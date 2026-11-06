@@ -13,6 +13,7 @@ import { appRouter } from '../trpc/router';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
 import { purgeOldAttendancePhotos } from '../services/attendancePhotoRetention';
 import { setFaceEngineForTests } from '../services/face';
+import { signLivenessToken } from '../services/face/liveness';
 import type { RequestContext, SessionContext } from '../trpc/context';
 
 (function loadEnv() {
@@ -642,6 +643,10 @@ describe.skipIf(!SHOULD_RUN)('attendance face check', () => {
         overtimeReason: kind === 'out' ? 'face test' : undefined,
       });
 
+    // The person agrees in the app before their face is used.
+    await db.delete(s.attendanceFaceConsents).where(eq(s.attendanceFaceConsents.orgId, f.orgId));
+    await expectError(punch('in', 'Ali'), 'attendance.errors.consentRequired');
+    await f.staff().attendance.faceConsentGive({ version: 1 });
     await expectError(punch('in', 'nobody'), 'attendance.errors.faceNotFound');
     expect((await punch('in', 'Ali')).face).toBe('enrolled');
     expect((await punch('out', 'Ali')).face).toBe('match');
@@ -751,6 +756,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
         left?: string;
         right?: string;
         forMemberId?: string;
+        identify?: boolean;
         token?: string;
         accept?: boolean;
         device?: string;
@@ -762,11 +768,15 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
           await caller.attendance.livenessChallenge({
             storeId: f.storeId,
             forMemberId: opts.forMemberId,
+            identify: opts.identify,
+            // Always the turns here; the passive path is tested below.
+            force: true,
           })
         ).token;
       return caller.attendance.punch({
         storeId: f.storeId,
-        kind,
+        kind: opts.identify ? undefined : kind,
+        identify: opts.identify,
         deviceId: opts.device ?? OTHER_DEVICE,
         photos: { face: jpeg(`${who}:front`), scene: jpeg('shop') },
         liveness: {
@@ -789,7 +799,12 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       }),
       'attendance.errors.livenessRequired',
     );
-    const challenge = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
+    await db.delete(s.attendanceFaceConsents).where(eq(s.attendanceFaceConsents.orgId, f.orgId));
+    await f.staff().attendance.faceConsentGive({ version: 1 });
+    const challenge = await f.staff().attendance.livenessChallenge({
+      storeId: f.storeId,
+      force: true,
+    });
     expect([...challenge.steps].sort()).toEqual(['left', 'right']);
     const first = await punch(f.staff(), 'in', 'Ali', { token: challenge.token });
     expect([first.liveness, first.face]).toEqual(['pass', 'enrolled']);
@@ -799,7 +814,10 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       'attendance.errors.livenessExpired',
     );
     // Another member's challenge does not fit.
-    const theirs = await f.colleague().attendance.livenessChallenge({ storeId: f.storeId });
+    const theirs = await f.colleague().attendance.livenessChallenge({
+      storeId: f.storeId,
+      force: true,
+    });
     await expectError(
       punch(f.staff(), 'out', 'Ali', { token: theirs.token }),
       'attendance.errors.livenessExpired',
@@ -839,7 +857,21 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     expect(list.members.map((m) => [m.memberId, m.faceOnFile])).toEqual([[f.colleagueId, false]]);
     await expectError(
       punch(f.staff(), 'in', 'Bob', { forMemberId: f.colleagueId }),
+      'attendance.errors.borrowNoConsent',
+    );
+    await expectError(
+      punch(f.colleague(), 'in', 'Bob', { device: DEVICE }),
+      'attendance.errors.consentRequired',
+    );
+    await f.colleague().attendance.faceConsentGive({ version: 1 });
+    await expectError(
+      punch(f.staff(), 'in', 'Bob', { forMemberId: f.colleagueId }),
       'attendance.errors.borrowNoFace',
+    );
+    // Nobody to recognise yet.
+    await expectError(
+      punch(f.staff(), 'in', 'Bob', { identify: true }),
+      'attendance.errors.notRecognized',
     );
     // Bob registers his face on his own phone first.
     const own = await punch(f.colleague(), 'in', 'Bob', { device: DEVICE });
@@ -860,11 +892,93 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       }),
       'attendance.errors.livenessFailed',
     );
-    const borrowed = await punch(f.staff(), 'out', 'Bob', { forMemberId: f.colleagueId });
-    expect([borrowed.face, borrowed.liveness]).toEqual(['match', 'pass']);
+    // The face says who: Ali's own face is not a colleague's.
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { identify: true }),
+      'attendance.errors.notRecognized',
+    );
+    // A borrowed phone never goes without the turns.
+    const noTurns = await signLivenessToken({
+      org: f.orgId,
+      mid: '*',
+      by: f.staffId,
+      storeId: f.storeId,
+      steps: [],
+    });
+    await expectError(
+      f.staff().attendance.punch({
+        storeId: f.storeId,
+        deviceId: OTHER_DEVICE,
+        photos: { face: jpeg('Bob:front') },
+        liveness: { token: noTurns.token },
+        identify: true,
+      }),
+      'attendance.errors.livenessNeeded',
+    );
+    const borrowed = await punch(f.staff(), 'out', 'Bob', { identify: true });
+    expect([borrowed.face, borrowed.liveness, borrowed.forName, borrowed.kind]).toEqual([
+      'match',
+      'pass',
+      'Att Colleague',
+      'out',
+    ]);
     sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
     const row = sheet.punches.find((p) => p.id === borrowed.id)!;
     expect([row.memberId, row.viaName]).toEqual([f.colleagueId, 'Att Staff']);
+    expect([...row.photos].sort()).toEqual(['face', 'left', 'right', 'scene']);
+
+    // One face photo, plainly real: no turns (the server did not ask).
+    const passiveToken = async () =>
+      (
+        await signLivenessToken({
+          org: f.orgId,
+          mid: f.staffId,
+          by: f.staffId,
+          storeId: f.storeId,
+          steps: [],
+        })
+      ).token;
+    const passive = await f.staff().attendance.punch({
+      storeId: f.storeId,
+      kind: 'in',
+      deviceId: OTHER_DEVICE,
+      photos: { face: jpeg('Ali:front') },
+      liveness: { token: await passiveToken() },
+    });
+    expect([passive.liveness, passive.face]).toEqual(['passive', 'match']);
+    // A photo held up: not sure it is real, so the turns after all.
+    await expectError(
+      f.staff().attendance.punch({
+        storeId: f.storeId,
+        kind: 'out',
+        deviceId: OTHER_DEVICE,
+        photos: { face: jpeg('Ali:print') },
+        liveness: { token: await passiveToken() },
+        overtimeReason: 'liveness test',
+      }),
+      'attendance.errors.livenessNeeded',
+    );
+    // Bob's face on Ali's punch: flagged, and whom it looks like.
+    const like = await punch(f.staff(), 'out', 'Bob');
+    expect([like.face, like.liveness]).toEqual(['mismatch', 'pass']);
+    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    expect(sheet.punches.find((p) => p.id === like.id)!.faceLikeName).toBe('Att Colleague');
+
+    // 待核对: the flagged punches, until a manager lets one stand.
+    let queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    const queued = queue.punches.map((p) => p.id);
+    expect(queued).toContain(flagged.id);
+    expect(queued).toContain(borrowed.id);
+    expect(queued).toContain(like.id);
+    expect(queued).not.toContain(passive.id);
+    expect(queue.punches.find((p) => p.id === like.id)!.faceLikeName).toBe('Att Colleague');
+    await expectError(
+      f.staff().attendance.reviewQueue({ storeId: f.storeId }),
+      'auth.errors.missingPermission',
+    );
+    await f.manager.attendance.reviewPunch({ storeId: f.storeId, punchId: like.id });
+    queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    expect(queue.punches.map((p) => p.id)).not.toContain(like.id);
 
     // A new phone: refused without the face check, let through with it.
     await f.manager.attendance.policySave({ ...rules, requireDevice: true, requireLiveness: true });
@@ -884,6 +998,16 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     expect(to('attendance.borrowedPhone')).toEqual([f.managerUserId]);
     expect(to('attendance.clockedOutForYou')).toEqual([f.colleagueUserId]);
     expect(to('attendance.newDevice')).toEqual([f.managerUserId]);
+    expect(to('attendance.faceLike')).toEqual([f.managerUserId]);
+
+    // Withdrawing the consent deletes the registered face.
+    await f.colleague().attendance.faceConsentWithdraw();
+    expect(
+      await db
+        .select()
+        .from(s.attendanceFaceRefs)
+        .where(eq(s.attendanceFaceRefs.memberId, f.colleagueId)),
+    ).toEqual([]);
 
     setFaceEngineForTests(null);
     await reset();

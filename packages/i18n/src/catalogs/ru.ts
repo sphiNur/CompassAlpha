@@ -2693,7 +2693,7 @@ export const ru = {
   'attendance.export.flag.early': 'Ранний уход',
   'attendance.export.flag.onDuty': 'На смене',
   'attendance.export.flag.upcoming': 'Ещё не началась',
-  'attendance.rules.photoLine': 'При каждой отметке два фото: лицо и место',
+  'attendance.rules.photoLine': 'Фото лица при каждой отметке',
   'attendance.photo.faceTitle': 'Сначала лицо',
   'attendance.photo.faceHint':
     'Фронтальная камера. Смотрите на экран, лицо целиком в кадре, при хорошем свете.',
@@ -2713,8 +2713,8 @@ export const ru = {
   'attendance.photo.show': 'Показать фото',
   'attendance.settings.requirePhoto': 'Фото при отметке',
   'attendance.settings.requirePhotoHint':
-    'При каждой отметке прихода и ухода — два фото на месте: лицо фронтальной камерой, затем место основной камерой. Хранятся 90 дней, видят только управляющие.',
-  'attendance.errors.photoRequired': 'В этом магазине для отметки нужны два фото.',
+    'При каждой отметке прихода и ухода на месте снимается фото лица фронтальной камерой. Хранится 90 дней, видят только руководители.',
+  'attendance.errors.photoRequired': 'В этом магазине для отметки нужны фото.',
   'attendance.errors.photoInvalid': 'Не удалось прочитать фото. Сделайте его снова.',
   'attendance.face.match': 'Лицо совпадает',
   'attendance.face.mismatch': 'Лицо не совпадает',
@@ -2782,7 +2782,7 @@ export const ru = {
   'attendance.live.badge.unchecked': 'Живое лицо не проверено',
   'attendance.photo.left': 'Поворот влево',
   'attendance.photo.right': 'Поворот вправо',
-  'attendance.rules.livenessLine': 'Проверка лица с поворотом головы',
+  'attendance.rules.livenessLine': 'Иногда проверка просит повернуть голову',
   'attendance.borrow.open': 'Отметить коллегу с этого телефона',
   'attendance.borrow.title': 'Отметить коллегу',
   'attendance.borrow.hint':
@@ -2798,7 +2798,7 @@ export const ru = {
   'attendance.device.newBadge': 'Новый телефон',
   'attendance.settings.requireLiveness': 'Проверка живого лица',
   'attendance.settings.requireLivenessHint':
-    'Кроме фото лица, сотрудник по подсказке поворачивает голову влево и вправо, а проверка убеждается, что это живое лицо, а не фото или экран. После двух неудачных попыток можно отметиться, но отметка помечается, и вам приходит уведомление.',
+    'Обычно одно фото лица с проверкой, что лицо живое. С нового или чужого телефона, при неясном фото и примерно при каждой третьей отметке сотрудник ещё поворачивает голову влево и вправо. После двух неудачных попыток можно отметиться, но отметка помечается, и вам приходит уведомление.',
   'attendance.export.col.checks': 'Проверки',
   'attendance.export.check.livenessFailed': 'Живое лицо не подтверждено',
   'attendance.export.check.borrowed': 'С телефона: {name}',
@@ -2825,4 +2825,47 @@ export const ru = {
   'attendance.live.slow':
     'Сеть медленная. Можно снять самому: сделайте движение по подсказке и нажмите кнопку.',
   'attendance.live.shootAnyway': 'Снять сейчас',
+  'attendance.errors.consentRequired':
+    'Сначала согласитесь на проверку лица, затем отметьтесь снова.',
+  'attendance.errors.borrowNoConsent':
+    'Этот коллега ещё не согласился на проверку лица. Сначала он соглашается на своём телефоне.',
+  'attendance.errors.livenessNeeded': 'На этот раз нужны ещё и повороты головы.',
+  'attendance.errors.notRecognized':
+    'Лицо не распознано ни как один сотрудник этого магазина. Попробуйте при хорошем свете или попросите руководителя добавить отметку.',
+  'attendance.errors.noConsent':
+    'Сотрудник не согласился на проверку лица, поэтому его лицо нельзя записать.',
+  'attendance.borrow.identifyHint': 'Коллега смотрит в камеру, приложение само узнаёт, кто это.',
+  'attendance.borrow.identifySend': 'Отметить',
+  'attendance.consent.title': 'Проверка лица',
+  'attendance.consent.intro':
+    'Этот магазин проверяет фото лица при каждой отметке прихода и ухода, чтобы никто не отмечался за другого.',
+  'attendance.consent.kept':
+    'Хранятся записанное лицо и фото отметок; фото отметок удаляются через 90 дней.',
+  'attendance.consent.who':
+    'Их видят только руководители вашего магазина. Они нужны только для учёта времени.',
+  'attendance.consent.withdrawNote':
+    'Отозвать согласие можно в любой момент на этом экране: записанное лицо удаляется, а отметки вносит руководитель.',
+  'attendance.consent.agree': 'Согласен',
+  'attendance.consent.notNow': 'Не сейчас',
+  'attendance.consent.withdraw': 'Отозвать согласие на проверку лица',
+  'attendance.consent.withdrawTitle': 'Отозвать согласие?',
+  'attendance.consent.withdrawBody':
+    'Записанное лицо удалится. В этом магазине отмечаться с телефона будет нельзя; отметки вносит руководитель.',
+  'attendance.settings.requireScene': 'Фото места',
+  'attendance.settings.requireSceneHint':
+    'После лица: снимок основной камерой того места, где находится сотрудник. Выключено: только фото лица.',
+  'attendance.rules.sceneLine': 'И фото места',
+  'attendance.face.like': 'Похоже на: {name}',
+  'attendance.live.badge.passive': 'Живое лицо (фото)',
+  'attendance.view.review': 'Проверить',
+  'attendance.review.emptyTitle': 'Проверять нечего',
+  'attendance.review.emptyBody':
+    'Здесь появляются помеченные отметки за две недели: лицо не совпадает, живое лицо не подтверждено, чужой телефон, новый телефон.',
+  'attendance.review.ok': 'Всё в порядке',
+  'attendance.review.overtimeTitle': 'Переработка ждёт решения',
+  'attendance.review.overtimeBody': 'Ожидают: {count}. Одобрите или отклоните в табеле.',
+  'attendance.export.check.faceLike': 'Похоже на: {name}',
+  'notify.attendance.faceLike.title': 'Лицо похоже на другого сотрудника',
+  'notify.attendance.faceLike.body':
+    '{name}: отметка в {store} в {time}, но лицо похоже на: {like}. Проверьте фото отметки.',
 } as const satisfies Record<CatalogKey, string>;

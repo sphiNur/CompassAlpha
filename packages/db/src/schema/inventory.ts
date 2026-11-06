@@ -705,6 +705,8 @@ export const attendanceStorePolicies = inventorySchema.table(
     requireFace: boolean('require_face').notNull().default(false),
     /** Head-turn + real-face check on the face photo (0064). */
     requireLiveness: boolean('require_liveness').notNull().default(false),
+    /** The place photo with each punch (0065; was always on with photos). */
+    requireScene: boolean('require_scene').notNull().default(false),
     updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
       onDelete: 'set null',
     }),
@@ -787,7 +789,9 @@ export const attendancePunches = inventorySchema.table(
     voidedByMemberId: uuid('voided_by_member_id'),
     voidReason: text('void_reason'),
     /** Liveness check (0064); null = not asked for. */
-    liveness: varchar('liveness', { length: 10 }).$type<'pass' | 'fail' | 'unchecked'>(),
+    liveness: varchar('liveness', { length: 10 }).$type<
+      'pass' | 'passive' | 'fail' | 'unchecked'
+    >(),
     livenessScore: real('liveness_score'),
     livenessNonce: varchar('liveness_nonce', { length: 64 }),
     /** Clocked on this colleague's phone (0064). */
@@ -894,6 +898,12 @@ export const attendancePhotos = inventorySchema.table(
       'match' | 'mismatch' | 'enrolled' | 'unchecked'
     >(),
     faceScore: real('face_score'),
+    /** Whom the face looks like when it is not the punch's person (0065). */
+    faceLikeMemberId: uuid('face_like_member_id').references(() => members.id, {
+      onDelete: 'set null',
+    }),
+    /** Real-face model's score for the face photo (0065). */
+    realScore: real('real_score'),
   },
   (t) => ({
     punchKind: unique('attendance_photos_punch_id_kind_key').on(t.punchId, t.kind),
@@ -921,4 +931,43 @@ export const attendanceFaceRefs = inventorySchema.table(
     setAt: timestamp('set_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => ({ orgIdx: index('afr_org_idx').on(t.orgId) }),
+);
+
+/** A manager has looked at a flagged punch (0065); punches never change. */
+export const attendancePunchReviews = inventorySchema.table(
+  'attendance_punch_reviews',
+  {
+    punchId: uuid('punch_id')
+      .primaryKey()
+      .references(() => attendancePunches.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    reviewedByMemberId: uuid('reviewed_by_member_id'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({ orgIdx: index('apr_org_idx').on(t.orgId) }),
+);
+
+/** A member agreed to face registration for clocking (0065). */
+export const attendanceFaceConsents = inventorySchema.table(
+  'attendance_face_consents',
+  {
+    memberId: uuid('member_id')
+      .primaryKey()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    consentedAt: timestamp('consented_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({ orgIdx: index('afc_org_idx').on(t.orgId) }),
 );

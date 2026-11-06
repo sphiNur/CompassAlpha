@@ -162,7 +162,7 @@ function OvertimeBadges({ items }: { items: SheetData['overtime'] }) {
   );
 }
 
-const FACE_TONE = {
+export const FACE_TONE = {
   match: 'success',
   mismatch: 'danger',
   enrolled: 'info',
@@ -180,6 +180,7 @@ function FaceBadges({ punches }: { punches: SheetData['punches'] }) {
   const livenessFailed = live.some((p) => p.liveness === 'fail');
   const borrowed = live.some((p) => p.viaName);
   const newDevice = live.some((p) => p.newDevice);
+  const like = [...new Set(live.map((p) => p.faceLikeName).filter((x): x is string => !!x))];
   if (results.length === 0 && !livenessFailed && !borrowed && !newDevice) return null;
   return (
     <span className="flex flex-wrap gap-1">
@@ -191,11 +192,21 @@ function FaceBadges({ punches }: { punches: SheetData['punches'] }) {
       {livenessFailed ? <Badge tone="danger">{i18n.t('attendance.live.badge.fail')}</Badge> : null}
       {borrowed ? <Badge tone="warn">{i18n.t('attendance.borrow.badge')}</Badge> : null}
       {newDevice ? <Badge tone="warn">{i18n.t('attendance.device.newBadge')}</Badge> : null}
+      {like.map((name) => (
+        <Badge key={`like-${name}`} tone="danger">
+          {i18n.t('attendance.face.like', { name })}
+        </Badge>
+      ))}
     </span>
   );
 }
 
-const LIVE_TONE = { pass: 'success', fail: 'danger', unchecked: 'warn' } as const;
+export const LIVE_TONE = {
+  pass: 'success',
+  passive: 'success',
+  fail: 'danger',
+  unchecked: 'warn',
+} as const;
 
 // ─── Daily sheet ──────────────────────────────────────────────────────────
 
@@ -339,7 +350,7 @@ function MemberDayRow({
 }
 
 /** A punch's face and surroundings photos, loaded when asked for. */
-function PunchPhotoStrip({
+export function PunchPhotoStrip({
   storeId,
   punchId,
   canSetFace,
@@ -533,6 +544,11 @@ function MemberDaySheet({
                     ) : null}
                     {p.newDevice ? (
                       <Badge tone="warn">{i18n.t('attendance.device.newBadge')}</Badge>
+                    ) : null}
+                    {p.faceLikeName ? (
+                      <Badge tone="danger">
+                        {i18n.t('attendance.face.like', { name: p.faceLikeName })}
+                      </Badge>
                     ) : null}
                     {p.viaName ? (
                       <span className="basis-full">

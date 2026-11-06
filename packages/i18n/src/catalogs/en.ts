@@ -2794,7 +2794,7 @@ export const en = {
   'attendance.export.flag.early': 'Left early',
   'attendance.export.flag.onDuty': 'On shift',
   'attendance.export.flag.upcoming': 'Not started',
-  'attendance.rules.photoLine': 'Two photos with each punch: your face and the place',
+  'attendance.rules.photoLine': 'A face photo with each punch',
   'attendance.photo.faceTitle': 'Your face first',
   'attendance.photo.faceHint':
     'Front camera. Look at the screen with your whole face in the frame, in good light.',
@@ -2816,8 +2816,8 @@ export const en = {
   'attendance.photo.show': 'Show photos',
   'attendance.settings.requirePhoto': 'Photos when clocking',
   'attendance.settings.requirePhotoHint':
-    'Each clock-in and clock-out takes two photos on the spot: the face with the front camera, then the place with the rear camera. Kept 90 days; only managers see them.',
-  'attendance.errors.photoRequired': 'This store needs the two photos to clock.',
+    'Each clock-in and clock-out takes a face photo on the spot with the front camera. Kept 90 days; only managers see them.',
+  'attendance.errors.photoRequired': 'This store needs the photos to clock.',
   'attendance.errors.photoInvalid': 'The photo could not be read. Take it again.',
   'attendance.face.match': 'Face matches',
   'attendance.face.mismatch': 'Face does not match',
@@ -2884,7 +2884,7 @@ export const en = {
   'attendance.live.badge.unchecked': 'Liveness not checked',
   'attendance.photo.left': 'Turned left',
   'attendance.photo.right': 'Turned right',
-  'attendance.rules.livenessLine': 'Face check with head turns',
+  'attendance.rules.livenessLine': 'Sometimes the check also asks for head turns',
   'attendance.borrow.open': 'Clock in a colleague on this phone',
   'attendance.borrow.title': 'Clock in a colleague',
   'attendance.borrow.hint':
@@ -2901,7 +2901,7 @@ export const en = {
   'attendance.device.newBadge': 'New phone',
   'attendance.settings.requireLiveness': 'Liveness check',
   'attendance.settings.requireLivenessHint':
-    'Besides the face photo, the person turns their head left and right when asked, and the check makes sure it is a real face, not a photo or a screen. After two failed tries they can clock anyway; the punch is marked and you are told.',
+    'Usually one face photo, checked for a real face. On a new or borrowed phone, when the photo is unclear, and on about one punch in three, the person also turns their head left and right. After two failed tries they can clock anyway; the punch is marked and you are told.',
   'attendance.export.col.checks': 'Checks',
   'attendance.export.check.livenessFailed': 'Liveness failed',
   'attendance.export.check.borrowed': "On {name}'s phone",
@@ -2928,4 +2928,47 @@ export const en = {
   'attendance.live.slow':
     'The network is slow. You can take the photos yourself: do what the prompt asks, then tap the button.',
   'attendance.live.shootAnyway': 'Take photo now',
+  'attendance.errors.consentRequired': 'Agree to the face check first, then clock again.',
+  'attendance.errors.borrowNoConsent':
+    'This colleague has not agreed to the face check yet. They agree on their own phone first.',
+  'attendance.errors.livenessNeeded': 'This time the check also needs the head turns.',
+  'attendance.errors.notRecognized':
+    'The face was not recognised as anyone at this store. Try again in good light, or ask a manager to add the punch.',
+  'attendance.errors.noConsent':
+    'This person has not agreed to the face check, so their face cannot be registered.',
+  'attendance.borrow.identifyHint':
+    'Your colleague looks at the camera; the app recognises who it is.',
+  'attendance.borrow.identifySend': 'Clock',
+  'attendance.consent.title': 'Face check',
+  'attendance.consent.intro':
+    'This store checks a face photo with each clock-in and clock-out, so nobody can clock for someone else.',
+  'attendance.consent.kept':
+    'Your registered face and the punch photos are kept; punch photos are deleted after 90 days.',
+  'attendance.consent.who':
+    "Only your store's managers see them. They are used only for attendance.",
+  'attendance.consent.withdrawNote':
+    'You can withdraw on this screen at any time; your registered face is then deleted, and a manager adds your punches by hand.',
+  'attendance.consent.agree': 'I agree',
+  'attendance.consent.notNow': 'Not now',
+  'attendance.consent.withdraw': 'Withdraw face check consent',
+  'attendance.consent.withdrawTitle': 'Withdraw consent?',
+  'attendance.consent.withdrawBody':
+    'Your registered face is deleted. At this store you then cannot clock on the phone; a manager adds your punches by hand.',
+  'attendance.settings.requireScene': 'Photo of the place',
+  'attendance.settings.requireSceneHint':
+    'After the face, a photo with the rear camera of where the person is. Off: the face photo alone.',
+  'attendance.rules.sceneLine': 'And a photo of the place',
+  'attendance.face.like': 'Looks like {name}',
+  'attendance.live.badge.passive': 'Real face (photo)',
+  'attendance.view.review': 'To check',
+  'attendance.review.emptyTitle': 'Nothing to check',
+  'attendance.review.emptyBody':
+    "Marked punches of the last two weeks show here: a face that does not match, a failed liveness check, a colleague's phone, a new phone.",
+  'attendance.review.ok': 'Looks fine',
+  'attendance.review.overtimeTitle': 'Overtime waiting for you',
+  'attendance.review.overtimeBody': 'Waiting: {count}. Approve or reject it on the sheet.',
+  'attendance.export.check.faceLike': 'Looks like {name}',
+  'notify.attendance.faceLike.title': 'Face looks like someone else',
+  'notify.attendance.faceLike.body':
+    '{name} clocked at {store} at {time}, but the face looks like {like}. Check the punch photos.',
 } as const;

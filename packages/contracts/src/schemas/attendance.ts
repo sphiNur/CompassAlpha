@@ -32,14 +32,17 @@ export const AttendancePhotoSchema = z
 
 export const AttendancePunchInputSchema = z.object({
   storeId: UuidSchema,
-  kind: z.enum(['in', 'out']),
+  /** Omitted with `identify`: the server knows the colleague's next punch. */
+  kind: z.enum(['in', 'out']).optional(),
   deviceId: AttendanceDeviceIdSchema,
   platform: z.string().max(32).optional(),
   location: AttendanceLocationSchema.nullable().optional(),
   /** Why a clock-out runs well past the shift; the server asks for it. */
   overtimeReason: z.string().trim().min(1).max(300).optional(),
   /** Taken on the spot when the store asks for photos: base64 JPEGs. */
-  photos: z.object({ face: AttendancePhotoSchema, scene: AttendancePhotoSchema }).optional(),
+  photos: z
+    .object({ face: AttendancePhotoSchema, scene: AttendancePhotoSchema.optional() })
+    .optional(),
   /**
    * Liveness (2026-11-06): the challenge from `livenessChallenge` and the
    * two head-turn frames; `photos.face` is the straight-on frame.
@@ -47,19 +50,39 @@ export const AttendancePunchInputSchema = z.object({
   liveness: z
     .object({
       token: z.string().min(20).max(2000),
-      left: AttendancePhotoSchema,
-      right: AttendancePhotoSchema,
+      /** The turn frames, when the challenge asked for turns. */
+      left: AttendancePhotoSchema.optional(),
+      right: AttendancePhotoSchema.optional(),
     })
     .optional(),
   /** After two failed liveness tries: clock anyway, flagged for the managers. */
   acceptLivenessFail: z.boolean().optional(),
   /** Clocking on a colleague's phone: whose punch this is (same store). */
   forMemberId: UuidSchema.optional(),
+  /** Clocking on a colleague's phone: the server finds who it is by the face. */
+  identify: z.boolean().optional(),
 });
 
 export const AttendanceLivenessChallengeInputSchema = z.object({
   storeId: UuidSchema,
   forMemberId: UuidSchema.optional(),
+  identify: z.boolean().optional(),
+  /** This phone and place: a new phone or an unknown place asks for turns. */
+  deviceId: AttendanceDeviceIdSchema.optional(),
+  location: AttendanceLocationSchema.nullable().optional(),
+  /** Always ask for turns (the server said a punch needs them). */
+  force: z.boolean().optional(),
+});
+
+export const AttendanceReviewQueueInputSchema = z.object({ storeId: UuidSchema });
+
+export const AttendanceReviewPunchInputSchema = z.object({
+  storeId: UuidSchema,
+  punchId: UuidSchema,
+});
+
+export const AttendanceFaceConsentInputSchema = z.object({
+  version: z.number().int().min(1).max(1000),
 });
 
 export const AttendanceColleaguesInputSchema = z.object({ storeId: UuidSchema });
@@ -143,6 +166,7 @@ export const AttendancePolicySaveInputSchema = z
     requirePhoto: z.boolean().default(false),
     requireFace: z.boolean().default(false),
     requireLiveness: z.boolean().default(false),
+    requireScene: z.boolean().default(false),
   })
   .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
 

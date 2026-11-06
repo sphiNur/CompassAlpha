@@ -78,3 +78,6 @@ export const STOCKTAKE_COUNT_MESSAGE = {
   decimals: 'inventory.errors.countDecimals',
   tooLarge: 'inventory.errors.countTooLarge',
 } as const satisfies Record<StocktakeCountProblem, string>;
+
+/** The face-registration consent text the person agreed to. */
+export const ATTENDANCE_FACE_CONSENT_VERSION = 1;
