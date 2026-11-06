@@ -9,6 +9,7 @@ import { useStoreContext } from '../../components/StoreSwitcher';
 import { useI18n } from '../../hooks/useI18n';
 import { useAuthStore } from '../../stores/authStore';
 import { AttendanceRoster, AttendanceSheet } from './AttendanceManage';
+import { AttendanceExport } from './AttendanceExport';
 import { AttendanceSettings } from './AttendanceSettings';
 
 type View = 'sheet' | 'roster' | 'settings';
@@ -71,7 +72,12 @@ export function AttendanceAdmin() {
           ]}
         />
       </div>
-      {view === 'sheet' ? <AttendanceSheet key={storeId} storeId={storeId} /> : null}
+      {view === 'sheet' ? (
+        <>
+          <AttendanceSheet key={storeId} storeId={storeId} />
+          <AttendanceExport key={`export-${storeId}`} storeId={storeId} />
+        </>
+      ) : null}
       {view === 'roster' ? <AttendanceRoster key={storeId} storeId={storeId} /> : null}
       {view === 'settings' ? <AttendanceSettings key={storeId} storeId={storeId} /> : null}
     </div>

@@ -11,6 +11,7 @@ import { env } from './env';
 import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
+import { attendanceMonthExport } from './http/attendanceExport';
 
 /**
  * Read the web build's id (emitted by vite.config.ts → buildShaPlugin)
@@ -263,6 +264,9 @@ export function createApp() {
       startedAt: STARTED_AT,
     }),
   );
+
+  // Attendance month spreadsheet behind a signed, five-minute link.
+  app.get('/files/attendance-month.xlsx', attendanceMonthExport);
 
   // @hono/trpc-server's createContext typing is `Record<string, unknown>` —
   // narrower than our shaped RequestContext. Cast at the boundary.
