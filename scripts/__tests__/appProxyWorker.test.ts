@@ -263,6 +263,24 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
     expect(calls[0]!.url).toBe(`${NEW}x`);
     expect(kv.data.get('signedTs')).toBe(String(t - 5));
   });
+
+  test('ntfy failing after a good read keeps the accepted origin, not stale KV', async () => {
+    const t = now();
+    const kv = memoryKv();
+    topic = ndjson(signed(NEW, t - 60));
+    await worker.fetch(new Request(`${PUBLIC}/x`), signedEnv(kv));
+    // The KV write is not visible yet and ntfy now times out.
+    kv.data.set('url', OLD);
+    resetCacheOnly();
+    const okFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://ntfy.sh/')) throw new Error('timeout');
+      return okFetch(input, init);
+    }) as typeof fetch;
+    await worker.fetch(new Request(`${PUBLIC}/y`), signedEnv(kv));
+    expect(calls[1]!.url).toBe(`${NEW}y`);
+  });
 });
 
 // Expire only the 30 s origin cache, keeping the per-isolate floor.
