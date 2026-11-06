@@ -262,6 +262,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const [requireGeo, setRequireGeo] = useState(initial.requireGeo);
   const [requirePhoto, setRequirePhoto] = useState(initial.requirePhoto);
   const [requireFace, setRequireFace] = useState(initial.requireFace);
+  const [requireLiveness, setRequireLiveness] = useState(initial.requireLiveness);
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
   const [grace, setGrace] = useState(String(initial.graceMinutes));
@@ -331,6 +332,16 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
               hint={i18n.t('attendance.settings.requireFaceHint')}
               checked={requireFace}
               onChange={(e) => setRequireFace(e.target.checked)}
+            />
+          </div>
+        ) : null}
+        {requirePhoto && requireFace ? (
+          <div className="mt-3">
+            <Switch
+              label={i18n.t('attendance.settings.requireLiveness')}
+              hint={i18n.t('attendance.settings.requireLivenessHint')}
+              checked={requireLiveness}
+              onChange={(e) => setRequireLiveness(e.target.checked)}
             />
           </div>
         ) : null}
@@ -417,6 +428,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             requireGeo,
             requirePhoto,
             requireFace: requirePhoto && requireFace,
+            requireLiveness: requirePhoto && requireFace && requireLiveness,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,

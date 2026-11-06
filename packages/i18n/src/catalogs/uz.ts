@@ -2737,4 +2737,75 @@ export const uz = {
   'notify.attendance.faceMismatch.title': 'Yuz mos emas',
   'notify.attendance.faceMismatch.body':
     '{name}: {store} da {time} da belgiladi, yuz roʻyxatdagisiga mos emas. Belgilash suratlarini tekshiring.',
+  'attendance.errors.livenessRequired':
+    'Bu doʻkonda belgilash uchun jonli yuz tekshiruvi kerak. Ilovani yangilab, qayta urinib koʻring.',
+  'attendance.errors.livenessExpired': 'Yuz tekshiruvi juda uzoq davom etdi. Qaytadan boshlang.',
+  'attendance.errors.livenessFailed':
+    'Jonli yuz tekshiruvidan oʻtilmadi. Yorugʻ joyda kameraga qarang va koʻrsatma boʻyicha boshingizni buring.',
+  'attendance.errors.borrowNeedsFace':
+    'Hamkasb telefonidan belgilash uchun doʻkonda yuz tekshiruvi yoqilgan boʻlishi kerak.',
+  'attendance.errors.borrowNoFace':
+    'Bu xodimning yuzi hali roʻyxatga olinmagan. Avval oʻz telefonidan bir marta belgilasin.',
+  'attendance.errors.borrowFaceMismatch': 'Yuz tanlangan xodimga mos emas.',
+  'attendance.errors.notColleague':
+    'Telefoningizda faqat shu doʻkon hamkasblarini belgilash mumkin.',
+  'attendance.live.lookTitle': 'Kameraga qarang',
+  'attendance.live.turnLeft': 'Boshingizni chapga buring',
+  'attendance.live.turnRight': 'Boshingizni oʻngga buring',
+  'attendance.live.autoHint':
+    'Koʻrsatmaga amal qiling: suratlar oʻzi olinadi. Tugmani bosish ham mumkin.',
+  'attendance.live.manualHint':
+    'Koʻrsatma boʻyicha harakat qiling va har safar surat tugmasini bosing.',
+  'attendance.live.guide.noFace': 'Yuz koʻrinmayapti',
+  'attendance.live.guide.manyFaces': 'Kadrda faqat bitta yuz boʻlsin',
+  'attendance.live.guide.lookStraight': 'Toʻgʻri kameraga qarang',
+  'attendance.live.guide.turnMore': 'Yana biroz buring',
+  'attendance.live.progress': 'Yuz suratlari {done}/{total}',
+  'attendance.live.failedTitle': 'Jonli yuz tekshiruvidan oʻtilmadi',
+  'attendance.live.failedBody':
+    'Yorugʻ joyda kameraga qarang va koʻrsatma boʻyicha boshingizni sekin buring. Qayta urinib koʻring.',
+  'attendance.live.clockAnyway': 'Baribir belgilash (boshqaruvchiga xabar boradi)',
+  'attendance.live.flaggedNote': 'Bu belgi boshqaruvchi tekshirishi uchun ajratildi.',
+  'attendance.live.badge.pass': 'Jonli yuz',
+  'attendance.live.badge.fail': 'Jonli yuz tasdiqlanmadi',
+  'attendance.live.badge.unchecked': 'Jonli yuz tekshirilmadi',
+  'attendance.photo.left': 'Chapga burilgan',
+  'attendance.photo.right': 'Oʻngga burilgan',
+  'attendance.rules.livenessLine': 'Bosh burish bilan yuz tekshiruvi',
+  'attendance.borrow.open': 'Shu telefonda hamkasbni belgilash',
+  'attendance.borrow.title': 'Hamkasbni belgilash',
+  'attendance.borrow.hint':
+    'Shu doʻkondagi telefoni yonida boʻlmagan hamkasb uchun. U yuzini shu yerda oʻzi suratga oladi; boshqaruvchiga va unga xabar boradi.',
+  'attendance.borrow.emptyTitle': 'Belgilanadigan hamkasb yoʻq',
+  'attendance.borrow.emptyBody':
+    'Bu yerda faqat belgilash yoqilgan shu doʻkon hamkasblari koʻrinadi.',
+  'attendance.borrow.noFace': 'Yuzi hali roʻyxatga olinmagan',
+  'attendance.borrow.forWhom': 'Kim uchun: {name}',
+  'attendance.borrow.doneIn': '{name}: keldi {time}',
+  'attendance.borrow.doneOut': '{name}: ketdi {time}',
+  'attendance.borrow.badge': 'Hamkasb telefoni',
+  'attendance.borrow.via': 'Telefon egasi: {name}',
+  'attendance.device.newBadge': 'Yangi telefon',
+  'attendance.settings.requireLiveness': 'Jonli yuz tekshiruvi',
+  'attendance.settings.requireLivenessHint':
+    'Yuz suratidan tashqari, xodim koʻrsatma boʻyicha boshini chapga va oʻngga buradi, tekshiruv esa bu surat yoki ekran emas, jonli yuz ekanini aniqlaydi. Ikki marta oʻtilmasa ham belgilash mumkin, lekin belgi ajratiladi va sizga xabar boradi.',
+  'attendance.export.col.checks': 'Tekshiruvlar',
+  'attendance.export.check.livenessFailed': 'Jonli yuz tasdiqlanmadi',
+  'attendance.export.check.borrowed': 'Telefon egasi: {name}',
+  'attendance.export.check.newDevice': 'Yangi telefon',
+  'notify.attendance.livenessFailed.title': 'Jonli yuz tekshiruvidan oʻtilmadi',
+  'notify.attendance.livenessFailed.body':
+    '{name}: {store} da {time} da belgiladi, jonli yuz tekshiruvidan oʻtilmadi. Belgilash suratlarini tekshiring.',
+  'notify.attendance.borrowedPhone.title': 'Hamkasb telefonidan belgilash',
+  'notify.attendance.borrowedPhone.body':
+    '{name}: {store} da {time} da belgiladi, telefon egasi: {owner}. Yuz mos keldi.',
+  'notify.attendance.newDevice.title': 'Yangi telefondan belgilash',
+  'notify.attendance.newDevice.body':
+    '{name}: {store} da {time} da bogʻlanmagan telefondan belgiladi. Yuz mos keldi. Endi shu telefon boʻlsa, davomat sozlamalarida eskisini ajrating.',
+  'notify.attendance.clockedInForYou.title': 'Siz uchun kelish belgilandi',
+  'notify.attendance.clockedInForYou.body':
+    'Siz uchun {store} da {time} da kelish belgilandi, telefon egasi: {owner}. Bu siz boʻlmasangiz, boshqaruvchiga ayting.',
+  'notify.attendance.clockedOutForYou.title': 'Siz uchun ketish belgilandi',
+  'notify.attendance.clockedOutForYou.body':
+    'Siz uchun {store} da {time} da ketish belgilandi, telefon egasi: {owner}. Bu siz boʻlmasangiz, boshqaruvchiga ayting.',
 } as const satisfies Record<CatalogKey, string>;

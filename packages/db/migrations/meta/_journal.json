@@ -449,6 +449,13 @@
       "when": 1792540000011,
       "tag": "0063_attendance_faces",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792540000012,
+      "tag": "0064_attendance_liveness",
+      "breakpoints": true
     }
   ]
 }

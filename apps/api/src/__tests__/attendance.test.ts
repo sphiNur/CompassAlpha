@@ -66,6 +66,9 @@ interface Fixture {
   staffUserId: string;
   managerUserId: string;
   outsiderId: string;
+  colleagueId: string;
+  colleagueUserId: string;
+  colleague: () => ReturnType<typeof appRouter.createCaller>;
   manager: ReturnType<typeof appRouter.createCaller>;
   staff: () => ReturnType<typeof appRouter.createCaller>;
 }
@@ -132,6 +135,7 @@ beforeAll(async () => {
   const mgr = await person('Att Manager', 1);
   const staff = await person('Att Staff', 2);
   const outsider = await person('Att Outsider', 3);
+  const colleague = await person('Att Colleague', 4);
   const [store] = await db
     .insert(s.stores)
     .values({ orgId: org!.id, name: 'Att Store' })
@@ -162,11 +166,13 @@ beforeAll(async () => {
     { memberId: mgr.memberId, roleId: mgrRole!.id, scopeType: 'store', scopeId: store!.id },
     { memberId: staff.memberId, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id },
     { memberId: outsider.memberId, roleId: staffRole!.id, scopeType: 'store', scopeId: other!.id },
+    { memberId: colleague.memberId, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id },
   ]);
   await db.insert(s.memberStoreAssignments).values([
     { memberId: mgr.memberId, storeId: store!.id },
     { memberId: staff.memberId, storeId: store!.id },
     { memberId: outsider.memberId, storeId: other!.id },
+    { memberId: colleague.memberId, storeId: store!.id },
   ]);
   const session = (p: { userId: string; memberId: string }, perms: string[]): SessionContext => ({
     userId: p.userId,
@@ -185,6 +191,9 @@ beforeAll(async () => {
     staffUserId: staff.userId,
     managerUserId: mgr.userId,
     outsiderId: outsider.memberId,
+    colleagueId: colleague.memberId,
+    colleagueUserId: colleague.userId,
+    colleague: () => appRouter.createCaller(buildCtx(session(colleague, ['attendance.clock']))),
     manager: appRouter.createCaller(buildCtx(session(mgr, ['attendance.manage']))),
     staff: () => appRouter.createCaller(buildCtx(session(staff, ['attendance.clock']))),
   };
@@ -603,7 +612,13 @@ describe.skipIf(!SHOULD_RUN)('attendance face check', () => {
       const tag = Buffer.from(bytes).toString('latin1');
       if (tag.includes('nobody')) return { found: false };
       if (tag.includes('boom')) throw new Error('model down');
-      return { found: true, score: 0.95, feature: unit(tag.includes('Bob') ? 1 : 0) };
+      return {
+        found: true,
+        score: 0.95,
+        feature: unit(tag.includes('Bob') ? 1 : 0),
+        yaw: 0,
+        real: 0.9,
+      };
     });
     const rules = {
       storeId: f.storeId,
@@ -681,6 +696,208 @@ describe.skipIf(!SHOULD_RUN)('attendance face check', () => {
       requireDevice: true,
       requirePhoto: false,
       requireFace: false,
+    });
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
+  test('turns and a real face pass; prints, flat turns and reused challenges do not', async () => {
+    const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const reset = () =>
+      db.execute(
+        sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id IN (${f.staffId}, ${f.colleagueId}) AND voided_at IS NULL`,
+      );
+    await reset();
+    await db.delete(s.attendanceFaceRefs).where(eq(s.attendanceFaceRefs.orgId, f.orgId));
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      enabled: true,
+    });
+    // Stub model. Tag "<who>:<pose>": Ali or Bob; front, left, right, print
+    // (a photo held up: real-face score low), flat (no head turn).
+    const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
+    setFaceEngineForTests(async (bytes) => {
+      const tag = Buffer.from(bytes).toString('latin1');
+      const yaw = tag.includes(':left') ? 0.5 : tag.includes(':right') ? -0.5 : 0;
+      return {
+        found: true,
+        score: 0.95,
+        feature: unit(tag.includes('Bob') ? 1 : 0),
+        yaw,
+        real: tag.includes('print') ? 0.05 : 0.95,
+      };
+    });
+    const rules = {
+      storeId: f.storeId,
+      requireDevice: false,
+      requireGeo: false,
+      geo: null,
+      graceMinutes: 5,
+      overtimeAfterMinutes: 30,
+      requirePhoto: true,
+      requireFace: true,
+    };
+    await f.manager.attendance.policySave({ ...rules, requireLiveness: true });
+    const jpeg = (tag: string) =>
+      Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
+    type Caller = ReturnType<typeof appRouter.createCaller>;
+    const punch = async (
+      caller: Caller,
+      kind: 'in' | 'out',
+      who: string,
+      opts: {
+        left?: string;
+        right?: string;
+        forMemberId?: string;
+        token?: string;
+        accept?: boolean;
+        device?: string;
+      } = {},
+    ) => {
+      const token =
+        opts.token ??
+        (
+          await caller.attendance.livenessChallenge({
+            storeId: f.storeId,
+            forMemberId: opts.forMemberId,
+          })
+        ).token;
+      return caller.attendance.punch({
+        storeId: f.storeId,
+        kind,
+        deviceId: opts.device ?? OTHER_DEVICE,
+        photos: { face: jpeg(`${who}:front`), scene: jpeg('shop') },
+        liveness: {
+          token,
+          left: jpeg(opts.left ?? `${who}:left`),
+          right: jpeg(opts.right ?? `${who}:right`),
+        },
+        acceptLivenessFail: opts.accept,
+        forMemberId: opts.forMemberId,
+        overtimeReason: kind === 'out' ? 'liveness test' : undefined,
+      });
+    };
+
+    await expectError(
+      f.staff().attendance.punch({
+        storeId: f.storeId,
+        kind: 'in',
+        deviceId: OTHER_DEVICE,
+        photos: { face: jpeg('Ali:front'), scene: jpeg('shop') },
+      }),
+      'attendance.errors.livenessRequired',
+    );
+    const challenge = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
+    expect([...challenge.steps].sort()).toEqual(['left', 'right']);
+    const first = await punch(f.staff(), 'in', 'Ali', { token: challenge.token });
+    expect([first.liveness, first.face]).toEqual(['pass', 'enrolled']);
+    // One challenge, one punch.
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { token: challenge.token }),
+      'attendance.errors.livenessExpired',
+    );
+    // Another member's challenge does not fit.
+    const theirs = await f.colleague().attendance.livenessChallenge({ storeId: f.storeId });
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { token: theirs.token }),
+      'attendance.errors.livenessExpired',
+    );
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { left: 'Ali:print', right: 'Ali:print' }),
+      'attendance.errors.livenessFailed',
+    );
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { left: 'Ali:flat', right: 'Ali:flat' }),
+      'attendance.errors.livenessFailed',
+    );
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { left: 'Bob:left', right: 'Bob:right' }),
+      'attendance.errors.livenessFailed',
+    );
+    // After two tries the person clocks anyway, flagged.
+    const flagged = await punch(f.staff(), 'out', 'Ali', {
+      left: 'Ali:flat',
+      right: 'Ali:flat',
+      accept: true,
+    });
+    expect(flagged.liveness).toBe('fail');
+    const date = dateInTz(new Date(flagged.at), TZ);
+    let sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    expect(sheet.requireLiveness).toBe(true);
+    const flaggedRow = sheet.punches.find((p) => p.id === flagged.id)!;
+    expect([flaggedRow.liveness, flaggedRow.face?.result]).toEqual(['fail', 'unchecked']);
+    expect([...flaggedRow.photos].sort()).toEqual(['face', 'left', 'right', 'scene']);
+
+    // A borrowed phone: Bob (the colleague) clocks on Ali's (staff's) phone.
+    await expectError(
+      f.staff().attendance.livenessChallenge({ storeId: f.storeId, forMemberId: f.outsiderId }),
+      'attendance.errors.notColleague',
+    );
+    let list = await f.staff().attendance.colleagues({ storeId: f.storeId });
+    expect(list.members.map((m) => [m.memberId, m.faceOnFile])).toEqual([[f.colleagueId, false]]);
+    await expectError(
+      punch(f.staff(), 'in', 'Bob', { forMemberId: f.colleagueId }),
+      'attendance.errors.borrowNoFace',
+    );
+    // Bob registers his face on his own phone first.
+    const own = await punch(f.colleague(), 'in', 'Bob', { device: DEVICE });
+    expect(own.face).toBe('enrolled');
+    list = await f.staff().attendance.colleagues({ storeId: f.storeId });
+    expect(list.members[0]!.faceOnFile).toBe(true);
+    // Ali cannot clock Bob out with Ali's own face, nor without a live check.
+    await expectError(
+      punch(f.staff(), 'out', 'Ali', { forMemberId: f.colleagueId }),
+      'attendance.errors.borrowFaceMismatch',
+    );
+    await expectError(
+      punch(f.staff(), 'out', 'Bob', {
+        forMemberId: f.colleagueId,
+        left: 'Bob:print',
+        right: 'Bob:print',
+        accept: true,
+      }),
+      'attendance.errors.livenessFailed',
+    );
+    const borrowed = await punch(f.staff(), 'out', 'Bob', { forMemberId: f.colleagueId });
+    expect([borrowed.face, borrowed.liveness]).toEqual(['match', 'pass']);
+    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    const row = sheet.punches.find((p) => p.id === borrowed.id)!;
+    expect([row.memberId, row.viaName]).toEqual([f.colleagueId, 'Att Staff']);
+
+    // A new phone: refused without the face check, let through with it.
+    await f.manager.attendance.policySave({ ...rules, requireDevice: true, requireLiveness: true });
+    await expectError(
+      punch(f.staff(), 'in', 'Ali', { device: DEVICE, left: 'Ali:flat', accept: true }),
+      'attendance.errors.otherDevice',
+    );
+    const moved = await punch(f.staff(), 'in', 'Ali', { device: DEVICE });
+    expect([moved.newDevice, moved.face]).toEqual([true, 'match']);
+
+    const told = await db
+      .select({ to: s.notifications.recipientUserId, template: s.notifications.template })
+      .from(s.notifications)
+      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
+    const to = (template: string) => told.filter((r) => r.template === template).map((r) => r.to);
+    expect(to('attendance.livenessFailed')).toEqual([f.managerUserId]);
+    expect(to('attendance.borrowedPhone')).toEqual([f.managerUserId]);
+    expect(to('attendance.clockedOutForYou')).toEqual([f.colleagueUserId]);
+    expect(to('attendance.newDevice')).toEqual([f.managerUserId]);
+
+    setFaceEngineForTests(null);
+    await reset();
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      enabled: false,
+    });
+    await f.manager.attendance.policySave({
+      ...rules,
+      requireDevice: true,
+      requirePhoto: false,
+      requireFace: false,
+      requireLiveness: false,
     });
   });
 });

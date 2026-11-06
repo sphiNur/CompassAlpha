@@ -2,6 +2,8 @@
  * Face pipeline (attendance face check, 2026-11-05), run in the face
  * worker: JPEG → YuNet (face box + 5 landmarks) → align to SFace's
  * 112×112 template → SFace (128-d feature, L2-normalised).
+ * Liveness (2026-11-06): head turn from the landmarks (`yaw`) and the
+ * MiniFASNet pair's real-face probability (`real`).
  * Models and licenses: apps/api/models/face/README.md.
  */
 import { readFile } from 'node:fs/promises';
@@ -201,9 +203,70 @@ export async function embed(session: ort.InferenceSession, aligned: Float32Array
   return Array.from(v, (x) => x / n);
 }
 
+/**
+ * How far the head is turned: the nose's offset from the midpoint of the
+ * eyes, in eye distances. 0 looking at the camera; positive when the
+ * nose is to the right in the picture (unmirrored front camera: the
+ * person turned to their own left). Around ±0.5 for a clear turn.
+ */
+export function yawOf(face: Face): number {
+  const [e1, e2, nose] = face.landmarks as [[number, number], [number, number], [number, number]];
+  const dist = Math.hypot(e2[0] - e1[0], e2[1] - e1[1]) || 1;
+  return (nose[0] - (e1[0] + e2[0]) / 2) / dist;
+}
+
+/** MiniFASNet input: the box widened by `scale`, 80×80, BGR 0–255 (Silent-Face). */
+export function spoofCrop(img: Image, face: Face, scale0: number): Float32Array {
+  const [x, y, bw, bh] = face.box;
+  const scale = Math.min((img.height - 1) / bh, (img.width - 1) / bw, scale0);
+  const nw = bw * scale;
+  const nh = bh * scale;
+  const cx = x + bw / 2;
+  const cy = y + bh / 2;
+  const x1 = Math.max(0, Math.floor(cx - nw / 2));
+  const y1 = Math.max(0, Math.floor(cy - nh / 2));
+  const x2 = Math.min(img.width - 1, Math.floor(cx + nw / 2));
+  const y2 = Math.min(img.height - 1, Math.floor(cy + nh / 2));
+  const w = x2 - x1 + 1;
+  const h = y2 - y1 + 1;
+  const plane = 80 * 80;
+  const out = new Float32Array(3 * plane);
+  for (let j = 0; j < 80; j++) {
+    for (let i = 0; i < 80; i++) {
+      const sx = x1 + Math.min(w - 1, Math.max(0, ((i + 0.5) * w) / 80 - 0.5));
+      const sy = y1 + Math.min(h - 1, Math.max(0, ((j + 0.5) * h) / 80 - 0.5));
+      const k = j * 80 + i;
+      out[k] = sample(img, sx, sy, 2);
+      out[plane + k] = sample(img, sx, sy, 1);
+      out[2 * plane + k] = sample(img, sx, sy, 0);
+    }
+  }
+  return out;
+}
+
+/** Real-face probability, the two models averaged (class 1 = real). */
+async function realness(spoof: Engine['spoof'], img: Image, face: Face): Promise<number> {
+  let real = 0;
+  for (const { session, scale } of spoof) {
+    const out = await session.run({
+      [session.inputNames[0]!]: new ort.Tensor(
+        'float32',
+        spoofCrop(img, face, scale),
+        [1, 3, 80, 80],
+      ),
+    });
+    const logits = Array.from(out[session.outputNames[0]!]!.data as Float32Array);
+    const max = Math.max(...logits);
+    const e = logits.map((v) => Math.exp(v - max));
+    real += e[1]! / e.reduce((a, b) => a + b, 0);
+  }
+  return real / spoof.length;
+}
+
 export interface Engine {
   detector: ort.InferenceSession;
   recognizer: ort.InferenceSession;
+  spoof: { session: ort.InferenceSession; scale: number }[];
 }
 
 const MODELS = new URL('../../../models/face/', import.meta.url);
@@ -211,14 +274,25 @@ const MODELS = new URL('../../../models/face/', import.meta.url);
 export async function loadEngine(): Promise<Engine> {
   const read = async (name: string) => new Uint8Array(await readFile(new URL(name, MODELS)));
   const options = { logSeverityLevel: 3 as const };
-  const [detector, recognizer] = await Promise.all([
+  const [detector, recognizer, v2, v1se] = await Promise.all([
     ort.InferenceSession.create(await read('face_detection_yunet_2023mar.onnx'), options),
     ort.InferenceSession.create(await read('face_recognition_sface_2021dec_int8.onnx'), options),
+    ort.InferenceSession.create(await read('MiniFASNetV2.onnx'), options),
+    ort.InferenceSession.create(await read('MiniFASNetV1SE.onnx'), options),
   ]);
-  return { detector, recognizer };
+  return {
+    detector,
+    recognizer,
+    spoof: [
+      { session: v2, scale: 2.7 },
+      { session: v1se, scale: 4.0 },
+    ],
+  };
 }
 
-export type FaceResult = { found: false } | { found: true; score: number; feature: number[] };
+export type FaceResult =
+  | { found: false }
+  | { found: true; score: number; feature: number[]; yaw: number; real: number };
 
 /** The largest face's feature, or none found. */
 export async function faceFeature(engine: Engine, bytes: Uint8Array): Promise<FaceResult> {
@@ -232,5 +306,7 @@ export async function faceFeature(engine: Engine, bytes: Uint8Array): Promise<Fa
     found: true,
     score: face.score,
     feature: await embed(engine.recognizer, align(img, face)),
+    yaw: yawOf(face),
+    real: await realness(engine.spoof, img, face),
   };
 }

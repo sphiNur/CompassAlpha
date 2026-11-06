@@ -703,6 +703,8 @@ export const attendanceStorePolicies = inventorySchema.table(
     requirePhoto: boolean('require_photo').notNull().default(false),
     /** Match the face photo against the member's reference face (0063). */
     requireFace: boolean('require_face').notNull().default(false),
+    /** Head-turn + real-face check on the face photo (0064). */
+    requireLiveness: boolean('require_liveness').notNull().default(false),
     updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
       onDelete: 'set null',
     }),
@@ -784,6 +786,14 @@ export const attendancePunches = inventorySchema.table(
     voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
     voidedByMemberId: uuid('voided_by_member_id'),
     voidReason: text('void_reason'),
+    /** Liveness check (0064); null = not asked for. */
+    liveness: varchar('liveness', { length: 10 }).$type<'pass' | 'fail' | 'unchecked'>(),
+    livenessScore: real('liveness_score'),
+    livenessNonce: varchar('liveness_nonce', { length: 64 }),
+    /** Clocked on this colleague's phone (0064). */
+    viaMemberId: uuid('via_member_id'),
+    /** A face-checked punch from a phone other than the bound one (0064). */
+    newDevice: boolean('new_device').notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => ({
@@ -875,7 +885,7 @@ export const attendancePhotos = inventorySchema.table(
     punchId: uuid('punch_id')
       .notNull()
       .references(() => attendancePunches.id, { onDelete: 'cascade' }),
-    kind: varchar('kind', { length: 8 }).notNull().$type<'face' | 'scene'>(),
+    kind: varchar('kind', { length: 8 }).notNull().$type<'face' | 'scene' | 'left' | 'right'>(),
     contentType: varchar('content_type', { length: 32 }).notNull().default('image/jpeg'),
     bytes: bytea('bytes').notNull(),
     takenAt: timestamp('taken_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),

@@ -150,7 +150,10 @@ export function createApp() {
           // Inline scripts and inline event handlers were eliminated
           // in the same milestone (boot guard externalized to
           // /boot-guard.js) so we DO NOT need 'unsafe-inline'.
-          "script-src 'self' https://telegram.org",
+          // 'wasm-unsafe-eval': the liveness face tracker (MediaPipe,
+          // WebAssembly from our own /assets) compiles in the page
+          // (2026-11-06). It allows WebAssembly only, not eval().
+          "script-src 'self' 'wasm-unsafe-eval' https://telegram.org",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",

@@ -40,7 +40,29 @@ export const AttendancePunchInputSchema = z.object({
   overtimeReason: z.string().trim().min(1).max(300).optional(),
   /** Taken on the spot when the store asks for photos: base64 JPEGs. */
   photos: z.object({ face: AttendancePhotoSchema, scene: AttendancePhotoSchema }).optional(),
+  /**
+   * Liveness (2026-11-06): the challenge from `livenessChallenge` and the
+   * two head-turn frames; `photos.face` is the straight-on frame.
+   */
+  liveness: z
+    .object({
+      token: z.string().min(20).max(2000),
+      left: AttendancePhotoSchema,
+      right: AttendancePhotoSchema,
+    })
+    .optional(),
+  /** After two failed liveness tries: clock anyway, flagged for the managers. */
+  acceptLivenessFail: z.boolean().optional(),
+  /** Clocking on a colleague's phone: whose punch this is (same store). */
+  forMemberId: UuidSchema.optional(),
 });
+
+export const AttendanceLivenessChallengeInputSchema = z.object({
+  storeId: UuidSchema,
+  forMemberId: UuidSchema.optional(),
+});
+
+export const AttendanceColleaguesInputSchema = z.object({ storeId: UuidSchema });
 
 const reason = z.string().trim().min(1).max(300);
 
@@ -120,6 +142,7 @@ export const AttendancePolicySaveInputSchema = z
     overtimeAfterMinutes: z.number().int().min(5).max(240).default(30),
     requirePhoto: z.boolean().default(false),
     requireFace: z.boolean().default(false),
+    requireLiveness: z.boolean().default(false),
   })
   .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
 
