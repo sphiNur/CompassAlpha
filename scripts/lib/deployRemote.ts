@@ -45,6 +45,97 @@ export function sshOptions(key: string, knownHosts: string): string {
 }
 
 /**
+ * What a release never carries, relative to the repo root (one list for
+ * the tarball and for rsync, so the two cannot drift). Patterns with a
+ * slash or a leading name are anchored at the root; `*.pem` is anywhere.
+ *
+ * - dependencies and build output: reinstalled / rebuilt on the server;
+ * - every .env (M3.25, 2026-05-18 incident #2): the server keeps its own,
+ *   and a dev box's once shipped a dev auth bypass into production;
+ * - .git (history, branch names), .claude and .worktrees (2026-07-26,
+ *   2026-10-29: full checkouts, one with its own node_modules and a test
+ *   bot token).
+ */
+export const SHIP_EXCLUDES = [
+  'node_modules',
+  'apps/*/node_modules',
+  'packages/*/node_modules',
+  'apps/*/dist',
+  'apps/*/.turbo',
+  '.turbo',
+  '.env',
+  '.env.*',
+  'apps/*/.env',
+  'apps/*/.env.*',
+  'packages/*/.env',
+  'packages/*/.env.*',
+  '*.log',
+  'test-results',
+  '.git',
+  '.claude',
+  '.worktrees',
+] as const;
+/** Matched at any depth. */
+const SHIP_EXCLUDES_ANYWHERE = ['*.pem'] as const;
+
+/** `tar` excludes for a tarball of `<parent>/<top>`. */
+export function tarExcludes(top = 'CompassAlpha'): string {
+  return [
+    ...SHIP_EXCLUDES.map((p) => `--exclude=${top}/${p}`),
+    ...SHIP_EXCLUDES_ANYWHERE.map((p) => `--exclude=${p}`),
+  ].join(' ');
+}
+
+/** `rsync` excludes for the repo root as the transfer root. */
+export function rsyncExcludes(): string {
+  return [
+    ...SHIP_EXCLUDES.map((p) => `--exclude='/${p}'`),
+    ...SHIP_EXCLUDES_ANYWHERE.map((p) => `--exclude='${p}'`),
+  ].join(' ');
+}
+
+/**
+ * Incremental upload (2026-11-06): the link to the server crosses a
+ * border with ~300 ms and lossy packets, and the 13 MB tarball took
+ * 20+ minutes. The server keeps a copy of the last shipped source in
+ * STAGE_DIR/CompassAlpha; rsync sends only what changed, and the server
+ * makes the same tarball from it that a full upload would have carried.
+ * The rest of the deploy is unchanged.
+ */
+export const STAGE_DIR = '/home/ubuntu/compass-alpha-src';
+export const DEPLOY_TARBALL = '/home/ubuntu/compass-alpha-deploy.tar.gz';
+
+/**
+ * Shell script: make sure the staging copy exists. The first time it is
+ * seeded from the last uploaded tarball (still on the server), so even
+ * the first incremental upload sends only the difference. Prints
+ * "seeded", "ready" or "empty".
+ */
+export function stageSeedScript(stageDir = STAGE_DIR, tarball = DEPLOY_TARBALL): string {
+  return [
+    'set -e',
+    'command -v rsync >/dev/null',
+    `if [ -d "${stageDir}/CompassAlpha" ]; then echo ready; exit 0; fi`,
+    `mkdir -p "${stageDir}.tmp"`,
+    `if [ -f "${tarball}" ] && tar xzf "${tarball}" -C "${stageDir}.tmp"; then`,
+    `  rm -rf "${stageDir}"; mv "${stageDir}.tmp" "${stageDir}"; echo seeded`,
+    'else',
+    `  rm -rf "${stageDir}.tmp"; mkdir -p "${stageDir}/CompassAlpha"; echo empty`,
+    'fi',
+  ].join('\n');
+}
+
+/** Shell script: the deploy tarball from the staging copy (temp name, then rename). */
+export function stageTarScript(stageDir = STAGE_DIR, tarball = DEPLOY_TARBALL): string {
+  return [
+    'set -e',
+    `tar -czf "${tarball}.tmp" -C "${stageDir}" CompassAlpha`,
+    `mv -f "${tarball}.tmp" "${tarball}"`,
+    `echo "built ${tarball} ($(du -h "${tarball}" | cut -f1))"`,
+  ].join('\n');
+}
+
+/**
  * Exclusions for the rollback snapshot: dependencies (reinstalled from the
  * snapshot's own lockfile), the web bundle's own spare copies, and the
  * server's .env files, which belong to the server and are never part of a

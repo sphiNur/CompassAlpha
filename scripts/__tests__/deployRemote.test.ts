@@ -17,8 +17,12 @@ import {
   hostName,
   knownHostsFile,
   restoreScript,
+  rsyncExcludes,
   snapshotScript,
   sshOptions,
+  stageSeedScript,
+  stageTarScript,
+  tarExcludes,
 } from '../lib/deployRemote';
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -156,5 +160,99 @@ describe('host key verification', () => {
     expect(host).toBe('129.204.59.183');
     expect(bash(`ssh-keygen -F ${host} -f "${kh}"`).status).toBe(0);
     expect(bash(`ssh-keygen -F compass-pro.com -f "${kh}"`).status).not.toBe(0);
+  });
+});
+
+describe('incremental upload', () => {
+  const hasRsync = spawnSync('rsync', ['--version']).status === 0;
+  /** A repo tree with things that must never ship. */
+  function repo(base: string) {
+    const r = join(base, 'CompassAlpha');
+    put(r, 'package.json', '{}');
+    put(r, 'apps/api/src/main.ts', 'main v1');
+    put(r, 'apps/web/src/a.ts', 'a');
+    put(r, 'apps/web/dist/index.html', 'built');
+    put(r, 'apps/api/node_modules/x/index.js', 'dep');
+    put(r, 'node_modules/y/index.js', 'dep');
+    put(r, '.env', 'SECRET=1');
+    put(r, 'apps/web/.env.local', 'VITE_DEV=1');
+    put(r, 'packages/db/.env', 'DB=1');
+    put(r, '.git/HEAD', 'ref');
+    put(r, '.claude/worktrees/w/x', 'x');
+    put(r, '.worktrees/w/.env', 'BOT=1');
+    put(r, 'infra/key.pem', 'KEY');
+    put(r, 'deploy.log', 'log');
+    return r;
+  }
+  function listing(tarball: string) {
+    const out = bash(`tar tzf "${tarball}" | grep -v '/$' | sort`);
+    expect(out.status).toBe(0);
+    return out.stdout.trim().split('\n');
+  }
+
+  test.skipIf(!hasRsync)(
+    'the staged tarball equals a full one; deletions and changes carry over',
+    () => {
+      const base = mkdtempSync(join(tmpdir(), 'ship-'));
+      dirs.push(base);
+      const local = join(base, 'local');
+      const r = repo(local);
+      const server = join(base, 'server');
+      mkdirSync(server);
+      const stage = join(server, 'src');
+      const tarball = join(server, 'deploy.tar.gz');
+
+      // The last full upload is still on the server: the stage is seeded from it.
+      expect(
+        bash(`cd "${local}" && tar ${tarExcludes()} -czf "${tarball}" CompassAlpha`).status,
+      ).toBe(0);
+      const full = listing(tarball);
+      expect(full).toEqual([
+        'CompassAlpha/apps/api/src/main.ts',
+        'CompassAlpha/apps/web/src/a.ts',
+        'CompassAlpha/package.json',
+      ]);
+      const seeded = bash(stageSeedScript(stage, tarball));
+      expect([seeded.status, seeded.stdout.trim()]).toEqual([0, 'seeded']);
+      expect(bash(stageSeedScript(stage, tarball)).stdout.trim()).toBe('ready');
+
+      // A change, a new file and a deleted file; then rsync and rebuild.
+      put(r, 'apps/api/src/main.ts', 'main v2');
+      put(r, 'apps/api/src/new.ts', 'new');
+      rmSync(join(r, 'apps/web/src/a.ts'));
+      const sync = bash(
+        `cd "${r}" && rsync -rlptc --delete --delete-excluded ${rsyncExcludes()} ./ "${stage}/CompassAlpha/"`,
+      );
+      expect(sync.status).toBe(0);
+      expect(bash(stageTarScript(stage, tarball)).status).toBe(0);
+
+      const fresh = join(base, 'fresh.tar.gz');
+      expect(
+        bash(`cd "${local}" && tar ${tarExcludes()} -czf "${fresh}" CompassAlpha`).status,
+      ).toBe(0);
+      expect(listing(tarball)).toEqual(listing(fresh));
+      expect(listing(tarball)).toEqual([
+        'CompassAlpha/apps/api/src/main.ts',
+        'CompassAlpha/apps/api/src/new.ts',
+        'CompassAlpha/package.json',
+      ]);
+      const out = join(base, 'out');
+      mkdirSync(out);
+      expect(bash(`tar xzf "${tarball}" -C "${out}"`).status).toBe(0);
+      expect(read(out, 'CompassAlpha/apps/api/src/main.ts')).toBe('main v2');
+    },
+  );
+
+  test('no earlier tarball: an empty stage, and rsync sends everything', () => {
+    const base = mkdtempSync(join(tmpdir(), 'ship-'));
+    dirs.push(base);
+    const stage = join(base, 'src');
+    const r = bash(stageSeedScript(stage, join(base, 'missing.tar.gz')));
+    if (spawnSync('rsync', ['--version']).status !== 0) {
+      expect(r.status).not.toBe(0);
+      return;
+    }
+    expect([r.status, r.stdout.trim()]).toEqual([0, 'empty']);
+    expect(existsSync(join(stage, 'CompassAlpha'))).toBe(true);
   });
 });
