@@ -169,13 +169,18 @@ const FACE_TONE = {
   unchecked: 'warn',
 } as const;
 
-/** The face check on the day's punches (2026-11-05). */
+/**
+ * The day's punch checks at a glance: face (2026-11-05), and liveness,
+ * borrowed phone and new phone (2026-11-06).
+ */
 function FaceBadges({ punches }: { punches: SheetData['punches'] }) {
   const i18n = useI18n();
-  const results = [
-    ...new Set(punches.filter((p) => !p.voided && p.face).map((p) => p.face!.result)),
-  ];
-  if (results.length === 0) return null;
+  const live = punches.filter((p) => !p.voided);
+  const results = [...new Set(live.filter((p) => p.face).map((p) => p.face!.result))];
+  const livenessFailed = live.some((p) => p.liveness === 'fail');
+  const borrowed = live.some((p) => p.viaName);
+  const newDevice = live.some((p) => p.newDevice);
+  if (results.length === 0 && !livenessFailed && !borrowed && !newDevice) return null;
   return (
     <span className="flex flex-wrap gap-1">
       {results.map((r) => (
@@ -183,9 +188,14 @@ function FaceBadges({ punches }: { punches: SheetData['punches'] }) {
           {i18n.t(`attendance.face.${r}`)}
         </Badge>
       ))}
+      {livenessFailed ? <Badge tone="danger">{i18n.t('attendance.live.badge.fail')}</Badge> : null}
+      {borrowed ? <Badge tone="warn">{i18n.t('attendance.borrow.badge')}</Badge> : null}
+      {newDevice ? <Badge tone="warn">{i18n.t('attendance.device.newBadge')}</Badge> : null}
     </span>
   );
 }
+
+const LIVE_TONE = { pass: 'success', fail: 'danger', unchecked: 'warn' } as const;
 
 // ─── Daily sheet ──────────────────────────────────────────────────────────
 
@@ -502,14 +512,33 @@ function MemberDaySheet({
                     </Button>
                   ) : null}
                 </div>
-                {p.face ? (
-                  <span className="flex items-center gap-2 text-old-label text-[var(--c-fg-muted)]">
-                    <Badge tone={FACE_TONE[p.face.result]}>
-                      {i18n.t(`attendance.face.${p.face.result}`)}
-                    </Badge>
-                    {p.face.score !== null
-                      ? i18n.t('attendance.face.score', { score: Math.round(p.face.score * 100) })
-                      : null}
+                {p.face || p.liveness || p.viaName || p.newDevice ? (
+                  <span className="flex flex-wrap items-center gap-2 text-old-label text-[var(--c-fg-muted)]">
+                    {p.face ? (
+                      <>
+                        <Badge tone={FACE_TONE[p.face.result]}>
+                          {i18n.t(`attendance.face.${p.face.result}`)}
+                        </Badge>
+                        {p.face.score !== null
+                          ? i18n.t('attendance.face.score', {
+                              score: Math.round(p.face.score * 100),
+                            })
+                          : null}
+                      </>
+                    ) : null}
+                    {p.liveness ? (
+                      <Badge tone={LIVE_TONE[p.liveness]}>
+                        {i18n.t(`attendance.live.badge.${p.liveness}`)}
+                      </Badge>
+                    ) : null}
+                    {p.newDevice ? (
+                      <Badge tone="warn">{i18n.t('attendance.device.newBadge')}</Badge>
+                    ) : null}
+                    {p.viaName ? (
+                      <span className="basis-full">
+                        {i18n.t('attendance.borrow.via', { name: p.viaName })}
+                      </span>
+                    ) : null}
                   </span>
                 ) : null}
                 {p.photos.length > 0 ? (

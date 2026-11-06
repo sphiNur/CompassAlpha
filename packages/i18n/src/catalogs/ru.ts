@@ -2748,4 +2748,74 @@ export const ru = {
   'notify.attendance.faceMismatch.title': 'Лицо не совпадает',
   'notify.attendance.faceMismatch.body':
     '{name}: отметка в {store} в {time}, лицо не совпадает с записанным. Проверьте фото отметки.',
+  'attendance.errors.livenessRequired':
+    'В этом магазине для отметки нужна проверка живого лица. Обновите приложение и попробуйте снова.',
+  'attendance.errors.livenessExpired':
+    'Проверка лица заняла слишком много времени. Начните заново.',
+  'attendance.errors.livenessFailed':
+    'Проверка живого лица не пройдена. Смотрите в камеру при хорошем свете и поворачивайте голову по подсказке.',
+  'attendance.errors.borrowNeedsFace':
+    'Чтобы отмечаться с телефона коллеги, в магазине должна быть включена проверка лица.',
+  'attendance.errors.borrowNoFace':
+    'У этого сотрудника ещё нет записанного лица. Пусть сначала отметится со своего телефона.',
+  'attendance.errors.borrowFaceMismatch': 'Лицо не совпадает с выбранным сотрудником.',
+  'attendance.errors.notColleague':
+    'С вашего телефона можно отметить только коллег из этого магазина.',
+  'attendance.live.lookTitle': 'Смотрите в камеру',
+  'attendance.live.turnLeft': 'Поверните голову влево',
+  'attendance.live.turnRight': 'Поверните голову вправо',
+  'attendance.live.autoHint': 'Следуйте подсказкам: снимки делаются сами. Можно нажать и кнопку.',
+  'attendance.live.manualHint':
+    'Сделайте движение по подсказке и каждый раз нажимайте кнопку снимка.',
+  'attendance.live.guide.noFace': 'Лицо не видно',
+  'attendance.live.guide.manyFaces': 'В кадре должно быть одно лицо',
+  'attendance.live.guide.lookStraight': 'Смотрите прямо в камеру',
+  'attendance.live.guide.turnMore': 'Поверните ещё немного',
+  'attendance.live.progress': 'Фото лица {done}/{total}',
+  'attendance.live.failedTitle': 'Проверка живого лица не пройдена',
+  'attendance.live.failedBody':
+    'Встаньте к свету, смотрите в камеру и медленно поворачивайте голову по подсказке. Попробуйте ещё раз.',
+  'attendance.live.clockAnyway': 'Всё равно отметиться (управляющий узнает)',
+  'attendance.live.flaggedNote': 'Эта отметка помечена для проверки управляющим.',
+  'attendance.live.badge.pass': 'Живое лицо',
+  'attendance.live.badge.fail': 'Живое лицо не подтверждено',
+  'attendance.live.badge.unchecked': 'Живое лицо не проверено',
+  'attendance.photo.left': 'Поворот влево',
+  'attendance.photo.right': 'Поворот вправо',
+  'attendance.rules.livenessLine': 'Проверка лица с поворотом головы',
+  'attendance.borrow.open': 'Отметить коллегу с этого телефона',
+  'attendance.borrow.title': 'Отметить коллегу',
+  'attendance.borrow.hint':
+    'Для коллеги из этого магазина, у которого нет с собой телефона. Он сам снимает лицо здесь; управляющий и он получат уведомление.',
+  'attendance.borrow.emptyTitle': 'Некого отметить',
+  'attendance.borrow.emptyBody': 'Здесь только коллеги этого магазина, которым включена отметка.',
+  'attendance.borrow.noFace': 'Лицо ещё не записано',
+  'attendance.borrow.forWhom': 'Отметка для: {name}',
+  'attendance.borrow.doneIn': '{name}: приход в {time}',
+  'attendance.borrow.doneOut': '{name}: уход в {time}',
+  'attendance.borrow.badge': 'Телефон коллеги',
+  'attendance.borrow.via': 'С телефона: {name}',
+  'attendance.device.newBadge': 'Новый телефон',
+  'attendance.settings.requireLiveness': 'Проверка живого лица',
+  'attendance.settings.requireLivenessHint':
+    'Кроме фото лица, сотрудник по подсказке поворачивает голову влево и вправо, а проверка убеждается, что это живое лицо, а не фото или экран. После двух неудачных попыток можно отметиться, но отметка помечается, и вам приходит уведомление.',
+  'attendance.export.col.checks': 'Проверки',
+  'attendance.export.check.livenessFailed': 'Живое лицо не подтверждено',
+  'attendance.export.check.borrowed': 'С телефона: {name}',
+  'attendance.export.check.newDevice': 'Новый телефон',
+  'notify.attendance.livenessFailed.title': 'Проверка живого лица не пройдена',
+  'notify.attendance.livenessFailed.body':
+    '{name}: отметка в {store} в {time}, проверка живого лица не пройдена. Проверьте фото отметки.',
+  'notify.attendance.borrowedPhone.title': 'Отметка с телефона коллеги',
+  'notify.attendance.borrowedPhone.body':
+    '{name}: отметка в {store} в {time} с телефона, владелец: {owner}. Лицо совпало.',
+  'notify.attendance.newDevice.title': 'Отметка с нового телефона',
+  'notify.attendance.newDevice.body':
+    '{name}: отметка в {store} в {time} с другого телефона, не привязанного. Лицо совпало. Если теперь это основной телефон, отвяжите старый в настройках отметок.',
+  'notify.attendance.clockedInForYou.title': 'Вам отметили приход',
+  'notify.attendance.clockedInForYou.body':
+    'Вам отметили приход в {store} в {time} с телефона, владелец: {owner}. Если это были не вы, сообщите управляющему.',
+  'notify.attendance.clockedOutForYou.title': 'Вам отметили уход',
+  'notify.attendance.clockedOutForYou.body':
+    'Вам отметили уход в {store} в {time} с телефона, владелец: {owner}. Если это были не вы, сообщите управляющему.',
 } as const satisfies Record<CatalogKey, string>;

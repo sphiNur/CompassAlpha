@@ -58,6 +58,9 @@ export interface MonthSheet {
     source: 'self' | 'manual';
     voided: unknown;
     face?: { result: 'match' | 'mismatch' | 'enrolled' | 'unchecked' } | null;
+    liveness?: 'pass' | 'fail' | 'unchecked' | null;
+    viaName?: string | null;
+    newDevice?: boolean;
   }[];
   days: readonly {
     memberId: string;
@@ -114,10 +117,17 @@ export async function monthWorkbook(
   }
   const punchesBy = new Map<string, { in: string[]; out: string[] }>();
   const faceBy = new Map<string, Set<string>>();
+  // Liveness failed, a colleague's phone, a new phone (2026-11-06).
+  const checksBy = new Map<string, Set<string>>();
   for (const p of sheet.punches) {
     if (p.voided) continue;
     const k = key(p.memberId, p.date);
     if (p.face) faceBy.set(k, new Set([...(faceBy.get(k) ?? []), p.face.result]));
+    const checks = checksBy.get(k) ?? new Set<string>();
+    if (p.liveness === 'fail') checks.add(t('check.livenessFailed'));
+    if (p.viaName) checks.add(t('check.borrowed', { name: p.viaName }));
+    if (p.newDevice) checks.add(t('check.newDevice'));
+    if (checks.size > 0) checksBy.set(k, checks);
     const slot = punchesBy.get(k) ?? { in: [], out: [] };
     slot[p.kind].push(p.source === 'manual' ? `${p.time} ${t('manualMark')}` : p.time);
     punchesBy.set(k, slot);
@@ -153,6 +163,7 @@ export async function monthWorkbook(
         .map((f) => t(`flag.${f}`))
         .join(', ') || t('flag.ok'),
       [...(faceBy.get(k) ?? [])].map((r) => t(`face.${r}`)).join(', ') || null,
+      [...(checksBy.get(k) ?? [])].join(', ') || null,
       t(`status.${d.pay.status}`),
       d.dailyWage === null ? null : Number(d.dailyWage),
       settled ? money(d.pay.deductionCents) : null,
@@ -261,7 +272,7 @@ export async function monthWorkbook(
   };
   const detail: SheetSpec = {
     name: t('sheetDays'),
-    widths: [12, 18, 14, 14, 14, 10, 10, 10, 10, 16, 14, 14, 12, 12, 12, 10, 14, 30],
+    widths: [12, 18, 14, 14, 14, 10, 10, 10, 10, 16, 14, 22, 14, 12, 12, 12, 10, 14, 30],
     header: [
       t('col.date'),
       t('col.name'),
@@ -274,6 +285,7 @@ export async function monthWorkbook(
       t('col.earlyMinutes'),
       t('col.attendance'),
       t('col.face'),
+      t('col.checks'),
       t('col.status'),
       t('col.dailyWage'),
       t('col.deduction'),
@@ -283,7 +295,7 @@ export async function monthWorkbook(
       t('col.overtimeReason'),
     ],
     rows: dayRows,
-    moneyColumns: [12, 13, 14],
+    moneyColumns: [13, 14, 15],
   };
   return { bytes: buildXlsx([summary, detail]) };
 }

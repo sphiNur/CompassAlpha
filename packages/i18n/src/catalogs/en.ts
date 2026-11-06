@@ -2852,4 +2852,73 @@ export const en = {
   'notify.attendance.faceMismatch.title': 'Face does not match',
   'notify.attendance.faceMismatch.body':
     '{name} clocked at {store} at {time}, and the face does not match the registered one. Check the punch photos.',
+  'attendance.errors.livenessRequired':
+    'This store needs the live face check to clock. Update the app and try again.',
+  'attendance.errors.livenessExpired': 'The face check took too long. Start again.',
+  'attendance.errors.livenessFailed':
+    'The live face check did not pass. Face the camera in good light and turn your head when asked.',
+  'attendance.errors.borrowNeedsFace':
+    "Clocking on a colleague's phone needs the store's face check to be on.",
+  'attendance.errors.borrowNoFace':
+    'This person has no registered face yet. They clock on their own phone once first.',
+  'attendance.errors.borrowFaceMismatch': 'The face does not match the person you chose.',
+  'attendance.errors.notColleague': 'On your phone you can clock in only colleagues of this store.',
+  'attendance.live.lookTitle': 'Look at the camera',
+  'attendance.live.turnLeft': 'Turn your head left',
+  'attendance.live.turnRight': 'Turn your head right',
+  'attendance.live.autoHint':
+    'Follow the prompts: each photo is taken by itself. You can also tap the button.',
+  'attendance.live.manualHint': 'Do what the prompt asks, then tap the photo button each time.',
+  'attendance.live.guide.noFace': 'No face in view',
+  'attendance.live.guide.manyFaces': 'Only one face, please',
+  'attendance.live.guide.lookStraight': 'Look straight at the camera',
+  'attendance.live.guide.turnMore': 'Turn a little more',
+  'attendance.live.progress': 'Face photos {done}/{total}',
+  'attendance.live.failedTitle': 'The live face check did not pass',
+  'attendance.live.failedBody':
+    'Face the camera in good light, then turn your head slowly when asked. Try again.',
+  'attendance.live.clockAnyway': 'Clock anyway (managers are told)',
+  'attendance.live.flaggedNote': 'This punch is marked for your managers to check.',
+  'attendance.live.badge.pass': 'Live face',
+  'attendance.live.badge.fail': 'Liveness failed',
+  'attendance.live.badge.unchecked': 'Liveness not checked',
+  'attendance.photo.left': 'Turned left',
+  'attendance.photo.right': 'Turned right',
+  'attendance.rules.livenessLine': 'Face check with head turns',
+  'attendance.borrow.open': 'Clock in a colleague on this phone',
+  'attendance.borrow.title': 'Clock in a colleague',
+  'attendance.borrow.hint':
+    'For a colleague of this store who has no phone with them. They take their own face photos here; the managers and they are told.',
+  'attendance.borrow.emptyTitle': 'No one to clock in',
+  'attendance.borrow.emptyBody':
+    'Only colleagues of this store switched on for clocking appear here.',
+  'attendance.borrow.noFace': 'No registered face yet',
+  'attendance.borrow.forWhom': 'Clocking: {name}',
+  'attendance.borrow.doneIn': '{name} clocked in at {time}',
+  'attendance.borrow.doneOut': '{name} clocked out at {time}',
+  'attendance.borrow.badge': "Colleague's phone",
+  'attendance.borrow.via': "Clocked on {name}'s phone",
+  'attendance.device.newBadge': 'New phone',
+  'attendance.settings.requireLiveness': 'Liveness check',
+  'attendance.settings.requireLivenessHint':
+    'Besides the face photo, the person turns their head left and right when asked, and the check makes sure it is a real face, not a photo or a screen. After two failed tries they can clock anyway; the punch is marked and you are told.',
+  'attendance.export.col.checks': 'Checks',
+  'attendance.export.check.livenessFailed': 'Liveness failed',
+  'attendance.export.check.borrowed': "On {name}'s phone",
+  'attendance.export.check.newDevice': 'New phone',
+  'notify.attendance.livenessFailed.title': 'Liveness check failed',
+  'notify.attendance.livenessFailed.body':
+    '{name} clocked at {store} at {time}, but the live face check did not pass. Check the punch photos.',
+  'notify.attendance.borrowedPhone.title': "Clocked on a colleague's phone",
+  'notify.attendance.borrowedPhone.body':
+    "{name} clocked at {store} at {time} on {owner}'s phone. The face matched.",
+  'notify.attendance.newDevice.title': 'Clocked from a new phone',
+  'notify.attendance.newDevice.body':
+    '{name} clocked at {store} at {time} from a phone that is not their registered one. The face matched. If it is their phone from now on, unbind the old one in the attendance settings.',
+  'notify.attendance.clockedInForYou.title': 'You were clocked in',
+  'notify.attendance.clockedInForYou.body':
+    "You were clocked in at {store} at {time} on {owner}'s phone. If this was not you, tell your manager.",
+  'notify.attendance.clockedOutForYou.title': 'You were clocked out',
+  'notify.attendance.clockedOutForYou.body':
+    "You were clocked out at {store} at {time} on {owner}'s phone. If this was not you, tell your manager.",
 } as const;

@@ -10,7 +10,7 @@
  * Nothing is queued offline: a clock-in must happen where and when it
  * says it did.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, DataState, EmptyState, PageHeader, Sheet, Textarea } from '@compass/ui';
 import { haptic } from '../hooks/useTelegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
@@ -24,7 +24,8 @@ import { useErrToast } from '../lib/errToast';
 import { minutesText } from '../lib/attendanceFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { PunchCamera, type PunchPhotos } from './attendance/PunchCamera';
+import { BorrowSheet } from './attendance/BorrowSheet';
+import { PunchCamera, type PunchPhotos, type Turn } from './attendance/PunchCamera';
 
 type Fix = { lat: number; lng: number; accuracy: number };
 
@@ -76,7 +77,12 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const [locationProblem, setLocationProblem] = useState<
     'denied' | 'unavailable' | 'timeout' | null
   >(null);
-  const [done, setDone] = useState<{ kind: 'in' | 'out'; time: string } | null>(null);
+  const [done, setDone] = useState<{
+    kind: 'in' | 'out';
+    time: string;
+    forName: string | null;
+    flagged: boolean;
+  } | null>(null);
 
   useEffect(() => {
     void attendanceDeviceId().then(setDeviceId);
@@ -86,45 +92,68 @@ function ClockPanel({ storeId }: { storeId: string }) {
     { deviceId: deviceId ?? undefined },
     { enabled: deviceId !== null, refetchInterval: 60_000 },
   );
+  // One punch attempt: where, for whom, and the liveness challenge.
+  type Attempt = {
+    location: Fix | null;
+    forMember: { id: string; name: string; kind: 'in' | 'out' } | null;
+    challenge: { token: string; steps: Turn[] } | null;
+  };
+  type PunchVars = Parameters<typeof punch.mutate>[0];
   // A clock-out well past the shift asks why (phase 2): the server refuses
   // it without a reason, and the same punch is sent again with one.
-  const [overtimeAsk, setOvertimeAsk] = useState<{
-    minutes: number;
-    location: Fix | null;
-    photos: PunchPhotos | undefined;
-  } | null>(null);
+  const [overtimeAsk, setOvertimeAsk] = useState<{ minutes: number; vars: PunchVars } | null>(null);
   // The store asks for a face and a surroundings photo with each punch.
-  const [camera, setCamera] = useState<{ location: Fix | null } | null>(null);
+  const [camera, setCamera] = useState<Attempt | null>(null);
   const [overtimeReason, setOvertimeReason] = useState('');
+  // Liveness (2026-11-06): after two failed tries the person may clock
+  // anyway; the punch is flagged and the managers are told.
+  const [liveFails, setLiveFails] = useState(0);
+  const [lastFailed, setLastFailed] = useState<PunchVars | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [borrowOpen, setBorrowOpen] = useState(false);
+  const challenge = trpc.attendance.livenessChallenge.useMutation();
   const punch = trpc.attendance.punch.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data, vars) => {
       haptic('success');
       setCamera(null);
       setOvertimeAsk(null);
       setOvertimeReason('');
-      setDone({ kind: data.kind, time: data.time });
+      setLiveFails(0);
+      setLastFailed(null);
+      setDone({
+        kind: data.kind,
+        time: data.time,
+        forName: vars.forMemberId ? (doneNames.current.get(vars.forMemberId) ?? null) : null,
+        flagged: data.liveness === 'fail' || data.newDevice,
+      });
       void utils.attendance.me.invalidate();
+      void utils.attendance.colleagues.invalidate();
     },
     onError: (err, vars) => {
       setCamera(null);
-      if (serverErrorKey(err) === 'attendance.errors.overtimeReasonRequired') {
+      const key = serverErrorKey(err);
+      if (key === 'attendance.errors.overtimeReasonRequired') {
         haptic('warning');
-        setOvertimeAsk({
-          minutes: Number(errorVars(err).minutes ?? 0),
-          location: vars.location ?? null,
-          photos: vars.photos,
-        });
+        setOvertimeAsk({ minutes: Number(errorVars(err).minutes ?? 0), vars });
+        return;
+      }
+      if (key === 'attendance.errors.livenessFailed') {
+        haptic('error');
+        setLiveFails((n) => n + 1);
+        setLastFailed(vars);
         return;
       }
       errToast('attendance.errors.punchFailed')(err);
     },
   });
+  const doneNames = useRef(new Map<string, string>());
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
 
-  const onPunch = async () => {
+  const begin = async (forMember: Attempt['forMember']) => {
     if (!store || !deviceId) return;
     setLocationProblem(null);
+    setDone(null);
     let location: Fix | null = null;
     if (store.rules.requireGeo) {
       setLocating(true);
@@ -138,23 +167,57 @@ function ClockPanel({ storeId }: { storeId: string }) {
       }
       setLocating(false);
     }
-    if (store.rules.requirePhoto) {
-      setCamera({ location });
+    if (!store.rules.requirePhoto && !forMember) {
+      send({ location, forMember: null, challenge: null }, undefined);
       return;
     }
-    send(location, undefined);
+    let ch: Attempt['challenge'] = null;
+    if (store.rules.requireLiveness || forMember) {
+      setPreparing(true);
+      try {
+        const c = await challenge.mutateAsync({ storeId, forMemberId: forMember?.id });
+        ch = { token: c.token, steps: c.steps };
+      } catch (err) {
+        errToast('attendance.errors.punchFailed')(err);
+        return;
+      } finally {
+        setPreparing(false);
+      }
+    }
+    if (forMember) doneNames.current.set(forMember.id, forMember.name);
+    setCamera({ location, forMember, challenge: ch });
   };
 
-  const send = (location: Fix | null, photos: PunchPhotos | undefined) => {
+  const send = (attempt: Attempt, photos: PunchPhotos | undefined) => {
     if (!store || !deviceId) return;
     punch.mutate({
       storeId,
-      kind: store.nextKind,
+      kind: attempt.forMember?.kind ?? store.nextKind,
       deviceId,
       platform: devicePlatform(),
-      location,
-      photos,
+      location: attempt.location,
+      photos: photos ? { face: photos.face, scene: photos.scene } : undefined,
+      liveness:
+        attempt.challenge && photos?.left && photos.right
+          ? { token: attempt.challenge.token, left: photos.left, right: photos.right }
+          : undefined,
+      forMemberId: attempt.forMember?.id,
     });
+  };
+
+  /** The failed punch again, flagged: a fresh challenge, the same photos. */
+  const sendAnyway = async () => {
+    if (!lastFailed?.liveness) return;
+    try {
+      const c = await challenge.mutateAsync({ storeId });
+      punch.mutate({
+        ...lastFailed,
+        liveness: { ...lastFailed.liveness, token: c.token },
+        acceptLivenessFail: true,
+      });
+    } catch (err) {
+      errToast('attendance.errors.punchFailed')(err);
+    }
   };
 
   return (
@@ -225,23 +288,52 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   ) : null}
                 </Banner>
               ) : null}
+              {liveFails > 0 && lastFailed ? (
+                <Banner tone="danger" title={i18n.t('attendance.live.failedTitle')}>
+                  <p>{i18n.t('attendance.live.failedBody')}</p>
+                  {liveFails >= 2 && !lastFailed.forMemberId ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2"
+                      loading={punch.isPending || challenge.isPending}
+                      onClick={() => void sendAnyway()}
+                    >
+                      {i18n.t('attendance.live.clockAnyway')}
+                    </Button>
+                  ) : null}
+                </Banner>
+              ) : null}
               {done ? (
                 <Banner
-                  tone="success"
-                  title={i18n.t(
-                    done.kind === 'in' ? 'attendance.clock.doneIn' : 'attendance.clock.doneOut',
-                    { time: done.time },
-                  )}
-                />
+                  tone={done.flagged ? 'warn' : 'success'}
+                  title={
+                    done.forName
+                      ? i18n.t(
+                          done.kind === 'in'
+                            ? 'attendance.borrow.doneIn'
+                            : 'attendance.borrow.doneOut',
+                          { name: done.forName, time: done.time },
+                        )
+                      : i18n.t(
+                          done.kind === 'in'
+                            ? 'attendance.clock.doneIn'
+                            : 'attendance.clock.doneOut',
+                          { time: done.time },
+                        )
+                  }
+                >
+                  {done.flagged ? i18n.t('attendance.live.flaggedNote') : undefined}
+                </Banner>
               ) : null}
 
               <Button
                 size="lg"
                 block
                 variant={store.nextKind === 'in' ? 'primary' : 'secondary'}
-                loading={locating || punch.isPending}
-                disabled={!online || !deviceId || punch.isPending || locating}
-                onClick={() => void onPunch()}
+                loading={locating || preparing || punch.isPending}
+                disabled={!online || !deviceId || punch.isPending || locating || preparing}
+                onClick={() => void begin(null)}
               >
                 {locating
                   ? i18n.t('attendance.clock.locating')
@@ -257,14 +349,38 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   <li>{i18n.t('attendance.rules.geoLine', { radius: store.rules.geo.radiusM })}</li>
                 ) : null}
                 {store.rules.requirePhoto ? <li>{i18n.t('attendance.rules.photoLine')}</li> : null}
+                {store.rules.requireLiveness ? (
+                  <li>{i18n.t('attendance.rules.livenessLine')}</li>
+                ) : null}
               </ul>
+              {store.rules.requireFace ? (
+                <Button
+                  variant="ghost"
+                  block
+                  disabled={!online || !deviceId || punch.isPending || locating || preparing}
+                  onClick={() => setBorrowOpen(true)}
+                >
+                  {i18n.t('attendance.borrow.open')}
+                </Button>
+              ) : null}
+              <BorrowSheet
+                open={borrowOpen}
+                storeId={storeId}
+                onClose={() => setBorrowOpen(false)}
+                onPick={(m) => {
+                  setBorrowOpen(false);
+                  void begin({ id: m.memberId, name: m.name, kind: m.nextKind });
+                }}
+              />
               <PunchCamera
                 open={camera !== null}
-                kind={store.nextKind}
+                kind={camera?.forMember?.kind ?? store.nextKind}
                 faceCheck={store.rules.requireFace}
+                turns={camera?.challenge?.steps ?? null}
+                forName={camera?.forMember?.name ?? null}
                 busy={punch.isPending}
                 onCancel={() => setCamera(null)}
-                onConfirm={(photos) => send(camera?.location ?? null, photos)}
+                onConfirm={(photos) => camera && send(camera, photos)}
               />
               <UpcomingShifts shifts={store.shifts} today={store.today} />
               <Sheet
@@ -293,17 +409,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
                     disabled={overtimeReason.trim().length === 0 || !deviceId}
                     loading={punch.isPending}
                     onClick={() =>
-                      deviceId &&
                       overtimeAsk &&
-                      punch.mutate({
-                        storeId,
-                        kind: 'out',
-                        deviceId,
-                        platform: devicePlatform(),
-                        location: overtimeAsk.location,
-                        photos: overtimeAsk.photos,
-                        overtimeReason: overtimeReason.trim(),
-                      })
+                      punch.mutate({ ...overtimeAsk.vars, overtimeReason: overtimeReason.trim() })
                     }
                   >
                     {i18n.t('attendance.clock.out')}
