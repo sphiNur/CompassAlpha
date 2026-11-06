@@ -2841,12 +2841,11 @@ export const ru = {
   'attendance.enroll.start': 'Зарегистрировать лицо',
   'attendance.enroll.redo': 'Зарегистрировать лицо заново',
   'attendance.enroll.again': 'Начать заново',
-  'attendance.enroll.submit': 'Отправить на одобрение',
   'attendance.enroll.newPending':
     'Новая регистрация лица ждёт одобрения; до этого используется прежняя.',
   'attendance.enroll.card.none.title': 'Сначала зарегистрируйте лицо',
   'attendance.enroll.card.none.body':
-    'Отметка только по лицу. Сделайте шесть фото по подсказкам (около минуты); отмечаться можно после одобрения руководителем.',
+    'Отметка только по лицу. Посмотрите в круг и медленно поверните голову (меньше минуты); отмечаться можно после одобрения руководителем.',
   'attendance.enroll.card.pending.title': 'Ждёт одобрения руководителя',
   'attendance.enroll.card.pending.body':
     'Фото лица отправлены руководителю. Отмечаться можно после одобрения.',
@@ -2856,10 +2855,7 @@ export const ru = {
   'attendance.enroll.card.approved.body': 'Можно отмечаться по лицу.',
   'attendance.enroll.card.note': 'Комментарий руководителя: {note}',
   'attendance.enroll.hint':
-    'Следуйте подсказке: фото делается само, когда голова в нужном положении. Хороший свет, без шапки и маски.',
-  'attendance.enroll.reviewTitle': 'Проверьте фото',
-  'attendance.enroll.reviewHint':
-    'Руководитель посмотрит фото и одобрит их. Их видят только руководители вашего магазина.',
+    'Держите телефон на уровне глаз при хорошем свете, без шапки и маски. Нажимать ничего не нужно: фото делаются сами.',
   'attendance.enroll.pose.front': 'Смотрите прямо',
   'attendance.enroll.pose.left': 'Поверните голову влево',
   'attendance.enroll.pose.right': 'Поверните голову вправо',
@@ -2911,4 +2907,19 @@ export const ru = {
   'notify.attendance.faceEnrollRejected.title': 'Регистрация лица возвращена',
   'notify.attendance.faceEnrollRejected.body':
     'Регистрация лица в {store} возвращена. Причина: «{note}». Пройдите её заново.',
+  'attendance.enroll.phase.position': 'Поместите лицо в круг',
+  'attendance.enroll.phase.circle': 'Медленно поверните голову по кругу',
+  'attendance.enroll.phase.final': 'Ещё раз посмотрите в камеру',
+  'attendance.enroll.phase.sending': 'Проверяем фото…',
+  'attendance.enroll.phase.done': 'Лицо зарегистрировано',
+  'attendance.enroll.circleHint':
+    'Смотрите на экран и поворачивайте голову, пока весь круг не станет зелёным.',
+  'attendance.enroll.slowHint': 'Чуть медленнее и чуть шире круг.',
+  'attendance.enroll.doneHint':
+    'Отправлено руководителю на одобрение. После одобрения можно отмечаться.',
+  'attendance.enroll.center': 'Переместите лицо в центр круга',
+  'attendance.enroll.pose.upleft': 'Вверх и влево',
+  'attendance.enroll.pose.upright': 'Вверх и вправо',
+  'attendance.enroll.pose.downleft': 'Вниз и влево',
+  'attendance.enroll.pose.downright': 'Вниз и вправо',
 } as const satisfies Record<CatalogKey, string>;

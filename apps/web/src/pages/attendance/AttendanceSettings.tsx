@@ -204,14 +204,24 @@ export function EnrollPhotos({
   name,
 }: {
   photos: {
-    pose: 'front' | 'front2' | 'left' | 'right' | 'up' | 'down';
+    pose:
+      | 'front'
+      | 'front2'
+      | 'left'
+      | 'right'
+      | 'up'
+      | 'down'
+      | 'upleft'
+      | 'upright'
+      | 'downleft'
+      | 'downright';
     src: string;
   }[];
   name: string;
 }) {
   const i18n = useI18n();
   return (
-    <div className="grid grid-cols-6 gap-1">
+    <div className="grid grid-cols-5 gap-1">
       {photos.map((p) => (
         <img
           key={p.pose}

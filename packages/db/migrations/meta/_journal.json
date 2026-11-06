@@ -470,6 +470,13 @@
       "when": 1792540000014,
       "tag": "0066_attendance_face_enroll",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792540000015,
+      "tag": "0067_attendance_face_ring",
+      "breakpoints": true
     }
   ]
 }

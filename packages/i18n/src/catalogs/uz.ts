@@ -2829,12 +2829,11 @@ export const uz = {
   'attendance.enroll.start': 'Yuzni roʻyxatdan oʻtkazish',
   'attendance.enroll.redo': 'Yuzni qayta roʻyxatdan oʻtkazish',
   'attendance.enroll.again': 'Qaytadan boshlash',
-  'attendance.enroll.submit': 'Tasdiqlashga yuborish',
   'attendance.enroll.newPending':
     'Yangi yuz roʻyxati tasdiq kutmoqda; shu paytgacha avvalgisi ishlatiladi.',
   'attendance.enroll.card.none.title': 'Avval yuzingizni roʻyxatdan oʻtkazing',
   'attendance.enroll.card.none.body':
-    'Belgilanish faqat yuz orqali. Koʻrsatma boʻyicha olti surat oling (taxminan bir daqiqa); rahbar tasdiqlagach belgilanish mumkin.',
+    'Belgilanish faqat yuz orqali. Doiraga qarab boshingizni sekin aylantiring (bir daqiqadan kam); rahbar tasdiqlagach belgilanish mumkin.',
   'attendance.enroll.card.pending.title': 'Rahbar tasdigʻi kutilmoqda',
   'attendance.enroll.card.pending.body':
     'Yuz suratlari rahbarga yuborildi. Tasdiqlangach belgilanish mumkin.',
@@ -2844,10 +2843,7 @@ export const uz = {
   'attendance.enroll.card.approved.body': 'Yuz orqali belgilanish mumkin.',
   'attendance.enroll.card.note': 'Rahbar izohi: {note}',
   'attendance.enroll.hint':
-    'Koʻrsatmaga amal qiling: bosh kerakli holatda boʻlganda surat oʻzi olinadi. Yaxshi yorugʻlik, shapka va niqobsiz.',
-  'attendance.enroll.reviewTitle': 'Suratlarni tekshiring',
-  'attendance.enroll.reviewHint':
-    'Rahbar suratlarni koʻrib tasdiqlaydi. Ularni faqat doʻkoningiz rahbarlari koʻradi.',
+    'Telefonni koʻz darajasida, yaxshi yorugʻlikda, shapka va niqobsiz tuting. Hech narsa bosish shart emas: suratlar oʻzi olinadi.',
   'attendance.enroll.pose.front': 'Toʻgʻriga qarang',
   'attendance.enroll.pose.left': 'Boshingizni chapga buring',
   'attendance.enroll.pose.right': 'Boshingizni oʻngga buring',
@@ -2899,4 +2895,19 @@ export const uz = {
   'notify.attendance.faceEnrollRejected.title': 'Yuz roʻyxati qaytarildi',
   'notify.attendance.faceEnrollRejected.body':
     '{store} doʻkonidagi yuz roʻyxatingiz qaytarildi. Sabab: «{note}». Qaytadan oʻting.',
+  'attendance.enroll.phase.position': 'Yuzingizni doira ichiga joylang',
+  'attendance.enroll.phase.circle': 'Boshingizni sekin aylana boʻylab aylantiring',
+  'attendance.enroll.phase.final': 'Yana bir bor kameraga qarang',
+  'attendance.enroll.phase.sending': 'Suratlar tekshirilmoqda…',
+  'attendance.enroll.phase.done': 'Yuz roʻyxatdan oʻtdi',
+  'attendance.enroll.circleHint':
+    'Ekranga qarab turing va butun doira yashil boʻlguncha boshingizni aylantiring.',
+  'attendance.enroll.slowHint': 'Biroz sekinroq va doirani biroz kattaroq qiling.',
+  'attendance.enroll.doneHint':
+    'Rahbarga tasdiqlash uchun yuborildi. Tasdiqlangach belgilanish mumkin.',
+  'attendance.enroll.center': 'Yuzingizni doira markaziga olib keling',
+  'attendance.enroll.pose.upleft': 'Yuqori-chap',
+  'attendance.enroll.pose.upright': 'Yuqori-oʻng',
+  'attendance.enroll.pose.downleft': 'Pastki-chap',
+  'attendance.enroll.pose.downright': 'Pastki-oʻng',
 } as const satisfies Record<CatalogKey, string>;

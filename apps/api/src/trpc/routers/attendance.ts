@@ -1649,8 +1649,8 @@ export const attendanceRouter = router({
     }),
 
   /**
-   * The person enrolls their face (owner decisions 2026-11-06): six photos
-   * the phone took by itself, each checked here for one clear, sharp,
+   * The person enrolls their face (owner decisions 2026-11-06): the photos
+   * the phone took by itself around a ring (Face ID style), each checked here for one clear, sharp,
    * well-lit real face of the same person, turned where it says. It then
    * waits for a store manager's approval; a new enrollment replaces one
    * still waiting.
@@ -1663,11 +1663,12 @@ export const attendanceRouter = router({
         await authorize(tx, session, input.storeId, 'attendance.clock');
         if (!(await hasFaceConsent(tx, session.memberId))) fail('BAD_REQUEST', 'consentRequired');
       });
-      const bytes = {} as Record<EnrollPose, Buffer>;
-      for (const pose of ENROLL_POSES) bytes[pose] = photoBytes(input.photos[pose]);
-      const results = {} as Record<EnrollPose, FaceResult>;
-      for (const pose of ENROLL_POSES) {
-        const r = await faceFeature(bytes[pose]);
+      const poses = ENROLL_POSES.filter((p) => input.photos[p] !== undefined);
+      const bytes: Partial<Record<EnrollPose, Buffer>> = {};
+      for (const pose of poses) bytes[pose] = photoBytes(input.photos[pose]!);
+      const results: Partial<Record<EnrollPose, FaceResult>> = {};
+      for (const pose of poses) {
+        const r = await faceFeature(bytes[pose]!);
         if (!r) fail('CONFLICT', 'faceCheckUnavailable');
         results[pose] = r;
       }
@@ -1697,14 +1698,14 @@ export const attendanceRouter = router({
           .values({ orgId: session.orgId, memberId: session.memberId, storeId: store.id })
           .returning();
         await tx.insert(s.attendanceFaceSamples).values(
-          ENROLL_POSES.map((pose) => {
+          poses.map((pose) => {
             const r = results[pose] as Extract<FaceResult, { found: true }>;
             return {
               orgId: session.orgId,
               enrollmentId: row!.id,
               pose,
               feature: r.feature,
-              bytes: bytes[pose],
+              bytes: bytes[pose]!,
               realScore: r.real,
             };
           }),
