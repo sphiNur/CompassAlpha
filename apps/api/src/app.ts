@@ -95,7 +95,9 @@ export function createApp() {
       c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
       c.header(
         'Permissions-Policy',
-        'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+        // Camera for clock-in photos and location for the clock-in radius
+        // (2026-11-05); our own page only.
+        'camera=(self), microphone=(), geolocation=(self), payment=(), usb=()',
       );
       /**
        * M1.20 (2026-05-08, launch hardening): Content-Security-Policy.

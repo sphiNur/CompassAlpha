@@ -435,6 +435,13 @@
       "when": 1792540000009,
       "tag": "0061_attendance_pay",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792540000010,
+      "tag": "0062_attendance_photos",
+      "breakpoints": true
     }
   ]
 }

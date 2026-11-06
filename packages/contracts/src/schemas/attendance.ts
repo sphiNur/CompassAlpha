@@ -24,6 +24,12 @@ export const AttendanceMeInputSchema = z.object({
   deviceId: AttendanceDeviceIdSchema.optional(),
 });
 
+/** A base64 JPEG of at most ~600 KB (the client sends ~720 px, ~100 KB). */
+export const AttendancePhotoSchema = z
+  .string()
+  .max(820_000)
+  .regex(/^[A-Za-z0-9+/]+={0,2}$/);
+
 export const AttendancePunchInputSchema = z.object({
   storeId: UuidSchema,
   kind: z.enum(['in', 'out']),
@@ -32,6 +38,8 @@ export const AttendancePunchInputSchema = z.object({
   location: AttendanceLocationSchema.nullable().optional(),
   /** Why a clock-out runs well past the shift; the server asks for it. */
   overtimeReason: z.string().trim().min(1).max(300).optional(),
+  /** Taken on the spot when the store asks for photos: base64 JPEGs. */
+  photos: z.object({ face: AttendancePhotoSchema, scene: AttendancePhotoSchema }).optional(),
 });
 
 const reason = z.string().trim().min(1).max(300);
@@ -110,6 +118,7 @@ export const AttendancePolicySaveInputSchema = z
       .nullable(),
     graceMinutes: z.number().int().min(0).max(120),
     overtimeAfterMinutes: z.number().int().min(5).max(240).default(30),
+    requirePhoto: z.boolean().default(false),
   })
   .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
 
@@ -140,4 +149,9 @@ export const AttendanceExportLinkInputSchema = z.object({
   storeId: UuidSchema,
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
   locale: LocaleSchema,
+});
+
+export const AttendancePunchPhotosInputSchema = z.object({
+  storeId: UuidSchema,
+  punchId: UuidSchema,
 });

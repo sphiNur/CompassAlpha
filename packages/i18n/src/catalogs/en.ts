@@ -2794,4 +2794,29 @@ export const en = {
   'attendance.export.flag.early': 'Left early',
   'attendance.export.flag.onDuty': 'On shift',
   'attendance.export.flag.upcoming': 'Not started',
+  'attendance.rules.photoLine': 'Two photos with each punch: your face and the place',
+  'attendance.photo.faceTitle': 'Your face first',
+  'attendance.photo.faceHint':
+    'Front camera. Look at the screen with your whole face in the frame, in good light.',
+  'attendance.photo.sceneTitle': 'Now the place',
+  'attendance.photo.sceneHint':
+    'Rear camera. Show where you are: the shop, the counter or the door.',
+  'attendance.photo.reviewTitle': 'Check the photos',
+  'attendance.photo.reviewHint':
+    'Only your managers see these photos. They are deleted after 90 days.',
+  'attendance.photo.face': 'Face',
+  'attendance.photo.scene': 'Place',
+  'attendance.photo.retake': 'Retake',
+  'attendance.photo.shoot': 'Take photo',
+  'attendance.photo.problem.unsupported': 'The camera does not open here',
+  'attendance.photo.problem.denied': 'No access to the camera',
+  'attendance.photo.problem.unavailable': 'The camera did not start',
+  'attendance.photo.useSystemCamera': 'Take the photo with the phone camera instead.',
+  'attendance.photo.openSystemCamera': 'Open the phone camera',
+  'attendance.photo.show': 'Show photos',
+  'attendance.settings.requirePhoto': 'Photos when clocking',
+  'attendance.settings.requirePhotoHint':
+    'Each clock-in and clock-out takes two photos on the spot: the face with the front camera, then the place with the rear camera. Kept 90 days; only managers see them.',
+  'attendance.errors.photoRequired': 'This store needs the two photos to clock.',
+  'attendance.errors.photoInvalid': 'The photo could not be read. Take it again.',
 } as const;

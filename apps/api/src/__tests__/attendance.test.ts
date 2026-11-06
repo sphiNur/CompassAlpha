@@ -11,6 +11,7 @@ import { logger } from '../infra/log';
 import { attendanceMonthExport } from '../http/attendanceExport';
 import { appRouter } from '../trpc/router';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
+import { purgeOldAttendancePhotos } from '../services/attendancePhotoRetention';
 import type { RequestContext, SessionContext } from '../trpc/context';
 
 (function loadEnv() {
@@ -527,6 +528,62 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 
     const bad = await http.request('/files/attendance-month.xlsx?t=nope');
     expect(bad.status).toBe(410);
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
+  test('a store can ask for a face and a place photo; managers see them; 90 days', async () => {
+    const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db.execute(
+      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
+    );
+    const rules = {
+      storeId: f.storeId,
+      requireDevice: false,
+      requireGeo: false,
+      geo: null,
+      graceMinutes: 5,
+      overtimeAfterMinutes: 30,
+    };
+    await f.manager.attendance.policySave({ ...rules, requirePhoto: true });
+    expect((await f.staff().attendance.me({})).stores[0]!.rules.requirePhoto).toBe(true);
+    const punch = { storeId: f.storeId, kind: 'in' as const, deviceId: OTHER_DEVICE };
+    await expectError(f.staff().attendance.punch(punch), 'attendance.errors.photoRequired');
+    const notJpeg = Buffer.from('not a photo at all').toString('base64');
+    await expectError(
+      f.staff().attendance.punch({ ...punch, photos: { face: notJpeg, scene: notJpeg } }),
+      'attendance.errors.photoInvalid',
+    );
+    const jpeg = (tag: string) =>
+      Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
+    const done = await f.staff().attendance.punch({
+      ...punch,
+      photos: { face: jpeg('face'), scene: jpeg('scene') },
+    });
+
+    const date = dateInTz(new Date(done.at), TZ);
+    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    expect(sheet.punches.find((p) => p.id === done.id)!.photos.sort()).toEqual(['face', 'scene']);
+    const photos = await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id });
+    expect(photos.map((p) => p.kind)).toEqual(['face', 'scene']);
+    expect(photos[0]!.src).toBe(`data:image/jpeg;base64,${jpeg('face')}`);
+    await expectError(
+      f.staff().attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
+      'auth.errors.missingPermission',
+    );
+
+    // Kept 90 days.
+    expect(await purgeOldAttendancePhotos(db)).toBe(0);
+    await db.execute(
+      sql`UPDATE inventory.attendance_photos SET taken_at = now() - interval '91 days' WHERE punch_id = ${done.id}`,
+    );
+    expect(await purgeOldAttendancePhotos(db)).toBe(2);
+    expect(
+      await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
+    ).toEqual([]);
+
+    await f.manager.attendance.policySave({ ...rules, requireDevice: true, requirePhoto: false });
   });
 });
 

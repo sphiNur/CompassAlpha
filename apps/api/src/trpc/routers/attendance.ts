@@ -25,6 +25,7 @@ import {
   AttendanceMeInputSchema,
   AttendanceMemberSetInputSchema,
   AttendanceOvertimeDecideInputSchema,
+  AttendancePunchPhotosInputSchema,
   AttendancePayRateSetInputSchema,
   AttendanceWageSuggestionsInputSchema,
   AttendancePolicyGetInputSchema,
@@ -144,7 +145,19 @@ function policyView(p: PolicyRow | undefined) {
         : null,
     graceMinutes: p?.graceMinutes ?? 5,
     overtimeAfterMinutes: p?.overtimeAfterMinutes ?? 30,
+    requirePhoto: p?.requirePhoto ?? false,
   };
+}
+
+/** Largest photo the server keeps (the column's own limit). */
+const MAX_PHOTO_BYTES = 600_000;
+
+/** A base64 photo from the client → JPEG bytes, or refused. */
+function photoBytes(b64: string): Buffer {
+  const bytes = Buffer.from(b64, 'base64');
+  const jpeg = bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (!jpeg || bytes.length > MAX_PHOTO_BYTES) fail('BAD_REQUEST', 'photoInvalid');
+  return bytes;
 }
 
 /** Active members working at the store (assignment or store role). */
@@ -288,6 +301,21 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         ),
       ),
   ]);
+  const photoRows =
+    punches.length === 0
+      ? []
+      : await tx
+          .select({ punchId: s.attendancePhotos.punchId, kind: s.attendancePhotos.kind })
+          .from(s.attendancePhotos)
+          .where(
+            inArray(
+              s.attendancePhotos.punchId,
+              punches.map((p) => p.id),
+            ),
+          );
+  const photoKinds = new Map<string, ('face' | 'scene')[]>();
+  for (const ph of photoRows)
+    photoKinds.set(ph.punchId, [...(photoKinds.get(ph.punchId) ?? []), ph.kind]);
   const memberIds = new Set([
     ...roster.map((m) => m.memberId),
     ...shifts.map((x) => x.memberId),
@@ -376,6 +404,7 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
       source: p.source,
       reason: p.reason,
       distanceM: p.distanceM,
+      photos: photoKinds.get(p.id) ?? [],
       createdByName: p.source === 'manual' ? (names.get(p.createdByMemberId) ?? null) : null,
       voided: p.voidedAt
         ? {
@@ -529,6 +558,7 @@ export const attendanceRouter = router({
             requireDevice: view.requireDevice,
             requireGeo: view.requireGeo,
             geo: view.requireGeo ? view.geo : null,
+            requirePhoto: view.requirePhoto,
           },
           nextKind: rules.nextPunchKind(
             punches.map((p) => ({ kind: p.kind, at: p.punchedAt })),
@@ -571,6 +601,11 @@ export const attendanceRouter = router({
       );
       const policy = policyView(await loadPolicy(tx, store.id));
       const now = new Date();
+      // Face + surroundings, taken on the spot (owner request 2026-11-05).
+      if (policy.requirePhoto && !input.photos) fail('BAD_REQUEST', 'photoRequired');
+      const photos = input.photos
+        ? { face: photoBytes(input.photos.face), scene: photoBytes(input.photos.scene) }
+        : null;
 
       // Device: the first punch binds the phone.
       const hash = hashDeviceId(input.deviceId);
@@ -660,6 +695,19 @@ export const attendanceRouter = router({
           minutes: overtime.minutes,
           reason: input.overtimeReason ?? null,
         });
+      }
+      if (photos) {
+        await tx.insert(s.attendancePhotos).values(
+          (['face', 'scene'] as const).map((kind) => ({
+            orgId: session.orgId,
+            storeId: store.id,
+            memberId: session.memberId,
+            punchId: row!.id,
+            kind,
+            bytes: photos[kind],
+            takenAt: now,
+          })),
+        );
       }
       publish(session.orgId, store.id);
       const tz = tzOf(store, session);
@@ -947,6 +995,7 @@ export const attendanceRouter = router({
           geoRadiusM: input.geo?.radiusM ?? null,
           graceMinutes: input.graceMinutes,
           overtimeAfterMinutes: input.overtimeAfterMinutes,
+          requirePhoto: input.requirePhoto,
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),
         };
@@ -1080,5 +1129,36 @@ export const attendanceRouter = router({
         path: `/files/attendance-month.xlsx?t=${encodeURIComponent(token)}`,
         fileName: await exportFileName(input.locale, store.name, input.month),
       };
+    }),
+
+  /** A punch's photos for the store's managers (kept 90 days). */
+  punchPhotos: authedProcedure
+    .input(AttendancePunchPhotosInputSchema)
+    .query(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const rows = await tx
+          .select({
+            kind: s.attendancePhotos.kind,
+            contentType: s.attendancePhotos.contentType,
+            bytes: s.attendancePhotos.bytes,
+            takenAt: s.attendancePhotos.takenAt,
+          })
+          .from(s.attendancePhotos)
+          .where(
+            and(
+              eq(s.attendancePhotos.storeId, store.id),
+              eq(s.attendancePhotos.punchId, input.punchId),
+            ),
+          );
+        return rows
+          .sort((a, b) => (a.kind === 'face' ? -1 : 1) - (b.kind === 'face' ? -1 : 1))
+          .map((r) => ({
+            kind: r.kind,
+            src: `data:${r.contentType};base64,${Buffer.from(r.bytes).toString('base64')}`,
+            takenAt: r.takenAt.toISOString(),
+          }));
+      });
     }),
 });
