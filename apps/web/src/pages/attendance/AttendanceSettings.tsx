@@ -2,6 +2,9 @@
  * Attendance settings for one store (2026-11-05): who clocks (the
  * per-member switch), unbinding a lost phone, and the store's clock-in
  * rules — bound phone, location radius, grace minutes.
+ *
+ * Face only (2026-11-06): the face check is always on; each person's face
+ * enrollment shows here, and a manager can ask for it again.
  */
 import { useState } from 'react';
 import {
@@ -114,12 +117,12 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                   {m.enabled ? (
                     <WageField storeId={storeId} memberId={m.memberId} current={m.dailyWage} />
                   ) : null}
-                  {m.enabled && data.requireFace ? (
-                    <FaceRefLine
+                  {m.enabled ? (
+                    <FaceEnrollLine
                       storeId={storeId}
                       memberId={m.memberId}
                       name={m.name}
-                      at={m.faceRefAt}
+                      status={m.face}
                     />
                   ) : null}
                 </li>
@@ -131,39 +134,46 @@ function PeopleBlock({ storeId }: { storeId: string }) {
   );
 }
 
-/** The person's reference face: shown on demand, or cleared to enroll again. */
-function FaceRefLine({
+/** The person's face enrollment: its photos on demand, or deleted so they enroll again. */
+function FaceEnrollLine({
   storeId,
   memberId,
   name,
-  at,
+  status,
 }: {
   storeId: string;
   memberId: string;
   name: string;
-  at: string | null;
+  status: 'approved' | 'pending' | 'rejected' | 'none';
 }) {
   const i18n = useI18n();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [show, setShow] = useState(false);
-  const ref = trpc.attendance.faceRef.useQuery({ storeId, memberId }, { enabled: show && !!at });
-  const clear = trpc.attendance.faceRefClear.useMutation({
+  const has = status === 'approved' || status === 'pending';
+  const photos = trpc.attendance.faceEnrollment.useQuery(
+    { storeId, memberId },
+    { enabled: show && has },
+  );
+  const reset = trpc.attendance.faceEnrollReset.useMutation({
     onSuccess: () => {
       haptic('success');
       setShow(false);
       void utils.attendance.sheet.invalidate();
-      void utils.attendance.faceRef.invalidate();
+      void utils.attendance.faceEnrollment.invalidate();
+      void utils.attendance.reviewQueue.invalidate();
     },
     onError: errToast('attendance.errors.saveFailed'),
   });
+  // The one in use, else the one waiting.
+  const inUse = photos.data?.find((e) => e.status === 'approved') ?? photos.data?.[0];
   return (
     <div className="mt-2 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-old-label text-[var(--c-fg-muted)]">
-          {at ? i18n.t('attendance.face.refSet') : i18n.t('attendance.face.refNotYet')}
+          {i18n.t(`attendance.enroll.status.${status}`)}
         </span>
-        {at ? (
+        {has ? (
           <>
             <Button variant="ghost" size="sm" onClick={() => setShow(!show)}>
               {i18n.t(show ? 'attendance.face.hideRef' : 'attendance.face.showRef')}
@@ -171,25 +181,48 @@ function FaceRefLine({
             <Button
               variant="ghost"
               size="sm"
-              loading={clear.isPending}
+              loading={reset.isPending}
               onClick={() =>
-                nativeConfirm(i18n.t('attendance.face.clearConfirm', { name }), () =>
-                  clear.mutate({ storeId, memberId }),
+                nativeConfirm(i18n.t('attendance.enroll.resetConfirm', { name }), () =>
+                  reset.mutate({ storeId, memberId }),
                 )
               }
             >
-              {i18n.t('attendance.face.clear')}
+              {i18n.t('attendance.enroll.reset')}
             </Button>
           </>
         ) : null}
       </div>
-      {show && ref.data ? (
+      {show && inUse ? <EnrollPhotos photos={inUse.photos} name={name} /> : null}
+    </div>
+  );
+}
+
+/** An enrollment's six photos in a row. */
+export function EnrollPhotos({
+  photos,
+  name,
+}: {
+  photos: {
+    pose: 'front' | 'front2' | 'left' | 'right' | 'up' | 'down';
+    src: string;
+  }[];
+  name: string;
+}) {
+  const i18n = useI18n();
+  return (
+    <div className="grid grid-cols-6 gap-1">
+      {photos.map((p) => (
         <img
-          src={ref.data.src}
-          alt={i18n.t('attendance.face.refAlt', { name })}
-          className="aspect-[3/4] w-28 rounded-[var(--r-utility)] object-cover"
+          key={p.pose}
+          src={p.src}
+          alt={i18n.t('attendance.enroll.photoAlt', {
+            name,
+            pose: i18n.t(`attendance.enroll.pose.${p.pose}`),
+          })}
+          className="aspect-[3/4] w-full rounded-[var(--r-utility)] object-cover"
         />
-      ) : null}
+      ))}
     </div>
   );
 }
@@ -260,9 +293,6 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const utils = trpc.useUtils();
   const [requireDevice, setRequireDevice] = useState(initial.requireDevice);
   const [requireGeo, setRequireGeo] = useState(initial.requireGeo);
-  const [requirePhoto, setRequirePhoto] = useState(initial.requirePhoto);
-  const [requireFace, setRequireFace] = useState(initial.requireFace);
-  const [requireLiveness, setRequireLiveness] = useState(initial.requireLiveness);
   const [requireScene, setRequireScene] = useState(initial.requireScene);
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
@@ -320,42 +350,20 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
       </div>
 
       <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
-        <Switch
-          label={i18n.t('attendance.settings.requirePhoto')}
-          hint={i18n.t('attendance.settings.requirePhotoHint')}
-          checked={requirePhoto}
-          onChange={(e) => setRequirePhoto(e.target.checked)}
-        />
-        {requirePhoto ? (
-          <div className="mt-3">
-            <Switch
-              label={i18n.t('attendance.settings.requireFace')}
-              hint={i18n.t('attendance.settings.requireFaceHint')}
-              checked={requireFace}
-              onChange={(e) => setRequireFace(e.target.checked)}
-            />
-          </div>
-        ) : null}
-        {requirePhoto && requireFace ? (
-          <div className="mt-3">
-            <Switch
-              label={i18n.t('attendance.settings.requireLiveness')}
-              hint={i18n.t('attendance.settings.requireLivenessHint')}
-              checked={requireLiveness}
-              onChange={(e) => setRequireLiveness(e.target.checked)}
-            />
-          </div>
-        ) : null}
-        {requirePhoto ? (
-          <div className="mt-3">
-            <Switch
-              label={i18n.t('attendance.settings.requireScene')}
-              hint={i18n.t('attendance.settings.requireSceneHint')}
-              checked={requireScene}
-              onChange={(e) => setRequireScene(e.target.checked)}
-            />
-          </div>
-        ) : null}
+        <p className="text-old-body font-semibold text-[var(--c-fg)]">
+          {i18n.t('attendance.settings.faceOnly')}
+        </p>
+        <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+          {i18n.t('attendance.settings.faceOnlyHint')}
+        </p>
+        <div className="mt-3">
+          <Switch
+            label={i18n.t('attendance.settings.requireScene')}
+            hint={i18n.t('attendance.settings.requireSceneHint')}
+            checked={requireScene}
+            onChange={(e) => setRequireScene(e.target.checked)}
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
@@ -437,10 +445,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             storeId,
             requireDevice,
             requireGeo,
-            requirePhoto,
-            requireFace: requirePhoto && requireFace,
-            requireLiveness: requirePhoto && requireFace && requireLiveness,
-            requireScene: requirePhoto && requireScene,
+            requireScene,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,

@@ -1,32 +1,25 @@
 /**
- * The clock-in photos (2026-11-05): face (front camera), then the
- * surroundings (rear camera), then a look at all of them before the punch
- * is sent.
+ * The clock-in photos (2026-11-05): the face (front camera), then, where
+ * the store asks for it, the place (rear camera), then a look at them
+ * before the punch is sent.
  *
  * Liveness (2026-11-06): with `turns`, the face step becomes three front
  * camera frames: straight on, then each head turn in the order the server
- * chose. A face tracker in the page takes each frame by itself once the
- * head is where the prompt asks; the shutter button works too. The server
- * checks the frames; the phone only guides.
+ * chose. The server checks the frames; the phone only guides.
  *
- * Checks (2026-11-06): the turns come only when the server asks for them
- * (a risk signal or the 1-in-3 spot check; otherwise one face photo), and
- * the photo of the place only where the store switched it on.
+ * Face only (owner, 2026-11-06): the face frames are taken by the face
+ * tracker when the head is where the prompt asks; there is no shutter for
+ * them and no system camera (which could pick a photo from the gallery).
+ * A phone whose camera or tracker cannot run cannot clock by itself: a
+ * colleague's phone or the manager's manual punch then. Only the place
+ * photo has a shutter.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Banner, Button, Sheet } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
-import {
-  fileToJpeg,
-  grabFrame,
-  isCameraError,
-  jpegSrc,
-  startCamera,
-  stopCamera,
-  type Facing,
-} from '../../lib/attendanceCamera';
-import { loadFaceTracker, onTrackerProgress, type FaceTracker } from '../../lib/faceTracker';
+import { jpegSrc, type Facing } from '../../lib/attendanceCamera';
+import { basicGuide, useAutoCapture, useCamera, useTracker, type Guide } from './faceCapture';
 
 export type Turn = 'left' | 'right';
 export type PunchPhotos = { face: string; scene?: string; left?: string; right?: string };
@@ -36,20 +29,14 @@ type Step = Shot | 'review';
 /** Where the tracker takes the frame (the server accepts turns from 0.2, straight up to 0.2). */
 const STRAIGHT_MAX = 0.12;
 const TURN_MIN = 0.35;
-/** How long the face steps wait for the tracker before offering the shutter. */
-const TRACKER_WAIT_MS = 30_000;
-/** Readings in a row (~120 ms apart) before the frame is taken. */
-const HOLD = 3;
-
-type Guide = 'noFace' | 'manyFaces' | 'lookStraight' | 'turnMore' | null;
+/** The face's width as a share of the frame (the server wants 0.18 for enrollment). */
+const MIN_SIZE = 0.2;
 
 export function PunchCamera({
   open,
   kind,
-  faceCheck,
   turns: askedTurns,
   scene,
-  forName,
   identifying,
   busy,
   onCancel,
@@ -58,13 +45,10 @@ export function PunchCamera({
   open: boolean;
   /** null: a colleague found by their face; the server knows their next punch. */
   kind: 'in' | 'out' | null;
-  faceCheck: boolean;
   /** The liveness turn order from the server; null or empty = no turns. */
   turns: Turn[] | null;
   /** The store asks for a photo of the place too. */
   scene: boolean;
-  /** Clocking a colleague in on this phone: their name. */
-  forName?: string | null;
   /** A colleague clocks on this phone: the face says who. */
   identifying?: boolean;
   busy: boolean;
@@ -72,84 +56,28 @@ export function PunchCamera({
   onConfirm: (photos: PunchPhotos) => void;
 }) {
   const i18n = useI18n();
-  const turns = askedTurns && askedTurns.length > 0 ? askedTurns : null;
-  const sequence: Shot[] = ['face', ...(turns ?? []), ...(scene ? (['scene'] as const) : [])];
+  const turns = askedTurns && askedTurns.length > 0 ? askedTurns : [];
+  const faceShots: Shot[] = ['face', ...turns];
+  const sequence: Shot[] = [...faceShots, ...(scene ? (['scene'] as const) : [])];
   const [step, setStep] = useState<Step>('face');
   const [shots, setShots] = useState<Partial<Record<Shot, string>>>({});
-  const [problem, setProblem] = useState<'unsupported' | 'denied' | 'unavailable' | null>(null);
-  const [ready, setReady] = useState(false);
-  // A callback ref: the sheet mounts its content after it opens.
-  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [tracker, setTracker] = useState<FaceTracker | null>(null);
-  // The tracker downloads once (~4 MB); until then the shutter is used.
-  const [trackerState, setTrackerState] = useState<'loading' | 'ready' | 'failed'>('loading');
-  const [trackerPercent, setTrackerPercent] = useState(0);
-  const [waitedLong, setWaitedLong] = useState(false);
-  const [guide, setGuide] = useState<Guide>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [guide, setGuide] = useState<Guide | null>(null);
 
   // Start over each time the sheet opens.
   useEffect(() => {
     if (!open) return;
     setStep('face');
     setShots({});
-    setProblem(null);
     setGuide(null);
   }, [open]);
 
-  const live = turns !== null;
-  useEffect(() => {
-    if (!open || !live) return;
-    let cancelled = false;
-    setWaitedLong(false);
-    const stop = onTrackerProgress((p) =>
-      setTrackerPercent(Math.floor((p.loaded / p.total) * 100)),
-    );
-    const timer = setTimeout(() => setWaitedLong(true), TRACKER_WAIT_MS);
-    void loadFaceTracker().then((t) => {
-      if (cancelled) return;
-      setTracker(t);
-      setTrackerState(t ? 'ready' : 'failed');
-    });
-    return () => {
-      cancelled = true;
-      stop();
-      clearTimeout(timer);
-    };
-  }, [open, live]);
-
+  const track = useTracker(open);
   // One camera at a time: the front one stays on through the face and
   // turn frames, then stops before the rear one opens.
   const facing: Facing | null =
     !open || step === 'review' ? null : step === 'scene' ? 'environment' : 'user';
-  useEffect(() => {
-    if (!facing) return;
-    let opened: MediaStream | null = null;
-    let cancelled = false;
-    setReady(false);
-    setProblem(null);
-    startCamera(facing)
-      .then((s) => {
-        if (cancelled) return stopCamera(s);
-        opened = s;
-        setStream(s);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setProblem(isCameraError(e) ? e.reason : 'unavailable');
-      });
-    return () => {
-      cancelled = true;
-      stopCamera(opened);
-      setStream(null);
-    };
-  }, [facing]);
-
-  useEffect(() => {
-    if (!video) return;
-    video.srcObject = stream;
-    if (stream) void video.play().catch(() => {});
-  }, [video, stream]);
+  const cam = useCamera(facing);
+  const front = step === 'face' || step === 'left' || step === 'right';
 
   const keep = (b64: string) => {
     haptic('light');
@@ -159,51 +87,28 @@ export function PunchCamera({
     setGuide(null);
     setStep(sequence.find((s) => !next[s]) ?? 'review');
   };
-
   const shoot = () => {
-    if (!video) return;
-    try {
-      keep(grabFrame(video));
-    } catch {
-      setProblem('unavailable');
-    }
+    const b64 = cam.grab();
+    if (b64) keep(b64);
   };
 
-  // The tracker takes the face and turn frames by itself.
-  const auto =
-    tracker && ready && !problem && (step === 'face' || step === 'left' || step === 'right');
-  const shootRef = useRef(shoot);
-  shootRef.current = shoot;
-  useEffect(() => {
-    if (!auto || !video || !tracker || !turns) return;
-    let held = 0;
-    const timer = setInterval(() => {
-      const r = tracker.read(video);
-      let next: Guide = null;
-      if (r.count === 0 || r.yaw === null) next = 'noFace';
-      else if (r.count > 1) next = 'manyFaces';
-      else if (step === 'face' && Math.abs(r.yaw) > STRAIGHT_MAX) next = 'lookStraight';
-      else if (step === 'left' && r.yaw < TURN_MIN) next = 'turnMore';
-      else if (step === 'right' && r.yaw > -TURN_MIN) next = 'turnMore';
-      setGuide(next);
-      held = next === null ? held + 1 : 0;
-      if (held >= HOLD) {
-        clearInterval(timer);
-        shootRef.current();
-      }
-    }, 120);
-    return () => clearInterval(timer);
-  }, [auto, video, tracker, step, turns]);
-
-  const fromSystemCamera = async (file: File | undefined) => {
-    if (!file) return;
-    try {
-      keep(await fileToJpeg(file));
-    } catch {
-      haptic('error');
-      setProblem('unavailable');
-    }
-  };
+  useAutoCapture({
+    active: open && front && cam.ready && !cam.problem && track.state === 'ready',
+    video: cam.video,
+    tracker: track.tracker,
+    key: step,
+    check: (r) => {
+      const basic = basicGuide(r, MIN_SIZE);
+      if (basic) return basic;
+      const yaw = r.yaw!;
+      if (step === 'face' && Math.abs(yaw) > STRAIGHT_MAX) return 'lookStraight';
+      if (step === 'left' && yaw < TURN_MIN) return 'turnMore';
+      if (step === 'right' && yaw > -TURN_MIN) return 'turnMore';
+      return null;
+    },
+    onHeld: shoot,
+    onGuide: setGuide,
+  });
 
   /** Retaking any face frame retakes all of them, in order. */
   const retake = (which: Shot) => {
@@ -216,6 +121,8 @@ export function PunchCamera({
     setStep('face');
   };
 
+  // This phone cannot take a face frame: no clocking on it by itself.
+  const cannot = front && (cam.problem !== null || track.state === 'failed');
   const title =
     step === 'review'
       ? i18n.t('attendance.photo.reviewTitle')
@@ -225,27 +132,19 @@ export function PunchCamera({
           ? i18n.t('attendance.live.turnLeft')
           : step === 'right'
             ? i18n.t('attendance.live.turnRight')
-            : live
-              ? i18n.t('attendance.live.lookTitle')
-              : i18n.t('attendance.photo.faceTitle');
+            : i18n.t('attendance.live.lookTitle');
   const hint =
     step === 'review'
-      ? i18n.t(faceCheck ? 'attendance.photo.reviewHintFace' : 'attendance.photo.reviewHint')
+      ? i18n.t('attendance.photo.reviewHintFace')
       : step === 'scene'
         ? i18n.t('attendance.photo.sceneHint')
-        : live
-          ? i18n.t(
-              trackerState === 'ready'
-                ? 'attendance.live.autoHint'
-                : trackerState === 'loading'
-                  ? waitedLong
-                    ? 'attendance.live.slow'
-                    : 'attendance.live.preparing'
-                  : 'attendance.live.manualHint',
-            )
-          : i18n.t('attendance.photo.faceHint');
-  const reviewShots = sequence;
-  const front = step === 'face' || step === 'left' || step === 'right';
+        : i18n.t(
+            track.state === 'ready'
+              ? 'attendance.live.autoHint'
+              : track.slow
+                ? 'attendance.live.slow'
+                : 'attendance.live.preparing',
+          );
 
   return (
     <Sheet
@@ -255,79 +154,56 @@ export function PunchCamera({
       description={hint}
     >
       <div className="flex flex-col gap-3 py-3">
-        {forName ? (
-          <p className="text-old-label font-semibold text-[var(--c-fg)]">
-            {i18n.t('attendance.borrow.forWhom', { name: forName })}
-          </p>
-        ) : identifying ? (
+        {identifying ? (
           <p className="text-old-label font-semibold text-[var(--c-fg)]">
             {i18n.t('attendance.borrow.identifyHint')}
           </p>
         ) : null}
-        {step !== 'review' ? (
-          problem ? null : (
-            <div className="relative overflow-hidden rounded-[var(--r-card)] bg-black">
-              <video
-                ref={setVideo}
-                playsInline
-                muted
-                autoPlay
-                onLoadedData={() => setReady(true)}
-                aria-label={title}
-                className={`aspect-[3/4] w-full object-cover ${front ? '-scale-x-100' : ''}`}
+        {cannot ? (
+          <Banner tone="danger" title={i18n.t('attendance.face.cannotTitle')}>
+            {i18n.t(
+              cam.problem === 'denied'
+                ? 'attendance.face.cannotDenied'
+                : 'attendance.face.cannotBody',
+            )}
+          </Banner>
+        ) : step === 'scene' && cam.problem ? (
+          <Banner tone="danger" title={i18n.t(`attendance.photo.problem.${cam.problem}`)} />
+        ) : step !== 'review' ? (
+          <div className="relative overflow-hidden rounded-[var(--r-card)] bg-black">
+            <video
+              ref={cam.setVideo}
+              playsInline
+              muted
+              autoPlay
+              onLoadedData={() => cam.setReady(true)}
+              aria-label={title}
+              className={`aspect-[3/4] w-full object-cover ${front ? '-scale-x-100' : ''}`}
+            />
+            {front ? (
+              <FaceOverlay
+                title={title}
+                arrow={step === 'left' ? '←' : step === 'right' ? '→' : '●'}
+                loading={track.state === 'loading'}
+                percent={track.percent}
+                guide={track.state === 'ready' ? guide : null}
+                progress={i18n.t('attendance.live.progress', {
+                  done: faceShots.filter((s) => shots[s]).length,
+                  total: faceShots.length,
+                })}
               />
-              {live && front ? (
-                <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-center text-white">
-                  <span className="text-old-h3 font-semibold">
-                    {step === 'left' ? '←' : step === 'right' ? '→' : '●'} {title}
-                  </span>
-                  {trackerState === 'loading' ? (
-                    <span className="flex w-full max-w-60 flex-col items-center gap-1">
-                      <span className="text-old-label">
-                        {i18n.t('attendance.live.preparingPercent', { percent: trackerPercent })}
-                      </span>
-                      <span
-                        className="h-1.5 w-full overflow-hidden rounded-full bg-white/30"
-                        role="progressbar"
-                        aria-label={i18n.t('attendance.live.preparingPercent', {
-                          percent: trackerPercent,
-                        })}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={trackerPercent}
-                      >
-                        <span
-                          className="block h-full rounded-full bg-white transition-[width]"
-                          style={{ width: `${trackerPercent}%` }}
-                        />
-                      </span>
-                    </span>
-                  ) : null}
-                  {auto && guide ? (
-                    <span className="text-old-label">
-                      {i18n.t(`attendance.live.guide.${guide}`)}
-                    </span>
-                  ) : null}
-                  <span className="text-old-label opacity-80" aria-live="polite">
-                    {i18n.t('attendance.live.progress', {
-                      done: (['face', ...(turns ?? [])] as Shot[]).filter((s) => shots[s]).length,
-                      total: 1 + (turns?.length ?? 0),
-                    })}
-                  </span>
-                </div>
-              ) : null}
-              {shots.face && step === 'scene' ? (
-                <img
-                  src={jpegSrc(shots.face)}
-                  alt={i18n.t('attendance.photo.face')}
-                  className="absolute left-2 top-2 h-20 w-16 rounded-md object-cover ring-2 ring-white"
-                />
-              ) : null}
-            </div>
-          )
+            ) : null}
+            {shots.face && step === 'scene' ? (
+              <img
+                src={jpegSrc(shots.face)}
+                alt={i18n.t('attendance.photo.face')}
+                className="absolute left-2 top-2 h-20 w-16 rounded-md object-cover ring-2 ring-white"
+              />
+            ) : null}
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            {reviewShots.map((which) => {
+            {sequence.map((which) => {
               const src = shots[which];
               return (
                 <figure key={which} className="flex flex-col gap-1">
@@ -350,30 +226,12 @@ export function PunchCamera({
           </div>
         )}
 
-        {problem ? (
-          <Banner tone="warn" title={i18n.t(`attendance.photo.problem.${problem}`)}>
-            {i18n.t('attendance.photo.useSystemCamera')}
-          </Banner>
-        ) : null}
-
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          capture={step === 'scene' ? 'environment' : 'user'}
-          className="hidden"
-          onChange={(e) => {
-            void fromSystemCamera(e.target.files?.[0]);
-            e.target.value = '';
-          }}
-        />
-
         {step === 'review' ? (
           <Button
             block
             size="lg"
             loading={busy}
-            disabled={reviewShots.some((s) => !shots[s])}
+            disabled={sequence.some((s) => !shots[s])}
             onClick={() =>
               shots.face &&
               onConfirm({
@@ -392,31 +250,68 @@ export function PunchCamera({
                   : 'attendance.clock.out',
             )}
           </Button>
-        ) : problem ? (
-          <Button block size="lg" onClick={() => fileRef.current?.click()}>
-            {i18n.t('attendance.photo.openSystemCamera')}
+        ) : cannot ? (
+          <Button block size="lg" variant="secondary" onClick={onCancel}>
+            {i18n.t('common.cancel')}
           </Button>
-        ) : live && front && trackerState === 'loading' && !waitedLong ? (
-          // The face steps start once the tracker is ready (owner, 2026-11-06).
-          <Button block size="lg" variant="secondary" disabled>
-            {i18n.t('attendance.live.preparingShort')}
+        ) : step === 'scene' ? (
+          <Button block size="lg" disabled={!cam.ready || !!cam.problem} onClick={shoot}>
+            {i18n.t('attendance.photo.shoot')}
           </Button>
-        ) : (
-          <Button
-            block
-            size="lg"
-            variant={auto ? 'secondary' : 'primary'}
-            disabled={!ready}
-            onClick={shoot}
-          >
-            {i18n.t(
-              live && front && trackerState === 'loading'
-                ? 'attendance.live.shootAnyway'
-                : 'attendance.photo.shoot',
-            )}
-          </Button>
-        )}
+        ) : null}
       </div>
     </Sheet>
+  );
+}
+
+/** The prompt over the front camera: what to do, the tracker's download, progress. */
+export function FaceOverlay({
+  title,
+  arrow,
+  loading,
+  percent,
+  guide,
+  progress,
+}: {
+  title: string;
+  arrow: string;
+  loading: boolean;
+  percent: number;
+  guide: Guide | null;
+  progress: string;
+}) {
+  const i18n = useI18n();
+  return (
+    <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-center text-white">
+      <span className="text-old-h3 font-semibold">
+        {arrow} {title}
+      </span>
+      {loading ? (
+        <span className="flex w-full max-w-60 flex-col items-center gap-1">
+          <span className="text-old-label">
+            {i18n.t('attendance.live.preparingPercent', { percent })}
+          </span>
+          <span
+            className="h-1.5 w-full overflow-hidden rounded-full bg-white/30"
+            role="progressbar"
+            aria-label={i18n.t('attendance.live.preparingPercent', { percent })}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <span
+              className="block h-full rounded-full bg-white transition-[width]"
+              style={{ width: `${percent}%` }}
+            />
+          </span>
+        </span>
+      ) : null}
+      {guide ? (
+        <span className="text-old-label">{i18n.t(`attendance.live.guide.${guide}`)}</span>
+      ) : null}
+      <span className="text-old-label opacity-80" aria-live="polite">
+        {progress}
+      </span>
+    </div>
   );
 }

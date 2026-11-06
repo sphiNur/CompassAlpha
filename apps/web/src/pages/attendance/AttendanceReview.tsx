@@ -3,6 +3,10 @@
  * yet: a face that does not match (and whom it looks like), a failed
  * liveness check, a colleague's phone, a new phone. The manager looks at
  * the photos, then lets the punch stand or voids it with a reason.
+ *
+ * Face enrollments (2026-11-06) wait here too: the manager compares the
+ * six photos with the person they know and approves, or sends them back
+ * with a reason. Nobody approves their own.
  */
 import { useState } from 'react';
 import { Badge, Banner, Button, DataState, EmptyState, Field, Input } from '@compass/ui';
@@ -11,6 +15,7 @@ import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
 import { trpc } from '../../lib/trpc';
 import { FACE_TONE, LIVE_TONE, PunchPhotoStrip } from './AttendanceManage';
+import { EnrollPhotos } from './AttendanceSettings';
 
 export function AttendanceReview({ storeId }: { storeId: string }) {
   const i18n = useI18n();
@@ -50,12 +55,24 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
                 {i18n.t('attendance.review.overtimeBody', { count: data.overtimePending })}
               </Banner>
             ) : null}
-            {data.punches.length === 0 ? (
+            {data.enrollments.length > 0 ? (
+              <section className="flex flex-col gap-2">
+                <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+                  {i18n.t('attendance.review.enrollTitle')}
+                </h2>
+                <ul className="flex flex-col gap-2">
+                  {data.enrollments.map((e) => (
+                    <EnrollItem key={e.id} storeId={storeId} enrollment={e} />
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {data.punches.length === 0 && data.enrollments.length === 0 ? (
               <EmptyState
                 title={i18n.t('attendance.review.emptyTitle')}
                 description={i18n.t('attendance.review.emptyBody')}
               />
-            ) : (
+            ) : data.punches.length === 0 ? null : (
               <ul className="flex flex-col gap-2" aria-label={i18n.t('attendance.view.review')}>
                 {data.punches.map((p) => (
                   <li
@@ -94,7 +111,7 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
                         {i18n.t('attendance.borrow.via', { name: p.viaName })}
                       </span>
                     ) : null}
-                    <PunchPhotoStrip storeId={storeId} punchId={p.id} canSetFace={false} />
+                    <PunchPhotoStrip storeId={storeId} punchId={p.id} />
                     {voiding === p.id ? (
                       <div className="flex flex-col gap-2">
                         <Field label={i18n.t('attendance.void.reasonLabel', { time: p.time })}>
@@ -150,5 +167,118 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
         )}
       </DataState>
     </div>
+  );
+}
+
+/** One waiting face enrollment: its photos (and the one in use), approve or send back. */
+function EnrollItem({
+  storeId,
+  enrollment,
+}: {
+  storeId: string;
+  enrollment: {
+    id: string;
+    memberId: string;
+    name: string;
+    own: boolean;
+    date: string;
+    time: string;
+  };
+}) {
+  const i18n = useI18n();
+  const errToast = useErrToast();
+  const utils = trpc.useUtils();
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState('');
+  const photos = trpc.attendance.faceEnrollment.useQuery({
+    storeId,
+    memberId: enrollment.memberId,
+  });
+  const decide = trpc.attendance.faceEnrollDecide.useMutation({
+    onSuccess: () => {
+      haptic('success');
+      void utils.attendance.reviewQueue.invalidate();
+      void utils.attendance.sheet.invalidate();
+      void utils.attendance.faceEnrollment.invalidate();
+    },
+    onError: errToast('attendance.errors.saveFailed'),
+  });
+  const waiting = photos.data?.find((x) => x.id === enrollment.id);
+  const inUse = photos.data?.find((x) => x.status === 'approved');
+  return (
+    <li className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-old-body font-semibold text-[var(--c-fg)]">{enrollment.name}</span>
+        <span className="tabular-nums text-old-label text-[var(--c-fg-muted)]">
+          {enrollment.date} {enrollment.time}
+        </span>
+      </div>
+      {waiting ? <EnrollPhotos photos={waiting.photos} name={enrollment.name} /> : null}
+      {inUse ? (
+        <>
+          <span className="text-old-label text-[var(--c-fg-muted)]">
+            {i18n.t('attendance.review.enrollInUse')}
+          </span>
+          <EnrollPhotos photos={inUse.photos} name={enrollment.name} />
+        </>
+      ) : null}
+      {enrollment.own ? (
+        <span className="text-old-label text-[var(--c-fg-muted)]">
+          {i18n.t('attendance.review.enrollOwn')}
+        </span>
+      ) : rejecting ? (
+        <div className="flex flex-col gap-2">
+          <Field label={i18n.t('attendance.review.enrollReasonLabel')}>
+            <Input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={300}
+              placeholder={i18n.t('attendance.review.enrollReasonPlaceholder')}
+            />
+          </Field>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setRejecting(false)}>
+              {i18n.t('common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={note.trim().length === 0}
+              loading={decide.isPending}
+              onClick={() =>
+                decide.mutate({
+                  storeId,
+                  enrollmentId: enrollment.id,
+                  approve: false,
+                  note: note.trim(),
+                })
+              }
+            >
+              {i18n.t('attendance.review.enrollReject')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            loading={decide.isPending}
+            disabled={!waiting}
+            onClick={() => decide.mutate({ storeId, enrollmentId: enrollment.id, approve: true })}
+          >
+            {i18n.t('attendance.review.enrollApprove')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setNote('');
+              setRejecting(true);
+            }}
+          >
+            {i18n.t('attendance.review.enrollReject')}
+          </Button>
+        </div>
+      )}
+    </li>
   );
 }

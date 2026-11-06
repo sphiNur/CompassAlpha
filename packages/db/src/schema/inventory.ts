@@ -912,25 +912,60 @@ export const attendancePhotos = inventorySchema.table(
   }),
 );
 
-/** A member's reference face for the attendance face check (0063). */
-export const attendanceFaceRefs = inventorySchema.table(
-  'attendance_face_refs',
+/**
+ * A guided face enrollment (0066): pending until a store manager approves
+ * it; the approved one is what punches are checked against.
+ */
+export const attendanceFaceEnrollments = inventorySchema.table(
+  'attendance_face_enrollments',
   {
-    memberId: uuid('member_id')
-      .primaryKey()
-      .references(() => members.id, { onDelete: 'cascade' }),
+    id: uuid('id').primaryKey().defaultRandom(),
     orgId: uuid('org_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    status: varchar('status', { length: 10 })
+      .notNull()
+      .default('pending')
+      .$type<'pending' | 'approved' | 'rejected'>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    decidedByMemberId: uuid('decided_by_member_id'),
+    decidedAt: timestamp('decided_at', { withTimezone: true, mode: 'date' }),
+    note: varchar('note', { length: 300 }),
+  },
+  (t) => ({
+    orgIdx: index('afe_org_idx').on(t.orgId),
+    memberIdx: index('afe_member_idx').on(t.memberId),
+  }),
+);
+
+export type FacePose = 'front' | 'front2' | 'left' | 'right' | 'up' | 'down';
+
+/** An enrollment's photos and their face features (0066). */
+export const attendanceFaceSamples = inventorySchema.table(
+  'attendance_face_samples',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    enrollmentId: uuid('enrollment_id')
+      .notNull()
+      .references(() => attendanceFaceEnrollments.id, { onDelete: 'cascade' }),
+    pose: varchar('pose', { length: 8 }).notNull().$type<FacePose>(),
     feature: real('feature').array().notNull(),
     bytes: bytea('bytes').notNull(),
-    sourcePunchId: uuid('source_punch_id').references(() => attendancePunches.id, {
-      onDelete: 'set null',
-    }),
-    setByMemberId: uuid('set_by_member_id'),
-    setAt: timestamp('set_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    realScore: real('real_score'),
   },
-  (t) => ({ orgIdx: index('afr_org_idx').on(t.orgId) }),
+  (t) => ({
+    enrollmentPose: unique('afs_enrollment_pose_key').on(t.enrollmentId, t.pose),
+    orgIdx: index('afs_org_idx').on(t.orgId),
+  }),
 );
 
 /** A manager has looked at a flagged punch (0065); punches never change. */

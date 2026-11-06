@@ -12,6 +12,11 @@
  *   accepted. (A store-network check was dropped 2026-11-05: a Mini App
  *   cannot read the Wi-Fi name and shop broadband addresses change.)
  * - Punches are never deleted; a correction voids one (trigger-enforced).
+ * - Face only (owner decisions 2026-11-06): every self punch is checked by
+ *   face in every store. A person first enrolls their face (six guided
+ *   photos), a store manager approves it, and only then can they clock; a
+ *   face that is not theirs is refused. Without a camera that works, a
+ *   colleague's phone or a manager's manual punch is the way.
  */
 import { createHash } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
@@ -19,7 +24,6 @@ import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzl
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
-  AttendanceColleaguesInputSchema,
   AttendanceCopyWeekInputSchema,
   AttendanceLivenessChallengeInputSchema,
   AttendanceExportLinkInputSchema,
@@ -28,8 +32,9 @@ import {
   AttendanceMemberSetInputSchema,
   AttendanceOvertimeDecideInputSchema,
   AttendancePunchPhotosInputSchema,
-  AttendanceFaceRefInputSchema,
-  AttendanceFaceRefSetInputSchema,
+  AttendanceFaceEnrollDecideInputSchema,
+  AttendanceFaceEnrollInputSchema,
+  AttendanceFaceMemberInputSchema,
   AttendancePayRateSetInputSchema,
   AttendanceWageSuggestionsInputSchema,
   AttendancePolicyGetInputSchema,
@@ -54,7 +59,13 @@ import {
   getActorStoreIds,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
-import { cosine, faceFeature, MATCH_THRESHOLD, type FaceResult } from '../../services/face';
+import { faceFeature, MATCH_THRESHOLD, type FaceResult } from '../../services/face';
+import {
+  bestScore,
+  ENROLL_POSES,
+  evaluateEnrollment,
+  type EnrollPose,
+} from '../../services/face/enroll';
 import {
   CHECK_LINES,
   faceInGrayZone,
@@ -64,7 +75,6 @@ import {
 } from '../../services/face/checks';
 import {
   evaluateLiveness,
-  randomSteps,
   signLivenessToken,
   verifyLivenessToken,
   type LivenessVerdict,
@@ -173,37 +183,93 @@ function policyView(p: PolicyRow | undefined) {
         : null,
     graceMinutes: p?.graceMinutes ?? 5,
     overtimeAfterMinutes: p?.overtimeAfterMinutes ?? 30,
-    requirePhoto: p?.requirePhoto ?? false,
-    requireFace: (p?.requirePhoto ?? false) && (p?.requireFace ?? false),
-    requireLiveness:
-      (p?.requirePhoto ?? false) && (p?.requireFace ?? false) && (p?.requireLiveness ?? false),
+    // Face only, in every store (owner decision 2026-11-06).
+    requirePhoto: true,
+    requireFace: true,
+    requireLiveness: true,
     /** A photo of the place too (off by default since 2026-11-06). */
-    requireScene: (p?.requirePhoto ?? false) && (p?.requireScene ?? false),
+    requireScene: p?.requireScene ?? false,
   };
 }
 
 type FaceVerdict = {
-  result: 'match' | 'mismatch' | 'enrolled' | 'unchecked';
+  result: 'match' | 'mismatch' | 'unchecked';
   score: number | null;
 };
 
+/** Approved enrollments' features, per member. */
+async function enrolledFeatures(
+  tx: DB,
+  memberIds: readonly string[],
+): Promise<Map<string, number[][]>> {
+  const out = new Map<string, number[][]>();
+  if (memberIds.length === 0) return out;
+  const rows = await tx
+    .select({
+      memberId: s.attendanceFaceEnrollments.memberId,
+      feature: s.attendanceFaceSamples.feature,
+    })
+    .from(s.attendanceFaceSamples)
+    .innerJoin(
+      s.attendanceFaceEnrollments,
+      eq(s.attendanceFaceEnrollments.id, s.attendanceFaceSamples.enrollmentId),
+    )
+    .where(
+      and(
+        inArray(s.attendanceFaceEnrollments.memberId, [...memberIds]),
+        eq(s.attendanceFaceEnrollments.status, 'approved'),
+      ),
+    );
+  for (const r of rows) {
+    const list = out.get(r.memberId) ?? [];
+    list.push(r.feature);
+    out.set(r.memberId, list);
+  }
+  return out;
+}
+
 /**
- * The face photo against `memberId`'s reference. `enrolled` = no reference
- * yet: this face becomes it once the punch is written. `checked` is the
- * worker's answer; null = the check could not run.
+ * The face photo against `memberId`'s approved enrollment (the best of its
+ * photos counts). `checked` is the worker's answer; null = the check could
+ * not run. Null when the person has no approved enrollment.
  */
 async function faceCompare(
   tx: DB,
   memberId: string,
   checked: FaceResult | null,
-): Promise<FaceVerdict> {
+): Promise<FaceVerdict | null> {
+  const features = (await enrolledFeatures(tx, [memberId])).get(memberId);
+  if (!features?.length) return null;
   if (!checked || !checked.found) return { result: 'unchecked', score: null };
-  const ref = await tx.query.attendanceFaceRefs.findFirst({
-    where: (r, { eq: eq2 }) => eq2(r.memberId, memberId),
-  });
-  if (!ref) return { result: 'enrolled', score: null };
-  const score = cosine(ref.feature, checked.feature);
+  const score = bestScore(features, checked.feature) ?? -1;
   return { result: score >= MATCH_THRESHOLD ? 'match' : 'mismatch', score };
+}
+
+type EnrollmentRow = typeof s.attendanceFaceEnrollments.$inferSelect;
+
+/** The person's face enrollment state: the one in use and the latest one. */
+async function enrollmentState(tx: DB, memberId: string) {
+  const rows = await tx
+    .select()
+    .from(s.attendanceFaceEnrollments)
+    .where(eq(s.attendanceFaceEnrollments.memberId, memberId))
+    .orderBy(sql`${s.attendanceFaceEnrollments.createdAt} DESC`)
+    .limit(5);
+  const approved = rows.find((r) => r.status === 'approved') ?? null;
+  const latest: EnrollmentRow | null = rows[0] ?? null;
+  return { approved, latest };
+}
+
+/** What the person sees: in use, waiting, sent back, or nothing yet. */
+function enrollmentView(state: Awaited<ReturnType<typeof enrollmentState>>) {
+  const { approved, latest } = state;
+  return {
+    status: approved ? ('approved' as const) : (latest?.status ?? ('none' as const)),
+    approvedAt: approved?.decidedAt?.toISOString() ?? null,
+    /** A newer enrollment waiting or sent back while an older one is in use. */
+    pending: latest?.status === 'pending',
+    rejectedNote: latest?.status === 'rejected' ? (latest.note ?? null) : null,
+  };
 }
 
 /** Face, the two liveness turns, then the place. */
@@ -304,21 +370,21 @@ async function knownFaces(
     ids = ids.filter((id) => enabled.has(id));
   }
   if (ids.length === 0) return [];
-  const rows = await tx
-    .select({
-      memberId: s.attendanceFaceRefs.memberId,
-      feature: s.attendanceFaceRefs.feature,
-      name: s.users.displayName,
-    })
-    .from(s.attendanceFaceRefs)
-    .innerJoin(
-      s.attendanceFaceConsents,
-      eq(s.attendanceFaceConsents.memberId, s.attendanceFaceRefs.memberId),
-    )
-    .innerJoin(s.members, eq(s.members.id, s.attendanceFaceRefs.memberId))
-    .innerJoin(s.users, eq(s.users.id, s.members.userId))
-    .where(inArray(s.attendanceFaceRefs.memberId, ids));
-  return rows.map((r) => ({ memberId: r.memberId, name: r.name ?? '—', feature: r.feature }));
+  const consented = await tx
+    .select({ memberId: s.attendanceFaceConsents.memberId })
+    .from(s.attendanceFaceConsents)
+    .where(inArray(s.attendanceFaceConsents.memberId, ids));
+  const agreed = new Set(consented.map((r) => r.memberId));
+  const features = await enrolledFeatures(
+    tx,
+    ids.filter((id) => agreed.has(id)),
+  );
+  const names = new Map(roster.map((m) => [m.memberId, m.displayName]));
+  return [...features].map(([memberId, list]) => ({
+    memberId,
+    name: names.get(memberId) ?? '—',
+    features: list,
+  }));
 }
 
 /**
@@ -512,11 +578,20 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     for (const r of rows) if (!names.has(r.memberId)) names.set(r.memberId, r.displayName);
   }
   const deviceBound = new Map(devices.map((d) => [d.memberId, d.boundAt]));
-  const faceRefs = await tx
-    .select({ memberId: s.attendanceFaceRefs.memberId, setAt: s.attendanceFaceRefs.setAt })
-    .from(s.attendanceFaceRefs)
-    .where(eq(s.attendanceFaceRefs.orgId, session.orgId));
-  const faceRefAt = new Map(faceRefs.map((r) => [r.memberId, r.setAt]));
+  // Each person's face enrollment: in use, waiting, sent back or none.
+  const enrollments = await tx
+    .select({
+      memberId: s.attendanceFaceEnrollments.memberId,
+      status: s.attendanceFaceEnrollments.status,
+    })
+    .from(s.attendanceFaceEnrollments)
+    .where(eq(s.attendanceFaceEnrollments.orgId, session.orgId))
+    .orderBy(asc(s.attendanceFaceEnrollments.createdAt));
+  const faceStatus = new Map<string, 'approved' | 'pending' | 'rejected'>();
+  // The one in use wins; otherwise the latest.
+  for (const e of enrollments) {
+    if (faceStatus.get(e.memberId) !== 'approved') faceStatus.set(e.memberId, e.status);
+  }
   const view = policyView(policy);
   const summaries = rules
     .summarize({
@@ -571,7 +646,7 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         inStore: rosterIds.has(id),
         enabled: enabled.has(id),
         deviceBoundAt: deviceBound.get(id)?.toISOString() ?? null,
-        faceRefAt: faceRefAt.get(id)?.toISOString() ?? null,
+        face: faceStatus.get(id) ?? ('none' as const),
         dailyWage: rateOn(id, to),
       }))
       .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name)),
@@ -703,6 +778,7 @@ export const attendanceRouter = router({
       const consent = await tx.query.attendanceFaceConsents.findFirst({
         where: (c, { eq: eq2 }) => eq2(c.memberId, session.memberId),
       });
+      const enrollment = enrollmentView(await enrollmentState(tx, session.memberId));
       const now = new Date();
       const out = [];
       for (const store of stores) {
@@ -789,6 +865,8 @@ export const attendanceRouter = router({
           !!consent && consent.version >= ATTENDANCE_FACE_CONSENT_VERSION
             ? { at: consent.consentedAt.toISOString() }
             : null,
+        /** The face enrollment: clocking waits for an approved one. */
+        face: enrollment,
       };
     });
   }),
@@ -797,171 +875,88 @@ export const attendanceRouter = router({
    * The liveness challenge for one punch: whether it needs the head turns
    * (a risk signal or the 1-in-3 spot check, 2026-11-06) and their order,
    * signed for one punch and three minutes. `identify` = a colleague
-   * clocking on this phone, found by their face; `forMemberId` = named.
+   * clocking on this phone, found by their face.
    */
   livenessChallenge: authedProcedure
     .input(AttendanceLivenessChallengeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const session = ctx.session!;
-      const named =
-        input.forMemberId && input.forMemberId !== session.memberId ? input.forMemberId : null;
-      const borrowed = !!named || !!input.identify;
       const turns = await ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.clock');
-        if (named) await assertColleague(tx, session, store.id, named);
         // Nobody vouches for a borrowed phone: always the turns.
-        if (borrowed || input.force) return true;
+        if (input.identify || input.force) return true;
         const risk = await punchRisk(tx, session, store, input.deviceId ?? null);
         return risk.newDevice || risk.spot;
       });
       return signLivenessToken({
         org: session.orgId,
-        mid: input.identify ? IDENTIFY_MEMBER : (named ?? session.memberId),
+        mid: input.identify ? IDENTIFY_MEMBER : session.memberId,
         by: session.memberId,
         storeId: input.storeId,
-        steps: turns ? randomSteps() : [],
-      });
-    }),
-
-  /**
-   * Colleagues who can clock in on this phone (owner request 2026-11-06:
-   * a forgotten or broken phone is no excuse): same store, clocking on,
-   * a reference face on file, with the store's face check on.
-   */
-  colleagues: authedProcedure
-    .input(AttendanceColleaguesInputSchema)
-    .query(async ({ ctx, input }) => {
-      const session = ctx.session!;
-      return ctx.withOrg(async (tx) => {
-        const store = await authorize(tx, session, input.storeId, 'attendance.clock');
-        const policy = policyView(await loadPolicy(tx, store.id));
-        if (!policy.requireFace) return { available: false, members: [] };
-        const roster = (await storeRoster(tx, session.orgId, store.id)).filter(
-          (m) => m.memberId !== session.memberId,
-        );
-        const enabled = await clockEnabled(
-          tx,
-          roster.map((m) => m.memberId),
-        );
-        const refs =
-          roster.length === 0
-            ? []
-            : await tx
-                .select({ memberId: s.attendanceFaceRefs.memberId })
-                .from(s.attendanceFaceRefs)
-                .where(
-                  inArray(
-                    s.attendanceFaceRefs.memberId,
-                    roster.map((m) => m.memberId),
-                  ),
-                );
-        const withFace = new Set(refs.map((r) => r.memberId));
-        const now = new Date();
-        const recent =
-          roster.length === 0
-            ? []
-            : await tx
-                .select({
-                  memberId: s.attendancePunches.memberId,
-                  kind: s.attendancePunches.kind,
-                  at: s.attendancePunches.punchedAt,
-                })
-                .from(s.attendancePunches)
-                .where(
-                  and(
-                    inArray(
-                      s.attendancePunches.memberId,
-                      roster.map((m) => m.memberId),
-                    ),
-                    eq(s.attendancePunches.storeId, store.id),
-                    isNull(s.attendancePunches.voidedAt),
-                    gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
-                  ),
-                );
-        return {
-          available: true,
-          members: roster
-            .filter((m) => enabled.has(m.memberId))
-            .map((m) => ({
-              memberId: m.memberId,
-              name: m.displayName,
-              faceOnFile: withFace.has(m.memberId),
-              nextKind: rules.nextPunchKind(
-                recent.filter((r) => r.memberId === m.memberId),
-                now,
-              ),
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        };
+        steps: turns ? undefined : [],
       });
     }),
 
   punch: idempotentMutation.input(AttendancePunchInputSchema).mutation(async ({ ctx, input }) => {
     const session = ctx.session!;
-    const named =
-      input.forMemberId && input.forMemberId !== session.memberId ? input.forMemberId : null;
-    const identifying = !!input.identify && !named;
-    const borrowed = identifying || !!named;
+    // A colleague clocking on this phone, found by their face.
+    const identifying = !!input.identify;
+    const borrowed = identifying;
+    // Face only (2026-11-06): no face photo, no punch.
+    await ctx.withOrg(async (tx) => {
+      await authorize(tx, session, input.storeId, 'attendance.clock');
+      if (borrowed) return;
+      // The person agrees in the app, then enrolls and is approved.
+      if (!(await hasFaceConsent(tx, session.memberId))) fail('BAD_REQUEST', 'consentRequired');
+      const { approved } = await enrollmentState(tx, session.memberId);
+      if (!approved) fail('BAD_REQUEST', 'faceNotEnrolled');
+    });
+    const shots = input.photos;
+    if (!shots) fail('BAD_REQUEST', 'photoRequired');
     // The face and liveness checks (~0.5 s a frame) run before the
     // transaction, not inside it.
-    const pre = policyView(await ctx.withOrg((tx) => loadPolicy(tx, input.storeId)));
-    if (borrowed && !pre.requireFace) fail('FORBIDDEN', 'borrowNeedsFace');
-    // The person agrees in the app before their face is used (2026-11-06).
-    if (pre.requireFace && !borrowed) {
-      if (!(await ctx.withOrg((tx) => hasFaceConsent(tx, session.memberId)))) {
-        fail('BAD_REQUEST', 'consentRequired');
-      }
+    const checked = await faceFeature(photoBytes(shots.face));
+    if (!checked) fail('CONFLICT', 'faceCheckUnavailable');
+    if (!checked.found) fail('BAD_REQUEST', 'faceNotFound');
+    if (!input.liveness) fail('BAD_REQUEST', 'livenessRequired');
+    const claims = await verifyLivenessToken(input.liveness.token);
+    if (
+      !claims ||
+      claims.org !== session.orgId ||
+      claims.by !== session.memberId ||
+      claims.mid !== (identifying ? IDENTIFY_MEMBER : session.memberId) ||
+      claims.storeId !== input.storeId
+    ) {
+      fail('BAD_REQUEST', 'livenessExpired');
     }
-    let checked: FaceResult | null = null;
-    if (input.photos && pre.requireFace) {
-      checked = await faceFeature(photoBytes(input.photos.face));
-      if (checked && !checked.found) fail('BAD_REQUEST', 'faceNotFound');
-    }
-    // A borrowed phone always asks for liveness: nobody else vouches for it.
-    let live: LivenessVerdict | null = null;
-    let nonce: string | null = null;
-    let turnsAsked = false;
-    if (pre.requireLiveness || borrowed) {
-      if (!input.photos || !input.liveness) fail('BAD_REQUEST', 'livenessRequired');
-      const claims = await verifyLivenessToken(input.liveness.token);
-      if (
-        !claims ||
-        claims.org !== session.orgId ||
-        claims.by !== session.memberId ||
-        claims.mid !== (identifying ? IDENTIFY_MEMBER : (named ?? session.memberId)) ||
-        claims.storeId !== input.storeId
-      ) {
-        fail('BAD_REQUEST', 'livenessExpired');
+    const nonce = claims.nonce;
+    const turnsAsked = claims.steps.length > 0;
+    // A borrowed phone always asks for the turns: nobody else vouches for it.
+    if (borrowed && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
+    let live: LivenessVerdict;
+    if (turnsAsked) {
+      if (!input.liveness.left || !input.liveness.right) fail('BAD_REQUEST', 'livenessRequired');
+      const left = await faceFeature(photoBytes(input.liveness.left));
+      const right = await faceFeature(photoBytes(input.liveness.right));
+      live = evaluateLiveness(checked, left, right);
+      if (live.result === 'unchecked') fail('CONFLICT', 'faceCheckUnavailable');
+      // Face only: a failed check is refused; the person tries again.
+      if (live.result === 'fail') {
+        fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
       }
-      nonce = claims.nonce;
-      turnsAsked = claims.steps.length > 0;
-      if (borrowed && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
-      if (turnsAsked) {
-        if (!input.liveness.left || !input.liveness.right) fail('BAD_REQUEST', 'livenessRequired');
-        const left = await faceFeature(photoBytes(input.liveness.left));
-        const right = await faceFeature(photoBytes(input.liveness.right));
-        live = evaluateLiveness(checked, left, right);
-        if (live.result === 'fail' && (borrowed || !input.acceptLivenessFail)) {
-          fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
-        }
-        if (live.result === 'unchecked' && borrowed) fail('BAD_REQUEST', 'faceCheckUnavailable');
-      } else if (!checked) {
-        live = { result: 'unchecked', score: null, failures: [] };
-      } else if (checked.found && checked.real >= CHECK_LINES.realSure) {
-        // One face photo, plainly a real face: no turns this time.
-        live = { result: 'passive', score: checked.real, failures: [] };
-      } else {
-        // Not sure it is a real face: the same punch again with the turns.
-        fail('BAD_REQUEST', 'livenessNeeded');
-      }
+    } else if (checked.real >= CHECK_LINES.realSure) {
+      // One face photo, plainly a real face: no turns this time.
+      live = { result: 'passive', score: checked.real, failures: [] };
+    } else {
+      // Not sure it is a real face: the same punch again with the turns.
+      fail('BAD_REQUEST', 'livenessNeeded');
     }
     return ctx.withOrg(async (tx) => {
       const store = await authorize(tx, session, input.storeId, 'attendance.clock');
-      // Whose punch: this phone's person, a named colleague, or the
-      // colleague the face belongs to.
-      let target = named ?? session.memberId;
+      // Whose punch: this phone's person, or the colleague the face
+      // belongs to.
+      let target = session.memberId;
       if (identifying) {
-        if (!checked || !checked.found) fail('BAD_REQUEST', 'faceCheckUnavailable');
         const known = await knownFaces(tx, session.orgId, store.id, {
           except: session.memberId,
           colleagues: true,
@@ -979,42 +974,22 @@ export const attendanceRouter = router({
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'attendance:' + target}))`);
       const policy = policyView(await loadPolicy(tx, store.id));
       const now = new Date();
-      // Face (and, where asked, the place), taken on the spot.
-      if (policy.requirePhoto && !input.photos) fail('BAD_REQUEST', 'photoRequired');
-      if (policy.requireScene && !input.photos?.scene) fail('BAD_REQUEST', 'photoRequired');
-      if (borrowed && !policy.requireFace) fail('FORBIDDEN', 'borrowNeedsFace');
-      const photos = input.photos
-        ? {
-            face: photoBytes(input.photos.face),
-            scene: input.photos.scene ? photoBytes(input.photos.scene) : null,
-          }
-        : null;
+      // The place, where the store asks for it.
+      if (policy.requireScene && !shots.scene) fail('BAD_REQUEST', 'photoRequired');
+      const photos = {
+        face: photoBytes(shots.face),
+        scene: shots.scene ? photoBytes(shots.scene) : null,
+      };
 
-      // A failed liveness check never becomes, or is compared as, a reference.
-      const face: FaceVerdict | null =
-        photos && policy.requireFace
-          ? live?.result === 'fail'
-            ? { result: 'unchecked', score: null }
-            : await faceCompare(tx, target, checked)
-          : null;
-      if (borrowed && face?.result !== 'match') {
-        if (face?.result === 'unchecked') fail('BAD_REQUEST', 'faceCheckUnavailable');
-        fail('FORBIDDEN', face?.result === 'enrolled' ? 'borrowNoFace' : 'borrowFaceMismatch');
-      }
+      const face = await faceCompare(tx, target, checked);
+      if (!face) fail('BAD_REQUEST', borrowed ? 'borrowNoFace' : 'faceNotEnrolled');
       // A face close to the line is confirmed with the turns.
-      if (
-        policy.requireLiveness &&
-        !turnsAsked &&
-        face?.score != null &&
-        faceInGrayZone(face.score)
-      ) {
+      if (!turnsAsked && face.score != null && faceInGrayZone(face.score)) {
         fail('BAD_REQUEST', 'livenessNeeded');
       }
-      // Not this person's face: whose, among the store's people?
-      let faceLike: { memberId: string; name: string } | null = null;
-      if (face?.result === 'mismatch' && checked?.found) {
-        const known = await knownFaces(tx, session.orgId, store.id, { except: target });
-        faceLike = identify(checked.feature, known);
+      // Face only: someone else's face is refused (owner, 2026-11-06).
+      if (face.result !== 'match') {
+        fail('FORBIDDEN', borrowed ? 'borrowFaceMismatch' : 'faceMismatch');
       }
 
       // Device: the first punch binds the phone. A borrowed phone is the
@@ -1035,13 +1010,11 @@ export const attendanceRouter = router({
         } else if (device.deviceHash !== hash) {
           if (policy.requireDevice) {
             // A new phone is a risk signal: the turns, then it may clock.
-            if (policy.requireLiveness && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
+            if (!turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
             // A lost or broken phone is no excuse (owner, 2026-11-06): with
-            // the face (and liveness) confirmed, the new phone clocks too,
+            // the face and liveness confirmed, the new phone clocks too,
             // marked for the managers, who rebind it with "reset device".
-            const confirmed =
-              face?.result === 'match' && (!policy.requireLiveness || live?.result === 'pass');
-            if (!confirmed) fail('FORBIDDEN', 'otherDevice');
+            if (live.result !== 'pass') fail('FORBIDDEN', 'otherDevice');
             newDevice = true;
           }
         }
@@ -1109,8 +1082,8 @@ export const attendanceRouter = router({
           geoAccuracyM: input.location ? Math.round(input.location.accuracy) : null,
           distanceM,
           createdByMemberId: session.memberId,
-          liveness: live?.result ?? null,
-          livenessScore: live?.score ?? null,
+          liveness: live.result,
+          livenessScore: live.score,
           livenessNonce: nonce,
           viaMemberId: borrowed ? session.memberId : null,
           newDevice,
@@ -1131,43 +1104,30 @@ export const attendanceRouter = router({
           reason: input.overtimeReason ?? null,
         });
       }
-      if (photos) {
-        if (face?.result === 'enrolled') {
-          await tx.insert(s.attendanceFaceRefs).values({
-            memberId: target,
-            orgId: session.orgId,
-            feature: (checked as Extract<FaceResult, { found: true }>).feature,
-            bytes: photos.face,
-            sourcePunchId: row.id,
-            setByMemberId: target,
-          });
-        }
-        const frames: { kind: 'face' | 'scene' | 'left' | 'right'; bytes: Buffer }[] = [
-          { kind: 'face', bytes: photos.face },
-        ];
-        if (photos.scene) frames.push({ kind: 'scene', bytes: photos.scene });
-        if (turnsAsked && input.liveness?.left && input.liveness.right) {
-          frames.push(
-            { kind: 'left', bytes: photoBytes(input.liveness.left) },
-            { kind: 'right', bytes: photoBytes(input.liveness.right) },
-          );
-        }
-        await tx.insert(s.attendancePhotos).values(
-          frames.map(({ kind: k, bytes }) => ({
-            orgId: session.orgId,
-            storeId: store.id,
-            memberId: target,
-            punchId: row.id,
-            kind: k,
-            bytes,
-            takenAt: now,
-            faceResult: k === 'face' ? (face?.result ?? null) : null,
-            faceScore: k === 'face' ? (face?.score ?? null) : null,
-            faceLikeMemberId: k === 'face' ? (faceLike?.memberId ?? null) : null,
-            realScore: k === 'face' && checked?.found ? checked.real : null,
-          })),
+      const frames: { kind: 'face' | 'scene' | 'left' | 'right'; bytes: Buffer }[] = [
+        { kind: 'face', bytes: photos.face },
+      ];
+      if (photos.scene) frames.push({ kind: 'scene', bytes: photos.scene });
+      if (turnsAsked && input.liveness?.left && input.liveness.right) {
+        frames.push(
+          { kind: 'left', bytes: photoBytes(input.liveness.left) },
+          { kind: 'right', bytes: photoBytes(input.liveness.right) },
         );
       }
+      await tx.insert(s.attendancePhotos).values(
+        frames.map(({ kind: k, bytes }) => ({
+          orgId: session.orgId,
+          storeId: store.id,
+          memberId: target,
+          punchId: row.id,
+          kind: k,
+          bytes,
+          takenAt: now,
+          faceResult: k === 'face' ? face.result : null,
+          faceScore: k === 'face' ? face.score : null,
+          realScore: k === 'face' ? checked.real : null,
+        })),
+      );
 
       const tz = tzOf(store, session);
       const people = await tx
@@ -1180,27 +1140,10 @@ export const attendanceRouter = router({
       const vars = {
         name: person?.name ?? '—',
         owner: phoneOwner?.name ?? '—',
-        like: faceLike?.name ?? '—',
         store: store.name,
         time: rules.localTime(now, tz),
       };
       const flags: { template: string; title: string; key: string }[] = [];
-      if (face?.result === 'mismatch')
-        flags.push(
-          faceLike
-            ? {
-                template: 'attendance.faceLike',
-                title: 'Face looks like someone else',
-                key: 'face',
-              }
-            : { template: 'attendance.faceMismatch', title: 'Face does not match', key: 'face' },
-        );
-      if (live?.result === 'fail')
-        flags.push({
-          template: 'attendance.livenessFailed',
-          title: 'Liveness check failed',
-          key: 'live',
-        });
       if (borrowed)
         flags.push({
           template: 'attendance.borrowedPhone',
@@ -1243,8 +1186,8 @@ export const attendanceRouter = router({
       publish(session.orgId, store.id);
       return {
         id: row.id,
-        face: face?.result ?? null,
-        liveness: live?.result ?? null,
+        face: face.result,
+        liveness: live.result,
         newDevice,
         forName: borrowed ? (person?.name ?? null) : null,
         overtimeMinutes: overtime?.minutes ?? 0,
@@ -1474,11 +1417,11 @@ export const attendanceRouter = router({
           isNull(s.memberPermissionOverrides.scopeId),
         );
         await tx.delete(s.memberPermissionOverrides).where(where);
-        // Switched off clocking: their reference face goes too.
+        // Switched off clocking: their enrolled face goes too.
         if (!input.enabled)
           await tx
-            .delete(s.attendanceFaceRefs)
-            .where(eq(s.attendanceFaceRefs.memberId, input.memberId));
+            .delete(s.attendanceFaceEnrollments)
+            .where(eq(s.attendanceFaceEnrollments.memberId, input.memberId));
         if (input.enabled) {
           const member = await tx.query.members.findFirst({
             where: (m, { eq: eq2 }) => eq2(m.id, session.memberId),
@@ -1534,10 +1477,11 @@ export const attendanceRouter = router({
           geoRadiusM: input.geo?.radiusM ?? null,
           graceMinutes: input.graceMinutes,
           overtimeAfterMinutes: input.overtimeAfterMinutes,
-          requirePhoto: input.requirePhoto,
-          requireFace: input.requirePhoto && input.requireFace,
-          requireLiveness: input.requirePhoto && input.requireFace && input.requireLiveness,
-          requireScene: input.requirePhoto && (input.requireScene ?? false),
+          // Always on since 2026-11-06 (face only); kept true for the record.
+          requirePhoto: true,
+          requireFace: true,
+          requireLiveness: true,
+          requireScene: input.requireScene,
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),
         };
@@ -1704,83 +1648,218 @@ export const attendanceRouter = router({
       });
     }),
 
-  /** A member's reference face, for the manager to check. */
-  faceRef: authedProcedure.input(AttendanceFaceRefInputSchema).query(async ({ ctx, input }) => {
-    const session = ctx.session!;
-    return ctx.withOrg(async (tx) => {
-      const store = await authorize(tx, session, input.storeId, 'attendance.manage');
-      await assertInStore(tx, session.orgId, store.id, input.memberId);
-      const ref = await tx.query.attendanceFaceRefs.findFirst({
-        where: (r, { eq: eq2 }) => eq2(r.memberId, input.memberId),
-        columns: { bytes: true, setAt: true },
-      });
-      return ref
-        ? {
-            src: `data:image/jpeg;base64,${Buffer.from(ref.bytes).toString('base64')}`,
-            setAt: ref.setAt.toISOString(),
-          }
-        : null;
-    });
-  }),
-
-  /** Make a punch's face photo the member's reference face. */
-  faceRefSet: idempotentMutation
-    .input(AttendanceFaceRefSetInputSchema)
+  /**
+   * The person enrolls their face (owner decisions 2026-11-06): six photos
+   * the phone took by itself, each checked here for one clear, sharp,
+   * well-lit real face of the same person, turned where it says. It then
+   * waits for a store manager's approval; a new enrollment replaces one
+   * still waiting.
+   */
+  faceEnroll: idempotentMutation
+    .input(AttendanceFaceEnrollInputSchema)
     .mutation(async ({ ctx, input }) => {
       const session = ctx.session!;
-      const photo = await ctx.withOrg(async (tx) => {
-        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
-        const [row] = await tx
-          .select({ memberId: s.attendancePhotos.memberId, bytes: s.attendancePhotos.bytes })
-          .from(s.attendancePhotos)
+      await ctx.withOrg(async (tx) => {
+        await authorize(tx, session, input.storeId, 'attendance.clock');
+        if (!(await hasFaceConsent(tx, session.memberId))) fail('BAD_REQUEST', 'consentRequired');
+      });
+      const bytes = {} as Record<EnrollPose, Buffer>;
+      for (const pose of ENROLL_POSES) bytes[pose] = photoBytes(input.photos[pose]);
+      const results = {} as Record<EnrollPose, FaceResult>;
+      for (const pose of ENROLL_POSES) {
+        const r = await faceFeature(bytes[pose]);
+        if (!r) fail('CONFLICT', 'faceCheckUnavailable');
+        results[pose] = r;
+      }
+      const verdict = evaluateEnrollment(results);
+      if (!verdict.ok) {
+        const first = verdict.problems[0]!;
+        fail('BAD_REQUEST', 'enrollRejected', {
+          context: {
+            pose: first.pose,
+            problem: first.problem,
+            problems: verdict.problems.map((x) => `${x.pose}:${x.problem}`).join(','),
+          },
+        });
+      }
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.clock');
+        await tx
+          .delete(s.attendanceFaceEnrollments)
           .where(
             and(
-              eq(s.attendancePhotos.storeId, store.id),
-              eq(s.attendancePhotos.punchId, input.punchId),
-              eq(s.attendancePhotos.kind, 'face'),
+              eq(s.attendanceFaceEnrollments.memberId, session.memberId),
+              ne(s.attendanceFaceEnrollments.status, 'approved'),
             ),
           );
-        if (!row) fail('NOT_FOUND', 'photoNotFound');
-        if (!(await hasFaceConsent(tx, row.memberId))) fail('FORBIDDEN', 'noConsent');
-        return row;
+        const [row] = await tx
+          .insert(s.attendanceFaceEnrollments)
+          .values({ orgId: session.orgId, memberId: session.memberId, storeId: store.id })
+          .returning();
+        await tx.insert(s.attendanceFaceSamples).values(
+          ENROLL_POSES.map((pose) => {
+            const r = results[pose] as Extract<FaceResult, { found: true }>;
+            return {
+              orgId: session.orgId,
+              enrollmentId: row!.id,
+              pose,
+              feature: r.feature,
+              bytes: bytes[pose],
+              realScore: r.real,
+            };
+          }),
+        );
+        const me = await tx
+          .select({ userId: s.members.userId, name: s.users.displayName })
+          .from(s.members)
+          .innerJoin(s.users, eq(s.users.id, s.members.userId))
+          .where(eq(s.members.id, session.memberId));
+        const managers = (
+          await findRecipientsByPermissionInStore(tx, session.orgId, 'attendance.manage', store.id)
+        ).filter((u) => u !== me[0]?.userId);
+        await dispatch(tx, session.orgId, managers, {
+          template: 'attendance.faceEnrollPending',
+          title: 'Face enrollment to approve',
+          vars: { name: me[0]?.name ?? '—', store: store.name },
+          deepLink: linkForStore('/admin', store.id),
+          dedupKey: `attendance:enroll:${row!.id}`,
+        });
+        publish(session.orgId, store.id);
+        return { id: row!.id, status: 'pending' as const };
       });
-      const checked = await faceFeature(new Uint8Array(photo.bytes));
-      if (!checked) fail('CONFLICT', 'faceCheckUnavailable');
-      if (!checked.found) fail('BAD_REQUEST', 'faceNotFound');
+    }),
+
+  /** A person's face enrollments (in use and waiting) with their photos, for a manager. */
+  faceEnrollment: authedProcedure
+    .input(AttendanceFaceMemberInputSchema)
+    .query(async ({ ctx, input }) => {
+      const session = ctx.session!;
       return ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.manage');
-        const values = {
-          orgId: session.orgId,
-          feature: checked.feature,
-          bytes: Buffer.from(photo.bytes),
-          sourcePunchId: input.punchId,
-          setByMemberId: session.memberId,
-          setAt: new Date(),
+        await assertInStore(tx, session.orgId, store.id, input.memberId);
+        const rows = await tx
+          .select()
+          .from(s.attendanceFaceEnrollments)
+          .where(
+            and(
+              eq(s.attendanceFaceEnrollments.memberId, input.memberId),
+              ne(s.attendanceFaceEnrollments.status, 'rejected'),
+            ),
+          )
+          .orderBy(sql`${s.attendanceFaceEnrollments.createdAt} DESC`);
+        const samples =
+          rows.length === 0
+            ? []
+            : await tx
+                .select({
+                  enrollmentId: s.attendanceFaceSamples.enrollmentId,
+                  pose: s.attendanceFaceSamples.pose,
+                  bytes: s.attendanceFaceSamples.bytes,
+                })
+                .from(s.attendanceFaceSamples)
+                .where(
+                  inArray(
+                    s.attendanceFaceSamples.enrollmentId,
+                    rows.map((r) => r.id),
+                  ),
+                );
+        const order = (p: string) => ENROLL_POSES.indexOf(p as EnrollPose);
+        return rows.map((r) => ({
+          id: r.id,
+          status: r.status,
+          createdAt: r.createdAt.toISOString(),
+          decidedAt: r.decidedAt?.toISOString() ?? null,
+          photos: samples
+            .filter((x) => x.enrollmentId === r.id)
+            .sort((a, b) => order(a.pose) - order(b.pose))
+            .map((x) => ({
+              pose: x.pose,
+              src: `data:image/jpeg;base64,${Buffer.from(x.bytes).toString('base64')}`,
+            })),
+        }));
+      });
+    }),
+
+  /**
+   * A manager approves a waiting enrollment (it replaces the one in use)
+   * or sends it back with a reason (its photos are deleted). Nobody
+   * approves their own face.
+   */
+  faceEnrollDecide: idempotentMutation
+    .input(AttendanceFaceEnrollDecideInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const row = await tx.query.attendanceFaceEnrollments.findFirst({
+          where: (e, { eq: eq2 }) => eq2(e.id, input.enrollmentId),
+        });
+        if (!row || row.status !== 'pending') fail('NOT_FOUND', 'enrollmentNotFound');
+        await assertInStore(tx, session.orgId, store.id, row.memberId);
+        if (row.memberId === session.memberId) fail('FORBIDDEN', 'enrollOwn');
+        const decided = {
+          decidedByMemberId: session.memberId,
+          decidedAt: new Date(),
+          note: input.note || null,
         };
-        await tx
-          .insert(s.attendanceFaceRefs)
-          .values({ memberId: photo.memberId, ...values })
-          .onConflictDoUpdate({ target: s.attendanceFaceRefs.memberId, set: values });
+        if (input.approve) {
+          await tx
+            .delete(s.attendanceFaceEnrollments)
+            .where(
+              and(
+                eq(s.attendanceFaceEnrollments.memberId, row.memberId),
+                eq(s.attendanceFaceEnrollments.status, 'approved'),
+              ),
+            );
+          await tx
+            .update(s.attendanceFaceEnrollments)
+            .set({ status: 'approved', ...decided })
+            .where(eq(s.attendanceFaceEnrollments.id, row.id));
+        } else {
+          await tx
+            .update(s.attendanceFaceEnrollments)
+            .set({ status: 'rejected', ...decided })
+            .where(eq(s.attendanceFaceEnrollments.id, row.id));
+          await tx
+            .delete(s.attendanceFaceSamples)
+            .where(eq(s.attendanceFaceSamples.enrollmentId, row.id));
+        }
+        const person = await tx.query.members.findFirst({
+          where: (m, { eq: eq2 }) => eq2(m.id, row.memberId),
+          columns: { userId: true },
+        });
+        if (person) {
+          await dispatch(tx, session.orgId, [person.userId], {
+            template: input.approve
+              ? 'attendance.faceEnrollApproved'
+              : 'attendance.faceEnrollRejected',
+            title: input.approve ? 'Face enrollment approved' : 'Face enrollment sent back',
+            vars: { store: store.name, note: input.note ?? '' },
+            deepLink: '/attendance',
+            dedupKey: `attendance:enrolled:${row.id}`,
+          });
+        }
         publish(session.orgId, store.id);
         return { ok: true as const };
       });
     }),
 
-  /** Forget a member's reference face; their next punch enrolls again. */
-  faceRefClear: idempotentMutation
-    .input(AttendanceFaceRefInputSchema)
+  /** Delete a person's enrolled face; they enroll again before clocking. */
+  faceEnrollReset: idempotentMutation
+    .input(AttendanceFaceMemberInputSchema)
     .mutation(async ({ ctx, input }) => {
       const session = ctx.session!;
       return ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.manage');
         await assertInStore(tx, session.orgId, store.id, input.memberId);
         await tx
-          .delete(s.attendanceFaceRefs)
-          .where(eq(s.attendanceFaceRefs.memberId, input.memberId));
+          .delete(s.attendanceFaceEnrollments)
+          .where(eq(s.attendanceFaceEnrollments.memberId, input.memberId));
         publish(session.orgId, store.id);
         return { ok: true as const };
       });
     }),
+
   /** The person agrees to their face being used to check their punches. */
   faceConsentGive: idempotentMutation
     .input(AttendanceFaceConsentInputSchema)
@@ -1797,7 +1876,7 @@ export const attendanceRouter = router({
     }),
 
   /**
-   * Withdraw: the consent and the reference face are deleted. Stores that
+   * Withdraw: the consent and the enrolled face are deleted. Stores that
    * check faces then refuse this person's punches until they agree again
    * (a manager can still add punches by hand).
    */
@@ -1808,8 +1887,8 @@ export const attendanceRouter = router({
         .delete(s.attendanceFaceConsents)
         .where(eq(s.attendanceFaceConsents.memberId, session.memberId));
       await tx
-        .delete(s.attendanceFaceRefs)
-        .where(eq(s.attendanceFaceRefs.memberId, session.memberId));
+        .delete(s.attendanceFaceEnrollments)
+        .where(eq(s.attendanceFaceEnrollments.memberId, session.memberId));
       return { ok: true as const };
     });
   }),
@@ -1891,7 +1970,35 @@ export const attendanceRouter = router({
               isNull(s.attendancePunches.voidedAt),
             ),
           );
+        // Face enrollments waiting for a manager, of this store's people.
+        const roster = await storeRoster(tx, session.orgId, store.id);
+        const rosterName = new Map(roster.map((m) => [m.memberId, m.displayName]));
+        const waiting =
+          roster.length === 0
+            ? []
+            : await tx
+                .select({
+                  id: s.attendanceFaceEnrollments.id,
+                  memberId: s.attendanceFaceEnrollments.memberId,
+                  createdAt: s.attendanceFaceEnrollments.createdAt,
+                })
+                .from(s.attendanceFaceEnrollments)
+                .where(
+                  and(
+                    inArray(s.attendanceFaceEnrollments.memberId, [...rosterName.keys()]),
+                    eq(s.attendanceFaceEnrollments.status, 'pending'),
+                  ),
+                )
+                .orderBy(asc(s.attendanceFaceEnrollments.createdAt));
         return {
+          enrollments: waiting.map((e) => ({
+            id: e.id,
+            memberId: e.memberId,
+            name: rosterName.get(e.memberId) ?? '—',
+            own: e.memberId === session.memberId,
+            date: dateInTz(e.createdAt, tz),
+            time: rules.localTime(e.createdAt, tz),
+          })),
           punches: rows.map((r) => ({
             id: r.id,
             memberId: r.memberId,

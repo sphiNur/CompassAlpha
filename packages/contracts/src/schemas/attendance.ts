@@ -39,7 +39,10 @@ export const AttendancePunchInputSchema = z.object({
   location: AttendanceLocationSchema.nullable().optional(),
   /** Why a clock-out runs well past the shift; the server asks for it. */
   overtimeReason: z.string().trim().min(1).max(300).optional(),
-  /** Taken on the spot when the store asks for photos: base64 JPEGs. */
+  /**
+   * Taken on the spot (base64 JPEGs): the face, always (face-only
+   * clocking, 2026-11-06), and the place where the store asks for it.
+   */
   photos: z
     .object({ face: AttendancePhotoSchema, scene: AttendancePhotoSchema.optional() })
     .optional(),
@@ -55,17 +58,12 @@ export const AttendancePunchInputSchema = z.object({
       right: AttendancePhotoSchema.optional(),
     })
     .optional(),
-  /** After two failed liveness tries: clock anyway, flagged for the managers. */
-  acceptLivenessFail: z.boolean().optional(),
-  /** Clocking on a colleague's phone: whose punch this is (same store). */
-  forMemberId: UuidSchema.optional(),
   /** Clocking on a colleague's phone: the server finds who it is by the face. */
   identify: z.boolean().optional(),
 });
 
 export const AttendanceLivenessChallengeInputSchema = z.object({
   storeId: UuidSchema,
-  forMemberId: UuidSchema.optional(),
   identify: z.boolean().optional(),
   /** This phone and place: a new phone or an unknown place asks for turns. */
   deviceId: AttendanceDeviceIdSchema.optional(),
@@ -85,7 +83,33 @@ export const AttendanceFaceConsentInputSchema = z.object({
   version: z.number().int().min(1).max(1000),
 });
 
-export const AttendanceColleaguesInputSchema = z.object({ storeId: UuidSchema });
+/**
+ * A guided face enrollment (2026-11-06): six photos, taken by the phone
+ * when the head is where the prompt asks.
+ */
+export const AttendanceFaceEnrollInputSchema = z.object({
+  storeId: UuidSchema,
+  photos: z.object({
+    front: AttendancePhotoSchema,
+    left: AttendancePhotoSchema,
+    right: AttendancePhotoSchema,
+    up: AttendancePhotoSchema,
+    down: AttendancePhotoSchema,
+    front2: AttendancePhotoSchema,
+  }),
+});
+
+/** A manager approves an enrollment, or sends it back with a reason. */
+export const AttendanceFaceEnrollDecideInputSchema = z
+  .object({
+    storeId: UuidSchema,
+    enrollmentId: UuidSchema,
+    approve: z.boolean(),
+    note: z.string().trim().max(300).optional(),
+  })
+  .refine((v) => v.approve || (v.note ?? '').length > 0, {
+    message: 'attendance.errors.enrollNoteRequired',
+  });
 
 const reason = z.string().trim().min(1).max(300);
 
@@ -163,9 +187,7 @@ export const AttendancePolicySaveInputSchema = z
       .nullable(),
     graceMinutes: z.number().int().min(0).max(120),
     overtimeAfterMinutes: z.number().int().min(5).max(240).default(30),
-    requirePhoto: z.boolean().default(false),
-    requireFace: z.boolean().default(false),
-    requireLiveness: z.boolean().default(false),
+    /** Face, liveness and the photo are always on (2026-11-06); the place photo is a choice. */
     requireScene: z.boolean().default(false),
   })
   .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
@@ -204,13 +226,8 @@ export const AttendancePunchPhotosInputSchema = z.object({
   punchId: UuidSchema,
 });
 
-/** Make a punch's face photo the member's reference face. */
-export const AttendanceFaceRefSetInputSchema = z.object({
-  storeId: UuidSchema,
-  punchId: UuidSchema,
-});
-
-export const AttendanceFaceRefInputSchema = z.object({
+/** One person's face enrollment, for a manager. */
+export const AttendanceFaceMemberInputSchema = z.object({
   storeId: UuidSchema,
   memberId: UuidSchema,
 });

@@ -2794,10 +2794,6 @@ export const en = {
   'attendance.export.flag.early': 'Left early',
   'attendance.export.flag.onDuty': 'On shift',
   'attendance.export.flag.upcoming': 'Not started',
-  'attendance.rules.photoLine': 'A face photo with each punch',
-  'attendance.photo.faceTitle': 'Your face first',
-  'attendance.photo.faceHint':
-    'Front camera. Look at the screen with your whole face in the frame, in good light.',
   'attendance.photo.sceneTitle': 'Now the place',
   'attendance.photo.sceneHint':
     'Rear camera. Show where you are: the shop, the counter or the door.',
@@ -2811,34 +2807,18 @@ export const en = {
   'attendance.photo.problem.unsupported': 'The camera does not open here',
   'attendance.photo.problem.denied': 'No access to the camera',
   'attendance.photo.problem.unavailable': 'The camera did not start',
-  'attendance.photo.useSystemCamera': 'Take the photo with the phone camera instead.',
-  'attendance.photo.openSystemCamera': 'Open the phone camera',
   'attendance.photo.show': 'Show photos',
-  'attendance.settings.requirePhoto': 'Photos when clocking',
-  'attendance.settings.requirePhotoHint':
-    'Each clock-in and clock-out takes a face photo on the spot with the front camera. Kept 90 days; only managers see them.',
-  'attendance.errors.photoRequired': 'This store needs the photos to clock.',
+  'attendance.errors.photoRequired': 'Clocking needs the photos taken on the spot.',
   'attendance.errors.photoInvalid': 'The photo could not be read. Take it again.',
   'attendance.face.match': 'Face matches',
   'attendance.face.mismatch': 'Face does not match',
   'attendance.face.enrolled': 'Face registered',
   'attendance.face.unchecked': 'Face not checked',
   'attendance.face.score': 'similarity {score}%',
-  'attendance.face.useAsRef': 'Use as their face',
-  'attendance.face.refSaved': 'Their face is updated',
-  'attendance.face.refSet': 'Face registered',
-  'attendance.face.refNotYet': 'No face yet: the next clock-in registers it',
   'attendance.face.showRef': 'Show',
   'attendance.face.hideRef': 'Hide',
-  'attendance.face.clear': 'Register again',
-  'attendance.face.clearConfirm':
-    'Remove the registered face of {name}? Their next clock-in registers a new one.',
-  'attendance.face.refAlt': 'Registered face of {name}',
-  'attendance.settings.requireFace': 'Face check',
-  'attendance.settings.requireFaceHint':
-    'Matches the face photo with the face registered for that person. The first clock-in registers it; you can change it from a punch photo. A photo without a face is taken again; a mismatch is recorded and you are told.',
   'attendance.photo.reviewHintFace':
-    'Only your managers see these photos. They are deleted after 90 days. The face photo is matched with your registered face.',
+    'Only your managers see these photos. They are deleted after 90 days. The face photo is matched with your enrolled face.',
   'attendance.errors.faceNotFound':
     'No face found in the photo. Face the camera in good light and take it again.',
   'attendance.errors.faceCheckUnavailable':
@@ -2856,52 +2836,32 @@ export const en = {
     'This store needs the live face check to clock. Update the app and try again.',
   'attendance.errors.livenessExpired': 'The face check took too long. Start again.',
   'attendance.errors.livenessFailed':
-    'The live face check did not pass. Face the camera in good light and turn your head when asked.',
-  'attendance.errors.borrowNeedsFace':
-    "Clocking on a colleague's phone needs the store's face check to be on.",
-  'attendance.errors.borrowNoFace':
-    'This person has no registered face yet. They clock on their own phone once first.',
-  'attendance.errors.borrowFaceMismatch': 'The face does not match the person you chose.',
+    'The live check did not pass. Face the camera in good light and turn your head as asked.',
+  'attendance.errors.borrowNoFace': 'This colleague has not enrolled their face yet.',
+  'attendance.errors.borrowFaceMismatch': 'The face does not match this colleague.',
   'attendance.errors.notColleague': 'On your phone you can clock in only colleagues of this store.',
   'attendance.live.lookTitle': 'Look at the camera',
   'attendance.live.turnLeft': 'Turn your head left',
   'attendance.live.turnRight': 'Turn your head right',
   'attendance.live.autoHint':
-    'Follow the prompts: each photo is taken by itself. You can also tap the button.',
-  'attendance.live.manualHint': 'Do what the prompt asks, then tap the photo button each time.',
+    'Follow the prompt; the photo is taken by itself once your head is in place.',
   'attendance.live.guide.noFace': 'No face in view',
   'attendance.live.guide.manyFaces': 'Only one face, please',
   'attendance.live.guide.lookStraight': 'Look straight at the camera',
   'attendance.live.guide.turnMore': 'Turn a little more',
   'attendance.live.progress': 'Face photos {done}/{total}',
-  'attendance.live.failedTitle': 'The live face check did not pass',
-  'attendance.live.failedBody':
-    'Face the camera in good light, then turn your head slowly when asked. Try again.',
-  'attendance.live.clockAnyway': 'Clock anyway (managers are told)',
   'attendance.live.flaggedNote': 'This punch is marked for your managers to check.',
   'attendance.live.badge.pass': 'Live face',
   'attendance.live.badge.fail': 'Liveness failed',
   'attendance.live.badge.unchecked': 'Liveness not checked',
   'attendance.photo.left': 'Turned left',
   'attendance.photo.right': 'Turned right',
-  'attendance.rules.livenessLine': 'Sometimes the check also asks for head turns',
   'attendance.borrow.open': 'Clock in a colleague on this phone',
-  'attendance.borrow.title': 'Clock in a colleague',
-  'attendance.borrow.hint':
-    'For a colleague of this store who has no phone with them. They take their own face photos here; the managers and they are told.',
-  'attendance.borrow.emptyTitle': 'No one to clock in',
-  'attendance.borrow.emptyBody':
-    'Only colleagues of this store switched on for clocking appear here.',
-  'attendance.borrow.noFace': 'No registered face yet',
-  'attendance.borrow.forWhom': 'Clocking: {name}',
   'attendance.borrow.doneIn': '{name} clocked in at {time}',
   'attendance.borrow.doneOut': '{name} clocked out at {time}',
   'attendance.borrow.badge': "Colleague's phone",
   'attendance.borrow.via': "Clocked on {name}'s phone",
   'attendance.device.newBadge': 'New phone',
-  'attendance.settings.requireLiveness': 'Liveness check',
-  'attendance.settings.requireLivenessHint':
-    'Usually one face photo, checked for a real face. On a new or borrowed phone, when the photo is unclear, and on about one punch in three, the person also turns their head left and right. After two failed tries they can clock anyway; the punch is marked and you are told.',
   'attendance.export.col.checks': 'Checks',
   'attendance.export.check.livenessFailed': 'Liveness failed',
   'attendance.export.check.borrowed': "On {name}'s phone",
@@ -2921,39 +2881,34 @@ export const en = {
   'notify.attendance.clockedOutForYou.title': 'You were clocked out',
   'notify.attendance.clockedOutForYou.body':
     "You were clocked out at {store} at {time} on {owner}'s phone. If this was not you, tell your manager.",
-  'attendance.live.preparingShort': 'Getting face tracking ready…',
   'attendance.live.preparing':
     'Getting face tracking ready. The first time it downloads a few MB; please wait.',
   'attendance.live.preparingPercent': 'Getting face tracking ready: {percent}%',
-  'attendance.live.slow':
-    'The network is slow. You can take the photos yourself: do what the prompt asks, then tap the button.',
-  'attendance.live.shootAnyway': 'Take photo now',
-  'attendance.errors.consentRequired': 'Agree to the face check first, then clock again.',
+  'attendance.live.slow': 'The network is slow; face tracking is still downloading. Please wait.',
+  'attendance.errors.consentRequired': 'Agree to the face check first.',
   'attendance.errors.borrowNoConsent':
     'This colleague has not agreed to the face check yet. They agree on their own phone first.',
   'attendance.errors.livenessNeeded': 'This time the check also needs the head turns.',
   'attendance.errors.notRecognized':
     'The face was not recognised as anyone at this store. Try again in good light, or ask a manager to add the punch.',
-  'attendance.errors.noConsent':
-    'This person has not agreed to the face check, so their face cannot be registered.',
   'attendance.borrow.identifyHint':
     'Your colleague looks at the camera; the app recognises who it is.',
   'attendance.borrow.identifySend': 'Clock',
   'attendance.consent.title': 'Face check',
   'attendance.consent.intro':
-    'This store checks a face photo with each clock-in and clock-out, so nobody can clock for someone else.',
+    'Clock-ins and clock-outs are checked by face, so nobody can clock for someone else.',
   'attendance.consent.kept':
-    'Your registered face and the punch photos are kept; punch photos are deleted after 90 days.',
+    'Your enrolled face photos and the punch photos are kept; punch photos are deleted after 90 days.',
   'attendance.consent.who':
     "Only your store's managers see them. They are used only for attendance.",
   'attendance.consent.withdrawNote':
-    'You can withdraw on this screen at any time; your registered face is then deleted, and a manager adds your punches by hand.',
+    'You can withdraw on this screen at any time; your enrolled face is then deleted, and a manager adds your punches by hand.',
   'attendance.consent.agree': 'I agree',
   'attendance.consent.notNow': 'Not now',
   'attendance.consent.withdraw': 'Withdraw face check consent',
   'attendance.consent.withdrawTitle': 'Withdraw consent?',
   'attendance.consent.withdrawBody':
-    'Your registered face is deleted. At this store you then cannot clock on the phone; a manager adds your punches by hand.',
+    'Your enrolled face is deleted. You then cannot clock on the phone; a manager adds your punches by hand.',
   'attendance.settings.requireScene': 'Photo of the place',
   'attendance.settings.requireSceneHint':
     'After the face, a photo with the rear camera of where the person is. Off: the face photo alone.',
@@ -2971,4 +2926,93 @@ export const en = {
   'notify.attendance.faceLike.title': 'Face looks like someone else',
   'notify.attendance.faceLike.body':
     '{name} clocked at {store} at {time}, but the face looks like {like}. Check the punch photos.',
+  'attendance.errors.faceNotEnrolled':
+    'Enroll your face first; you can clock once a manager approves it.',
+  'attendance.errors.faceMismatch':
+    'This face does not match yours, so the punch was not recorded.',
+  'attendance.errors.enrollRejected': 'Some photos could not be used. Enroll again.',
+  'attendance.errors.enrollmentNotFound': 'This enrollment is no longer waiting for approval.',
+  'attendance.errors.enrollOwn': 'You cannot approve your own face. Another manager approves it.',
+  'attendance.errors.enrollNoteRequired': 'Say why the enrollment is sent back.',
+  'attendance.errors.enrollFailed': 'Could not submit the face enrollment.',
+  'attendance.face.refusedBody':
+    'Try again facing the camera in good light. If it still fails, ask a manager to add the punch.',
+  'attendance.face.cannotTitle': 'This phone cannot take the face photos',
+  'attendance.face.cannotBody':
+    "The camera or face tracking does not work here. Clock on a colleague's phone, or ask a manager to add the punch.",
+  'attendance.face.cannotDenied':
+    'Camera access is off. Allow the camera for Telegram in the phone settings, then try again.',
+  'attendance.enroll.start': 'Enroll my face',
+  'attendance.enroll.redo': 'Enroll my face again',
+  'attendance.enroll.again': 'Start over',
+  'attendance.enroll.submit': 'Submit for approval',
+  'attendance.enroll.newPending':
+    'Your new face enrollment is waiting for approval; the current one stays in use until then.',
+  'attendance.enroll.card.none.title': 'Enroll your face first',
+  'attendance.enroll.card.none.body':
+    'Clocking is by face only. Take six photos as the app asks (about a minute); you can clock once a manager approves them.',
+  'attendance.enroll.card.pending.title': "Waiting for a manager's approval",
+  'attendance.enroll.card.pending.body':
+    'Your face photos are with the manager. You can clock once they are approved.',
+  'attendance.enroll.card.rejected.title': 'Face enrollment sent back',
+  'attendance.enroll.card.rejected.body': 'Enroll your face again.',
+  'attendance.enroll.card.approved.title': 'Face enrolled',
+  'attendance.enroll.card.approved.body': 'You can clock in and out by face.',
+  'attendance.enroll.card.note': "Manager's note: {note}",
+  'attendance.enroll.hint':
+    'Follow the prompt; each photo is taken by itself once your head is in place. Good light, no hat or mask.',
+  'attendance.enroll.reviewTitle': 'Check your photos',
+  'attendance.enroll.reviewHint':
+    'A manager looks at these photos and approves them. Only managers of your store see them.',
+  'attendance.enroll.pose.front': 'Look straight',
+  'attendance.enroll.pose.left': 'Turn left',
+  'attendance.enroll.pose.right': 'Turn right',
+  'attendance.enroll.pose.up': 'Chin up a little',
+  'attendance.enroll.pose.down': 'Chin down a little',
+  'attendance.enroll.pose.front2': 'Look straight again',
+  'attendance.enroll.rejectedTitle': 'Some photos could not be used',
+  'attendance.enroll.problemLine': '{pose}: {problem}',
+  'attendance.enroll.problem.noFace': 'no face found',
+  'attendance.enroll.problem.manyFaces': 'more than one person',
+  'attendance.enroll.problem.small': 'face too far away',
+  'attendance.enroll.problem.dark': 'too dark',
+  'attendance.enroll.problem.bright': 'too bright',
+  'attendance.enroll.problem.blurry': 'blurry',
+  'attendance.enroll.problem.notFacing': 'not facing the camera',
+  'attendance.enroll.problem.notTurned': 'head not turned enough',
+  'attendance.enroll.problem.otherPerson': 'does not look like the same person',
+  'attendance.enroll.problem.spoof': 'does not look like a real face',
+  'attendance.enroll.cannotBody':
+    'The camera or face tracking does not work on this phone. Enroll on another phone with your own Telegram account.',
+  'attendance.enroll.status.approved': 'Face enrolled',
+  'attendance.enroll.status.pending': 'Face waiting for approval',
+  'attendance.enroll.status.rejected': 'Face sent back; not enrolled',
+  'attendance.enroll.status.none': 'Face not enrolled yet',
+  'attendance.enroll.reset': 'Ask to enroll again',
+  'attendance.enroll.resetConfirm':
+    "Delete {name}'s enrolled face? They cannot clock until they enroll again and it is approved.",
+  'attendance.enroll.photoAlt': '{name}: {pose}',
+  'attendance.rules.faceOnlyLine': 'Clock by face only: the photos are taken by themselves',
+  'attendance.settings.faceOnly': 'Face check: always on',
+  'attendance.settings.faceOnlyHint':
+    'Everyone clocks by face. Each person enrolls their face once and a manager approves it under To check.',
+  'attendance.review.enrollTitle': 'Face enrollments to approve',
+  'attendance.review.enrollInUse': 'Face in use now:',
+  'attendance.review.enrollOwn': 'Your own face: another manager approves it.',
+  'attendance.review.enrollApprove': 'Approve',
+  'attendance.review.enrollReject': 'Send back',
+  'attendance.review.enrollReasonLabel': 'Why is it sent back?',
+  'attendance.review.enrollReasonPlaceholder': 'e.g. not this person, too dark',
+  'attendance.live.guide.closer': 'Come a little closer',
+  'attendance.live.guide.chinUp': 'Lift your chin a little',
+  'attendance.live.guide.chinDown': 'Lower your chin a little',
+  'notify.attendance.faceEnrollPending.title': 'Face enrollment to approve',
+  'notify.attendance.faceEnrollPending.body':
+    '{name} enrolled their face at {store}. Check the photos under Attendance → To check.',
+  'notify.attendance.faceEnrollApproved.title': 'Face enrollment approved',
+  'notify.attendance.faceEnrollApproved.body':
+    'Your face is approved at {store}. You can clock by face now.',
+  'notify.attendance.faceEnrollRejected.title': 'Face enrollment sent back',
+  'notify.attendance.faceEnrollRejected.body':
+    'Your face enrollment at {store} was sent back. Reason: «{note}». Please enroll again.',
 } as const;

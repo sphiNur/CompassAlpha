@@ -4,6 +4,8 @@
  * 112×112 template → SFace (128-d feature, L2-normalised).
  * Liveness (2026-11-06): head turn from the landmarks (`yaw`) and the
  * MiniFASNet pair's real-face probability (`real`).
+ * Enrollment (2026-11-06): how usable the photo is (`quality`): how many
+ * faces, how big, how bright and how sharp.
  * Models and licenses: apps/api/models/face/README.md.
  */
 import { readFile } from 'node:fs/promises';
@@ -290,9 +292,77 @@ export async function loadEngine(): Promise<Engine> {
   };
 }
 
+/**
+ * How the nose sits between the eyes and the mouth, top to bottom: about
+ * 0.5 looking straight; smaller with the chin up, larger with it down.
+ */
+export function pitchOf(face: Face): number {
+  const [e1, e2, nose, m1, m2] = face.landmarks as [number, number][];
+  const eyes = (e1![1] + e2![1]) / 2;
+  const mouth = (m1![1] + m2![1]) / 2;
+  const span = mouth - eyes || 1;
+  return (nose![1] - eyes) / span;
+}
+
+/** Mean brightness (0–255) inside the face box. */
+export function lightOf(img: Image, face: Face): number {
+  const [x, y, w, h] = face.box;
+  let sum = 0;
+  let n = 0;
+  for (let j = 0; j < 24; j++) {
+    for (let i = 0; i < 24; i++) {
+      const sx = Math.min(img.width - 1, Math.max(0, Math.floor(x + ((i + 0.5) * w) / 24)));
+      const sy = Math.min(img.height - 1, Math.max(0, Math.floor(y + ((j + 0.5) * h) / 24)));
+      const k = (sy * img.width + sx) * 4;
+      sum += 0.299 * img.data[k]! + 0.587 * img.data[k + 1]! + 0.114 * img.data[k + 2]!;
+      n++;
+    }
+  }
+  return sum / n;
+}
+
+/** Sharpness: variance of the Laplacian over the aligned 112×112 face. */
+export function sharpOf(aligned: Float32Array): number {
+  const plane = 112 * 112;
+  const gray = (i: number) => (aligned[i]! + aligned[plane + i]! + aligned[2 * plane + i]!) / 3;
+  let sum = 0;
+  let sq = 0;
+  let n = 0;
+  for (let y = 1; y < 111; y++) {
+    for (let x = 1; x < 111; x++) {
+      const i = y * 112 + x;
+      const lap = gray(i - 112) + gray(i + 112) + gray(i - 1) + gray(i + 1) - 4 * gray(i);
+      sum += lap;
+      sq += lap * lap;
+      n++;
+    }
+  }
+  const mean = sum / n;
+  return sq / n - mean * mean;
+}
+
+export interface FaceQuality {
+  /** Faces in the photo. */
+  faces: number;
+  /** The face's width as a share of the photo's. */
+  size: number;
+  /** 0–255. */
+  light: number;
+  sharp: number;
+  pitch: number;
+}
+
 export type FaceResult =
   | { found: false }
-  | { found: true; score: number; feature: number[]; yaw: number; real: number };
+  | {
+      found: true;
+      score: number;
+      feature: number[];
+      yaw: number;
+      real: number;
+      /** Not set by test stubs. */
+      quality?: FaceQuality;
+    };
 
 /** The largest face's feature, or none found. */
 export async function faceFeature(engine: Engine, bytes: Uint8Array): Promise<FaceResult> {
@@ -302,11 +372,19 @@ export async function faceFeature(engine: Engine, bytes: Uint8Array): Promise<Fa
   const face = faces.reduce((best, f) =>
     f.box[2] * f.box[3] > best.box[2] * best.box[3] ? f : best,
   );
+  const aligned = align(img, face);
   return {
     found: true,
     score: face.score,
-    feature: await embed(engine.recognizer, align(img, face)),
+    feature: await embed(engine.recognizer, aligned),
     yaw: yawOf(face),
     real: await realness(engine.spoof, img, face),
+    quality: {
+      faces: faces.length,
+      size: face.box[2] / img.width,
+      light: lightOf(img, face),
+      sharp: sharpOf(aligned),
+      pitch: pitchOf(face),
+    },
   };
 }

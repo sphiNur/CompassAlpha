@@ -11,7 +11,8 @@
  */
 import { createHmac } from 'node:crypto';
 import { env } from '../../env';
-import { cosine, MATCH_THRESHOLD } from './index';
+import { bestScore } from './enroll';
+import { MATCH_THRESHOLD } from './index';
 
 /** One punch in this many gets the turns anyway. */
 export const SPOT_CHECK_EVERY = 3;
@@ -39,7 +40,8 @@ export function faceInGrayZone(score: number): boolean {
 export interface KnownFace {
   memberId: string;
   name: string;
-  feature: readonly number[];
+  /** The person's enrolled features; the best match counts. */
+  features: readonly (readonly number[])[];
 }
 
 /**
@@ -51,7 +53,11 @@ export function identify(
   known: readonly KnownFace[],
 ): { memberId: string; name: string; score: number } | null {
   const ranked = known
-    .map((k) => ({ memberId: k.memberId, name: k.name, score: cosine(k.feature, feature) }))
+    .map((k) => ({
+      memberId: k.memberId,
+      name: k.name,
+      score: bestScore(k.features, feature) ?? -1,
+    }))
     .sort((a, b) => b.score - a.score);
   const best = ranked[0];
   if (!best || best.score < MATCH_THRESHOLD) return null;
