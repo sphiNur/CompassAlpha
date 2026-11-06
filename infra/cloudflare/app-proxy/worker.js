@@ -208,6 +208,17 @@ async function currentOrigin(env) {
             } catch (error) {
               console.warn('could not persist the accepted origin to KV', error);
             }
+          } else if (found.ts === null && found.url !== lastAccepted) {
+            // Unsigned mode (no ORIGIN_SIGNING_KEY) never wrote KV, so a
+            // cold isolate whose ntfy poll timed out served the stale
+            // manual origin (2026-11-06). Write only on a change.
+            try {
+              if ((await env.COMPASS_ORIGIN.get('url')) !== found.url) {
+                await env.COMPASS_ORIGIN.put('url', found.url);
+              }
+            } catch (error) {
+              console.warn('could not persist the accepted origin to KV', error);
+            }
           }
           lastAccepted = found.url;
           originCache = { url: found.url, readAt: Date.now() };
