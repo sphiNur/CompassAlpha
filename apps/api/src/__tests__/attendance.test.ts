@@ -74,6 +74,8 @@ interface Fixture {
   colleagueUserId: string;
   colleague: () => ReturnType<typeof appRouter.createCaller>;
   manager: ReturnType<typeof appRouter.createCaller>;
+  /** The manager, also a super admin. */
+  superAdmin: () => ReturnType<typeof appRouter.createCaller>;
   staff: () => ReturnType<typeof appRouter.createCaller>;
 }
 let fx: Fixture | null = null;
@@ -324,6 +326,10 @@ beforeAll(async () => {
     colleagueUserId: colleague.userId,
     colleague: () => appRouter.createCaller(buildCtx(session(colleague, ['attendance.clock']))),
     manager: appRouter.createCaller(buildCtx(session(mgr, ['attendance.manage']))),
+    superAdmin: () =>
+      appRouter.createCaller(
+        buildCtx({ ...session(mgr, ['attendance.manage']), roleSlugs: new Set(['super_admin']) }),
+      ),
     staff: () => appRouter.createCaller(buildCtx(session(staff, ['attendance.clock']))),
   };
 });
@@ -938,6 +944,19 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
       }),
       'attendance.errors.enrollOwn',
     );
+    // ...except a super admin (owner, 2026-11-07): nobody is above them.
+    const asSuper = await f.superAdmin().attendance.reviewQueue({ storeId: f.storeId });
+    expect(asSuper.enrollments.find((e) => e.id === own!.id)!.own).toBe(false);
+    await f.superAdmin().attendance.faceEnrollDecide({
+      storeId: f.storeId,
+      enrollmentId: own!.id,
+      approve: true,
+    });
+    const [decided] = await db
+      .select()
+      .from(s.attendanceFaceEnrollments)
+      .where(eq(s.attendanceFaceEnrollments.id, own!.id));
+    expect(decided).toMatchObject({ status: 'approved', decidedByMemberId: f.managerId });
     await db.delete(s.attendanceFaceEnrollments).where(eq(s.attendanceFaceEnrollments.id, own!.id));
 
     // A manager asks for it again: no punch until a new one is approved.
