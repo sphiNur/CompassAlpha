@@ -637,6 +637,8 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     timezone: tz,
     today: todayInTz(tz, now),
     graceMinutes: view.graceMinutes,
+    /** The store's clock-in area, for the map. */
+    geo: view.geo,
     requireFace: view.requireFace,
     requireLiveness: view.requireLiveness,
     members: [...memberIds]
@@ -661,6 +663,11 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
       source: p.source,
       reason: p.reason,
       distanceM: p.distanceM,
+      /** Where the phone was (for the map), when it sent a location. */
+      location:
+        p.geoLat != null && p.geoLng != null
+          ? { lat: Number(p.geoLat), lng: Number(p.geoLng), accuracyM: p.geoAccuracyM }
+          : null,
       photos: photoKinds.get(p.id) ?? [],
       face: (faceOf.get(p.id) ?? null) as {
         result: 'match' | 'mismatch' | 'enrolled' | 'unchecked';

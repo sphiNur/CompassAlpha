@@ -23,6 +23,7 @@ import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendan
 import { minutesText } from '../../lib/attendanceFormat';
 import { currencyOf, formatMoney } from '../../lib/format';
 import { useAuthStore } from '../../stores/authStore';
+import { GeoMap } from '../../components/geo/GeoMap';
 import { trpc } from '../../lib/trpc';
 
 type SheetData = AttendanceSheetData;
@@ -452,6 +453,7 @@ function MemberDaySheet({
     >
       <div className="flex flex-col gap-3 py-3">
         <FlagBadges day={day} />
+        <PunchMap data={data} punches={punches} />
         {punches.length === 0 ? (
           <p className="text-old-body text-[var(--c-fg-muted)]">
             {i18n.t('attendance.sheet.noPunches')}
@@ -931,5 +933,41 @@ function ShiftSheet({
         </div>
       ) : null}
     </Sheet>
+  );
+}
+
+/**
+ * Where the day's punches were, on a map with the store's area
+ * (2026-11-07): green inside, red outside, the faint circle the phone's
+ * accuracy. Only punches that carried a location.
+ */
+function PunchMap({ data, punches }: { data: SheetData; punches: readonly Punch[] }) {
+  const i18n = useI18n();
+  const placed = punches.filter((p) => p.location && !p.voided);
+  if (placed.length === 0) return null;
+  const area = data.geo;
+  return (
+    <section className="flex flex-col gap-1">
+      <h3 className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+        {i18n.t('attendance.map.punches')}
+      </h3>
+      <GeoMap
+        area={area}
+        points={placed.map((p) => {
+          const outside =
+            area !== null &&
+            p.distanceM !== null &&
+            p.distanceM > area.radiusM + Math.min(p.location!.accuracyM ?? 0, 50);
+          return {
+            lat: p.location!.lat,
+            lng: p.location!.lng,
+            accuracyM: p.location!.accuracyM,
+            tone: outside ? ('outside' as const) : ('inside' as const),
+            label: `${p.time} ${i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')}`,
+          };
+        })}
+        label={i18n.t('attendance.map.punches')}
+      />
+    </section>
   );
 }

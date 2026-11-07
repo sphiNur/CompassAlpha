@@ -39,7 +39,15 @@ import { useStoreContext } from '../components/StoreSwitcher';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { useOnline } from '../hooks/useOnline';
 import { attendanceDeviceId, devicePlatform } from '../lib/attendanceDevice';
-import { currentLocation, isLocationError, openLocationSettings } from '../lib/attendanceLocation';
+import {
+  currentLocation,
+  distanceMeters,
+  isLocationError,
+  openLocationSettings,
+  type Fix as LocationFix,
+  type LocationFailure,
+} from '../lib/attendanceLocation';
+import { GeoMap, type GeoArea } from '../components/geo/GeoMap';
 import { errorVars, serverErrorKey } from '../lib/errorText';
 import { useErrToast } from '../lib/errToast';
 import { minutesText } from '../lib/attendanceFormat';
@@ -430,6 +438,9 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   {i18n.t('attendance.enroll.newPending')}
                 </p>
               ) : null}
+              {store.rules.requireGeo && store.rules.geo ? (
+                <WhereAmI area={store.rules.geo} />
+              ) : null}
               <ul className="flex flex-col gap-0.5 text-old-label text-[var(--c-fg-muted)]">
                 {store.rules.requireDevice ? (
                   <li>{i18n.t('attendance.rules.deviceLine')}</li>
@@ -550,6 +561,73 @@ function ClockPanel({ storeId }: { storeId: string }) {
 }
 
 /** Before the first punch: enroll the face, wait for approval, or enroll again. */
+/**
+ * The store's clock-in area on a map, and on request where the phone is
+ * now: whether a punch here would be inside it (2026-11-07). The server
+ * decides at the punch; this is only a look.
+ */
+function WhereAmI({ area }: { area: GeoArea }) {
+  const i18n = useI18n();
+  const [fix, setFix] = useState<LocationFix | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [problem, setProblem] = useState<LocationFailure | null>(null);
+  const locate = async () => {
+    setLocating(true);
+    setProblem(null);
+    try {
+      setFix(await currentLocation());
+    } catch (e) {
+      setProblem(isLocationError(e) ? e.reason : 'unavailable');
+    } finally {
+      setLocating(false);
+    }
+  };
+  const distance = fix ? Math.round(distanceMeters(fix, area)) : null;
+  const inside = distance !== null && distance <= area.radiusM;
+  return (
+    <section className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
+      <GeoMap
+        area={area}
+        points={
+          fix
+            ? [
+                {
+                  lat: fix.lat,
+                  lng: fix.lng,
+                  accuracyM: Math.round(fix.accuracy),
+                  tone: inside ? 'inside' : 'outside',
+                },
+              ]
+            : []
+        }
+        label={i18n.t('attendance.map.label')}
+        className="h-48 w-full overflow-hidden rounded-[var(--r-utility)]"
+      />
+      {fix && distance !== null ? (
+        <p
+          className={`text-old-body font-semibold ${inside ? 'text-[var(--c-success-ink)]' : 'text-[var(--c-danger-ink)]'}`}
+          aria-live="polite"
+        >
+          {inside
+            ? i18n.t('attendance.map.inside', { m: distance })
+            : i18n.t('attendance.map.outside', { m: distance - area.radiusM })}
+          <span className="block text-old-label font-normal text-[var(--c-fg-muted)]">
+            {i18n.t('attendance.map.accuracy', { m: Math.round(fix.accuracy) })}
+          </span>
+        </p>
+      ) : null}
+      {problem ? (
+        <p className="text-old-label text-[var(--c-danger-ink)]">
+          {i18n.t(`attendance.location.${problem}.title`)}
+        </p>
+      ) : null}
+      <Button variant="secondary" size="sm" loading={locating} onClick={() => void locate()}>
+        {i18n.t('attendance.map.whereAmI')}
+      </Button>
+    </section>
+  );
+}
+
 function EnrollCard({
   status,
   note,

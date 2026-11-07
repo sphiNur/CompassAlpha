@@ -2923,4 +2923,11 @@ export const ru = {
   'attendance.enroll.pose.downleft': 'Вниз и влево',
   'attendance.enroll.pose.downright': 'Вниз и вправо',
   'attendance.enroll.errorCode': 'Подробности для поддержки: {code}',
+  'attendance.map.label': 'Карта зоны отметки',
+  'attendance.map.dragHint': 'Перетащите метку на магазин; отмечаться можно внутри круга.',
+  'attendance.map.whereAmI': 'Показать, где я',
+  'attendance.map.inside': 'Вы в зоне отметки, {m} м от магазина.',
+  'attendance.map.outside': 'Вы вне зоны отметки: до неё ещё {m} м по прямой.',
+  'attendance.map.accuracy': 'Точность ±{m} м',
+  'attendance.map.punches': 'Где отмечался',
 } as const satisfies Record<CatalogKey, string>;

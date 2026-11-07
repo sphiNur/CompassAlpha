@@ -437,6 +437,13 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
       device: OTHER_DEVICE,
       location: { ...SHOP, accuracy: 5 },
     });
+    // The map: the area and where the phone was.
+    const today = todayInTz(TZ);
+    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: today, to: today });
+    expect(sheet.geo).toEqual({ ...SHOP, radiusM: 100 });
+    const placed = sheet.punches.find((p) => p.id === ok.id);
+    expect(placed?.location?.lat).toBeCloseTo(SHOP.lat + 0.0005, 6);
+    expect(placed?.location?.accuracyM).toBe(15);
     await f.manager.attendance.policySave({ ...base, requireGeo: false, geo: null });
   });
 
