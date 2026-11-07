@@ -1,18 +1,20 @@
 /**
- * Face enrollment (owner decisions 2026-11-06), in the manner of Face ID:
+ * Face enrollment (owner decisions 2026-11-06), in the manner of Face ID
+ * (continuous since 2026-11-07):
  *
- *   1. The face in the circle, looking straight: the first photo.
- *   2. A slow circle of the head. The ticks around the circle light where
- *      the head points, and a photo is kept in each of eight directions as
- *      the head passes it. The ring is full when all eight are in.
- *   3. Straight again: the last photo. Then it is sent by itself.
+ *   1. The face in the circle, looking straight: kept the moment it is
+ *      steady, and the ring starts.
+ *   2. A slow circle of the head. The ticks light wherever the head points,
+ *      on every video frame; in each of eight directions the steadiest
+ *      frame is kept in the background. Nothing to hold still for.
+ *   3. Back to straight: the last frame. Then it is sent by itself.
  *
- * Nothing is tapped: every photo is taken by the face tracker. The server
- * checks them (one clear, sharp, well-lit real face of the same person,
- * turned where it says); a store manager then approves before the person
- * can clock. The two side turns are required (they carry the liveness
- * check); if the tilts or diagonals do not come after a while, the ring
- * finishes without them.
+ * Nothing is tapped. The server checks the frames (one clear, sharp,
+ * well-lit real face of the same person, turned where it says); a store
+ * manager then approves before the person can clock. The two side turns
+ * are required (they carry the liveness check); if the tilts or diagonals
+ * do not come after a while, the ring finishes without them.
+ * The ring's logic: faceRing.ts (createRingSession).
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Banner, Button, Sheet } from '@compass/ui';
@@ -21,10 +23,17 @@ import { haptic } from '../../hooks/useTelegram';
 import { serverErrorKey } from '../../lib/errorText';
 import { useErrToast } from '../../lib/errToast';
 import { trpc } from '../../lib/trpc';
-import { basicGuide, useCamera, useTracker, type Guide } from './faceCapture';
-import { headDirection, poseAt, RING, TICKS, ticksNear, ticksOf, type RingPose } from './faceRing';
+import { useCamera, useTracker } from './faceCapture';
+import {
+  createRingSession,
+  RING,
+  TICKS,
+  type EnrollShot,
+  type RingGuide,
+  type RingStage,
+} from './faceRing';
 
-type Pose = 'front' | RingPose | 'front2';
+type Pose = EnrollShot;
 const POSES: readonly Pose[] = ['front', ...RING.map((r) => r.pose), 'front2'];
 type Problem =
   | 'noFace'
@@ -50,22 +59,10 @@ const PROBLEMS: readonly Problem[] = [
   'spoof',
 ];
 
-type Phase = 'position' | 'circle' | 'final' | 'sending' | 'done' | 'problems';
+type Phase = Exclude<RingStage, 'over'> | 'sending' | 'done' | 'problems';
 
-const STRAIGHT_MAX = 0.12;
-/** Closer than for a punch: the reference should be sharp. */
-const MIN_SIZE = 0.25;
-/** How far off the middle of the frame the face may be. */
-const CENTER_X = 0.18;
-const CENTER_Y = 0.22;
-/** Readings in a row (~120 ms apart) before a straight photo is taken. */
-const HOLD = 3;
-/** Ticks lit around where the head points right now (degrees each side). */
-const POINTER = 9;
-/** After this long in the circle, a hint to go slower and wider. */
-const SLOW_HINT_MS = 12_000;
-/** After this long, the circle finishes without the tilts it has not caught. */
-const CIRCLE_GIVE_UP_MS = 30_000;
+/** At most one tracker reading per this many ms (~20 a second). */
+const FRAME_MS = 50;
 
 export function FaceEnrollSheet({
   open,
@@ -82,17 +79,15 @@ export function FaceEnrollSheet({
   const errToast = useErrToast();
   const [phase, setPhase] = useState<Phase>('position');
   const [lit, setLit] = useState<ReadonlySet<number>>(new Set());
-  const [guide, setGuide] = useState<Guide | 'center' | null>(null);
+  const [guide, setGuide] = useState<RingGuide | null>(null);
   const [slow, setSlow] = useState(false);
   const [problems, setProblems] = useState<{ pose: Pose; problem: Problem }[]>([]);
   const [round, setRound] = useState(0);
-  // Kept out of state: the tracker loop reads and writes them every 120 ms.
+  // Kept out of state: the frame loop writes them.
   const shots = useRef<Partial<Record<Pose, string>>>({});
-  const basePitch = useRef(0.5);
 
   const restart = () => {
     shots.current = {};
-    basePitch.current = 0.5;
     setPhase('position');
     setLit(new Set());
     setGuide(null);
@@ -105,7 +100,7 @@ export function FaceEnrollSheet({
   }, [open]);
 
   const capturing = open && (phase === 'position' || phase === 'circle' || phase === 'final');
-  const track = useTracker(open);
+  const track = useTracker(open, 'landmarker');
   const cam = useCamera(capturing ? 'user' : null);
 
   const enroll = trpc.attendance.faceEnroll.useMutation({
@@ -154,91 +149,56 @@ export function FaceEnrollSheet({
   };
   const sendRef = useRef(send);
   sendRef.current = send;
+  const grabRef = useRef(cam.grab);
+  grabRef.current = cam.grab;
 
-  // One tracker loop for the three capture phases.
+  // One loop, on the video's frames, for the whole ring.
+  const loopOn = capturing && cam.ready && !cam.problem && track.state === 'ready';
   useEffect(() => {
-    if (!capturing || !cam.ready || cam.problem || track.state !== 'ready') return;
     const tracker = track.tracker;
     const video = cam.video;
-    if (!tracker || !video) return;
-    const started = performance.now();
-    let held = 0;
-    let lastPose: RingPose | null = null;
-    const timer = setInterval(() => {
-      const r = tracker.read(video);
-      const basic = basicGuide(r, MIN_SIZE);
-      if (phase === 'position' || phase === 'final') {
-        let next: Guide | 'center' | null = basic;
-        if (!next && r.cx !== null && r.cy !== null) {
-          if (Math.abs(r.cx - 0.5) > CENTER_X || Math.abs(r.cy - 0.5) > CENTER_Y) next = 'center';
-        }
-        if (!next && Math.abs(r.yaw!) > STRAIGHT_MAX) next = 'lookStraight';
-        setGuide(next);
-        held = next === null ? held + 1 : 0;
-        if (held < HOLD) return;
-        const b64 = cam.grab();
-        if (!b64) return;
-        clearInterval(timer);
-        haptic('light');
-        setGuide(null);
-        if (phase === 'position') {
-          shots.current.front = b64;
-          basePitch.current = r.pitch ?? 0.5;
-          setPhase('circle');
-        } else {
-          shots.current.front2 = b64;
-          sendRef.current();
-        }
-        return;
-      }
-      // The circle.
-      const elapsed = performance.now() - started;
-      if (elapsed > SLOW_HINT_MS) setSlow(true);
-      const have = shots.current;
-      const finish = () => {
-        clearInterval(timer);
-        setLit(new Set(Array.from({ length: TICKS }, (_, i) => i)));
-        haptic('success');
-        setTimeout(() => setPhase('final'), 500);
-      };
-      if (elapsed > CIRCLE_GIVE_UP_MS && have.left && have.right) {
-        finish();
-        return;
-      }
-      if (basic || r.pitch === null) {
-        setGuide(basic === 'closer' || basic === 'manyFaces' ? basic : null);
-        lastPose = null;
-        return;
-      }
-      setGuide(null);
-      const d = headDirection(r.yaw!, r.pitch, basePitch.current);
-      const pose = poseAt(d);
-      const add = d.reach >= 0.7 ? ticksNear(d.angle, POINTER) : [];
-      // The same direction twice in a row before its photo is kept.
-      const keep = pose !== null && pose === lastPose && !have[pose];
-      lastPose = pose;
-      if (keep) {
-        const b64 = cam.grab();
+    if (!loopOn || !tracker || !video) return;
+    const session = createRingSession();
+    let raf = 0;
+    let lastAt = 0;
+    let shown: {
+      stage: RingStage;
+      guide: RingGuide | null;
+      lit: ReadonlySet<number>;
+      slow: boolean;
+    } = { stage: 'position', guide: null, lit: new Set(), slow: false };
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      if (now - lastAt < FRAME_MS) return;
+      lastAt = now;
+      const step = session.step(tracker.read(video), now);
+      if (step.grab) {
+        const b64 = grabRef.current();
         if (b64) {
-          have[pose] = b64;
-          haptic('light');
-          add.push(...ticksOf(pose));
+          shots.current[step.grab] = b64;
+          session.took(step.grab);
+          if (step.grab === 'front' || step.grab === 'front2') haptic('light');
         }
       }
-      if (add.length) {
-        setLit((prev) => {
-          if (add.every((i) => prev.has(i))) return prev;
-          const next = new Set(prev);
-          for (const i of add) next.add(i);
-          return next;
-        });
+      const stage = session.stage;
+      if (stage !== shown.stage) {
+        if (stage === 'final') haptic('success');
+        if (stage === 'over') {
+          cancelAnimationFrame(raf);
+          sendRef.current();
+          return;
+        }
+        setPhase(stage);
       }
-      if (RING.every((x) => have[x.pose])) finish();
-    }, 120);
-    return () => clearInterval(timer);
-    // `cam.grab` and the refs are read fresh each tick; `round` restarts it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [capturing, phase, cam.ready, cam.problem, cam.video, track.state, track.tracker, round]);
+      if (step.guide !== shown.guide) setGuide(step.guide);
+      if (step.lit !== shown.lit) setLit(step.lit);
+      if (step.slow !== shown.slow) setSlow(step.slow);
+      shown = { stage, guide: step.guide, lit: step.lit, slow: step.slow };
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // `round` starts a new session.
+  }, [loopOn, cam.video, track.tracker, round]);
 
   const cannot = capturing && (cam.problem !== null || track.state === 'failed');
   const title = i18n.t(
@@ -325,7 +285,9 @@ export function FaceEnrollSheet({
                 ? i18n.t('attendance.enroll.center')
                 : guide
                   ? i18n.t(`attendance.live.guide.${guide}`)
-                  : ''}
+                  : phase === 'final'
+                    ? i18n.t('attendance.live.guide.lookStraight')
+                    : ''}
           </p>
         ) : null}
 
@@ -374,7 +336,7 @@ function FaceRing({
         strokeLinecap="round"
         style={{
           stroke: on ? 'var(--c-success)' : 'var(--c-divider)',
-          transition: 'stroke 150ms',
+          transition: 'stroke 120ms',
         }}
       />
     );
