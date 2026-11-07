@@ -17,7 +17,7 @@
  * face, not picked from a list.
  *
  * Face only (owner decisions 2026-11-06): the person first agrees, then
- * enrolls their face (six guided photos) and waits for a manager's
+ * enrolls their face (a Face ID-style ring) and waits for a manager's
  * approval; only then is the clock button there. Every punch is checked
  * against that face, and the photos are taken by the face tracker alone.
  */
@@ -215,8 +215,13 @@ function ClockPanel({ storeId }: { storeId: string }) {
   }, []);
   const face = me.data?.face ?? null;
   const enrolled = face?.status === 'approved';
+  // The enrollment ring's own tracker, while the person still has to enroll.
+  const mustEnroll = me.data !== undefined && !enrolled && face?.status !== 'pending';
+  useEffect(() => {
+    if (mustEnroll) void loadFaceTracker('landmarker');
+  }, [mustEnroll]);
 
-  /** Agree first, then the six photos. */
+  /** Agree first, then the ring. */
   const startEnroll = (consented = false) => {
     if (!consented && !me.data?.faceConsent) {
       setConsentFor('enroll');

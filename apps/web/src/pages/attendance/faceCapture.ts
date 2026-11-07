@@ -17,6 +17,7 @@ import {
   onTrackerProgress,
   type FaceReading,
   type FaceTracker,
+  type TrackerKind,
 } from '../../lib/faceTracker';
 
 export type CameraProblem = 'unsupported' | 'denied' | 'unavailable';
@@ -81,8 +82,8 @@ export function useCamera(facing: Facing | null) {
   return { video, setVideo, ready, setReady, problem, grab };
 }
 
-/** The face tracker while `open`: downloaded once (~4 MB), then cached. */
-export function useTracker(open: boolean) {
+/** The face tracker while `open`: downloaded once (a few MB), then cached. */
+export function useTracker(open: boolean, kind: TrackerKind = 'detector') {
   const [tracker, setTracker] = useState<FaceTracker | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [percent, setPercent] = useState(0);
@@ -91,9 +92,9 @@ export function useTracker(open: boolean) {
     if (!open) return;
     let cancelled = false;
     setSlow(false);
-    const stop = onTrackerProgress((p) => setPercent(Math.floor((p.loaded / p.total) * 100)));
+    const stop = onTrackerProgress((p) => setPercent(Math.floor((p.loaded / p.total) * 100)), kind);
     const timer = setTimeout(() => setSlow(true), 30_000);
-    void loadFaceTracker().then((t) => {
+    void loadFaceTracker(kind).then((t) => {
       if (cancelled) return;
       setTracker(t);
       setState(t ? 'ready' : 'failed');
@@ -103,7 +104,7 @@ export function useTracker(open: boolean) {
       stop();
       clearTimeout(timer);
     };
-  }, [open]);
+  }, [open, kind]);
   return { tracker, state, percent, slow };
 }
 
