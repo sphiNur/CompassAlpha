@@ -695,7 +695,7 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
-  test('the face always, the place where asked; managers see them; 90 days', async () => {
+  test('the face only, no place photo (2026-11-07); managers see it; 90 days', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
     await resetPunches(f.staffId);
@@ -707,38 +707,35 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
       graceMinutes: 5,
       overtimeAfterMinutes: 30,
     };
+    // An old page that still sends the switch: it is not kept.
     await f.manager.attendance.policySave({ ...rules, requireScene: true });
     expect((await f.staff().attendance.me({})).stores[0]!.rules).toMatchObject({
       requirePhoto: true,
       requireFace: true,
       requireLiveness: true,
-      requireScene: true,
+      requireScene: false,
     });
     const token = () => passiveToken(f.staffId);
-    // The place is asked for.
-    await expectError(
-      clock(f.staff(), { token: await token() }),
-      'attendance.errors.photoRequired',
-    );
     const notJpeg = Buffer.from('not a photo at all').toString('base64');
     await expectError(
       f.staff().attendance.punch({
         storeId: f.storeId,
         kind: 'in',
         deviceId: OTHER_DEVICE,
-        photos: { face: notJpeg, scene: notJpeg },
+        photos: { face: notJpeg },
         liveness: { token: await token() },
       }),
       'attendance.errors.photoInvalid',
     );
+    // A place photo from an old page is not stored.
     const done = await clock(f.staff(), { token: await token(), scene: 'shop' });
     expect(done.liveness).toBe('passive');
 
     const date = dateInTz(new Date(done.at), TZ);
     const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    expect(sheet.punches.find((p) => p.id === done.id)!.photos.sort()).toEqual(['face', 'scene']);
+    expect(sheet.punches.find((p) => p.id === done.id)!.photos).toEqual(['face']);
     const photos = await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id });
-    expect(photos.map((p) => p.kind)).toEqual(['face', 'scene']);
+    expect(photos.map((p) => p.kind)).toEqual(['face']);
     expect(photos[0]!.src).toBe(`data:image/jpeg;base64,${jpeg('Ali:front')}`);
     await expectError(
       f.staff().attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
@@ -750,7 +747,7 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
     await db.execute(
       sql`UPDATE inventory.attendance_photos SET taken_at = now() - interval '91 days' WHERE punch_id = ${done.id}`,
     );
-    expect(await purgeOldAttendancePhotos(db)).toBe(2);
+    expect(await purgeOldAttendancePhotos(db)).toBe(1);
     expect(
       await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
     ).toEqual([]);

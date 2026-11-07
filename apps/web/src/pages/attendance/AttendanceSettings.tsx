@@ -304,7 +304,6 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const utils = trpc.useUtils();
   const [requireDevice, setRequireDevice] = useState(initial.requireDevice);
   const [requireGeo, setRequireGeo] = useState(initial.requireGeo);
-  const [requireScene, setRequireScene] = useState(initial.requireScene);
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
   const [grace, setGrace] = useState(String(initial.graceMinutes));
@@ -367,14 +366,6 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
         <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('attendance.settings.faceOnlyHint')}
         </p>
-        <div className="mt-3">
-          <Switch
-            label={i18n.t('attendance.settings.requireScene')}
-            hint={i18n.t('attendance.settings.requireSceneHint')}
-            checked={requireScene}
-            onChange={(e) => setRequireScene(e.target.checked)}
-          />
-        </div>
       </div>
 
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
@@ -468,7 +459,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             storeId,
             requireDevice,
             requireGeo,
-            requireScene,
+            requireScene: false,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,

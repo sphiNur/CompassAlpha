@@ -2794,19 +2794,12 @@ export const en = {
   'attendance.export.flag.early': 'Left early',
   'attendance.export.flag.onDuty': 'On shift',
   'attendance.export.flag.upcoming': 'Not started',
-  'attendance.photo.sceneTitle': 'Now the place',
-  'attendance.photo.sceneHint':
-    'Rear camera. Show where you are: the shop, the counter or the door.',
   'attendance.photo.reviewTitle': 'Check the photos',
   'attendance.photo.reviewHint':
     'Only your managers see these photos. They are deleted after 90 days.',
   'attendance.photo.face': 'Face',
   'attendance.photo.scene': 'Place',
   'attendance.photo.retake': 'Retake',
-  'attendance.photo.shoot': 'Take photo',
-  'attendance.photo.problem.unsupported': 'The camera does not open here',
-  'attendance.photo.problem.denied': 'No access to the camera',
-  'attendance.photo.problem.unavailable': 'The camera did not start',
   'attendance.photo.show': 'Show photos',
   'attendance.errors.photoRequired': 'Clocking needs the photos taken on the spot.',
   'attendance.errors.photoInvalid': 'The photo could not be read. Take it again.',
@@ -2909,10 +2902,6 @@ export const en = {
   'attendance.consent.withdrawTitle': 'Withdraw consent?',
   'attendance.consent.withdrawBody':
     'Your enrolled face is deleted. You then cannot clock on the phone; a manager adds your punches by hand.',
-  'attendance.settings.requireScene': 'Photo of the place',
-  'attendance.settings.requireSceneHint':
-    'After the face, a photo with the rear camera of where the person is. Off: the face photo alone.',
-  'attendance.rules.sceneLine': 'And a photo of the place',
   'attendance.face.like': 'Looks like {name}',
   'attendance.live.badge.passive': 'Real face (photo)',
   'attendance.view.review': 'To check',

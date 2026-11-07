@@ -2680,19 +2680,12 @@ export const uz = {
   'attendance.export.flag.early': 'Erta ketdi',
   'attendance.export.flag.onDuty': 'Smenada',
   'attendance.export.flag.upcoming': 'Hali boshlanmagan',
-  'attendance.photo.sceneTitle': 'Endi joy',
-  'attendance.photo.sceneHint':
-    'Orqa kamera. Qayerdaligingizni koʻrsating: doʻkon, peshtaxta yoki eshik.',
   'attendance.photo.reviewTitle': 'Suratlarni tekshiring',
   'attendance.photo.reviewHint':
     'Bu suratlarni faqat boshqaruvchilar koʻradi. 90 kundan keyin oʻchiriladi.',
   'attendance.photo.face': 'Yuz',
   'attendance.photo.scene': 'Joy',
   'attendance.photo.retake': 'Qayta olish',
-  'attendance.photo.shoot': 'Suratga olish',
-  'attendance.photo.problem.unsupported': 'Bu yerda kamera ochilmaydi',
-  'attendance.photo.problem.denied': 'Kameraga ruxsat yoʻq',
-  'attendance.photo.problem.unavailable': 'Kamera ishga tushmadi',
   'attendance.photo.show': 'Suratlarni koʻrsatish',
   'attendance.errors.photoRequired': 'Belgilanish uchun joyida olingan suratlar kerak.',
   'attendance.errors.photoInvalid': 'Suratni oʻqib boʻlmadi. Qayta oling.',
@@ -2794,10 +2787,6 @@ export const uz = {
   'attendance.consent.withdrawTitle': 'Rozilik qaytarib olinsinmi?',
   'attendance.consent.withdrawBody':
     'Roʻyxatdagi yuz oʻchiriladi. Keyin telefonda belgilanib boʻlmaydi, belgilarni rahbar qoʻshadi.',
-  'attendance.settings.requireScene': 'Joy surati',
-  'attendance.settings.requireSceneHint':
-    'Yuzdan keyin orqa kamera bilan xodim turgan joy surati. Oʻchiq: faqat yuz surati.',
-  'attendance.rules.sceneLine': 'Va joy surati',
   'attendance.face.like': 'Oʻxshash: {name}',
   'attendance.live.badge.passive': 'Jonli yuz (surat)',
   'attendance.view.review': 'Tekshirish',

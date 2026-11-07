@@ -306,7 +306,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
       deviceId,
       platform: devicePlatform(),
       location: attempt.location,
-      photos: photos ? { face: photos.face, scene: photos.scene } : undefined,
+      photos: photos ? { face: photos.face } : undefined,
       liveness: attempt.challenge
         ? { token: attempt.challenge.token, left: photos?.left, right: photos?.right }
         : undefined,
@@ -449,7 +449,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   <li>{i18n.t('attendance.rules.geoLine', { radius: store.rules.geo.radiusM })}</li>
                 ) : null}
                 <li>{i18n.t('attendance.rules.faceOnlyLine')}</li>
-                {store.rules.requireScene ? <li>{i18n.t('attendance.rules.sceneLine')}</li> : null}
               </ul>
               <Button
                 variant="ghost"
@@ -511,7 +510,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 open={camera !== null}
                 kind={camera?.identify ? null : store.nextKind}
                 turns={camera?.challenge?.steps ?? null}
-                scene={store.rules.requireScene}
                 identifying={camera?.identify ?? false}
                 busy={punch.isPending}
                 onCancel={() => setCamera(null)}

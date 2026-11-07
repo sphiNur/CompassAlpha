@@ -189,7 +189,8 @@ function policyView(p: PolicyRow | undefined) {
     requireFace: true,
     requireLiveness: true,
     /** A photo of the place too (off by default since 2026-11-06). */
-    requireScene: p?.requireScene ?? false,
+    // The place photo was removed (owner, 2026-11-07): never asked for.
+    requireScene: false,
   };
 }
 
@@ -988,10 +989,10 @@ export const attendanceRouter = router({
       const policy = policyView(await loadPolicy(tx, store.id));
       const now = new Date();
       // The place, where the store asks for it.
-      if (policy.requireScene && !shots.scene) fail('BAD_REQUEST', 'photoRequired');
       const photos = {
         face: photoBytes(shots.face),
-        scene: shots.scene ? photoBytes(shots.scene) : null,
+        // A place photo from a phone still on the old page is not kept.
+        scene: null,
       };
 
       const face = await faceCompare(tx, target, checked);
@@ -1494,7 +1495,7 @@ export const attendanceRouter = router({
           requirePhoto: true,
           requireFace: true,
           requireLiveness: true,
-          requireScene: input.requireScene,
+          requireScene: false,
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),
         };
