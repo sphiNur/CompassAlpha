@@ -3029,4 +3029,17 @@ export const en = {
   'attendance.live.guide.closeMouth': 'Close your mouth first',
   'attendance.photo.blink': 'Blink',
   'attendance.photo.mouth': 'Open mouth',
+  'admin.errors.memberHasAttendance':
+    "This person has attendance records, so they can't be removed. Suspend them instead: the records are kept.",
+  'attendance.errors.manageOwn':
+    "You can't change your own attendance or wage. Ask another manager or a super admin.",
+  'attendance.errors.identifyIsOwner':
+    "That's your own face. To clock yourself in or out, use the Clock in / Clock out button.",
+  'attendance.errors.photoReused': 'These pictures were sent before. Do the face check again.',
+  'attendance.sheet.ownHint':
+    'Your own attendance and wage: another manager or a super admin changes them.',
+  'attendance.flag.missedShift': 'Missed a shift',
+  'attendance.export.flag.missedShift': 'Missed a shift',
+  'settlement.wages.fromAttendanceReasonMissed':
+    'Attendance: daily wage {wage}, late {late} min, left early {early} min, missed shift {missed} min, −{deduction}',
 } as const;

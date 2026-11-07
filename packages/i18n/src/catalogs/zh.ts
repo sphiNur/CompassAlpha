@@ -2604,4 +2604,13 @@ export const zh = {
   'attendance.live.guide.closeMouth': '请先闭上嘴',
   'attendance.photo.blink': '眨眼',
   'attendance.photo.mouth': '张嘴',
+  'admin.errors.memberHasAttendance': '此人有考勤记录，不能移除。请改为停用，考勤记录会保留。',
+  'attendance.errors.manageOwn': '不能修改自己的考勤或日薪，请让其他管理员或超级管理员处理。',
+  'attendance.errors.identifyIsOwner': '这是你自己的脸。给自己打卡请点「上班打卡」或「下班打卡」。',
+  'attendance.errors.photoReused': '这些照片之前已经提交过，请重新做一次人脸检查。',
+  'attendance.sheet.ownHint': '你自己的考勤和日薪由其他管理员或超级管理员修改。',
+  'attendance.flag.missedShift': '缺一个班次',
+  'attendance.export.flag.missedShift': '缺一个班次',
+  'settlement.wages.fromAttendanceReasonMissed':
+    '考勤：日薪 {wage}，迟到 {late} 分钟，早退 {early} 分钟，缺班 {missed} 分钟，扣 {deduction}',
 } as const satisfies Record<CatalogKey, string>;

@@ -116,7 +116,12 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                     </Button>
                   ) : null}
                   {m.enabled ? (
-                    <WageField storeId={storeId} memberId={m.memberId} current={m.dailyWage} />
+                    <WageField
+                      storeId={storeId}
+                      memberId={m.memberId}
+                      current={m.dailyWage}
+                      own={m.own}
+                    />
                   ) : null}
                   {m.enabled ? (
                     <FaceEnrollLine
@@ -243,10 +248,13 @@ function WageField({
   storeId,
   memberId,
   current,
+  own,
 }: {
   storeId: string;
   memberId: string;
   current: string | null;
+  /** The manager's own wage: only a super admin sets it (2026-11-07). */
+  own: boolean;
 }) {
   const i18n = useI18n();
   const toast = useToast();
@@ -266,24 +274,33 @@ function WageField({
   });
   return (
     <div className="mt-2 flex items-end gap-2">
-      <Field label={i18n.t('attendance.settings.dailyWage')} className="min-w-0 flex-1">
+      <Field
+        label={i18n.t('attendance.settings.dailyWage')}
+        hint={own ? i18n.t('attendance.sheet.ownHint') : undefined}
+        className="min-w-0 flex-1"
+      >
         <Input
           inputMode="decimal"
           value={text}
+          disabled={own}
           invalid={text !== '' && !valid}
           placeholder={i18n.t('attendance.settings.dailyWageNotSet')}
           onChange={(e) => setText(e.target.value)}
         />
       </Field>
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={!valid || value === shown}
-        loading={save.isPending}
-        onClick={() => save.mutate({ storeId, memberId, dailyWage: value, effectiveFrom: today() })}
-      >
-        {i18n.t('common.save')}
-      </Button>
+      {own ? null : (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!valid || value === shown}
+          loading={save.isPending}
+          onClick={() =>
+            save.mutate({ storeId, memberId, dailyWage: value, effectiveFrom: today() })
+          }
+        >
+          {i18n.t('common.save')}
+        </Button>
+      )}
     </div>
   );
 }
@@ -326,7 +343,11 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const graceOk = Number.isInteger(graceNum) && graceNum >= 0 && graceNum <= 120;
   const overtimeNum = Number(overtimeAfter);
   const overtimeOk = Number.isInteger(overtimeNum) && overtimeNum >= 5 && overtimeNum <= 240;
-  const canSave = graceOk && overtimeOk && (!requireGeo || (geo !== null && radiusOk));
+  // A saved location always goes with a valid radius, whether or not the
+  // rule is on: a bad radius used to save the location away (review
+  // 2026-11-07).
+  const canSave =
+    graceOk && overtimeOk && (!requireGeo || geo !== null) && (geo === null || radiusOk);
 
   const takeCurrentLocation = async () => {
     setLocating(true);
@@ -416,7 +437,9 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
                 onChange={(e) => {
                   setRadius(e.target.value);
                   const n = Number(e.target.value);
-                  if (geo && Number.isInteger(n)) setGeo({ ...geo, radiusM: n });
+                  if (geo && Number.isInteger(n) && n >= 20 && n <= 5000) {
+                    setGeo({ ...geo, radiusM: n });
+                  }
                 }}
               />
             </Field>
@@ -460,7 +483,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             requireDevice,
             requireGeo,
             requireScene: false,
-            geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
+            geo: geo ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,
           })

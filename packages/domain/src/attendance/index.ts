@@ -114,8 +114,13 @@ export type DayFlag =
   | 'onDuty'
   | 'late'
   | 'early'
-  /** Shift started (past grace) with no punch at all. */
+  /** The day's started shifts had no punch at all (past grace). */
   | 'absent'
+  /**
+   * One of the day's shifts had no punch while another was worked
+   * (2026-11-07): its minutes are short, not the whole day.
+   */
+  | 'missedShift'
   /** An out with no in before it. */
   | 'missingIn'
   /** An in with no out after the shift ended. */
@@ -134,6 +139,8 @@ export interface DaySummary {
   workedMinutes: number;
   lateMinutes: number;
   earlyMinutes: number;
+  /** Planned minutes of shifts with no punch at all (past grace). */
+  missedMinutes: number;
   flags: DayFlag[];
 }
 
@@ -228,6 +235,7 @@ export function summarize(input: {
         workedMinutes: 0,
         lateMinutes: 0,
         earlyMinutes: 0,
+        missedMinutes: 0,
         flags: [],
       };
       rows.set(key, r);
@@ -252,7 +260,7 @@ export function summarize(input: {
 
     if (ps.length === 0) {
       if (now < start + grace) flag(r, 'upcoming');
-      else flag(r, 'absent');
+      else r.missedMinutes += Math.round((end - start) / MINUTE);
       continue;
     }
     const firstIn = ps.find((p) => p.kind === 'in');
@@ -288,6 +296,12 @@ export function summarize(input: {
         r.workedMinutes += Math.max(0, Math.round((now - worked.openSince.getTime()) / MINUTE));
       } else flag(r, 'missingOut');
     }
+  }
+
+  // A missed shift: the whole day when nothing at all was punched, else
+  // only that shift's minutes (split shifts, 2026-11-07).
+  for (const r of rows.values()) {
+    if (r.missedMinutes > 0) flag(r, r.punchIds.length === 0 ? 'absent' : 'missedShift');
   }
 
   return [...rows.values()].sort((a, b) =>
@@ -383,6 +397,9 @@ export interface DayPay {
  * One person's pay for one day from its attendance verdict (owner decision
  * 2026-11-05): the daily wage, less late + early minutes in proportion to
  * the planned minutes, rounded half-up to the cent, never below zero.
+ * A missed shift on a day otherwise worked counts as short minutes; a day
+ * with punches that do not fit the plan is checked by a manager before an
+ * absence is assumed (2026-11-07).
  */
 export function dayPay(day: DaySummary, wageCents: number | null): DayPay {
   if (wageCents === null)
@@ -391,11 +408,14 @@ export function dayPay(day: DaySummary, wageCents: number | null): DayPay {
   if (has('upcoming') || has('onDuty')) {
     return { status: 'inProgress', wageCents, deductionCents: 0, netCents: null };
   }
-  if (has('absent')) return { status: 'absent', wageCents, deductionCents: 0, netCents: 0 };
   if (has('missingIn') || has('missingOut') || has('unscheduled') || day.plannedMinutes <= 0) {
     return { status: 'needsReview', wageCents, deductionCents: 0, netCents: null };
   }
-  const short = Math.min(day.plannedMinutes, day.lateMinutes + day.earlyMinutes);
+  if (has('absent')) return { status: 'absent', wageCents, deductionCents: 0, netCents: 0 };
+  const short = Math.min(
+    day.plannedMinutes,
+    day.lateMinutes + day.earlyMinutes + day.missedMinutes,
+  );
   // Integer half-up: (2·w·m + p) ÷ 2p.
   const deductionCents = Math.min(
     wageCents,

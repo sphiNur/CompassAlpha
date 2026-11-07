@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { env } from '../env';
 
@@ -30,7 +31,22 @@ export async function signAccess(claims: AccessClaims): Promise<string> {
 
 export async function verifyAccess(token: string): Promise<AccessClaims> {
   const { payload } = await jwtVerify(token, accessSecret);
+  // A login token names no audience. The month-export link and the
+  // liveness challenge did, signed with this same secret until 2026-11-07;
+  // without this check the export link worked as a 5-minute login.
+  if (payload.aud !== undefined) throw new Error('not an access token');
   return payload as unknown as AccessClaims;
+}
+
+/**
+ * The signing key for one kind of short-lived token (the export link, the
+ * liveness challenge), derived from JWT_SECRET (2026-11-07). Such a token
+ * never verifies as a login token, and a login token never as one of them.
+ */
+export function purposeKey(purpose: string): Uint8Array {
+  return new Uint8Array(
+    createHmac('sha256', env.JWT_SECRET).update(`compass-token:${purpose}`).digest(),
+  );
 }
 
 /**

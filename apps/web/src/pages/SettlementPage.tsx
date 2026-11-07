@@ -1249,16 +1249,24 @@ export function SettlementPage() {
         status: 'unpaid' as const,
         amount: r.amount!,
         reason:
-          r.lateMinutes + r.earlyMinutes > 0
-            ? i18n.t('settlement.wages.fromAttendanceReasonDeducted', {
+          r.missedMinutes > 0
+            ? i18n.t('settlement.wages.fromAttendanceReasonMissed', {
                 wage: formatMoney(r.dailyWage, currency),
                 late: r.lateMinutes,
                 early: r.earlyMinutes,
+                missed: r.missedMinutes,
                 deduction: formatMoney(r.deduction, currency),
               })
-            : i18n.t('settlement.wages.fromAttendanceReason', {
-                wage: formatMoney(r.dailyWage, currency),
-              }),
+            : r.lateMinutes + r.earlyMinutes > 0
+              ? i18n.t('settlement.wages.fromAttendanceReasonDeducted', {
+                  wage: formatMoney(r.dailyWage, currency),
+                  late: r.lateMinutes,
+                  early: r.earlyMinutes,
+                  deduction: formatMoney(r.deduction, currency),
+                })
+              : i18n.t('settlement.wages.fromAttendanceReason', {
+                  wage: formatMoney(r.dailyWage, currency),
+                }),
         isHistorical: false,
       }));
       haptic('success');

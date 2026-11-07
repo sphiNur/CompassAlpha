@@ -3086,6 +3086,18 @@ export const adminRouter = router({
           });
         }
       }
+      // Attendance stays (owner decision 2026-11-07): someone with punches,
+      // shifts, wages or overtime is suspended, not removed. The foreign
+      // keys refuse it too (0068); this says so in words.
+      const kept = await tx.execute(sql`
+        SELECT 1 FROM inventory.attendance_punches WHERE member_id = ${member.id}
+        UNION ALL SELECT 1 FROM inventory.attendance_shifts WHERE member_id = ${member.id}
+        UNION ALL SELECT 1 FROM inventory.attendance_pay_rates WHERE member_id = ${member.id}
+        UNION ALL SELECT 1 FROM inventory.attendance_overtime WHERE member_id = ${member.id}
+        LIMIT 1`);
+      if (kept.length > 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'admin.errors.memberHasAttendance' });
+      }
       // Cascading deletes on member_role_bindings via FK ON DELETE CASCADE.
       // member_store_assignments cascades through the migration's FK.
       // 2026-10-21 audit CA-39: the member row (and its bindings) is

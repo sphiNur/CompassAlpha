@@ -2913,4 +2913,18 @@ export const uz = {
   'attendance.live.guide.closeMouth': 'Avval ogʻzingizni yoping',
   'attendance.photo.blink': 'Koʻz yumish',
   'attendance.photo.mouth': 'Ochiq ogʻiz',
+  'admin.errors.memberHasAttendance':
+    'Bu kishining davomat yozuvlari bor, shuning uchun uni olib tashlab boʻlmaydi. Oʻrniga uni toʻxtatib qoʻying — yozuvlar saqlanadi.',
+  'attendance.errors.manageOwn':
+    'Oʻz davomatingiz yoki ish haqingizni oʻzgartira olmaysiz. Boshqa rahbar yoki superadmindan soʻrang.',
+  'attendance.errors.identifyIsOwner':
+    'Bu sizning oʻz yuzingiz. Oʻzingizni belgilash uchun «Kelishni belgilash» yoki «Ketishni belgilash» tugmasini bosing.',
+  'attendance.errors.photoReused':
+    'Bu suratlar avval yuborilgan. Yuz tekshiruvidan qaytadan oʻting.',
+  'attendance.sheet.ownHint':
+    'Oʻz davomatingiz va ish haqingizni boshqa rahbar yoki superadmin oʻzgartiradi.',
+  'attendance.flag.missedShift': 'Bir smenaga kelmadi',
+  'attendance.export.flag.missedShift': 'Bir smenaga kelmadi',
+  'settlement.wages.fromAttendanceReasonMissed':
+    'Davomat: kunlik haq {wage}, kechikish {late} daq, erta ketish {early} daq, oʻtkazib yuborilgan smena {missed} daq, −{deduction}',
 } as const satisfies Record<CatalogKey, string>;

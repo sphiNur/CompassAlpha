@@ -2,7 +2,7 @@
  * Manager views of attendance (2026-11-05): one day's sheet (who came,
  * when, late / early / absent, corrections) and the week's shift roster.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
@@ -56,6 +56,7 @@ const FLAG_TONE: Record<string, 'success' | 'warn' | 'danger' | 'info' | 'muted'
   late: 'warn',
   early: 'warn',
   absent: 'danger',
+  missedShift: 'danger',
   missingIn: 'danger',
   missingOut: 'danger',
   unscheduled: 'info',
@@ -414,6 +415,18 @@ function MemberDaySheet({
   const [reason, setReason] = useState('');
   const [voiding, setVoiding] = useState<Punch | null>(null);
   const [voidReason, setVoidReason] = useState('');
+  // The sheet stays mounted from one person to the next: start clean for
+  // each, or a void begun on one person's punch would be confirmed on
+  // the next person's sheet (review 2026-11-07).
+  useEffect(() => {
+    setVoiding(null);
+    setVoidReason('');
+    setKind('in');
+    setTime('');
+    setReason('');
+  }, [memberId, date]);
+  // A manager's own row: only a super admin changes it (2026-11-07).
+  const own = member?.own ?? false;
 
   const refresh = () => void utils.attendance.sheet.invalidate();
   const manual = trpc.attendance.manualPunch.useMutation({
@@ -488,7 +501,7 @@ function MemberDaySheet({
                         : ''}
                     </span>
                   </span>
-                  {!p.voided ? (
+                  {!p.voided && !own ? (
                     <Button variant="ghost" size="sm" onClick={() => setVoiding(p)}>
                       {i18n.t('attendance.void.action')}
                     </Button>
@@ -551,7 +564,7 @@ function MemberDaySheet({
                 : ''}
               {o.decisionNote ? ` · ${o.decisionNote}` : ''}
             </span>
-            {o.status === 'pending' ? (
+            {o.status === 'pending' && !own ? (
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -580,7 +593,7 @@ function MemberDaySheet({
             ) : null}
           </div>
         ))}
-        {voiding ? (
+        {voiding && punches.some((p) => p.id === voiding.id) ? (
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] p-3 ring-hairline">
             <Field label={i18n.t('attendance.void.reasonLabel', { time: voiding.time })}>
               <Input
@@ -608,43 +621,78 @@ function MemberDaySheet({
           </div>
         ) : null}
 
-        <h3 className="mt-2 text-old-h3 font-semibold text-[var(--c-fg)]">
-          {i18n.t('attendance.manual.title')}
-        </h3>
-        <Segmented<'in' | 'out'>
-          value={kind}
-          onChange={setKind}
-          ariaLabel={i18n.t('attendance.manual.title')}
-          options={[
-            { value: 'in', label: i18n.t('attendance.kind.in') },
-            { value: 'out', label: i18n.t('attendance.kind.out') },
-          ]}
-        />
-        <Field label={i18n.t('attendance.manual.time')}>
-          <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-        </Field>
-        <Field label={i18n.t('attendance.manual.reason')}>
-          <Textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            maxLength={300}
-            rows={2}
-            placeholder={i18n.t('attendance.manual.reasonPlaceholder')}
+        {own ? (
+          <p className="text-old-label text-[var(--c-fg-muted)]">
+            {i18n.t('attendance.sheet.ownHint')}
+          </p>
+        ) : (
+          <ManualPunchForm
+            kind={kind}
+            setKind={setKind}
+            time={time}
+            setTime={setTime}
+            reason={reason}
+            setReason={setReason}
+            saving={manual.isPending}
+            onSave={() =>
+              memberId &&
+              manual.mutate({ storeId, memberId, kind, date, time, reason: reason.trim() })
+            }
           />
-        </Field>
-        <Button
-          block
-          disabled={!/^\d{2}:\d{2}$/.test(time) || reason.trim().length === 0 || !memberId}
-          loading={manual.isPending}
-          onClick={() =>
-            memberId &&
-            manual.mutate({ storeId, memberId, kind, date, time, reason: reason.trim() })
-          }
-        >
-          {i18n.t('attendance.manual.save')}
-        </Button>
+        )}
       </div>
     </Sheet>
+  );
+}
+
+/** A punch a manager adds, with the reason. */
+function ManualPunchForm(props: {
+  kind: 'in' | 'out';
+  setKind: (k: 'in' | 'out') => void;
+  time: string;
+  setTime: (t: string) => void;
+  reason: string;
+  setReason: (r: string) => void;
+  saving: boolean;
+  onSave: () => void;
+}) {
+  const i18n = useI18n();
+  const { kind, setKind, time, setTime, reason, setReason } = props;
+  return (
+    <>
+      <h3 className="mt-2 text-old-h3 font-semibold text-[var(--c-fg)]">
+        {i18n.t('attendance.manual.title')}
+      </h3>
+      <Segmented<'in' | 'out'>
+        value={kind}
+        onChange={setKind}
+        ariaLabel={i18n.t('attendance.manual.title')}
+        options={[
+          { value: 'in', label: i18n.t('attendance.kind.in') },
+          { value: 'out', label: i18n.t('attendance.kind.out') },
+        ]}
+      />
+      <Field label={i18n.t('attendance.manual.time')}>
+        <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+      </Field>
+      <Field label={i18n.t('attendance.manual.reason')}>
+        <Textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={300}
+          rows={2}
+          placeholder={i18n.t('attendance.manual.reasonPlaceholder')}
+        />
+      </Field>
+      <Button
+        block
+        disabled={!/^\d{2}:\d{2}$/.test(time) || reason.trim().length === 0}
+        loading={props.saving}
+        onClick={props.onSave}
+      >
+        {i18n.t('attendance.manual.save')}
+      </Button>
+    </>
   );
 }
 
