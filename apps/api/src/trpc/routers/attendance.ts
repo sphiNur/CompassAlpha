@@ -1698,7 +1698,7 @@ export const attendanceRouter = router({
           .values({ orgId: session.orgId, memberId: session.memberId, storeId: store.id })
           .returning();
         await tx.insert(s.attendanceFaceSamples).values(
-          poses.map((pose) => {
+          verdict.kept.map((pose) => {
             const r = results[pose] as Extract<FaceResult, { found: true }>;
             return {
               orgId: session.orgId,

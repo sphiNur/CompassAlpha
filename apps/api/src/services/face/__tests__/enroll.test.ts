@@ -34,7 +34,8 @@ function good(): Partial<Record<EnrollPose, FaceResult>> {
 
 describe('evaluateEnrollment', () => {
   test('the whole ring passes', () => {
-    expect(evaluateEnrollment(good())).toMatchObject({ ok: true, problems: [] });
+    expect(evaluateEnrollment(good())).toMatchObject({ ok: true, problems: [], dropped: [] });
+    expect(evaluateEnrollment(good()).kept).toHaveLength(10);
   });
 
   test('tilts and diagonals are optional; straight twice and both sides are not', () => {
@@ -58,13 +59,38 @@ describe('evaluateEnrollment', () => {
     r.down = face({ quality: { ...q, sharp: 2 } });
     r.front2 = face({ quality: { ...q, faces: 2, size: 0.1 } });
     r.left = { found: false };
-    expect(evaluateEnrollment(r).problems).toEqual([
-      { pose: 'up', problem: 'dark' },
+    const v = evaluateEnrollment(r);
+    // Required photos refuse the enrollment...
+    expect(v.problems).toEqual([
       { pose: 'left', problem: 'noFace' },
-      { pose: 'down', problem: 'blurry' },
       { pose: 'front2', problem: 'manyFaces' },
       { pose: 'front2', problem: 'small' },
     ]);
+    // ...optional ones are only left out.
+    expect(v.dropped).toEqual([
+      { pose: 'up', problem: 'dark' },
+      { pose: 'down', problem: 'blurry' },
+    ]);
+  });
+
+  test('a poor tilt or diagonal is left out, not refused (2026-11-07)', () => {
+    const r = good();
+    const q = { faces: 1, size: 0.35, light: 120, sharp: 200, pitch: 0.5 };
+    r.downleft = { found: false };
+    r.upright = face({ quality: { ...q, sharp: 3 } });
+    r.down = face({ feature: unit(2) });
+    // Turned far, the detector rates them less real; they do not count.
+    r.upleft = face({ feature: unit(3), real: 0 });
+    const v = evaluateEnrollment(r);
+    expect(v.ok).toBe(true);
+    expect(v.kept).toEqual(['front', 'right', 'up', 'left', 'downright', 'front2']);
+    expect(v.dropped.map((d): string => d.pose).sort()).toEqual([
+      'down',
+      'downleft',
+      'upleft',
+      'upright',
+    ]);
+    expect(v.real).toBeCloseTo(0.95);
   });
 
   test('the turns, the same person, a real face', () => {

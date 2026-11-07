@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
 import { idempotencyRequestHash, idempotentMutation, router } from '../trpc/trpc';
@@ -95,7 +96,10 @@ beforeAll(async () => {
     .insert(s.users)
     .values({ displayName: 'Idem', tgUserId: BigInt(`7${Date.now()}4`.slice(-12)) })
     .returning();
-  const [member] = await db.insert(s.members).values({ orgId: org!.id, userId: user!.id }).returning();
+  const [member] = await db
+    .insert(s.members)
+    .values({ orgId: org!.id, userId: user!.id })
+    .returning();
   session = {
     userId: user!.id,
     memberId: member!.id,
@@ -117,6 +121,35 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
     const c = await caller(key).slowWrite();
     expect(c).toEqual(a);
     expect(runs - before).toBe(1);
+  });
+
+  test('a mutation without input works over HTTP with a key (empty body)', async () => {
+    const db = getDb();
+    const post = () =>
+      fetchRequestHandler({
+        endpoint: '/trpc',
+        router: testRouter,
+        req: new Request('http://test/trpc/slowWrite', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+        createContext: () =>
+          ({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            hono: {} as any,
+            db,
+            log: logger,
+            traceId: 'test-http',
+            ip: null,
+            userAgent: null,
+            idempotencyKey: randomUUID(),
+            session: session!,
+            withOrg: (fn: Parameters<RequestContext['withOrg']>[0]) =>
+              withOrgContext(db, session!.orgId, fn),
+          }) as unknown as RequestContext,
+      });
+    const res = await post();
+    expect(res.status).toBe(200);
   });
 
   test('a failed attempt frees its key so the retry runs', async () => {

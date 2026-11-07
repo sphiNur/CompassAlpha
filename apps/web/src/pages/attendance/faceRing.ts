@@ -150,8 +150,14 @@ export function createRingSession() {
   let prev: { yaw: number; pitch: number } | null = null;
   let steady = 0;
   let circleAt = 0;
-  const kept = new Map<EnrollShot, { motion: number; at: number }>();
-  let pending: { shot: EnrollShot; motion: number; at: number; pitch: number } | null = null;
+  const kept = new Map<EnrollShot, { motion: number; at: number; turn: number }>();
+  let pending: {
+    shot: EnrollShot;
+    motion: number;
+    at: number;
+    pitch: number;
+    turn: number;
+  } | null = null;
 
   const light = (add: number[]) => {
     if (add.every((i) => lit.has(i))) return;
@@ -206,7 +212,7 @@ export function createRingSession() {
         steady = guide === null && motion <= RING_LINES.steady ? steady + 1 : 0;
         if (steady < RING_LINES.steadyFrames) return out(guide, null, now);
         const shot = stage === 'position' ? 'front' : 'front2';
-        pending = { shot, motion, at: now, pitch };
+        pending = { shot, motion, at: now, pitch, turn: 0 };
         return out(null, shot, now);
       }
 
@@ -216,9 +222,18 @@ export function createRingSession() {
       const pose = poseAt(d);
       if (pose && motion !== Infinity) {
         const had = kept.get(pose);
-        const better = !had || (motion < had.motion * 0.6 && now - had.at >= RING_LINES.regrabMs);
+        const turn = Math.abs(d.x);
+        const due = !had || now - had.at >= RING_LINES.regrabMs;
+        // The sides carry the server's turn check: the furthest turn is
+        // kept (2026-11-07). The others: the steadiest frame.
+        const better =
+          !had ||
+          (due &&
+            (pose === 'left' || pose === 'right'
+              ? turn > had.turn + 0.1 && motion <= RING_LINES.steady * 3
+              : motion < had.motion * 0.6));
         if (better) {
-          pending = { shot: pose, motion, at: now, pitch };
+          pending = { shot: pose, motion, at: now, pitch, turn };
           return out(null, pose, now);
         }
       }
@@ -235,7 +250,7 @@ export function createRingSession() {
     /** The frame asked for by the last step was kept. */
     took(shot: EnrollShot) {
       if (!pending || pending.shot !== shot) return;
-      kept.set(shot, { motion: pending.motion, at: pending.at });
+      kept.set(shot, { motion: pending.motion, at: pending.at, turn: pending.turn });
       if (shot === 'front') {
         basePitch = pending.pitch;
         stage = 'circle';
