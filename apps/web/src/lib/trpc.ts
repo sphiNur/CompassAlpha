@@ -176,6 +176,21 @@ async function refreshAccessToken(): Promise<{
 /** Queries may wait this long for an answer, writes a little longer. */
 const READ_TIMEOUT_MS = 20_000;
 const WRITE_TIMEOUT_MS = 30_000;
+/**
+ * Writes that upload photos and wait for the server's face checks
+ * (2026-11-07): an enrollment is up to ten photos (~2 MB) checked one by
+ * one, over a slow cross-border link it took longer than 30 s, and the
+ * phone gave up while the server was still working.
+ */
+const PHOTO_WRITE_TIMEOUT_MS = 120_000;
+const PHOTO_WRITES = ['/attendance.faceEnroll', '/attendance.punch'];
+
+/** How long a request may take: reads 20 s, writes 30 s, photo uploads 120 s. */
+export function requestTimeoutMs(url: string, method: string): number {
+  if (method.toUpperCase() === 'GET') return READ_TIMEOUT_MS;
+  const path = url.split('?')[0] ?? url;
+  return PHOTO_WRITES.some((p) => path.endsWith(p)) ? PHOTO_WRITE_TIMEOUT_MS : WRITE_TIMEOUT_MS;
+}
 /** What a proxy says when the API behind it is restarting or unreachable. */
 const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530]);
 
@@ -195,7 +210,7 @@ export async function guardedFetch(
   init: RequestInit,
   timeoutMs?: number,
 ): Promise<Response> {
-  const isWrite = (init.method ?? 'GET').toUpperCase() !== 'GET';
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(
@@ -203,7 +218,7 @@ export async function guardedFetch(
       timedOut = true;
       controller.abort();
     },
-    timeoutMs ?? (isWrite ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS),
+    timeoutMs ?? requestTimeoutMs(url, init.method ?? 'GET'),
   );
   const outer = init.signal;
   const forward = () => controller.abort();

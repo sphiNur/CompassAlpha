@@ -2600,4 +2600,5 @@ export const zh = {
   'attendance.enroll.pose.upright': '右上',
   'attendance.enroll.pose.downleft': '左下',
   'attendance.enroll.pose.downright': '右下',
+  'attendance.enroll.errorCode': '错误详情（可截图发给管理员）：{code}',
 } as const satisfies Record<CatalogKey, string>;

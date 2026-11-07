@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { guardedFetch } from '../trpc';
+import { guardedFetch, requestTimeoutMs } from '../trpc';
 import { isLikelyNetworkError } from '../networkError';
 
 const realFetch = globalThis.fetch;
@@ -8,19 +8,32 @@ afterEach(() => {
 });
 
 function stubFetch(impl: (init: RequestInit | undefined) => Promise<Response>) {
-  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => impl(init)) as typeof fetch;
+  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+    impl(init)) as typeof fetch;
 }
 
 describe('guardedFetch (N3/N5)', () => {
   it('turns a proxy error page into a network failure', async () => {
-    stubFetch(async () => new Response('<html>502 Bad Gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }));
+    stubFetch(
+      async () =>
+        new Response('<html>502 Bad Gateway</html>', {
+          status: 502,
+          headers: { 'content-type': 'text/html' },
+        }),
+    );
     const err = await guardedFetch('/trpc/x', { method: 'POST' }).catch((e) => e);
     expect(err).toBeInstanceOf(TypeError);
     expect(isLikelyNetworkError(err)).toBe(true);
   });
 
   it("passes the API's own JSON error through", async () => {
-    stubFetch(async () => new Response('{"error":{}}', { status: 503, headers: { 'content-type': 'application/json' } }));
+    stubFetch(
+      async () =>
+        new Response('{"error":{}}', {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
     const res = await guardedFetch('/trpc/x', {});
     expect(res.status).toBe(503);
   });
@@ -29,7 +42,9 @@ describe('guardedFetch (N3/N5)', () => {
     stubFetch(
       (init) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
         }),
     );
     const err = await guardedFetch('/trpc/x', { method: 'POST' }, 30).catch((e) => e);
@@ -41,7 +56,9 @@ describe('guardedFetch (N3/N5)', () => {
     stubFetch(
       (init) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
         }),
     );
     const caller = new AbortController();
@@ -52,7 +69,23 @@ describe('guardedFetch (N3/N5)', () => {
   });
 
   it('returns ordinary answers untouched', async () => {
-    stubFetch(async () => new Response('{"result":{}}', { status: 200, headers: { 'content-type': 'application/json' } }));
+    stubFetch(
+      async () =>
+        new Response('{"result":{}}', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
     expect((await guardedFetch('/trpc/x', {})).status).toBe(200);
+  });
+});
+
+describe('requestTimeoutMs', () => {
+  it('photo uploads wait longer than other writes (2026-11-07)', () => {
+    expect(requestTimeoutMs('https://x/trpc/attendance.faceEnroll', 'POST')).toBe(120_000);
+    expect(requestTimeoutMs('/trpc/attendance.punch?x=1', 'POST')).toBe(120_000);
+    expect(requestTimeoutMs('/trpc/attendance.faceEnrollDecide', 'POST')).toBe(30_000);
+    expect(requestTimeoutMs('/trpc/run.purchaseItem', 'POST')).toBe(30_000);
+    expect(requestTimeoutMs('/trpc/attendance.me', 'GET')).toBe(20_000);
   });
 });
