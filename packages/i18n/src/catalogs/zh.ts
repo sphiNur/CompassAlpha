@@ -2598,4 +2598,10 @@ export const zh = {
   'attendance.map.outside': '你在打卡范围外，还差 {m} 米。',
   'attendance.map.accuracy': '定位误差 ±{m} 米',
   'attendance.map.punches': '打卡位置',
+  'attendance.live.blinkTitle': '眨一下眼',
+  'attendance.live.mouthTitle': '张开嘴',
+  'attendance.live.guide.openEyes': '请睁开眼睛',
+  'attendance.live.guide.closeMouth': '请先闭上嘴',
+  'attendance.photo.blink': '眨眼',
+  'attendance.photo.mouth': '张嘴',
 } as const satisfies Record<CatalogKey, string>;

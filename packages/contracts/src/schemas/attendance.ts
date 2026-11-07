@@ -56,6 +56,9 @@ export const AttendancePunchInputSchema = z.object({
       /** The turn frames, when the challenge asked for turns. */
       left: AttendancePhotoSchema.optional(),
       right: AttendancePhotoSchema.optional(),
+      /** The blink and open-mouth frames (every punch since 2026-11-07). */
+      blink: AttendancePhotoSchema.optional(),
+      mouth: AttendancePhotoSchema.optional(),
     })
     .optional(),
   /** Clocking on a colleague's phone: the server finds who it is by the face. */

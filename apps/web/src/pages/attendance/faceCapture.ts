@@ -30,7 +30,9 @@ export type Guide =
   | 'lookStraight'
   | 'turnMore'
   | 'chinUp'
-  | 'chinDown';
+  | 'chinDown'
+  | 'openEyes'
+  | 'closeMouth';
 
 /** The camera facing `facing` while it is set; one camera at a time. */
 export function useCamera(facing: Facing | null) {
@@ -83,7 +85,7 @@ export function useCamera(facing: Facing | null) {
 }
 
 /** The face tracker while `open`: downloaded once (a few MB), then cached. */
-export function useTracker(open: boolean, kind: TrackerKind = 'detector') {
+export function useTracker(open: boolean, kind: TrackerKind = 'landmarker') {
   const [tracker, setTracker] = useState<FaceTracker | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [percent, setPercent] = useState(0);
@@ -162,4 +164,35 @@ export function basicGuide(r: FaceReading, minSize = 0.28): Guide | null {
   if (r.count > 1) return 'manyFaces';
   if (r.size !== null && r.size < minSize) return 'closer';
   return null;
+}
+
+/**
+ * Calls `onReading` with a tracker reading about every 50 ms while
+ * `active` (blink and open mouth, 2026-11-07: a blink lasts ~150 ms, too
+ * short for the 120 ms hold loop above).
+ */
+export function useFrameLoop({
+  active,
+  video,
+  tracker,
+  key,
+  onReading,
+}: {
+  active: boolean;
+  video: HTMLVideoElement | null;
+  tracker: FaceTracker | null;
+  /** Restarts the loop (the step). */
+  key: string;
+  onReading: (r: FaceReading, now: number) => boolean | void;
+}) {
+  const readRef = useRef(onReading);
+  readRef.current = onReading;
+  useEffect(() => {
+    if (!active || !video || !tracker) return;
+    const timer = setInterval(() => {
+      // `true` from the callback: this step is over.
+      if (readRef.current(tracker.read(video), performance.now()) === true) clearInterval(timer);
+    }, 50);
+    return () => clearInterval(timer);
+  }, [active, video, tracker, key]);
 }

@@ -2907,4 +2907,10 @@ export const uz = {
   'attendance.map.outside': 'Siz hududdan tashqaridasiz: yana {m} m.',
   'attendance.map.accuracy': 'Aniqlik ±{m} m',
   'attendance.map.punches': 'Qayerda belgiladi',
+  'attendance.live.blinkTitle': 'Koʻzingizni bir marta yumib oching',
+  'attendance.live.mouthTitle': 'Ogʻzingizni oching',
+  'attendance.live.guide.openEyes': 'Koʻzingizni oching',
+  'attendance.live.guide.closeMouth': 'Avval ogʻzingizni yoping',
+  'attendance.photo.blink': 'Koʻz yumish',
+  'attendance.photo.mouth': 'Ochiq ogʻiz',
 } as const satisfies Record<CatalogKey, string>;

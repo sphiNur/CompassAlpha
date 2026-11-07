@@ -107,6 +107,9 @@ const SHOP = { lat: 41.311081, lng: 69.240562 };
 const jpeg = (tag: string) =>
   Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
 const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
+/** A blink or an open mouth: the same person, a slightly different picture. */
+const moved = (f: number[], yes: boolean) =>
+  yes ? f.map((x, j) => (j === 100 ? 0.31 : x * 0.95)) : f;
 /**
  * The stub face model. Tag "<who>:<pose>[:print|:dark]": Ali (the staff
  * member), Bob (the colleague) or Cat (a stranger); left / right turn the
@@ -122,7 +125,10 @@ function stubFaces() {
     return {
       found: true,
       score: 0.95,
-      feature: unit(tag.includes('Bob') ? 1 : tag.includes('Cat') ? 2 : 0),
+      feature: moved(
+        unit(tag.includes('Bob') ? 1 : tag.includes('Cat') ? 2 : 0),
+        tag.includes(':blink') || tag.includes(':mouth'),
+      ),
       yaw,
       real: tag.includes('print') ? 0.05 : 0.95,
       quality: {
@@ -182,6 +188,8 @@ async function clock(
     overtimeReason?: string;
     left?: string;
     right?: string;
+    blink?: string | null;
+    mouth?: string | null;
     token?: string;
     identify?: boolean;
     scene?: string;
@@ -209,6 +217,8 @@ async function clock(
       token,
       left: jpeg(opts.left ?? `${who}:left`),
       right: jpeg(opts.right ?? `${who}:right`),
+      blink: opts.blink === null ? undefined : jpeg(opts.blink ?? `${who}:blink`),
+      mouth: opts.mouth === null ? undefined : jpeg(opts.mouth ?? `${who}:mouth`),
     },
     overtimeReason: opts.overtimeReason,
   });
@@ -1106,9 +1116,19 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       overtimeReason: why,
     });
     expect([passive.liveness, passive.face]).toEqual(['passive', 'match']);
-    // A photo held up: not sure it is real, so the turns after all.
+    // A photo held up: its blink and open mouth are prints too (2026-11-07).
     await expectError(
       clock(f.staff(), { who: 'Ali:print', token: await passiveToken(f.staffId) }),
+      'attendance.errors.livenessFailed',
+    );
+    // Real movements but an unsure straight photo: the turns after all.
+    await expectError(
+      clock(f.staff(), {
+        who: 'Ali:print',
+        blink: 'Ali:blink',
+        mouth: 'Ali:mouth',
+        token: await passiveToken(f.staffId),
+      }),
       'attendance.errors.livenessNeeded',
     );
     // Bob's face on Ali's punch: refused.
@@ -1160,6 +1180,79 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       memberId: f.colleagueId,
       enabled: false,
     });
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () => {
+  test('every punch: both movements, real, the same person, not a copy', async () => {
+    const f = fx!;
+    await resetPunches(f.staffId);
+    await f.manager.attendance.policySave({
+      storeId: f.storeId,
+      requireDevice: false,
+      requireGeo: false,
+      geo: null,
+      graceMinutes: 5,
+      overtimeAfterMinutes: 30,
+    });
+    // Every challenge asks for both, in either order, turns or not.
+    const plain = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
+    expect([...plain.acts].sort()).toEqual(['blink', 'mouth']);
+    const token = () => passiveToken(f.staffId);
+
+    await expectError(
+      clock(f.staff(), { token: await token(), blink: null }),
+      'attendance.errors.livenessRequired',
+    );
+    await expectError(
+      clock(f.staff(), { token: await token(), mouth: 'Bob:mouth' }),
+      'attendance.errors.livenessFailed',
+    );
+    // The straight photo sent again as the blink.
+    await expectError(
+      clock(f.staff(), { token: await token(), blink: 'Ali:front' }),
+      'attendance.errors.livenessFailed',
+    );
+    await expectError(
+      clock(f.staff(), { token: await token(), blink: 'nobody' }),
+      'attendance.errors.livenessFailed',
+    );
+    let refused: unknown = null;
+    try {
+      await clock(f.staff(), { token: await token(), blink: 'Ali:front', mouth: 'Cat:mouth' });
+    } catch (e) {
+      refused = e;
+    }
+    // Either order: the server picks the order of the movements.
+    expect(
+      (refused as { cause?: { context?: { failures?: string } } }).cause?.context?.failures
+        ?.split(',')
+        .sort(),
+    ).toEqual(['otherPerson', 'sameFrame']);
+
+    const ok = await clock(f.staff(), { token: await token() });
+    expect([ok.liveness, ok.face]).toEqual(['passive', 'match']);
+
+    // A challenge signed before the change asks for no movements.
+    const old = (
+      await signLivenessToken({
+        org: f.orgId,
+        mid: f.staffId,
+        by: f.staffId,
+        storeId: f.storeId,
+        steps: [],
+        acts: [],
+      })
+    ).token;
+    const out = await clock(f.staff(), {
+      kind: 'out',
+      token: old,
+      blink: null,
+      mouth: null,
+      overtimeReason: 'blink test',
+    });
+    expect(out.kind).toBe('out');
+    await resetPunches(f.staffId);
   });
 });
 

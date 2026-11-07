@@ -2920,4 +2920,10 @@ export const ru = {
   'attendance.map.outside': 'Вы вне зоны отметки: до неё ещё {m} м по прямой.',
   'attendance.map.accuracy': 'Точность ±{m} м',
   'attendance.map.punches': 'Где отмечался',
+  'attendance.live.blinkTitle': 'Моргните',
+  'attendance.live.mouthTitle': 'Откройте рот',
+  'attendance.live.guide.openEyes': 'Откройте глаза',
+  'attendance.live.guide.closeMouth': 'Сначала закройте рот',
+  'attendance.photo.blink': 'Моргание',
+  'attendance.photo.mouth': 'Открытый рот',
 } as const satisfies Record<CatalogKey, string>;

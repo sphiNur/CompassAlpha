@@ -57,6 +57,7 @@ import { loadFaceTracker } from '../lib/faceTracker';
 import { FaceConsentSheet } from './attendance/FaceConsentSheet';
 import { FaceEnrollSheet } from './attendance/FaceEnrollSheet';
 import { PunchCamera, type PunchPhotos, type Turn } from './attendance/PunchCamera';
+import type { Act } from './attendance/faceActs';
 
 type Fix = { lat: number; lng: number; accuracy: number };
 
@@ -128,7 +129,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
     location: Fix | null;
     /** A colleague clocks on this phone; their face says who. */
     identify: boolean;
-    challenge: { token: string; steps: Turn[] } | null;
+    challenge: { token: string; steps: Turn[]; acts: Act[] } | null;
   };
   type PunchVars = Parameters<typeof punch.mutate>[0];
   // A clock-out well past the shift asks why (phase 2): the server refuses
@@ -223,11 +224,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
   }, []);
   const face = me.data?.face ?? null;
   const enrolled = face?.status === 'approved';
-  // The enrollment ring's own tracker, while the person still has to enroll.
-  const mustEnroll = me.data !== undefined && !enrolled && face?.status !== 'pending';
-  useEffect(() => {
-    if (mustEnroll) void loadFaceTracker('landmarker');
-  }, [mustEnroll]);
 
   /** Agree first, then the ring. */
   const startEnroll = (consented = false) => {
@@ -270,7 +266,11 @@ function ClockPanel({ storeId }: { storeId: string }) {
         deviceId,
         location: location ?? undefined,
       });
-      setCamera({ location, identify, challenge: { token: c.token, steps: c.steps } });
+      setCamera({
+        location,
+        identify,
+        challenge: { token: c.token, steps: c.steps, acts: c.acts ?? [] },
+      });
     } catch (err) {
       errToast('attendance.errors.punchFailed')(err);
     } finally {
@@ -289,7 +289,10 @@ function ClockPanel({ storeId }: { storeId: string }) {
         location: attempt.location ?? undefined,
         force: true,
       });
-      setCamera({ ...attempt, challenge: { token: c.token, steps: c.steps } });
+      setCamera({
+        ...attempt,
+        challenge: { token: c.token, steps: c.steps, acts: c.acts ?? [] },
+      });
     } catch (err) {
       errToast('attendance.errors.punchFailed')(err);
     } finally {
@@ -308,7 +311,13 @@ function ClockPanel({ storeId }: { storeId: string }) {
       location: attempt.location,
       photos: photos ? { face: photos.face } : undefined,
       liveness: attempt.challenge
-        ? { token: attempt.challenge.token, left: photos?.left, right: photos?.right }
+        ? {
+            token: attempt.challenge.token,
+            left: photos?.left,
+            right: photos?.right,
+            blink: photos?.blink,
+            mouth: photos?.mouth,
+          }
         : undefined,
       identify: attempt.identify || undefined,
     });
@@ -510,6 +519,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 open={camera !== null}
                 kind={camera?.identify ? null : store.nextKind}
                 turns={camera?.challenge?.steps ?? null}
+                acts={camera?.challenge?.acts ?? []}
                 identifying={camera?.identify ?? false}
                 busy={punch.isPending}
                 onCancel={() => setCamera(null)}
