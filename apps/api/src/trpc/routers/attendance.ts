@@ -1663,6 +1663,7 @@ export const attendanceRouter = router({
         await authorize(tx, session, input.storeId, 'attendance.clock');
         if (!(await hasFaceConsent(tx, session.memberId))) fail('BAD_REQUEST', 'consentRequired');
       });
+      const checksStarted = performance.now();
       const poses = ENROLL_POSES.filter((p) => input.photos[p] !== undefined);
       const bytes: Partial<Record<EnrollPose, Buffer>> = {};
       for (const pose of poses) bytes[pose] = photoBytes(input.photos[pose]!);
@@ -1673,6 +1674,17 @@ export const attendanceRouter = router({
         results[pose] = r;
       }
       const verdict = evaluateEnrollment(results);
+      // How long the checks took, to tell a slow server from a slow link.
+      ctx.log.info(
+        {
+          photos: poses.length,
+          kb: Math.round(poses.reduce((a, p) => a + bytes[p]!.length, 0) / 1024),
+          ms: Math.round(performance.now() - checksStarted),
+          ok: verdict.ok,
+          dropped: verdict.dropped.map((d) => `${d.pose}:${d.problem}`).join(',') || undefined,
+        },
+        'attendance enroll checked',
+      );
       if (!verdict.ok) {
         const first = verdict.problems[0]!;
         fail('BAD_REQUEST', 'enrollRejected', {
