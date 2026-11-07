@@ -20,8 +20,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Banner, Button, Sheet } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
-import { serverErrorKey } from '../../lib/errorText';
-import { useErrToast } from '../../lib/errToast';
+import { errorTextOf, serverErrorKey, type ErrorVars } from '../../lib/errorText';
 import { trpc } from '../../lib/trpc';
 import { useCamera, useTracker } from './faceCapture';
 import {
@@ -61,6 +60,13 @@ const PROBLEMS: readonly Problem[] = [
 
 type Phase = Exclude<RingStage, 'over'> | 'sending' | 'done' | 'problems';
 
+/**
+ * Enrollment frames are kept smaller than punch photos (2026-11-07): up to
+ * ten go in one request over a slow link, and the face is still well over
+ * the 112 px the recognizer works at.
+ */
+const ENROLL_SIDE = 560;
+
 /** At most one tracker reading per this many ms (~20 a second). */
 const FRAME_MS = 50;
 
@@ -76,12 +82,14 @@ export function FaceEnrollSheet({
   onDone: () => void;
 }) {
   const i18n = useI18n();
-  const errToast = useErrToast();
   const [phase, setPhase] = useState<Phase>('position');
   const [lit, setLit] = useState<ReadonlySet<number>>(new Set());
   const [guide, setGuide] = useState<RingGuide | null>(null);
   const [slow, setSlow] = useState(false);
   const [problems, setProblems] = useState<{ pose: Pose; problem: Problem }[]>([]);
+  const [failure, setFailure] = useState<{ key: string; vars: ErrorVars; code: string } | null>(
+    null,
+  );
   const [round, setRound] = useState(0);
   // Kept out of state: the frame loop writes them.
   const shots = useRef<Partial<Record<Pose, string>>>({});
@@ -93,6 +101,7 @@ export function FaceEnrollSheet({
     setGuide(null);
     setSlow(false);
     setProblems([]);
+    setFailure(null);
     setRound((n) => n + 1);
   };
   useEffect(() => {
@@ -123,8 +132,20 @@ export function FaceEnrollSheet({
         setPhase('problems');
         return;
       }
+      // Not a refused photo: say why on the sheet itself, with a code to
+      // send to support (2026-11-07: a toast alone left "failed, no reason").
+      const text = errorTextOf(err, 'attendance.errors.enrollFailed');
+      const e = err as { message?: unknown; data?: { httpStatus?: unknown; code?: unknown } };
+      const code = [
+        e.data?.httpStatus,
+        e.data?.code,
+        typeof e.message === 'string' ? e.message : '',
+      ]
+        .filter((x) => x !== undefined && x !== null && x !== '')
+        .join(' ')
+        .slice(0, 160);
+      setFailure({ ...text, code });
       setPhase('problems');
-      errToast('attendance.errors.enrollFailed')(err);
     },
   });
 
@@ -173,7 +194,7 @@ export function FaceEnrollSheet({
       lastAt = now;
       const step = session.step(tracker.read(video), now);
       if (step.grab) {
-        const b64 = grabRef.current();
+        const b64 = grabRef.current(ENROLL_SIDE);
         if (b64) {
           shots.current[step.grab] = b64;
           session.took(step.grab);
@@ -252,6 +273,17 @@ export function FaceEnrollSheet({
                   </li>
                 ))}
               </ul>
+            </Banner>
+          ) : failure ? (
+            <Banner tone="danger" title={i18n.t('attendance.errors.enrollFailed')}>
+              {failure.key !== 'attendance.errors.enrollFailed' ? (
+                <p>{i18n.t(failure.key as Parameters<typeof i18n.t>[0], failure.vars)}</p>
+              ) : null}
+              {failure.code ? (
+                <p className="mt-1 break-all text-old-label text-[var(--c-fg-muted)]">
+                  {i18n.t('attendance.enroll.errorCode', { code: failure.code })}
+                </p>
+              ) : null}
             </Banner>
           ) : null
         ) : (

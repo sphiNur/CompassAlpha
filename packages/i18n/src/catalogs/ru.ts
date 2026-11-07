@@ -2922,4 +2922,5 @@ export const ru = {
   'attendance.enroll.pose.upright': 'Вверх и вправо',
   'attendance.enroll.pose.downleft': 'Вниз и влево',
   'attendance.enroll.pose.downright': 'Вниз и вправо',
+  'attendance.enroll.errorCode': 'Подробности для поддержки: {code}',
 } as const satisfies Record<CatalogKey, string>;

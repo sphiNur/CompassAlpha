@@ -285,6 +285,16 @@ export function createApp() {
       onError({ error, path, type }) {
         if (error.code === 'INTERNAL_SERVER_ERROR') {
           logger.error({ err: error.cause ?? error, path, type }, 'trpc internal error');
+        } else if (path?.startsWith('attendance.') && type === 'mutation') {
+          // Attendance refusals (2026-11-07): an enrollment or punch that
+          // failed left nothing in the journal, so "it fails" could not be
+          // traced. The key and its context only (which photo, why); no
+          // photos, names or locations.
+          const cause = error.cause as { context?: unknown } | undefined;
+          logger.info(
+            { path, code: error.code, key: error.message, context: cause?.context },
+            'attendance refused',
+          );
         }
       },
     }),

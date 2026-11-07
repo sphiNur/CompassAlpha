@@ -69,10 +69,10 @@ export function useCamera(facing: Facing | null) {
   }, [video, stream]);
 
   /** The current frame, or null (and the problem set) when the camera failed. */
-  const grab = (): string | null => {
+  const grab = (maxSide?: number): string | null => {
     if (!video) return null;
     try {
-      return grabFrame(video);
+      return grabFrame(video, maxSide);
     } catch {
       setProblem('unavailable');
       return null;

@@ -3026,4 +3026,5 @@ export const en = {
   'attendance.enroll.pose.upright': 'Up and right',
   'attendance.enroll.pose.downleft': 'Down and left',
   'attendance.enroll.pose.downright': 'Down and right',
+  'attendance.enroll.errorCode': 'Details for support: {code}',
 } as const;

@@ -48,8 +48,13 @@ export function stopCamera(stream: MediaStream | null): void {
   stream?.getTracks().forEach((t) => t.stop());
 }
 
-function toBase64Jpeg(source: CanvasImageSource, width: number, height: number): string {
-  const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
+function toBase64Jpeg(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  maxSide = MAX_SIDE,
+): string {
+  const scale = Math.min(1, maxSide / Math.max(width, height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
@@ -63,10 +68,10 @@ function toBase64Jpeg(source: CanvasImageSource, width: number, height: number):
 }
 
 /** The video's current frame as a base64 JPEG (not mirrored). */
-export function grabFrame(video: HTMLVideoElement): string {
+export function grabFrame(video: HTMLVideoElement, maxSide = MAX_SIDE): string {
   // A frame this small is a camera that has not really started.
   if (video.videoWidth < 160 || video.videoHeight < 160) throw new CameraError('unavailable');
-  return toBase64Jpeg(video, video.videoWidth, video.videoHeight);
+  return toBase64Jpeg(video, video.videoWidth, video.videoHeight, maxSide);
 }
 
 /** A photo from the system camera as a base64 JPEG, scaled down. */

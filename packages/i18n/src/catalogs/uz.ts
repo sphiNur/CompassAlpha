@@ -2910,4 +2910,5 @@ export const uz = {
   'attendance.enroll.pose.upright': 'Yuqori-oʻng',
   'attendance.enroll.pose.downleft': 'Pastki-chap',
   'attendance.enroll.pose.downright': 'Pastki-oʻng',
+  'attendance.enroll.errorCode': 'Yordam uchun tafsilotlar: {code}',
 } as const satisfies Record<CatalogKey, string>;
