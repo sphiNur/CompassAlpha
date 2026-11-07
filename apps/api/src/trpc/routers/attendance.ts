@@ -91,6 +91,7 @@ type Session = {
   orgId: string;
   orgTimezone: string;
   permissions: ReadonlySet<string>;
+  roleSlugs: ReadonlySet<string>;
 };
 type StoreRow = typeof s.stores.$inferSelect;
 type PolicyRow = typeof s.attendanceStorePolicies.$inferSelect;
@@ -309,6 +310,11 @@ async function assertColleague(tx: DB, session: Session, storeId: string, member
   if (!roster.some((m) => m.memberId === memberId) || !enabled.has(memberId)) {
     fail('FORBIDDEN', 'notColleague');
   }
+}
+
+/** A super admin approves their own face enrollment; nobody else does. */
+function approvesOwnFace(session: Session): boolean {
+  return session.roleSlugs.has('super_admin');
 }
 
 function publish(orgId: string, storeId: string): void {
@@ -1803,7 +1809,8 @@ export const attendanceRouter = router({
   /**
    * A manager approves a waiting enrollment (it replaces the one in use)
    * or sends it back with a reason (its photos are deleted). Nobody
-   * approves their own face.
+   * approves their own face, except a super admin (owner, 2026-11-07:
+   * there is nobody above them to ask).
    */
   faceEnrollDecide: idempotentMutation
     .input(AttendanceFaceEnrollDecideInputSchema)
@@ -1816,7 +1823,9 @@ export const attendanceRouter = router({
         });
         if (!row || row.status !== 'pending') fail('NOT_FOUND', 'enrollmentNotFound');
         await assertInStore(tx, session.orgId, store.id, row.memberId);
-        if (row.memberId === session.memberId) fail('FORBIDDEN', 'enrollOwn');
+        if (row.memberId === session.memberId && !approvesOwnFace(session)) {
+          fail('FORBIDDEN', 'enrollOwn');
+        }
         const decided = {
           decidedByMemberId: session.memberId,
           decidedAt: new Date(),
@@ -1848,7 +1857,8 @@ export const attendanceRouter = router({
           where: (m, { eq: eq2 }) => eq2(m.id, row.memberId),
           columns: { userId: true },
         });
-        if (person) {
+        // A super admin who decided their own needs no message about it.
+        if (person && row.memberId !== session.memberId) {
           await dispatch(tx, session.orgId, [person.userId], {
             template: input.approve
               ? 'attendance.faceEnrollApproved'
@@ -2015,7 +2025,7 @@ export const attendanceRouter = router({
             id: e.id,
             memberId: e.memberId,
             name: rosterName.get(e.memberId) ?? '—',
-            own: e.memberId === session.memberId,
+            own: e.memberId === session.memberId && !approvesOwnFace(session),
             date: dateInTz(e.createdAt, tz),
             time: rules.localTime(e.createdAt, tz),
           })),
