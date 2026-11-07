@@ -2794,12 +2794,8 @@ export const en = {
   'attendance.export.flag.early': 'Left early',
   'attendance.export.flag.onDuty': 'On shift',
   'attendance.export.flag.upcoming': 'Not started',
-  'attendance.photo.reviewTitle': 'Check the photos',
-  'attendance.photo.reviewHint':
-    'Only your managers see these photos. They are deleted after 90 days.',
   'attendance.photo.face': 'Face',
   'attendance.photo.scene': 'Place',
-  'attendance.photo.retake': 'Retake',
   'attendance.photo.show': 'Show photos',
   'attendance.errors.photoRequired': 'Clocking needs the photos taken on the spot.',
   'attendance.errors.photoInvalid': 'The photo could not be read. Take it again.',
@@ -2810,8 +2806,6 @@ export const en = {
   'attendance.face.score': 'similarity {score}%',
   'attendance.face.showRef': 'Show',
   'attendance.face.hideRef': 'Hide',
-  'attendance.photo.reviewHintFace':
-    'Only your managers see these photos. They are deleted after 90 days. The face photo is matched with your enrolled face.',
   'attendance.errors.faceNotFound':
     'No face found in the photo. Face the camera in good light and take it again.',
   'attendance.errors.faceCheckUnavailable':
@@ -2886,7 +2880,6 @@ export const en = {
     'The face was not recognised as anyone at this store. Try again in good light, or ask a manager to add the punch.',
   'attendance.borrow.identifyHint':
     'Your colleague looks at the camera; the app recognises who it is.',
-  'attendance.borrow.identifySend': 'Clock',
   'attendance.consent.title': 'Face check',
   'attendance.consent.intro':
     'Clock-ins and clock-outs are checked by face, so nobody can clock for someone else.',
@@ -3027,8 +3020,6 @@ export const en = {
   'attendance.live.mouthTitle': 'Open your mouth',
   'attendance.live.guide.openEyes': 'Open your eyes',
   'attendance.live.guide.closeMouth': 'Close your mouth first',
-  'attendance.photo.blink': 'Blink',
-  'attendance.photo.mouth': 'Open mouth',
   'admin.errors.memberHasAttendance':
     "This person has attendance records, so they can't be removed. Suspend them instead: the records are kept.",
   'attendance.errors.manageOwn':
@@ -3042,4 +3033,45 @@ export const en = {
   'attendance.export.flag.missedShift': 'Missed a shift',
   'settlement.wages.fromAttendanceReasonMissed':
     'Attendance: daily wage {wage}, late {late} min, left early {early} min, missed shift {missed} min, −{deduction}',
+  'attendance.errors.justPunched': 'Clocked a moment ago ({time}). No need to clock again.',
+  'attendance.errors.undoNotYours':
+    'Only a colleague punch just made on this phone can be taken back here.',
+  'attendance.errors.undoTooLate':
+    'More than 2 minutes have passed. Ask a manager to void the punch.',
+  'attendance.voidReason.wrongPerson': 'wrong person, taken back on the phone that clocked it',
+  'notify.attendance.punchUndone.title': 'Colleague punch taken back',
+  'notify.attendance.punchUndone.body':
+    "{owner}'s phone clocked {name} at {store} at {time}, but it was someone else. The punch was taken back on that phone.",
+  'notify.attendance.punchUndoneForYou.title': 'Punch in your name taken back',
+  'notify.attendance.punchUndoneForYou.body':
+    "{owner}'s phone clocked you at {store} at {time}, but it was someone else. The punch was taken back and does not count for you.",
+  'attendance.punch.colleagueTitle': 'Clock a colleague',
+  'attendance.punch.checking': 'Checking, one moment…',
+  'attendance.punch.checkingSlow':
+    'The connection is slow and it is still sending. Please keep this open.',
+  'attendance.punch.okIn': 'Clocked in',
+  'attendance.punch.okOut': 'Clocked out',
+  'attendance.punch.told': '{name} and the managers have been told.',
+  'attendance.punch.notThem': 'Not {name}',
+  'attendance.punch.undone': 'Taken back. Look at the camera again.',
+  'attendance.punch.again': 'Try again',
+  'attendance.punch.forSelf': 'Clock myself',
+  'attendance.punch.done': 'OK',
+  'attendance.punch.oneMore': 'One more step: turn your head as shown.',
+  'attendance.punch.restart': 'That took too long. Please do it once more.',
+  'attendance.punch.netFailed': 'No connection: this punch was not recorded.',
+  'attendance.punch.netFailedBody':
+    'The photos are kept for now: tap Try again to send them again.',
+  'attendance.punch.alreadyIn': 'You clocked in at {time} already. No need to clock again.',
+  'attendance.punch.alreadyOut': 'You clocked out at {time} already. No need to clock again.',
+  'attendance.punch.alreadyInFor': '{name} clocked in at {time} already. No need to clock again.',
+  'attendance.punch.alreadyOutFor': '{name} clocked out at {time} already. No need to clock again.',
+  'attendance.punch.notRecognizedHint':
+    "A colleague first enrolls their face on their own phone and a manager approves it; only then can they clock on someone else's phone. Poor light can also cause this.",
+  'attendance.overtime.askBodyFor':
+    '{name}: time past the end of the shift: {duration}. Overtime counts once a manager approves it.',
+  'attendance.overtime.continue': 'Continue',
+  'attendance.location.outside.title': 'Too far from the store',
+  'attendance.location.inaccurate.title': 'Location not precise enough',
+  'attendance.punch.preparing': 'Getting ready…',
 } as const;

@@ -2693,11 +2693,8 @@ export const ru = {
   'attendance.export.flag.early': 'Ранний уход',
   'attendance.export.flag.onDuty': 'На смене',
   'attendance.export.flag.upcoming': 'Ещё не началась',
-  'attendance.photo.reviewTitle': 'Проверьте фото',
-  'attendance.photo.reviewHint': 'Эти фото видят только управляющие. Через 90 дней они удаляются.',
   'attendance.photo.face': 'Лицо',
   'attendance.photo.scene': 'Место',
-  'attendance.photo.retake': 'Переснять',
   'attendance.photo.show': 'Показать фото',
   'attendance.errors.photoRequired': 'Для отметки нужны фото, сделанные на месте.',
   'attendance.errors.photoInvalid': 'Не удалось прочитать фото. Сделайте его снова.',
@@ -2708,8 +2705,6 @@ export const ru = {
   'attendance.face.score': 'сходство {score}%',
   'attendance.face.showRef': 'Показать',
   'attendance.face.hideRef': 'Скрыть',
-  'attendance.photo.reviewHintFace':
-    'Эти фото видят только руководители, через 90 дней они удаляются. Фото лица сверяется с зарегистрированным лицом.',
   'attendance.errors.faceNotFound':
     'На фото не найдено лицо. Смотрите в камеру при хорошем свете и сделайте фото снова.',
   'attendance.errors.faceCheckUnavailable': 'Проверка лица сейчас недоступна. Попробуйте позже.',
@@ -2784,7 +2779,6 @@ export const ru = {
   'attendance.errors.notRecognized':
     'Лицо не распознано ни как один сотрудник этого магазина. Попробуйте при хорошем свете или попросите руководителя добавить отметку.',
   'attendance.borrow.identifyHint': 'Коллега смотрит в камеру, приложение само узнаёт, кто это.',
-  'attendance.borrow.identifySend': 'Отметить',
   'attendance.consent.title': 'Проверка лица',
   'attendance.consent.intro':
     'Приход и уход проверяются по лицу, чтобы никто не отмечался за другого.',
@@ -2924,8 +2918,6 @@ export const ru = {
   'attendance.live.mouthTitle': 'Откройте рот',
   'attendance.live.guide.openEyes': 'Откройте глаза',
   'attendance.live.guide.closeMouth': 'Сначала закройте рот',
-  'attendance.photo.blink': 'Моргание',
-  'attendance.photo.mouth': 'Открытый рот',
   'admin.errors.memberHasAttendance':
     'У этого человека есть записи учёта времени, поэтому его нельзя удалить. Вместо этого приостановите его — записи сохранятся.',
   'attendance.errors.manageOwn':
@@ -2940,4 +2932,45 @@ export const ru = {
   'attendance.export.flag.missedShift': 'Пропустил смену',
   'settlement.wages.fromAttendanceReasonMissed':
     'Учёт времени: ставка {wage}, опоздание {late} мин, ранний уход {early} мин, пропущенная смена {missed} мин, −{deduction}',
+  'attendance.errors.justPunched': 'Отметка сделана только что ({time}). Повторять не нужно.',
+  'attendance.errors.undoNotYours':
+    'Здесь можно отменить только отметку коллеги, только что сделанную с этого телефона.',
+  'attendance.errors.undoTooLate':
+    'Прошло больше 2 минут. Попросите управляющего аннулировать отметку.',
+  'attendance.voidReason.wrongPerson': 'не тот человек, отменено с телефона, где была отметка',
+  'notify.attendance.punchUndone.title': 'Отметка коллеги отменена',
+  'notify.attendance.punchUndone.body':
+    '{name}: отметка в {store} в {time} с телефона, владелец: {owner}, но это был другой человек. Отметка отменена с этого телефона.',
+  'notify.attendance.punchUndoneForYou.title': 'Отметка на ваше имя отменена',
+  'notify.attendance.punchUndoneForYou.body':
+    'Вас отметили в {store} в {time} с телефона, владелец: {owner}, но это был другой человек. Отметка отменена и вам не засчитывается.',
+  'attendance.punch.colleagueTitle': 'Отметка коллеги',
+  'attendance.punch.checking': 'Проверяем, подождите…',
+  'attendance.punch.checkingSlow':
+    'Связь медленная, отправка продолжается. Пожалуйста, не закрывайте.',
+  'attendance.punch.okIn': 'Приход отмечен',
+  'attendance.punch.okOut': 'Уход отмечен',
+  'attendance.punch.told': '{name} и управляющие получили уведомление.',
+  'attendance.punch.notThem': 'Это не {name}',
+  'attendance.punch.undone': 'Отменено. Посмотрите в камеру ещё раз.',
+  'attendance.punch.again': 'Попробовать ещё раз',
+  'attendance.punch.forSelf': 'Отметить себя',
+  'attendance.punch.done': 'Хорошо',
+  'attendance.punch.oneMore': 'Ещё один шаг: поверните голову, как показано.',
+  'attendance.punch.restart': 'Время вышло. Пожалуйста, пройдите ещё раз.',
+  'attendance.punch.netFailed': 'Нет связи: отметка не записана.',
+  'attendance.punch.netFailedBody':
+    'Фото пока сохранены: нажмите «Попробовать ещё раз», чтобы отправить их снова.',
+  'attendance.punch.alreadyIn': 'Вы уже отметили приход в {time}. Повторять не нужно.',
+  'attendance.punch.alreadyOut': 'Вы уже отметили уход в {time}. Повторять не нужно.',
+  'attendance.punch.alreadyInFor': 'Приход {name} уже отмечен в {time}. Повторять не нужно.',
+  'attendance.punch.alreadyOutFor': 'Уход {name} уже отмечен в {time}. Повторять не нужно.',
+  'attendance.punch.notRecognizedHint':
+    'Сначала коллега регистрирует лицо на своём телефоне, и управляющий его подтверждает; только потом можно отмечаться с чужого телефона. Плохой свет тоже мешает.',
+  'attendance.overtime.askBodyFor':
+    '{name}: после конца смены прошло: {duration}. Сверхурочные учитываются после одобрения управляющего.',
+  'attendance.overtime.continue': 'Продолжить',
+  'attendance.location.outside.title': 'Слишком далеко от магазина',
+  'attendance.location.inaccurate.title': 'Местоположение неточное',
+  'attendance.punch.preparing': 'Подготовка…',
 } as const satisfies Record<CatalogKey, string>;

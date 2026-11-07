@@ -40,6 +40,7 @@ import {
   AttendancePolicyGetInputSchema,
   AttendancePolicySaveInputSchema,
   AttendancePunchInputSchema,
+  AttendancePunchUndoInputSchema,
   AttendanceResetDeviceInputSchema,
   AttendanceSheetInputSchema,
   AttendanceShiftDeleteInputSchema,
@@ -49,7 +50,12 @@ import {
   AttendanceReviewPunchInputSchema,
   AttendanceReviewQueueInputSchema,
 } from '@compass/contracts';
-import { ATTENDANCE_FACE_CONSENT_VERSION } from '@compass/contracts/limits';
+import {
+  ATTENDANCE_ACCURACY_SLACK_M,
+  ATTENDANCE_FACE_CONSENT_VERSION,
+  ATTENDANCE_MAX_ACCURACY_M,
+  ATTENDANCE_UNDO_WINDOW_MS,
+} from '@compass/contracts/limits';
 import { z } from 'zod';
 import { attendance as rules, dateInTz, todayInTz } from '@compass/domain';
 import { hub } from '../../realtime/hub';
@@ -103,13 +109,11 @@ type PolicyRow = typeof s.attendanceStorePolicies.$inferSelect;
 const DAY = 24 * 3600_000;
 /** The longest range the sheet reads at once. */
 const MAX_SHEET_DAYS = 62;
-/** A phone fix this coarse cannot place anyone inside a store. */
-const MAX_ACCURACY_M = 300;
 /** How far back 待核对 looks, and how many punches it lists at most. */
 const REVIEW_DAYS = 14;
 const REVIEW_LIMIT = 200;
-/** Slack for the phone's own uncertainty, capped. */
-const MAX_ACCURACY_SLACK_M = 50;
+/** What a "not them" punch is voided with; the sheet shows it translated. */
+const WRONG_PERSON_REASON = 'attendance.voidReason.wrongPerson';
 
 function fail(
   code: 'FORBIDDEN' | 'BAD_REQUEST' | 'NOT_FOUND' | 'CONFLICT',
@@ -810,6 +814,42 @@ async function overtimeFor(
   return minutes > 0 ? { shiftId: ended.id, minutes } : null;
 }
 
+/** A member's punches at a store in the last two days, voided ones left out. */
+function recentPunches(tx: DB, memberId: string, storeId: string, now: Date) {
+  return tx
+    .select({ kind: s.attendancePunches.kind, at: s.attendancePunches.punchedAt })
+    .from(s.attendancePunches)
+    .where(
+      and(
+        eq(s.attendancePunches.memberId, memberId),
+        eq(s.attendancePunches.storeId, storeId),
+        isNull(s.attendancePunches.voidedAt),
+        gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
+      ),
+    );
+}
+
+/** The latest of `punches`, or null. */
+function latestPunch<T extends { at: Date }>(punches: readonly T[]): T | null {
+  let last: T | null = null;
+  for (const p of punches) if (!last || p.at.getTime() >= last.at.getTime()) last = p;
+  return last;
+}
+
+/**
+ * The overtime minutes a clock-out by this member would carry now (0: none,
+ * or their next punch is a clock-in). The phone asks why before it opens
+ * the camera (2026-11-07); the punch decides again at its own time.
+ */
+async function clockOutOvertime(tx: DB, memberId: string, storeId: string): Promise<number> {
+  const now = new Date();
+  const recent = await recentPunches(tx, memberId, storeId, now);
+  if (rules.nextPunchKind(recent, now) !== 'out') return 0;
+  const policy = policyView(await loadPolicy(tx, storeId));
+  const overtime = await overtimeFor(tx, memberId, storeId, now, policy.overtimeAfterMinutes);
+  return overtime?.minutes ?? 0;
+}
+
 async function loadSheet(ctx: RequestContext, input: z.infer<typeof AttendanceSheetInputSchema>) {
   const session = ctx.session!;
   return ctx.withOrg(async (tx) => {
@@ -962,20 +1002,27 @@ export const attendanceRouter = router({
     .input(AttendanceLivenessChallengeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const session = ctx.session!;
-      const turns = await ctx.withOrg(async (tx) => {
+      const { turns, overtimeMinutes } = await ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.clock');
+        // A clock-out well past the shift: the phone asks why first, so
+        // the punch goes out straight after the camera. Whose clock-out a
+        // colleague's is, only their face says.
+        const overtimeMinutes = input.identify
+          ? 0
+          : await clockOutOvertime(tx, session.memberId, store.id);
         // Nobody vouches for a borrowed phone: always the turns.
-        if (input.identify || input.force) return true;
+        if (input.identify || input.force) return { turns: true, overtimeMinutes };
         const risk = await punchRisk(tx, session, store, input.deviceId ?? null);
-        return risk.newDevice || risk.spot;
+        return { turns: risk.newDevice || risk.spot, overtimeMinutes };
       });
-      return signLivenessToken({
+      const challenge = await signLivenessToken({
         org: session.orgId,
         mid: input.identify ? IDENTIFY_MEMBER : session.memberId,
         by: session.memberId,
         storeId: input.storeId,
         steps: turns ? undefined : [],
       });
+      return { ...challenge, overtimeMinutes };
     }),
 
   punch: idempotentMutation.input(AttendancePunchInputSchema).mutation(async ({ ctx, input }) => {
@@ -1084,6 +1131,7 @@ export const attendanceRouter = router({
       // Whose punch: this phone's person, or the colleague the face
       // belongs to.
       let target = session.memberId;
+      let targetName: string | null = null;
       if (identifying) {
         const known = await knownFaces(tx, session.orgId, store.id, {
           except: session.memberId,
@@ -1097,6 +1145,7 @@ export const attendanceRouter = router({
         if (!who) fail('FORBIDDEN', 'notRecognized');
         if (who.memberId === session.memberId) fail('FORBIDDEN', 'identifyIsOwner');
         target = who.memberId;
+        targetName = who.name || null;
       }
       if (borrowed) {
         await assertColleague(tx, session, store.id, target);
@@ -1173,13 +1222,13 @@ export const attendanceRouter = router({
       if (policy.requireGeo && policy.geo) {
         const loc = input.location;
         if (!loc) fail('BAD_REQUEST', 'locationRequired');
-        if (loc.accuracy > MAX_ACCURACY_M) {
+        if (loc.accuracy > ATTENDANCE_MAX_ACCURACY_M) {
           fail('BAD_REQUEST', 'locationInaccurate', {
             context: { accuracy: Math.round(loc.accuracy) },
           });
         }
         distanceM = Math.round(rules.distanceMeters(loc, policy.geo));
-        const slack = Math.min(loc.accuracy, MAX_ACCURACY_SLACK_M);
+        const slack = Math.min(loc.accuracy, ATTENDANCE_ACCURACY_SLACK_M);
         if (distanceM > policy.geo.radiusM + slack) {
           fail('FORBIDDEN', 'outsideArea', {
             context: { distance: distanceM, radius: policy.geo.radiusM },
@@ -1189,32 +1238,51 @@ export const attendanceRouter = router({
         distanceM = Math.round(rules.distanceMeters(input.location, policy.geo));
       }
 
-      const recent = await tx
-        .select({ kind: s.attendancePunches.kind, at: s.attendancePunches.punchedAt })
-        .from(s.attendancePunches)
-        .where(
-          and(
-            eq(s.attendancePunches.memberId, target),
-            eq(s.attendancePunches.storeId, store.id),
-            isNull(s.attendancePunches.voidedAt),
-            gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
-          ),
-        );
+      const recent = await recentPunches(tx, target, store.id, now);
+      const last = latestPunch(recent);
+      const lastSeen = last
+        ? { lastKind: last.kind, time: rules.localTime(last.at, tzOf(store, session)) }
+        : null;
+      // The same colleague found again within two minutes of their last
+      // punch, on this phone or another, is that punch sent again (an
+      // answer lost on a slow link), not their next one (2026-11-07). The
+      // server picks a colleague's kind, so it used to become their
+      // clock-out a minute after the clock-in.
+      if (
+        identifying &&
+        last &&
+        lastSeen &&
+        now.getTime() - last.at.getTime() < ATTENDANCE_UNDO_WINDOW_MS
+      ) {
+        fail('CONFLICT', 'justPunched', { context: { ...lastSeen, name: targetName } });
+      }
       const expected = rules.nextPunchKind(recent, now);
       // A colleague found by their face: their own next punch.
       const kind = identifying ? expected : (input.kind ?? expected);
       if (kind !== expected) {
-        fail('CONFLICT', kind === 'in' ? 'alreadyClockedIn' : 'notClockedIn');
+        // With the last punch's kind and time, the phone can say "clocked
+        // in already at 09:02" when that is what happened.
+        fail(
+          'CONFLICT',
+          kind === 'in' ? 'alreadyClockedIn' : 'notClockedIn',
+          lastSeen ? { context: lastSeen } : undefined,
+        );
       }
 
       // Well past the shift's end: the person says why, and it waits for a
       // manager's approval before it counts (owner decision 2026-11-05).
+      // For a colleague the phone learns it only now, so it hears whose.
       const overtime =
         kind === 'out'
           ? await overtimeFor(tx, target, store.id, now, policy.overtimeAfterMinutes)
           : null;
       if (overtime && !input.overtimeReason) {
-        fail('BAD_REQUEST', 'overtimeReasonRequired', { context: { minutes: overtime.minutes } });
+        fail('BAD_REQUEST', 'overtimeReasonRequired', {
+          context: {
+            minutes: overtime.minutes,
+            ...(identifying && targetName ? { name: targetName } : {}),
+          },
+        });
       }
 
       const inserted = await tx
@@ -1559,6 +1627,82 @@ export const attendanceRouter = router({
             voidReason: input.reason,
           })
           .where(eq(s.attendancePunches.id, punch.id));
+        publish(session.orgId, store.id);
+        return { ok: true as const };
+      });
+    }),
+
+  /**
+   * "Not them" (owner decision 2026-11-07): a colleague clocked on this
+   * phone by the wrong face is taken back here, by the phone's own person,
+   * within ATTENDANCE_UNDO_WINDOW_MS. The punch is voided, not deleted (the
+   * sheet shows it struck through, with the reason), and the managers and
+   * the person it was recorded for are told.
+   */
+  punchUndo: idempotentMutation
+    .input(AttendancePunchUndoInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.clock');
+        const punch = await tx.query.attendancePunches.findFirst({
+          where: (p, { and: and2, eq: eq2 }) =>
+            and2(eq2(p.id, input.punchId), eq2(p.storeId, store.id)),
+        });
+        if (!punch) fail('NOT_FOUND', 'punchNotFound');
+        // Only a colleague's punch made on this person's phone.
+        if (punch.viaMemberId !== session.memberId || punch.memberId === session.memberId) {
+          fail('FORBIDDEN', 'undoNotYours');
+        }
+        if (punch.voidedAt) fail('CONFLICT', 'alreadyVoided');
+        const now = new Date();
+        if (now.getTime() - punch.punchedAt.getTime() > ATTENDANCE_UNDO_WINDOW_MS) {
+          fail('BAD_REQUEST', 'undoTooLate');
+        }
+        await tx
+          .update(s.attendancePunches)
+          .set({
+            voidedAt: now,
+            voidedByMemberId: session.memberId,
+            voidReason: WRONG_PERSON_REASON,
+          })
+          .where(eq(s.attendancePunches.id, punch.id));
+
+        const people = await tx
+          .select({ memberId: s.members.id, userId: s.members.userId, name: s.users.displayName })
+          .from(s.members)
+          .innerJoin(s.users, eq(s.users.id, s.members.userId))
+          .where(inArray(s.members.id, [punch.memberId, session.memberId]));
+        const person = people.find((p) => p.memberId === punch.memberId);
+        const phoneOwner = people.find((p) => p.memberId === session.memberId);
+        const vars = {
+          name: person?.name ?? '—',
+          owner: phoneOwner?.name ?? '—',
+          store: store.name,
+          time: rules.localTime(punch.punchedAt, tzOf(store, session)),
+        };
+        const managers = await findRecipientsByPermissionInStore(
+          tx,
+          session.orgId,
+          'attendance.manage',
+          store.id,
+        );
+        await dispatch(tx, session.orgId, managers, {
+          template: 'attendance.punchUndone',
+          title: 'A colleague punch was taken back',
+          vars,
+          deepLink: linkForStore('/admin', store.id),
+          dedupKey: `attendance:undo:${punch.id}`,
+        });
+        if (person) {
+          await dispatch(tx, session.orgId, [person.userId], {
+            template: 'attendance.punchUndoneForYou',
+            title: 'A punch in your name was taken back',
+            vars,
+            deepLink: '/attendance',
+            dedupKey: `attendance:undo-you:${punch.id}`,
+          });
+        }
         publish(session.orgId, store.id);
         return { ok: true as const };
       });

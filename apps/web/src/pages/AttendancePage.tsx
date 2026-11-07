@@ -20,25 +20,26 @@
  * enrolls their face (a Face ID-style ring) and waits for a manager's
  * approval; only then is the clock button there. Every punch is checked
  * against that face, and the photos are taken by the face tracker alone.
+ *
+ * Straight on (owner, 2026-11-07): nobody looks at the photos first. The
+ * punch goes as soon as the last face frame is in, and its sheet shows the
+ * result; for a colleague, whose punch it was, with "Not <name>" for two
+ * minutes (attendance/usePunchFlow.ts, attendance/PunchSheet.tsx).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Banner, Button, ConfirmSheet, DataState, EmptyState, PageHeader } from '@compass/ui';
 import {
-  Banner,
-  Button,
-  ConfirmSheet,
-  DataState,
-  EmptyState,
-  PageHeader,
-  Sheet,
-  Textarea,
-} from '@compass/ui';
-import { ATTENDANCE_FACE_CONSENT_VERSION } from '@compass/contracts/limits';
+  ATTENDANCE_ACCURACY_SLACK_M,
+  ATTENDANCE_FACE_CONSENT_VERSION,
+  ATTENDANCE_MAX_ACCURACY_M,
+} from '@compass/contracts/limits';
+import type { CatalogKey } from '@compass/i18n';
 import { haptic } from '../hooks/useTelegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { useOnline } from '../hooks/useOnline';
-import { attendanceDeviceId, devicePlatform } from '../lib/attendanceDevice';
+import { attendanceDeviceId } from '../lib/attendanceDevice';
 import {
   currentLocation,
   distanceMeters,
@@ -48,18 +49,60 @@ import {
   type LocationFailure,
 } from '../lib/attendanceLocation';
 import { GeoMap, type GeoArea } from '../components/geo/GeoMap';
-import { errorVars, serverErrorKey } from '../lib/errorText';
 import { useErrToast } from '../lib/errToast';
-import { minutesText } from '../lib/attendanceFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { loadFaceTracker } from '../lib/faceTracker';
 import { FaceConsentSheet } from './attendance/FaceConsentSheet';
 import { FaceEnrollSheet } from './attendance/FaceEnrollSheet';
-import { PunchCamera, type PunchPhotos, type Turn } from './attendance/PunchCamera';
-import type { Act } from './attendance/faceActs';
+import { PunchSheet, type PunchResult } from './attendance/PunchSheet';
+import { usePunchFlow } from './attendance/usePunchFlow';
 
 type Fix = { lat: number; lng: number; accuracy: number };
+
+type Far =
+  | { kind: 'outside'; distance: number; radius: number }
+  | { kind: 'inaccurate'; accuracy: number };
+
+/**
+ * The server's own location lines (attendance.punch), checked before the
+ * camera: the phone never refuses what the server would take.
+ */
+function tooFar(fix: Fix, area: GeoArea): Far | null {
+  if (fix.accuracy > ATTENDANCE_MAX_ACCURACY_M) {
+    return { kind: 'inaccurate', accuracy: Math.round(fix.accuracy) };
+  }
+  const distance = Math.round(distanceMeters(fix, area));
+  if (distance > area.radiusM + Math.min(fix.accuracy, ATTENDANCE_ACCURACY_SLACK_M)) {
+    return { kind: 'outside', distance, radius: area.radiusM };
+  }
+  return null;
+}
+
+/** The page's line for the latest punch, once its sheet has closed. */
+function doneTitle(i18n: ReturnType<typeof useI18n>, r: PunchResult): string {
+  if (r.already) {
+    return r.forName
+      ? i18n.t(
+          r.kind === 'in' ? 'attendance.punch.alreadyInFor' : 'attendance.punch.alreadyOutFor',
+          {
+            name: r.forName,
+            time: r.time,
+          },
+        )
+      : i18n.t(r.kind === 'in' ? 'attendance.punch.alreadyIn' : 'attendance.punch.alreadyOut', {
+          time: r.time,
+        });
+  }
+  return r.forName
+    ? i18n.t(r.kind === 'in' ? 'attendance.borrow.doneIn' : 'attendance.borrow.doneOut', {
+        name: r.forName,
+        time: r.time,
+      })
+    : i18n.t(r.kind === 'in' ? 'attendance.clock.doneIn' : 'attendance.clock.doneOut', {
+        time: r.time,
+      });
+}
 
 export function AttendancePage() {
   const i18n = useI18n();
@@ -109,12 +152,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const [locationProblem, setLocationProblem] = useState<
     'denied' | 'unavailable' | 'timeout' | null
   >(null);
-  const [done, setDone] = useState<{
-    kind: 'in' | 'out';
-    time: string;
-    forName: string | null;
-    flagged: boolean;
-  } | null>(null);
+  // Too far from the store, or a fix too coarse to tell, before the camera.
+  const [outside, setOutside] = useState<Far | null>(null);
 
   useEffect(() => {
     void attendanceDeviceId().then(setDeviceId);
@@ -124,34 +163,10 @@ function ClockPanel({ storeId }: { storeId: string }) {
     { deviceId: deviceId ?? undefined },
     { enabled: deviceId !== null, refetchInterval: 60_000 },
   );
-  // One punch attempt: where, for whom, and the liveness challenge.
-  type Attempt = {
-    location: Fix | null;
-    /** A colleague clocks on this phone; their face says who. */
-    identify: boolean;
-    challenge: { token: string; steps: Turn[]; acts: Act[] } | null;
-  };
-  type PunchVars = Parameters<typeof punch.mutate>[0];
-  // A clock-out well past the shift asks why (phase 2): the server refuses
-  // it without a reason, and the same punch is sent again with one.
-  const [overtimeAsk, setOvertimeAsk] = useState<{ minutes: number; vars: PunchVars } | null>(null);
-  // The store asks for a face and a surroundings photo with each punch.
-  const [camera, setCamera] = useState<Attempt | null>(null);
-  const [overtimeReason, setOvertimeReason] = useState('');
-  // A refused face (no turns passed, or not this person's face): try again.
-  const [faceRefused, setFaceRefused] = useState<
-    | 'attendance.errors.livenessFailed'
-    | 'attendance.errors.faceMismatch'
-    | 'attendance.errors.faceNotFound'
-    | 'attendance.errors.notRecognized'
-    | null
-  >(null);
-  const [preparing, setPreparing] = useState(false);
   // The face-check consent, asked before enrolling or the first face punch.
   const [consentFor, setConsentFor] = useState<{ identify: boolean } | 'enroll' | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const lastAttempt = useRef<Attempt | null>(null);
   const consentGive = trpc.attendance.faceConsentGive.useMutation({
     onSuccess: () => void utils.attendance.me.invalidate(),
   });
@@ -161,59 +176,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
       void utils.attendance.me.invalidate();
     },
     onError: errToast('attendance.errors.punchFailed'),
-  });
-  const challenge = trpc.attendance.livenessChallenge.useMutation();
-  const punch = trpc.attendance.punch.useMutation({
-    onSuccess: (data) => {
-      haptic('success');
-      setCamera(null);
-      setOvertimeAsk(null);
-      setOvertimeReason('');
-      setFaceRefused(null);
-      setDone({
-        kind: data.kind,
-        time: data.time,
-        forName: data.forName,
-        flagged: data.newDevice,
-      });
-      void utils.attendance.me.invalidate();
-    },
-    onError: (err, vars) => {
-      setCamera(null);
-      const key = serverErrorKey(err);
-      // The server wants the head turns this time: the same punch again
-      // with them (a fresh challenge that asks for the turns).
-      if (key === 'attendance.errors.livenessNeeded' && lastAttempt.current) {
-        haptic('warning');
-        void retryWithTurns(lastAttempt.current);
-        return;
-      }
-      if (key === 'attendance.errors.consentRequired') {
-        setConsentFor('enroll');
-        return;
-      }
-      if (key === 'attendance.errors.faceNotEnrolled') {
-        void utils.attendance.me.invalidate();
-        setEnrolling(true);
-        return;
-      }
-      if (key === 'attendance.errors.overtimeReasonRequired') {
-        haptic('warning');
-        setOvertimeAsk({ minutes: Number(errorVars(err).minutes ?? 0), vars });
-        return;
-      }
-      if (
-        key === 'attendance.errors.livenessFailed' ||
-        key === 'attendance.errors.faceMismatch' ||
-        key === 'attendance.errors.faceNotFound' ||
-        key === 'attendance.errors.notRecognized'
-      ) {
-        haptic('error');
-        setFaceRefused(key);
-        return;
-      }
-      errToast('attendance.errors.punchFailed')(err);
-    },
   });
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
@@ -234,7 +196,16 @@ function ClockPanel({ storeId }: { storeId: string }) {
     setEnrolling(true);
   };
 
-  const begin = async (identify: boolean) => {
+  // The punch itself, in its sheet: camera, check, result (2026-11-07).
+  const flow = usePunchFlow({
+    storeId,
+    deviceId,
+    onConsent: () => setConsentFor('enroll'),
+    onEnroll: () => setEnrolling(true),
+    onAgain: (identify, notice) => void begin(identify, notice),
+  });
+
+  const begin = async (identify: boolean, notice?: CatalogKey) => {
     if (!store || !deviceId) return;
     // The phone's own person agrees and enrolls first; a colleague did so
     // on their own phone (the server checks).
@@ -243,7 +214,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
       return;
     }
     setLocationProblem(null);
-    setDone(null);
+    setOutside(null);
+    flow.clearLast();
     let location: Fix | null = null;
     if (store.rules.requireGeo) {
       setLocating(true);
@@ -256,71 +228,16 @@ function ClockPanel({ storeId }: { storeId: string }) {
         return;
       }
       setLocating(false);
+      // Clearly too far, or too coarse to tell: said before the camera, not
+      // after a face check that cannot count (2026-11-07). The server decides.
+      const far = store.rules.geo ? tooFar(location, store.rules.geo) : null;
+      if (far) {
+        haptic('error');
+        setOutside(far);
+        return;
+      }
     }
-    setFaceRefused(null);
-    setPreparing(true);
-    try {
-      const c = await challenge.mutateAsync({
-        storeId,
-        identify: identify || undefined,
-        deviceId,
-        location: location ?? undefined,
-      });
-      setCamera({
-        location,
-        identify,
-        challenge: { token: c.token, steps: c.steps, acts: c.acts ?? [] },
-      });
-    } catch (err) {
-      errToast('attendance.errors.punchFailed')(err);
-    } finally {
-      setPreparing(false);
-    }
-  };
-
-  /** The server asked for the turns after all: a challenge that has them. */
-  const retryWithTurns = async (attempt: Attempt) => {
-    setPreparing(true);
-    try {
-      const c = await challenge.mutateAsync({
-        storeId,
-        identify: attempt.identify || undefined,
-        deviceId: deviceId ?? undefined,
-        location: attempt.location ?? undefined,
-        force: true,
-      });
-      setCamera({
-        ...attempt,
-        challenge: { token: c.token, steps: c.steps, acts: c.acts ?? [] },
-      });
-    } catch (err) {
-      errToast('attendance.errors.punchFailed')(err);
-    } finally {
-      setPreparing(false);
-    }
-  };
-
-  const send = (attempt: Attempt, photos: PunchPhotos | undefined) => {
-    if (!store || !deviceId) return;
-    lastAttempt.current = attempt;
-    punch.mutate({
-      storeId,
-      kind: attempt.identify ? undefined : store.nextKind,
-      deviceId,
-      platform: devicePlatform(),
-      location: attempt.location,
-      photos: photos ? { face: photos.face } : undefined,
-      liveness: attempt.challenge
-        ? {
-            token: attempt.challenge.token,
-            left: photos?.left,
-            right: photos?.right,
-            blink: photos?.blink,
-            mouth: photos?.mouth,
-          }
-        : undefined,
-      identify: attempt.identify || undefined,
-    });
+    await flow.start(identify, location, identify ? null : store.nextKind, notice);
   };
 
   return (
@@ -391,31 +308,43 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   ) : null}
                 </Banner>
               ) : null}
-              {faceRefused ? (
-                <Banner tone="danger" title={i18n.t(faceRefused)}>
-                  {i18n.t('attendance.face.refusedBody')}
+              {outside ? (
+                <Banner
+                  tone="danger"
+                  title={i18n.t(
+                    outside.kind === 'outside'
+                      ? 'attendance.location.outside.title'
+                      : 'attendance.location.inaccurate.title',
+                  )}
+                >
+                  {outside.kind === 'outside'
+                    ? i18n.t('attendance.errors.outsideArea', {
+                        distance: outside.distance,
+                        radius: outside.radius,
+                      })
+                    : i18n.t('attendance.errors.locationInaccurate', {
+                        accuracy: outside.accuracy,
+                      })}
                 </Banner>
               ) : null}
-              {done ? (
+              {flow.last ? (
                 <Banner
-                  tone={done.flagged ? 'warn' : 'success'}
-                  title={
-                    done.forName
-                      ? i18n.t(
-                          done.kind === 'in'
-                            ? 'attendance.borrow.doneIn'
-                            : 'attendance.borrow.doneOut',
-                          { name: done.forName, time: done.time },
-                        )
-                      : i18n.t(
-                          done.kind === 'in'
-                            ? 'attendance.clock.doneIn'
-                            : 'attendance.clock.doneOut',
-                          { time: done.time },
-                        )
+                  tone={flow.last.flagged ? 'warn' : 'success'}
+                  title={doneTitle(i18n, flow.last)}
+                  action={
+                    flow.last.forName && flow.last.undoUntil ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={flow.undoPending}
+                        onClick={flow.undo}
+                      >
+                        {i18n.t('attendance.punch.notThem', { name: flow.last.forName })}
+                      </Button>
+                    ) : undefined
                   }
                 >
-                  {done.flagged ? i18n.t('attendance.live.flaggedNote') : undefined}
+                  {flow.last.flagged ? i18n.t('attendance.live.flaggedNote') : undefined}
                 </Banner>
               ) : null}
 
@@ -424,8 +353,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   size="lg"
                   block
                   variant={store.nextKind === 'in' ? 'primary' : 'secondary'}
-                  loading={locating || preparing || punch.isPending}
-                  disabled={!online || !deviceId || punch.isPending || locating || preparing}
+                  loading={locating || flow.preparing}
+                  disabled={!online || !deviceId || locating || flow.preparing || flow.open}
                   onClick={() => void begin(false)}
                 >
                   {locating
@@ -462,7 +391,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
               <Button
                 variant="ghost"
                 block
-                disabled={!online || !deviceId || punch.isPending || locating || preparing}
+                disabled={!online || !deviceId || locating || flow.preparing || flow.open}
                 onClick={() => void begin(true)}
               >
                 {i18n.t('attendance.borrow.open')}
@@ -515,51 +444,18 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   void utils.attendance.me.invalidate();
                 }}
               />
-              <PunchCamera
-                open={camera !== null}
-                kind={camera?.identify ? null : store.nextKind}
-                turns={camera?.challenge?.steps ?? null}
-                acts={camera?.challenge?.acts ?? []}
-                identifying={camera?.identify ?? false}
-                busy={punch.isPending}
-                onCancel={() => setCamera(null)}
-                onConfirm={(photos) => camera && send(camera, photos)}
+              <PunchSheet
+                {...flow.sheet}
+                title={i18n.t(
+                  flow.sheet.identifying
+                    ? 'attendance.punch.colleagueTitle'
+                    : flow.kind === 'out'
+                      ? 'attendance.clock.out'
+                      : 'attendance.clock.in',
+                )}
+                storeName={store.storeName}
               />
               <UpcomingShifts shifts={store.shifts} today={store.today} />
-              <Sheet
-                open={overtimeAsk !== null}
-                onOpenChange={(open) => !open && setOvertimeAsk(null)}
-                title={i18n.t('attendance.overtime.askTitle')}
-                description={
-                  overtimeAsk
-                    ? i18n.t('attendance.overtime.askBody', {
-                        duration: minutesText(i18n, overtimeAsk.minutes),
-                      })
-                    : ''
-                }
-              >
-                <div className="flex flex-col gap-3 py-3">
-                  <Textarea
-                    rows={3}
-                    maxLength={300}
-                    value={overtimeReason}
-                    onChange={(e) => setOvertimeReason(e.target.value)}
-                    placeholder={i18n.t('attendance.overtime.reasonPlaceholder')}
-                    aria-label={i18n.t('attendance.overtime.askTitle')}
-                  />
-                  <Button
-                    block
-                    disabled={overtimeReason.trim().length === 0 || !deviceId}
-                    loading={punch.isPending}
-                    onClick={() =>
-                      overtimeAsk &&
-                      punch.mutate({ ...overtimeAsk.vars, overtimeReason: overtimeReason.trim() })
-                    }
-                  >
-                    {i18n.t('attendance.clock.out')}
-                  </Button>
-                </div>
-              </Sheet>
             </>
           )
         }

@@ -81,3 +81,22 @@ export const STOCKTAKE_COUNT_MESSAGE = {
 
 /** The face-registration consent text the person agreed to. */
 export const ATTENDANCE_FACE_CONSENT_VERSION = 1;
+
+/**
+ * Where a phone's fix still places someone at the store: a fix coarser
+ * than this cannot, and the phone's own uncertainty counts for up to the
+ * slack. The phone checks the same before it opens the camera
+ * (2026-11-07), so nobody does the face check only to hear they are too
+ * far; the server decides.
+ */
+export const ATTENDANCE_MAX_ACCURACY_M = 300;
+export const ATTENDANCE_ACCURACY_SLACK_M = 50;
+
+/**
+ * A colleague clocked on someone's phone (owner decision 2026-11-07):
+ * for this long the phone that did it can take it back ("not them", the
+ * face was taken for the wrong colleague), and that colleague is not
+ * clocked again on any phone (a punch sent twice would otherwise be their
+ * clock-in and, a minute later, their clock-out).
+ */
+export const ATTENDANCE_UNDO_WINDOW_MS = 2 * 60_000;

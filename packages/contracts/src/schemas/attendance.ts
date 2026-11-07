@@ -169,6 +169,16 @@ export const AttendanceVoidPunchInputSchema = z.object({
   reason,
 });
 
+/**
+ * "Not them": the phone that just clocked a colleague takes it back
+ * (2026-11-07). Only that phone's person, only a colleague punch, only
+ * for ATTENDANCE_UNDO_WINDOW_MS.
+ */
+export const AttendancePunchUndoInputSchema = z.object({
+  storeId: UuidSchema,
+  punchId: UuidSchema,
+});
+
 export const AttendanceMemberSetInputSchema = z.object({
   storeId: UuidSchema,
   memberId: UuidSchema,

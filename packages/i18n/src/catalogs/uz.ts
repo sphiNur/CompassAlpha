@@ -2680,12 +2680,8 @@ export const uz = {
   'attendance.export.flag.early': 'Erta ketdi',
   'attendance.export.flag.onDuty': 'Smenada',
   'attendance.export.flag.upcoming': 'Hali boshlanmagan',
-  'attendance.photo.reviewTitle': 'Suratlarni tekshiring',
-  'attendance.photo.reviewHint':
-    'Bu suratlarni faqat boshqaruvchilar koʻradi. 90 kundan keyin oʻchiriladi.',
   'attendance.photo.face': 'Yuz',
   'attendance.photo.scene': 'Joy',
-  'attendance.photo.retake': 'Qayta olish',
   'attendance.photo.show': 'Suratlarni koʻrsatish',
   'attendance.errors.photoRequired': 'Belgilanish uchun joyida olingan suratlar kerak.',
   'attendance.errors.photoInvalid': 'Suratni oʻqib boʻlmadi. Qayta oling.',
@@ -2696,8 +2692,6 @@ export const uz = {
   'attendance.face.score': 'oʻxshashlik {score}%',
   'attendance.face.showRef': 'Koʻrsatish',
   'attendance.face.hideRef': 'Yashirish',
-  'attendance.photo.reviewHintFace':
-    'Bu suratlarni faqat rahbarlar koʻradi, 90 kundan keyin oʻchiriladi. Yuz surati roʻyxatdagi yuzingiz bilan solishtiriladi.',
   'attendance.errors.faceNotFound': 'Suratda yuz topilmadi. Kameraga qarab, yorugʻda qayta oling.',
   'attendance.errors.faceCheckUnavailable':
     'Yuzni tekshirish hozir ishlamayapti. Keyinroq urinib koʻring.',
@@ -2771,7 +2765,6 @@ export const uz = {
   'attendance.errors.notRecognized':
     'Yuz bu doʻkondagi hech kimga mos kelmadi. Yorugʻ joyda qayta urining yoki rahbardan belgini qoʻshishni soʻrang.',
   'attendance.borrow.identifyHint': 'Hamkasb kameraga qaraydi, ilova kimligini oʻzi aniqlaydi.',
-  'attendance.borrow.identifySend': 'Belgilash',
   'attendance.consent.title': 'Yuz tekshiruvi',
   'attendance.consent.intro':
     'Kelish va ketish yuz orqali tekshiriladi, hech kim boshqa uchun belgilanmasligi uchun.',
@@ -2911,8 +2904,6 @@ export const uz = {
   'attendance.live.mouthTitle': 'Ogʻzingizni oching',
   'attendance.live.guide.openEyes': 'Koʻzingizni oching',
   'attendance.live.guide.closeMouth': 'Avval ogʻzingizni yoping',
-  'attendance.photo.blink': 'Koʻz yumish',
-  'attendance.photo.mouth': 'Ochiq ogʻiz',
   'admin.errors.memberHasAttendance':
     'Bu kishining davomat yozuvlari bor, shuning uchun uni olib tashlab boʻlmaydi. Oʻrniga uni toʻxtatib qoʻying — yozuvlar saqlanadi.',
   'attendance.errors.manageOwn':
@@ -2927,4 +2918,48 @@ export const uz = {
   'attendance.export.flag.missedShift': 'Bir smenaga kelmadi',
   'settlement.wages.fromAttendanceReasonMissed':
     'Davomat: kunlik haq {wage}, kechikish {late} daq, erta ketish {early} daq, oʻtkazib yuborilgan smena {missed} daq, −{deduction}',
+  'attendance.errors.justPunched': 'Hozirgina belgilangan ({time}). Qayta belgilash shart emas.',
+  'attendance.errors.undoNotYours':
+    'Bu yerda faqat shu telefondan hozirgina hamkasb uchun qilingan belgini bekor qilish mumkin.',
+  'attendance.errors.undoTooLate':
+    '2 daqiqadan koʻproq vaqt oʻtdi. Belgini bekor qilishni boshqaruvchidan soʻrang.',
+  'attendance.voidReason.wrongPerson': 'boshqa odam, belgi qilingan telefondan bekor qilindi',
+  'notify.attendance.punchUndone.title': 'Hamkasb belgisi bekor qilindi',
+  'notify.attendance.punchUndone.body':
+    '{owner} telefoni {store} da {time} da {name} ni belgiladi, lekin bu boshqa odam edi. Belgi shu telefondan bekor qilindi.',
+  'notify.attendance.punchUndoneForYou.title': 'Sizning nomingizdagi belgi bekor qilindi',
+  'notify.attendance.punchUndoneForYou.body':
+    '{owner} telefoni {store} da {time} da sizni belgiladi, lekin bu boshqa odam edi. Belgi bekor qilindi va sizga hisoblanmaydi.',
+  'attendance.punch.colleagueTitle': 'Hamkasbni belgilash',
+  'attendance.punch.checking': 'Tekshirilmoqda, biroz kuting…',
+  'attendance.punch.checkingSlow': 'Aloqa sekin, yuborish davom etmoqda. Iltimos, yopmang.',
+  'attendance.punch.okIn': 'Kelish belgilandi',
+  'attendance.punch.okOut': 'Ketish belgilandi',
+  'attendance.punch.told': '{name} va boshqaruvchilarga xabar yuborildi.',
+  'attendance.punch.notThem': 'Bu {name} emas',
+  'attendance.punch.undone': 'Bekor qilindi. Kameraga qayta qarang.',
+  'attendance.punch.again': 'Qayta urinish',
+  'attendance.punch.forSelf': 'Oʻzimni belgilash',
+  'attendance.punch.done': 'Yaxshi',
+  'attendance.punch.oneMore': 'Yana bir qadam: koʻrsatilgandek boshingizni buring.',
+  'attendance.punch.restart': 'Vaqt tugadi. Iltimos, yana bir marta bajaring.',
+  'attendance.punch.netFailed': 'Aloqa yoʻq: belgi yozilmadi.',
+  'attendance.punch.netFailedBody':
+    'Rasmlar hozircha saqlangan: qayta yuborish uchun «Qayta urinish» tugmasini bosing.',
+  'attendance.punch.alreadyIn':
+    'Siz {time} da kelishni allaqachon belgilagansiz. Qayta belgilash shart emas.',
+  'attendance.punch.alreadyOut':
+    'Siz {time} da ketishni allaqachon belgilagansiz. Qayta belgilash shart emas.',
+  'attendance.punch.alreadyInFor':
+    '{name} {time} da kelishni allaqachon belgilagan. Qayta belgilash shart emas.',
+  'attendance.punch.alreadyOutFor':
+    '{name} {time} da ketishni allaqachon belgilagan. Qayta belgilash shart emas.',
+  'attendance.punch.notRecognizedHint':
+    'Avval hamkasb yuzini oʻz telefonida roʻyxatdan oʻtkazadi va boshqaruvchi tasdiqlaydi; shundan keyingina boshqa telefondan belgilanish mumkin. Yorugʻlik kamligi ham xalaqit qiladi.',
+  'attendance.overtime.askBodyFor':
+    '{name}: smena tugaganidan {duration} keyin. Qoʻshimcha ish boshqaruvchi tasdiqlagach hisoblanadi.',
+  'attendance.overtime.continue': 'Davom etish',
+  'attendance.location.outside.title': 'Doʻkondan juda uzoqdasiz',
+  'attendance.location.inaccurate.title': 'Joylashuv yetarlicha aniq emas',
+  'attendance.punch.preparing': 'Tayyorlanmoqda…',
 } as const satisfies Record<CatalogKey, string>;

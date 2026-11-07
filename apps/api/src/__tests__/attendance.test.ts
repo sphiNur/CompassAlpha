@@ -1145,12 +1145,19 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       clock(f.staff(), { who: 'Bob', identify: true, left: 'Bob:print', right: 'Bob:print' }),
       'attendance.errors.livenessFailed',
     );
+    // Bob clocked in on his own phone a moment ago: found again on Ali's
+    // phone, that is the same punch twice, not his clock-out (2026-11-07).
+    await expectError(
+      clock(f.staff(), { who: 'Bob', identify: true }),
+      'attendance.errors.justPunched',
+    );
+    await resetPunches(f.colleagueId);
     const borrowed = await clock(f.staff(), { who: 'Bob', identify: true });
     expect([borrowed.face, borrowed.liveness, borrowed.forName, borrowed.kind]).toEqual([
       'match',
       'pass',
       'Att Colleague',
-      'out',
+      'in',
     ]);
     sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
     const row = sheet.punches.find((p) => p.id === borrowed.id)!;
@@ -1218,7 +1225,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
     const to = (template: string) => told.filter((r) => r.template === template).map((r) => r.to);
     expect(to('attendance.borrowedPhone')).toEqual([f.managerUserId]);
-    expect(to('attendance.clockedOutForYou')).toEqual([f.colleagueUserId]);
+    expect(to('attendance.clockedInForYou')).toEqual([f.colleagueUserId]);
     expect(to('attendance.newDevice')).toEqual([f.managerUserId]);
     expect(to('attendance.livenessFailed')).toEqual([]);
 
@@ -1506,6 +1513,173 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       refused = true;
     }
     expect(refused).toBe(true);
+  });
+});
+
+/** A refused call's key and the placeholders it sent. */
+async function refusal(p: Promise<unknown>) {
+  try {
+    await p;
+  } catch (e) {
+    const err = e as { message?: string; cause?: { context?: Record<string, unknown> } };
+    return { message: err.message ?? null, context: err.cause?.context ?? null };
+  }
+  return { message: null, context: null };
+}
+
+describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {
+  test('the challenge says when a clock-out will need a reason', async () => {
+    const f = fx!;
+    await resetPunches(f.staffId);
+    await f.manager.attendance.policySave({
+      storeId: f.storeId,
+      requireDevice: false,
+      requireGeo: false,
+      geo: null,
+      graceMinutes: 5,
+      overtimeAfterMinutes: 30,
+    });
+    // Next is a clock-in: nothing to ask.
+    const toIn = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
+    expect(toIn.overtimeMinutes).toBe(0);
+    // Clocked in at the start of the shift that ended an hour ago (the pay test's).
+    const start = new Date(Date.now() - 5 * 3600_000);
+    await f.manager.attendance.manualPunch({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      kind: 'in',
+      date: dateInTz(start, TZ),
+      time: attendance.localTime(start, TZ),
+      reason: 'test',
+    });
+    const toOut = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
+    expect(toOut.overtimeMinutes).toBeGreaterThanOrEqual(59);
+    // A colleague's is known only once their face is.
+    const colleague = await f.staff().attendance.livenessChallenge({
+      storeId: f.storeId,
+      identify: true,
+    });
+    expect(colleague.overtimeMinutes).toBe(0);
+    await resetPunches(f.staffId);
+  });
+
+  test('a colleague: named in the overtime question, not clocked twice, "not them" for two minutes', async () => {
+    const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    await resetPunches(f.staffId, f.colleagueId);
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      enabled: true,
+    });
+    await enrollApproved(f.colleague(), 'Bob');
+    // Bob's shift ended an hour ago; he clocked in at its start.
+    const start = new Date(Date.now() - 5 * 3600_000);
+    const end = new Date(Date.now() - 3600_000);
+    await f.manager.attendance.shiftSave({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      date: dateInTz(start, TZ),
+      start: attendance.localTime(start, TZ),
+      end: attendance.localTime(end, TZ),
+    });
+    await f.manager.attendance.manualPunch({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      kind: 'in',
+      date: dateInTz(start, TZ),
+      time: attendance.localTime(start, TZ),
+      reason: 'test',
+    });
+
+    // On Ali's phone, Bob's clock-out past the shift: the question says whose.
+    const asked = await refusal(clock(f.staff(), { who: 'Bob', identify: true }));
+    expect(asked.message).toBe('attendance.errors.overtimeReasonRequired');
+    expect(asked.context?.name).toBe('Att Colleague');
+    expect(Number(asked.context?.minutes)).toBeGreaterThanOrEqual(59);
+    const out = await clock(f.staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' });
+    expect([out.kind, out.forName]).toEqual(['out', 'Att Colleague']);
+
+    // Found again within two minutes, on any phone: the same punch, not his next.
+    const again = await refusal(
+      clock(f.staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' }),
+    );
+    expect(again.message).toBe('attendance.errors.justPunched');
+    expect(again.context).toMatchObject({ lastKind: 'out', name: 'Att Colleague' });
+    expect(String(again.context?.time)).toMatch(/^\d{2}:\d{2}$/);
+    // On his own phone the kind is his to say; the refusal says when he did.
+    const own = await refusal(clock(f.colleague(), { who: 'Bob', kind: 'out', device: DEVICE }));
+    expect(own.message).toBe('attendance.errors.notClockedIn');
+    expect(own.context?.lastKind).toBe('out');
+
+    // "Not them": only the phone that made it, only once.
+    await expectError(
+      f.colleague().attendance.punchUndo({ storeId: f.storeId, punchId: out.id }),
+      'attendance.errors.undoNotYours',
+    );
+    // A manager voids it from the sheet, with a reason; this is not that.
+    await expectError(
+      f.manager.attendance.punchUndo({ storeId: f.storeId, punchId: out.id }),
+      'attendance.errors.notEnabled',
+    );
+    await f.staff().attendance.punchUndo({ storeId: f.storeId, punchId: out.id });
+    await expectError(
+      f.staff().attendance.punchUndo({ storeId: f.storeId, punchId: out.id }),
+      'attendance.errors.alreadyVoided',
+    );
+    const date = dateInTz(new Date(out.at), TZ);
+    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    const row = sheet.punches.find((p) => p.id === out.id)!;
+    expect([row.voided?.reason, row.voided?.byName]).toEqual([
+      'attendance.voidReason.wrongPerson',
+      'Att Staff',
+    ]);
+    // Its overtime is no longer waiting for anyone.
+    expect(sheet.overtime.filter((o) => o.punchId === out.id && o.status === 'pending')).toEqual(
+      [],
+    );
+    const told = await db
+      .select({ to: s.notifications.recipientUserId, template: s.notifications.template })
+      .from(s.notifications)
+      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
+    const to = (template: string) => told.filter((r) => r.template === template).map((r) => r.to);
+    expect(to('attendance.punchUndone')).toEqual([f.managerUserId]);
+    expect(to('attendance.punchUndoneForYou')).toEqual([f.colleagueUserId]);
+
+    // Taken back, the right face clocks: the voided punch holds nothing up.
+    const right = await clock(f.staff(), {
+      who: 'Bob',
+      identify: true,
+      overtimeReason: 'stocktake',
+    });
+    expect(right.kind).toBe('out');
+
+    // After two minutes it is the manager's to void.
+    const [old] = await db
+      .insert(s.attendancePunches)
+      .values({
+        orgId: f.orgId,
+        storeId: f.storeId,
+        memberId: f.colleagueId,
+        kind: 'in',
+        punchedAt: new Date(Date.now() - 5 * 60_000),
+        source: 'self',
+        createdByMemberId: f.staffId,
+        viaMemberId: f.staffId,
+      })
+      .returning({ id: s.attendancePunches.id });
+    await expectError(
+      f.staff().attendance.punchUndo({ storeId: f.storeId, punchId: old!.id }),
+      'attendance.errors.undoTooLate',
+    );
+
+    await resetPunches(f.staffId, f.colleagueId);
+    await f.colleague().attendance.faceConsentWithdraw();
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      enabled: false,
+    });
   });
 });
 

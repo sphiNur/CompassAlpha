@@ -497,7 +497,14 @@ function MemberDaySheet({
                           ? i18n.t('attendance.sheet.selfAt', { m: p.distanceM })
                           : i18n.t('attendance.source.self')}
                       {p.voided
-                        ? ` · ${i18n.t('attendance.sheet.voidedBy', { name: p.voided.byName ?? '—', reason: p.voided.reason })}`
+                        ? ` · ${i18n.t('attendance.sheet.voidedBy', {
+                            name: p.voided.byName ?? '—',
+                            // "Not them" on a colleague's phone is stored as a key (2026-11-07).
+                            reason:
+                              p.voided.reason === 'attendance.voidReason.wrongPerson'
+                                ? i18n.t('attendance.voidReason.wrongPerson')
+                                : p.voided.reason,
+                          })}`
                         : ''}
                     </span>
                   </span>
