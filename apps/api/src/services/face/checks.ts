@@ -31,6 +31,19 @@ export const CHECK_LINES = {
   realSure: 0.8,
   /** Identification: the best face beats the next one by this much. */
   identifyMargin: 0.05,
+  /**
+   * Identification among colleagues needs more than one person's match
+   * line (2026-11-07): the best of many faces crosses it more easily.
+   */
+  identifyMin: 0.45,
+  /**
+   * A movement frame (blink, open mouth, a turn) against the person's
+   * enrollment: closed eyes, an open mouth or a turned head match less
+   * well than the straight frame, but a different person stays far below.
+   */
+  moveMatch: 0.3,
+  /** A frame this close to one seen before is the same picture sent again. */
+  samePicture: 0.9995,
 } as const;
 
 export function faceInGrayZone(score: number): boolean {
@@ -51,6 +64,7 @@ export interface KnownFace {
 export function identify(
   feature: readonly number[],
   known: readonly KnownFace[],
+  line: number = MATCH_THRESHOLD,
 ): { memberId: string; name: string; score: number } | null {
   const ranked = known
     .map((k) => ({
@@ -60,8 +74,24 @@ export function identify(
     }))
     .sort((a, b) => b.score - a.score);
   const best = ranked[0];
-  if (!best || best.score < MATCH_THRESHOLD) return null;
+  if (!best || !(best.score >= line)) return null;
   const next = ranked[1];
-  if (next && best.score - next.score < CHECK_LINES.identifyMargin) return null;
+  if (next && !(best.score - next.score >= CHECK_LINES.identifyMargin)) return null;
   return best;
+}
+
+/** Every movement frame is the enrolled person too, not only the straight one. */
+export function movesMatch(
+  enrolled: readonly (readonly number[])[],
+  moves: readonly (readonly number[])[],
+): boolean {
+  return moves.every((m) => (bestScore(enrolled, m) ?? -1) >= CHECK_LINES.moveMatch);
+}
+
+/** Whether any of `frames` is (nearly) the same picture as one in `seen`. */
+export function samePicture(
+  frames: readonly (readonly number[])[],
+  seen: readonly (readonly number[])[],
+): boolean {
+  return frames.some((f) => (bestScore(seen, f) ?? -1) > CHECK_LINES.samePicture);
 }

@@ -152,6 +152,16 @@ const mutationRateMiddleware = t.middleware(async (opts) => {
   return opts.next();
 });
 
+/**
+ * Mutations that only delete a person's face data stay open in a
+ * read-only workspace (review 2026-11-07): withdrawing consent must work
+ * whether or not the subscription is paid.
+ */
+const ERASE_WHEN_READ_ONLY: ReadonlySet<string> = new Set([
+  'attendance.faceConsentWithdraw',
+  'attendance.faceEnrollReset',
+]);
+
 /** Authenticated user required. */
 export const authedProcedure = t.procedure
   .use(errorLogMiddleware)
@@ -168,7 +178,8 @@ export const authedProcedure = t.procedure
     const exempt =
       opts.path.startsWith('auth.') ||
       opts.path.startsWith('system.') ||
-      opts.path.startsWith('platform.');
+      opts.path.startsWith('platform.') ||
+      ERASE_WHEN_READ_ONLY.has(opts.path);
     if (exempt) return opts.next();
     throw new TRPCError({
       code: 'FORBIDDEN',

@@ -744,7 +744,7 @@ export const attendanceShifts = inventorySchema.table(
       .references(() => stores.id, { onDelete: 'cascade' }),
     memberId: uuid('member_id')
       .notNull()
-      .references(() => members.id, { onDelete: 'cascade' }),
+      .references(() => members.id, { onDelete: 'no action' }),
     shiftDate: date('shift_date', { mode: 'string' }).notNull(),
     startsAt: timestamp('starts_at', { withTimezone: true, mode: 'date' }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true, mode: 'date' }).notNull(),
@@ -762,7 +762,10 @@ export const attendanceShifts = inventorySchema.table(
   }),
 );
 
-/** Append-only (trigger): a punch is never deleted, only voided once. */
+/**
+ * Append-only (trigger): a punch is never deleted, only voided once. It
+ * stays when the member is removed (0068): removal is refused instead.
+ */
 export const attendancePunches = inventorySchema.table(
   'attendance_punches',
   {
@@ -775,7 +778,7 @@ export const attendancePunches = inventorySchema.table(
       .references(() => stores.id, { onDelete: 'cascade' }),
     memberId: uuid('member_id')
       .notNull()
-      .references(() => members.id, { onDelete: 'cascade' }),
+      .references(() => members.id, { onDelete: 'no action' }),
     kind: varchar('kind', { length: 3 }).notNull().$type<'in' | 'out'>(),
     punchedAt: timestamp('punched_at', { withTimezone: true, mode: 'date' }).notNull(),
     source: varchar('source', { length: 8 }).notNull().$type<'self' | 'manual'>(),
@@ -817,7 +820,7 @@ export const attendancePayRates = inventorySchema.table(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     memberId: uuid('member_id')
       .notNull()
-      .references(() => members.id, { onDelete: 'cascade' }),
+      .references(() => members.id, { onDelete: 'no action' }),
     dailyWage: decimal('daily_wage', { precision: 14, scale: 2 }).notNull(),
     effectiveFrom: date('effective_from', { mode: 'string' }).notNull(),
     createdByMemberId: uuid('created_by_member_id'),
@@ -845,7 +848,7 @@ export const attendanceOvertime = inventorySchema.table(
       .references(() => stores.id, { onDelete: 'cascade' }),
     memberId: uuid('member_id')
       .notNull()
-      .references(() => members.id, { onDelete: 'cascade' }),
+      .references(() => members.id, { onDelete: 'no action' }),
     shiftId: uuid('shift_id').references(() => attendanceShifts.id, { onDelete: 'set null' }),
     punchId: uuid('punch_id')
       .notNull()
@@ -997,6 +1000,38 @@ export const attendancePunchReviews = inventorySchema.table(
       .defaultNow(),
   },
   (t) => ({ orgIdx: index('apr_org_idx').on(t.orgId) }),
+);
+
+/**
+ * Prints of an accepted punch's frames (0068): a SHA-256 and the SFace
+ * feature of each, so a frame sent again later is refused. Kept 90 days.
+ */
+export const attendancePunchFrames = inventorySchema.table(
+  'attendance_punch_frames',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    punchId: uuid('punch_id')
+      .notNull()
+      .references(() => attendancePunches.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 8 })
+      .notNull()
+      .$type<'face' | 'blink' | 'mouth' | 'left' | 'right'>(),
+    sha256: bytea('sha256').notNull(),
+    feature: real('feature').array().notNull(),
+    takenAt: timestamp('taken_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => ({
+    memberTakenIdx: index('apf_member_taken_idx').on(t.memberId, t.takenAt),
+    takenIdx: index('apf_taken_idx').on(t.takenAt),
+    orgIdx: index('apf_org_idx').on(t.orgId),
+    punchIdx: index('apf_punch_idx').on(t.punchId),
+  }),
 );
 
 /** A member agreed to face registration for clocking (0065). */

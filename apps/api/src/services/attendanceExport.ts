@@ -10,11 +10,12 @@
  */
 import { SignJWT, jwtVerify } from 'jose';
 import { format, loadCatalog, type CatalogKey, type Locale } from '@compass/i18n';
-import { env } from '../env';
+import { purposeKey } from '../infra/jwt';
 import { buildXlsx, type Cell, type SheetSpec } from './xlsx';
 
-const secret = new TextEncoder().encode(env.JWT_SECRET);
 const AUDIENCE = 'attendance-month-export';
+/** Its own key: the link is never a login (2026-11-07). */
+const secret = purposeKey(AUDIENCE);
 
 export interface ExportClaims {
   sub: string;
@@ -92,6 +93,7 @@ const money = (cents: number) => Math.round(cents) / 100;
 /** The day's attendance in words, most telling first; empty = as planned. */
 const FLAG_ORDER = [
   'absent',
+  'missedShift',
   'missingIn',
   'missingOut',
   'unscheduled',

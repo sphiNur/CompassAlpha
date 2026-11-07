@@ -21,18 +21,24 @@
  * of the same person, looking roughly at the camera, and not a copy of
  * another frame. A print or a screen cannot blink.
  *
+ * Every frame must also be the enrolled person (checked in the punch, not
+ * here), and the straight frame must look real on its own (2026-11-07): a
+ * mean over the frames let a printed straight frame through with live
+ * movements done by someone else.
+ *
  * Limits: a deep-fake video fed straight into the camera stream is not
- * something two small models catch; the scene photo, the bound phone and
- * the store's location are the other locks.
+ * something two small models catch; the bound phone, the store's location
+ * and the frame prints (a frame sent before is refused) are the other locks.
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
-import { env } from '../../env';
+import { purposeKey } from '../../infra/jwt';
 import type { FaceResult } from './pipeline';
 import { cosine } from './index';
 
-const secret = new TextEncoder().encode(env.JWT_SECRET);
 const AUDIENCE = 'attendance-liveness';
+/** Its own key, apart from the login tokens' (2026-11-07). */
+const secret = purposeKey(AUDIENCE);
 
 export type Turn = 'left' | 'right';
 /** The face movements asked for on every punch (2026-11-07). */
@@ -98,7 +104,7 @@ export const LIVENESS = {
   turnMinYaw: 0.2,
   /** Turned frames against the straight one: a turned face matches less well. */
   samePerson: 0.25,
-  /** Mean real-face probability over the three frames. */
+  /** Real-face probability: the straight frame's, and the mean over the three. */
   realMin: 0.5,
 } as const;
 
@@ -144,7 +150,9 @@ export function evaluateLiveness(
     failures.push('otherPerson');
   }
   const score = (front.real + left.real + right.real) / 3;
-  if (score < LIVENESS.realMin) failures.push('spoof');
+  // The straight frame is the one matched to the enrollment: it must look
+  // real by itself, not only on average with the turns.
+  if (score < LIVENESS.realMin || front.real < LIVENESS.realMin) failures.push('spoof');
   return { result: failures.length ? 'fail' : 'pass', score, failures };
 }
 
@@ -155,7 +163,7 @@ export const ACT_LINES = {
   samePerson: 0.4,
   /** Above this the two frames are one picture sent twice. */
   sameFrame: 0.9995,
-  /** Mean real-face probability over the straight frame and the movements. */
+  /** Real-face probability: the straight frame's, and the mean with the movements. */
   realMin: 0.5,
 } as const;
 
@@ -186,6 +194,6 @@ export function evaluateActs(
   }
   const all = [front, ...found];
   const score = all.reduce((t, f) => t + f.real, 0) / all.length;
-  if (score < ACT_LINES.realMin) failures.add('spoof');
+  if (score < ACT_LINES.realMin || front.real < ACT_LINES.realMin) failures.add('spoof');
   return { result: failures.size ? 'fail' : 'pass', score, failures: [...failures] };
 }

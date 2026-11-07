@@ -54,6 +54,7 @@ DECLARE
     'inventory.attendance_face_samples',
     'inventory.attendance_punch_reviews',
     'inventory.attendance_face_consents',
+    'inventory.attendance_punch_frames',
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',

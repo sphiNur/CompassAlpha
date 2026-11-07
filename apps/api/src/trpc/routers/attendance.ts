@@ -20,7 +20,7 @@
  */
 import { createHash } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
@@ -70,6 +70,8 @@ import {
   CHECK_LINES,
   faceInGrayZone,
   identify,
+  movesMatch,
+  samePicture,
   spotCheck,
   type KnownFace,
 } from '../../services/face/checks';
@@ -233,20 +235,72 @@ async function enrolledFeatures(
 }
 
 /**
- * The face photo against `memberId`'s approved enrollment (the best of its
- * photos counts). `checked` is the worker's answer; null = the check could
- * not run. Null when the person has no approved enrollment.
+ * The face photo against a person's approved enrollment (`features`, the
+ * best of its photos counts). `checked` is the worker's answer; null = the
+ * check could not run. Null when the person has no approved enrollment.
  */
-async function faceCompare(
-  tx: DB,
-  memberId: string,
+function faceCompare(
+  features: readonly (readonly number[])[] | undefined,
   checked: FaceResult | null,
-): Promise<FaceVerdict | null> {
-  const features = (await enrolledFeatures(tx, [memberId])).get(memberId);
+): FaceVerdict | null {
   if (!features?.length) return null;
   if (!checked || !checked.found) return { result: 'unchecked', score: null };
   const score = bestScore(features, checked.feature) ?? -1;
   return { result: score >= MATCH_THRESHOLD ? 'match' : 'mismatch', score };
+}
+
+/** One frame of a punch: what is kept of it to refuse it if sent again. */
+interface FramePrint {
+  kind: 'face' | 'blink' | 'mouth' | 'left' | 'right';
+  sha256: Buffer;
+  feature: number[];
+}
+
+const print = (kind: FramePrint['kind'], bytes: Buffer, feature: number[]): FramePrint => ({
+  kind,
+  sha256: createHash('sha256').update(bytes).digest(),
+  feature,
+});
+
+/** Frames compared feature by feature with the new ones: the latest this many. */
+const FRAME_PRINTS_COMPARED = 400;
+
+/**
+ * Whether one of `prints` was sent before for `memberId` (2026-11-07): the
+ * same bytes as a kept frame, or the same picture as a recent frame or an
+ * enrollment photo. A person in front of the camera never gives the same
+ * picture twice; saved pictures do.
+ */
+async function framesSeenBefore(
+  tx: DB,
+  memberId: string,
+  prints: readonly FramePrint[],
+  enrolled: readonly (readonly number[])[],
+): Promise<boolean> {
+  const sameBytes = await tx
+    .select({ id: s.attendancePunchFrames.id })
+    .from(s.attendancePunchFrames)
+    .where(
+      and(
+        eq(s.attendancePunchFrames.memberId, memberId),
+        inArray(
+          s.attendancePunchFrames.sha256,
+          prints.map((p) => p.sha256),
+        ),
+      ),
+    )
+    .limit(1);
+  if (sameBytes.length > 0) return true;
+  const recent = await tx
+    .select({ feature: s.attendancePunchFrames.feature })
+    .from(s.attendancePunchFrames)
+    .where(eq(s.attendancePunchFrames.memberId, memberId))
+    .orderBy(desc(s.attendancePunchFrames.takenAt))
+    .limit(FRAME_PRINTS_COMPARED);
+  return samePicture(
+    prints.map((p) => p.feature),
+    [...recent.map((r) => r.feature), ...enrolled],
+  );
 }
 
 type EnrollmentRow = typeof s.attendanceFaceEnrollments.$inferSelect;
@@ -315,9 +369,18 @@ async function assertColleague(tx: DB, session: Session, storeId: string, member
   }
 }
 
-/** A super admin approves their own face enrollment; nobody else does. */
-function approvesOwnFace(session: Session): boolean {
+/**
+ * A super admin handles their own attendance: approves their own face,
+ * fixes their own punches, sets their own wage, decides their own
+ * overtime. Other managers do not (owner decisions 2026-11-06 / 2026-11-07).
+ */
+function handlesOwn(session: Session): boolean {
   return session.roleSlugs.has('super_admin');
+}
+
+/** Refuses a manager's action on their own attendance (see `handlesOwn`). */
+function refuseOwn(session: Session, memberId: string): void {
+  if (memberId === session.memberId && !handlesOwn(session)) fail('FORBIDDEN', 'manageOwn');
 }
 
 function publish(orgId: string, storeId: string): void {
@@ -656,6 +719,8 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         name: names.get(id) ?? '—',
         inStore: rosterIds.has(id),
         enabled: enabled.has(id),
+        /** The manager's own row: only a super admin changes it (2026-11-07). */
+        own: id === session.memberId && !handlesOwn(session),
         deviceBoundAt: deviceBound.get(id)?.toISOString() ?? null,
         face: faceStatus.get(id) ?? ('none' as const),
         dailyWage: rateOn(id, to),
@@ -931,9 +996,14 @@ export const attendanceRouter = router({
     if (!shots) fail('BAD_REQUEST', 'photoRequired');
     // The face and liveness checks (~0.5 s a frame) run before the
     // transaction, not inside it.
-    const checked = await faceFeature(photoBytes(shots.face));
+    const faceBytes = photoBytes(shots.face);
+    const checked = await faceFeature(faceBytes);
     if (!checked) fail('CONFLICT', 'faceCheckUnavailable');
     if (!checked.found) fail('BAD_REQUEST', 'faceNotFound');
+    // Every frame's print, and the movement frames' features: each must be
+    // the enrolled person, and none may have been sent before (2026-11-07).
+    const prints: FramePrint[] = [print('face', faceBytes, checked.feature)];
+    const moves: number[][] = [];
     if (!input.liveness) fail('BAD_REQUEST', 'livenessRequired');
     const claims = await verifyLivenessToken(input.liveness.token);
     if (
@@ -950,14 +1020,13 @@ export const attendanceRouter = router({
     // frames checked here. A token from before asks for none.
     const acts = claims.acts ?? [];
     if (acts.length > 0) {
-      const faceBytes = photoBytes(shots.face);
       const frames: { act: Act; bytes: Buffer }[] = [];
       for (const act of acts) {
         const b64 = input.liveness[act];
         if (!b64) fail('BAD_REQUEST', 'livenessRequired');
         frames.push({ act, bytes: photoBytes(b64) });
       }
-      const results = [];
+      const results: { act: Act; result: FaceResult | null; copy: boolean }[] = [];
       for (const f of frames) {
         results.push({
           act: f.act,
@@ -972,6 +1041,13 @@ export const attendanceRouter = router({
           context: { failures: verdict.failures.join(',') },
         });
       }
+      frames.forEach((f, i) => {
+        const r = results[i]!.result;
+        if (r?.found) {
+          prints.push(print(f.act, f.bytes, r.feature));
+          moves.push(r.feature);
+        }
+      });
     }
     const turnsAsked = claims.steps.length > 0;
     // A borrowed phone always asks for the turns: nobody else vouches for it.
@@ -979,13 +1055,22 @@ export const attendanceRouter = router({
     let live: LivenessVerdict;
     if (turnsAsked) {
       if (!input.liveness.left || !input.liveness.right) fail('BAD_REQUEST', 'livenessRequired');
-      const left = await faceFeature(photoBytes(input.liveness.left));
-      const right = await faceFeature(photoBytes(input.liveness.right));
+      const leftBytes = photoBytes(input.liveness.left);
+      const rightBytes = photoBytes(input.liveness.right);
+      const left = await faceFeature(leftBytes);
+      const right = await faceFeature(rightBytes);
       live = evaluateLiveness(checked, left, right);
       if (live.result === 'unchecked') fail('CONFLICT', 'faceCheckUnavailable');
       // Face only: a failed check is refused; the person tries again.
       if (live.result === 'fail') {
         fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
+      }
+      if (left?.found && right?.found) {
+        prints.push(
+          print('left', leftBytes, left.feature),
+          print('right', rightBytes, right.feature),
+        );
+        moves.push(left.feature, right.feature);
       }
     } else if (checked.real >= CHECK_LINES.realSure) {
       // One face photo, plainly a real face: no turns this time.
@@ -1004,8 +1089,13 @@ export const attendanceRouter = router({
           except: session.memberId,
           colleagues: true,
         });
-        const who = identify(checked.feature, known);
+        // The phone's own person is a candidate too (2026-11-07): their
+        // face must not pass for a colleague who looks like them.
+        const own = (await enrolledFeatures(tx, [session.memberId])).get(session.memberId);
+        if (own?.length) known.push({ memberId: session.memberId, name: '', features: own });
+        const who = identify(checked.feature, known, CHECK_LINES.identifyMin);
         if (!who) fail('FORBIDDEN', 'notRecognized');
+        if (who.memberId === session.memberId) fail('FORBIDDEN', 'identifyIsOwner');
         target = who.memberId;
       }
       if (borrowed) {
@@ -1024,7 +1114,8 @@ export const attendanceRouter = router({
         scene: null,
       };
 
-      const face = await faceCompare(tx, target, checked);
+      const enrolled = (await enrolledFeatures(tx, [target])).get(target);
+      const face = faceCompare(enrolled, checked);
       if (!face) fail('BAD_REQUEST', borrowed ? 'borrowNoFace' : 'faceNotEnrolled');
       // A face close to the line is confirmed with the turns.
       if (!turnsAsked && face.score != null && faceInGrayZone(face.score)) {
@@ -1033,6 +1124,21 @@ export const attendanceRouter = router({
       // Face only: someone else's face is refused (owner, 2026-11-06).
       if (face.result !== 'match') {
         fail('FORBIDDEN', borrowed ? 'borrowFaceMismatch' : 'faceMismatch');
+      }
+      // The blink, the open mouth and the turns are this person too, not
+      // someone else moving after a photo of them (2026-11-07).
+      if (!movesMatch(enrolled ?? [], moves)) {
+        fail('BAD_REQUEST', 'livenessFailed', { context: { failures: 'otherPerson' } });
+      }
+      // A token used for a punch already: say so before looking at frames.
+      const used = await tx
+        .select({ id: s.attendancePunches.id })
+        .from(s.attendancePunches)
+        .where(eq(s.attendancePunches.livenessNonce, nonce))
+        .limit(1);
+      if (used.length > 0) fail('BAD_REQUEST', 'livenessExpired');
+      if (await framesSeenBefore(tx, target, prints, enrolled ?? [])) {
+        fail('BAD_REQUEST', 'photoReused');
       }
 
       // Device: the first punch binds the phone. A borrowed phone is the
@@ -1157,6 +1263,17 @@ export const attendanceRouter = router({
           { kind: 'right', bytes: photoBytes(input.liveness.right) },
         );
       }
+      await tx.insert(s.attendancePunchFrames).values(
+        prints.map((p) => ({
+          orgId: session.orgId,
+          memberId: target,
+          punchId: row.id,
+          kind: p.kind,
+          sha256: p.sha256,
+          feature: p.feature,
+          takenAt: now,
+        })),
+      );
       await tx.insert(s.attendancePhotos).values(
         frames.map(({ kind: k, bytes }) => ({
           orgId: session.orgId,
@@ -1377,6 +1494,7 @@ export const attendanceRouter = router({
       const session = ctx.session!;
       return ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        refuseOwn(session, input.memberId);
         await assertInStore(tx, session.orgId, store.id, input.memberId);
         const tz = tzOf(store, session);
         const at = rules.zonedTimeToUtc(input.date, input.time, tz);
@@ -1431,6 +1549,7 @@ export const attendanceRouter = router({
             and2(eq2(p.id, input.punchId), eq2(p.storeId, store.id)),
         });
         if (!punch) fail('NOT_FOUND', 'punchNotFound');
+        refuseOwn(session, punch.memberId);
         if (punch.voidedAt) fail('CONFLICT', 'alreadyVoided');
         await tx
           .update(s.attendancePunches)
@@ -1544,6 +1663,12 @@ export const attendanceRouter = router({
       const session = ctx.session!;
       return ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const overtime = await tx.query.attendanceOvertime.findFirst({
+          where: (o, { and: and2, eq: eq2 }) =>
+            and2(eq2(o.id, input.overtimeId), eq2(o.storeId, store.id)),
+        });
+        if (!overtime) fail('NOT_FOUND', 'overtimeNotFound');
+        refuseOwn(session, overtime.memberId);
         const [row] = await tx
           .update(s.attendanceOvertime)
           .set({
@@ -1572,6 +1697,7 @@ export const attendanceRouter = router({
       const session = ctx.session!;
       return ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        refuseOwn(session, input.memberId);
         await assertInStore(tx, session.orgId, store.id, input.memberId);
         await tx
           .insert(s.attendancePayRates)
@@ -1628,6 +1754,7 @@ export const attendanceRouter = router({
             dailyWage: d.dailyWage,
             lateMinutes: d.lateMinutes,
             earlyMinutes: d.earlyMinutes,
+            missedMinutes: d.missedMinutes,
             deduction: centsToMoney(d.pay.deductionCents),
             amount: d.pay.netCents === null ? null : centsToMoney(d.pay.netCents),
           }));
@@ -1853,7 +1980,7 @@ export const attendanceRouter = router({
         });
         if (!row || row.status !== 'pending') fail('NOT_FOUND', 'enrollmentNotFound');
         await assertInStore(tx, session.orgId, store.id, row.memberId);
-        if (row.memberId === session.memberId && !approvesOwnFace(session)) {
+        if (row.memberId === session.memberId && !handlesOwn(session)) {
           fail('FORBIDDEN', 'enrollOwn');
         }
         const decided = {
@@ -2055,7 +2182,7 @@ export const attendanceRouter = router({
             id: e.id,
             memberId: e.memberId,
             name: rosterName.get(e.memberId) ?? '—',
-            own: e.memberId === session.memberId && !approvesOwnFace(session),
+            own: e.memberId === session.memberId && !handlesOwn(session),
             date: dateInTz(e.createdAt, tz),
             time: rules.localTime(e.createdAt, tz),
           })),
@@ -2073,6 +2200,7 @@ export const attendanceRouter = router({
             liveness: r.liveness,
             viaName: r.viaMemberId ? (nameOf.get(r.viaMemberId) ?? '—') : null,
             newDevice: r.newDevice,
+            own: r.memberId === session.memberId && !handlesOwn(session),
           })),
           overtimePending: pending?.n ?? 0,
         };
@@ -2091,6 +2219,7 @@ export const attendanceRouter = router({
             and2(eq2(p.id, input.punchId), eq2(p.storeId, store.id)),
         });
         if (!punch) fail('NOT_FOUND', 'punchNotFound');
+        refuseOwn(session, punch.memberId);
         await tx
           .insert(s.attendancePunchReviews)
           .values({

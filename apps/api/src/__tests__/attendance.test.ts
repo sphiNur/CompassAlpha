@@ -11,7 +11,10 @@ import { logger } from '../infra/log';
 import { attendanceMonthExport } from '../http/attendanceExport';
 import { appRouter } from '../trpc/router';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
-import { purgeOldAttendancePhotos } from '../services/attendancePhotoRetention';
+import {
+  purgeOldAttendancePhotos,
+  purgeOldFramePrints,
+} from '../services/attendancePhotoRetention';
 import { setFaceEngineForTests } from '../services/face';
 import { signLivenessToken } from '../services/face/liveness';
 import type { RequestContext, SessionContext } from '../trpc/context';
@@ -107,13 +110,30 @@ const SHOP = { lat: 41.311081, lng: 69.240562 };
 const jpeg = (tag: string) =>
   Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
 const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
+/**
+ * A picture taken now, not one sent before: tag "...#n" leans the face a
+ * little towards its own direction, so two punches never give the same
+ * picture (a frame sent again is refused, 2026-11-07).
+ */
+const taken = (f: number[], tag: string) => {
+  const n = /#(\d+)/.exec(tag)?.[1];
+  if (n === undefined) return f;
+  const lean = Array.from({ length: 128 }, (_, j) => (j === 3 + (Number(n) % 90) ? 0.1 : 0));
+  const v = f.map((x, j) => x + lean[j]!);
+  const norm = Math.sqrt(v.reduce((t, x) => t + x * x, 0));
+  return v.map((x) => x / norm);
+};
+let frameSeq = 0;
+/** Tag ":half": a picture only somewhat like the person (score ~0.4), leaning towards Dan. */
+const half = (f: number[]) => f.map((x, j) => x * 0.4 + (j === 110 ? 0.917 : 0));
 /** A blink or an open mouth: the same person, a slightly different picture. */
 const moved = (f: number[], yes: boolean) =>
   yes ? f.map((x, j) => (j === 100 ? 0.31 : x * 0.95)) : f;
 /**
- * The stub face model. Tag "<who>:<pose>[:print|:dark]": Ali (the staff
- * member), Bob (the colleague) or Cat (a stranger); left / right turn the
- * head; print = a photo held up (low real-face score); flat = no turn;
+ * The stub face model. Tag "<who>:<pose>[:print|:dark|:half]": Ali (the staff
+ * member), Bob (the colleague), Cat or Dan (strangers); left / right turn the
+ * head; print = a photo held up (low real-face score); unsure = a real-face
+ * score between the lines; flat = no turn;
  * dark = a dark photo; "nobody" = no face; "boom" = the model is down.
  */
 function stubFaces() {
@@ -126,11 +146,16 @@ function stubFaces() {
       found: true,
       score: 0.95,
       feature: moved(
-        unit(tag.includes('Bob') ? 1 : tag.includes('Cat') ? 2 : 0),
+        taken(
+          (tag.includes(':half') ? half : (f: number[]) => f)(
+            unit(tag.includes('Bob') ? 1 : tag.includes('Cat') ? 2 : tag.includes('Dan') ? 110 : 0),
+          ),
+          tag,
+        ),
         tag.includes(':blink') || tag.includes(':mouth'),
       ),
       yaw,
-      real: tag.includes('print') ? 0.05 : 0.95,
+      real: tag.includes('print') ? 0.05 : tag.includes('unsure') ? 0.6 : 0.95,
       quality: {
         faces: 1,
         size: 0.35,
@@ -183,6 +208,8 @@ async function clock(
   opts: {
     kind?: 'in' | 'out';
     who?: string;
+    /** The straight frame's tag, when it is not `who`'s face. */
+    face?: string;
     device?: string;
     location?: { lat: number; lng: number; accuracy: number } | null;
     overtimeReason?: string;
@@ -193,10 +220,15 @@ async function clock(
     token?: string;
     identify?: boolean;
     scene?: string;
+    /** Send the pictures of punch `seq` (again); null = pictures without a number. */
+    seq?: number | null;
   } = {},
 ) {
   const f = fx!;
   const who = opts.who ?? 'Ali';
+  // This punch's own pictures (see `taken`).
+  const n = opts.seq === undefined ? ++frameSeq : opts.seq;
+  const shot = (tag: string) => jpeg(n === null ? tag : `${tag}#${n}`);
   const token =
     opts.token ??
     (
@@ -212,13 +244,16 @@ async function clock(
     identify: opts.identify,
     deviceId: opts.device ?? OTHER_DEVICE,
     location: opts.location,
-    photos: { face: jpeg(`${who}:front`), scene: opts.scene ? jpeg(opts.scene) : undefined },
+    photos: {
+      face: shot(opts.face ?? `${who}:front`),
+      scene: opts.scene ? jpeg(opts.scene) : undefined,
+    },
     liveness: {
       token,
-      left: jpeg(opts.left ?? `${who}:left`),
-      right: jpeg(opts.right ?? `${who}:right`),
-      blink: opts.blink === null ? undefined : jpeg(opts.blink ?? `${who}:blink`),
-      mouth: opts.mouth === null ? undefined : jpeg(opts.mouth ?? `${who}:mouth`),
+      left: shot(opts.left ?? `${who}:left`),
+      right: shot(opts.right ?? `${who}:right`),
+      blink: opts.blink === null ? undefined : shot(opts.blink ?? `${who}:blink`),
+      mouth: opts.mouth === null ? undefined : shot(opts.mouth ?? `${who}:mouth`),
     },
     overtimeReason: opts.overtimeReason,
   });
@@ -746,7 +781,9 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
     expect(sheet.punches.find((p) => p.id === done.id)!.photos).toEqual(['face']);
     const photos = await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id });
     expect(photos.map((p) => p.kind)).toEqual(['face']);
-    expect(photos[0]!.src).toBe(`data:image/jpeg;base64,${jpeg('Ali:front')}`);
+    expect(Buffer.from(photos[0]!.src.split(',')[1]!, 'base64').toString('latin1')).toContain(
+      'Ali:front#',
+    );
     await expectError(
       f.staff().attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
       'auth.errors.missingPermission',
@@ -761,6 +798,16 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
     expect(
       await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
     ).toEqual([]);
+    // The frame prints go after 90 days too: the straight frame, the blink
+    // and the open mouth.
+    await db.execute(
+      sql`UPDATE inventory.attendance_punch_frames SET taken_at = now() - interval '91 days' WHERE punch_id = ${done.id}`,
+    );
+    expect(await purgeOldFramePrints(db)).toBeGreaterThanOrEqual(3);
+    const prints = await db.execute(
+      sql`SELECT count(*)::int AS n FROM inventory.attendance_punch_frames WHERE punch_id = ${done.id}`,
+    );
+    expect((prints as unknown as { n: number }[])[0]!.n).toBe(0);
 
     await f.manager.attendance.policySave({ ...rules, requireDevice: true });
     await resetPunches(f.staffId);
@@ -1076,10 +1123,11 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     await enrollApproved(f.colleague(), 'Bob');
     const own = await clock(f.colleague(), { who: 'Bob', device: DEVICE });
     expect(own.face).toBe('match');
-    // The face says who: Ali's own face is not a colleague's.
+    // The face says who: Ali's own face is not a colleague's, and he is
+    // told it is his own (the phone's person is a candidate too).
     await expectError(
       clock(f.staff(), { who: 'Ali', identify: true }),
-      'attendance.errors.notRecognized',
+      'attendance.errors.identifyIsOwner',
     );
     // A borrowed phone never goes without the turns.
     const noTurns = await signLivenessToken({
@@ -1121,12 +1169,21 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       clock(f.staff(), { who: 'Ali:print', token: await passiveToken(f.staffId) }),
       'attendance.errors.livenessFailed',
     );
-    // Real movements but an unsure straight photo: the turns after all.
+    // Real movements after a printed straight photo: refused; the straight
+    // frame must look real by itself (2026-11-07).
     await expectError(
       clock(f.staff(), {
         who: 'Ali:print',
         blink: 'Ali:blink',
         mouth: 'Ali:mouth',
+        token: await passiveToken(f.staffId),
+      }),
+      'attendance.errors.livenessFailed',
+    );
+    // Real movements, a straight photo that is only probably real: the turns.
+    await expectError(
+      clock(f.staff(), {
+        face: 'Ali:front:unsure',
         token: await passiveToken(f.staffId),
       }),
       'attendance.errors.livenessNeeded',
@@ -1253,6 +1310,202 @@ describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () 
     });
     expect(out.kind).toBe('out');
     await resetPunches(f.staffId);
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
+  const rules = (storeId: string) => ({
+    storeId,
+    requireDevice: false,
+    requireGeo: false,
+    geo: null,
+    graceMinutes: 5,
+    overtimeAfterMinutes: 30,
+  });
+  const turns = async () =>
+    (await fx!.staff().attendance.livenessChallenge({ storeId: fx!.storeId, force: true })).token;
+
+  test('a printed straight frame does not pass on the strength of live movements', async () => {
+    const f = fx!;
+    await resetPunches(f.staffId);
+    await f.manager.attendance.policySave(rules(f.storeId));
+    // Mean real-face over the frames was 0.65 and went through.
+    await expectError(
+      clock(f.staff(), { token: await turns(), face: 'Ali:front:print' }),
+      'attendance.errors.livenessFailed',
+    );
+  });
+
+  test('the movements must be the enrolled person, not someone like the photo', async () => {
+    const f = fx!;
+    let refused: unknown = null;
+    try {
+      await clock(f.staff(), {
+        token: await turns(),
+        face: 'Ali:front:half',
+        blink: 'Dan:blink',
+        mouth: 'Dan:mouth',
+        left: 'Dan:left',
+        right: 'Dan:right',
+      });
+    } catch (e) {
+      refused = e;
+    }
+    expect((refused as Error | null)?.message).toBe('attendance.errors.livenessFailed');
+    expect((refused as { cause?: { context?: unknown } }).cause?.context).toEqual({
+      failures: 'otherPerson',
+    });
+  });
+
+  test('pictures sent before are refused: an earlier punch, an enrollment photo', async () => {
+    const f = fx!;
+    await resetPunches(f.staffId);
+    const first = await clock(f.staff(), { token: await passiveToken(f.staffId), seq: 7001 });
+    expect(first.kind).toBe('in');
+    await expectError(
+      clock(f.staff(), { kind: 'out', token: await passiveToken(f.staffId), seq: 7001 }),
+      'attendance.errors.photoReused',
+    );
+    // The enrollment's own photos.
+    await expectError(
+      clock(f.staff(), { kind: 'out', token: await passiveToken(f.staffId), seq: null }),
+      'attendance.errors.photoReused',
+    );
+    // New pictures clock as usual.
+    const out = await clock(f.staff(), {
+      kind: 'out',
+      token: await passiveToken(f.staffId),
+      overtimeReason: 'review test',
+    });
+    expect(out.kind).toBe('out');
+    await resetPunches(f.staffId);
+  });
+
+  test("a colleague's face only somewhat like them is not enough to clock them", async () => {
+    const f = fx!;
+    await expectError(
+      clock(f.staff(), {
+        identify: true,
+        face: 'Bob:front:half',
+        blink: 'Bob:blink:half',
+        mouth: 'Bob:mouth:half',
+        left: 'Bob:left:half',
+        right: 'Bob:right:half',
+      }),
+      'attendance.errors.notRecognized',
+    );
+  });
+
+  test('a manager does not change their own attendance or wage; a super admin does', async () => {
+    const f = fx!;
+    const hourAgo = new Date(Date.now() - 3600_000);
+    const when = { date: dateInTz(hourAgo, TZ), time: attendance.localTime(hourAgo, TZ) };
+    const own = { storeId: f.storeId, memberId: f.managerId };
+    await expectError(
+      f.manager.attendance.manualPunch({ ...own, ...when, kind: 'in', reason: 'own' }),
+      'attendance.errors.manageOwn',
+    );
+    await expectError(
+      f.manager.attendance.payRateSet({ ...own, dailyWage: '999999', effectiveFrom: when.date }),
+      'attendance.errors.manageOwn',
+    );
+    // The super admin may.
+    const mine = await f
+      .superAdmin()
+      .attendance.manualPunch({ ...own, ...when, kind: 'in', reason: 'forgot' });
+    await f
+      .superAdmin()
+      .attendance.payRateSet({ ...own, dailyWage: '100', effectiveFrom: when.date });
+    await expectError(
+      f.manager.attendance.voidPunch({ storeId: f.storeId, punchId: mine.id, reason: 'own' }),
+      'attendance.errors.manageOwn',
+    );
+    await expectError(
+      f.manager.attendance.reviewPunch({ storeId: f.storeId, punchId: mine.id }),
+      'attendance.errors.manageOwn',
+    );
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [ot] = (await db.execute(sql`
+      INSERT INTO inventory.attendance_overtime (org_id, store_id, member_id, punch_id, minutes, reason)
+      VALUES (${f.orgId}, ${f.storeId}, ${f.managerId}, ${mine.id}, 45, 'own overtime')
+      RETURNING id`)) as unknown as { id: string }[];
+    await expectError(
+      f.manager.attendance.overtimeDecide({
+        storeId: f.storeId,
+        overtimeId: ot!.id,
+        approve: true,
+      }),
+      'attendance.errors.manageOwn',
+    );
+    await f
+      .superAdmin()
+      .attendance.overtimeDecide({ storeId: f.storeId, overtimeId: ot!.id, approve: false });
+    await f
+      .superAdmin()
+      .attendance.voidPunch({ storeId: f.storeId, punchId: mine.id, reason: 'test' });
+    // Someone else's attendance: as before.
+    const sheet = await f.manager.attendance.sheet({
+      storeId: f.storeId,
+      from: when.date,
+      to: when.date,
+    });
+    expect(sheet.members.find((m) => m.memberId === f.managerId)?.own).toBe(true);
+    expect(sheet.members.find((m) => m.memberId === f.staffId)?.own).toBe(false);
+  });
+
+  test('withdrawing face consent works in a read-only workspace', async () => {
+    const f = fx!;
+    const readOnly = appRouter.createCaller(
+      buildCtx({
+        userId: f.colleagueUserId,
+        memberId: f.colleagueId,
+        orgId: f.orgId,
+        orgTimezone: TZ,
+        writeAccess: false,
+        permissions: new Set(['attendance.clock']),
+        roleSlugs: new Set(),
+      }),
+    );
+    await expectError(
+      readOnly.attendance.faceConsentGive({ version: 1 }),
+      'subscription.errors.readOnly',
+    );
+    await readOnly.attendance.faceConsentWithdraw();
+    const me = await f.colleague().attendance.me({});
+    expect(me.faceConsent).toBeNull();
+    expect(me.face?.status ?? 'none').toBe('none');
+  });
+
+  test('a member with attendance is suspended, not removed; the records stay', async () => {
+    const f = fx!;
+    const admin = appRouter.createCaller(
+      buildCtx({
+        userId: f.managerUserId,
+        memberId: f.managerId,
+        orgId: f.orgId,
+        orgTimezone: TZ,
+        writeAccess: true,
+        permissions: new Set(['org.admin', 'users.manage', 'attendance.manage']),
+        roleSlugs: new Set(),
+      }),
+    );
+    await expectError(
+      admin.admin.memberRemove({ memberId: f.staffId }),
+      'admin.errors.memberHasAttendance',
+    );
+    const db = getDb(undefined, { system: 'maintenance' });
+    const left = await db.execute(
+      sql`SELECT count(*)::int AS n FROM inventory.attendance_punches WHERE member_id = ${f.staffId}`,
+    );
+    expect((left as unknown as { n: number }[])[0]!.n).toBeGreaterThan(0);
+    // The database refuses it too.
+    let refused = false;
+    try {
+      await db.execute(sql`DELETE FROM auth.members WHERE id = ${f.staffId}`);
+    } catch {
+      refused = true;
+    }
+    expect(refused).toBe(true);
   });
 });
 

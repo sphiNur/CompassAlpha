@@ -2926,4 +2926,18 @@ export const ru = {
   'attendance.live.guide.closeMouth': 'Сначала закройте рот',
   'attendance.photo.blink': 'Моргание',
   'attendance.photo.mouth': 'Открытый рот',
+  'admin.errors.memberHasAttendance':
+    'У этого человека есть записи учёта времени, поэтому его нельзя удалить. Вместо этого приостановите его — записи сохранятся.',
+  'attendance.errors.manageOwn':
+    'Нельзя менять собственный учёт времени или ставку. Попросите другого руководителя или суперадмина.',
+  'attendance.errors.identifyIsOwner':
+    'Это ваше собственное лицо. Чтобы отметиться самому, нажмите «Отметить приход» или «Отметить уход».',
+  'attendance.errors.photoReused':
+    'Эти снимки уже отправлялись раньше. Пройдите проверку лица заново.',
+  'attendance.sheet.ownHint':
+    'Ваш учёт времени и ставку меняет другой руководитель или суперадмин.',
+  'attendance.flag.missedShift': 'Пропустил смену',
+  'attendance.export.flag.missedShift': 'Пропустил смену',
+  'settlement.wages.fromAttendanceReasonMissed':
+    'Учёт времени: ставка {wage}, опоздание {late} мин, ранний уход {early} мин, пропущенная смена {missed} мин, −{deduction}',
 } as const satisfies Record<CatalogKey, string>;

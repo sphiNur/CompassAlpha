@@ -261,6 +261,54 @@ describe('pay', () => {
   });
 });
 
+describe('pay with more than one shift (2026-11-07)', () => {
+  const D = '2026-11-05';
+  test('a missed second shift costs its own minutes, not the whole day', () => {
+    // 08–12 worked, 13–17 missed: half the planned minutes are short.
+    const [d] = run(
+      [shift('a', D, '08:00', '12:00'), shift('b', D, '13:00', '17:00')],
+      [punch('in', D, '08:00'), punch('out', D, '12:00')],
+      at(D, '23:00'),
+    );
+    expect(d!.flags).toEqual(['missedShift']);
+    expect(d!.missedMinutes).toBe(240);
+    expect(dayPay(d!, 10_000)).toEqual({
+      status: 'payable',
+      wageCents: 10_000,
+      deductionCents: 5_000,
+      netCents: 5_000,
+    });
+  });
+  test('nothing punched all day is still absent', () => {
+    const [d] = run(
+      [shift('a', D, '08:00', '12:00'), shift('b', D, '13:00', '17:00')],
+      [],
+      at(D, '23:00'),
+    );
+    expect(d!.flags).toEqual(['absent']);
+    expect(dayPay(d!, 10_000).status).toBe('absent');
+  });
+  test('punches at other hours than planned go to a manager, not to "absent"', () => {
+    // Planned 18–23, worked 08–12.
+    const [d] = run(
+      [shift('a', D, '18:00', '23:00')],
+      [punch('in', D, '08:00'), punch('out', D, '12:00')],
+      at(D, '23:59'),
+    );
+    expect([...d!.flags].sort()).toEqual(['missedShift', 'unscheduled']);
+    expect(dayPay(d!, 10_000).status).toBe('needsReview');
+  });
+  test('the later shift still to come: in progress', () => {
+    const [d] = run(
+      [shift('a', D, '08:00', '12:00'), shift('b', D, '13:00', '17:00')],
+      [punch('in', D, '08:00'), punch('out', D, '12:00')],
+      at(D, '12:30'),
+    );
+    expect(d!.flags).toEqual(['upcoming']);
+    expect(dayPay(d!, 10_000).status).toBe('inProgress');
+  });
+});
+
 test('overtime counts only past the threshold', () => {
   const end = at('2026-11-05', '18:00');
   expect(overtimeMinutes(end, at('2026-11-05', '18:20'), 30)).toBe(0);

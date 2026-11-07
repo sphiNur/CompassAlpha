@@ -112,7 +112,11 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
                       </span>
                     ) : null}
                     <PunchPhotoStrip storeId={storeId} punchId={p.id} />
-                    {voiding === p.id ? (
+                    {p.own ? (
+                      <span className="text-old-label text-[var(--c-fg-muted)]">
+                        {i18n.t('attendance.sheet.ownHint')}
+                      </span>
+                    ) : voiding === p.id ? (
                       <div className="flex flex-col gap-2">
                         <Field label={i18n.t('attendance.void.reasonLabel', { time: p.time })}>
                           <Input
