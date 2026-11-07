@@ -1,11 +1,10 @@
 /**
- * The clock-in photos (2026-11-05): the face (front camera), then a look
- * at it before the punch is sent. The rear-camera photo of the place was
- * removed (owner, 2026-11-07).
+ * The clock-in camera (2026-11-05): the face, from the front camera. The
+ * rear-camera photo of the place was removed (owner, 2026-11-07).
  *
- * Liveness (2026-11-06): with `turns`, the face step becomes three front
- * camera frames: straight on, then each head turn in the order the server
- * chose. The server checks the frames; the phone only guides.
+ * Liveness (2026-11-06): with `turns`, each head turn after the straight
+ * frame, in the order the server chose. The server checks the frames; the
+ * phone only guides.
  *
  * Blink and open mouth (owner, 2026-11-07): every punch, after the
  * straight frame, a blink and an open mouth in the server's order; the
@@ -16,12 +15,17 @@
  * them and no system camera (which could pick a photo from the gallery).
  * A phone whose camera or tracker cannot run cannot clock by itself: a
  * colleague's phone or the manager's manual punch then.
+ *
+ * Straight on (owner, 2026-11-07): nobody looks at the photos before they
+ * go. The last frame hands them over and the camera goes off; the sheet
+ * around this (PunchSheet) shows the check and its result. Each try mounts
+ * this afresh, so nothing of the last one (a half-done blink) carries over.
  */
-import { useEffect, useRef, useState } from 'react';
-import { Banner, Button, Sheet } from '@compass/ui';
+import { useRef, useState } from 'react';
+import { Banner, Button } from '@compass/ui';
+import type { CatalogKey } from '@compass/i18n';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
-import { jpegSrc, type Facing } from '../../lib/attendanceCamera';
 import { createActWatcher, type Act } from './faceActs';
 import {
   basicGuide,
@@ -41,7 +45,6 @@ export type PunchPhotos = {
   mouth?: string;
 };
 type Shot = 'face' | Turn | Act;
-type Step = Shot | 'review';
 
 /** Where the tracker takes the frame (the server accepts turns from 0.2, straight up to 0.2). */
 const STRAIGHT_MAX = 0.12;
@@ -50,61 +53,59 @@ const TURN_MIN = 0.35;
 const MIN_SIZE = 0.2;
 
 export function PunchCamera({
-  open,
-  kind,
-  turns: askedTurns,
-  acts: askedActs,
+  turns,
+  acts,
   identifying,
-  busy,
+  notice,
+  onCaptured,
   onCancel,
-  onConfirm,
 }: {
-  open: boolean;
-  /** null: a colleague found by their face; the server knows their next punch. */
-  kind: 'in' | 'out' | null;
-  /** The liveness turn order from the server; null or empty = no turns. */
-  turns: Turn[] | null;
+  /** The liveness turn order from the server; empty = no turns. */
+  turns: readonly Turn[];
   /** The blink and open mouth, in the server's order; none from an old server. */
-  acts: Act[];
+  acts: readonly Act[];
   /** A colleague clocks on this phone: the face says who. */
-  identifying?: boolean;
-  busy: boolean;
+  identifying: boolean;
+  /** Why this try: the server asked for the turns, the last one ran out. */
+  notice: CatalogKey | null;
+  /** The last frame is in: the photos, once. */
+  onCaptured: (photos: PunchPhotos) => void;
   onCancel: () => void;
-  onConfirm: (photos: PunchPhotos) => void;
 }) {
   const i18n = useI18n();
-  const turns = askedTurns && askedTurns.length > 0 ? askedTurns : [];
-  const faceShots: Shot[] = ['face', ...askedActs, ...turns];
-  const sequence: Shot[] = faceShots;
-  const [step, setStep] = useState<Step>('face');
+  const faceShots: Shot[] = ['face', ...acts, ...turns];
+  const [step, setStep] = useState<Shot>('face');
   const [shots, setShots] = useState<Partial<Record<Shot, string>>>({});
   const [guide, setGuide] = useState<Guide | null>(null);
+  // Handed over: the camera goes off at once, nothing more is taken.
+  const [finished, setFinished] = useState(false);
   // The blink's frame is taken while the eyes are shut, kept once they open.
   const frames = useRef<Partial<Record<Act, string>>>({});
 
-  // Start over each time the sheet opens.
-  useEffect(() => {
-    if (!open) return;
-    setStep('face');
-    setShots({});
-    frames.current = {};
-    setGuide(null);
-  }, [open]);
-
-  const track = useTracker(open);
-  // The front camera stays on through the face and turn frames.
-  const facing: Facing | null = !open || step === 'review' ? null : 'user';
-  const cam = useCamera(facing);
-  const front = step !== 'review';
+  const track = useTracker(true);
+  const cam = useCamera(finished ? null : 'user');
   const isAct = step === 'blink' || step === 'mouth';
+  const running = !finished && cam.ready && !cam.problem && track.state === 'ready';
 
   const keep = (b64: string) => {
+    if (finished) return;
     haptic('light');
-    if (step === 'review') return;
     const next = { ...shots, [step]: b64 };
     setShots(next);
     setGuide(null);
-    setStep(sequence.find((s) => !next[s]) ?? 'review');
+    const missing = faceShots.find((s) => !next[s]);
+    if (missing) {
+      setStep(missing);
+      return;
+    }
+    setFinished(true);
+    onCaptured({
+      face: next.face!,
+      left: next.left,
+      right: next.right,
+      blink: next.blink,
+      mouth: next.mouth,
+    });
   };
   const shoot = () => {
     const b64 = cam.grab();
@@ -112,9 +113,9 @@ export function PunchCamera({
   };
 
   // The blink or the open mouth: its own watcher for each step.
-  const watcher = useRef<{ step: Step; w: ReturnType<typeof createActWatcher> } | null>(null);
+  const watcher = useRef<{ step: Shot; w: ReturnType<typeof createActWatcher> } | null>(null);
   useFrameLoop({
-    active: open && isAct && cam.ready && !cam.problem && track.state === 'ready',
+    active: running && isAct,
     video: cam.video,
     tracker: track.tracker,
     key: step,
@@ -139,7 +140,7 @@ export function PunchCamera({
   });
 
   useAutoCapture({
-    active: open && front && !isAct && cam.ready && !cam.problem && track.state === 'ready',
+    active: running && !isAct,
     video: cam.video,
     tracker: track.tracker,
     key: step,
@@ -156,53 +157,37 @@ export function PunchCamera({
     onGuide: setGuide,
   });
 
-  /** Retaking any face frame retakes all of them, in order. */
-  const retake = () => {
-    watcher.current = null;
-    frames.current = {};
-    setShots({});
-    setStep('face');
-  };
-
   // This phone cannot take a face frame: no clocking on it by itself.
-  const cannot = front && (cam.problem !== null || track.state === 'failed');
-  const title =
-    step === 'review'
-      ? i18n.t('attendance.photo.reviewTitle')
-      : step === 'blink'
-        ? i18n.t('attendance.live.blinkTitle')
-        : step === 'mouth'
-          ? i18n.t('attendance.live.mouthTitle')
-          : step === 'left'
-            ? i18n.t('attendance.live.turnLeft')
-            : step === 'right'
-              ? i18n.t('attendance.live.turnRight')
-              : i18n.t('attendance.live.lookTitle');
-  const hint =
-    step === 'review'
-      ? i18n.t('attendance.photo.reviewHintFace')
-      : i18n.t(
-          track.state === 'ready'
-            ? 'attendance.live.autoHint'
-            : track.slow
-              ? 'attendance.live.slow'
-              : 'attendance.live.preparing',
-        );
+  const cannot = cam.problem !== null || track.state === 'failed';
+  const title = i18n.t(
+    step === 'blink'
+      ? 'attendance.live.blinkTitle'
+      : step === 'mouth'
+        ? 'attendance.live.mouthTitle'
+        : step === 'left'
+          ? 'attendance.live.turnLeft'
+          : step === 'right'
+            ? 'attendance.live.turnRight'
+            : 'attendance.live.lookTitle',
+  );
+  const hint = i18n.t(
+    track.state === 'ready'
+      ? 'attendance.live.autoHint'
+      : track.slow
+        ? 'attendance.live.slow'
+        : 'attendance.live.preparing',
+  );
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(o) => !o && !busy && onCancel()}
-      title={title}
-      description={hint}
-    >
-      <div className="flex flex-col gap-3 py-3">
-        {identifying ? (
-          <p className="text-old-label font-semibold text-[var(--c-fg)]">
-            {i18n.t('attendance.borrow.identifyHint')}
-          </p>
-        ) : null}
-        {cannot ? (
+    <div className="flex flex-col gap-3">
+      {notice ? <Banner tone="info" title={i18n.t(notice)} /> : null}
+      {identifying ? (
+        <p className="text-old-label font-semibold text-[var(--c-fg)]">
+          {i18n.t('attendance.borrow.identifyHint')}
+        </p>
+      ) : null}
+      {cannot ? (
+        <>
           <Banner tone="danger" title={i18n.t('attendance.face.cannotTitle')}>
             {i18n.t(
               cam.problem === 'denied'
@@ -210,7 +195,12 @@ export function PunchCamera({
                 : 'attendance.face.cannotBody',
             )}
           </Banner>
-        ) : step !== 'review' ? (
+          <Button block size="lg" variant="secondary" onClick={onCancel}>
+            {i18n.t('common.cancel')}
+          </Button>
+        </>
+      ) : (
+        <>
           <div className="relative overflow-hidden rounded-[var(--r-card)] bg-black">
             <video
               ref={cam.setVideo}
@@ -219,79 +209,24 @@ export function PunchCamera({
               autoPlay
               onLoadedData={() => cam.setReady(true)}
               aria-label={title}
-              className={`aspect-[3/4] w-full object-cover ${front ? '-scale-x-100' : ''}`}
+              className="aspect-[3/4] w-full -scale-x-100 object-cover"
             />
-            {front ? (
-              <FaceOverlay
-                title={title}
-                arrow={step === 'left' ? '←' : step === 'right' ? '→' : '●'}
-                loading={track.state === 'loading'}
-                percent={track.percent}
-                guide={track.state === 'ready' ? guide : null}
-                progress={i18n.t('attendance.live.progress', {
-                  done: faceShots.filter((s) => shots[s]).length,
-                  total: faceShots.length,
-                })}
-              />
-            ) : null}
+            <FaceOverlay
+              title={title}
+              arrow={step === 'left' ? '←' : step === 'right' ? '→' : '●'}
+              loading={track.state === 'loading'}
+              percent={track.percent}
+              guide={track.state === 'ready' ? guide : null}
+              progress={i18n.t('attendance.live.progress', {
+                done: faceShots.filter((s) => shots[s]).length,
+                total: faceShots.length,
+              })}
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {sequence.map((which) => {
-              const src = shots[which];
-              return (
-                <figure key={which} className="flex flex-col gap-1">
-                  {src ? (
-                    <img
-                      src={jpegSrc(src)}
-                      alt={i18n.t(`attendance.photo.${which}`)}
-                      className="aspect-[3/4] w-full rounded-[var(--r-card)] object-cover"
-                    />
-                  ) : null}
-                  <figcaption className="flex items-center justify-between text-old-label text-[var(--c-fg-muted)]">
-                    {i18n.t(`attendance.photo.${which}`)}
-                    <Button variant="ghost" size="sm" disabled={busy} onClick={retake}>
-                      {i18n.t('attendance.photo.retake')}
-                    </Button>
-                  </figcaption>
-                </figure>
-              );
-            })}
-          </div>
-        )}
-
-        {step === 'review' ? (
-          <Button
-            block
-            size="lg"
-            loading={busy}
-            disabled={sequence.some((s) => !shots[s])}
-            onClick={() =>
-              shots.face &&
-              onConfirm({
-                face: shots.face,
-                left: shots.left,
-                right: shots.right,
-                blink: shots.blink,
-                mouth: shots.mouth,
-              })
-            }
-          >
-            {i18n.t(
-              kind === null
-                ? 'attendance.borrow.identifySend'
-                : kind === 'in'
-                  ? 'attendance.clock.in'
-                  : 'attendance.clock.out',
-            )}
-          </Button>
-        ) : cannot ? (
-          <Button block size="lg" variant="secondary" onClick={onCancel}>
-            {i18n.t('common.cancel')}
-          </Button>
-        ) : null}
-      </div>
-    </Sheet>
+          <p className="text-old-label text-[var(--c-fg-muted)]">{hint}</p>
+        </>
+      )}
+    </div>
   );
 }
 

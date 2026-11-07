@@ -354,6 +354,8 @@ export const IDEMPOTENT_MUTATIONS = new Set<string>([
   'attendance.copyWeek',
   'attendance.manualPunch',
   'attendance.voidPunch',
+  // 2026-11-07: "not them" on the phone that clocked a colleague.
+  'attendance.punchUndo',
   'attendance.memberSet',
   'attendance.resetDevice',
   'attendance.policySave',
