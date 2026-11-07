@@ -3027,4 +3027,11 @@ export const en = {
   'attendance.enroll.pose.downleft': 'Down and left',
   'attendance.enroll.pose.downright': 'Down and right',
   'attendance.enroll.errorCode': 'Details for support: {code}',
+  'attendance.map.label': 'Map of the clock-in area',
+  'attendance.map.dragHint': 'Drag the pin to the store; the circle is where people can clock in.',
+  'attendance.map.whereAmI': 'Show where I am',
+  'attendance.map.inside': 'You are inside the area, {m} m from the store.',
+  'attendance.map.outside': 'You are outside the area: {m} m too far.',
+  'attendance.map.accuracy': 'Location accuracy ±{m} m',
+  'attendance.map.punches': 'Where they clocked',
 } as const;

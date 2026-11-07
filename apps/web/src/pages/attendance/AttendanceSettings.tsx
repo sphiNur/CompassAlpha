@@ -20,6 +20,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
 import { useErrToast } from '../../lib/errToast';
+import { GeoMap } from '../../components/geo/GeoMap';
 import type { AttendancePolicyData } from '@compass/api/src/trpc/routers/attendance';
 import { trpc } from '../../lib/trpc';
 import { nativeConfirm } from '../admin/shared';
@@ -401,6 +402,18 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             >
               {i18n.t('attendance.settings.useHere')}
             </Button>
+            {geo ? (
+              <>
+                <GeoMap
+                  area={radiusOk ? { ...geo, radiusM: radiusNum } : geo}
+                  onAreaMove={(lat, lng) => setGeo({ ...geo, lat, lng })}
+                  label={i18n.t('attendance.map.label')}
+                />
+                <p className="text-old-label text-[var(--c-fg-muted)]">
+                  {i18n.t('attendance.map.dragHint')}
+                </p>
+              </>
+            ) : null}
             <Field
               label={i18n.t('attendance.settings.radius')}
               hint={i18n.t('attendance.settings.radiusHint')}

@@ -1,0 +1,52 @@
+/* Attendance map (GeoMapView). Colours from the theme tokens. */
+.leaflet-container {
+  font: inherit;
+  background: var(--c-surface-2);
+}
+.geo-area {
+  stroke: var(--c-action);
+  stroke-width: 2;
+  fill: var(--c-action);
+  fill-opacity: 0.12;
+}
+.geo-acc {
+  stroke-width: 1;
+  fill-opacity: 0.1;
+  stroke-dasharray: 3 3;
+}
+.geo-acc.geo-inside {
+  stroke: var(--c-success);
+  fill: var(--c-success);
+}
+.geo-acc.geo-outside {
+  stroke: var(--c-danger);
+  fill: var(--c-danger);
+}
+.geo-acc.geo-me {
+  stroke: var(--c-fg-muted);
+  fill: var(--c-fg-muted);
+}
+.geo-pin {
+  border-radius: 9999px;
+  border: 3px solid white;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+.geo-pin-area {
+  background: var(--c-action);
+}
+.geo-pin.geo-inside {
+  background: var(--c-success);
+}
+.geo-pin.geo-outside {
+  background: var(--c-danger);
+}
+.geo-pin.geo-me {
+  background: var(--c-fg);
+}
+.leaflet-marker-draggable.geo-pin-area {
+  width: 26px !important;
+  height: 26px !important;
+  margin-left: -13px !important;
+  margin-top: -13px !important;
+  cursor: grab;
+}

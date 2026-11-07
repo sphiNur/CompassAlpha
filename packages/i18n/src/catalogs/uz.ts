@@ -2911,4 +2911,11 @@ export const uz = {
   'attendance.enroll.pose.downleft': 'Pastki-chap',
   'attendance.enroll.pose.downright': 'Pastki-oʻng',
   'attendance.enroll.errorCode': 'Yordam uchun tafsilotlar: {code}',
+  'attendance.map.label': 'Belgilash hududi xaritasi',
+  'attendance.map.dragHint': 'Belgini doʻkon joyiga suring; doira ichida belgilash mumkin.',
+  'attendance.map.whereAmI': 'Men qayerdaman',
+  'attendance.map.inside': 'Siz belgilash hududidasiz, doʻkondan {m} m.',
+  'attendance.map.outside': 'Siz hududdan tashqaridasiz: yana {m} m.',
+  'attendance.map.accuracy': 'Aniqlik ±{m} m',
+  'attendance.map.punches': 'Qayerda belgiladi',
 } as const satisfies Record<CatalogKey, string>;

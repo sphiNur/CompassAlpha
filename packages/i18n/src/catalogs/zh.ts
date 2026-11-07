@@ -2601,4 +2601,11 @@ export const zh = {
   'attendance.enroll.pose.downleft': '左下',
   'attendance.enroll.pose.downright': '右下',
   'attendance.enroll.errorCode': '错误详情（可截图发给管理员）：{code}',
+  'attendance.map.label': '打卡范围地图',
+  'attendance.map.dragHint': '拖动图钉到门店位置；圆圈内可以打卡。',
+  'attendance.map.whereAmI': '查看我的位置',
+  'attendance.map.inside': '你在打卡范围内，距门店 {m} 米。',
+  'attendance.map.outside': '你在打卡范围外，还差 {m} 米。',
+  'attendance.map.accuracy': '定位误差 ±{m} 米',
+  'attendance.map.punches': '打卡位置',
 } as const satisfies Record<CatalogKey, string>;
