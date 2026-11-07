@@ -7,22 +7,40 @@
  * camera frames: straight on, then each head turn in the order the server
  * chose. The server checks the frames; the phone only guides.
  *
+ * Blink and open mouth (owner, 2026-11-07): every punch, after the
+ * straight frame, a blink and an open mouth in the server's order; the
+ * frame is taken at the moment (faceActs.ts).
+ *
  * Face only (owner, 2026-11-06): the face frames are taken by the face
  * tracker when the head is where the prompt asks; there is no shutter for
  * them and no system camera (which could pick a photo from the gallery).
  * A phone whose camera or tracker cannot run cannot clock by itself: a
  * colleague's phone or the manager's manual punch then.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Sheet } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { jpegSrc, type Facing } from '../../lib/attendanceCamera';
-import { basicGuide, useAutoCapture, useCamera, useTracker, type Guide } from './faceCapture';
+import { createActWatcher, type Act } from './faceActs';
+import {
+  basicGuide,
+  useAutoCapture,
+  useCamera,
+  useFrameLoop,
+  useTracker,
+  type Guide,
+} from './faceCapture';
 
 export type Turn = 'left' | 'right';
-export type PunchPhotos = { face: string; left?: string; right?: string };
-type Shot = 'face' | Turn;
+export type PunchPhotos = {
+  face: string;
+  left?: string;
+  right?: string;
+  blink?: string;
+  mouth?: string;
+};
+type Shot = 'face' | Turn | Act;
 type Step = Shot | 'review';
 
 /** Where the tracker takes the frame (the server accepts turns from 0.2, straight up to 0.2). */
@@ -35,6 +53,7 @@ export function PunchCamera({
   open,
   kind,
   turns: askedTurns,
+  acts: askedActs,
   identifying,
   busy,
   onCancel,
@@ -45,6 +64,8 @@ export function PunchCamera({
   kind: 'in' | 'out' | null;
   /** The liveness turn order from the server; null or empty = no turns. */
   turns: Turn[] | null;
+  /** The blink and open mouth, in the server's order; none from an old server. */
+  acts: Act[];
   /** A colleague clocks on this phone: the face says who. */
   identifying?: boolean;
   busy: boolean;
@@ -53,17 +74,20 @@ export function PunchCamera({
 }) {
   const i18n = useI18n();
   const turns = askedTurns && askedTurns.length > 0 ? askedTurns : [];
-  const faceShots: Shot[] = ['face', ...turns];
+  const faceShots: Shot[] = ['face', ...askedActs, ...turns];
   const sequence: Shot[] = faceShots;
   const [step, setStep] = useState<Step>('face');
   const [shots, setShots] = useState<Partial<Record<Shot, string>>>({});
   const [guide, setGuide] = useState<Guide | null>(null);
+  // The blink's frame is taken while the eyes are shut, kept once they open.
+  const frames = useRef<Partial<Record<Act, string>>>({});
 
   // Start over each time the sheet opens.
   useEffect(() => {
     if (!open) return;
     setStep('face');
     setShots({});
+    frames.current = {};
     setGuide(null);
   }, [open]);
 
@@ -71,7 +95,8 @@ export function PunchCamera({
   // The front camera stays on through the face and turn frames.
   const facing: Facing | null = !open || step === 'review' ? null : 'user';
   const cam = useCamera(facing);
-  const front = step === 'face' || step === 'left' || step === 'right';
+  const front = step !== 'review';
+  const isAct = step === 'blink' || step === 'mouth';
 
   const keep = (b64: string) => {
     haptic('light');
@@ -86,8 +111,35 @@ export function PunchCamera({
     if (b64) keep(b64);
   };
 
+  // The blink or the open mouth: its own watcher for each step.
+  const watcher = useRef<{ step: Step; w: ReturnType<typeof createActWatcher> } | null>(null);
+  useFrameLoop({
+    active: open && isAct && cam.ready && !cam.problem && track.state === 'ready',
+    video: cam.video,
+    tracker: track.tracker,
+    key: step,
+    onReading: (r, now) => {
+      if (step !== 'blink' && step !== 'mouth') return true;
+      if (watcher.current?.step !== step) watcher.current = { step, w: createActWatcher(step) };
+      const w = watcher.current.w;
+      const out = w.step(r, now);
+      setGuide(out.guide);
+      if (out.grab) {
+        const b64 = cam.grab();
+        if (b64) {
+          w.took();
+          frames.current[step] = b64;
+        }
+      }
+      if (!w.done) return;
+      watcher.current = null;
+      keep(frames.current[step]!);
+      return true;
+    },
+  });
+
   useAutoCapture({
-    active: open && front && cam.ready && !cam.problem && track.state === 'ready',
+    active: open && front && !isAct && cam.ready && !cam.problem && track.state === 'ready',
     video: cam.video,
     tracker: track.tracker,
     key: step,
@@ -106,6 +158,8 @@ export function PunchCamera({
 
   /** Retaking any face frame retakes all of them, in order. */
   const retake = () => {
+    watcher.current = null;
+    frames.current = {};
     setShots({});
     setStep('face');
   };
@@ -115,11 +169,15 @@ export function PunchCamera({
   const title =
     step === 'review'
       ? i18n.t('attendance.photo.reviewTitle')
-      : step === 'left'
-        ? i18n.t('attendance.live.turnLeft')
-        : step === 'right'
-          ? i18n.t('attendance.live.turnRight')
-          : i18n.t('attendance.live.lookTitle');
+      : step === 'blink'
+        ? i18n.t('attendance.live.blinkTitle')
+        : step === 'mouth'
+          ? i18n.t('attendance.live.mouthTitle')
+          : step === 'left'
+            ? i18n.t('attendance.live.turnLeft')
+            : step === 'right'
+              ? i18n.t('attendance.live.turnRight')
+              : i18n.t('attendance.live.lookTitle');
   const hint =
     step === 'review'
       ? i18n.t('attendance.photo.reviewHintFace')
@@ -214,6 +272,8 @@ export function PunchCamera({
                 face: shots.face,
                 left: shots.left,
                 right: shots.right,
+                blink: shots.blink,
+                mouth: shots.mouth,
               })
             }
           >

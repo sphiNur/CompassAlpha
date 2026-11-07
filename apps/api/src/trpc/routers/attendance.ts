@@ -75,10 +75,12 @@ import {
 } from '../../services/face/checks';
 import {
   evaluateLiveness,
+  evaluateActs,
   signLivenessToken,
   verifyLivenessToken,
   type LivenessVerdict,
 } from '../../services/face/liveness';
+import type { Act } from '../../services/face/liveness';
 import { dispatch, findRecipientsByPermissionInStore } from '../../services/notify';
 import { linkForStore } from '../../services/notifyForEvent';
 import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
@@ -944,6 +946,33 @@ export const attendanceRouter = router({
       fail('BAD_REQUEST', 'livenessExpired');
     }
     const nonce = claims.nonce;
+    // The blink and the open mouth (2026-11-07): seen by the phone, the
+    // frames checked here. A token from before asks for none.
+    const acts = claims.acts ?? [];
+    if (acts.length > 0) {
+      const faceBytes = photoBytes(shots.face);
+      const frames: { act: Act; bytes: Buffer }[] = [];
+      for (const act of acts) {
+        const b64 = input.liveness[act];
+        if (!b64) fail('BAD_REQUEST', 'livenessRequired');
+        frames.push({ act, bytes: photoBytes(b64) });
+      }
+      const results = [];
+      for (const f of frames) {
+        results.push({
+          act: f.act,
+          result: await faceFeature(f.bytes),
+          copy: f.bytes.equals(faceBytes) || frames.some((o) => o !== f && o.bytes.equals(f.bytes)),
+        });
+      }
+      const verdict = evaluateActs(checked, results);
+      if (verdict.result === 'unchecked') fail('CONFLICT', 'faceCheckUnavailable');
+      if (verdict.result === 'fail') {
+        fail('BAD_REQUEST', 'livenessFailed', {
+          context: { failures: verdict.failures.join(',') },
+        });
+      }
+    }
     const turnsAsked = claims.steps.length > 0;
     // A borrowed phone always asks for the turns: nobody else vouches for it.
     if (borrowed && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');

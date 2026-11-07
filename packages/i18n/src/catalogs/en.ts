@@ -3023,4 +3023,10 @@ export const en = {
   'attendance.map.outside': 'You are outside the area: {m} m too far.',
   'attendance.map.accuracy': 'Location accuracy ±{m} m',
   'attendance.map.punches': 'Where they clocked',
+  'attendance.live.blinkTitle': 'Blink',
+  'attendance.live.mouthTitle': 'Open your mouth',
+  'attendance.live.guide.openEyes': 'Open your eyes',
+  'attendance.live.guide.closeMouth': 'Close your mouth first',
+  'attendance.photo.blink': 'Blink',
+  'attendance.photo.mouth': 'Open mouth',
 } as const;

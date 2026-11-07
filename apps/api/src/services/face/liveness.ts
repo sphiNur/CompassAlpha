@@ -14,6 +14,13 @@
  * The challenge is a signed token naming whose punch it is, good for one
  * punch (`liveness_nonce` is unique) and three minutes.
  *
+ * Blink and mouth (owner, 2026-11-07): every punch also shows a blink and
+ * an open mouth, in an order the server picks. The phone's face mesh sees
+ * them and takes the frame at that moment; the server's five-point model
+ * cannot see eyelids, so it checks what it can: each frame is a real face
+ * of the same person, looking roughly at the camera, and not a copy of
+ * another frame. A print or a screen cannot blink.
+ *
  * Limits: a deep-fake video fed straight into the camera stream is not
  * something two small models catch; the scene photo, the bound phone and
  * the store's location are the other locks.
@@ -28,6 +35,8 @@ const secret = new TextEncoder().encode(env.JWT_SECRET);
 const AUDIENCE = 'attendance-liveness';
 
 export type Turn = 'left' | 'right';
+/** The face movements asked for on every punch (2026-11-07). */
+export type Act = 'blink' | 'mouth';
 
 export interface LivenessClaims {
   org: string;
@@ -37,7 +46,14 @@ export interface LivenessClaims {
   by: string;
   storeId: string;
   steps: Turn[];
+  /** Missing on a token from before 2026-11-07: no movements asked. */
+  acts?: Act[];
   nonce: string;
+}
+
+/** Both movements, in a random order. */
+export function randomActs(): Act[] {
+  return randomInt(2) === 0 ? ['blink', 'mouth'] : ['mouth', 'blink'];
 }
 
 /** Both turns, in a random order. */
@@ -46,17 +62,18 @@ export function randomSteps(): Turn[] {
 }
 
 export async function signLivenessToken(
-  claims: Omit<LivenessClaims, 'nonce' | 'steps'> & { steps?: Turn[] },
-): Promise<{ token: string; steps: Turn[]; nonce: string }> {
+  claims: Omit<LivenessClaims, 'nonce' | 'steps' | 'acts'> & { steps?: Turn[]; acts?: Act[] },
+): Promise<{ token: string; steps: Turn[]; acts: Act[]; nonce: string }> {
   const steps = claims.steps ?? randomSteps();
+  const acts = claims.acts ?? randomActs();
   const nonce = randomBytes(18).toString('base64url');
-  const token = await new SignJWT({ ...claims, steps, nonce })
+  const token = await new SignJWT({ ...claims, steps, acts, nonce })
     .setProtectedHeader({ alg: 'HS256' })
     .setAudience(AUDIENCE)
     .setIssuedAt()
     .setExpirationTime('3m')
     .sign(secret);
-  return { token, steps, nonce };
+  return { token, steps, acts, nonce };
 }
 
 /** The claims, or null for a bad or expired token. */
@@ -85,7 +102,13 @@ export const LIVENESS = {
   realMin: 0.5,
 } as const;
 
-export type LivenessFailure = 'noFace' | 'notFacing' | 'notTurned' | 'otherPerson' | 'spoof';
+export type LivenessFailure =
+  | 'noFace'
+  | 'notFacing'
+  | 'notTurned'
+  | 'otherPerson'
+  | 'spoof'
+  | 'sameFrame';
 
 export interface LivenessVerdict {
   /** `passive`: no turns asked, one photo plainly of a real face. */
@@ -123,4 +146,46 @@ export function evaluateLiveness(
   const score = (front.real + left.real + right.real) / 3;
   if (score < LIVENESS.realMin) failures.push('spoof');
   return { result: failures.length ? 'fail' : 'pass', score, failures };
+}
+
+export const ACT_LINES = {
+  /** |yaw| of a movement frame: roughly at the camera. */
+  maxYaw: 0.3,
+  /** A blink or an open mouth against the straight frame: the same person. */
+  samePerson: 0.4,
+  /** Above this the two frames are one picture sent twice. */
+  sameFrame: 0.9995,
+  /** Mean real-face probability over the straight frame and the movements. */
+  realMin: 0.5,
+} as const;
+
+type Found = Extract<FaceResult, { found: true }>;
+
+/**
+ * The movement frames (blink, open mouth) against the straight frame.
+ * Null results: the check could not run (`unchecked`). `copies` lists the
+ * movements whose bytes equal the straight frame's or another's.
+ */
+export function evaluateActs(
+  front: Found,
+  acts: readonly { act: Act; result: FaceResult | null; copy: boolean }[],
+): LivenessVerdict {
+  if (acts.some((a) => !a.result)) return { result: 'unchecked', score: null, failures: [] };
+  const failures = new Set<LivenessFailure>();
+  const found: Found[] = [];
+  for (const a of acts) {
+    const r = a.result!;
+    if (!r.found) {
+      failures.add('noFace');
+      continue;
+    }
+    found.push(r);
+    if (a.copy || cosine(front.feature, r.feature) > ACT_LINES.sameFrame) failures.add('sameFrame');
+    if (Math.abs(r.yaw) > ACT_LINES.maxYaw) failures.add('notFacing');
+    if (cosine(front.feature, r.feature) < ACT_LINES.samePerson) failures.add('otherPerson');
+  }
+  const all = [front, ...found];
+  const score = all.reduce((t, f) => t + f.real, 0) / all.length;
+  if (score < ACT_LINES.realMin) failures.add('spoof');
+  return { result: failures.size ? 'fail' : 'pass', score, failures: [...failures] };
 }

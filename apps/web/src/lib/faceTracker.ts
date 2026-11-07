@@ -1,35 +1,34 @@
 /**
- * Live face tracking for the liveness prompts (2026-11-06). MediaPipe's
- * BlazeFace detector runs in the page on the camera frames, so the phone
- * can say "turn left" and take the frame itself the moment the head is
- * turned. It only guides: the server checks the frames it receives
- * (apps/api/src/services/face/liveness.ts) and decides.
+ * Live face tracking for the face prompts (2026-11-06). MediaPipe's Face
+ * Landmarker runs in the page on the camera frames, so the phone can say
+ * "turn left", "blink" or "open your mouth" and take the frame itself the
+ * moment it happens. It only guides: the server checks the frames it
+ * receives (apps/api/src/services/face/liveness.ts) and decides.
  *
- * About 13 MB of WebAssembly (~4 MB compressed), loaded only when a store
- * has liveness on, from our own /assets: hashed, kept at the Cloudflare
- * edge and by the service worker after the first time. The clock page
- * starts the download when it opens, before anyone taps clock in, and the
- * camera waits for it with a progress bar (owner, 2026-11-06: the face
- * steps start once it is ready).
+ * About 13 MB of WebAssembly (~4 MB compressed) and a 3.7 MB model, from
+ * our own /assets: hashed, kept at the Cloudflare edge and by the service
+ * worker after the first time. The clock page starts the download when it
+ * opens, before anyone taps clock in, and the camera waits for it with a
+ * progress bar.
  *
  * Face only (owner, 2026-11-06): every face photo, for a punch or for the
  * enrollment, is taken by the tracker; there is no shutter for the face.
  * A phone that cannot run it cannot clock by itself (a colleague's phone
  * or a manager's manual punch then).
  *
- * The face enrollment ring (2026-11-07) uses MediaPipe's Face Landmarker
- * instead (`loadFaceTracker('landmarker')`, ~3.7 MB more): 478 points that
- * stay steady from frame to frame, read on every video frame, so the ring
- * follows the head instead of jumping. The turn and tilt are measured from
- * its eye, nose and mouth points exactly as from BlazeFace's.
+ * The landmarker (2026-11-07) gives 478 points that stay steady from frame
+ * to frame, for the enrollment ring, and the blink and jaw-open scores for
+ * the blink and open-mouth prompts on every punch. The punch camera used
+ * BlazeFace before; its four keypoints could not see eyelids. The turn
+ * and tilt are measured from the eye, nose and mouth points the same way
+ * as on the server.
  */
 import wasmLoaderPath from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';
-import detectorModelPath from '../assets/mediapipe/blaze_face_short_range.tflite?url';
 import landmarkerModelPath from '../assets/mediapipe/face_landmarker.task?url';
 
-/** `detector`: BlazeFace, for the punch camera. `landmarker`: the enrollment ring. */
-export type TrackerKind = 'detector' | 'landmarker';
+/** One kind since 2026-11-07 (the landmarker); kept as a name for the progress listeners. */
+export type TrackerKind = 'landmarker';
 
 export interface FaceReading {
   /** Faces in the frame. */
@@ -50,6 +49,10 @@ export interface FaceReading {
   /** The face box's centre, 0–1 across and down the (unmirrored) frame. */
   cx: number | null;
   cy: number | null;
+  /** How closed the eyes are, 0 (open) – 1 (shut): both eyes' blendshape, averaged. */
+  blink: number | null;
+  /** How open the mouth is, 0 (shut) – 1 (wide): the jawOpen blendshape. */
+  jaw: number | null;
 }
 
 export interface FaceTracker {
@@ -83,7 +86,7 @@ const listeners = new Set<{ kind: TrackerKind; fn: (p: TrackerProgress) => void 
 /** Download progress of a tracker; called at once with the latest. */
 export function onTrackerProgress(
   fn: (p: TrackerProgress) => void,
-  kind: TrackerKind = 'detector',
+  kind: TrackerKind = 'landmarker',
 ): () => void {
   const entry = { kind, fn };
   listeners.add(entry);
@@ -129,67 +132,15 @@ async function prefetch(kind: TrackerKind, files: { url: string; bytes: number }
 const loading: Partial<Record<TrackerKind, Promise<FaceTracker | null>>> = {};
 
 /** The tracker, or null where it cannot run (no face clocking on this phone then). */
-export function loadFaceTracker(kind: TrackerKind = 'detector'): Promise<FaceTracker | null> {
-  loading[kind] ??= (kind === 'detector' ? loadDetector() : loadLandmarker()).then((t) => {
+export function loadFaceTracker(kind: TrackerKind = 'landmarker'): Promise<FaceTracker | null> {
+  loading[kind] ??= loadLandmarker().then((t) => {
     if (!t) delete loading[kind];
     return t;
   });
   return loading[kind];
 }
 
-const NONE = { yaw: null, pitch: null, size: null, cx: null, cy: null };
-
-async function loadDetector(): Promise<FaceTracker | null> {
-  try {
-    const [{ FaceDetector }] = await Promise.all([
-      import('@mediapipe/tasks-vision'),
-      prefetch('detector', [{ url: wasmBinaryPath, bytes: WASM_BYTES }]),
-    ]);
-    const detector = await FaceDetector.createFromOptions(
-      { wasmLoaderPath, wasmBinaryPath },
-      {
-        baseOptions: { modelAssetPath: detectorModelPath },
-        runningMode: 'VIDEO',
-        minDetectionConfidence: 0.6,
-      },
-    );
-    let last = 0;
-    return {
-      read(video) {
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (!w || !h) return { count: 0, ...NONE };
-        // detectForVideo needs increasing timestamps.
-        last = Math.max(last + 1, performance.now());
-        const found = detector.detectForVideo(video, last).detections;
-        if (found.length === 0) return { count: 0, ...NONE };
-        const area = (d: (typeof found)[number]) =>
-          (d.boundingBox?.width ?? 0) * (d.boundingBox?.height ?? 0);
-        const best = found.reduce((a, b) => (area(b) > area(a) ? b : a));
-        // BlazeFace keypoints: eyes, nose tip, mouth, ears (normalised).
-        const k = best.keypoints;
-        if (k.length < 4) return { count: found.length, ...NONE };
-        const px = (p: { x: number; y: number }) => ({ x: p.x * w, y: p.y * h });
-        const [eyeA, eyeB, nose, mouth] = [px(k[0]!), px(k[1]!), px(k[2]!), px(k[3]!)];
-        return {
-          count: found.length,
-          yaw: yawFrom(eyeA, eyeB, nose),
-          pitch: pitchFrom(eyeA, eyeB, nose, mouth),
-          size: (best.boundingBox?.width ?? 0) / w,
-          cx: best.boundingBox ? (best.boundingBox.originX + best.boundingBox.width / 2) / w : null,
-          cy: best.boundingBox
-            ? (best.boundingBox.originY + best.boundingBox.height / 2) / h
-            : null,
-        };
-      },
-      close() {
-        detector.close();
-      },
-    } satisfies FaceTracker;
-  } catch {
-    return null;
-  }
-}
+const NONE = { yaw: null, pitch: null, size: null, cx: null, cy: null, blink: null, jaw: null };
 
 /**
  * Face mesh points used for the turn and tilt: the corners of each eye
@@ -205,7 +156,13 @@ export const MESH = {
 type Mark = { x: number; y: number };
 
 /** A FaceReading from one face's mesh (normalised points) in a w×h frame. */
-export function readMesh(marks: readonly Mark[], w: number, h: number, count: number): FaceReading {
+export function readMesh(
+  marks: readonly Mark[],
+  w: number,
+  h: number,
+  count: number,
+  shapes: { blink: number | null; jaw: number | null } = { blink: null, jaw: null },
+): FaceReading {
   if (marks.length < 468) return { count, ...NONE };
   const px = (i: number) => ({ x: marks[i]!.x * w, y: marks[i]!.y * h });
   const mid = ([a, b]: readonly [number, number]) => {
@@ -234,7 +191,23 @@ export function readMesh(marks: readonly Mark[], w: number, h: number, count: nu
     size: maxX - minX,
     cx: (minX + maxX) / 2,
     cy: (minY + maxY) / 2,
+    blink: shapes.blink,
+    jaw: shapes.jaw,
   };
+}
+
+type Shape = { categoryName: string; score: number };
+
+/** The blink and jaw-open scores from one face's blendshapes. */
+export function readShapes(shapes: readonly Shape[] | undefined): {
+  blink: number | null;
+  jaw: number | null;
+} {
+  if (!shapes || shapes.length === 0) return { blink: null, jaw: null };
+  const score = (name: string) => shapes.find((x) => x.categoryName === name)?.score ?? null;
+  const l = score('eyeBlinkLeft');
+  const r = score('eyeBlinkRight');
+  return { blink: l !== null && r !== null ? (l + r) / 2 : null, jaw: score('jawOpen') };
 }
 
 async function loadLandmarker(): Promise<FaceTracker | null> {
@@ -256,6 +229,8 @@ async function loadLandmarker(): Promise<FaceTracker | null> {
         minFaceDetectionConfidence: 0.6,
         minFacePresenceConfidence: 0.6,
         minTrackingConfidence: 0.5,
+        // Blink and open mouth (2026-11-07).
+        outputFaceBlendshapes: true,
       },
     );
     let last = 0;
@@ -265,12 +240,17 @@ async function loadLandmarker(): Promise<FaceTracker | null> {
         const h = video.videoHeight;
         if (!w || !h) return { count: 0, ...NONE };
         last = Math.max(last + 1, performance.now());
-        const faces = landmarker.detectForVideo(video, last).faceLandmarks;
+        const result = landmarker.detectForVideo(video, last);
+        const faces = result.faceLandmarks;
         if (faces.length === 0) return { count: 0, ...NONE };
         const width = (f: readonly Mark[]) =>
           Math.max(...f.map((m) => m.x)) - Math.min(...f.map((m) => m.x));
-        const best = faces.reduce((a, b) => (width(b) > width(a) ? b : a));
-        return readMesh(best, w, h, faces.length);
+        let best = 0;
+        faces.forEach((f, i) => {
+          if (width(f) > width(faces[best]!)) best = i;
+        });
+        const shapes = readShapes(result.faceBlendshapes?.[best]?.categories);
+        return readMesh(faces[best]!, w, h, faces.length, shapes);
       },
       close() {
         landmarker.close();
