@@ -5,7 +5,8 @@
  * photo straight on, one in each of eight directions as the head passes
  * them, and straight on again at the end. Straight on (twice) and the two
  * side turns are required (they carry the liveness check); the tilts and
- * diagonals are kept when the phone caught them. The server checks every
+ * diagonals are kept when the phone caught them well, and left out
+ * otherwise. The server checks every
  * photo here; a store manager then approves before the person can clock.
  *
  * Punches are matched against all the features (the best one counts), so
@@ -62,67 +63,80 @@ export type EnrollProblem =
 
 export interface EnrollVerdict {
   ok: boolean;
-  /** Each photo's problems; empty when it is fine. */
+  /** Problems with the required photos; any one refuses the enrollment. */
   problems: { pose: EnrollPose; problem: EnrollProblem }[];
-  /** Mean real-face probability. */
+  /** The photos to keep: the required ones and the optional ones without problems. */
+  kept: EnrollPose[];
+  /**
+   * Optional photos left out, and why (2026-11-07): a tilt or diagonal
+   * caught while the head was moving can be blurred or too turned for the
+   * detector. That used to refuse the whole enrollment; now the photo is
+   * just not kept.
+   */
+  dropped: { pose: EnrollPose; problem: EnrollProblem }[];
+  /** Mean real-face probability over the kept photos. */
   real: number | null;
 }
 
 type Found = Extract<FaceResult, { found: true }>;
 
-/** The photos' face results → whether they make a good reference. */
+const isRequired = (pose: EnrollPose) => (REQUIRED_POSES as readonly string[]).includes(pose);
+
+/** The photos' face results → whether they make a good reference, and which to keep. */
 export function evaluateEnrollment(
   results: Partial<Record<EnrollPose, FaceResult>>,
 ): EnrollVerdict {
-  const problems: EnrollVerdict['problems'] = [];
+  const all: EnrollVerdict['problems'] = [];
   const found: Partial<Record<EnrollPose, Found>> = {};
   for (const pose of ENROLL_POSES) {
     const r = results[pose];
     if (!r) {
-      if ((REQUIRED_POSES as readonly string[]).includes(pose)) {
-        problems.push({ pose, problem: 'noFace' });
-      }
+      if (isRequired(pose)) all.push({ pose, problem: 'noFace' });
       continue;
     }
     if (!r.found) {
-      problems.push({ pose, problem: 'noFace' });
+      all.push({ pose, problem: 'noFace' });
       continue;
     }
     found[pose] = r;
     const q = r.quality;
     if (!q) continue;
-    if (q.faces > 1) problems.push({ pose, problem: 'manyFaces' });
-    if (q.size < ENROLL_LINES.minSize) problems.push({ pose, problem: 'small' });
-    if (q.light < ENROLL_LINES.minLight) problems.push({ pose, problem: 'dark' });
-    if (q.light > ENROLL_LINES.maxLight) problems.push({ pose, problem: 'bright' });
-    if (q.sharp < ENROLL_LINES.minSharp) problems.push({ pose, problem: 'blurry' });
+    if (q.faces > 1) all.push({ pose, problem: 'manyFaces' });
+    if (q.size < ENROLL_LINES.minSize) all.push({ pose, problem: 'small' });
+    if (q.light < ENROLL_LINES.minLight) all.push({ pose, problem: 'dark' });
+    if (q.light > ENROLL_LINES.maxLight) all.push({ pose, problem: 'bright' });
+    if (q.sharp < ENROLL_LINES.minSharp) all.push({ pose, problem: 'blurry' });
   }
   const front = found.front;
   if (front) {
     for (const pose of ['front', 'front2'] as const) {
       const f = found[pose];
-      if (f && Math.abs(f.yaw) > LIVENESS.frontMaxYaw)
-        problems.push({ pose, problem: 'notFacing' });
+      if (f && Math.abs(f.yaw) > LIVENESS.frontMaxYaw) all.push({ pose, problem: 'notFacing' });
     }
     // yaw > 0: turned to the person's own left (see yawOf).
     if (found.left && found.left.yaw < LIVENESS.turnMinYaw) {
-      problems.push({ pose: 'left', problem: 'notTurned' });
+      all.push({ pose: 'left', problem: 'notTurned' });
     }
     if (found.right && found.right.yaw > -LIVENESS.turnMinYaw) {
-      problems.push({ pose: 'right', problem: 'notTurned' });
+      all.push({ pose: 'right', problem: 'notTurned' });
     }
     for (const pose of ENROLL_POSES) {
       const f = found[pose];
       if (!f || pose === 'front') continue;
       const line = pose === 'front2' ? ENROLL_LINES.sameFront : ENROLL_LINES.samePose;
-      if (cosine(front.feature, f.feature) < line) problems.push({ pose, problem: 'otherPerson' });
+      if (cosine(front.feature, f.feature) < line) all.push({ pose, problem: 'otherPerson' });
     }
   }
-  const all = Object.values(found);
-  const real = all.length ? all.reduce((a, f) => a + f.real, 0) / all.length : null;
+  const problems = all.filter((p) => isRequired(p.pose));
+  const dropped = all.filter((p) => !isRequired(p.pose));
+  const kept = ENROLL_POSES.filter((pose) => found[pose] && !dropped.some((d) => d.pose === pose));
+  const keptFound = kept.map((pose) => found[pose]!);
+  const real = keptFound.length
+    ? keptFound.reduce((a, f) => a + f.real, 0) / keptFound.length
+    : null;
   if (real !== null && real < ENROLL_LINES.realMin)
     problems.push({ pose: 'front', problem: 'spoof' });
-  return { ok: problems.length === 0, problems, real };
+  return { ok: problems.length === 0, problems, kept, dropped, real };
 }
 
 /** A face against a person's enrolled features: the best one counts. */

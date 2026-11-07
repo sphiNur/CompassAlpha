@@ -154,6 +154,20 @@ describe('ring session', () => {
     expect(still.kept).toEqual(['right']);
   });
 
+  test('a side keeps its furthest turn', () => {
+    const s = createRingSession();
+    const start = run(s, Array(4).fill(face(0, 0.5)));
+    const first = run(s, Array(8).fill(face(-0.32, 0.5)), start.t);
+    expect(first.kept).toEqual(['right']);
+    // Turned further and held: kept again.
+    const further = run(s, Array(12).fill(face(-0.5, 0.5)), first.t + 400);
+    expect(further.kept.length).toBeGreaterThan(0);
+    expect(new Set(further.kept)).toEqual(new Set(['right']));
+    // Back to a smaller turn: not replaced.
+    const back = run(s, Array(8).fill(face(-0.32, 0.5)), further.t + 400);
+    expect(back.kept).toEqual([]);
+  });
+
   test('after a while, both sides are enough', () => {
     const s = createRingSession();
     const start = run(s, Array(4).fill(face(0, 0.5)));
@@ -163,9 +177,9 @@ describe('ring session', () => {
       start.t,
     );
     expect(sides.last.stage).toBe('circle');
-    const later = s.step(face(0.4, 0.5), start.t + 31_000);
-    expect(later.stage).toBe('final');
-    expect(later.slow).toBe(false);
+    const later = run(s, Array(2).fill(face(0.4, 0.5)), start.t + 31_000);
+    expect(later.last.stage).toBe('final');
+    expect(later.last.slow).toBe(false);
   });
 
   test('a frame the camera could not give is asked for again', () => {

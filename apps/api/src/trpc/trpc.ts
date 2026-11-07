@@ -258,7 +258,11 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
     return opts.next();
   }
   const db = ctx.db as RequestContext['db'];
-  const requestHash = idempotencyRequestHash(await opts.getRawInput());
+  // A procedure without input (attendance.faceConsentWithdraw) gets an
+  // empty body over HTTP, which getRawInput cannot parse as JSON; that
+  // failed every such call (2026-11-07). No input hashes as null, and a
+  // body that really is broken is refused by the input parser anyway.
+  const requestHash = idempotencyRequestHash(await opts.getRawInput().catch(() => null));
   /** BUY-16: the key is held for a different request body. A row from
    *  before the hash existed (NULL) is taken to match. */
   const refuseIfOtherBody = (row: { requestHash: string | null }) => {
@@ -352,7 +356,10 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
       refuseIfOtherBody(existing);
       if (existing.response !== null && existing.response !== undefined) {
         // M3.9: debug, not info — cache hits are the good path.
-        logger.debug({ path: opts.path, userId, key }, 'idempotency cache hit — returning prior response');
+        logger.debug(
+          { path: opts.path, userId, key },
+          'idempotency cache hit — returning prior response',
+        );
         return cachedResult(existing.response);
       }
       if (Date.now() >= deadline) {

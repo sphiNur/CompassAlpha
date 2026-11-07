@@ -761,11 +761,21 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     await expectError(enroll(), 'attendance.errors.consentRequired');
     await f.staff().attendance.faceConsentGive({ version: 1 });
 
-    // Every photo is checked.
-    await expectError(enroll({ up: 'Ali:up:dark' }), 'attendance.errors.enrollRejected');
+    // Every photo is checked: a poor required one refuses the enrollment...
     await expectError(enroll({ left: 'Ali:flat' }), 'attendance.errors.enrollRejected');
     await expectError(enroll({ front2: 'Bob:front2' }), 'attendance.errors.enrollRejected');
-    await expectError(enroll({ down: 'nobody' }), 'attendance.errors.enrollRejected');
+    // ...a poor tilt is only left out (2026-11-07).
+    const partial = await enroll({ up: 'Ali:up:dark', down: 'nobody' });
+    expect(
+      (
+        await db
+          .select({ pose: s.attendanceFaceSamples.pose })
+          .from(s.attendanceFaceSamples)
+          .where(eq(s.attendanceFaceSamples.enrollmentId, partial.id))
+      )
+        .map((x) => x.pose)
+        .sort(),
+    ).toEqual(['front', 'front2', 'left', 'right']);
     await expectError(
       enroll({
         left: 'Ali:left:print',
@@ -785,7 +795,7 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     }
     expect(
       (refused as { cause?: { context?: { problems?: string } } }).cause?.context?.problems,
-    ).toBe('up:dark,left:notTurned');
+    ).toBe('left:notTurned');
 
     // The ring: tilts and diagonals are kept when caught, not required.
     const minimal = await f.staff().attendance.faceEnroll({
