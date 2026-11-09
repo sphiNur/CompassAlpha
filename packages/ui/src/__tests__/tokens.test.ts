@@ -458,3 +458,28 @@ describe('DX-VIS-8: wrapped tap areas do not overlap', () => {
     expect(Number(gap?.[1] ?? 0)).toBeGreaterThanOrEqual((44 - 26) / 2 * 2);
   });
 });
+
+describe('UI-10: checkbox and switch show their edge and state', () => {
+  const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
+
+  test('the unchecked box and the off track use the 3:1 field edge, not the hairline', () => {
+    // --c-field-border clears 3:1 on every surface (above); --c-divider is
+    // a 1.2–1.4:1 hairline.
+    for (const name of ['Checkbox.tsx', 'Switch.tsx']) {
+      const src = read(name);
+      expect({
+        name,
+        field: src.includes('ring-field'),
+        hairline: src.includes('ring-hairline'),
+      }).toEqual({ name, field: true, hairline: false });
+    }
+  });
+
+  test('the switch thumb is the field border when off and the action text colour when on', () => {
+    // Both pairs are measured above: --c-field-border on --c-surface-2 ≥ 3,
+    // --c-action-fg on --c-action ≥ 4.5.
+    const src = read('Switch.tsx');
+    expect(src).toMatch(/h-4 w-4 rounded-full bg-\[var\(--c-field-border\)\]/);
+    expect(src).toContain('peer-checked:[&>span]:bg-[var(--c-action-fg)]');
+  });
+});
