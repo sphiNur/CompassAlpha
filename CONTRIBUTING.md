@@ -154,7 +154,7 @@ users see English.
 | Layer | Tool | Where | Notes |
 |---|---|---|---|
 | Domain unit | `bun test` | `packages/domain/src/<a>/*.test.ts` | Pure decide/apply tests, no DB. Always cheap. |
-| API integration | `bun test` (PG-gated) | `apps/api/src/__tests__/*.test.ts` | Spin up real Postgres + Drizzle migrate first. Skipped in CI via `SKIP_PG_TESTS=1`. |
+| API integration | `bun test` (PG-gated) | `apps/api/src/__tests__/*.test.ts` | Migrate a throwaway Postgres first, named like `compass_test`: a test run refuses a database without `test` or `e2e` in its name. CI's unit job skips them with `SKIP_PG_TESTS=1`; its integration job runs them. |
 | FE lib | `bun test` | `apps/web/src/lib/__tests__/`, `apps/web/src/hooks/__tests__/` | Pure utility tests. |
 | Smoke | `bun run scripts/smoke.ts` | server-side tRPC against the live URL | 29 checks, ~5–10 s. |
 | Browser smoke | `node scripts/browser-smoke*.ts` | Playwright against the live URL | Shallow render + deep walk. |
