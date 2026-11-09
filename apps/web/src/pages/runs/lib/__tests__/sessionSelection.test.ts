@@ -6,6 +6,7 @@ import {
   selectPreview,
   selectedSessionIds,
   withGroupSelection,
+  type PreviewShape,
 } from '../sessionSelection';
 
 const TODAY = '2026-10-21';
@@ -76,7 +77,7 @@ describe('session selection (CA-03)', () => {
         ],
       },
     };
-    const out = selectPreview(preview, ['s-a', 's-b']);
+    const out = selectPreview<PreviewShape>(preview, ['s-a', 's-b']);
     expect(out.sessions.map((s) => s.id)).toEqual(['s-a', 's-b']);
     expect(out.plannedItems).toEqual([
       { skuId: 'k1', qty: '3' },

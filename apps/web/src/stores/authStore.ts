@@ -153,7 +153,10 @@ export function isUsableSession(value: unknown): value is AuthSession {
   );
 }
 
-type PersistedAuth = Pick<AuthState, 'accessToken' | 'refreshToken' | 'session' | 'currentStoreId'>;
+export type PersistedAuth = Pick<
+  AuthState,
+  'accessToken' | 'refreshToken' | 'session' | 'currentStoreId'
+>;
 
 /** What a stored payload restores: all of it, or nothing when the session is unusable. */
 export function mergePersistedAuth<T extends PersistedAuth>(persisted: unknown, current: T): T {

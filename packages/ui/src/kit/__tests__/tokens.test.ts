@@ -40,12 +40,12 @@ const doc = frontMatter();
 
 describe('tailwind preset restates DESIGN.md', () => {
   test('colours', () => {
-    expect(colors).toEqual(doc.colors as Record<string, string>);
+    expect<Record<string, string>>(colors).toEqual(doc.colors as Record<string, string>);
   });
 
   test('spacing and radii', () => {
-    expect(spacing).toEqual(doc.spacing as Record<string, string>);
-    expect(rounded).toEqual(doc.rounded as Record<string, string>);
+    expect<Record<string, string>>(spacing).toEqual(doc.spacing as Record<string, string>);
+    expect<Record<string, string>>(rounded).toEqual(doc.rounded as Record<string, string>);
   });
 
   test('typography', () => {

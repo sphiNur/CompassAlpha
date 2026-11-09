@@ -42,17 +42,17 @@ describe('sendWriteAhead', () => {
 
   it('a network failure leaves the entry queued (and no longer live)', async () => {
     const store = fakeStore();
-    let queued: boolean | null = null;
+    const queued: boolean[] = [];
     const err = await sendWriteAhead(
       'order.adjustItem',
       { qty: '1' },
       () => Promise.reject(new TypeError('Failed to fetch')),
       undefined,
-      (q) => (queued = q),
+      (q) => queued.push(q),
       store,
     ).catch((e) => e);
     expect(err).toBeInstanceOf(TypeError);
-    expect(queued).toBe(true);
+    expect(queued).toEqual([true]);
     const [entry] = [...store.rows.values()];
     expect(entry).toBeDefined();
     expect(isLiveEntry(entry!.clientSeq)).toBe(false);

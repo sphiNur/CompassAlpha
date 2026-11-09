@@ -17,7 +17,7 @@ const t = (key: string, values?: Record<string, string | number>) => {
 describe('offlineDropText (RE-DLV-4 / R2-DLV-3)', () => {
   test('names the action and the server reason', () => {
     expect(
-      offlineDropText(t as never, {
+      offlineDropText(t, {
         procedure: 'run.confirmStore',
         reason: 'rejected',
         message: 'run.errors.storeItemsUnchecked',
@@ -27,26 +27,26 @@ describe('offlineDropText (RE-DLV-4 / R2-DLV-3)', () => {
 
   test('without a known reason, the action alone', () => {
     expect(
-      offlineDropText(t as never, {
+      offlineDropText(t, {
         procedure: 'run.confirmStore',
         reason: 'rejected',
         message: 'run.errors.somethingUnknown',
       }),
     ).toBe('Confirm receipt did not sync — please check');
-    expect(offlineDropText(t as never, { procedure: 'run.confirmStore', reason: 'gaveup' })).toBe(
+    expect(offlineDropText(t, { procedure: 'run.confirmStore', reason: 'gaveup' })).toBe(
       'Confirm receipt did not sync — please check',
     );
   });
 
   test('a procedure this page does not know keeps the generic copy', () => {
-    expect(offlineDropText(t as never, { procedure: 'order.adjustItem', reason: 'gaveup' })).toBe(
+    expect(offlineDropText(t, { procedure: 'order.adjustItem', reason: 'gaveup' })).toBe(
       'A saved change did not sync',
     );
   });
 
   test('an order change from a day that is over says so (CMP-FE-3, was OrderPage)', () => {
     expect(
-      offlineDropText(t as never, {
+      offlineDropText(t, {
         procedure: 'order.adjustItem',
         reason: 'rejected',
         message: 'order.errors.staleOfflineEdit',

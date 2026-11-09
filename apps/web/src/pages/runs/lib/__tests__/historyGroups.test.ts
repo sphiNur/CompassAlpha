@@ -67,7 +67,7 @@ describe('groupRunsByDay', () => {
 
 describe('dayStoreSummaries', () => {
   test('a store in two trips is one row with both trips', () => {
-    const shared = (id: string, total: string) => ({
+    const shared = (total: string) => ({
       storeId: 'lagman',
       total,
       cash: total,
@@ -77,11 +77,11 @@ describe('dayStoreSummaries', () => {
     const [day] = groupRunsByDay([
       run('b', '2026-10-22', 1, {
         storeTotals: [
-          shared('b', '50'),
+          shared('50'),
           { storeId: 'x', total: '300', cash: '100', transfer: '200', itemCount: 4 },
         ],
       }),
-      run('a', '2026-10-22', 0, { storeTotals: [shared('a', '80')] }),
+      run('a', '2026-10-22', 0, { storeTotals: [shared('80')] }),
     ]);
     const stores = dayStoreSummaries(day!);
     expect(stores.map((s) => s.storeId)).toEqual(['x', 'lagman']);

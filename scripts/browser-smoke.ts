@@ -23,7 +23,7 @@
  *
  * COMPASS_BASE is required (P0-4, 2026-05-17 — stale-default footgun removed).
  */
-import { chromium, type ConsoleMessage, type Page } from 'playwright';
+import { chromium, type ConsoleMessage } from 'playwright';
 
 // Use process.env (works under both Bun and Node) so this can run via
 // `node --experimental-strip-types ...`.

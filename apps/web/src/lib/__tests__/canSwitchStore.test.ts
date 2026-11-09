@@ -3,8 +3,7 @@ import { canSwitchStore } from '../../components/StoreSwitcher';
 import type { AuthSession } from '../../stores/authStore';
 
 const store = (id: string) => ({ id, name: id, code: null, isActive: true });
-const session = (permissions: string[], stores: AuthSession['stores']) =>
-  ({ permissions, stores }) as unknown as AuthSession;
+const session = (permissions: string[], stores: AuthSession['stores']) => ({ permissions, stores });
 
 describe('canSwitchStore', () => {
   it('lets org admins switch even with a single store', () => {
