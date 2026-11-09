@@ -53,6 +53,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import { UuidSchema } from '@compass/contracts';
+import { PURCHASE_PRICE_RE } from '@compass/contracts/limits';
 import { authedProcedure, router } from '../trpc';
 import { isUniqueViolation } from '../../services/pgErrors';
 import {
@@ -97,15 +98,17 @@ const IngredientSchema = z.object({
   note: z.string().max(500).optional().nullable(),
 });
 
+/**
+ * A dish's sale price: the numeric(14,2) shape every price column has
+ * (contracts' PURCHASE_PRICE_RE; CONF-08 kept one copy of the pattern).
+ */
+const DishPriceSchema = z.string().regex(PURCHASE_PRICE_RE, 'dishes.errors.priceTooLarge');
+
 const CreateInputSchema = z.object({
   code: z.string().max(32).optional().nullable(),
   names: NamesSchema,
   description: z.record(z.string(), z.string().max(2000)).optional(),
-  unitPrice: z
-    .string()
-    .regex(/^\d{1,12}(\.\d{1,2})?$/, 'dishes.errors.priceTooLarge')
-    .optional()
-    .nullable(),
+  unitPrice: DishPriceSchema.optional().nullable(),
   ingredients: z.array(IngredientSchema).max(100),
 });
 
@@ -114,11 +117,7 @@ const UpdateInputSchema = z.object({
   code: z.string().max(32).optional().nullable(),
   names: NamesSchema.optional(),
   description: z.record(z.string(), z.string().max(2000)).optional(),
-  unitPrice: z
-    .string()
-    .regex(/^\d{1,12}(\.\d{1,2})?$/, 'dishes.errors.priceTooLarge')
-    .optional()
-    .nullable(),
+  unitPrice: DishPriceSchema.optional().nullable(),
   sortIndex: z.number().int().optional(),
 });
 

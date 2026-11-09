@@ -10,9 +10,15 @@ import {
   ORDER_QTY_MAX,
   SKU_STEPS,
   SKU_UNITS,
+  settlementMoneyProblem,
   stocktakeCountProblem,
 } from './limits';
 import { OrderQtySchema } from './schemas/common';
+import {
+  SettlementOperatingExpenseItemSchema,
+  SettlementMoneySchema,
+  SignedSettlementMoneySchema,
+} from './schemas/settlement';
 import { SkuStepSchema, SkuUnitSchema } from './schemas/catalog';
 import { PurchasePriceSchema } from './schemas/run';
 import * as barrel from './index';
@@ -58,5 +64,54 @@ describe('limits.ts', () => {
       expect(stocktakeCountProblem(ok)).toBeNull();
     }
     expect(barrel.stocktakeCountProblem).toBe(stocktakeCountProblem);
+  });
+
+  it('settlementMoneyProblem keeps the daily close rule the schemas had (CONF-08)', () => {
+    // The two patterns the schemas, the page and its field lines each carried.
+    const unsigned = /^\d{1,12}(\.\d{1,2})?$/;
+    const signed = /^-?\d{1,12}(\.\d{1,2})?$/;
+    const samples = [
+      '0',
+      '0.5',
+      '0010.5',
+      '320000.50',
+      '999999999999.99',
+      '',
+      '-5',
+      '-0',
+      '-0.05',
+      'abc',
+      '1.2.3',
+      '12.345',
+      '1234567890123',
+      ' 1',
+      '1 ',
+      '.5',
+      '1.',
+      '1e3',
+      '1,5',
+      '-',
+    ];
+    for (const v of samples) {
+      expect(settlementMoneyProblem(v) === null).toBe(unsigned.test(v));
+      expect(settlementMoneyProblem(v, { signed: true }) === null).toBe(signed.test(v));
+      expect(SettlementMoneySchema.safeParse(v).success).toBe(unsigned.test(v));
+      expect(SignedSettlementMoneySchema.safeParse(v).success).toBe(signed.test(v));
+    }
+    expect(settlementMoneyProblem('-5')).toBe('negative');
+    expect(settlementMoneyProblem('12.345')).toBe('decimals');
+    expect(settlementMoneyProblem('1234567890123')).toBe('tooLarge');
+    expect(settlementMoneyProblem('0.00', { positive: true })).toBe('zero');
+    expect(settlementMoneyProblem('0.01', { positive: true })).toBeNull();
+  });
+
+  it('an expense or wage line above zero, refused with a catalog key', () => {
+    const line = (amount: string) =>
+      SettlementOperatingExpenseItemSchema.safeParse({ amount, reason: 'gas' });
+    expect(line('12.50').success).toBe(true);
+    const zero = line('0.00');
+    expect(zero.success).toBe(false);
+    expect(zero.error?.issues[0]?.message).toBe('settlement.errors.invalidDetails');
+    expect(line('12.345').error?.issues[0]?.message).toBe('settlement.errors.invalidMoney');
   });
 });

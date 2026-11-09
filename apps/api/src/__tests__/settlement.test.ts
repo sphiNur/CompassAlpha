@@ -67,6 +67,9 @@ describe('daily settlement money normalization', () => {
     expect(normalizeSettlementMoney('0010.5')).toBe('10.50');
     expect(normalizeSettlementMoney('-12.3')).toBe('-12.30');
     expect(normalizeSettlementMoney('-0')).toBe('0.00');
+    // CONF-08: below one unit, and as large as the column holds.
+    expect(normalizeSettlementMoney('-0.05')).toBe('-0.05');
+    expect(normalizeSettlementMoney('-999999999999.99')).toBe('-999999999999.99');
   });
 });
 
