@@ -34,6 +34,12 @@ const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '
 type Db = ReturnType<typeof getDb>;
 type Caller = ReturnType<typeof appRouter.createCaller>;
 
+/**
+ * A Telegram id no other test file hands out: theirs stay below 10^12
+ * (a time-based id cut to 12 digits collided with one of them in CI).
+ */
+const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
+
 function callerFor(db: Db, session: SessionContext): Caller {
   const ctx: RequestContext = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,7 +115,7 @@ beforeAll(async () => {
     const name = `Audit ${slug} ${n}`;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: name, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: name, tgUserId: freshTgId() })
       .returning();
     const [m] = await db
       .insert(s.members)
