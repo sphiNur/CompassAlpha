@@ -396,11 +396,8 @@ export function PerVendorView({
         const totalQty = b.items.reduce((s, r) => s + Number(r.plannedQty || 0), 0);
         return (
           <Card key={b.supplierId ?? '__unassigned__'}>
-            {/* 🛒/❓ encode assigned-vs-unassigned supplier state (UI-1:
-                state-carrying, not decorative) — the Phase 6 sweep
-                decides whether to swap them for text/color. */}
             <GroupCardHeader
-              title={b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+              title={b.supplierName}
               meta={i18n.t('run.label.skuCountAndQty', {
                 n: b.items.length,
                 qty: formatQty(String(totalQty)),

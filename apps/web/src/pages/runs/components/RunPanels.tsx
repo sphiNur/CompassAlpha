@@ -819,7 +819,7 @@ export function ActiveRunPanel({
                         <li key={sp.skuId} className="flex items-start gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-old-label text-[var(--c-warning-fg)]">
-                              ⚠ {name} · {statusLabel}
+                              {name} · {statusLabel}
                               {sp.confirmReceivedQty != null
                                 ? ' · ' +
                                   i18n.t('confirm.receivedOf', {
@@ -898,9 +898,6 @@ export function ActiveRunPanel({
                         key={'na-' + ln.skuId}
                         className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5 text-[var(--c-fg-muted)]"
                       >
-                        <span aria-hidden className="shrink-0 text-old-body text-[var(--c-danger)]">
-                          ✗
-                        </span>
                         <span className="min-w-0 flex-1 truncate text-old-body line-through">
                           {sku ? productName(sku) : ln.skuId.slice(0, 8)}
                         </span>
@@ -1786,18 +1783,13 @@ export function PreviewSummaryCard({
             {/* flex-1, not a max-w cap: the stall name is the field this
                 whole row exists to surface, so it should take whatever the
                 number leaves rather than give up at 45% while half the row
-                sits empty. The emoji is decorative and aria-hidden — this
-                row repeats once per item, and a screen reader announcing
-                "shopping trolley" before every stall name is noise. */}
+                sits empty. */}
             <span className={`min-w-0 flex-1 truncate ${stallTone}`}>
-              {line.kind === 'extra' ? null : (
-                <>
-                  <span aria-hidden>{line.supplierId ? '🛒' : '❓'}</span>{' '}
-                  {line.supplierId
-                    ? line.supplierName ?? ''
-                    : i18n.t('run.previewSupplier.unassigned')}
-                </>
-              )}
+              {line.kind === 'extra'
+                ? null
+                : line.supplierId
+                  ? (line.supplierName ?? '')
+                  : i18n.t('run.previewSupplier.unassigned')}
             </span>
             <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
               {line.unitPrice ? `${qtyUnit} × ${formatMoney(line.unitPrice)}` : qtyUnit}
@@ -2131,7 +2123,7 @@ export function PreviewSummaryCard({
                   </span>
                   <span className="block min-w-0 flex-1">
                     <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                      {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+                      {b.supplierName}
                     </span>
                     {b.contactTg ? (
                       <span className="block text-old-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
