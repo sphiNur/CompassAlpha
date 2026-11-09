@@ -23,24 +23,3 @@ export function bootLocale(
   }
   return detectLocale(platformLanguage);
 }
-
-/**
- * Resolves when `load` settles or after `ms`, whichever comes first, so a
- * slow or failing catalog download never keeps the app from starting (it
- * then starts in English and switches when the catalog lands, as before).
- */
-export function waitAtMost(load: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    load.then(
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-    );
-  });
-}

@@ -216,11 +216,15 @@ export function AdminPage() {
   }
 
   // A restored navigation state can point at a section this member no
-  // longer lists; fall back to the home list.
+  // longer lists; fall back to the home list. The state is kept per
+  // device, so it can also be another member's (review WALK-07: a
+  // platform admin's "platform" section reopened for an org admin, who
+  // got a 403).
   const sectionHidden =
     ((section === 'organization' || section === 'permissions') && !isOrgAdmin) ||
     (section === 'catalog' && !seesCatalog) ||
-    (section === 'attendance' && !seesAttendance);
+    (section === 'attendance' && !seesAttendance) ||
+    (section === 'platform' && !isPlatformAdmin);
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame

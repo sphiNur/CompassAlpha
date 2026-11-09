@@ -1128,6 +1128,13 @@ const ROW_TRACKS = '1.25rem minmax(0,1fr) minmax(3rem,auto) minmax(4.25rem,auto)
  * not what this redesign buys — see the note on the PurchaseRow doc. */
 const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
 
+/* A row's product name: up to two lines, then an ellipsis (WALK-02).
+ * Hyphenated where the page language allows (<html lang> is set), broken
+ * anywhere only when a word still does not fit. */
+const RUN_ROW_NAME_BASE =
+  'min-w-0 line-clamp-2 break-words hyphens-auto text-old-body font-semibold';
+const RUN_ROW_NAME = `${RUN_ROW_NAME_BASE} text-[var(--c-fg)]`;
+
 /* self-stretch (V4, 2026-10-30): the body fills the 52px row, so it
  * taps across the row's height instead of only its 18px text line. */
 const ROW_TAP =
@@ -1837,11 +1844,13 @@ export function PurchaseRow({
                 ("...рафинированное" vs "...нерафинированное",
                 "охлаждённое" vs "замороженное") and CSS ellipsis eats
                 exactly that suffix. Long-press is the recovery; opening
-                the row is the other. */}
-            <span
-              className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg)]"
-              title={skuName}
-            >
+                the row is the other.
+                Review WALK-02 (2026-11-09): two lines before the
+                ellipsis. At 320px in Russian the payment label, the
+                quantity and the money took their floors and left the
+                name one to five letters ("Я…" for Яблоко); two 13px
+                lines fit the 52px row. */}
+            <span className={RUN_ROW_NAME} title={skuName}>
               {skuName}
             </span>
 
@@ -2224,7 +2233,7 @@ export function PurchaseRow({
               {/* One ink level down: finished work recedes so the eye
                   finds what is left. */}
               <span
-                className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg-muted)]"
+                className={`${RUN_ROW_NAME_BASE} text-[var(--c-fg-muted)]`}
                 title={skuName}
               >
                 {skuName}
@@ -2348,7 +2357,7 @@ export function PurchaseRow({
               not subtle: --c-fg-subtle is 3.22:1 and the purchaser still
               has to find this row by name when the vendor restocks. */}
           <span
-            className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg-muted)] line-through"
+            className={`${RUN_ROW_NAME_BASE} text-[var(--c-fg-muted)] line-through`}
             title={skuName}
           >
             {skuName}

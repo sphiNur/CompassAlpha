@@ -228,6 +228,14 @@ describe('tap areas', () => {
     expect(base).not.toContain('overflow-hidden');
   });
 
+  test('Segmented does not clip its own tap area (review UI-06)', () => {
+    // `truncate` is overflow:hidden. On the segment button it cut the
+    // hit-44 area back to the visible 28/36px; the label span truncates.
+    const segment = /<button[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/.exec(read('Segmented.tsx'))![1]!;
+    expect(segment).toContain('hit-44');
+    expect(segment).not.toMatch(/\btruncate\b|overflow-hidden|overflow-clip/);
+  });
+
   test('hit-44 is at least 44px in both directions', () => {
     const rule = /\.hit-44::after\s*\{([^}]*)\}/.exec(css)![1]!;
     expect(rule).toContain('width: max(100%, 44px)');
