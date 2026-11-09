@@ -378,6 +378,11 @@ export interface NameCellProps {
   primaryLang?: string;
   secondaryLang?: string;
   size?: 'default' | 'prominent';
+  /**
+   * 'span' inside a button, where only phrasing content may go (review
+   * RUNWEB2-06, the run's product picker). It looks the same.
+   */
+  as?: 'div' | 'span';
   className?: string;
 }
 
@@ -387,10 +392,11 @@ export function NameCell({
   primaryLang,
   secondaryLang,
   size = 'default',
+  as: Tag = 'div',
   className,
 }: NameCellProps) {
   return (
-    <div className={cn('min-w-0', className)}>
+    <Tag className={cn('block min-w-0', className)}>
       {/* No explicit leading on the primary — each tier inherits its
           size token's line-height (text-old-h2 → 1.25, text-old-body → 1.4) so
           this matches the hand-rolled markup it replaced byte-for-byte.
@@ -398,7 +404,7 @@ export function NameCell({
           A11Y-1 (2026-10-31): the primary name wraps to two lines instead
           of truncating. At 200% zoom a row is ~195 px wide and `truncate`
           cut the name down to nothing, leaving only the qty control. */}
-      <div
+      <Tag
         lang={primaryLang}
         className={cn(
           'line-clamp-2 break-words font-semibold text-[var(--c-fg)]',
@@ -406,15 +412,15 @@ export function NameCell({
         )}
       >
         {primary}
-      </div>
+      </Tag>
       {secondary ? (
-        <div
+        <Tag
           lang={secondaryLang}
-          className="truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]"
+          className="block truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]"
         >
           {secondary}
-        </div>
+        </Tag>
       ) : null}
-    </div>
+    </Tag>
   );
 }
