@@ -20,10 +20,12 @@ import designTokens from '@compass/ui/tailwind-preset';
  *     because they're proper headings; the 600 + tightening is the whole
  *     point.
  *   - Everything else (h3, body, body-sm, label, meta, tiny): just size +
- *     line-height. NO baked weight, NO baked tracking. If a caller wants
- *     an 11px-uppercase-bold-spaced LABEL, they write
- *     `className="text-label font-semibold uppercase tracking-eyebrow"`
- *     — opt-in, explicit, locally readable.
+ *     line-height. NO baked weight, NO baked tracking; the caller picks
+ *     the weight. Labels are sentence case: section headings are
+ *     SectionLabel, form labels FieldLabel, and CI fails on `uppercase`
+ *     (UI-11).
+ *
+ * Roles per size: packages/ui/src/tokens.css, above --text-display.
  *
  * Sizes (keep in sync with packages/ui/src/tokens.css):
  *   display 24 · h1 19 · h2 15 · h3 14 · body 13 · body-sm 12 ·
@@ -44,8 +46,10 @@ const fontSizeScale = {
 };
 
 export default {
-  // The redesign's tokens (DESIGN.md). Screens that have been rebuilt use
-  // only these; the `old-*` scale below goes away with the last old screen.
+  // The redesign preset (DESIGN.md). The owner kept the current look
+  // (2026-11-05, docs/UI_STANDARDS.md), so screens use the `old-*` scale
+  // below; the preset's own `text-h2` / `text-body` are larger sizes under
+  // the same names (review UI-16).
   presets: [designTokens],
   content: [
     './index.html',
@@ -55,13 +59,6 @@ export default {
   theme: {
     extend: {
       fontSize: fontSizeScale,
-      letterSpacing: {
-        // M1.9-extra (2026-05-07): "eyebrow" labels — caps-set
-        // semantic markers above sections/tiles. The 0.08em spacing
-        // was repeated in 18 ad-hoc `tracking-[0.08em]` arbitrary
-        // utilities. Promoting to a token: `tracking-eyebrow`.
-        eyebrow: '0.08em',
-      },
     },
   },
   plugins: [],
