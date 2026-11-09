@@ -473,7 +473,7 @@ export const en = {
   'run.status.purchasing': 'Purchasing',
   'run.status.delivering': 'Delivering',
   'run.status.finished': 'Finished',
-  'run.status.cancelled': 'Canceled',
+  'run.status.cancelled': 'Cancelled',
   'run.status.amending': 'Amending',
   'time.justNow': 'just now',
   'time.minutesAgo': '{n}m ago',
@@ -829,7 +829,7 @@ export const en = {
   'subscription.status.active': 'Active',
   'subscription.status.past_due': 'Past due',
   'subscription.status.suspended': 'Suspended',
-  'subscription.status.canceled': 'Canceled',
+  'subscription.status.canceled': 'Cancelled',
   'subscription.errors.readOnly': 'This workspace is read-only because its subscription has ended.',
   'subscription.errors.storeLimit':
     "This plan's store limit has been reached. Upgrade or ask the platform admin.",
@@ -1643,7 +1643,7 @@ export const en = {
   'run.toast.purchaseUndone': 'Purchase undone — back to pending',
   'run.toast.deliveryRecalled': 'Delivery recalled',
   'run.toast.delivered': 'Marked as delivered',
-  'run.toast.runCancelled': 'Run canceled',
+  'run.toast.runCancelled': 'Run cancelled',
   // Wave2 #15 (M3.40, 2026-05-20): shown when run.cancel completes but
   // one or more sessions failed to eject cleanly. The repair worker
   // sweep picks them up within ~5 min so the operator doesn't need
@@ -1664,7 +1664,7 @@ export const en = {
   // Optional input — we deliberately don't hard-require because
   // operators sometimes cancel because they fat-fingered, and forcing
   // a reason produces "asdf" noise that pollutes audit.
-  'run.cancel.reasonPlaceholder': 'Why are you canceling? (optional, helps the team learn)',
+  'run.cancel.reasonPlaceholder': 'Why are you cancelling? (optional, helps the team learn)',
   'run.history.totalLabel': 'Total spent',
   'run.history.itemSummary': '{bought} bought · {na} unavailable',
   'run.history.storeSummary': '{stores, plural, one {# store} other {# stores}}',
@@ -1718,9 +1718,9 @@ export const en = {
   'run.errors.itemAlreadyPurchased':
     'This item is already recorded as bought — edit the existing record instead',
   'run.errors.cannotCancelAfterConfirm':
-    'A store has already confirmed its delivery — this run can no longer be canceled',
+    'A store has already confirmed its delivery — this run can no longer be cancelled',
   'run.errors.cannotCancelAfterDelivery':
-    'Goods have been delivered to a store, so the run cannot be canceled. Recall the delivery first',
+    'Goods have been delivered to a store, so the run cannot be cancelled. Recall the delivery first',
   'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
   'run.errors.notReadyToDeliver':
     'Delivery cannot start yet: the run is not at the delivery step. Refresh to see where it is.',

@@ -516,6 +516,8 @@ function untranslated(cats: Catalogs): string[] {
  *   daily close       日结      daily close          закрытие дня     kun yakuni
  *
  * Each entry is a word that names one of these concepts the other way.
+ * Something outside the catalog is therefore not a 商品: it is 其他物品 /
+ * 目录外物品 (full review 2026-11, I18N1-03).
  */
 const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
   zh: [
@@ -524,6 +526,7 @@ const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
     { pattern: /SKU/, use: '商品' },
     { pattern: /买手/, use: '采购员' },
     { pattern: /结算/, use: '日结 (or 计算 for run totals)' },
+    { pattern: /其他商品|目录外商品/, use: '其他物品 / 目录外物品' },
   ],
   en: [
     { pattern: /\bSKUs?\b/, use: 'product' },
@@ -583,6 +586,10 @@ function htmlEntities(cats: Catalogs): string[] {
  * step is not a "step length", a permission is not "in the dictionary",
  * a run is not per "slot", and a review is not "claimed" and "released".
  * Placeholders ({org}) are code and are not checked.
+ *
+ * Full review 2026-11: a receipt is 收据 in zh, never 发票 (a tax invoice a
+ * market stall cannot give), 票据, 小票 or 凭证 (I18N1-07); en spells
+ * cancelled / cancelling one way (I18N1-05).
  */
 const COPY_BANNED: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
   zh: [
@@ -596,9 +603,11 @@ const COPY_BANNED: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
     { pattern: /认领/, use: '我来审核 / 接手' },
     { pattern: /释放/, use: '放回' },
     { pattern: /后台自动/, use: '稍后会…' },
+    { pattern: /发票|票据|小票|凭证/, use: '收据' },
   ],
   en: [
     { pattern: /\borgs?\b|organi[sz]ation/i, use: 'workspace (D23)' },
+    { pattern: /\bcancel(?:ed|ing)\b/i, use: 'cancelled / cancelling' },
     { pattern: /\binbox\b/i, use: 'orders waiting for review' },
     { pattern: /\bfrozen\b/i, use: 'finished or cancelled' },
     { pattern: /\bslot\b/i, use: 'say what happened' },
@@ -721,6 +730,33 @@ function distinctActions(cats: Catalogs): string[] {
   return found;
 }
 
+/**
+ * Full review 2026-11 (I18N1-04, I18N1-05): zh used one word for two
+ * things. A cancelled run was 作废 in its notification but 取消 on its
+ * button, while 作废 is what voiding a sale or a clock-in says; the people
+ * who added items to an order were 提交人, the word for the one person who
+ * submitted it. A key whose English names the first may not use the word
+ * for the second.
+ */
+const ZH_KEEPS_APART: Array<{ english: RegExp; zh: RegExp; why: string }> = [
+  { english: /\bcancel/i, zh: /作废/, why: '作废 is void; a cancel is 取消' },
+  { english: /\bvoid/i, zh: /取消/, why: '取消 is cancel; a void is 作废' },
+  { english: /\bcontributor/i, zh: /提交人/, why: '提交人 is the submitter; say 参与人' },
+];
+
+function chineseWordsKeepApart(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    const chinese = cats.zh[key] ?? '';
+    for (const rule of ZH_KEEPS_APART) {
+      if (rule.english.test(english) && rule.zh.test(chinese)) {
+        found.push(`zh ${key}: "${chinese}" — ${rule.why}`);
+      }
+    }
+  }
+  return found;
+}
+
 // ── The gates ───────────────────────────────────────────────────────────
 
 const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
@@ -743,6 +779,7 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['ru: no «(а)» gender shortcuts', russianGenderShortcuts],
   ['uz: a reset is not «tiklash» (restore)', uzbekResetIsNotRestore],
   ['actions on the same screen read differently', distinctActions],
+  ['zh: cancel, void and contributor keep their own words', chineseWordsKeepApart],
 ];
 
 describe('catalog lint', () => {
@@ -975,5 +1012,22 @@ describe('catalog lint rules catch the original findings', () => {
     expect(htmlEntities(one({ en: 'Salt &amp; pepper' }))).toHaveLength(1);
     expect(htmlEntities(one({ ru: 'Д&#39;Артаньян' }))).toHaveLength(1);
     expect(htmlEntities(one({ en: 'Salt & pepper; to taste' }))).toEqual([]);
+  });
+
+  test('I18N1-03 / 04 / 05 / 07: other items, contributors, cancel and receipts', () => {
+    expect(terminology(one({ zh: '+ 添加其他商品' }))).toHaveLength(1);
+    expect(terminology(one({ zh: '目录外商品和开销' }))).toHaveLength(1);
+    expect(terminology(one({ zh: '为别的商品盘点' }))).toEqual([]);
+    expect(copyBanned(one({ zh: '发票（可选）' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '例如：小票上的单价看错了' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '收据照片' }))).toEqual([]);
+    expect(copyBanned(one({ en: 'Run canceled' }))).toHaveLength(1);
+    expect(copyBanned(one({ en: 'Why are you canceling?' }))).toHaveLength(1);
+    expect(copyBanned(one({ en: 'Run cancelled · Cancel' }))).toEqual([]);
+    expect(chineseWordsKeepApart(one({ en: 'Run cancelled', zh: '采购单已作废' }))).toHaveLength(1);
+    expect(chineseWordsKeepApart(one({ en: 'Void sale', zh: '取消销售' }))).toHaveLength(1);
+    expect(chineseWordsKeepApart(one({ en: '3 contributors', zh: '3 位提交人' }))).toHaveLength(1);
+    expect(chineseWordsKeepApart(one({ en: 'Run cancelled', zh: '采购单已取消' }))).toEqual([]);
+    expect(chineseWordsKeepApart(one({ en: 'Rejected', zh: '提交人会看到原因' }))).toEqual([]);
   });
 });
