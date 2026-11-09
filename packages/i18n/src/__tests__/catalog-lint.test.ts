@@ -216,6 +216,17 @@ const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   { pattern: /(?<!\p{L})[Сс]есси/u, what: 'session (say заказ / вход)' },
   { pattern: /\bservers?\b|сервер|服务器|服务端/i, what: 'server (say what happened to the user)' },
   { pattern: /\bsync(?:s|ed|ing)?\b|синхрон|sinxron|同步/i, what: 'sync (say send / 发送)' },
+  // Review I18N1-06 (2026-11-10): the transaction words a member transfer
+  // explained itself with, and zh's words for session, parameter and
+  // cascade. ru «откатить» stays: undoing a purchase is a real action.
+  { pattern: /会话/, what: 'session (say 登录)' },
+  {
+    pattern:
+      /事务|原子|回滚|\btransactions?\b|\batomic|\brolls? back\b|\brolled back\b|транзакци|атомарн|tranzaksiya|atomar/i,
+    what: 'transaction (say "in one step" / "nothing is changed")',
+  },
+  { pattern: /入参/, what: 'parameter (say 输入内容)' },
+  { pattern: /级联|cascade|каскад|kaskad/i, what: 'cascade (say "deleted with it")' },
 ];
 
 /** `lang key` prefixes whose screens only developers see. */
@@ -937,6 +948,20 @@ describe('catalog lint rules catch the original findings', () => {
     expect(devTerms(one({ uz: 'sinxronlanishni kutmoqda' }))).toHaveLength(1);
     expect(devTerms(one({ en: 'Saved offline — waiting to send' }))).toEqual([]);
     expect(devTerms(one({ en: 'Only for people on the server allowlist' }, 'dev.x'))).toEqual([]);
+  });
+
+  test('I18N1-06: transaction, session, parameter and cascade words', () => {
+    expect(devTerms(one({ en: 'Atomic in one transaction:' }))).not.toEqual([]);
+    expect(devTerms(one({ en: 'the whole transfer rolls back' }))).toHaveLength(1);
+    expect(devTerms(one({ ru: 'Атомарно, в одной транзакции:' }))).toHaveLength(1);
+    expect(devTerms(one({ uz: 'Bitta tranzaksiyada atomar bajariladi:' }))).toHaveLength(1);
+    expect(devTerms(one({ zh: '会话已过期——请刷新' }))).toHaveLength(1);
+    expect(devTerms(one({ zh: '入参' }))).toHaveLength(1);
+    expect(devTerms(one({ en: 'see what gets cascade-deleted' }))).toHaveLength(1);
+    expect(devTerms(one({ ru: 'посмотрите, что удалится каскадом' }))).toHaveLength(1);
+    // Undoing a purchase is a real action in ru.
+    expect(devTerms(one({ ru: 'Нельзя откатить — магазин уже принял' }))).toEqual([]);
+    expect(devTerms(one({ en: 'All in one step:', zh: '登录已过期——请重新登录' }))).toEqual([]);
   });
 
   test('DX-COPY-18 / DX-COPY-15: mojibake and ISO dates', () => {
