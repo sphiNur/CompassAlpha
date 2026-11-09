@@ -101,6 +101,9 @@ const runReadProcedure = authedProcedure.use(async (opts) => {
   return result;
 });
 
+/** Runs not finished or cancelled: run.list keeps them whatever their age (RUNAPI-06). */
+const OPEN_RUN_STATUSES = ['planned', 'purchasing', 'delivering', 'amending'];
+
 function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
   return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
 }
@@ -135,6 +138,42 @@ function sumDecimalStrings(values: readonly string[]): string {
   const whole = digits.slice(0, -scale) || '0';
   const fraction = digits.slice(-scale).replace(/0+$/, '');
   return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+/**
+ * A run's active expenses as a reader sees them: only the splits of the
+ * reader's stores, the quantity summed over those, and no receipt photo
+ * when a split was cut off. The photo shows the whole amount, and with it
+ * the other stores' shares. Review RUNAPI-11 (2026-11-09): run.get had
+ * this rule and historyDetail returned the photo; both use this now.
+ */
+function expensesForReader(
+  rawExpenses: ReadonlyArray<typeof s.runExpensesV.$inferSelect>,
+  allowedStoreSet: ReadonlySet<string> | null,
+) {
+  return rawExpenses.flatMap((expense) => {
+    const allStoreSplits = expense.storeSplitsJson as Array<{ storeId: string; qty: string }>;
+    const storeSplits = allowedStoreSet
+      ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
+      : allStoreSplits;
+    if (storeSplits.length === 0) return [];
+    return [
+      {
+        id: expense.id,
+        label: expense.label,
+        unitHint: expense.unitHint,
+        qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
+        unitPrice: expense.unitPrice,
+        storeSplits,
+        paymentMethod: expense.paymentMethod,
+        receiptPhotoUrl:
+          storeSplits.length !== allStoreSplits.length ? null : expense.receiptPhotoUrl,
+        reason: expense.reason,
+        addedByMemberId: expense.addedByMemberId,
+        addedAt: expense.addedAt.toISOString(),
+      },
+    ];
+  });
 }
 
 export const runRouter = router({
@@ -1166,17 +1205,44 @@ export const runRouter = router({
       // provenance first; store-scoped readers receive a redacted projection
       // below rather than the raw cross-store run row.
       const allowedStoreIds = await resolveRunReadStoreScope(tx, ctx);
-      const runs = await tx
+      if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+      // Review RUNAPI-06 (2026-11-09): the store scope is applied in SQL,
+      // before the limit, as run.history does; and a run still open is
+      // listed however old it is. The org's newest 50 were taken first and
+      // filtered after, so a store reader could get far fewer than 50, and
+      // a run waiting for a store's receipt fell off the receiving page
+      // once 50 newer runs existed: that store could never confirm it, and
+      // the run could never finish.
+      const visibleToReader =
+        allowedStoreIds === null
+          ? undefined
+          : sql`EXISTS (
+              SELECT 1 FROM read_model.order_sessions_v os
+              WHERE os.org_id = ${ctx.session!.orgId}
+                AND os.store_id IN (${uuidListSql(allowedStoreIds)})
+                AND os.id IN (
+                  SELECT (jsonb_array_elements_text(${s.marketRunsV.sessionIdsJson}))::uuid
+                )
+            )`;
+      const orgRuns = and(eq(s.marketRunsV.orgId, ctx.session!.orgId), visibleToReader);
+      const newestFirst = [desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex)] as const;
+      const open = await tx
         .select()
         .from(s.marketRunsV)
-        .where(eq(s.marketRunsV.orgId, ctx.session!.orgId))
-        .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
+        .where(and(orgRuns, inArray(s.marketRunsV.status, OPEN_RUN_STATUSES)))
+        .orderBy(...newestFirst);
+      const recent = await tx
+        .select()
+        .from(s.marketRunsV)
+        .where(orgRuns)
+        .orderBy(...newestFirst)
         .limit(50);
-      let visibleRuns = runs;
-      if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+      const recentIds = new Set(recent.map((r) => r.id));
+      const runs = [...recent, ...open.filter((r) => !recentIds.has(r.id))].sort(
+        (a, b) => b.runDate.localeCompare(a.runDate) || b.runIndex - a.runIndex,
+      );
       // Resolve every involved storeId in one shot; cheap join on a
-      // bounded result set. Filter runs whose sessions touch any
-      // allowed store.
+      // bounded result set.
       const allSessionIds = [
         ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
       ];
@@ -1195,16 +1261,7 @@ export const runRouter = router({
         });
         for (const row of sessionStoreRows) sessionStore.set(row.id, row.storeId);
       }
-      if (allowedStoreSet) {
-        if (allSessionIds.length === 0) return [];
-        visibleRuns = runs.filter((r) => {
-          const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
-          return ids.some((sid) => {
-            const storeId = sessionStore.get(sid);
-            return storeId !== undefined && allowedStoreSet.has(storeId);
-          });
-        });
-      }
+      const visibleRuns = runs;
       if (visibleRuns.length === 0) return [];
 
       // 2026-10-21 CA-11: per-store money now comes from the shared
@@ -2036,28 +2093,7 @@ export const runRouter = router({
             and2(eq2(expense.runId, run.id), isNull(expense.removedAt)),
           orderBy: (expense, { asc }) => asc(expense.addedAt),
         });
-        const expenses = rawExpenses.flatMap((expense) => {
-          const allStoreSplits = expense.storeSplitsJson as Array<{ storeId: string; qty: string }>;
-          const storeSplits = allowedStoreSet
-            ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
-            : allStoreSplits;
-          if (storeSplits.length === 0) return [];
-          return [
-            {
-              id: expense.id,
-              label: expense.label,
-              unitHint: expense.unitHint,
-              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
-              unitPrice: expense.unitPrice,
-              storeSplits,
-              paymentMethod: expense.paymentMethod,
-              receiptPhotoUrl: expense.receiptPhotoUrl,
-              reason: expense.reason,
-              addedByMemberId: expense.addedByMemberId,
-              addedAt: expense.addedAt.toISOString(),
-            },
-          ];
-        });
+        const expenses = expensesForReader(rawExpenses, allowedStoreSet);
 
         // DX-HIS-6 (2026-11-01): the detail names each line's supplier.
         // Names come with the payload: catalog.suppliers is not readable
@@ -2611,34 +2647,7 @@ export const runRouter = router({
             and2(eq2(e.runId, run.id), isNull(e.removedAt)),
           orderBy: (e, { asc }) => asc(e.addedAt),
         });
-        const expenses = rawExpenses.flatMap((expense) => {
-          const allStoreSplits = expense.storeSplitsJson as Array<{
-            storeId: string;
-            qty: string;
-          }>;
-          const storeSplits = allowedStoreSet
-            ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
-            : allStoreSplits;
-          if (storeSplits.length === 0) return [];
-          return [
-            {
-              id: expense.id,
-              label: expense.label,
-              unitHint: expense.unitHint,
-              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
-              unitPrice: expense.unitPrice,
-              storeSplits,
-              paymentMethod: expense.paymentMethod,
-              receiptPhotoUrl:
-                allowedStoreSet && storeSplits.length !== allStoreSplits.length
-                  ? null
-                  : expense.receiptPhotoUrl,
-              reason: expense.reason,
-              addedByMemberId: expense.addedByMemberId,
-              addedAt: expense.addedAt.toISOString(),
-            },
-          ];
-        });
+        const expenses = expensesForReader(rawExpenses, allowedStoreSet);
 
         const visibleMoney = {
           total: [] as string[],

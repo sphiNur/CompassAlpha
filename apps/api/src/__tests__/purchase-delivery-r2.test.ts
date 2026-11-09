@@ -635,6 +635,50 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
     expect(err?.message).toBe('run.errors.runHasOtherStores');
   });
 
+  test("RUNAPI-11: a shared expense's receipt is hidden from a reader of one of its stores", async () => {
+    const { admin, buyerA, storeA, storeB, skuIds, orgId } = fix!;
+    const { runId } = await seedRun('delivered');
+    const photo = `https://receipts.example/${runId}.jpg`;
+    const porter = randomUUID();
+    await fix!.db.insert(s.runExpensesV).values({
+      id: porter,
+      runId,
+      orgId,
+      label: 'Porter',
+      qty: '2',
+      unitPrice: '30000',
+      storeSplitsJson: [
+        { storeId: storeA, qty: '1' },
+        { storeId: storeB, qty: '1' },
+      ],
+      paymentMethod: 'cash',
+      receiptPhotoUrl: photo,
+      reason: 'carried both orders',
+      addedByMemberId: admin.memberId,
+      addedAt: new Date(),
+    });
+    await admin.caller.run.markStoreItemsOk({ runId, storeId: storeA, skuIds: [skuIds[0]] });
+    await admin.caller.run.confirmStore({ runId, storeId: storeA });
+    await admin.caller.run.markStoreItemsOk({ runId, storeId: storeB, skuIds: [skuIds[1]] });
+    await admin.caller.run.confirmStore({ runId, storeId: storeB });
+    await admin.caller.run.finish({ runId });
+
+    // The photo shows the whole 60,000, and so store B's share.
+    const seenByA = (await buyerA.caller.run.historyDetail({ runId })).expenses.find(
+      (e) => e.id === porter,
+    );
+    expect(seenByA?.storeSplits).toEqual([{ storeId: storeA, qty: '1' }]);
+    expect(seenByA?.receiptPhotoUrl).toBeNull();
+    // The same answer as run.get.
+    const fromGet = (await buyerA.caller.run.get({ runId })).expenses?.find((e) => e.id === porter);
+    expect(fromGet?.receiptPhotoUrl).toBeNull();
+    // Someone who sees every store still gets it.
+    const seenByAdmin = (await admin.caller.run.historyDetail({ runId })).expenses.find(
+      (e) => e.id === porter,
+    );
+    expect(seenByAdmin?.receiptPhotoUrl).toBe(photo);
+  });
+
   test('R2-DLV-1 + D3: re-buying in a correction keeps the verdict; added quantity is labelled', async () => {
     const { admin, storeA, storeB, skuIds, db } = fix!;
     const { runId } = await seedRun('delivered');
