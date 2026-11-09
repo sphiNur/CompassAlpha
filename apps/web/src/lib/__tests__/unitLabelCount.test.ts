@@ -8,18 +8,8 @@
  * caption); those are listed below with the reason.
  */
 import { describe, expect, it } from 'bun:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-
-const SRC = new URL('../..', import.meta.url).pathname;
-
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) return name === '__tests__' ? [] : sourceFiles(p);
-    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [p] : [];
-  });
-}
+import { readFileSync } from 'node:fs';
+import { SRC, sourceFiles } from '../../__tests__/helpers/sourceFiles';
 
 /** `file: call` → why the unit stands without a count. */
 const SINGULAR_ALLOWED: Record<string, string> = {
@@ -78,7 +68,7 @@ function offenders(file: string, src: string): string[] {
 describe('a unit after a quantity agrees with it', () => {
   it('passes the quantity to unitLabel wherever a number is shown with it', () => {
     const found: string[] = [];
-    for (const path of sourceFiles(SRC)) {
+    for (const path of sourceFiles()) {
       const src = readFileSync(path, 'utf8');
       if (!src.includes('unitLabel(')) continue;
       found.push(...offenders(path.slice(SRC.length), src));

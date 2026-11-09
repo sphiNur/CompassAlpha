@@ -1,32 +1,20 @@
 import { describe, expect, it } from 'bun:test';
 import { groupStoreBySupplier } from '../previewGrouping';
-import type { PreviewLine, PreviewStoreGroup } from '../../types';
+import type { PreviewLine } from '../../types';
+import { previewLine, previewStore } from './previewFixtures';
 
-function line(overrides: Partial<PreviewLine> = {}): PreviewLine {
-  return {
-    id: overrides.id ?? 'line',
-    kind: overrides.kind ?? 'sku',
-    skuId: 'skuId' in overrides ? (overrides.skuId ?? null) : 'sku-1',
-    name: overrides.name ?? 'Tomato',
-    qty: overrides.qty ?? '1',
-    unit: overrides.unit ?? 'kg',
-    unitPrice: 'unitPrice' in overrides ? (overrides.unitPrice ?? null) : '1000',
-    total: 'total' in overrides ? (overrides.total ?? null) : 1000,
-    supplierId: overrides.supplierId,
-    supplierName: overrides.supplierName,
-    note: overrides.note,
-  };
-}
+const line = (over: Partial<PreviewLine> = {}) =>
+  previewLine({
+    id: 'line',
+    skuId: 'sku-1',
+    name: 'Tomato',
+    unit: 'kg',
+    unitPrice: '1000',
+    total: 1000,
+    ...over,
+  });
 
-function store(items: PreviewLine[]): PreviewStoreGroup {
-  return {
-    storeId: 'store-a',
-    storeName: 'Store A',
-    items,
-    total: 0,
-    unknownCount: 0,
-  };
-}
+const store = (items: PreviewLine[]) => previewStore('store-a', items, { storeName: 'Store A' });
 
 describe('groupStoreBySupplier', () => {
   it('groups rows by stall, totals each group, and leaves unassigned rows last', () => {
