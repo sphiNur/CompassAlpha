@@ -2,6 +2,7 @@ import { centsToMoney, lineCents, lineWithinCap, MAX_LINE_AMOUNT } from '@compas
 import { conflict, forbidden, preconditionFailed, validation } from '../shared/errors';
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
+import { milliQty, storedQtyMilli } from '../shared/quantity';
 import type { RunEvent } from './events';
 import type { RunState } from './state';
 
@@ -1221,18 +1222,19 @@ export function decideRun(
           });
         }
         const planned = num(existing.plannedQty, 'run.errors.invalidQty');
-        if (qty - planned > TOLERANCE) {
+        // RUNAPI-05: in whole thousandths, not floats.
+        const remaining = storedQtyMilli(existing.plannedQty) - storedQtyMilli(removed.qty);
+        if (remaining < 0n) {
           throw preconditionFailed('run.errors.ejectQtyExceedsPlan', {
             skuId: removed.skuId,
             planned,
             qty,
           });
         }
-        const remaining = planned - qty;
-        if (remaining <= TOLERANCE) {
+        if (remaining === 0n) {
           items.delete(removed.skuId);
         } else {
-          items.set(removed.skuId, { ...existing, plannedQty: remaining.toString() });
+          items.set(removed.skuId, { ...existing, plannedQty: milliQty(remaining) });
         }
       }
       if (items.size === 0) {

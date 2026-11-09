@@ -8,20 +8,27 @@
  * card total — only when every expense has a price — is the D1 sum:
  * each line rounded half-up to cents, added in cents.
  *
+ * RUNWEB2-02 (2026-11-09): a line is one store's share (D1), as on the
+ * settlement sheet, in history and on the server. The card used to take
+ * the whole expense as one line: 12,345 shared 0.333 / 0.333 / 0.334 read
+ * 12,345.00 here and 12,345.01 everywhere else. It now calls the
+ * settlement rule and only adds "no price, no amount".
+ *
  * Pure; tests in __tests__/expenseMoney.test.ts.
  */
-import { lineAmount, sumMoney } from '@compass/contracts/money';
+import { sumMoney } from '@compass/contracts/money';
+import { expenseLine as settlementExpenseLine } from './settlement';
 
-type ExpenseIn = { qty: string; unitPrice: string | null | undefined };
+type ExpenseIn = {
+  qty: string;
+  unitPrice: string | null | undefined;
+  storeSplits?: ReadonlyArray<{ qty: string; unitPrice?: string | null }> | null;
+};
 
-/** One expense line, or null when its price is not shown. */
+/** One expense's amount, or null when its price is not shown. */
 export function expenseLine(expense: ExpenseIn): string | null {
   if (expense.unitPrice == null || expense.unitPrice === '') return null;
-  try {
-    return lineAmount(expense.qty, expense.unitPrice);
-  } catch {
-    return null;
-  }
+  return settlementExpenseLine({ ...expense, unitPrice: expense.unitPrice }).toFixed(2);
 }
 
 /** The card total, or null when any expense's amount is hidden. */

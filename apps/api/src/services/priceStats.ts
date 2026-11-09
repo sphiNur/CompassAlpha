@@ -14,12 +14,17 @@
  * on screen.
  */
 import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { estimateOrder, type OrderEstimate } from '@compass/contracts';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 
 export interface SkuPriceStat {
   skuId: string;
-  lastPrice: number | null;
+  /**
+   * The last purchase's price, rounded to cents (ORD-01): a decimal string
+   * with two decimals. Every estimate is made of it.
+   */
+  lastPrice: string | null;
   lastObservedAt: Date | null;
   avg7d: number | null;
   avg30d: number | null;
@@ -65,7 +70,7 @@ export async function loadSkuPriceStats(
     .orderBy(s.priceHistory.skuId, s.priceHistory.observedAt);
 
   type Acc = {
-    last: { price: number; at: Date } | null;
+    last: { price: string; at: Date } | null;
     sum7: number;
     n7: number;
     sum30: number;
@@ -87,7 +92,7 @@ export async function loadSkuPriceStats(
       acc.n7 += 1;
     }
     if (!acc.last || r.observedAt > acc.last.at) {
-      acc.last = { price, at: r.observedAt };
+      acc.last = { price: r.unitPrice, at: r.observedAt };
     }
   }
 
@@ -110,13 +115,18 @@ export async function loadSkuPriceStats(
   // store at the same instant, and those are weighed by quantity. A
   // corrected price is a later row, so it replaces the mistake here even
   // though the mistake stays in the averages above.
+  //
+  // ORD-01 (2026-11-09): rounded to cents here, once. The server's
+  // estimates used the weighted price unrounded (10000.666…) while the
+  // web got it from catalog.skuPriceStats rounded, so the same order was
+  // estimated a cent apart.
   const latest = (await db.execute(sql`
     SELECT
       t.sku_id::text AS sku_id,
       t.observed_at  AS observed_at,
-      COALESCE(
-        SUM(t.unit_price * t.qty) / NULLIF(SUM(t.qty), 0),
-        AVG(t.unit_price)
+      ROUND(
+        COALESCE(SUM(t.unit_price * t.qty) / NULLIF(SUM(t.qty), 0), AVG(t.unit_price)),
+        2
       )::text AS unit_price
     FROM (
       SELECT
@@ -138,8 +148,8 @@ export async function loadSkuPriceStats(
     GROUP BY t.sku_id, t.observed_at
   `)) as unknown as Array<{ sku_id: string; observed_at: Date | string; unit_price: string }>;
   for (const r of latest) {
-    const price = Number(r.unit_price);
-    if (!Number.isFinite(price)) continue;
+    if (!Number.isFinite(Number(r.unit_price))) continue;
+    const price = r.unit_price;
     const at = r.observed_at instanceof Date ? r.observed_at : new Date(r.observed_at);
     const stat = out.get(r.sku_id);
     if (stat) {
@@ -159,16 +169,6 @@ export async function loadSkuPriceStats(
   return out;
 }
 
-/**
- * The single "what do we expect this to cost" rule, shared by every
- * surface that shows a `~` estimate (order review sheet, approval card,
- * approval detail). Prefers the 7-day mean so one freak-sale day doesn't
- * skew tomorrow's expectation, falling back to the last observed price.
- *
- * Returns the total plus how many lines it could and could NOT price, so
- * callers can be honest about the estimate's coverage instead of
- * presenting a partial sum as complete.
- */
 export type PaymentMethod = 'cash' | 'transfer';
 
 /** How each product was paid for the last time it was bought. */
@@ -238,40 +238,31 @@ export async function loadSkuUsualPayment(
 }
 
 /**
- * `cash` and `transfer` split `total` by how each product was last paid:
- * the ordering store's own last purchase, else anyone's, else cash, which
- * is what a purchase is recorded as unless the purchaser says otherwise.
+ * What an order should cost, for the server's surfaces (approval cards,
+ * today's batches). The rule is `estimateOrder` in @compass/contracts,
+ * which the web's review sheet and approval detail run too (ORD-01), at
+ * each product's last price paid: market prices move by the day, so an
+ * average of the week is a price nobody paid, and it keeps a mistyped
+ * price for a week after the mistake is corrected. It is also the price
+ * the purchasing plan goes by.
+ *
+ * `cash` and `transfer` split the total by how each product was last
+ * paid: the ordering store's own last purchase, else anyone's, else cash,
+ * which is what a purchase is recorded as unless the purchaser says
+ * otherwise. `known` and `unknown` count the lines that could and could
+ * not be priced, so a screen can say the sum is partial.
  */
 export function estimateLines(
-  lines: Array<{ skuId: string; qty: number }>,
+  lines: Array<{ skuId: string; qty: string }>,
   stats: Map<string, SkuPriceStat>,
   paid?: { usual: SkuUsualPayment; storeId: string },
-): { total: number; known: number; unknown: number; cash: number; transfer: number } {
-  let total = 0;
-  let known = 0;
-  let unknown = 0;
-  let cash = 0;
-  let transfer = 0;
-  for (const line of lines) {
-    if (!(line.qty > 0)) continue;
-    const stat = stats.get(line.skuId);
-    // What it cost the last time it was bought. Market prices move by
-    // the day, so an average of the week is a price nobody paid, and it
-    // keeps a mistyped price for a week after the mistake is corrected.
-    // It is also the price the purchasing plan already goes by.
-    const price = stat?.lastPrice ?? null;
-    if (price != null) {
-      total += price * line.qty;
-      known += 1;
-      const method =
-        paid?.usual.byStoreSku.get(`${paid.storeId}:${line.skuId}`) ??
-        paid?.usual.bySku.get(line.skuId) ??
-        'cash';
-      if (method === 'transfer') transfer += price * line.qty;
-      else cash += price * line.qty;
-    } else {
-      unknown += 1;
-    }
-  }
-  return { total, known, unknown, cash, transfer };
+): OrderEstimate {
+  return estimateOrder(
+    lines,
+    (skuId) => stats.get(skuId)?.lastPrice,
+    (skuId) =>
+      paid?.usual.byStoreSku.get(`${paid.storeId}:${skuId}`) ??
+      paid?.usual.bySku.get(skuId) ??
+      'cash',
+  );
 }

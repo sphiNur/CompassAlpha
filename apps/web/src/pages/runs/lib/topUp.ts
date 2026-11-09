@@ -24,6 +24,9 @@
  *
  * Pure; tests in __tests__/topUp.test.ts.
  */
+import { toCents } from '@compass/contracts/money';
+import { milliQty, qtyMilli } from '@compass/contracts/quantity';
+
 export type PaymentMethod = 'cash' | 'transfer';
 
 type BaseSplit = { storeId: string; qty: string; unitPrice: string; paymentMethod: PaymentMethod };
@@ -40,12 +43,23 @@ export type TopUpRevision = {
   }>;
 };
 
-const milli = (v: string): bigint => BigInt(Math.round(Number(v) * 1000));
-const cents = (v: string): bigint => BigInt(Math.round(Number(v) * 100));
-const milliText = (m: bigint): string => {
-  const whole = m / 1000n;
-  const frac = (m % 1000n).toString().padStart(3, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : whole.toString();
+// Quantities in whole thousandths and prices in cents, never floats. A
+// field can hold text a number input accepts but a decimal is not
+// ("1e3"); that is read through Number, as before.
+const finite = (v: string): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const milli = (v: string): bigint => {
+  try {
+    return qtyMilli(v || '0');
+  } catch {
+    return qtyMilli(finite(v));
+  }
+};
+const cents = (v: string): bigint => {
+  try {
+    return toCents(v);
+  } catch {
+    return toCents(finite(v));
+  }
 };
 const centsText = (c: bigint): string => {
   const whole = c / 100n;
@@ -58,7 +72,12 @@ export function topUpRevision(input: {
   item: { unitPrice: string; paymentMethod: PaymentMethod };
   /** Each store's earlier quantity with its effective price and method. */
   base: readonly BaseSplit[];
-  /** Each store's quantity after the top-up, as the sheet holds it. */
+  /**
+   * Each store's quantity after the top-up, as the sheet holds it. The
+   * sheet drops a store whose field was cleared, and shows it empty, so a
+   * store missing here has nothing now (RUNWEB2-08: it used to keep its
+   * earlier quantity, and the revision saved more than the sheet showed).
+   */
   next: ReadonlyMap<string, string>;
   topUpPrice: string;
   topUpMethod: PaymentMethod;
@@ -72,8 +91,7 @@ export function topUpRevision(input: {
   for (const storeId of storeIds) {
     const b = baseBy.get(storeId);
     const baseQty = b ? milli(b.qty) : 0n;
-    const nextRaw = next.get(storeId);
-    const nextQty = nextRaw === undefined ? baseQty : milli(nextRaw || '0');
+    const nextQty = milli(next.get(storeId) ?? '0');
     if (nextQty < baseQty) return null;
     if (nextQty === 0n) continue;
     const add = nextQty - baseQty;
@@ -95,7 +113,7 @@ export function topUpRevision(input: {
     }
     storeSplits.push({
       storeId,
-      qty: milliText(nextQty),
+      qty: milliQty(nextQty),
       ...(Number(price) !== Number(item.unitPrice) ? { unitPrice: price } : {}),
       ...(method !== item.paymentMethod ? { paymentMethod: method } : {}),
     });
@@ -104,7 +122,38 @@ export function topUpRevision(input: {
   return {
     unitPrice: item.unitPrice,
     paymentMethod: item.paymentMethod,
-    actualQty: milliText(total),
+    actualQty: milliQty(total),
     storeSplits,
   };
+}
+
+/**
+ * RUNWEB1-03 (2026-11-09): where the extra quantity goes when the top-up
+ * sheet opens. It fills the stores whose demand is not yet covered, in
+ * demand order, and the rest stays on the total. Worked in whole
+ * thousandths: as floats, 1.1 + 0.2 put "1.3000000000000003" in a store's
+ * field, which the server refuses (3 decimals at most).
+ */
+export function topUpPrefill(input: {
+  /** Each store's quantity as the sheet opened with it. */
+  splits: ReadonlyMap<string, string>;
+  /** What each store's orders ask for. */
+  demand: ReadonlyArray<{ storeId: string; qty: string }>;
+  /** The quantity still to buy (the row's topUpQty). */
+  extra: string | null | undefined;
+}): { splits: Map<string, string>; actualQty: string } {
+  const splits = new Map(input.splits);
+  let remaining = milli(input.extra ?? '0');
+  for (const dm of input.demand) {
+    if (remaining <= 0n) break;
+    const have = milli(splits.get(dm.storeId) ?? '0');
+    const gap = milli(dm.qty) - have;
+    if (gap <= 0n) continue;
+    const add = gap < remaining ? gap : remaining;
+    splits.set(dm.storeId, milliQty(have + add));
+    remaining -= add;
+  }
+  let total = remaining > 0n ? remaining : 0n;
+  for (const qty of splits.values()) total += milli(qty);
+  return { splits, actualQty: milliQty(total) };
 }

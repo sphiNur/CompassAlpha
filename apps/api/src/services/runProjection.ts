@@ -7,6 +7,7 @@
 import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import { milliQty, qtyMilli } from '@compass/contracts';
 import { DomainError } from '@compass/domain';
 import type { RunEvent } from '@compass/domain/run';
 import { readStream } from './eventStore';
@@ -713,9 +714,9 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             .from(s.runItemsV)
             .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)))
             .limit(1);
-          const planned = Number(existing[0]?.plannedQty ?? 0);
-          const remaining = planned - Number(removed.qty);
-          if (remaining <= 1e-6) {
+          // RUNAPI-05: in whole thousandths, as the reducer does.
+          const remaining = qtyMilli(existing[0]?.plannedQty ?? '0') - qtyMilli(removed.qty);
+          if (remaining <= 0n) {
             await db
               .delete(s.runItemStoresV)
               .where(
@@ -733,7 +734,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             await db
               .update(s.runItemsV)
               .set({
-                plannedQty: remaining.toString(),
+                plannedQty: milliQty(remaining),
                 updatedAt: new Date(),
               })
               .where(

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   addMoney,
   centsToMoney,
+  estimateOrder,
   lineAmountNumber,
   lineAmount,
   lineCents,
@@ -64,5 +65,50 @@ describe('D1 money rounding', () => {
     expect(lineWithinCap('1', '999999999999.99')).toBe(true);
     expect(lineWithinCap('1000', '1000000000')).toBe(true);
     expect(lineWithinCap('1000.001', '1000000000')).toBe(false);
+  });
+});
+
+describe('order estimate (ORD-01)', () => {
+  const price = (m: Record<string, string>) => (skuId: string) => m[skuId];
+
+  it('is D1 money lines added in cents, not a float product', () => {
+    // The server used to say 1.00 here (0.5 × 2.01 = 1.005 in floats,
+    // then toFixed); the web said 1.01.
+    expect(estimateOrder([{ skuId: 'a', qty: '0.5' }], price({ a: '2.01' })).total).toBe('1.01');
+    // A last purchase split 1 @ 10000 and 2 @ 10001 has a weighted price
+    // of 10000.666…, which the server now rounds to 10000.67 first.
+    expect(estimateOrder([{ skuId: 'a', qty: '3' }], price({ a: '10000.67' })).total).toBe(
+      '30002.01',
+    );
+  });
+
+  it('counts unpriced lines, skips empty ones and splits by payment', () => {
+    const est = estimateOrder(
+      [
+        { skuId: 'a', qty: '2' },
+        { skuId: 'b', qty: '0.5' },
+        { skuId: 'c', qty: '1' },
+        { skuId: 'd', qty: '0' },
+      ],
+      price({ a: '1500.50', b: '2.01', d: '9' }),
+      (skuId) => (skuId === 'b' ? 'transfer' : 'cash'),
+    );
+    expect(est).toEqual({
+      total: '3002.01',
+      cash: '3001.00',
+      transfer: '1.01',
+      known: 2,
+      unknown: 1,
+    });
+  });
+
+  it('is zero with nothing priced', () => {
+    expect(estimateOrder([{ skuId: 'a', qty: '1' }], () => null)).toEqual({
+      total: '0.00',
+      cash: '0.00',
+      transfer: '0.00',
+      known: 0,
+      unknown: 1,
+    });
   });
 });

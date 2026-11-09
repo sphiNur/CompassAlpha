@@ -93,7 +93,7 @@ import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/comp
 import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/lib/purchaseOverrides';
-import { topUpRevision } from './runs/lib/topUp';
+import { topUpPrefill, topUpRevision } from './runs/lib/topUp';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 import { moneyLine as moneyLineAmount } from '../lib/money';
@@ -2611,21 +2611,15 @@ export function RunPage() {
               );
               setPurchaseDraft((d) => {
                 if (!d) return d;
-                const splits = new Map(d.splits);
-                let remaining = Number(item.topUpQty ?? 0);
-                for (const dm of demand) {
-                  if (remaining <= 0) break;
-                  const gap = Number(dm.qty) - Number(splits.get(dm.storeId) ?? 0);
-                  if (gap <= 0) continue;
-                  const add = Math.min(gap, remaining);
-                  splits.set(dm.storeId, String(Number(splits.get(dm.storeId) ?? 0) + add));
-                  remaining -= add;
-                }
-                const total = [...splits.values()].reduce((sum, q) => sum + Number(q), 0) + remaining;
+                const { splits, actualQty } = topUpPrefill({
+                  splits: d.splits,
+                  demand,
+                  extra: item.topUpQty,
+                });
                 return {
                   ...d,
                   splits,
-                  actualQty: String(Number(total.toFixed(3))),
+                  actualQty,
                   reason: i18n.t('run.topUp.reason'),
                   ...(topUpBase
                     ? {

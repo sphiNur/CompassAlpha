@@ -56,7 +56,7 @@ import { QtyDrafts } from './approval/qtyDrafts';
 import { adjustingSessionIds } from './approval/adjustInFlight';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 import { moneyLine } from '../lib/money';
-import { addMoney } from '@compass/contracts/money';
+import { estimateOrder } from '@compass/contracts/money';
 
 /** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
 const NEXT_CARD = '[data-approval-list] > li h2';
@@ -1090,22 +1090,11 @@ function SessionItems({
   const priceBySku = new Map(
     (priceStats.data ?? []).map((r) => [r.skuId, r.lastPrice]),
   );
+  // ORD-01: the server's rule for the card's "~", so the card and this
+  // detail agree to the cent.
   const estimateTotal = (() => {
-    let sum = 0;
-    let known = 0;
-    let unknown = 0;
-    const priceMap = priceBySku;
-    for (const t of totals) {
-      const price = priceMap.get(t.skuId);
-      if (price) {
-        // DX-PFE-12: half-up cents per line, added in cents (D1).
-        sum = addMoney(sum, moneyLine(t.qty, price));
-        known++;
-      } else {
-        unknown++;
-      }
-    }
-    return { sum, known, unknown };
+    const est = estimateOrder(totals, (skuId) => priceBySku.get(skuId));
+    return { sum: Number(est.total), known: est.known, unknown: est.unknown };
   })();
   const sessionNotes = detail.data?.notes ?? null;
   const sessionExtras = detail.data?.extras ?? [];

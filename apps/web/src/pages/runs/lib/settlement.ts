@@ -93,7 +93,7 @@ export function settleItemLine(
 export function expenseLine(ex: {
   qty: string;
   unitPrice: string;
-  storeSplits?: ReadonlyArray<{ qty: string }> | null;
+  storeSplits?: ReadonlyArray<{ qty: string; unitPrice?: string | null }> | null;
 }): number {
   const splits = ex.storeSplits?.length ? ex.storeSplits : [{ qty: ex.qty }];
   return splits.reduce((sum, sp) => addMoney(sum, splitSubtotal(sp, ex)), 0);
