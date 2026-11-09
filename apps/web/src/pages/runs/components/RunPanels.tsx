@@ -179,7 +179,8 @@ export function ActiveRunPanel({
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onDeliverStore: (storeId: string, storeName: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;

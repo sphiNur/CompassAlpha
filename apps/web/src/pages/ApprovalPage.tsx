@@ -1012,7 +1012,18 @@ function SessionItems({
       }, rerender),
     [sessionId, storeId],
   );
-  useEffect(() => () => drafts.dispose(), [drafts]);
+  // Review ORD-02 (2026-11-09): leaving the card sends the taps still
+  // waiting instead of dropping them, and 「通过」 stays held until they
+  // are answered (it used to unlock at once, on the old number). The
+  // page being closed or hidden sends them too.
+  useEffect(() => {
+    const onPageHide = () => void drafts.flushAll();
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      void drafts.dispose().finally(() => onHold(sessionId, false));
+    };
+  }, [drafts, onHold, sessionId]);
   const qtyKey = (skuId: string, memberId: string) => `${skuId}|${memberId}`;
 
   // DX-APR-3: the order as first seen (or last acknowledged).
@@ -1031,7 +1042,6 @@ function SessionItems({
   useEffect(() => {
     onHold(sessionId, hold);
   }, [hold, onHold, sessionId]);
-  useEffect(() => () => onHold(sessionId, false), [onHold, sessionId]);
 
   // Member directory lookup so we can show who contributed each row.
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {

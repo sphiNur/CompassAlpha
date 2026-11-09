@@ -2570,8 +2570,11 @@ export function RunPage() {
                 },
               );
             }}
-            onUnmark={(skuId, skuName) =>
-              setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
+            onUnmark={
+              activeRun.status === 'delivering'
+                ? undefined
+                : (skuId, skuName) =>
+                    setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
             }
             onTopUpBuy={(item) => {
               const sku = skuById.get(item.skuId);
@@ -2788,7 +2791,7 @@ export function RunPage() {
         // from a money-committing ✓) into this sheet. Same ConfirmSheet
         // as before.
         onUndo={
-          purchaseDraft?.isEdit
+          purchaseDraft?.isEdit && activeRun?.status !== 'delivering'
             ? () => {
                 const d = purchaseDraft;
                 const sku = skuById.get(d.skuId);

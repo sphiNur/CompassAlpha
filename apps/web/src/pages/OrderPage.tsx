@@ -22,7 +22,7 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, useTelegramBackButton, haptic } from '../hooks/useTelegram';
-import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
+import { frozenOrderDate, localDateString, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { outbox } from '../lib/idb';
 import { registerLocalWrites } from '../lib/localWrites';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -499,7 +499,11 @@ export function OrderPage() {
             storeId,
             initiatedByMemberId: myMember,
             submittedByMemberId: null,
-            orderDate: new Date().toISOString().slice(0, 10),
+            // Review ORD-03 (2026-11-09): the device's own date, as
+            // frozenOrderDate uses. The UTC date was yesterday in Tashkent
+            // between 00:00 and 05:00, and once the real id came back it
+            // was frozen into queued offline taps.
+            orderDate: localDateString(new Date()),
             status: 'draft' as const,
             claimedByMemberId: null,
             claimedByDisplayName: null,

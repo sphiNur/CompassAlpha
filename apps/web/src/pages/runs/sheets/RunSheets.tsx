@@ -33,7 +33,13 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { normalizeQuery, rankNameLike } from '../../../lib/searchMatch';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
-import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } from '../lib/priceMath';
+import {
+  toDisplayPrice,
+  fromDisplayPrice,
+  isStorablePrice,
+  readDisplayPrice,
+  shownPrice,
+} from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
@@ -184,7 +190,11 @@ export function PurchaseSheet({
   // String(Number()) and lose the trailing decimal. Resynced when
   // the sheet opens on a different row or the mode flips.
   const [priceInput, setPriceInput] = useState<string>('');
+  // Review RUNWEB2-01: the per-store price fields keep their typed text
+  // the same way (see shownPrice), per store, reset with the main one.
+  const typedSplitPrice = useRef(new Map<string, string>());
   useEffect(() => {
+    typedSplitPrice.current.clear();
     if (!draft) {
       setPriceInput('');
       return;
@@ -491,11 +501,13 @@ export function PurchaseSheet({
                           type="number"
                           inputMode="decimal"
                           aria-label={i18n.t('run.alloc.priceFor', { store: store.name })}
-                          value={toDisplayPrice(
+                          value={shownPrice(
                             draft.splitPrices.get(store.id) ?? draft.unitPrice,
+                            typedSplitPrice.current.get(store.id),
                             priceInThousands,
                           )}
                           onChange={(e) => {
+                            typedSplitPrice.current.set(store.id, e.target.value);
                             const next = new Map(draft.splitPrices);
                             next.set(store.id, fromDisplayPrice(e.target.value, priceInThousands));
                             onChange({ ...draft, splitPrices: next });

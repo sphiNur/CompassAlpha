@@ -50,4 +50,31 @@ describe('QtyDrafts (DX-APR-2)', () => {
     expect(sent).toEqual([2, 3]);
     expect(drafts.value('a')).toBeUndefined();
   });
+  it('leaving the card sends what is still waiting (review ORD-02)', async () => {
+    const sent: Array<[string, number]> = [];
+    let release: () => void = () => {};
+    const drafts = new QtyDrafts(
+      (key, value) => {
+        sent.push([key, value]);
+        return new Promise<void>((r) => {
+          release = r;
+        });
+      },
+      () => {},
+      1_000,
+    );
+    drafts.set('banana', 2);
+    let settled = false;
+    const done = drafts.dispose().then(() => {
+      settled = true;
+    });
+    // Sent at once, not dropped and not after the quiet time.
+    expect(sent).toEqual([['banana', 2]]);
+    await wait(1);
+    // 「通过」 stays held while that write is out.
+    expect(settled).toBe(false);
+    release();
+    await done;
+    expect(settled).toBe(true);
+  });
 });

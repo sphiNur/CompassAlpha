@@ -298,7 +298,8 @@ export function PerVendorView({
   onMarkNa: (skuId: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   /** M3.37 (Wave2 #5): tap-to-cycle extras status. */
   onMarkExtraStatus: (
     sessionId: string,
@@ -969,7 +970,8 @@ export function PerCategoryView({
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onSetPaymentMethod: (
     item: ActiveRun['items'][number],
@@ -1322,7 +1324,8 @@ export function PurchaseRow({
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   onOpenAdvanced: (item: ActiveRun['items'][number]) => void;
   /**
    * Correct the payment method of an ALREADY purchased row, from the row
@@ -2375,17 +2378,22 @@ export function PurchaseRow({
         </div>
 
         {/* This state's one control: put it back. Already routes through
-            RunPage's ConfirmSheet. */}
-        <button
-          type="button"
-          disabled={pendingSync}
-          onClick={() => onUnmark(item.skuId, skuName)}
-          aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
-          title={i18n.t('run.action.unmarkUnavailable')}
-          className={`${ROW_CTRL} ${CTRL_QUIET}`}
-        >
-          <span aria-hidden>↺</span>
-        </button>
+            RunPage's ConfirmSheet. Not offered while the goods are going
+            out (review RUNAPI-02): the line could not be bought then. */}
+        {onUnmark ? (
+          <button
+            type="button"
+            disabled={pendingSync}
+            onClick={() => onUnmark(item.skuId, skuName)}
+            aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
+            title={i18n.t('run.action.unmarkUnavailable')}
+            className={`${ROW_CTRL} ${CTRL_QUIET}`}
+          >
+            <span aria-hidden>↺</span>
+          </button>
+        ) : (
+          <span aria-hidden className={`${ROW_CTRL} invisible`} />
+        )}
       </div>
 
       {/* The note is prose, so it cannot live in a number track. Second

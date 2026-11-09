@@ -2962,4 +2962,6 @@ export const uz = {
   'attendance.location.outside.title': 'Doʻkondan juda uzoqdasiz',
   'attendance.location.inaccurate.title': 'Joylashuv yetarlicha aniq emas',
   'attendance.punch.preparing': 'Tayyorlanmoqda…',
+  'run.errors.listFrozenWhileDelivering':
+    'Yetkazib berish boshlandi, roʻyxatni hozir oʻzgartirib boʻlmaydi. Hali hech bir doʻkon tovarni olmagan boʻlsa, avval xaridga qayting.',
 } as const satisfies Record<CatalogKey, string>;

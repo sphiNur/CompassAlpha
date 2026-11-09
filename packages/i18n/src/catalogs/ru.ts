@@ -2973,4 +2973,6 @@ export const ru = {
   'attendance.location.outside.title': 'Слишком далеко от магазина',
   'attendance.location.inaccurate.title': 'Местоположение неточное',
   'attendance.punch.preparing': 'Подготовка…',
+  'run.errors.listFrozenWhileDelivering':
+    'Доставка уже началась, список сейчас менять нельзя. Если ни один магазин ещё не получил товар, сначала вернитесь к закупке.',
 } as const satisfies Record<CatalogKey, string>;
