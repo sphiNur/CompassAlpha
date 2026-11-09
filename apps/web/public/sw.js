@@ -16,7 +16,8 @@
  *   - /assets/*    Vite's content-hashed files never change under one
  *                  URL: served from the cache once seen, so a lazy page
  *                  chunk opened offline still loads. Trimmed to the
- *                  newest MAX_ASSETS entries so old deploys age out.
+ *                  MAX_ASSETS most recently used entries so old deploys
+ *                  age out (see trimAssets).
  *   - other files  of the app's own origin under / (boot.css,
  *                  boot-guard.js): network first, cache as fallback.
  *   - everything else — /trpc, /health, /ws, uploads, other origins,
@@ -67,17 +68,63 @@ function route(request, origin) {
 }
 self.__compassSwRoute = route; // for the unit test only
 
-function trimAssets(cache) {
-  return cache.keys().then(function (keys) {
-    var assets = keys.filter(function (k) {
-      return new URL(k.url).pathname.indexOf('/assets/') === 0;
+function pathOf(url) {
+  return new URL(url, self.location.origin).pathname;
+}
+
+/**
+ * Drop the oldest assets beyond MAX_ASSETS, never one the cached shell
+ * names (the entry files an offline reload needs first) or one in `keep`
+ * (what the page just reported loading).
+ *
+ * COREWEB1-06 (2026-11-09): the order is the cache's own, oldest written
+ * first, and a cache hit was never written again. Chunks that stay the
+ * same across deploys (vendor, unchanged pages) were therefore the first
+ * to go once new deploys filled the cache, while still in use, and the
+ * next offline reload failed to start. A hit is now written again once
+ * per worker (touch), which moves it to the end, and the shell's own
+ * files are kept whatever their place.
+ */
+function trimAssets(cache, keep) {
+  return Promise.all([
+    cache.keys(),
+    cache.match(SHELL_KEY, MATCH).then(function (shell) {
+      return shell ? shell.text().then(shellAssetUrls) : [];
+    }),
+  ]).then(function (found) {
+    var assets = found[0].filter(function (k) {
+      return pathOf(k.url).indexOf('/assets/') === 0;
     });
     var extra = assets.length - MAX_ASSETS;
+    if (extra <= 0) return undefined;
+    var kept = found[1].concat((keep || []).map(pathOf));
+    var removable = assets.filter(function (k) {
+      return kept.indexOf(pathOf(k.url)) === -1;
+    });
     return Promise.all(
-      assets.slice(0, Math.max(0, extra)).map(function (k) {
+      removable.slice(0, extra).map(function (k) {
         return cache.delete(k);
       }),
     );
+  });
+}
+self.__compassTrimAssets = trimAssets; // for the unit test only
+
+/** Assets written again by this worker already (see trimAssets). */
+var touched = {};
+
+/**
+ * Write a cache hit again, once per worker, so it counts as recently used.
+ * Keyed by the URL alone, as every asset is stored: a key carrying the
+ * page's Origin header would not replace an entry stored without one
+ * (`Vary: Origin`) but sit beside it.
+ */
+function touch(cache, url, hit) {
+  var key = pathOf(url);
+  if (touched[key]) return Promise.resolve();
+  touched[key] = true;
+  return cache.put(url, hit).catch(function () {
+    touched[key] = false;
   });
 }
 
@@ -116,7 +163,11 @@ function precacheShell() {
   });
 }
 
-/** Cache files the page already loaded before this worker controlled it. */
+/**
+ * Cache the files the page loaded (sent on every load, main.tsx): files it
+ * loaded before this worker controlled it, and a fresh "recently used"
+ * mark for the ones already cached.
+ */
 function cacheUrls(urls) {
   return caches.open(CACHE).then(function (c) {
     return Promise.all(
@@ -124,11 +175,13 @@ function cacheUrls(urls) {
         var kind = route({ method: 'GET', url: u, mode: 'no-cors' }, self.location.origin);
         if (kind !== 'asset' && kind !== 'static') return undefined;
         return c.match(u, MATCH).then(function (hit) {
-          if (hit) return undefined;
+          if (hit) return touch(c, u, hit);
           return c.add(u).catch(function () {});
         });
       }),
-    );
+    ).then(function () {
+      return trimAssets(c, urls);
+    });
   });
 }
 
@@ -164,12 +217,18 @@ function networkFirst(request, cacheKey, cacheOnOriginDown) {
 
 function cacheFirst(request) {
   return caches.match(request, MATCH).then(function (hit) {
-    if (hit) return hit;
+    if (hit) {
+      var again = hit.clone();
+      caches.open(CACHE).then(function (c) {
+        return touch(c, request.url, again);
+      });
+      return hit;
+    }
     return fetch(request).then(function (res) {
       if (res.ok && res.type === 'basic') {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) {
-          return c.put(request, copy).then(function () {
+          return c.put(request.url, copy).then(function () {
             return trimAssets(c);
           });
         });
