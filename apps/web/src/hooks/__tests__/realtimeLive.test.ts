@@ -3,7 +3,7 @@
  * pushes are not arriving. The liveness rule and the flag pages read are
  * pinned here; the socket wiring itself needs a browser.
  */
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import {
   REALTIME_STALE_MS,
   getRealtimeLive,
@@ -37,6 +37,11 @@ describe('pollWhenOffline', () => {
 });
 
 describe('realtime live flag', () => {
+  // TEST3-07: the flag is module state shared with every other test file;
+  // put it back down even when an assertion below fails, so "starts down"
+  // keeps holding whatever order the files run in.
+  afterEach(() => setRealtimeLive(false));
+
   it('starts down and follows transitions', () => {
     expect(getRealtimeLive()).toBe(false);
     setRealtimeLive(true);

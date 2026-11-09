@@ -2669,7 +2669,9 @@ describe('run.topUp (BUY-5)', () => {
     const undone = s.items.get('sku-extra');
     expect(undone?.status).toBe('pending');
     expect(undone?.plannedQty).toBe('3');
-    expect(() => decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow();
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow(
+      'run.errors.itemsPending',
+    );
   });
 
   test('a pending item just grows, with no top-up', () => {

@@ -35,7 +35,18 @@ export default async function globalSetup(): Promise<void> {
   }
   pnpm(['--filter', '@compass/db', 'migrate']);
   pnpm(['--filter', '@compass/db', 'seed']);
-  pnpm(['compass', 'user', 'grant', ADMIN_TG_ID, '--role', 'super_admin', '--org', 'default']);
+  pnpm([
+    'compass',
+    'user',
+    'grant',
+    ADMIN_TG_ID,
+    '--role',
+    'super_admin',
+    '--org',
+    'default',
+    // A fresh database has no account for this id; the dev login uses it.
+    '--new-user',
+  ]);
 
   // The role the api runs as; see APP_DATABASE_URL.
   const owner = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });

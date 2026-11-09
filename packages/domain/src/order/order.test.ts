@@ -77,7 +77,7 @@ describe('order.decide (per-contributor lines)', () => {
         { type: 'AdjustItem', skuId: 'towel', qty: '1.5', sku: archived, actor: staff() },
         { clock },
       ),
-    ).toThrow();
+    ).toThrow('order.errors.skuArchived');
     state = decide(
       state,
       { type: 'AdjustItem', skuId: 'towel', qty: '0', sku: archived, actor: staff() },
@@ -341,13 +341,11 @@ describe('order.decide (per-contributor lines)', () => {
     );
     expect(events).toHaveLength(1);
     const ev = events[0]!;
-    expect(ev.type).toBe('ClaimReleased');
-    if (ev.type === 'ClaimReleased') {
-      expect(ev.payload.byMemberId).toBe('mem-mgrB');
-      expect(ev.payload.reason).toBe('override');
-      // RE-APR-2: and whose claim it ended.
-      expect(ev.payload.reason === 'override' && ev.payload.fromMemberId).toBe('mem-mgrA');
-    }
+    if (ev.type !== 'ClaimReleased') throw new Error(`expected ClaimReleased, got ${ev.type}`);
+    expect(ev.payload.byMemberId).toBe('mem-mgrB');
+    expect(ev.payload.reason).toBe('override');
+    // RE-APR-2: and whose claim it ended.
+    expect(ev.payload.reason === 'override' && ev.payload.fromMemberId).toBe('mem-mgrA');
     state = events.reduce(apply, state);
     expect(state.claimedByMemberId).toBeNull();
     expect(state.status).toBe('submitted'); // queue is unstuck, still awaits decision
@@ -400,10 +398,9 @@ describe('order.decide (per-contributor lines)', () => {
     );
     expect(events).toHaveLength(1);
     const ev = events[0]!;
-    if (ev.type === 'ClaimReleased') {
-      expect(ev.payload.byMemberId).toBe('mem-mgrA');
-      expect(ev.payload.reason).toBe('pagehide');
-    }
+    if (ev.type !== 'ClaimReleased') throw new Error(`expected ClaimReleased, got ${ev.type}`);
+    expect(ev.payload.byMemberId).toBe('mem-mgrA');
+    expect(ev.payload.reason).toBe('pagehide');
   });
 
   test('reject requires non-empty reason', () => {
@@ -623,7 +620,7 @@ describe('order.decide (per-contributor lines)', () => {
     ).reduce(apply, s);
     expect(() =>
       decide(s, { type: 'Archive', reason: 'empty_draft', actor: staff() }, { clock }),
-    ).toThrow();
+    ).toThrow('order.errors.cannotArchive');
     s = decide(
       s,
       { type: 'AdjustItem', skuId: 'sku-1', qty: '0', sku: sku('sku-1'), actor: staff() },
@@ -633,7 +630,9 @@ describe('order.decide (per-contributor lines)', () => {
     expect(out.map((e) => e.type)).toEqual(['Archived']);
     expect(out.reduce(apply, s).status).toBe('archived');
     // Any other reason still needs in_run / approved.
-    expect(() => decide(s, { type: 'Archive', reason: 'manual', actor: staff() }, { clock })).toThrow();
+    expect(() =>
+      decide(s, { type: 'Archive', reason: 'manual', actor: staff() }, { clock }),
+    ).toThrow('order.errors.cannotArchive');
   });
 
   test('Archive on an already-archived session is a no-op', () => {
