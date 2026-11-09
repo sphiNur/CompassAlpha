@@ -9,13 +9,15 @@
  * as needed. Cheap and correct.
  *
  * Reconnect: exponential backoff up to 30 s. Closes cleanly on signOut.
+ * A socket that has gone quiet (no ping for REALTIME_STALE_MS) is dropped
+ * and opened again, and every re-open refreshes what pushes would have.
  */
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
 import { useRefreshSession } from '../lib/refreshSession';
-import { ORDER_CHANGED_KEYS, RUN_CHANGED_KEYS } from './realtimeKeys';
+import { PUSH_KEYS, REOPEN_KEYS } from './realtimeKeys';
 import { hasLocalWrites } from '../lib/localWrites';
 
 const RECONNECT_BASE_MS = 1_000;
@@ -49,8 +51,6 @@ export function shouldDeferInvalidate(
 // 2026-10-21 audit CA-35: close codes the API's WS layer uses.
 const WS_CLOSE_EVICTED = 4000;
 const WS_CLOSE_TOKEN_EXPIRED = 4001;
-/** Query-key roots refreshed when the socket re-opens (CA-35). */
-const REOPEN_INVALIDATE_KEYS = ['order', 'run', 'catalog', 'admin', 'notifications', 'nav'] as const;
 
 // The server pings every socket every 25 s (apps/api/src/main.ts). An
 // open socket that has heard nothing for longer than this is treated as
@@ -62,6 +62,16 @@ const STALE_CHECK_MS = 10_000;
 /** Is the socket delivering pushes? Open and heard from recently. */
 export function isRealtimeLive(open: boolean, lastMessageAt: number, now: number): boolean {
   return open && now - lastMessageAt <= REALTIME_STALE_MS;
+}
+
+/**
+ * COREWEB2-07: should a socket be given up on? One that has heard nothing
+ * (or, still connecting, got no answer) for REALTIME_STALE_MS. Only two
+ * pollers stood in for a quiet socket, so most pages stopped updating
+ * until the half-open connection finally closed, minutes later.
+ */
+export function isRealtimeStale(lastHeardAt: number, now: number): boolean {
+  return now - lastHeardAt > REALTIME_STALE_MS;
 }
 
 // P-4 (2026-10-31): one module-level flag so pages poll only while
@@ -107,7 +117,6 @@ interface RealtimeMessage {
     | 'catalog.changed'
     | 'people.changed'
     | 'attendance.changed'
-    | 'notification'
     // 2026-10-21 audit CA-35 / E-06: the hub drops its OLDEST socket at the
     // connection cap and sends this, but used to leave it open — a zombie
     // that never received another event.
@@ -117,8 +126,6 @@ interface RealtimeMessage {
   sessionId?: string;
   runId?: string;
   entity?: 'store' | 'sku' | 'supplier' | 'category';
-  title?: string;
-  body?: string;
 }
 
 function wsUrl(token: string): string {
@@ -148,6 +155,14 @@ export function useRealtime(): void {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const stoppedRef = useRef(false);
+  // 2026-10-21 audit CA-35 / E-05: events broadcast while the socket was
+  // down (Telegram backgrounded, network blip) are lost, so every
+  // re-open after the first one refreshes what they would have.
+  // COREWEB2-08: kept across effect runs. A rotated token re-runs the
+  // effect after the server closed the old socket (4001), and that
+  // re-open used to count as a first one: no refresh for the gap, about
+  // every 15 minutes.
+  const openedForRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!accessToken || !orgId) return;
@@ -184,18 +199,44 @@ export function useRealtime(): void {
       pendingInvalidates.set(id, t);
     };
 
-    // 2026-10-21 audit CA-35 / E-05: events broadcast while the socket was
-    // down (Telegram backgrounded, network blip) are lost, so every
-    // re-open after the first one invalidates what they would have.
-    let hasOpened = false;
+    const openScope = `${useAuthStore.getState().session?.user.id ?? ''}:${orgId}`;
     // After an eviction, keep the backoff growing instead of resetting it
     // on the next open, so repeated evictions can't spin at 1 s.
     let reopenAfterEviction = false;
     // Liveness for pollers (P-4): open + heard from within REALTIME_STALE_MS.
     let socketOpen = false;
+    // Last message, or when the current attempt to connect started.
     let lastMessageAt = 0;
     const updateLive = () => setRealtimeLive(isRealtimeLive(socketOpen, lastMessageAt, Date.now()));
-    const staleTimer = setInterval(updateLive, STALE_CHECK_MS);
+
+    // COREWEB2-07: give up on a quiet socket and open a new one. Its close
+    // event can take minutes on a half-open connection, so it is detached
+    // first: the close handler only reconnects for the current socket.
+    const dropIfStale = (reconnect: () => void) => {
+      const ws = wsRef.current;
+      if (!ws || !isRealtimeStale(lastMessageAt, Date.now())) return;
+      wsRef.current = null;
+      socketOpen = false;
+      updateLive();
+      try {
+        ws.close(1000, 'stale');
+      } catch {
+        /* already closing */
+      }
+      reconnect();
+    };
+    const staleTimer = setInterval(() => {
+      updateLive();
+      dropIfStale(scheduleReconnect);
+    }, STALE_CHECK_MS);
+    // Back in the foreground: a socket that went quiet meanwhile is
+    // replaced now, and a reconnect waiting out its backoff goes now.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || disposed) return;
+      dropIfStale(reconnectNow);
+      if (!wsRef.current && timeoutHandle) reconnectNow();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     const connect = () => {
       if (stoppedRef.current) return;
@@ -209,6 +250,7 @@ export function useRealtime(): void {
         return;
       }
       wsRef.current = ws;
+      lastMessageAt = Date.now();
 
       ws.addEventListener('open', () => {
         if (!reopenAfterEviction) reconnectAttemptsRef.current = 0;
@@ -218,10 +260,12 @@ export function useRealtime(): void {
           lastMessageAt = Date.now();
           updateLive();
         }
-        if (hasOpened) {
-          for (const key of REOPEN_INVALIDATE_KEYS) debouncedInvalidate([[key]]);
+        if (openedForRef.current === openScope) {
+          for (const key of REOPEN_KEYS) debouncedInvalidate([key]);
+          // A missed people.changed may have been about this person.
+          void refreshSessionRef.current();
         }
-        hasOpened = true;
+        openedForRef.current = openScope;
       });
 
       ws.addEventListener('message', (e) => {
@@ -238,36 +282,17 @@ export function useRealtime(): void {
         switch (msg.type) {
           // HIS-6 / DX-CAT-1: see realtimeKeys.ts for what each makes stale.
           case 'order.changed':
-            for (const key of ORDER_CHANGED_KEYS) debouncedInvalidate([key]);
-            break;
           case 'run.changed':
-            for (const key of RUN_CHANGED_KEYS) debouncedInvalidate([key]);
-            break;
           case 'catalog.changed':
-            // Catalog changes ripple into many admin queries AND into
-            // the public-ish catalog queries used by OrderPage etc.
-            // Hit both: any tRPC procedure starting with `admin.` AND
-            // the `catalog.*` ones used by the order screen.
-            debouncedInvalidate([['admin']]);
-            debouncedInvalidate([['catalog']]);
-            // CAT-12 (2026-10-30): the purchaser's expense templates.
-            debouncedInvalidate([['run', 'expenseTemplates']]);
+          case 'attendance.changed':
+            for (const key of PUSH_KEYS[msg.type]) debouncedInvalidate([key]);
             break;
           case 'people.changed':
-            // Member / role binding / store assignment changes.
-            // The admin people page reads multiple list queries; one
-            // coarse `[admin]` invalidation covers them all.
-            debouncedInvalidate([['admin']]);
+            for (const key of PUSH_KEYS[msg.type]) debouncedInvalidate([key]);
             // ADM-24 (2026-10-30): the change may be to this person's own
             // roles; re-read the session so tabs and pages follow it
             // instead of failing on the next request.
             void refreshSessionRef.current();
-            break;
-          case 'attendance.changed':
-            debouncedInvalidate([['attendance']]);
-            break;
-          case 'notification':
-            debouncedInvalidate([['notifications']]);
             break;
           case 'evicted':
             // Close; the close handler reconnects with backoff.
@@ -285,12 +310,14 @@ export function useRealtime(): void {
       });
 
       ws.addEventListener('close', (ev) => {
-        if (wsRef.current === ws) {
+        const current = wsRef.current === ws;
+        if (current) {
           wsRef.current = null;
           socketOpen = false;
           updateLive();
         }
-        if (disposed) return;
+        // A socket dropped as stale was replaced already (COREWEB2-07).
+        if (disposed || !current) return;
         if (ev.code === WS_CLOSE_EVICTED) reopenAfterEviction = true;
         if (ev.code === WS_CLOSE_TOKEN_EXPIRED) {
           // Reconnecting with the same token would just be refused again.
@@ -319,7 +346,16 @@ export function useRealtime(): void {
       if (disposed || stoppedRef.current) return;
       const attempt = ++reconnectAttemptsRef.current;
       const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
-      timeoutHandle = setTimeout(connect, delay);
+      timeoutHandle = setTimeout(() => {
+        timeoutHandle = null;
+        connect();
+      }, delay);
+    };
+    const reconnectNow = () => {
+      if (disposed || stoppedRef.current) return;
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      timeoutHandle = null;
+      connect();
     };
 
     connect();
@@ -328,6 +364,7 @@ export function useRealtime(): void {
       disposed = true;
       stoppedRef.current = true;
       clearInterval(staleTimer);
+      document.removeEventListener('visibilitychange', onVisible);
       setRealtimeLive(false);
       if (timeoutHandle) clearTimeout(timeoutHandle);
       pendingInvalidates.forEach((t) => clearTimeout(t));

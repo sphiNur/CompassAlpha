@@ -68,6 +68,53 @@ describe('guardedFetch (N3/N5)', () => {
     expect((err as DOMException).name).toBe('AbortError');
   });
 
+  it('times out an answer whose body stalls after the headers (COREWEB2-05)', async () => {
+    stubFetch(
+      async (init) =>
+        new Response(
+          new ReadableStream({
+            start(body) {
+              body.enqueue(new TextEncoder().encode('{"result":'));
+              init?.signal?.addEventListener('abort', () =>
+                body.error(new DOMException('aborted', 'AbortError')),
+              );
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const err = await guardedFetch('/trpc/x', { method: 'POST' }, 30).catch((e) => e);
+    expect(err).toBeInstanceOf(TypeError);
+    expect(isLikelyNetworkError(err)).toBe(true);
+  });
+
+  it("keeps the caller's abort during the body read an abort", async () => {
+    const caller = new AbortController();
+    stubFetch(
+      async (init) =>
+        new Response(
+          new ReadableStream({
+            start(body) {
+              init?.signal?.addEventListener('abort', () =>
+                body.error(new DOMException('aborted', 'AbortError')),
+              );
+              queueMicrotask(() => caller.abort());
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const err = await guardedFetch('/trpc/x', { signal: caller.signal }, 5_000).catch((e) => e);
+    expect((err as DOMException).name).toBe('AbortError');
+  });
+
+  it('passes an answer without a body through', async () => {
+    stubFetch(async () => new Response(null, { status: 204 }));
+    const res = await guardedFetch('/trpc/x', {});
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+  });
+
   it('returns ordinary answers untouched', async () => {
     stubFetch(
       async () =>
@@ -76,7 +123,10 @@ describe('guardedFetch (N3/N5)', () => {
           headers: { 'content-type': 'application/json' },
         }),
     );
-    expect((await guardedFetch('/trpc/x', {})).status).toBe(200);
+    const res = await guardedFetch('/trpc/x', {});
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/json');
+    expect(await res.json()).toEqual({ result: {} });
   });
 });
 

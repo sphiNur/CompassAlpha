@@ -22,7 +22,7 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, useTelegramBackButton, haptic } from '../hooks/useTelegram';
-import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
+import { frozenOrderDate, staysQueued, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { outbox } from '../lib/idb';
 import { registerLocalWrites } from '../lib/localWrites';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -272,8 +272,9 @@ export function OrderPage() {
     },
     onError: (err, vars) => {
       // Keep optimistic: flushOne stored the write in the outbox before
-      // sending it (R2-ORD-5), and a network failure leaves it there.
-      if (isLikelyNetworkError(err)) return;
+      // sending it (R2-ORD-5), and a network failure leaves it there, as
+      // does being signed out (COREWEB2-02).
+      if (staysQueued(err)) return;
       // CONFLICT = (streamId, seq) UNIQUE collision. With per-store
       // serialization (see `flushOne`) this can only happen when a
       // SECOND staff member at the same store wrote concurrently —
@@ -830,8 +831,9 @@ export function OrderPage() {
             setSessionExtras.mutateAsync(input),
           );
         } catch (err) {
-          // Left in the outbox on a network failure — keep the rows as saved locally.
-          if (!isLikelyNetworkError(err)) throw err;
+          // Left in the outbox (network failure, signed out): keep the
+          // rows as saved locally.
+          if (!staysQueued(err)) throw err;
         }
         const newId = res?.sessionId ?? null;
         // Optimistic cache write so the editor doesn't flicker on the
