@@ -114,6 +114,8 @@ const REVIEW_DAYS = 14;
 const REVIEW_LIMIT = 200;
 /** What a "not them" punch is voided with; the sheet shows it translated. */
 const WRONG_PERSON_REASON = 'attendance.voidReason.wrongPerson';
+/** How long a colleague taken back as "not them" stays out of that phone's face look. */
+const TAKEN_BACK_LEFT_OUT_MS = 5 * 60_000;
 
 function fail(
   code: 'FORBIDDEN' | 'BAD_REQUEST' | 'NOT_FOUND' | 'CONFLICT',
@@ -814,6 +816,32 @@ async function overtimeFor(
   return minutes > 0 ? { shiftId: ended.id, minutes } : null;
 }
 
+/**
+ * ATT-02 (2026-11-09): the colleagues this phone's person took back as
+ * "not them" a moment ago. The face in front of the camera is still the
+ * one that matched them, and it matched them again: each round another
+ * punch in their name and two more messages, while the person clocking
+ * (often not enrolled) was never found. Left out, the face is not
+ * recognized and the sheet says what to do instead.
+ */
+async function takenBackOnPhone(tx: DB, storeId: string, phoneMemberId: string) {
+  const since = Date.now() - TAKEN_BACK_LEFT_OUT_MS;
+  const rows = await tx
+    .select({ memberId: s.attendancePunches.memberId })
+    .from(s.attendancePunches)
+    .where(
+      and(
+        eq(s.attendancePunches.storeId, storeId),
+        // An undo comes within ATTENDANCE_UNDO_WINDOW_MS of the punch.
+        gte(s.attendancePunches.punchedAt, new Date(since - ATTENDANCE_UNDO_WINDOW_MS)),
+        eq(s.attendancePunches.viaMemberId, phoneMemberId),
+        eq(s.attendancePunches.voidReason, WRONG_PERSON_REASON),
+        gte(s.attendancePunches.voidedAt, new Date(since)),
+      ),
+    );
+  return new Set(rows.map((r) => r.memberId));
+}
+
 /** A member's punches at a store in the last two days, voided ones left out. */
 function recentPunches(tx: DB, memberId: string, storeId: string, now: Date) {
   return tx
@@ -969,6 +997,8 @@ export const attendanceRouter = router({
               id: p.id,
               kind: p.kind,
               at: p.punchedAt.toISOString(),
+              /** The store's day it fell on: yesterday's are listed too (ATT-05). */
+              date: dateInTz(p.punchedAt, tz),
               time: rules.localTime(p.punchedAt, tz),
               source: p.source,
             })),
@@ -1133,10 +1163,13 @@ export const attendanceRouter = router({
       let target = session.memberId;
       let targetName: string | null = null;
       if (identifying) {
-        const known = await knownFaces(tx, session.orgId, store.id, {
-          except: session.memberId,
-          colleagues: true,
-        });
+        const takenBack = await takenBackOnPhone(tx, store.id, session.memberId);
+        const known = (
+          await knownFaces(tx, session.orgId, store.id, {
+            except: session.memberId,
+            colleagues: true,
+          })
+        ).filter((k) => !takenBack.has(k.memberId));
         // The phone's own person is a candidate too (2026-11-07): their
         // face must not pass for a colleague who looks like them.
         const own = (await enrolledFeatures(tx, [session.memberId])).get(session.memberId);
@@ -1637,7 +1670,8 @@ export const attendanceRouter = router({
    * phone by the wrong face is taken back here, by the phone's own person,
    * within ATTENDANCE_UNDO_WINDOW_MS. The punch is voided, not deleted (the
    * sheet shows it struck through, with the reason), and the managers and
-   * the person it was recorded for are told.
+   * the person it was recorded for are told. For TAKEN_BACK_LEFT_OUT_MS
+   * that colleague is no longer looked for on this phone (ATT-02).
    */
   punchUndo: idempotentMutation
     .input(AttendancePunchUndoInputSchema)

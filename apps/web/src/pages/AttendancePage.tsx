@@ -255,7 +255,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 <p className="text-old-label text-[var(--c-fg-muted)]">
                   {dates.weekdayLong(store.today)}
                 </p>
-                <TodayShift shifts={store.shifts} today={store.today} />
+                <TodayShift shifts={store.shifts} today={store.today} now={me.dataUpdatedAt} />
                 {store.punches.length > 0 ? (
                   <ul
                     className="mt-3 flex flex-col gap-1"
@@ -268,6 +268,12 @@ function ClockPanel({ storeId }: { storeId: string }) {
                           {p.source === 'manual' ? ` · ${i18n.t('attendance.source.manual')}` : ''}
                         </span>
                         <span className="tabular-nums font-semibold text-[var(--c-fg)]">
+                          {/* ATT-05: the last 24 hours, so yesterday's evening too. */}
+                          {p.date !== store.today ? (
+                            <span className="mr-1 font-normal text-[var(--c-fg-muted)]">
+                              {i18n.t('attendance.clock.yesterday')}
+                            </span>
+                          ) : null}
                           {p.time}
                         </span>
                       </li>
@@ -572,24 +578,42 @@ function EnrollCard({
   );
 }
 
-type ShiftView = { id: string; date: string; start: string; end: string; note: string | null };
+type ShiftView = {
+  id: string;
+  date: string;
+  start: string;
+  end: string;
+  endsAt: string;
+  note: string | null;
+};
 
-function TodayShift({ shifts, today }: { shifts: ShiftView[]; today: string }) {
+/**
+ * Today's shifts, and a night shift begun yesterday while it is still on
+ * (ATT-05): at 02:00 in a 22:00–06:00 shift the page said "no shift today".
+ * `now`: when the page last read the shifts.
+ */
+function TodayShift({ shifts, today, now }: { shifts: ShiftView[]; today: string; now: number }) {
   const i18n = useI18n();
+  const times = (list: ShiftView[]) => list.map((x) => `${x.start}–${x.end}`).join(', ');
+  const carried = shifts.filter((x) => x.date < today && Date.parse(x.endsAt) > now);
   const todays = shifts.filter((x) => x.date === today);
-  if (todays.length === 0) {
-    return (
-      <p className="mt-1 text-old-h3 font-semibold text-[var(--c-fg)]">
-        {i18n.t('attendance.clock.noShiftToday')}
-      </p>
-    );
-  }
   return (
-    <p className="mt-1 text-old-h3 font-semibold text-[var(--c-fg)]">
-      {i18n.t('attendance.clock.shiftToday', {
-        times: todays.map((x) => `${x.start}–${x.end}`).join(', '),
-      })}
-    </p>
+    <>
+      {carried.length > 0 ? (
+        <p className="mt-1 text-old-h3 font-semibold text-[var(--c-fg)]">
+          {i18n.t('attendance.clock.shiftFromYesterday', { times: times(carried) })}
+        </p>
+      ) : null}
+      {todays.length > 0 ? (
+        <p className="mt-1 text-old-h3 font-semibold text-[var(--c-fg)]">
+          {i18n.t('attendance.clock.shiftToday', { times: times(todays) })}
+        </p>
+      ) : carried.length === 0 ? (
+        <p className="mt-1 text-old-h3 font-semibold text-[var(--c-fg)]">
+          {i18n.t('attendance.clock.noShiftToday')}
+        </p>
+      ) : null}
+    </>
   );
 }
 
