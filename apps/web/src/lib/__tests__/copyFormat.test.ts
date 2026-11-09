@@ -11,6 +11,7 @@ import { unitLabeller } from '../unitLabel';
 import { BUILTIN_ROLE_DEFAULTS, roleLabeller } from '../roleLabels';
 import { withoutFinalStop } from '../errorText';
 import { formatMoneyThousands } from '../format';
+import { punchKindText } from '../attendanceFormat';
 import { BUILTIN_ROLES, PERMISSIONS } from '../../../../../packages/db/src/seed-data';
 
 beforeAll(async () => {
@@ -129,5 +130,26 @@ describe('RE-AUTH-1: no doubled full stop', () => {
     ).not.toContain('。。');
     expect(withoutFinalStop('Invite not found.')).toBe('Invite not found');
     expect(withoutFinalStop('Is it?')).toBe('Is it?');
+  });
+});
+
+describe('a clock-in made on another day than its row (2026-11-10)', () => {
+  const now = () => new Date(2026, 10, 10, 12);
+  const out = { kind: 'out' as const, date: '2026-11-10' };
+
+  test('on its own day: only the kind', () => {
+    const dates = makeDateFormatters('en', now);
+    expect(punchKindText(createI18n('en'), dates, out, '2026-11-10')).toBe('Out');
+  });
+
+  test("on an overnight shift's row: the day it was made on, in the UI language", () => {
+    const row = '2026-11-09';
+    expect(punchKindText(createI18n('en'), makeDateFormatters('en', now), out, row)).toBe(
+      'Out (Nov 10)',
+    );
+    // Full-width brackets, no space before them.
+    expect(punchKindText(createI18n('zh'), makeDateFormatters('zh', now), out, row)).toBe(
+      '下班（11月10日）',
+    );
   });
 });

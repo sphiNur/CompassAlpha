@@ -578,16 +578,21 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         ),
       )
       .orderBy(asc(s.attendancePayRates.effectiveFrom)),
+    // By the clock-out it belongs to, as the punches above. It was by the
+    // record's creation time, so the overtime of a clock-out a manager
+    // entered days later was in no sheet and no export.
     tx
-      .select()
+      .select({ overtime: s.attendanceOvertime })
       .from(s.attendanceOvertime)
+      .innerJoin(s.attendancePunches, eq(s.attendancePunches.id, s.attendanceOvertime.punchId))
       .where(
         and(
           eq(s.attendanceOvertime.storeId, store.id),
-          gte(s.attendanceOvertime.createdAt, fromAt),
-          lte(s.attendanceOvertime.createdAt, new Date(toAt.getTime() + DAY)),
+          gte(s.attendancePunches.punchedAt, fromAt),
+          lte(s.attendancePunches.punchedAt, toAt),
         ),
-      ),
+      )
+      .then((rows) => rows.map((r) => r.overtime)),
   ]);
   const photoRows =
     punches.length === 0
@@ -669,23 +674,31 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     if (faceStatus.get(e.memberId) !== 'approved') faceStatus.set(e.memberId, e.status);
   }
   const view = policyView(policy);
-  const summaries = rules
-    .summarize({
-      shifts: shifts.map((x) => ({
-        id: x.id,
-        memberId: x.memberId,
-        date: x.shiftDate,
-        startsAt: x.startsAt,
-        endsAt: x.endsAt,
-      })),
-      punches: punches
-        .filter((p) => !p.voidedAt)
-        .map((p) => ({ id: p.id, memberId: p.memberId, kind: p.kind, at: p.punchedAt })),
-      graceMinutes: view.graceMinutes,
-      now,
-      dateOf: (at) => dateInTz(at, tz),
-    })
-    .filter((d) => d.date >= from && d.date <= to);
+  const allDays = rules.summarize({
+    shifts: shifts.map((x) => ({
+      id: x.id,
+      memberId: x.memberId,
+      date: x.shiftDate,
+      startsAt: x.startsAt,
+      endsAt: x.endsAt,
+    })),
+    punches: punches
+      .filter((p) => !p.voidedAt)
+      .map((p) => ({ id: p.id, memberId: p.memberId, kind: p.kind, at: p.punchedAt })),
+    graceMinutes: view.graceMinutes,
+    now,
+    dateOf: (at) => dateInTz(at, tz),
+  });
+  const summaries = allDays.filter((d) => d.date >= from && d.date <= to);
+  // The day each punch counts for (2026-11-10): its shift's, so an overnight
+  // shift keeps its early-morning out, as in the rows above; else its own
+  // date. The export and the overtime used the punch's own date, so after
+  // a clock-out past midnight the shift's row had the hours but not the
+  // clock-out or its overtime.
+  const dayOfPunch = new Map<string, string>();
+  for (const d of allDays) for (const id of d.punchIds) dayOfPunch.set(id, d.date);
+  const dayOf = (p: { id: string; punchedAt: Date }) =>
+    dayOfPunch.get(p.id) ?? dateInTz(p.punchedAt, tz);
   const rosterIds = new Set(roster.map((m) => m.memberId));
   // The rate a day is paid at: the latest one in effect on that date.
   const rateOn = (memberId: string, date: string): string | null => {
@@ -702,13 +715,16 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
       id: o.id,
       memberId: o.memberId,
       punchId: o.punchId,
-      date: dateInTz(punchById.get(o.punchId)!.punchedAt, tz),
+      date: dayOf(punchById.get(o.punchId)!),
       minutes: o.minutes,
       reason: o.reason,
       status: o.status,
       decidedByName: o.decidedByMemberId ? (names.get(o.decidedByMemberId) ?? null) : null,
       decisionNote: o.decisionNote,
-    }));
+    }))
+    // Only the sheet's days: the export's totals counted the day before
+    // and the days after too.
+    .filter((o) => o.date >= from && o.date <= to);
   return {
     timezone: tz,
     today: todayInTz(tz, now),
@@ -737,6 +753,8 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
       kind: p.kind,
       at: p.punchedAt.toISOString(),
       date: dateInTz(p.punchedAt, tz),
+      /** The day it counts for; `date` is the day it was made on. */
+      day: dayOf(p),
       time: rules.localTime(p.punchedAt, tz),
       source: p.source,
       reason: p.reason,
