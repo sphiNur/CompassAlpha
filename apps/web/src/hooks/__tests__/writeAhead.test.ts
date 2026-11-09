@@ -60,7 +60,7 @@ describe('sendWriteAhead', () => {
 
   it('a refused session leaves the entry queued too, as the replay does (COREWEB2-02)', async () => {
     const store = fakeStore();
-    let queued: boolean | null = null;
+    const queued: boolean[] = [];
     const signedOut = Object.assign(new Error('auth.errors.required'), {
       data: { code: 'UNAUTHORIZED' },
     });
@@ -69,11 +69,11 @@ describe('sendWriteAhead', () => {
       { qty: '3' },
       () => Promise.reject(signedOut),
       undefined,
-      (q) => (queued = q),
+      (q) => queued.push(q),
       store,
     ).catch((e) => e);
     expect(err).toBe(signedOut);
-    expect(queued).toBe(true);
+    expect(queued).toEqual([true]);
     expect([...store.rows.values()].map((e) => e.input)).toEqual([{ qty: '3' }]);
   });
 
