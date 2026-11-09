@@ -10,7 +10,10 @@
 #   3. Creates /home/ubuntu/compass-backups (the destination dir)
 #   4. systemctl daemon-reload
 #   5. Enables + starts the .timer (NOT the service — the timer fires it)
-#   6. Optionally runs the first backup immediately so we know it works
+#   6. Grants the backup role (BACKUP_DATABASE_URL in .env) SELECT on every
+#      table and sequence, and on the ones later migrations create
+#      (grant-backup-role.sql)
+#   7. Optionally runs the first backup immediately so we know it works
 #      (skip with INSTALL_SKIP_FIRST_RUN=1)
 #
 # Run on the server:
@@ -58,6 +61,31 @@ chmod +x "$SCRIPT_SRC"
 mkdir -p "$BACKUP_DIR_DEFAULT"
 chown ubuntu:ubuntu "$BACKUP_DIR_DEFAULT"
 chmod 750 "$BACKUP_DIR_DEFAULT"
+
+# --- Backup role privileges (review OPS-02, 2026-11-09) -----------------------
+# A GRANT on today's tables does not reach a table a later migration
+# creates: every nightly backup failed on one from 2026-08 to 2026-11 and
+# nothing said so. grant-backup-role.sql also sets the default privileges
+# of the role the migrations connect as. Idempotent.
+ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
+env_get() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true; }
+# shellcheck source=pg-url.sh
+. "$PGURL_SRC"
+pg_url_parts "$(env_get BACKUP_DATABASE_URL)"
+BACKUP_ROLE=$PG_URL_USER
+BACKUP_DB=$PG_URL_DB
+OWNER_URL=$(env_get DATABASE_URL_DIRECT)
+[[ -n "$OWNER_URL" ]] || OWNER_URL=$(env_get DATABASE_URL)
+pg_url_parts "$OWNER_URL"
+OWNER_ROLE=$PG_URL_USER
+if [[ -n "$BACKUP_ROLE" && -n "$BACKUP_DB" && -n "$OWNER_ROLE" ]]; then
+  sudo -u postgres psql -q -d "$BACKUP_DB" -v backup="$BACKUP_ROLE" -v owner="$OWNER_ROLE" \
+    -f "$HERE/grant-backup-role.sql"
+  echo "[install] $BACKUP_ROLE may read every table in $BACKUP_DB, and what $OWNER_ROLE creates later"
+else
+  echo "[install] WARN: no BACKUP_DATABASE_URL (or DATABASE_URL) with a user and a database in $ENV_FILE —" >&2
+  echo "[install]       backups would run as the app role and fail under row-level security. See .env.example." >&2
+fi
 
 # --- Install units ----------------------------------------------------------
 # Use symlinks so a future git pull on the source files is picked up

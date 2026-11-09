@@ -13,9 +13,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  BACKUP_MAX_AGE_SECONDS,
+  INCOMPLETE_MARKER,
+  backupHealthScript,
+  backupProblem,
+  clearIncompleteScript,
   describeSnapshotScript,
   hostName,
   knownHostsFile,
+  markIncompleteScript,
   restoreScript,
   rsyncExcludes,
   snapshotScript,
@@ -133,6 +139,97 @@ describe('rollback snapshot', () => {
     writeFileSync(prev, 'not a tarball');
     expect(bash(restoreScript(app, prev)).status).not.toBe(0);
     expect(read(app, 'apps/web/dist/index.html')).toBe('old html');
+  });
+});
+
+// Review OPS-01 (2026-11-09): a deploy that failed after extracting left a
+// tree that never ran, and the next deploy kept it as its rollback point.
+describe('a deploy that stopped after extracting', () => {
+  test('is not kept as the rollback point: the snapshot from before it stays', () => {
+    const { app, prev } = liveTree();
+    expect(bash(snapshotScript(app, prev)).status).toBe(0);
+    expect(bash(markIncompleteScript('bbbbbbbbbbbb', app)).status).toBe(0);
+    expect(read(app, INCOMPLETE_MARKER)).toMatch(/^bbbbbbbbbbbb \d{4}-\d\d-\d\dT/);
+    put(app, 'apps/api/src/main.ts', 'new api, never started');
+
+    const snap = bash(snapshotScript(app, prev));
+    expect(snap.status).toBe(0);
+    expect(snap.stdout).toContain('the last deploy did not finish (bbbbbbbbbbbb');
+    expect(bash(`tar -xzOf "${prev}" ./apps/api/src/main.ts`).stdout).toBe('old api');
+  });
+
+  test('with no earlier snapshot the deploy stops before extracting', () => {
+    const { app, prev } = liveTree();
+    bash(markIncompleteScript('bbbbbbbbbbbb', app));
+    const snap = bash(snapshotScript(app, prev));
+    expect(snap.status).toBe(4);
+    expect(snap.stderr).toContain('no earlier snapshot');
+    expect(existsSync(prev)).toBe(false);
+  });
+
+  test('putting the kept release back clears the mark', () => {
+    const { app, prev } = liveTree();
+    bash(snapshotScript(app, prev));
+    bash(markIncompleteScript('bbbbbbbbbbbb', app));
+    deployOver(app);
+    expect(bash(restoreScript(app, prev)).status).toBe(0);
+    expect(read(app, 'apps/api/src/main.ts')).toBe('old api');
+    expect(existsSync(join(app, INCOMPLETE_MARKER))).toBe(false);
+  });
+
+  test('a finished deploy clears the mark and is kept next time', () => {
+    const { app, prev } = liveTree();
+    bash(markIncompleteScript('bbbbbbbbbbbb', app));
+    expect(bash(clearIncompleteScript(app)).status).toBe(0);
+    expect(existsSync(join(app, INCOMPLETE_MARKER))).toBe(false);
+    expect(bash(snapshotScript(app, prev)).stdout).toContain('kept aaaaaaaaaaaa');
+  });
+});
+
+// Review OPS-02 (2026-11-09): backups failed silently from 2026-08 to 11.
+describe('backup health before a deploy', () => {
+  const healthy = 'timer=active\nunit=inactive\nlatest=/b/compass-2026-11-09-033000.dump\nage=3600';
+
+  test('a running timer, a clean last run and a recent dump pass', () => {
+    expect(backupProblem(healthy)).toBeNull();
+  });
+
+  test('each way of failing is named', () => {
+    expect(backupProblem(healthy.replace('timer=active', 'timer=inactive'))).toContain(
+      'timer is not running (compass-backup.timer: inactive)',
+    );
+    expect(backupProblem(healthy.replace('timer=active', 'timer='))).toContain('not installed');
+    expect(backupProblem(healthy.replace('unit=inactive', 'unit=failed'))).toContain(
+      'last backup run failed',
+    );
+    expect(backupProblem('timer=active\nunit=inactive\nlatest=\nage=-1')).toBe(
+      'there is no backup file',
+    );
+    expect(backupProblem(healthy.replace('age=3600', `age=${BACKUP_MAX_AGE_SECONDS + 7200}`))).toBe(
+      'the newest backup is 28 hours old (/b/compass-2026-11-09-033000.dump)',
+    );
+  });
+
+  test('the script finds the newest dump and its age', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'backups-'));
+    dirs.push(dir);
+    put(dir, 'compass-2026-11-07-033000.dump', 'old');
+    put(dir, 'compass-2026-11-08-033000.dump', 'new');
+    bash(`touch -d '50 hours ago' "${dir}/compass-2026-11-07-033000.dump"`);
+    bash(`touch -d '2 hours ago' "${dir}/compass-2026-11-08-033000.dump"`);
+    const out = bash(backupHealthScript(dir)).stdout;
+    expect(out).toContain(`latest=${dir}/compass-2026-11-08-033000.dump`);
+    const age = Number(/^age=(-?\d+)$/m.exec(out)?.[1]);
+    expect(age).toBeGreaterThanOrEqual(7200);
+    expect(age).toBeLessThan(7300);
+  });
+
+  test('an empty folder reports no dump', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'backups-'));
+    dirs.push(dir);
+    const out = bash(backupHealthScript(dir)).stdout;
+    expect(out).toContain('latest=\n');
+    expect(out).toContain('age=-1');
   });
 });
 

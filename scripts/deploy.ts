@@ -76,9 +76,13 @@ import {
   APP_DIR,
   PREV_TARBALL,
   STAGE_DIR,
+  backupHealthScript,
+  backupProblem,
+  clearIncompleteScript,
   describeSnapshotScript,
   hostName,
   knownHostsFile,
+  markIncompleteScript,
   restoreScript,
   rsyncExcludes,
   snapshotScript,
@@ -420,6 +424,165 @@ if (!ROLLBACK) {
   }
 }
 
+/**
+ * Review OPS-02 (2026-11-09): a deploy runs migrations, and the way back
+ * from a bad one is last night's dump. Backups failed silently twice (CRLF
+ * in the script; from 2026-08 to 2026-11 the backup role could not read a
+ * new table) and nothing looked. A rollback is an emergency and is not
+ * held up by this.
+ */
+if (!DRY && !ROLLBACK) {
+  step("0.6. pre-flight: last night's backup");
+  try {
+    const problem = backupProblem(ssh(backupHealthScript()));
+    if (problem && !args.has('--allow-stale-backup')) {
+      console.error(`\x1b[31m✖ Refusing to deploy — ${problem}.\x1b[0m`);
+      console.error('  A deploy runs migrations; without a recent dump there is no way back');
+      console.error('  from a bad one. Look at: journalctl -u compass-backup.service -n 50');
+      console.error('  (infra/backup/, docs/RUNBOOK.md). Deploy anyway: --allow-stale-backup.');
+      process.exit(1);
+    }
+    console.log(
+      problem
+        ? `  \x1b[33m⚠ --allow-stale-backup: ${problem}\x1b[0m`
+        : '  ✓ backup timer running, last run ok, newest dump under 26 hours old',
+    );
+  } catch (err) {
+    console.log(`  \x1b[33m⚠ couldn't check the backups: ${(err as Error).message}\x1b[0m`);
+  }
+}
+
+/**
+ * Read-only checks of the server's own state (its .env files, its database
+ * role). Review OPS-01 (2026-11-09): they used to run after the new release
+ * was extracted and migrated, so a failed check left the server changed.
+ * Nothing they read is part of a release, so they run before the upload.
+ */
+if (!DRY) {
+  step('0.7. verify no dev auth bypass in any server .env (P0-3 defense in depth)');
+  // The vite.config.ts + AuthGate.tsx already prevent the mock initData
+  // from reaching production code paths, but we belt-and-braces here:
+  // refuse to deploy if any server-side .env file (root, apps/web, etc.)
+  // carries the dev override. M3.25 (2026-05-18 incident #2) extended
+  // this from a single-file grep to cover apps/*/env.
+  const envBypass = ssh(
+    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' \
+      /home/ubuntu/compass-alpha/.env \
+      /home/ubuntu/compass-alpha/apps/*/.env \
+      /home/ubuntu/compass-alpha/packages/*/.env \
+      2>/dev/null || echo __CLEAN__`,
+  );
+  if (!envBypass.includes('__CLEAN__')) {
+    console.error(
+      '\x1b[31m✖ Server .env file(s) carry VITE_DEV_MOCK_INIT_DATA — aborting deploy.\x1b[0m',
+    );
+    console.error('  Offending file(s): ' + envBypass.trim().replace(/\n/g, ', '));
+    console.error('  Unset on the server before deploying.');
+    process.exit(1);
+  }
+
+  step('0.8. verify PG role "compass" does not BYPASSRLS (defense in depth)');
+  // RLS policies are useless if the connecting role bypasses them.
+  // psql is available on the server; reads DATABASE_URL from .env.
+  try {
+    const out = ssh(
+      [
+        'set -e',
+        'cd /home/ubuntu/compass-alpha',
+        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
+        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
+      ].join(' && '),
+    );
+    const [bypassRls, superuser] = out.trim().split(',');
+    if (superuser === 'true') {
+      // A superuser ignores RLS as completely as BYPASSRLS does, FORCE or
+      // not. Not a hard stop yet: a box provisioned from
+      // docker-compose.prod.yml connects as POSTGRES_USER, which is one,
+      // and aborting would also block the deploy that fixes it.
+      console.log(
+        '  \x1b[31m⚠ DB role is a SUPERUSER — row-level security is not enforced for it.\x1b[0m\n' +
+          '    Connect the app as a plain role (NOSUPERUSER NOBYPASSRLS) that does not own the tables.',
+      );
+    }
+    if (bypassRls !== 'false') {
+      console.error(
+        `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
+      );
+      console.error('  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;');
+      process.exit(1);
+    }
+    if (superuser !== 'true') console.log('  ✓ DB role is not a superuser and does not bypass RLS');
+  } catch (err) {
+    console.log(
+      `  \x1b[33m⚠ couldn't verify BYPASSRLS (psql failed): ${(err as Error).message}\x1b[0m`,
+    );
+  }
+}
+
+/** Shell script: install exactly the dependencies the tree on disk locks. */
+function installScript(): string {
+  // 2026-10-30: pipefail — `| tail -5` used to report tail's exit code, so
+  // a failed install went on to restart the api on missing deps.
+  return [
+    'set -o pipefail',
+    'export PATH=$HOME/.bun/bin:$PATH',
+    `cd ${APP_DIR}`,
+    // Frozen: the server must install exactly what CI tested, not
+    // re-resolve and quietly rewrite the lockfile.
+    'pnpm install --frozen-lockfile 2>&1 | tail -5',
+  ].join(' && ');
+}
+
+/** Shell script: the systemd units and helpers from the tree on disk. */
+function unitsScript(): string {
+  // M3.18 (2026-05-16): compass-api.service now ships in the repo too;
+  // earlier it was hand-edited on the server and absent from version
+  // control, leaving the unit at risk of drift on a host rebuild.
+  return [
+    `sudo cp ${APP_DIR}/infra/systemd/compass-api.service /etc/systemd/system/compass-api.service`,
+    `sudo cp ${APP_DIR}/infra/systemd/compass-worker.service /etc/systemd/system/compass-worker.service`,
+    `sudo cp ${APP_DIR}/infra/systemd/compass-app-tunnel.service /etc/systemd/system/compass-app-tunnel.service`,
+    `sudo cp ${APP_DIR}/infra/systemd/compass-origin-watch.service /etc/systemd/system/compass-origin-watch.service`,
+    `sudo cp ${APP_DIR}/infra/systemd/compass-origin-watch.timer /etc/systemd/system/compass-origin-watch.timer`,
+    `sudo install -m 755 ${APP_DIR}/infra/tunnel/compass-origin-watch.sh /usr/local/bin/compass-origin-watch`,
+    'sudo systemctl daemon-reload',
+    'sudo systemctl enable compass-api.service compass-worker.service',
+    'sudo systemctl enable --now compass-app-tunnel.service compass-origin-watch.timer',
+  ].join(' && ');
+}
+
+/**
+ * Review OPS-01 (2026-11-09): a step between the extract and the restart
+ * failed. The disk has the new release while the api and worker still run
+ * the old one; a crash or a reboot would have started the new code against
+ * the old bundle, a database that was not migrated, or half-installed
+ * dependencies. Put the release kept in step 2.5 back, with its own
+ * dependencies and units, so the disk matches what runs again. Nothing is
+ * restarted. If this fails too, `.deploy-incomplete` stays, and the next
+ * deploy keeps the older snapshot instead of this tree.
+ */
+function abortAfterExtract(what: string, err: unknown): never {
+  console.error(`\x1b[31m✖ ${what}\x1b[0m`);
+  console.error(String((err as Error)?.message ?? err));
+  step('undo. put the previous release back (nothing was restarted)');
+  try {
+    console.log('  ' + ssh(restoreScript()).trim());
+    console.log(ssh(installScript()));
+    ssh(unitsScript());
+    console.error(
+      '\x1b[33m  The previous release is back on disk; the running api and worker never changed.\x1b[0m',
+    );
+    console.error('  Migrations that already ran stay applied (they only go forward).');
+  } catch (undoErr) {
+    console.error(
+      '\x1b[31m✖ putting the previous release back FAILED — do not restart the api or worker.\x1b[0m',
+    );
+    console.error('  Run: bun run scripts/deploy.ts --rollback');
+    console.error(String((undoErr as Error)?.message ?? undoErr));
+  }
+  process.exit(1);
+}
+
 if (!DRY) {
   if (!ROLLBACK) {
     // Incremental upload (2026-11-06) where both ends have rsync: only
@@ -463,7 +626,13 @@ if (!DRY) {
     }
 
     step('3. extract on server');
-    ssh(`tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C ${APP_DIR} --strip-components=1`);
+    // OPS-01: from here until the restart, the disk is not what runs.
+    ssh(markIncompleteScript(releaseSha));
+    try {
+      ssh(`tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C ${APP_DIR} --strip-components=1`);
+    } catch (err) {
+      abortAfterExtract('extract FAILED', err);
+    }
   } else {
     // N9: put the release kept by the last deploy's step 2.5 back. The
     // remaining steps (deps, units, env checks, restart, smokes) are the
@@ -483,22 +652,10 @@ if (!DRY) {
   }
 
   step('3.5. pnpm install (sync workspace deps if package.json changed)');
-  // 2026-10-30: pipefail — `| tail -5` used to report tail's exit code, so
-  // a failed install went on to restart the api on missing deps.
   try {
-    console.log(
-      ssh(
-        [
-          'set -o pipefail',
-          'export PATH=$HOME/.bun/bin:$PATH',
-          'cd /home/ubuntu/compass-alpha',
-          // Frozen: the server must install exactly what CI tested, not
-          // re-resolve and quietly rewrite the lockfile.
-          'pnpm install --frozen-lockfile 2>&1 | tail -5',
-        ].join(' && '),
-      ),
-    );
+    console.log(ssh(installScript()));
   } catch (err) {
+    if (!ROLLBACK) abortAfterExtract('pnpm install FAILED', err);
     console.error('\x1b[31m✖ pnpm install FAILED — aborting before the api restart\x1b[0m');
     console.error(String((err as Error).message ?? err));
     process.exit(1);
@@ -522,87 +679,18 @@ if (!DRY) {
         ),
       );
     } catch (err) {
-      console.error('\x1b[31m✖ db migrate FAILED — aborting deploy before api restart\x1b[0m');
-      console.error(String((err as Error).message ?? err));
-      process.exit(1);
+      abortAfterExtract('db migrate FAILED', err);
     }
   }
 
   step('4a. install/refresh systemd units (api, worker, tunnel, watchdog)');
-  // M3.18 (2026-05-16): compass-api.service now ships in the repo too;
-  // earlier it was hand-edited on the server and absent from version
-  // control, leaving the unit at risk of drift on a host rebuild.
-  ssh(
-    [
-      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-api.service /etc/systemd/system/compass-api.service',
-      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-worker.service /etc/systemd/system/compass-worker.service',
-      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-app-tunnel.service /etc/systemd/system/compass-app-tunnel.service',
-      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-origin-watch.service /etc/systemd/system/compass-origin-watch.service',
-      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-origin-watch.timer /etc/systemd/system/compass-origin-watch.timer',
-      'sudo install -m 755 /home/ubuntu/compass-alpha/infra/tunnel/compass-origin-watch.sh /usr/local/bin/compass-origin-watch',
-      'sudo systemctl daemon-reload',
-      'sudo systemctl enable compass-api.service compass-worker.service',
-      'sudo systemctl enable --now compass-app-tunnel.service compass-origin-watch.timer',
-    ].join(' && '),
-  );
-
-  step('4a-pre. verify no dev auth bypass in any server .env (P0-3 defense in depth)');
-  // The vite.config.ts + AuthGate.tsx already prevent the mock initData
-  // from reaching production code paths, but we belt-and-braces here:
-  // refuse to deploy if any server-side .env file (root, apps/web, etc.)
-  // carries the dev override. M3.25 (2026-05-18 incident #2) extended
-  // this from a single-file grep to cover apps/*/env.
-  const envBypass = ssh(
-    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' \
-      /home/ubuntu/compass-alpha/.env \
-      /home/ubuntu/compass-alpha/apps/*/.env \
-      /home/ubuntu/compass-alpha/packages/*/.env \
-      2>/dev/null || echo __CLEAN__`,
-  );
-  if (!envBypass.includes('__CLEAN__')) {
-    console.error(
-      '\x1b[31m✖ Server .env file(s) carry VITE_DEV_MOCK_INIT_DATA — aborting deploy.\x1b[0m',
-    );
-    console.error('  Offending file(s): ' + envBypass.trim().replace(/\n/g, ', '));
-    console.error('  Unset on the server before deploying.');
-    process.exit(1);
-  }
-
-  step('4a-pg. verify PG role "compass" does not BYPASSRLS (defense in depth)');
-  // RLS policies are useless if the connecting role bypasses them.
-  // psql is available on the server; reads DATABASE_URL from .env.
   try {
-    const out = ssh(
-      [
-        'set -e',
-        'cd /home/ubuntu/compass-alpha',
-        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
-      ].join(' && '),
-    );
-    const [bypassRls, superuser] = out.trim().split(',');
-    if (superuser === 'true') {
-      // A superuser ignores RLS as completely as BYPASSRLS does, FORCE or
-      // not. Not a hard stop yet: a box provisioned from
-      // docker-compose.prod.yml connects as POSTGRES_USER, which is one,
-      // and aborting would also block the deploy that fixes it.
-      console.log(
-        '  \x1b[31m⚠ DB role is a SUPERUSER — row-level security is not enforced for it.\x1b[0m\n' +
-          '    Connect the app as a plain role (NOSUPERUSER NOBYPASSRLS) that does not own the tables.',
-      );
-    }
-    if (bypassRls !== 'false') {
-      console.error(
-        `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
-      );
-      console.error('  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;');
-      process.exit(1);
-    }
-    if (superuser !== 'true') console.log('  ✓ DB role is not a superuser and does not bypass RLS');
+    ssh(unitsScript());
   } catch (err) {
-    console.log(
-      `  \x1b[33m⚠ couldn't verify BYPASSRLS (psql failed): ${(err as Error).message}\x1b[0m`,
-    );
+    if (!ROLLBACK) abortAfterExtract('installing the systemd units FAILED', err);
+    console.error('\x1b[31m✖ installing the systemd units FAILED — nothing was restarted\x1b[0m');
+    console.error(String((err as Error).message ?? err));
+    process.exit(1);
   }
 
   if (!ROLLBACK) {
@@ -640,17 +728,31 @@ if (!DRY) {
         ),
       );
     } catch (err) {
-      console.error('\x1b[31m✖ web build FAILED — aborting before the api restart\x1b[0m');
-      console.error('  The live apps/web/dist was not touched.');
-      console.error(String((err as Error).message ?? err));
-      process.exit(1);
+      abortAfterExtract('web build FAILED', err);
     }
   }
 
   step('4c. restart api + worker');
-  ssh(
-    `sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
-  );
+  try {
+    ssh(
+      `sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
+    );
+  } catch (err) {
+    // The new code is what runs now (or fails to). `.deploy-incomplete`
+    // stays, so the next deploy does not keep this tree as its rollback.
+    console.error('\x1b[31m✖ api or worker did not come up after the restart\x1b[0m');
+    console.error(String((err as Error).message ?? err));
+    console.error('  Put the previous release back now: bun run scripts/deploy.ts --rollback');
+    process.exit(1);
+  }
+  // OPS-01: the processes run the release on disk again.
+  try {
+    ssh(clearIncompleteScript());
+  } catch (err) {
+    console.log(
+      `  \x1b[33m⚠ couldn't clear ${APP_DIR}/.deploy-incomplete: ${(err as Error).message}\x1b[0m`,
+    );
+  }
 
   // M1.9 (2026-05-07): is-active above only proves the process is
   // alive — it's still possible for the worker to start, fail to
