@@ -8,7 +8,7 @@
  * For M1 the photo capture stub is a text URL; full S3 upload + image picker
  * lands in M1 follow-ups (PhotoCapture component).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -92,6 +92,37 @@ export function ConfirmPage() {
   const [issueReceivedTouched, setIssueReceivedTouched] = useState(false);
   const [issueSaveTried, setIssueSaveTried] = useState(false);
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
+  // The open issue form, for answers that arrive after a re-render.
+  const issueOpenRef = useRef(issueOpen);
+  issueOpenRef.current = issueOpen;
+  /**
+   * Close and clear the issue form, if the answer is for it.
+   *
+   * CONF-01 (2026-11-09): one mutation serves the quick "OK" and the issue
+   * form. A quick OK answered while another product's issue form was being
+   * filled closed it and cleared the note, photo and received quantity.
+   */
+  const closeIssueFormFor = (sent: {
+    runId: string;
+    skuId: string;
+    storeId: string;
+    status: DecisionStatus;
+  }) => {
+    const form = issueOpenRef.current;
+    if (
+      !form ||
+      form.runId !== sent.runId ||
+      form.skuId !== sent.skuId ||
+      form.storeId !== sent.storeId ||
+      form.status !== sent.status
+    ) {
+      return;
+    }
+    setIssueOpen(null);
+    setIssueNote('');
+    setIssuePhoto(null);
+    setIssueReceived('');
+  };
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
   // summary sheet instead of submitting on one tap.
@@ -217,10 +248,7 @@ export function ConfirmPage() {
   const confirmItem = trpc.run.confirmStoreItem.useMutation({
     onSuccess: (_data, vars) => {
       void utils.run.get.invalidate();
-      setIssueOpen(null);
-      setIssueNote('');
-      setIssuePhoto(null);
-      setIssueReceived('');
+      closeIssueFormFor(vars);
       // Bug fix: previously this said "Issue noted" for EVERY confirm,
       // including the most common "ok" case — confusing. The toast now
       // matches what actually happened.
@@ -239,10 +267,7 @@ export function ConfirmPage() {
         // what was typed when the device could not store it either.
         void offline.enqueue('run.confirmStoreItem', vars).then(
           () => {
-            setIssueOpen(null);
-            setIssueNote('');
-            setIssuePhoto(null);
-            setIssueReceived('');
+            closeIssueFormFor(vars);
             toast.info(i18n.t('confirm.toast.savedOffline'));
           },
           () => errToast('common.errors.actionFailed')(err),
@@ -947,7 +972,7 @@ export function ConfirmPage() {
           // local state (issueOpen / issueNote / issuePhoto) clears and
           // a subsequent failure produces an error toast with all that
           // work lost. Mutation success closes the sheet naturally via
-          // confirmItem.onSuccess setIssueOpen(null).
+          // confirmItem.onSuccess (closeIssueFormFor).
           if (!open && confirmItem.isPending) return;
           // 2026-10-21 audit C-20: drop the draft on cancel too — it used
           // to be cleared only on success, so a cancelled note/photo

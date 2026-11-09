@@ -43,6 +43,7 @@ import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
+import { useRefreshSession } from '../lib/refreshSession';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 import {
@@ -518,6 +519,16 @@ export function SettlementPage() {
       setCurrentStore(currentStoreId);
     }
   }, [currentStoreId, requestedStoreId, setCurrentStore]);
+  // CONF-02 (2026-11-09): a store assigned since the session was read is
+  // in this page's list but not yet in the session, so it never became
+  // the shell's store and the page waited for that forever. Read the
+  // session again; the store then joins it.
+  const refreshSession = useRefreshSession();
+  const storeNotInSession =
+    !!currentStoreId && !(session?.stores ?? []).some((store) => store.id === currentStoreId);
+  useEffect(() => {
+    if (storeNotInSession) void refreshSession();
+  }, [storeNotInSession, refreshSession]);
 
   // The server owns "today" because this is a store business date, not a
   // device date. Reset to that date whenever the selected store changes.
@@ -1108,7 +1119,9 @@ export function SettlementPage() {
         {pageHeading}
         {storeSelector}
         <div className="flex justify-center py-8" aria-label={i18n.t('settlement.title')}>
-          <Spinner size={20} />
+          {/* CONF-02: offline with no saved copy of this day, say so; a
+              bare spinner turned until the network came back. */}
+          <PendingSpinner query={closeQuery} />
         </div>
       </div>
     );
@@ -1375,12 +1388,6 @@ export function SettlementPage() {
               <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} className="" />
             ) : null}
           </section>
-        ) : null}
-
-        {closeQuery.isPending ? (
-          <div className="flex justify-center py-4" aria-label={i18n.t('settlement.title')}>
-            <PendingSpinner query={closeQuery} />
-          </div>
         ) : null}
 
         {closeQuery.isError ? (
