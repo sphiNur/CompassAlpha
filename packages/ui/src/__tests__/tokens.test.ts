@@ -14,19 +14,29 @@ const UI_SRC = join(import.meta.dir, '..');
 const WEB_SRC = join(UI_SRC, '../../../apps/web/src');
 const css = readFileSync(join(UI_SRC, 'tokens.css'), 'utf8');
 
-function block(selectorStart: string): Record<string, string> {
-  const at = css.indexOf(selectorStart);
-  if (at < 0) throw new Error(`no block ${selectorStart}`);
-  const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('\n}', at));
+/**
+ * Every custom property on <html> for one set of attributes, through the
+ * cascade below (parseRules / computedOnRoot). Review TEST4-15: this used
+ * to cut the light and dark blocks out of the file by string offsets, so
+ * merging two selectors threw "no block", and the apple theme was never
+ * measured.
+ */
+function themeOf(attrs: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const m of body.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)) {
-    out[m[1]!] = m[2]!.trim();
+  for (const rule of parseRules(css)) {
+    for (const name of Object.keys(rule.decls)) {
+      if (!name.startsWith('--') || name in out) continue;
+      const value = computedOnRoot(name, attrs, { reducedMotion: false });
+      if (value !== undefined) out[name] = value;
+    }
   }
   return out;
 }
 
-const light = block(':root,\n:root[data-theme=');
-const dark = { ...light, ...block(":root[data-theme='dark'],") };
+const light = themeOf({ 'data-theme': 'native' });
+const dark = themeOf({ 'data-theme': 'dark' });
+const nativeDark = themeOf({ 'data-theme': 'native', 'data-color-scheme': 'dark' });
+const apple = themeOf({ 'data-theme': 'apple' });
 
 type Rgba = [number, number, number, number];
 
@@ -107,6 +117,8 @@ const TEXT_PAIRS: Array<[fg: string, bg: string]> = [
 describe.each([
   ['light', light],
   ['dark', dark],
+  ['Telegram dark', nativeDark],
+  ['apple', apple],
 ] as const)('%s theme contrast', (_name, theme) => {
   for (const fg of TEXT_ON_SURFACES) {
     for (const bg of SURFACES) {
@@ -235,6 +247,18 @@ describe('tap areas', () => {
   });
 });
 
+/** The text of a JSX className value: `"…"` or a balanced `{…}`. */
+function classNameValue(after: string): string {
+  if (after.startsWith('"')) return after.slice(1, after.indexOf('"', 1));
+  if (!after.startsWith('{')) return '';
+  let depth = 0;
+  for (let i = 0; i < after.length; i++) {
+    if (after[i] === '{') depth++;
+    else if (after[i] === '}' && --depth === 0) return after.slice(1, i);
+  }
+  return after.slice(1);
+}
+
 describe('D18: text fields are 44px', () => {
   const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
 
@@ -256,6 +280,10 @@ describe('D18: text fields are 44px', () => {
   });
 
   test('no raw <input>, <select> or <textarea> in the web app is shorter than 44px', () => {
+    // TEST4-15: the scan read only `className="…"`; a `className={cn(…)}`
+    // or a template string went unchecked, and so did `h-[36px]`.
+    const SHORT =
+      /(^|[\s'"`])(h-(?:[0-9]|10)|h-\[(?:[0-9]|[1-3][0-9]|4[0-3])px\]|py-1)(?=$|[\s'"`])/;
     const short: string[] = [];
     for (const file of sources(WEB_SRC)) {
       if (!file.endsWith('.tsx')) continue;
@@ -263,15 +291,23 @@ describe('D18: text fields are 44px', () => {
       for (const m of src.matchAll(/<(input|select|textarea)\b/g)) {
         // The element's own attributes: up to its first className.
         const attrs = src.slice(m.index!, m.index! + 1200);
-        const cls = /className="([^"]*)"/.exec(attrs)?.[1] ?? '';
-        const type = /type="([a-z]+)"/.exec(attrs.slice(0, attrs.indexOf('className=')))?.[1];
+        const at = attrs.indexOf('className=');
+        const type = /type="([a-z]+)"/.exec(at < 0 ? attrs : attrs.slice(0, at))?.[1];
         if (type && ['checkbox', 'radio', 'hidden', 'file'].includes(type)) continue;
-        if (/(^|\s)(h-([0-9]|10)|py-1)(\s|$)/.test(cls)) {
-          short.push(`${file.slice(WEB_SRC.length)}: ${cls}`);
-        }
+        const cls = at < 0 ? '' : classNameValue(attrs.slice(at + 'className='.length));
+        if (SHORT.test(cls))
+          short.push(`${file.slice(WEB_SRC.length)}: ${cls.replace(/\s+/g, ' ')}`);
       }
     }
     expect(short).toEqual([]);
+  });
+
+  test('the scan reads every way a className is written', () => {
+    expect(classNameValue('"h-9 w-full" />')).toBe('h-9 w-full');
+    expect(classNameValue("{cn('h-[36px] px-2', a && 'b')} />")).toBe(
+      "cn('h-[36px] px-2', a && 'b')",
+    );
+    expect(classNameValue('{`h-10 ${x}`} />')).toBe('`h-10 ${x}`');
   });
 });
 
