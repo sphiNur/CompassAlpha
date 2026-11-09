@@ -258,6 +258,22 @@ export function idempotencyRequestHash(rawInput: unknown): string {
     .digest('hex');
 }
 
+/**
+ * The middleware result a cache hit answers with, without running the
+ * handler. Returning the raw payload (no `ok` field) made tRPC's caller
+ * treat it as a FAILED middleware result (P0 H2). The caller reads only
+ * `.ok`/`.data`; `ctx` and (once captured) `marker` match a real result.
+ * Exported for idempotency-middleware.test.ts.
+ */
+export function cacheHitResult(response: unknown, ctx: unknown) {
+  return {
+    ok: true as const,
+    data: response,
+    ctx,
+    ...(capturedMiddlewareMarker !== undefined ? { marker: capturedMiddlewareMarker } : {}),
+  };
+}
+
 const idempotencyMiddleware = t.middleware(async (opts) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ctx = opts.ctx as any;
@@ -336,18 +352,8 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
           ),
       }),
     );
-  const cachedResult = (response: unknown) => {
-    // Return a properly-shaped tRPC middleware result. Returning the raw
-    // payload (no `ok` field) made tRPC's caller treat it as a FAILED
-    // middleware result (P0 H2). The caller reads only `.ok`/`.data`; we
-    // include `ctx` and (once captured) `marker` to match a real result.
-    return {
-      ok: true,
-      data: response,
-      ctx: opts.ctx,
-      ...(capturedMiddlewareMarker !== undefined ? { marker: capturedMiddlewareMarker } : {}),
-    } as unknown as Awaited<ReturnType<typeof opts.next>>;
-  };
+  const cachedResult = (response: unknown) =>
+    cacheHitResult(response, opts.ctx) as unknown as Awaited<ReturnType<typeof opts.next>>;
 
   if (!(await claim())) {
     // Someone holds the key. If it is this user's request on this route,
