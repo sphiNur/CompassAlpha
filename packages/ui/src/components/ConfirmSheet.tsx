@@ -3,6 +3,7 @@ import { Banner } from './Banner';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Sheet } from './Sheet';
+import { useUiLabels } from '../labels';
 import { useTapGuard } from '../useTapGuard';
 
 export interface ConfirmSheetProps {
@@ -15,7 +16,7 @@ export interface ConfirmSheetProps {
   banner?: ReactNode;
   /** Label of the primary action button. */
   confirmLabel: ReactNode;
-  /** Label for the secondary cancel button. Defaults to "Cancel". */
+  /** Label for the secondary cancel button. Defaults to the host's `cancel` label. */
   cancelLabel?: ReactNode;
   /** Color treatment of the primary action. `danger` = red. */
   danger?: boolean;
@@ -100,7 +101,7 @@ export function ConfirmSheet({
   body,
   banner,
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   danger,
   irreversible,
   requireReason,
@@ -115,6 +116,7 @@ export function ConfirmSheet({
   onConfirm,
   onCancel,
 }: ConfirmSheetProps) {
+  const labels = useUiLabels();
   const reasonOk = !requireReason || reason.trim().length > 0;
   // DLV-4: a double tap sent two requests before `pending` disabled this.
   const guardTap = useTapGuard();
@@ -156,7 +158,7 @@ export function ConfirmSheet({
                 disabled={pending}
                 data-autofocus={startOnCancel || undefined}
               >
-                {cancelLabel}
+                {cancelLabel ?? labels.cancel}
               </Button>
             ) : null}
           </div>
@@ -172,7 +174,7 @@ export function ConfirmSheet({
         ) : null}
         {requireReason ? (
           <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-            {reasonLabel ?? 'Reason'}
+            {reasonLabel ?? labels.reason}
             <Input
               className="mt-1"
               value={reason}

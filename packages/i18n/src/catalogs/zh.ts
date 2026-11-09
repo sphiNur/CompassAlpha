@@ -23,6 +23,8 @@ export const zh = {
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': '新版本已就绪',
   'common.cancel': '取消',
+  'common.reason': '原因',
+  'common.clearSearch': '清除搜索',
   'common.archive': '归档',
   'common.archived': '已归档',
   'common.unarchive': '取消归档',

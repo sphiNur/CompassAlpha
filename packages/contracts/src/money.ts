@@ -64,6 +64,24 @@ export function centsToMoney(cents: bigint): string {
   return `${negative ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}`;
 }
 
+/**
+ * Review COREAPI-18 (2026-11-09): an amount as people read it, for text
+ * the server writes (notifications). It is the app's display rule
+ * (formatMoney in apps/web/src/lib/format.ts), the same in every
+ * language by the owner's decision: comma thousands, a whole amount
+ * without decimals, any other with both cents. Exact, on cents:
+ * "1234567.5" → "1,234,567.50", "1000.00" → "1,000".
+ */
+export function moneyText(value: string | number): string {
+  const cents = toCents(value);
+  const negative = cents < 0n;
+  const abs = negative ? -cents : cents;
+  const whole = (abs / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const minor = abs % 100n;
+  const shown = minor === 0n ? whole : `${whole}.${minor.toString().padStart(2, '0')}`;
+  return negative ? `-${shown}` : shown;
+}
+
 /** One money line as a string: `lineCents` formatted. */
 export function lineAmount(qty: string, unitPrice: string): string {
   return centsToMoney(lineCents(qty, unitPrice));
