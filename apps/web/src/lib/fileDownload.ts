@@ -8,12 +8,6 @@
 import { API_URL } from './trpc';
 import { getTg, isInTelegram } from '../hooks/useTelegram';
 
-type TgDownload = {
-  downloadFile?: (params: { url: string; file_name: string }, cb?: (ok: boolean) => void) => void;
-  isVersionAtLeast?: (v: string) => boolean;
-  openLink?: (url: string) => void;
-};
-
 export function absoluteUrl(path: string): string {
   return new URL(`${API_URL}${path}`, window.location.origin).href;
 }
@@ -21,7 +15,7 @@ export function absoluteUrl(path: string): string {
 /** Resolves false when the person cancels Telegram's dialog. */
 export function saveFile(path: string, fileName: string): Promise<boolean> {
   const url = absoluteUrl(path);
-  const tg = getTg() as TgDownload | null;
+  const tg = getTg();
   if (isInTelegram() && tg?.downloadFile && tg.isVersionAtLeast?.('8.0')) {
     return new Promise((resolve) => {
       try {
