@@ -71,13 +71,19 @@ import {
   withoutPrices,
 } from '../../services/priceRedaction';
 import { appendEvents, readStream } from '../../services/eventStore';
-import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
+import {
+  isStreamSeqConflict,
+  isUniqueViolation,
+  pgConstraintName,
+  withStreamConflictRetry,
+} from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
 import { runCorrections } from '../../services/runCorrections';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
 import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { inUuids } from '../../services/sqlIn';
 import { todayInTz } from '@compass/domain';
 import {
   hiddenSplits,
@@ -328,13 +334,10 @@ export const runRouter = router({
       const involvedStoreIds = [
         ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
       ];
-      // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
-      // array as a single parameter — `IN ${array}` becomes
-      // `IN ($1)` with $1 being the entire array, not an IN-list.
-      // Postgres compares the UUID column to the text representation
-      // of the array and returns no rows; storeName silently became
-      // '—' for every store on the by-store preview. Use the
-      // `inArray()` builder, which expands to a proper IN-list.
+      // M1.9-fix (2026-05-07): storeName was '—' for every store on the
+      // by-store preview; the store lookup now uses `inArray()`, which
+      // expands to a proper IN-list. (Review RUNAPI-16: in drizzle 0.45 a
+      // bare `IN ${array}` expands too, but `= ANY(${array})` does not.)
       const storeRows = involvedStoreIds.length
         ? await tx
             .select({ id: s.stores.id, name: s.stores.name })
@@ -455,7 +458,7 @@ export const runRouter = router({
             FROM inventory.price_history ph
             WHERE ph.org_id = ${ctx.session!.orgId}
               AND ph.superseded_at IS NULL
-              AND ph.sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
+              AND ph.sku_id IN ${inUuids(skuIds)}
             ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
           `);
         const prices = Array.isArray(priceRows)
@@ -745,6 +748,7 @@ export const runRouter = router({
   create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
     // BUY-12 (2026-10-30): a double tap raced on the orders' streams and
     // answered 500; decided again, the second finds the run the first made.
+    // RUNAPI-04: the same for a race on the run's own unique indexes.
     return withRunStreamRetry(ctx, async (tx) => {
       const today = todayStr(ctx);
       const date = input.date ?? today;
@@ -916,12 +920,14 @@ export const runRouter = router({
         // `live` check above and this insert. Outside the try, either
         // surfaced as a 500.
         //
-        // CONFLICT rather than a server-side retry: the transaction is
-        // already aborted here, so we cannot re-read to find the winner.
-        // One client retry resolves it — the second attempt hits the
-        // `live` short-circuit and gets the run that won.
+        // The transaction is aborted by then, so it cannot re-read to
+        // find the winner. RUNAPI-04 (2026-11-09): the error goes out as
+        // it is, and withRunStreamRetry runs the whole transaction again;
+        // the next attempt hits the `live` short-circuit and returns the
+        // run that won.
         await projectRun(tx, ctx.session!.orgId, events);
       } catch (err) {
+        if (isRunSlotConflict(err)) throw err;
         if (isUniqueViolation(err)) {
           throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.alreadyPlanned' });
         }
@@ -995,7 +1001,7 @@ export const runRouter = router({
         lastSeq: events[events.length - 1]?.seq ?? 0,
         reused: false,
       };
-    });
+    }, runCreateRetryable);
   }),
 
   /**
@@ -2534,7 +2540,7 @@ export const runRouter = router({
                 WHERE org_id = ${ctx.session!.orgId}
                   AND superseded_at IS NULL
                   ${priceStoreScope}
-                  AND sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
+                  AND sku_id IN ${inUuids(skuIds)}
                   -- 2026-07-27: exclude THIS run's own observations.
                   --
                   -- Every ItemPurchased inserts a price_history row
@@ -3237,11 +3243,13 @@ export const runRouter = router({
    *   be re-used in a future run — silently wedged forever.
    *
    *   Now the entire cascade runs inside `ctx.withOrg` (one tx).
-   *   We collect every session's failure into `archiveFailures`;
-   *   if the list is non-empty after the loop we throw, which rolls
-   *   back BOTH the RunFinished event AND any partial session
-   *   archives. The operator gets a structured error with the full
-   *   failure list and retries after fixing the cause.
+   *   Every session the domain refuses to archive goes into
+   *   `archiveFailures`; if the list is non-empty after the loop we
+   *   throw, which rolls back BOTH the RunFinished event AND any
+   *   partial session archives. The operator gets a structured error
+   *   with the full failure list and retries after fixing the cause.
+   *   A database error ends the transaction at once (RUNAPI-09): a
+   *   sequence race is decided again by withRunStreamRetry.
    *
    *   Re-running `finish` on a partially-archived state is safe
    *   thanks to the `if (oState.status === 'archived') continue`
@@ -3331,35 +3339,26 @@ export const runRouter = router({
           throw err;
         }
         if (ev.length > 0) {
-          try {
-            await appendEvents(tx, {
-              streamType: 'order',
-              streamId: sessionId,
-              orgId: ctx.session!.orgId,
-              events: ev.map((e) => ({ ...e })),
-            });
-            await projectOrder(tx, ctx.session!.orgId, ev);
-          } catch (err) {
-            // M3.4: append/project failures count too. A seq
-            // collision or projection error here would leave the
-            // session partially advanced; record + roll back.
-            archiveFailures.push({
-              sessionId,
-              reason: err instanceof Error ? err.message : String(err),
-            });
-            ctx.log.warn(
-              { sessionId, runId: run.id, err: archiveFailures.at(-1)!.reason },
-              'finish: append/project failed for session archive — will roll back the run-finish',
-            );
-            continue;
-          }
+          // RUNAPI-09 (2026-11-09): a database error here is not collected.
+          // It aborts the transaction, so the next session's read failed
+          // anyway, and a sequence race (someone marking an extra at that
+          // moment) answered 500 instead of being decided again. It goes
+          // out as it is: withRunStreamRetry runs the whole finish again
+          // on the fresh streams, and anything else rolls it back.
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: sessionId,
+            orgId: ctx.session!.orgId,
+            events: ev.map((e) => ({ ...e })),
+          });
+          await projectOrder(tx, ctx.session!.orgId, ev);
         }
       }
 
-      // M3.4 atomicity bar — if any session failed, abort the whole
-      // tx by throwing. ctx.withOrg's transaction roll-back undoes the
-      // Step-1 RunFinished event AND any partial archives we may have
-      // committed in this loop iteration before the failure.
+      // M3.4 atomicity bar — if the domain refused any session, abort
+      // the whole tx by throwing. ctx.withOrg's transaction roll-back
+      // undoes the Step-1 RunFinished event AND the archives written in
+      // this loop before it.
       if (archiveFailures.length > 0) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -3958,13 +3957,32 @@ function actorFromCtx(
  * "edited by someone else — try again" (and a replayed offline write was
  * dropped). A race lost on every attempt is still reported as CONFLICT.
  */
+/**
+ * Review RUNAPI-04 (2026-11-09): another run.create took the
+ * organisation's live-run slot (mrv_one_active_per_org_unique) or this
+ * day's run index (mrv_org_date_index_unique) between this one's checks
+ * and its insert.
+ */
+function isRunSlotConflict(err: unknown): boolean {
+  if (!isUniqueViolation(err)) return false;
+  const name = pgConstraintName(err);
+  return name === 'mrv_one_active_per_org_unique' || name === 'mrv_org_date_index_unique';
+}
+
+const runCreateRetryable = (err: unknown): boolean =>
+  isStreamSeqConflict(err) || isRunSlotConflict(err);
+
 async function withRunStreamRetry<T>(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   fn: (tx: import('@compass/db').DB) => Promise<T>,
+  retryable: (err: unknown) => boolean = isStreamSeqConflict,
 ): Promise<T> {
   try {
-    return await withStreamConflictRetry(() => ctx.withOrg(fn));
+    return await withStreamConflictRetry(() => ctx.withOrg(fn), 3, retryable);
   } catch (err) {
+    if (isRunSlotConflict(err)) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.alreadyPlanned' });
+    }
     if (isUniqueViolation(err)) {
       throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.staleSeq' });
     }

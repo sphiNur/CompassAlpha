@@ -38,6 +38,7 @@ import { assertCanAddMember, assertCanAddStore } from '../../services/subscripti
 import { isUniqueViolation } from '../../services/pgErrors';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
 import { recentEventContext } from '../../services/eventContext';
+import { inTexts, inUuids } from '../../services/sqlIn';
 import { env } from '../../env';
 import {
   applyCatalogCopy,
@@ -5737,25 +5738,25 @@ export const adminRouter = router({
       if (sessionIds.length > 0) {
         const r = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-                WHERE session_id IN ${sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE session_id IN ${inUuids(sessionIds)}`,
         );
         counts['read_model.order_items_v'] = (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
       }
       if (runIds.length > 0) {
         const r1 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.run_items_v
-                WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE run_id IN ${inUuids(runIds)}`,
         );
         counts['read_model.run_items_v'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r2 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
-                WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE run_id IN ${inUuids(runIds)}`,
         );
         counts['read_model.run_item_stores_v'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r3 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM inventory.price_history
                 WHERE org_id = ${orgId}
-                  AND run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                  AND run_id IN ${inUuids(runIds)}`,
         );
         counts['inventory.price_history'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r4 = await tx.execute(
@@ -5767,7 +5768,7 @@ export const adminRouter = router({
         // the preview matches what is deleted.
         const r5 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.run_expenses_v
-                WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE run_id IN ${inUuids(runIds)}`,
         );
         counts['read_model.run_expenses_v'] = (r5 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
       }
@@ -5775,12 +5776,12 @@ export const adminRouter = router({
         const r1 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM domain.events
                 WHERE org_id = ${orgId}
-                  AND stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}`,
+                  AND stream_id IN ${inUuids(allStreamIds)}`,
         );
         counts['domain.events'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r2 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM domain.snapshots
-                WHERE stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE stream_id IN ${inUuids(allStreamIds)}`,
         );
         counts['domain.snapshots'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r3 = await tx.execute(
@@ -5793,8 +5794,8 @@ export const adminRouter = router({
           sql`SELECT count(*)::int AS n FROM ops.notifications
                 WHERE org_id = ${orgId}
                   AND (
-                    payload->>'sessionId' IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
-                    OR payload->>'runId' IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
+                    payload->>'sessionId' IN ${inTexts(allStreamIds)}
+                    OR payload->>'runId' IN ${inTexts(allStreamIds)}
                   )`,
         );
         counts['ops.notifications'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
@@ -5808,7 +5809,7 @@ export const adminRouter = router({
 
       // Commit pass — same id sets, dependency-safe order.
       if (runIds.length > 0) {
-        const inRuns = sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`);
+        const inRuns = inUuids(runIds);
         await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`);
         await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id IN ${inRuns}`);
         await tx.execute(
@@ -5822,7 +5823,7 @@ export const adminRouter = router({
         );
       }
       if (sessionIds.length > 0) {
-        const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
+        const inSessions = inUuids(sessionIds);
         await tx.execute(
           sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`,
         );
@@ -5832,14 +5833,15 @@ export const adminRouter = router({
         );
       }
       if (allStreamIds.length > 0) {
-        const inStreams = sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`);
+        const inStreams = inUuids(allStreamIds);
+        const inStreamTexts = inTexts(allStreamIds);
         // Notifications first (cheap; doesn't depend on events).
         await tx.execute(
           sql`DELETE FROM ops.notifications
                 WHERE org_id = ${orgId}
                   AND (
-                    payload->>'sessionId' IN ${inStreams}
-                    OR payload->>'runId' IN ${inStreams}
+                    payload->>'sessionId' IN ${inStreamTexts}
+                    OR payload->>'runId' IN ${inStreamTexts}
                   )`,
         );
         // Outbox before events (event_id FK).
@@ -6623,31 +6625,20 @@ export function outboxOfOrg(orgId: string): ReturnType<typeof sql> {
  */
 export function outboxOfStreams(orgId: string, streamIds: string[]): ReturnType<typeof sql> {
   if (streamIds.length === 0) return sql`false`;
-  const uuids = sql.join(
-    streamIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  const texts = sql.join(
-    streamIds.map((id) => sql`${id}::text`),
-    sql`, `,
-  );
+  const texts = inTexts(streamIds);
   return sql`(event_id IN (
-      SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN (${uuids})
+      SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inUuids(streamIds)}
     )
     OR (aggregate = 'notification' AND payload->>'orgId' = ${orgId}
-      AND (payload->'extra'->>'sessionId' IN (${texts})
-        OR payload->'extra'->>'runId' IN (${texts}))))`;
+      AND (payload->'extra'->>'sessionId' IN ${texts}
+        OR payload->'extra'->>'runId' IN ${texts})))`;
 }
 
 /** 2026-10-21 audit CA-28 (D-08): stock movements written for these runs. */
 export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof sql> {
   if (runIds.length === 0) return sql`false`;
-  const ids = sql.join(
-    runIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
   // DLV-3: corrections of a finished run book 'run_amend' rows too.
-  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN (${ids}))`;
+  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN ${inUuids(runIds)})`;
 }
 
 // ---------- session/run cascade helpers ----------
@@ -7132,32 +7123,31 @@ async function countRunCascade(
   );
   // All streams = run + all attached sessions.
   const allStreams = [runId, ...sessionIds];
-  if (allStreams.length > 0) {
-    const inStreams = sql.raw(`(${allStreams.map((id) => `'${id}'`).join(',')})`);
-    await exec(
-      'domain.events',
-      sql`SELECT count(*)::int AS n FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-    );
-    await exec(
-      'domain.snapshots',
-      sql`SELECT count(*)::int AS n FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
-    );
-    await exec(
-      'sync.outbox',
-      sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`,
-    );
-    await exec(
-      'ops.notifications',
-      sql`SELECT count(*)::int AS n FROM ops.notifications
-          WHERE org_id = ${orgId}
-            AND (payload->>'sessionId' IN ${inStreams} OR payload->>'runId' IN ${inStreams})`,
-    );
-    await exec(
-      'read_model.order_items_v',
-      sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-          WHERE session_id IN ${sessionIds.length > 0 ? sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`) : sql.raw(`('00000000-0000-0000-0000-000000000000')`)}`,
-    );
-  }
+  const inStreams = inUuids(allStreams);
+  const inStreamTexts = inTexts(allStreams);
+  await exec(
+    'domain.events',
+    sql`SELECT count(*)::int AS n FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
+  );
+  await exec(
+    'domain.snapshots',
+    sql`SELECT count(*)::int AS n FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
+  );
+  await exec(
+    'sync.outbox',
+    sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`,
+  );
+  await exec(
+    'ops.notifications',
+    sql`SELECT count(*)::int AS n FROM ops.notifications
+        WHERE org_id = ${orgId}
+          AND (payload->>'sessionId' IN ${inStreamTexts} OR payload->>'runId' IN ${inStreamTexts})`,
+  );
+  await exec(
+    'read_model.order_items_v',
+    sql`SELECT count(*)::int AS n FROM read_model.order_items_v
+        WHERE session_id IN ${inUuids(sessionIds)}`,
+  );
   return c;
 }
 
@@ -7169,20 +7159,19 @@ async function deleteRunCascade(
 ): Promise<void> {
   const allStreams = [runId, ...sessionIds];
   // Notifications first.
-  if (allStreams.length > 0) {
-    const inStreams = sql.raw(`(${allStreams.map((id) => `'${id}'`).join(',')})`);
-    await tx.execute(
-      sql`DELETE FROM ops.notifications
-          WHERE org_id = ${orgId}
-            AND (payload->>'sessionId' IN ${inStreams} OR payload->>'runId' IN ${inStreams})`,
-    );
-    await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
-    await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
-    await allowEventPurge(tx);
-    await tx.execute(
-      sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-    );
-  }
+  const inStreams = inUuids(allStreams);
+  const inStreamTexts = inTexts(allStreams);
+  await tx.execute(
+    sql`DELETE FROM ops.notifications
+        WHERE org_id = ${orgId}
+          AND (payload->>'sessionId' IN ${inStreamTexts} OR payload->>'runId' IN ${inStreamTexts})`,
+  );
+  await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
+  await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
+  await allowEventPurge(tx);
+  await tx.execute(
+    sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
+  );
   // Run-side projections.
   await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id = ${runId}`);
   await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id = ${runId}`);
@@ -7195,7 +7184,7 @@ async function deleteRunCascade(
   );
   // Session-side projections (attached sessions).
   if (sessionIds.length > 0) {
-    const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
+    const inSessions = inUuids(sessionIds);
     await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`);
     await tx.execute(
       sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id IN ${inSessions}`,

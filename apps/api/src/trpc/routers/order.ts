@@ -27,6 +27,7 @@ import {
   TodayBatchesInputSchema,
   TodaySessionInputSchema,
   UnapproveInputSchema,
+  UuidSchema,
 } from '@compass/contracts';
 import {
   apply,
@@ -1173,7 +1174,13 @@ export const orderRouter = router({
           sku,
           actor: buildActor(ctx, state, effectivePerms),
           targetMemberId: input.targetMemberId,
-          correlationId: input.idempotencyKey,
+          // ORD-04 (2026-11-09): correlation_id is a uuid column. The key
+          // may be any 8-128 characters, and a key that is not a uuid
+          // failed the insert with a 500. It is still stored as the
+          // event's idempotency_key below.
+          correlationId: UuidSchema.safeParse(input.idempotencyKey).success
+            ? input.idempotencyKey
+            : undefined,
         });
         if (adjustEvents.length === 0 && collected.length === 0) {
           // No-op: existing qty equals incoming qty and no implicit start needed.

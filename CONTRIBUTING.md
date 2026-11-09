@@ -210,9 +210,10 @@ runtime issues, smokes do.
 ## What NOT to do
 
 - **Never** mutate an existing event's payload schema — add a V2 type.
-- **Never** call `tx.execute(sql.raw(\`'${id}'\`))` style. Use Drizzle's
-  `inArray()`. Existing call-sites with raw IDs are db-loaded UUIDs, but
-  the pattern is one PR away from an injection sink.
+- **Never** splice ids into SQL (`sql.raw(\`'${id}'\`)`): the pattern is one
+  PR away from an injection sink. Use Drizzle's `inArray()`, or `inUuids()` /
+  `inTexts()` from `apps/api/src/services/sqlIn.ts` inside a `sql` template.
+  `no-raw-sql.test.ts` fails on any `sql.raw` in the API's source.
 - **Never** skip the i18n catalog for ru/uz/zh. The English fallback is
   silent and embarrassing in front of real users.
 - **Never** add a button without a permission check. Server gates first;
