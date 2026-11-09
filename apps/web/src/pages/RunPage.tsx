@@ -68,6 +68,7 @@ import { otherStoreSkusOf } from './runs/types';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
+import { purchaseDraftCheck } from './runs/lib/purchaseForm';
 import {
   allItemsHandled as allItemsHandledOf,
   pendingItemCount as pendingItemCountOf,
@@ -1080,33 +1081,16 @@ export function RunPage() {
   );
 
   /**
-   * Derived purchase-form validity (mirrors the math inside PurchaseSheet
-   * so MainButton can show the right text + enable/disable). Lives here
-   * so we don't duplicate it in two places.
+   * The purchase sheet's own rule (runs/lib/purchaseForm.ts), for
+   * sheetPrimary below. RUNWEB2-04: this was a copy that took a price
+   * the sheet and the server refuse. Since M3.49 an open sheet covers
+   * the page's main button, so sheetPrimary is not seen (review
+   * RUNWEB1-05).
    */
-  const purchaseFormState = useMemo(() => {
-    if (!purchaseDraft) return null;
-    let splitTotal = 0;
-    for (const v of purchaseDraft.splits.values()) splitTotal += Number(v) || 0;
-    const splitMatches = Math.abs(splitTotal - Number(purchaseDraft.actualQty || 0)) < 0.001;
-    const reasonOk = !purchaseDraft.isEdit || purchaseDraft.reason.trim().length > 0;
-    const splitPricesOk =
-      !purchaseDraft.perStorePricing ||
-      [...purchaseDraft.splits.entries()]
-        .filter(([, qty]) => Number(qty) > 0)
-        .every(
-          ([storeId]) =>
-            Number(purchaseDraft.splitPrices.get(storeId) || purchaseDraft.unitPrice) > 0,
-        );
-    const canSubmit = !!(
-      Number(purchaseDraft.actualQty) > 0 &&
-      Number(purchaseDraft.unitPrice) > 0 &&
-      splitMatches &&
-      reasonOk &&
-      splitPricesOk
-    );
-    return { splitTotal, splitMatches, reasonOk, canSubmit };
-  }, [purchaseDraft]);
+  const purchaseFormState = useMemo(
+    () => (purchaseDraft ? purchaseDraftCheck(purchaseDraft) : null),
+    [purchaseDraft],
+  );
 
   // ---- MainButton -----------------------------------------------------
   // The previous implementation showed a clickable MainButton even when
