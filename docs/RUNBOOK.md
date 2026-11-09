@@ -210,8 +210,15 @@ project rebuild` is not implemented; it only points here.)
 
 ### Add a new built-in permission
 1. Add to `packages/db/src/seed-data.ts` `PERMISSIONS`.
-2. Add to relevant role's permissions list.
-3. Run `pnpm db:seed` (idempotent — only inserts the missing rows).
+2. Add to relevant role's permissions list. New organisations get it from
+   `provisionOrganization`.
+3. Existing organisations: write a numbered migration that inserts the key
+   into `auth.permissions` and grants it to the built-in roles that should
+   hold it, `ON CONFLICT DO NOTHING`, never removing anything. Copy 0048 /
+   0054 / 0059. Deploys run `migrate`, not `seed`. Never run `pnpm db:seed`
+   on a server: it is the local-development seed and refuses to run in
+   production. It would write demo stores and products into a real tenant
+   and give back keys an admin had removed.
 4. Wire the check in the relevant tRPC router via `permissionProcedure('your.new.key')`.
 5. Update `docs/PERMISSION_MATRIX.md`.
 

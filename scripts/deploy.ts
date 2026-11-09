@@ -394,6 +394,8 @@ if (!ROLLBACK) {
     [
       'test',
       'packages/domain',
+      'packages/contracts',
+      'packages/db',
       'packages/i18n',
       'packages/ui',
       'apps/api',

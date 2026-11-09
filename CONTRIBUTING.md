@@ -73,6 +73,14 @@ Both are required. CI fails-closed on orphan SQL files (the bug that broke
 0009 in prod for a week). Drizzle migrator skips the SQL file silently
 if the journal entry is missing.
 
+No `BEGIN`, `COMMIT` or `ROLLBACK` in a migration: the runner applies each
+batch in one transaction, and a file's own `COMMIT` ends it early for every
+file after it (`migrate` refuses such a file; 23 early ones are
+grandfathered in `packages/db/src/migrationLint.ts`). The runner also sets
+the `maintenance` system context for its whole session, so a backfill
+under FORCE RLS sees every tenant without a `set_config` of its own. Do not
+set or clear `app.system_context` in a migration.
+
 Write the SQL by hand. Do not run `drizzle-kit generate` (`pnpm
 db:generate` now refuses): `meta/` only has the snapshot of 0000, and
 about two dozen CHECK constraints exist only in the SQL, so the
