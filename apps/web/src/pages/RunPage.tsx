@@ -88,13 +88,13 @@ import {
 import { isUnusualFirstPrice, isUnusualPrice } from './runs/lib/priceMath';
 import { mergeSplitsIntoExistingItem, mergeIntoPurchasedItem, runStoreIdsOf } from './runs/lib/runStores';
 import { buildStorePickList } from './runs/lib/storePickList';
+import { closedFor } from './runs/lib/draftClose';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { topUpRevision } from './runs/lib/topUp';
-import { closedFor } from './runs/lib/draftClose';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 import { moneyLine as moneyLineAmount } from '../lib/money';
