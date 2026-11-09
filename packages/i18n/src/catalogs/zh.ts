@@ -2574,7 +2574,7 @@ export const zh = {
   'attendance.enroll.phase.position': '把脸放进圆圈里',
   'attendance.enroll.phase.circle': '慢慢转动头部，画一个圈',
   'attendance.enroll.phase.final': '再看一次镜头',
-  'attendance.enroll.phase.sending': '正在检查照片……',
+  'attendance.enroll.phase.sending': '正在检查照片…',
   'attendance.enroll.phase.done': '人脸录入完成',
   'attendance.enroll.circleHint': '眼睛看着屏幕，转动头部，直到整个圆圈变绿。',
   'attendance.enroll.slowHint': '转慢一点，圈画大一点。',
