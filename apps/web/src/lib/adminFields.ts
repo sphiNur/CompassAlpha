@@ -4,19 +4,40 @@
  */
 
 /**
- * DX-ADM-4 (2026-11-01): a role's rank is a whole number from 1 to `max`
- * (one below the actor's own rank). The field used to clamp on every
- * keystroke: clearing it gave 1, typing 45 gave 99, and 12.7 got through
- * to a bare "something went wrong". The text is now kept as typed and
- * read here when the field loses focus and on save.
+ * DX-ADM-4 (2026-11-01): a role's rank is a whole number from `min`
+ * (1 unless the role's tier is locked, roleRankRange) to `max` (one below
+ * the actor's own rank). The field used to clamp on every keystroke:
+ * clearing it gave 1, typing 45 gave 99, and 12.7 got through to a bare
+ * "something went wrong". The text is now kept as typed and read here
+ * when the field loses focus and on save.
  */
 export type RankResult = { ok: true; rank: number } | { ok: false; max: number };
 
-export function readRank(text: string, max: number): RankResult {
+export function readRank(text: string, max: number, min = 1): RankResult {
   const t = text.trim();
   if (!/^\d{1,3}$/.test(t)) return { ok: false, max };
   const rank = Number(t);
-  return rank >= 1 && rank <= max ? { ok: true, rank } : { ok: false, max };
+  return rank >= min && rank <= max ? { ok: true, rank } : { ok: false, max };
+}
+
+/**
+ * ADM1-02 (2026-11-09): the levels a custom role may move to. A role
+ * somebody holds keeps its tier, because the tier decides where it is
+ * bound (from `adminRank` up for the whole workspace, below it per
+ * store); the server refuses the rest (rankTierChangeHasBindings).
+ * `locked` says the range was narrowed for that reason.
+ */
+export function roleRankRange(
+  current: number,
+  held: boolean,
+  actorRank: number,
+  adminRank: number,
+): { min: number; max: number; locked: boolean } {
+  const max = actorRank - 1;
+  if (!held) return { min: 1, max, locked: false };
+  return current >= adminRank
+    ? { min: adminRank, max, locked: true }
+    : { min: 1, max: Math.min(max, adminRank - 1), locked: max >= adminRank };
 }
 
 /**

@@ -43,15 +43,31 @@ const UNKNOWN = Number.POSITIVE_INFINITY;
 
 /**
  * Highest rank among the bindings that count in a scope: organisation-wide
- * (`storeId` null) every binding counts — getActorMaxRank; in a store,
- * global bindings and that store's — getActorMaxRankInStore. Infinity
- * when a counted binding has no rank (older server: undecidable).
+ * (`storeId` null) every binding counts — getActorMaxRank, how the person
+ * acted on is ranked; in a store, global bindings and that store's —
+ * getActorMaxRankInStore. Infinity when a counted binding has no rank
+ * (older server: undecidable).
  */
 export function rankIn(bindings: readonly Binding[], storeId: string | null): number {
+  return maxRank(
+    bindings,
+    (b) => storeId === null || b.scopeType === 'global' || b.scopeId === storeId,
+  );
+}
+
+/**
+ * The actor's weight in an organisation-level act: their global bindings
+ * alone — getActorMaxGlobalRank (ADM1-01). A store binding, even a legacy
+ * rank-100 one, gives no organisation-wide authority.
+ */
+export function orgRankOf(bindings: readonly Binding[]): number {
+  return maxRank(bindings, (b) => b.scopeType === 'global');
+}
+
+function maxRank(bindings: readonly Binding[], counts: (b: Binding) => boolean): number {
   let max = 0;
   for (const b of bindings) {
-    const counts = storeId === null || b.scopeType === 'global' || b.scopeId === storeId;
-    if (!counts) continue;
+    if (!counts(b)) continue;
     if (b.rank === undefined) return UNKNOWN;
     if (b.rank > max) max = b.rank;
   }
@@ -68,15 +84,22 @@ function administers(actor: Actor, storeId: string): boolean {
   return actor.adminStoreIds.includes(storeId);
 }
 
-/** revokeRole: not one's own admin roles; admin of the binding's store; outrank it there. */
+/**
+ * revokeRole: not one's own admin roles; a store binding by the store's
+ * admin who outranks it there, a global one by an organisation admin who
+ * outranks it organisation-wide (ADM1-17).
+ */
 export function canRevokeRole(actor: Actor, targetUserId: string, binding: Binding): boolean {
   if (targetUserId === actor.userId && (binding.slug === 'super_admin' || binding.slug === 'admin')) {
     return false;
   }
   const storeId = binding.scopeType === 'store' ? binding.scopeId : null;
-  if (storeId && !administers(actor, storeId)) return false;
+  if (storeId ? !administers(actor, storeId) : !actor.isOrgAdmin) return false;
   if (binding.rank === undefined) return true;
-  return outranks(rankIn(actor.bindings, storeId), binding.rank);
+  return outranks(
+    storeId ? rankIn(actor.bindings, storeId) : orgRankOf(actor.bindings),
+    binding.rank,
+  );
 }
 
 /**
@@ -92,7 +115,7 @@ export function canSetStatus(
 ): boolean {
   if (target.userId === actor.userId) return next !== 'suspended';
   if (actor.isOrgAdmin) {
-    return outranks(rankIn(actor.bindings, null), rankIn(target.bindings, null));
+    return outranks(orgRankOf(actor.bindings), rankIn(target.bindings, null));
   }
   if (target.storeIds.length === 0) return false;
   return target.storeIds.every(
@@ -113,7 +136,7 @@ export function canGrantRole(
 ): boolean {
   if (scope.type === 'global') {
     if (!actor.isOrgAdmin || role.rank < ADMIN_RANK) return false;
-    return outranks(rankIn(actor.bindings, null), role.rank);
+    return outranks(orgRankOf(actor.bindings), role.rank);
   }
   if (role.rank >= ADMIN_RANK || !administers(actor, scope.storeId)) return false;
   return outranks(rankIn(actor.bindings, scope.storeId), role.rank);
@@ -169,5 +192,6 @@ export function transferTargets<S extends { id: string }>(
  */
 export function canSetOverride(actor: Actor, target: TargetMember, storeId: string | null): boolean {
   if (storeId === null ? !actor.isOrgAdmin : !administers(actor, storeId)) return false;
-  return outranks(rankIn(actor.bindings, storeId), rankIn(target.bindings, storeId));
+  const actorRank = storeId === null ? orgRankOf(actor.bindings) : rankIn(actor.bindings, storeId);
+  return outranks(actorRank, rankIn(target.bindings, storeId));
 }

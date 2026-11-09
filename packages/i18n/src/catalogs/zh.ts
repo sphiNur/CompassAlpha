@@ -173,11 +173,13 @@ export const zh = {
   'people.newRoleHint': '自定义角色的等级可以是 1 到 {max} 之间的任意值。',
   'people.rolePlaceholderName': '班组长',
   'people.rolePlaceholderDesc': '可选',
-  'people.rankField': '等级（1–{max}）',
+  'people.rankField': '等级（{min}–{max}）',
   'people.slugRule': '小写英文字母、数字和连字符（-），例如 night-shift。',
   'people.slugInvalid': '只能用小写英文字母、数字和连字符（-），例如 night-shift。',
   'people.slugRequired': '必填。',
-  'people.rankInvalid': '填 1 到 {max} 之间的整数。',
+  'people.rankInvalid': '填 {min} 到 {max} 之间的整数。',
+  'people.rankTierLocked':
+    '已有成员持有这个角色，等级不能跨过 {rank}：{rank} 及以上作用于整个工作区，低于 {rank} 只作用于单个门店。',
   'people.roleHasKeysYouLack': '这个角色含你自己没有的权限，不能在这里授予。',
   'people.roleNameKeysYouLack': '{name}（含你没有的权限）',
   'people.rolesOfMember': '角色',
@@ -859,6 +861,8 @@ export const zh = {
   'admin.errors.userCreateFailed': '没能添加这个人，再试一次。',
   'admin.errors.cannotDeleteBuiltinRole': '内置角色不能删除，但可以改名称、说明和权限。',
   'admin.errors.roleHasBindings': '该角色仍有成员持有，请先撤销这些授予',
+  'admin.errors.rankTierChangeHasBindings':
+    '该角色仍有成员持有，等级不能跨过 {rank}。请先撤销这些授予，或新建一个角色。',
   'admin.errors.permissionNotFound': '没有这个权限。',
   'admin.errors.notAdminOfStore': '你不是该门店的管理员，无法在此门店执行此操作',
   'admin.errors.memberNotInSourceStore':
