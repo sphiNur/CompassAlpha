@@ -23,6 +23,12 @@ const { BUILTIN_ROLES } = (await import(
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 const KEY = 'order.approve';
 
+/**
+ * A Telegram id no other test file hands out: theirs stay below 10^12
+ * (a time-based id cut to 12 digits collided with one of them in CI).
+ */
+const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
+
 type Db = ReturnType<typeof getDb>;
 type Grant =
   | { role: 'manager' | 'staff'; store: 'A' | 'B' | null }
@@ -76,7 +82,7 @@ beforeAll(async () => {
     n += 1;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Notify ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Notify ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status }).returning();
     for (const g of grants) {

@@ -16,6 +16,12 @@ const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '
 
 type Db = ReturnType<typeof getDb>;
 
+/**
+ * A Telegram id no other test file hands out: theirs stay below 10^12
+ * (a time-based id cut to 12 digits collided with one of them in CI).
+ */
+const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
+
 /** An organisation with one member whose shift began 40 minutes ago. */
 async function lateShift(db: Db, timezone: string, now: Date) {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 100000)}`;
@@ -29,7 +35,7 @@ async function lateShift(db: Db, timezone: string, now: Date) {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Late', tgUserId: BigInt(suffix.slice(-12)) })
+    .values({ displayName: 'Late', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)
