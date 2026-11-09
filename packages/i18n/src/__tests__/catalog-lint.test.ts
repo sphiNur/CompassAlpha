@@ -677,6 +677,29 @@ function russianGenderShortcuts(cats: Catalogs): string[] {
 // ── 13. Words that must not mean two things ─────────────────────────────
 
 /**
+ * I18N2-01 (review, 2026-11-09): "void" is one word in each language, used
+ * by attendance and sales alike, and not the word for cancel or delete. A
+ * void keeps the record with its reason; the attendance hint says it is
+ * "never deleted". uz had «Bekor qilish» (cancel) in attendance and
+ * «Oʻchirish» (delete) in sales; ru had «Отмена» in the stock history.
+ */
+const VOID_WORD: Partial<Record<Lang, string>> = { ru: 'аннулир', uz: 'yaroqsiz', zh: '作废' };
+
+function voidIsOneWord(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    if (!/\bvoid/i.test(english)) continue;
+    for (const [lang, word] of Object.entries(VOID_WORD) as Array<[Lang, string]>) {
+      const text = cats[lang][key] ?? '';
+      if (!text.toLowerCase().includes(word)) {
+        found.push(`${lang} ${key}: "${text}" — say «${word}…»`);
+      }
+    }
+  }
+  return found;
+}
+
+/**
  * DX-COPY-1 (2026-11-01): uz «tiklash» is "restore". It was the label of
  * every reset and wipe button, so "delete today's data" read "restore
  * today". A key whose English says reset / wipe / clear may not use it.
@@ -702,6 +725,11 @@ function uzbekResetIsNotRestore(cats: Catalogs): string[] {
 const MUST_DIFFER: Array<[string, string, string]> = [
   ['sales.void.confirmBtn', 'common.cancel', 'void-sale sheet'],
   ['sales.action.void', 'common.cancel', 'sales row'],
+  // I18N2-01 (review, 2026-11-09): attendance came back with the same word
+  // as cancel, and sales had moved to the word for delete.
+  ['attendance.void.action', 'common.cancel', 'attendance review row'],
+  ['attendance.void.confirm', 'common.cancel', 'void-clock-in sheet'],
+  ['sales.action.void', 'common.delete', 'sales row'],
   ['run.action.undoPurchase', 'common.cancel', 'undo-purchase sheet'],
   ['approval.undo', 'common.cancel', 'approval undo toast'],
   ['approval.unapprove', 'common.cancel', 'reverse-approval sheet'],
@@ -742,6 +770,7 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['no mojibake and no ISO dates in copy', mojibakeAndIsoDates],
   ['ru: no «(а)» gender shortcuts', russianGenderShortcuts],
   ['uz: a reset is not «tiklash» (restore)', uzbekResetIsNotRestore],
+  ['void is one word per language, not cancel or delete', voidIsOneWord],
   ['actions on the same screen read differently', distinctActions],
 ];
 
