@@ -32,7 +32,18 @@ type Row = {
 
 const asDate = (v: Date | string) => (v instanceof Date ? v : new Date(v));
 
-export async function scanAttendanceReminders(db: DB, now: Date = new Date()): Promise<number> {
+export async function scanAttendanceReminders(
+  db: DB,
+  now: Date = new Date(),
+  options: {
+    /**
+     * COREAPI-13 (2026-11-09): a shift whose reminder fails is reported
+     * here and the scan goes on; one bad row used to end the scan for
+     * every organisation.
+     */
+    onShiftError?: (shiftId: string, err: unknown) => void;
+  } = {},
+): Promise<number> {
   // Raw queries take the instant as text (postgres-js rejects a Date here).
   const nowIso = now.toISOString();
   const rows = await inSystem(db, 'worker', (tx) =>
@@ -64,51 +75,62 @@ export async function scanAttendanceReminders(db: DB, now: Date = new Date()): P
   );
   let sent = 0;
   for (const r of rows as unknown as Row[]) {
-    const startsAt = asDate(r.starts_at);
-    const endsAt = asDate(r.ends_at);
-    const due = rules.dueReminders({
-      startsAt,
-      endsAt,
-      graceMinutes: Number(r.grace_minutes),
-      lastKind: r.last_kind,
-      now,
-    });
-    if (due.length === 0) continue;
-    const tz = storeTimeZone(r.store_tz, r.org_tz);
-    const vars = {
-      store: r.store_name,
-      name: r.member_name,
-      start: rules.localTime(startsAt, tz),
-      end: rules.localTime(endsAt, tz),
-    };
-    await inSystem(db, 'worker', async (tx) => {
-      for (const action of due) {
-        if (action === 'remindIn' || action === 'remindOut') {
-          await dispatch(tx, r.org_id, [r.user_id], {
-            template: `attendance.${action}`,
-            title: action === 'remindIn' ? 'Time to clock in' : 'Did you clock out?',
-            vars,
-            deepLink: linkForStore('/attendance', r.store_id),
-            dedupKey: `attendance:${r.shift_id}:${action}`,
-          });
-        } else {
-          const managers = await findRecipientsByPermissionInStore(
-            tx,
-            r.org_id,
-            'attendance.manage',
-            r.store_id,
-          );
-          await dispatch(tx, r.org_id, managers, {
-            template: 'attendance.absent',
-            title: 'Not clocked in',
-            vars,
-            deepLink: linkForStore('/admin', r.store_id),
-            dedupKey: `attendance:${r.shift_id}:absent`,
-          });
-        }
-        sent++;
-      }
-    });
+    try {
+      sent += await remindShift(db, r, now);
+    } catch (err) {
+      options.onShiftError?.(r.shift_id, err);
+    }
   }
   return sent;
+}
+
+/** Send one shift's due reminders; returns how many went out. */
+async function remindShift(db: DB, r: Row, now: Date): Promise<number> {
+  const startsAt = asDate(r.starts_at);
+  const endsAt = asDate(r.ends_at);
+  const due = rules.dueReminders({
+    startsAt,
+    endsAt,
+    graceMinutes: Number(r.grace_minutes),
+    lastKind: r.last_kind,
+    now,
+  });
+  if (due.length === 0) return 0;
+  const tz = storeTimeZone(r.store_tz, r.org_tz);
+  const vars = {
+    store: r.store_name,
+    name: r.member_name,
+    start: rules.localTime(startsAt, tz),
+    end: rules.localTime(endsAt, tz),
+  };
+  return inSystem(db, 'worker', async (tx) => {
+    let sent = 0;
+    for (const action of due) {
+      if (action === 'remindIn' || action === 'remindOut') {
+        await dispatch(tx, r.org_id, [r.user_id], {
+          template: `attendance.${action}`,
+          title: action === 'remindIn' ? 'Time to clock in' : 'Did you clock out?',
+          vars,
+          deepLink: linkForStore('/attendance', r.store_id),
+          dedupKey: `attendance:${r.shift_id}:${action}`,
+        });
+      } else {
+        const managers = await findRecipientsByPermissionInStore(
+          tx,
+          r.org_id,
+          'attendance.manage',
+          r.store_id,
+        );
+        await dispatch(tx, r.org_id, managers, {
+          template: 'attendance.absent',
+          title: 'Not clocked in',
+          vars,
+          deepLink: linkForStore('/admin', r.store_id),
+          dedupKey: `attendance:${r.shift_id}:absent`,
+        });
+      }
+      sent++;
+    }
+    return sent;
+  });
 }

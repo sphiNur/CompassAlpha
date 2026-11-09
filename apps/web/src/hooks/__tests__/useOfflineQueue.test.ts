@@ -142,9 +142,10 @@ describe('isOwnEntry', () => {
 });
 
 describe('countsTowardGiveUp', () => {
-  it('does not blame the entry for a lost request or a lapsed session', () => {
+  it('does not blame the entry for a lost request, a lapsed session or a server that is down', () => {
     expect(countsTowardGiveUp(undefined)).toBe(false);
     expect(countsTowardGiveUp('UNAUTHORIZED')).toBe(false);
+    expect(countsTowardGiveUp('SERVICE_UNAVAILABLE')).toBe(false);
   });
 
   it('counts failures the server actually returned', () => {

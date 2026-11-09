@@ -1,7 +1,7 @@
 import type { Context as HonoContext } from 'hono';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext, type OrgTransactionOptions } from '@compass/db';
-import { verifyAccess } from '../infra/jwt';
+import { verifyAccess, type AccessClaims } from '../infra/jwt';
 import { logger } from '../infra/log';
 import { env } from '../env';
 import { ulid } from 'ulid';
@@ -59,11 +59,57 @@ export interface RequestContext {
   idempotencyKey: string | null;
   /** Resolved when request carried a valid Bearer token. */
   session: SessionContext | null;
+  /**
+   * COREAPI-15 (2026-11-09): the token was valid but the session could not
+   * be read (the database failed). Signed-in procedures then answer
+   * SERVICE_UNAVAILABLE instead of UNAUTHORIZED, which sent the app off to
+   * refresh its token over a database problem.
+   */
+  sessionUnavailable?: boolean;
   /** Run a callback inside a tx with RLS org context bound. */
   withOrg<T>(
     fn: (tx: ReturnType<typeof getDb>) => Promise<T>,
     options?: OrgTransactionOptions,
   ): Promise<T>;
+}
+
+/**
+ * The session a Bearer token stands for.
+ *
+ * COREAPI-15 (2026-11-09): a bad token makes the request anonymous; a
+ * good token whose session cannot be read (the database failed) is
+ * `unavailable`, not anonymous. The two used to share one catch, so a
+ * database hiccup answered signed-in users UNAUTHORIZED, the app went to
+ * refresh its token (failing the same way), and the log blamed the JWT.
+ * The socket upgrade already answers that case 503 (realtime/socket.ts).
+ */
+export async function sessionFromToken(
+  token: string,
+  deps: {
+    verifyAccess: (token: string) => Promise<AccessClaims>;
+    loadSession: (
+      userId: string,
+      orgId: string,
+      memberId: string,
+    ) => Promise<SessionContext | null>;
+    log: Pick<typeof logger, 'warn' | 'error'>;
+  },
+): Promise<{ session: SessionContext | null; unavailable: boolean }> {
+  let claims: AccessClaims;
+  try {
+    claims = await deps.verifyAccess(token);
+  } catch (err) {
+    deps.log.warn({ err: (err as Error).message }, 'invalid jwt; treating as anonymous');
+    return { session: null, unavailable: false };
+  }
+  try {
+    const session = await deps.loadSession(claims.sub, claims.org, claims.mid);
+    if (session && typeof claims.fam === 'string') session.refreshFamily = claims.fam;
+    return { session, unavailable: false };
+  } catch (err) {
+    deps.log.error({ err }, 'session lookup failed');
+    return { session: null, unavailable: true };
+  }
 }
 
 export async function createContext(_opts: unknown, c: HonoContext): Promise<RequestContext> {
@@ -81,17 +127,13 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
   const idempotencyKey = rawIdem && rawIdem.trim().length > 0 ? rawIdem.trim().slice(0, 128) : null;
   const auth = c.req.header('authorization');
 
-  let session: SessionContext | null = null;
-  if (auth?.startsWith('Bearer ')) {
-    const token = auth.slice(7);
-    try {
-      const claims = await verifyAccess(token);
-      session = await loadSession(db, claims.sub, claims.org, claims.mid);
-      if (session && typeof claims.fam === 'string') session.refreshFamily = claims.fam;
-    } catch (err) {
-      logger.warn({ err: (err as Error).message, traceId }, 'invalid jwt; treating as anonymous');
-    }
-  }
+  const { session, unavailable: sessionUnavailable } = auth?.startsWith('Bearer ')
+    ? await sessionFromToken(auth.slice(7), {
+        verifyAccess,
+        loadSession: (userId, orgId, memberId) => loadSession(db, userId, orgId, memberId),
+        log: logger.child({ traceId }),
+      })
+    : { session: null, unavailable: false };
 
   return {
     hono: c,
@@ -104,6 +146,7 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
     userAgent,
     idempotencyKey,
     session,
+    sessionUnavailable,
     async withOrg(fn, options) {
       if (!session) throw new Error('withOrg requires authenticated session');
       return withOrgContext(db, session.orgId, fn, options);

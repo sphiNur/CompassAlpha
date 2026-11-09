@@ -7,7 +7,7 @@
  * plugs the real `verifyAccess` and `loadSession` in.
  */
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
-import { hub, WS_CLOSE_MEMBERSHIP_ENDED } from './hub';
+import { hub, WS_CLOSE_GOING_AWAY, WS_CLOSE_MEMBERSHIP_ENDED } from './hub';
 import { checkClientRate } from '../services/rateLimit';
 
 export interface WSData {
@@ -169,8 +169,7 @@ export function createWebSocketHandler(log: {
       ws.data.unsub = hub.subscribe(
         ws.data.orgId,
         (data) => ws.send(data),
-        (code) =>
-          ws.close(code, code === WS_CLOSE_MEMBERSHIP_ENDED ? 'membership ended' : 'evicted'),
+        (code) => ws.close(code, closeReason(code)),
         ws.data.memberId,
       );
       // CA-35/F-08: the socket lives no longer than the token it was
@@ -222,4 +221,11 @@ export function createWebSocketHandler(log: {
       );
     },
   };
+}
+
+/** The reason sent with a close the hub asks for. */
+function closeReason(code: number): string {
+  if (code === WS_CLOSE_MEMBERSHIP_ENDED) return 'membership ended';
+  if (code === WS_CLOSE_GOING_AWAY) return 'server restarting';
+  return 'evicted';
 }

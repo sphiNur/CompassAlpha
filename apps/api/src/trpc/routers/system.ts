@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { inSystem, schema as s } from '@compass/db';
 import { RecentLogsInputSchema } from '@compass/contracts';
+import { CLIENT_LOG_BATCH_MAX } from '@compass/contracts/limits';
 import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
 import { checkClientRate } from '../../services/rateLimit';
@@ -35,7 +36,7 @@ const LOG_LIMIT = { window: 60_000, max: 60 } as const;
  * still gets ingested instead of 400-looping into oblivion.
  */
 const LooseLogBatchSchema = z.object({
-  events: z.array(z.record(z.unknown())).max(200),
+  events: z.array(z.record(z.unknown())).max(CLIENT_LOG_BATCH_MAX),
 });
 
 const ALLOWED_LEVELS = new Set(['debug', 'info', 'warn', 'error']);

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, onlineManager, useQueryClient } from '@tanstack/react-query';
 import { ThemeProvider, ToastProvider } from '@compass/ui';
 import { initLogger, getLogger } from '@compass/telemetry';
+import { CLIENT_LOG_BATCH_MAX, CLIENT_LOG_BATCH_MAX_BYTES } from '@compass/contracts/limits';
 import { trpc, buildTrpcClient, sendClientLogs } from '../lib/trpc';
 import { reportLastReload } from '../lib/reload';
 import {
@@ -31,7 +32,11 @@ const isBrowser = typeof window !== 'undefined';
 interface CompassWindow extends Window { __compassLoggerBooted?: boolean }
 const compassWindow = isBrowser ? (window as CompassWindow) : null;
 if (compassWindow && !compassWindow.__compassLoggerBooted) {
-  const logger = initLogger({ appVersion: import.meta.env.VITE_BUILD_SHA ?? 'dev' });
+  const logger = initLogger({
+    appVersion: import.meta.env.VITE_BUILD_SHA ?? 'dev',
+    maxBatchEvents: CLIENT_LOG_BATCH_MAX,
+    maxBatchBytes: CLIENT_LOG_BATCH_MAX_BYTES,
+  });
   compassWindow.__compassLoggerBooted = true;
   // Without a transport every event stayed in the browser: client errors
   // never reached system.log and the debug page's server tab was empty.

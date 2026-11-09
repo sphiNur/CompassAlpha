@@ -83,6 +83,13 @@ export const WS_CLOSE_EVICTED = 4000;
  */
 export const WS_CLOSE_MEMBERSHIP_ENDED = 4003;
 
+/**
+ * Close code for every socket when the API shuts down (COREAPI-14,
+ * 2026-11-09): the standard "going away". Clients reconnect as after any
+ * close; on a deploy they reach the new process.
+ */
+export const WS_CLOSE_GOING_AWAY = 1001;
+
 class Hub {
   private readonly subs = new Map<string, Set<Send>>();
   private readonly closers = new WeakMap<Send, Close>();
@@ -154,6 +161,30 @@ class Hub {
       }
     }
     if (set.size === 0) this.subs.delete(orgId);
+  }
+
+  /**
+   * Close every socket now (COREAPI-14): the API is shutting down, and
+   * Bun's graceful stop waits for open sockets as well as requests.
+   * Returns how many were closed.
+   */
+  closeAll(code: number): number {
+    let closed = 0;
+    for (const set of this.subs.values()) {
+      for (const send of set) {
+        const close = this.closers.get(send);
+        this.closers.delete(send);
+        this.members.delete(send);
+        try {
+          close?.(code);
+          closed++;
+        } catch {
+          /* already closed */
+        }
+      }
+    }
+    this.subs.clear();
+    return closed;
   }
 
   /** Send to the org's sockets once the current transaction commits. */

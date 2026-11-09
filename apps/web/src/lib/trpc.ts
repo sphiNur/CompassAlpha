@@ -1,7 +1,7 @@
 import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
-import { getLogger, type LogEvent } from '@compass/telemetry';
+import { BatchRefused, getLogger, type LogEvent } from '@compass/telemetry';
 import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -27,7 +27,12 @@ export async function sendClientLogs(events: LogEvent[]): Promise<void> {
     keepalive: true,
   });
   // The endpoint is public and treats a stale token as anonymous, so a
-  // non-2xx is about the batch or the server; throwing re-queues it.
+  // non-2xx is about the batch or the server. COREAPI-04: a batch the
+  // server refused is dropped (sending it again gets the same answer);
+  // anything else, a 429 included, is queued again.
+  if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+    throw new BatchRefused(res.status);
+  }
   if (!res.ok) throw new Error(`system.log answered ${res.status}`);
 }
 
