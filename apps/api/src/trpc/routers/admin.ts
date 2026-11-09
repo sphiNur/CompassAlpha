@@ -28,6 +28,7 @@ import {
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
+import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import {
   ORG_WIDE_PERMISSION_KEYS,
@@ -46,7 +47,6 @@ import {
   type CatalogSnapshot,
 } from '../../services/catalogCopy';
 import { inviterStillAuthorized } from './auth';
-import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { logger } from '../../infra/log';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
