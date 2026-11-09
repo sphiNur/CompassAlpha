@@ -282,19 +282,11 @@ export function createApp() {
       createContext: createContext as unknown as Parameters<typeof trpcServer>[0]['createContext'],
       // The client only gets a generic key for these (trpc.ts
       // errorFormatter), so this log is the one place the cause is kept.
+      // Refusals (attendance's included, 2026-11-07) are logged by the
+      // procedures' own middleware (trpc.ts logFailedCall).
       onError({ error, path, type }) {
         if (error.code === 'INTERNAL_SERVER_ERROR') {
           logger.error({ err: error.cause ?? error, path, type }, 'trpc internal error');
-        } else if (path?.startsWith('attendance.') && type === 'mutation') {
-          // Attendance refusals (2026-11-07): an enrollment or punch that
-          // failed left nothing in the journal, so "it fails" could not be
-          // traced. The key and its context only (which photo, why); no
-          // photos, names or locations.
-          const cause = error.cause as { context?: unknown } | undefined;
-          logger.info(
-            { path, code: error.code, key: error.message, context: cause?.context },
-            'attendance refused',
-          );
         }
       },
     }),

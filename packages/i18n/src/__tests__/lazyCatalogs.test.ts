@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureCatalog, isLoaded, loadCatalog, lookup } from '../index';
-import type { CatalogKey } from '../index';
+import type { CatalogKey, Locale } from '../index';
 
 describe('catalog registry', () => {
   test('imports no catalog statically (each locale is its own chunk)', () => {
@@ -29,5 +29,12 @@ describe('catalog registry', () => {
     // A key every catalog has reads in the requested language, not English.
     await loadCatalog('zh');
     expect(lookup('common.retry' as CatalogKey, 'zh')).not.toBe('Retry');
+  });
+
+  test('a name that is no locale gets English without being filed as loaded (COREWEB2-10)', async () => {
+    const raw = 'zh-hans' as Locale;
+    const catalog = await loadCatalog(raw);
+    expect(catalog['common.retry']).toBe('Retry');
+    expect(isLoaded(raw)).toBe(false);
   });
 });

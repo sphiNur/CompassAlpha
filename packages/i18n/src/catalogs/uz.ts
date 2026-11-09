@@ -1315,8 +1315,8 @@ export const uz = {
   'run.action.ejectSession': 'Xariddan chiqarish',
   'run.section.sessions': 'Ushbu xariddagi buyurtmalar',
   'run.sessions.meta': '{n} ta buyurtma',
-  'run.sessions.stats': '{items} ta mahsulot · {qty} birlik · boshqa {extras}',
-  'run.sessions.statsNoExtras': '{items} ta mahsulot · {qty} birlik',
+  'run.sessions.stats': '{items} ta mahsulot · boshqa {extras}',
+  'run.sessions.statsNoExtras': '{items} ta mahsulot',
   'run.sessions.unknownSubmitter': 'Nomaʼlum yuboruvchi',
   'run.eject.reasonPlaceholder': 'Sabab (ixtiyoriy)',
   'run.confirm.ejectSession.title': '{store} / {who} buyurtmasini xariddan chiqarasizmi?',
@@ -2708,7 +2708,9 @@ export const uz = {
     'Bu doʻkonda belgilash uchun jonli yuz tekshiruvi kerak. Ilovani yangilab, qayta urinib koʻring.',
   'attendance.errors.livenessExpired': 'Yuz tekshiruvi juda uzoq davom etdi. Qaytadan boshlang.',
   'attendance.errors.livenessFailed':
-    'Jonli tekshiruvdan oʻtilmadi. Yaxshi yorugʻlikda kameraga qarang va koʻrsatma boʻyicha boshingizni buring.',
+    'Jonli tekshiruvdan oʻtilmadi: ekran soʻragan har bir harakatni bajaring.',
+  'attendance.errors.livenessOtherFace':
+    'Harakatlar yuzingizga mos kelmadi: kadrda faqat oʻz yuzingiz qolsin.',
   'attendance.errors.borrowNoFace': 'Bu hamkasb hali yuzini roʻyxatdan oʻtkazmagan.',
   'attendance.errors.borrowFaceMismatch': 'Yuz bu hamkasbniki bilan mos emas.',
   'attendance.errors.notColleague':

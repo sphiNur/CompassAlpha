@@ -14,8 +14,10 @@ export function startLocale(): Locale {
   } catch {
     /* storage blocked */
   }
-  return bootLocale(
-    storage,
-    window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language,
-  );
+  return bootLocale(storage, platformLanguage());
+}
+
+/** Telegram's language for this person, or the browser's outside Telegram. */
+export function platformLanguage(): string {
+  return window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language;
 }

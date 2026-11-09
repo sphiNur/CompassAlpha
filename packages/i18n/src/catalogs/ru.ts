@@ -1320,9 +1320,9 @@ export const ru = {
   'run.sessions.meta':
     '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
   'run.sessions.stats':
-    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед. · прочее {extras}',
+    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · прочее {extras}',
   'run.sessions.statsNoExtras':
-    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед.',
+    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
   'run.sessions.unknownSubmitter': 'Неизвестный отправитель',
   'run.eject.reasonPlaceholder': 'Причина (необязательно)',
   'run.confirm.ejectSession.title': 'Убрать заказ {store} / {who} из закупки?',
@@ -2722,7 +2722,9 @@ export const ru = {
   'attendance.errors.livenessExpired':
     'Проверка лица заняла слишком много времени. Начните заново.',
   'attendance.errors.livenessFailed':
-    'Проверка живого лица не пройдена. Смотрите в камеру при хорошем свете и поворачивайте голову по подсказке.',
+    'Проверка живого лица не пройдена: выполните каждое движение, о котором просит экран.',
+  'attendance.errors.livenessOtherFace':
+    'Движения не удалось сопоставить с вашим лицом: оставьте в кадре только своё лицо.',
   'attendance.errors.borrowNoFace': 'Этот коллега ещё не зарегистрировал лицо.',
   'attendance.errors.borrowFaceMismatch': 'Лицо не совпадает с этим коллегой.',
   'attendance.errors.notColleague':

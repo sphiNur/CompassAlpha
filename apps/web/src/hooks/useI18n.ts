@@ -1,13 +1,8 @@
 import { createElement, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import {
-  createI18n,
-  detectLocale,
-  ensureCatalog,
-  isLoaded,
-  type Locale,
-} from '@compass/i18n';
-import { startLocale } from '../lib/startLocale';
+import { createI18n, ensureCatalog, isLoaded, type Locale } from '@compass/i18n';
+import { platformLanguage, startLocale } from '../lib/startLocale';
+import { accountLocale } from '../lib/bootLocale';
 import { ALL_LOCALES, shownLocaleFor } from '../lib/shownLocale';
 import { useAuthStore } from '../stores/authStore';
 import { makeDateFormatters } from '../lib/dateFormat';
@@ -70,10 +65,9 @@ function useEnsureLocale(locale: Locale): void {
 
 export function useI18n() {
   const locale = useAuthStore((s) => s.session?.user.locale ?? null);
-  // M3.18: window.Telegram is globally typed via src/types/telegram.d.ts.
-  const fallback =
-    window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language;
-  const resolved: Locale = (locale as Locale | null) ?? detectLocale(fallback);
+  // Read as the first screen was (bootLocale): a session from before the
+  // server kept only the four still carries Telegram's raw code.
+  const resolved = accountLocale(locale, platformLanguage());
   useEnsureLocale(resolved);
   // boot-guard.js sets <html lang> from the Telegram / browser language;
   // the account's own locale wins once it is known. Screen readers use it,

@@ -54,7 +54,14 @@ export function isLoaded(locale: Locale): boolean {
   return loaded.has(locale);
 }
 
+const LOCALES: readonly string[] = ['en', 'zh', 'ru', 'uz'] satisfies Locale[];
+
 export async function loadCatalog(locale: Locale): Promise<CatalogModule> {
+  // COREWEB2-10 (2026-11-09): a name that is not one of the four (a raw
+  // Telegram code such as 'zh-hans' cast to Locale) gets English, without
+  // English being filed under that name, where isLoaded() took it for the
+  // language itself.
+  if (!LOCALES.includes(locale)) return loadCatalog('en');
   const existing = loaded.get(locale);
   if (existing) return existing;
   const pending = inFlight.get(locale);
@@ -72,8 +79,6 @@ export async function loadCatalog(locale: Locale): Promise<CatalogModule> {
         return (await import('./ru')).ru as CatalogModule;
       case 'uz':
         return (await import('./uz')).uz as CatalogModule;
-      default:
-        return (await import('./en')).en as CatalogModule;
     }
   })();
   inFlight.set(locale, promise);
