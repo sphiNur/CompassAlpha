@@ -128,6 +128,11 @@ look (colors, nav, flows); they only stop each page from inventing its own.
 Section headings are `SectionLabel` (13 px semibold, muted, sentence case);
 form labels are `FieldLabel`. Nothing is styled `uppercase`: it means nothing in
 Chinese, reads badly in Russian/Uzbek, and every copy drifted in size.
+A field with one input is a `Field`: its title labels that input. A titled set
+of controls (checkboxes, a segmented choice, a switch with its own label) is a
+`FieldGroup`. A label around several controls hands a tap on its title to the
+first of them (2026-11-09, review UI-01: tapping "Assigned stores" assigned the
+member to the first store).
 **Enforcement:** CI "Typography guard" fails on any `uppercase` class.
 
 #### UI-12 — One page frame

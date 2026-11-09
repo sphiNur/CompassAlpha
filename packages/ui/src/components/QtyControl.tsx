@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useUiLabels } from '../labels';
 import { cn } from '../cn';
-import { Sheet, SheetFooter } from './Sheet';
+import { Sheet } from './Sheet';
 import { Button } from './Button';
-import { QTY_DECIMALS, readQtyDraft } from '../qtyDraft';
+import { QTY_DECIMALS, isMultipleOfStep, readQtyDraft } from '../qtyDraft';
 import { NumberInput } from './NumberInput';
 
 interface QtyControlProps {
@@ -441,18 +441,18 @@ function QtyQuickPickSheet({
       returnFocusRef={returnFocusRef}
       title={title ?? labels.setQuantity}
       description={unit ? labels.unitIs(unit) : undefined}
+      // UI-04 (2026-11-09): Sheet puts `footer` in a SheetFooter itself; a
+      // second one drew two dividers and narrowed the button (UI-7).
       footer={
-        <SheetFooter>
-          <Button
-            block
-            disabled={!draftDiffers}
-            onClick={() => {
-              if (sanitizedDraft !== null) onPick(sanitizedDraft);
-            }}
-          >
-            {setLabel}
-          </Button>
-        </SheetFooter>
+        <Button
+          block
+          disabled={!draftDiffers}
+          onClick={() => {
+            if (sanitizedDraft !== null) onPick(sanitizedDraft);
+          }}
+        >
+          {setLabel}
+        </Button>
       }
     >
       <div className="flex flex-col gap-3 py-3">
@@ -462,7 +462,7 @@ function QtyQuickPickSheet({
             the bottom of "0.5 kg" taps "2 kg" on the next row. */}
         <div className="flex flex-wrap gap-x-2 gap-y-[18px]">
           {presets
-            .filter((p) => p >= min && p <= max)
+            .filter((p) => p >= min && p <= max && isMultipleOfStep(p, step))
             .map((p) => {
               const selected = p === current;
               return (
@@ -524,8 +524,14 @@ function QtyQuickPickSheet({
  * restaurant procurement quantities — small steps get small ladders
  * (you don't order 100 kg of saffron at 0.01 kg step), big steps get
  * round commodity numbers (1, 2, 5, 10, 20, 50, 100 pcs).
+ *
+ * UI-03 (2026-11-09): every preset is a multiple of the step. A product
+ * sold in packs of 50 was offered 1, 2, 5, 10 and 20, which the server
+ * refuses: the line jumped, then an error, then it jumped back. Exported
+ * for tests.
  */
-function defaultPresets(step: number): number[] {
+export function defaultPresets(step: number): number[] {
+  if (step > 1) return [1, 2, 3, 5, 10].map((k) => k * step);
   if (step >= 1) return [1, 2, 5, 10, 20, 50, 100];
   if (step >= 0.5) return [0.5, 1, 2, 5, 10, 20, 50];
   if (step >= 0.1) return [0.1, 0.5, 1, 2, 5, 10, 20];

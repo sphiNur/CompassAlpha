@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { surfaceClass } from './Card';
 import { IconChevronRight } from './NavIcon';
@@ -223,6 +223,29 @@ export function Field({ label, hint, children, className }: FieldProps) {
 }
 
 /**
+ * A titled set of controls (checkboxes, a segmented choice, a switch
+ * with its own label), drawn like Field.
+ *
+ * UI-01 (2026-11-09): Field wraps its content in a `<label>`, which hands
+ * a click on the title, or on the gaps of a list, to the first control
+ * inside. Tapping "Assigned stores" ticked the first store and assigned
+ * the member there. A label may not hold another label either. A group is
+ * titled, not labelled: use Field for one input, FieldGroup for several.
+ */
+export function FieldGroup({ label, hint, children, className }: FieldProps) {
+  const titleId = useId();
+  return (
+    <div role="group" aria-labelledby={titleId} className={cn('block', className)}>
+      <FieldLabel id={titleId}>{label}</FieldLabel>
+      <div className="mt-1">{children}</div>
+      {hint ? (
+        <span className="mt-1 block text-old-label text-[var(--c-fg-muted)]">{hint}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Field label — the one definition of a form-field label (sentence
  * case, `text-old-label font-semibold text-fg-muted`). Field uses it; call
  * sites that re-inlined the same span (e.g. ConfirmSheet's reason
@@ -230,9 +253,20 @@ export function Field({ label, hint, children, className }: FieldProps) {
  * place. Deliberately sentence-case: uppercase eyebrows are
  * `SectionLabel`, a different role.
  */
-export function FieldLabel({ className, children }: { className?: string; children: ReactNode }) {
+export function FieldLabel({
+  className,
+  children,
+  id,
+}: {
+  className?: string;
+  children: ReactNode;
+  id?: string;
+}) {
   return (
-    <span className={cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className)}>
+    <span
+      id={id}
+      className={cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className)}
+    >
       {children}
     </span>
   );
