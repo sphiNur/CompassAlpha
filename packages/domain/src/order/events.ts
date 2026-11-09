@@ -8,9 +8,11 @@
  * can attribute authorship and the command layer can enforce
  * "edit only what you authored" by default.
  *
- * Event payload shape is part of the public contract; bumping it requires a
- * new event TYPE (e.g. `ItemAdjusted` → `ItemAdjustedV2`) with a parallel
- * projector branch. Never mutate an existing event's payload schema.
+ * Event payload shape is part of the public contract (docs/EVENT_CATALOG.md):
+ * written events are never rewritten. A payload may gain an optional field
+ * or an enum value that every reader tolerates when absent or unknown;
+ * changing a field's meaning or requiring it needs a new event TYPE (e.g.
+ * `ItemAdjusted` → `ItemAdjustedV2`) with a parallel projector branch.
  */
 
 export type OrderEventType =
@@ -215,7 +217,11 @@ export type AttachedToRunEvent = BaseEvent & {
 
 export type EjectedFromRunEvent = BaseEvent & {
   type: 'EjectedFromRun';
-  payload: { runId: string; byMemberId: string; reason?: string | undefined };
+  /** The `null` form (2026-10-21, CA-45) is the worker's repair of a
+   *  session left in_run on a cancelled run: no human actor. */
+  payload:
+    | { runId: string; byMemberId: string; reason?: string | undefined }
+    | { runId: string; byMemberId: null; reason: 'repair' };
 };
 
 export type ArchivedEvent = BaseEvent & {

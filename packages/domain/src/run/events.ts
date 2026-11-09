@@ -1,6 +1,7 @@
 /**
- * Market run event catalog. Same patterns as order: append-only, payload
- * schema is contract — bump TYPE on breaking change.
+ * Market run event catalog. Same contract as order (docs/EVENT_CATALOG.md):
+ * append-only; optional fields only, each with its meaning when absent;
+ * a new TYPE for anything else.
  */
 
 interface BaseEvent {
