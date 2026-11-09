@@ -1,4 +1,5 @@
 import { cn } from '../cn';
+import { disabledClass } from './disabled';
 
 /**
  * The one visual definition of a pill-shaped toggle button, shared by
@@ -16,6 +17,7 @@ export function pillButtonClass(selected?: boolean): string {
     // ChipBar / TabList rows pad 6 px above and below, which is exactly
     // what the tap area needs inside their horizontal scroller.
     'press hit-44 inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-3 text-old-label font-medium',
+    disabledClass,
     selected
       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
       : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline',

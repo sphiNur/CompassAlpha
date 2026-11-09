@@ -1,5 +1,6 @@
 import { forwardRef, type SelectHTMLAttributes } from 'react';
 import { cn } from '../cn';
+import { disabledClass } from './disabled';
 
 /**
  * Select — native dropdown with Concord styling.
@@ -47,7 +48,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           'outline-none ring-field',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
           'focus-visible:ring-offset-[var(--c-bg)]',
-          'disabled:opacity-60',
+          disabledClass,
           invalid && 'ring-2 ring-[var(--c-danger)]',
           className,
         )}

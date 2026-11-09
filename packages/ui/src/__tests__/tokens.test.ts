@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { disabledClass, disabledLook } from '../components/disabled';
 
 /**
  * V3 / V7 / V8 / V9 (2026-10-30): the colour tokens are checked by
@@ -481,5 +482,41 @@ describe('UI-10: checkbox and switch show their edge and state', () => {
     const src = read('Switch.tsx');
     expect(src).toMatch(/h-4 w-4 rounded-full bg-\[var\(--c-field-border\)\]/);
     expect(src).toContain('peer-checked:[&>span]:bg-[var(--c-action-fg)]');
+  });
+});
+
+describe('UI-11: one disabled look', () => {
+  const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
+
+  test('the kit controls take the shared disabled classes, not their own opacity', () => {
+    for (const name of [
+      'Input.tsx',
+      'NumberInput.tsx',
+      'Textarea.tsx',
+      'Select.tsx',
+      'Button.tsx',
+      'pill.ts',
+    ]) {
+      const src = read(name);
+      expect({
+        name,
+        shared: src.includes('disabledClass'),
+        own: /disabled:opacity-|disabled \? 'opacity-/.test(src),
+      }).toEqual({ name, shared: true, own: false });
+    }
+    // A labelled checkbox or switch dims once, on the label; the bare box
+    // or track dims itself.
+    for (const name of ['Checkbox.tsx', 'Switch.tsx']) {
+      const src = read(name);
+      expect({
+        name,
+        label: src.includes('disabled && disabledLook'),
+        bare: src.includes("label === undefined && 'peer-disabled:opacity-50'"),
+      }).toEqual({ name, label: true, bare: true });
+    }
+  });
+
+  test('the element and the wrapper look are the same', () => {
+    expect(disabledClass.replace(/disabled:/g, '')).toBe(disabledLook);
   });
 });

@@ -1,5 +1,6 @@
 import { forwardRef, type TextareaHTMLAttributes } from 'react';
 import { cn } from '../cn';
+import { disabledClass } from './disabled';
 
 /**
  * Textarea — multi-line text input. Sibling of `Input` for inputs
@@ -41,7 +42,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         'outline-none ring-field',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
-        'disabled:opacity-60',
+        disabledClass,
         invalid && 'ring-2 ring-[var(--c-danger)]',
         className,
       )}
