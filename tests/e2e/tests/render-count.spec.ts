@@ -8,8 +8,9 @@
  * a stand-in `__REACT_DEVTOOLS_GLOBAL_HOOK__` sees every commit and the
  * components that did work in it.
  *
- * Runs after main-flow.spec.ts (files run in name order), which leaves a
- * run in buying with one item bought and one to buy.
+ * Runs after main-flow.spec.ts, which leaves a run in buying with one
+ * item bought and one to buy: its project depends on main-flow's
+ * (playwright.config.ts), so running this file alone runs that first.
  */
 import { createHmac } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
