@@ -55,6 +55,18 @@ describe('flatEffectivePermissions', () => {
     expect(flatEffectivePermissions([], [{ ...store('org.admin', 'A'), effect: 'allow' }]).has('org.admin')).toBe(false);
     expect(flatEffectivePermissions([global('org.admin')], []).has('org.admin')).toBe(true);
   });
+
+  // Review CONF-04 (2026-11-09): dishes and recipes belong to every store.
+  test('dishes.manage only ever comes from a global row', () => {
+    const has = (flat: Set<string>) => flat.has('dishes.manage');
+    expect(has(flatEffectivePermissions([store('dishes.manage', 'A')], []))).toBe(false);
+    expect(has(flatEffectivePermissions([], [{ ...store('dishes.manage', 'A'), effect: 'allow' }]))).toBe(false);
+    expect(has(flatEffectivePermissions([], [{ ...global('dishes.manage'), effect: 'allow' }]))).toBe(true);
+    // A deny in one store cannot take an org-wide key away there either.
+    expect(
+      has(flatEffectivePermissions([global('dishes.manage')], [{ ...store('dishes.manage', 'A'), effect: 'deny' }])),
+    ).toBe(true);
+  });
 });
 
 (function loadEnv() {

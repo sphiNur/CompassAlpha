@@ -442,6 +442,61 @@ describe.skipIf(!SHOULD_RUN)('D6: money only with prices.view, per store', () =>
       .where(eq(s.memberPermissionOverrides.memberId, mixedMemberId));
   });
 
+  // Review ADM2-01 (2026-11-09): the activity feed returned run payloads
+  // as stored, unit prices included, to anyone holding users.manage.
+  test('admin.recentEvents: no unit prices for a reader who may not price every store', async () => {
+    const { owner, mixed, runId } = fix!;
+    const prices = (rows: Array<{ streamId: string; type: string; payload: unknown }>) =>
+      rows
+        .filter((r) => r.streamId === runId && r.type === 'ItemPurchased')
+        .map((r) => (r.payload as { unitPrice: string | null }).unitPrice);
+    const ownerSees = prices(await owner.admin.recentEvents({ limit: 200 }));
+    expect(ownerSees.length).toBeGreaterThan(0);
+    expect(ownerSees.every((p) => p !== null)).toBe(true);
+    const mixedSees = prices(await mixed.admin.recentEvents({ limit: 200 }));
+    expect(mixedSees.length).toBe(ownerSees.length);
+    expect(mixedSees.every((p) => p === null)).toBe(true);
+  });
+
+  // Review CONF-04 (2026-11-09): dishes are the whole organisation's. A
+  // store-level grant of dishes.manage used to pass the flat permission
+  // check and edit every store's recipes and selling prices.
+  test('dishes: only an organisation-wide dishes.manage may change a dish', async () => {
+    const { db, owner, mixedMemberId, dishId, reload, ownerUserId, storeB } = fix!;
+    const [m] = await db
+      .select({ userId: s.members.userId })
+      .from(s.members)
+      .where(eq(s.members.id, mixedMemberId));
+    const grant = (scopeType: 'store' | 'global') =>
+      db.insert(s.memberPermissionOverrides).values({
+        memberId: mixedMemberId,
+        permissionKey: 'dishes.manage',
+        effect: 'allow',
+        scopeType,
+        scopeId: scopeType === 'store' ? storeB : null,
+        grantedBy: ownerUserId,
+      });
+    const clear = () =>
+      db
+        .delete(s.memberPermissionOverrides)
+        .where(eq(s.memberPermissionOverrides.memberId, mixedMemberId));
+    try {
+      await grant('store');
+      const storeLevel = await reload(m!.userId, mixedMemberId);
+      expect((await errorOf(() => storeLevel.dishes.archive({ dishId })))?.message).toBe(
+        'dishes.errors.cannotManage',
+      );
+      await clear();
+      await grant('global');
+      const orgWide = await reload(m!.userId, mixedMemberId);
+      expect(await errorOf(() => orgWide.dishes.archive({ dishId }))).toBeNull();
+    } finally {
+      await clear();
+      // The sales tests below need this dish live.
+      await owner.dishes.unarchive({ dishId });
+    }
+  });
+
   test('run.previewCreatable: a planner without prices.view gets quantities only', async () => {
     const { db, orgId, owner, person, roleIds, storeA, skuId } = fix!;
     const planner = await person([[roleIds.planner!, storeA]]);

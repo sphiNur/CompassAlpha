@@ -30,6 +30,7 @@ import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import {
+  ORG_WIDE_PERMISSION_KEYS,
   effectiveGlobalPermissions,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
@@ -45,6 +46,7 @@ import {
   type CatalogSnapshot,
 } from '../../services/catalogCopy';
 import { inviterStillAuthorized } from './auth';
+import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { logger } from '../../infra/log';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
@@ -3647,9 +3649,11 @@ export const adminRouter = router({
         }
         // Global overrides change authority across the whole organization.
         // Store managers may manage their own store, but cannot mint or
-        // alter organization-wide grants. `org.admin` itself is global-only
-        // even when cleaning up a malformed historical row.
-        if (input.permissionKey === 'org.admin' && input.scopeType !== 'global') {
+        // alter organization-wide grants. An org-wide key (`org.admin`,
+        // `dishes.manage`) is global-only even when cleaning up a malformed
+        // historical row: in one store it would count nowhere (review
+        // CONF-04).
+        if (ORG_WIDE_PERMISSION_KEYS.has(input.permissionKey) && input.scopeType !== 'global') {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'admin.errors.orgAdminMustBeGlobal',
@@ -5210,6 +5214,11 @@ export const adminRouter = router({
               .where(inArray(s.users.id, userIds))
           : [];
         const userById = new Map(users.map((u) => [u.id, u]));
+        // Review ADM2-01 (2026-11-09): run payloads carry unit prices and
+        // expense amounts. They are returned as stored only to a reader
+        // who may price every store; anyone else gets them nulled, as on
+        // the run page. (The feed itself shows none of them.)
+        const showMoney = (await priceStoreIds(tx, ctx.session!)) === null;
         return rows.map((r) => ({
           id: r.id,
           streamId: r.streamId,
@@ -5218,7 +5227,7 @@ export const adminRouter = router({
           type: r.type,
           actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
           occurredAt: r.occurredAt.toISOString(),
-          payload: r.payload as unknown,
+          payload: showMoney ? (r.payload as unknown) : withoutPrices(r.payload as unknown),
           context: context.get(r.id) ?? null,
         }));
       });

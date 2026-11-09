@@ -492,6 +492,18 @@ describe('P0 store-manager scope', () => {
           scopeId: storeA.id,
         }),
       ).rejects.toThrow('orgAdminMustBeGlobal');
+
+      // Review CONF-04 (2026-11-09): dishes.manage covers every store's
+      // menu, so not even an organisation admin can grant it for one store.
+      await expect(
+        orgCaller.admin.memberPermissionSet({
+          memberId: targetMember,
+          permissionKey: 'dishes.manage',
+          effect: 'allow',
+          scopeType: 'store',
+          scopeId: storeA.id,
+        }),
+      ).rejects.toThrow('orgAdminMustBeGlobal');
     },
   );
 });
