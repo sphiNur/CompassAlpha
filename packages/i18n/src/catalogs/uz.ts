@@ -2238,6 +2238,8 @@ export const uz = {
   'ops.audit.emptyStoreBody': 'Doʻkonsiz eski yozuvlar doʻkon filtrida koʻrinmaydi.',
   'ops.audit.emptyFilterTitle': 'Bu turdagi amallar yoʻq',
   'ops.audit.unknown': '(nomaʼlum)',
+  'ops.audit.change': '{field}: {before} → {after}',
+  'ops.audit.field.status': 'Holati',
   'ops.audit.s.roleGrant': '{actor} {member} ga «{role}» rolini berdi',
   'ops.audit.s.roleRevoke': '{actor} {member} dan «{role}» rolini oldi',
   'ops.audit.s.roleCreate': '{actor} «{role}» rolini yaratdi',
@@ -2268,6 +2270,10 @@ export const uz = {
   'ops.audit.s.catalogRestore': '{actor} «{name}»ni arxivdan chiqardi',
   'ops.audit.s.financeUpdate': '{actor} moliya sozlamalarini oʻzgartirdi',
   'ops.audit.s.subscriptionUpdate': '{actor} obunani yangiladi',
+  'ops.audit.s.purgeSession': '{actor} {store} doʻkonining {date} buyurtmasini oʻchirdi ({member})',
+  'ops.audit.s.purgeRun': '{actor} {date} #{n} xaridini oʻchirdi',
+  'ops.audit.s.purgeDate': '{actor} {date} dagi barcha buyurtma va xaridlarni oʻchirdi',
+  'ops.audit.s.purgeAll': '{actor} ish maydonidagi barcha maʼlumotlarni oʻchirdi',
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.

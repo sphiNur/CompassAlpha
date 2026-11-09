@@ -14,6 +14,7 @@ import {
 const loc = {
   unknown: '?',
   localName: (names: Record<string, string>) => names.en ?? Object.values(names)[0] ?? '',
+  day: (iso: string) => `day(${iso})`,
 };
 
 const labels = (over: Partial<NonNullable<AuditRowLike['labels']>> = {}) => ({
@@ -165,6 +166,47 @@ describe('describeAuditRow', () => {
   test('rows from an older server (no labels) still render', () => {
     const s = describeAuditRow({ action: 'admin.store.update', inputs: {}, actor }, loc);
     expect(s).toMatchObject({ key: 'ops.audit.s.storeUpdate', params: { store: '?' } });
+  });
+
+  test('a purge says what it deleted (ADM2-05)', () => {
+    const session = describeAuditRow(
+      {
+        action: 'admin.purge.session',
+        inputs: { sessionId: 's1', orderDate: '2026-11-08', storeId: 'st1', memberId: 'm1' },
+        actor,
+        labels: labels({ storeName: 'Chilonzor', memberName: 'Dilnoza' }),
+      },
+      loc,
+    );
+    expect(session).toMatchObject({
+      key: 'ops.audit.s.purgeSession',
+      tone: 'danger',
+      params: { actor: 'Aziz', date: 'day(2026-11-08)', store: 'Chilonzor', member: 'Dilnoza' },
+    });
+    expect(
+      describeAuditRow(
+        {
+          action: 'admin.purge.run',
+          inputs: { runId: 'r1', runDate: '2026-11-08', runIndex: 1 },
+          actor,
+          labels: labels(),
+        },
+        loc,
+      ),
+    ).toMatchObject({ key: 'ops.audit.s.purgeRun', params: { date: 'day(2026-11-08)', n: '2' } });
+    expect(
+      describeAuditRow({ action: 'admin.purge.date', inputs: { date: '2026-11-07' }, actor }, loc),
+    ).toMatchObject({ key: 'ops.audit.s.purgeDate', params: { date: 'day(2026-11-07)' } });
+    expect(describeAuditRow({ action: 'admin.purge.all', inputs: {}, actor }, loc)).toMatchObject({
+      key: 'ops.audit.s.purgeAll',
+      tone: 'danger',
+    });
+  });
+
+  test('a purge row from before keeps the generic line', () => {
+    expect(
+      describeAuditRow({ action: 'admin.purge.session', inputs: { sessionId: 's1' }, actor }, loc),
+    ).toMatchObject({ key: 'ops.audit.s.generic', tone: 'danger' });
   });
 
   test('unknown action → generic sentence with parsed words', () => {

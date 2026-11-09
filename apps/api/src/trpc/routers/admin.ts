@@ -36,6 +36,7 @@ import {
 import { isPlatformAdmin } from '../../services/platformAdmin';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
+import { auditChanges } from '../../services/auditChanges';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
 import { recentEventContext } from '../../services/eventContext';
 import { env } from '../../env';
@@ -303,6 +304,26 @@ async function memberStoreIdsForAudit(tx: OrgTx, memberId: string): Promise<stri
   return [...ids];
 }
 
+/** ADM2-06: a role's name for an audit change line (null for none). */
+async function roleNameForAudit(tx: OrgTx, roleId: string | null): Promise<string | null> {
+  if (!roleId) return null;
+  const [row] = await tx.select({ name: s.roles.name }).from(s.roles).where(eq(s.roles.id, roleId));
+  return row?.name ?? null;
+}
+
+/** ADM2-06: a category's names map for an audit change line (null for none). */
+async function categoryNamesForAudit(
+  tx: OrgTx,
+  categoryId: string | null,
+): Promise<Record<string, string> | null> {
+  if (!categoryId) return null;
+  const [row] = await tx
+    .select({ names: s.categories.names })
+    .from(s.categories)
+    .where(eq(s.categories.id, categoryId));
+  return (row?.names as Record<string, string> | undefined) ?? null;
+}
+
 /** Audit rows scoped to any of `storeIds`, including a transfer's from-store. */
 function auditTouchesStores(storeIds: string[]) {
   const list = sql.join(
@@ -314,16 +335,26 @@ function auditTouchesStores(storeIds: string[]) {
     sql`(${s.policyDecisions.inputs} ->> 'fromStoreId') in (${list})`,
     // ADM-13: member actions list every store the member was in.
     sql`jsonb_exists_any(${s.policyDecisions.inputs} -> 'memberStoreIds', array[${list}]::text[])`,
+    // ADM2-05: rows about several stores (a purged run, a multi-store
+    // invite) list them all; scope_store_id holds one store at most.
+    sql`jsonb_exists_any(${s.policyDecisions.inputs} -> 'storeIds', array[${list}]::text[])`,
   );
 }
 
-async function auditAdmin(
+export async function auditAdmin(
   tx: any,
   ctx: { session?: { userId: string; orgId: string } | null },
   action: string,
   resourceType: string,
   resourceId: string | null,
   inputs: unknown,
+  /**
+   * ADM2-05 (2026-11-09): `strict` rolls the action back with the audit
+   * row, as the daily settlement does. A purge cannot be undone, so it is
+   * not done unrecorded; elsewhere the action stands and the failure is
+   * logged.
+   */
+  options: { strict?: boolean } = {},
 ): Promise<void> {
   try {
     // B19 (2026-10-30): inside a savepoint. In Postgres a failed statement
@@ -358,6 +389,7 @@ async function auditAdmin(
     });
   } catch (err) {
     logger.warn({ err, action }, 'admin audit insert failed');
+    if (options.strict) throw err;
   }
 }
 
@@ -4372,7 +4404,24 @@ export const adminRouter = router({
         tx.update(s.stores).set(patch).where(eq(s.stores.id, input.storeId)),
         'admin.errors.codeTaken',
       );
-      await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, input);
+      // ADM2-06 (2026-11-09): from what to what, not only the new values.
+      const changes = auditChanges(existing, patch, [
+        'name',
+        'code',
+        'address',
+        'timezone',
+        'isActive',
+      ]);
+      if (patch.defaultRoleId !== undefined && patch.defaultRoleId !== existing.defaultRoleId) {
+        changes.defaultRole = [
+          await roleNameForAudit(tx, existing.defaultRoleId),
+          await roleNameForAudit(tx, patch.defaultRoleId as string | null),
+        ];
+      }
+      await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, {
+        ...input,
+        changes,
+      });
       broadcastCatalog(orgId, 'store');
       return { ok: true };
     });
@@ -4538,6 +4587,7 @@ export const adminRouter = router({
             .select({
               memberId: s.memberRoleBindings.memberId,
               roleId: s.memberRoleBindings.roleId,
+              roleSlug: s.roles.slug,
               roleRank: s.roles.rank,
             })
             .from(s.memberRoleBindings)
@@ -4579,8 +4629,23 @@ export const adminRouter = router({
               })
               .onConflictDoNothing()
               .returning({ id: s.memberRoleBindings.id });
-            if (inserted.length > 0) cloned++;
-            else skippedExisting++;
+            if (inserted.length === 0) {
+              skippedExisting++;
+              continue;
+            }
+            cloned++;
+            // ADM2-07 (2026-11-09): each copied binding is a grant, and is
+            // audited as one (who got which role where), as grantRole does;
+            // the summary row below only counted them.
+            await auditAdmin(tx, ctx, 'admin.role.grant', 'member', b.memberId, {
+              roleSlug: b.roleSlug,
+              scopeType: 'store',
+              scopeId: input.targetStoreId,
+              bindingId: inserted[0]!.id,
+              roleRank: b.roleRank,
+              via: 'storeCloneRoles',
+              sourceStoreId: input.sourceStoreId,
+            });
           }
           // Also populate the target's store assignments from the source's.
           const sourceMsa = await tx
@@ -4597,7 +4662,13 @@ export const adminRouter = router({
               })
               .onConflictDoNothing()
               .returning({ memberId: s.memberStoreAssignments.memberId });
-            if (inserted.length > 0) assigned++;
+            if (inserted.length === 0) continue;
+            assigned++;
+            await auditAdmin(tx, ctx, 'admin.memberAssignStore', 'member', r.memberId, {
+              memberId: r.memberId,
+              storeId: input.targetStoreId,
+              via: 'storeCloneRoles',
+            });
           }
         }
         await auditAdmin(tx, ctx, 'admin.store.cloneRoles', 'store', input.targetStoreId, {
@@ -4691,7 +4762,10 @@ export const adminRouter = router({
           tx.update(s.categories).set(patch).where(eq(s.categories.id, input.categoryId)),
           'admin.errors.slugTaken',
         );
-        await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, input);
+        await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, {
+          ...input,
+          changes: auditChanges(existing, patch, ['slug', 'names', 'sortIndex']),
+        });
         broadcastCatalog(orgId, 'category');
         return { ok: true };
       });
@@ -4822,7 +4896,19 @@ export const adminRouter = router({
         tx.update(s.skus).set(patch).where(eq(s.skus.id, input.skuId)),
         'admin.errors.codeTaken',
       );
-      await auditAdmin(tx, ctx, 'admin.sku.update', 'sku', input.skuId, input);
+      const changes = auditChanges(
+        existing,
+        patch,
+        ['code', 'names', 'unit', 'step', 'sortIndex'],
+        ['step'],
+      );
+      if (patch.categoryId !== undefined && patch.categoryId !== existing.categoryId) {
+        changes.category = [
+          await categoryNamesForAudit(tx, existing.categoryId),
+          await categoryNamesForAudit(tx, patch.categoryId as string | null),
+        ];
+      }
+      await auditAdmin(tx, ctx, 'admin.sku.update', 'sku', input.skuId, { ...input, changes });
       broadcastCatalog(orgId, 'sku');
       return { ok: true };
     });
@@ -4930,7 +5016,16 @@ export const adminRouter = router({
         if (input.notes !== undefined) patch.notes = input.notes;
         if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
         await tx.update(s.suppliers).set(patch).where(eq(s.suppliers.id, input.supplierId));
-        await auditAdmin(tx, ctx, 'admin.supplier.update', 'supplier', input.supplierId, input);
+        await auditAdmin(tx, ctx, 'admin.supplier.update', 'supplier', input.supplierId, {
+          ...input,
+          changes: auditChanges(existing, patch, [
+            'name',
+            'contactPhone',
+            'contactTg',
+            'address',
+            'notes',
+          ]),
+        });
         broadcastCatalog(orgId, 'supplier');
         return { ok: true };
       });
@@ -5104,13 +5199,26 @@ export const adminRouter = router({
           .update(s.expenseTemplates)
           .set(patch)
           .where(eq(s.expenseTemplates.id, input.templateId));
+        const changes = auditChanges(
+          existing,
+          patch,
+          [
+            'label',
+            'unitHint',
+            'defaultQty',
+            'defaultUnitPrice',
+            'defaultPaymentMethod',
+            'sortIndex',
+          ],
+          ['defaultQty', 'defaultUnitPrice'],
+        );
         await auditAdmin(
           tx,
           ctx,
           'admin.expenseTemplate.update',
           'expenseTemplate',
           input.templateId,
-          input,
+          { ...input, changes },
         );
         broadcastCatalog(orgId, 'expenseTemplate');
         return { ok: true };
@@ -5609,7 +5717,15 @@ export const adminRouter = router({
         // CAT-5 (2026-10-30): the admin audit (domain.policy_decisions)
         // stays, as this procedure's contract says; it used to be wiped
         // with everything else. The purge itself is recorded in it.
-        await auditAdmin(tx, ctx, 'admin.purge.all', 'org', orgId, { total, byTable: counts });
+        await auditAdmin(
+          tx,
+          ctx,
+          'admin.purge.all',
+          'org',
+          orgId,
+          { total, byTable: counts },
+          { strict: true },
+        );
 
         broadcastPurged(orgId, [], []);
         return { dryRun: false, total, byTable: counts, orgSlug: org.slug };
@@ -5870,13 +5986,15 @@ export const adminRouter = router({
           ),
         );
 
-      await auditAdmin(tx, ctx, 'admin.purge.date', 'org', orgId, {
-        date,
-        total,
-        byTable: counts,
-        sessionIds,
-        runIds,
-      });
+      await auditAdmin(
+        tx,
+        ctx,
+        'admin.purge.date',
+        'org',
+        orgId,
+        { date, total, byTable: counts, sessionIds, runIds },
+        { strict: true },
+      );
       broadcastPurged(orgId, sessionIds, runIds);
       return { dryRun: false, total, byTable: counts, date, scope };
     });
@@ -6436,10 +6554,26 @@ export const adminRouter = router({
         };
       }
       await deleteSessionCascade(tx, orgId, input.sessionId);
-      await auditAdmin(tx, ctx, 'admin.purge.session', 'session', input.sessionId, {
-        ...input,
-        byTable: counts,
-      });
+      // ADM2-05 (2026-11-09): what went, while it can still be read — the
+      // store (which also shows the row to that store's admins), the day,
+      // the status and whose order it was. Ids alone named nothing once
+      // the rows were gone.
+      await auditAdmin(
+        tx,
+        ctx,
+        'admin.purge.session',
+        'session',
+        input.sessionId,
+        {
+          ...input,
+          byTable: counts,
+          storeId: session.storeId,
+          orderDate: session.orderDate,
+          status: session.status,
+          memberId: session.initiatedByMemberId ?? session.submittedByMemberId,
+        },
+        { strict: true },
+      );
       broadcastPurged(orgId, [input.sessionId], []);
       return {
         dryRun: false,
@@ -6511,12 +6645,36 @@ export const adminRouter = router({
           sessionIds,
         };
       }
+      // ADM2-05 (2026-11-09): the run's day and number, its purchaser and
+      // the stores whose orders it held, read before they are deleted.
+      const runStores =
+        sessionIds.length > 0
+          ? await tx
+              .selectDistinct({ storeId: s.orderSessionsV.storeId })
+              .from(s.orderSessionsV)
+              .where(
+                and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
+              )
+          : [];
       await deleteRunCascade(tx, orgId, input.runId, sessionIds);
-      await auditAdmin(tx, ctx, 'admin.purge.run', 'run', input.runId, {
-        ...input,
-        sessionIds,
-        byTable: counts,
-      });
+      await auditAdmin(
+        tx,
+        ctx,
+        'admin.purge.run',
+        'run',
+        input.runId,
+        {
+          ...input,
+          sessionIds,
+          byTable: counts,
+          runDate: run.runDate,
+          runIndex: run.runIndex,
+          status: run.status,
+          storeIds: runStores.map((r) => r.storeId),
+          memberId: run.purchaserMemberId,
+        },
+        { strict: true },
+      );
       broadcastPurged(orgId, sessionIds, [input.runId]);
       return {
         dryRun: false,
