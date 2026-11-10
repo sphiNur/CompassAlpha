@@ -742,6 +742,31 @@ function russianGenderShortcuts(cats: Catalogs): string[] {
     .map(([k, v]) => `ru ${k}: ${v}`);
 }
 
+/**
+ * Full review 2026-11 (I18N2-04): the same rule without the shortcut. A
+ * woman was marked «Не пришёл» on her own attendance row and had to tap
+ * «Согласен». Copy about a person says what happened, not who did it in
+ * the masculine: «Неявка», «Своя отметка», «Даю согласие», «Понятно».
+ * Generic subjects stay («Кто пришёл», «кто-то изменил», «Закупщик
+ * добавил»), so only the forms that stand for a person are listed.
+ */
+const RU_MASCULINE_PERSON =
+  /(?<!\p{L})(?:не пришёл|ушёл на|отметился|согласен|согласился|пропустил|посмотрел|ошибся|нажал|никогда не входил|самому|самого себя)(?!\p{L})/iu;
+
+/** `ru key` → why it may keep a masculine form for now. */
+const RU_MASCULINE_ALLOW: Record<string, string> = {
+  'ru attendance.sheet.selfAt': 'I18N2-04 follow-up: changes after #253 merges',
+  'ru attendance.consent.agree': 'I18N2-04 follow-up: changes after #260 merges',
+  'ru attendance.flag.missedShift': 'I18N2-04 follow-up: changes after #260 merges',
+  'ru attendance.export.flag.missedShift': 'I18N2-04 follow-up: changes after #260 merges',
+};
+
+function russianMasculinePerson(cats: Catalogs): string[] {
+  return Object.entries(cats.ru)
+    .filter(([k, v]) => !RU_MASCULINE_ALLOW[`ru ${k}`] && RU_MASCULINE_PERSON.test(v))
+    .map(([k, v]) => `ru ${k}: ${v}`);
+}
+
 // ── 13. Words that must not mean two things ─────────────────────────────
 
 /**
@@ -865,6 +890,7 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['D23 and the copy review: workspace, no internal words', copyBanned],
   ['no mojibake and no ISO dates in copy', mojibakeAndIsoDates],
   ['ru: no «(а)» gender shortcuts', russianGenderShortcuts],
+  ['ru: no masculine past tense for a person', russianMasculinePerson],
   ['uz: a reset is not «tiklash» (restore)', uzbekResetIsNotRestore],
   ['void is one word per language, not cancel or delete', voidIsOneWord],
   ['actions on the same screen read differently', distinctActions],
@@ -1109,6 +1135,15 @@ describe('catalog lint rules catch the original findings', () => {
   test('DX-COPY-10: ru gender shortcuts', () => {
     expect(russianGenderShortcuts(one({ ru: '{actor} импортировал(а) товары' }))).toHaveLength(1);
     expect(russianGenderShortcuts(one({ ru: '{actor}: участник {member} удалён' }))).toEqual([]);
+  });
+
+  test('I18N2-04: ru masculine past tense for a person', () => {
+    for (const ru of ['Не пришёл', 'Отметился сам', 'Согласен', 'Посмотрел', 'Нажал по ошибке']) {
+      expect(russianMasculinePerson(one({ ru }))).toHaveLength(1);
+    }
+    for (const ru of ['Неявка', 'Кто пришёл, график смен', 'Остаток ушёл в минус', 'Понятно']) {
+      expect(russianMasculinePerson(one({ ru }))).toEqual([]);
+    }
   });
 
   test('DX-COPY-1: uz reset written as restore', () => {
