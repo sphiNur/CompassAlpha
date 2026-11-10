@@ -69,7 +69,7 @@ export const en = {
   'qty.atMost': 'Enter {max} or less',
   'qty.notMultiple': 'Enter a multiple of {step}',
   'qty.maxDecimals': 'At most {decimals, plural, one {# decimal} other {# decimals}}',
-  'number.invalid': 'Not a number — write it like 1500 or 1.5',
+  'number.invalid': 'Not a number — write it like 1500 or 1.5.',
   'photo.label': 'Receipt photo',
   'photo.remove': 'Remove photo',
   'photo.hint': 'Tap to take a photo',
@@ -515,7 +515,7 @@ export const en = {
   // server-side mutation rate limiter when a (user, path) exceeds the
   // 120-per-minute budget. The auth-specific equivalent stays under
   // 'auth.errors.rateLimited' — same wording, different namespace.
-  'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
+  'common.errors.rateLimited': 'Too many requests — please wait a moment and try again.',
   'common.errors.requestInFlight':
     'The previous attempt is still being processed. Try again in a moment.',
   'common.errors.idempotencyKeyReused':
@@ -536,8 +536,8 @@ export const en = {
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan runs. Ask an admin for access.",
   'common.errors.controlCharacters':
-    'Names cannot contain line breaks, tabs or other hidden characters',
-  'common.errors.validation': 'Invalid input — check the highlighted fields',
+    'Names cannot contain line breaks, tabs or other hidden characters.',
+  'common.errors.validation': 'Invalid input — check the highlighted fields.',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Language',
@@ -710,15 +710,15 @@ export const en = {
   // ── 5. Auth errors (server-thrown TRPCError messages) ──────────
   'auth.errors.botTokenMissing':
     'Sign-in through Telegram is not set up yet. Tell the platform admin.',
-  'auth.errors.invalidInitData': 'Telegram sign-in could not be verified — please reopen the app',
-  'auth.errors.invalidRefresh': 'Your sign-in has expired — please sign in again',
+  'auth.errors.invalidInitData': 'Telegram sign-in could not be verified — please reopen the app.',
+  'auth.errors.invalidRefresh': 'Your sign-in has expired — please sign in again.',
   'auth.errors.refreshReplayDetected':
     'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
   'auth.errors.refreshChainSwitched':
     'This account switched to another workspace elsewhere, so this sign-in has ended. Please open the app again.',
   'auth.errors.missingPermission':
     "You don't have permission to do that. Ask an admin if you think this is a mistake.",
-  'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
+  'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it.',
   'auth.errors.noMembership':
     'You have not been added to a store yet. Ask your store manager to invite you in Compass.',
   'auth.errors.membershipSuspended':
@@ -769,7 +769,7 @@ export const en = {
   'dev.persona.noRoles': 'No role',
   'dev.switchPersona': 'Switch test person',
   'auth.errors.noOrg': 'This workspace is gone — it may have been deleted.',
-  'auth.errors.required': 'Sign-in required',
+  'auth.errors.required': 'Sign-in required.',
   'auth.errors.signInFailed':
     'Sign-in did not work. Close the app and open it again from Telegram.',
   'auth.retryInvite': 'Try the invitation again',
@@ -839,7 +839,7 @@ export const en = {
   'platform.field.note': 'Internal note',
   'platform.errors.planNotFound':
     'This plan is gone — it may have just been deleted. Refresh to check.',
-  'platform.errors.invalidDate': 'Invalid date',
+  'platform.errors.invalidDate': 'Invalid date.',
   'admin.subsection.categories': 'Categories',
   'admin.subsection.skus': 'Products',
   'admin.subsection.suppliers': 'Suppliers',
@@ -940,18 +940,18 @@ export const en = {
   'admin.workspace.name': 'Name',
   'admin.workspace.yourRole': 'Your role',
   'admin.workspace.telegram': 'Telegram',
-  'auth.errors.sessionStale': 'Your account has changed — please reload',
+  'auth.errors.sessionStale': 'Your account has changed — please reload.',
   'auth.errors.storeArchived': 'This store has been archived. Pick another store.',
   'auth.errors.storeForbidden':
     'You are not assigned to this store. Pick another store, or ask an admin to add you.',
   'auth.errors.notAssignedToStore':
     'You are not assigned to this store. Pick another store, or ask an admin to add you.',
   'auth.errors.userMissing': 'This account is gone — it may have been deleted. Open the app again.',
-  'auth.errors.cannotGrantEqualOrHigher': 'You cannot grant a role at or above your own level',
+  'auth.errors.cannotGrantEqualOrHigher': 'You cannot grant a role at or above your own level.',
   'auth.errors.cannotGrantMissingPermission':
     'This role includes permissions you do not have yourself, so you cannot grant it.',
-  'auth.errors.cannotRevokeEqualOrHigher': 'You cannot revoke a role at or above your own level',
-  'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again',
+  'auth.errors.cannotRevokeEqualOrHigher': 'You cannot revoke a role at or above your own level.',
+  'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again.',
   'system.errors.logRateLimited': 'Too many messages from this device — wait a moment.',
 
   // ── 6. Admin errors ────────────────────────────────────────────
@@ -959,15 +959,15 @@ export const en = {
   'admin.errors.slugTaken': 'That short code is already in use.',
   'admin.errors.codeTaken': 'That code is already in use.',
   'admin.errors.invalidExpiresAt': 'Expiry must be a valid future date and time.',
-  'admin.errors.cannotLeaveZeroStores': 'A member must remain assigned to at least one store',
+  'admin.errors.cannotLeaveZeroStores': 'A member must remain assigned to at least one store.',
   'admin.errors.cannotRemoveLastAdmin':
     "You can't remove the workspace's last admin. Make someone else an admin first.",
-  'admin.errors.cannotRemoveSelf': 'You cannot remove yourself',
-  'admin.errors.cannotRevokeSelfAdmin': 'You cannot revoke your own admin role',
-  'admin.errors.cannotSuspendSelf': 'You cannot suspend yourself',
+  'admin.errors.cannotRemoveSelf': 'You cannot remove yourself.',
+  'admin.errors.cannotRevokeSelfAdmin': 'You cannot revoke your own admin role.',
+  'admin.errors.cannotSuspendSelf': 'You cannot suspend yourself.',
   'admin.errors.categoryNotFound':
     'This category is gone — it may have just been archived. Refresh to check.',
-  'admin.errors.inviteNeedsStore': 'A non-admin invite must include at least one store assignment',
+  'admin.errors.inviteNeedsStore': 'A non-admin invite must include at least one store assignment.',
   'admin.errors.inviteCreateFailed': 'Could not create the invitation. Try again.',
   'admin.errors.memberCreateFailed': 'Could not add the member. Refresh the list and try again.',
   'admin.errors.memberNotFound':
@@ -975,16 +975,16 @@ export const en = {
   'admin.errors.orgNotFound': 'This workspace is gone — it may have been deleted.',
   'admin.errors.purgeConfirmMismatch':
     'The confirmation text did not match, so nothing was deleted. Type it exactly as shown.',
-  'admin.errors.purgeRequiresSuperAdmin': 'Only a super admin can purge data',
+  'admin.errors.purgeRequiresSuperAdmin': 'Only a super admin can purge data.',
   'admin.errors.orgAdminMustBeGlobal':
-    'Workspace-level roles and permissions can only be granted globally',
+    'Workspace-level roles and permissions can only be granted globally.',
   'admin.errors.roleNotFound':
     'This role is gone — it may have just been deleted. Refresh to check.',
   'admin.errors.roleSlugTaken': 'Another role already uses that short code.',
   'admin.errors.memberInactiveReactivateFirst':
-    'This member is suspended. Reactivate them first, then assign stores and roles',
-  'admin.errors.unknownPermission': 'There is no such permission',
-  'admin.errors.builtinRankLocked': "A built-in role's level cannot be changed",
+    'This member is suspended. Reactivate them first, then assign stores and roles.',
+  'admin.errors.unknownPermission': 'There is no such permission.',
+  'admin.errors.builtinRankLocked': "A built-in role's level cannot be changed.",
   'admin.errors.runHasForeignSessions':
     "This run contains other people's orders — it cannot be deleted.",
   'admin.errors.sessionHasForeignAuthors':
@@ -998,10 +998,10 @@ export const en = {
   'admin.errors.purgeGuardWaiverDisabledInProduction':
     "In the live app the check that keeps other people's orders and runs from being deleted cannot be skipped.",
   'admin.errors.purgeHasSettlements':
-    'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged',
+    'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged.',
   'admin.errors.runNotFound': 'This run is gone — it may have just been deleted. Refresh to check.',
-  'admin.errors.scopeStoreIdRequired': 'A per-store role must specify which store it applies to',
-  'admin.errors.sessionAttachedToRun': 'This order is locked into a run and cannot be edited',
+  'admin.errors.scopeStoreIdRequired': 'A per-store role must specify which store it applies to.',
+  'admin.errors.sessionAttachedToRun': 'This order is locked into a run and cannot be edited.',
   'admin.errors.sessionNotFound':
     'This order is gone — it may have just been deleted. Refresh to check.',
   'admin.errors.skuNotFound':
@@ -1014,19 +1014,19 @@ export const en = {
   'admin.errors.cannotDeleteBuiltinRole':
     "Built-in roles can't be deleted, but you can change their name, description and permissions.",
   'admin.errors.roleHasBindings':
-    'This role is still assigned to members — revoke those grants first',
+    'This role is still assigned to members — revoke those grants first.',
   'admin.errors.rankTierChangeHasBindings':
     "Members hold this role, so its level can't cross {rank}. Revoke it from them first, or create a new role.",
   'admin.errors.permissionNotFound': 'There is no such permission.',
   'admin.errors.notAdminOfStore':
-    "You don't administer this store — only its admin can perform this action",
+    "You don't administer this store — only its admin can perform this action.",
   'admin.errors.memberNotInSourceStore':
     'They are not in the source store, so they cannot be moved out of it; assign them to the new store instead.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
-    'Only workspace-level admins can invite or grant workspace-level admin roles',
-  'admin.errors.transferSameStore': 'Source and destination must be different stores',
+    'Only workspace-level admins can invite or grant workspace-level admin roles.',
+  'admin.errors.transferSameStore': 'Source and destination must be different stores.',
   'admin.errors.defaultRoleMustBeStoreTier':
-    "The default role must be a store-level role (below admin) — admin and super admin can't be a store default",
+    "The default role must be a store-level role (below admin) — admin and super admin can't be a store default.",
 
   // Admin operator-console toasts (added 2026-05-06).
   // Each verb is a separate key because Russian has gendered endings
@@ -1067,7 +1067,7 @@ export const en = {
   // ── 7. Upload errors ───────────────────────────────────────────
   'upload.errors.notConfigured':
     'Photo upload is not available right now. Save without a photo, or tell an admin.',
-  'upload.errors.unsupportedContentType': 'This file type is not allowed',
+  'upload.errors.unsupportedContentType': 'This file type is not allowed.',
 
   // ── 8. Order page (UI + actions + toasts) ──────────────────────
   // M1.9-fix (2026-05-07): SKU row meta + chip-bar labels were
@@ -1225,18 +1225,18 @@ export const en = {
     'Returns this order to the queue. Only allowed before it is added to a run.',
 
   // ── 9. Order errors ────────────────────────────────────────────
-  'order.errors.alreadyStarted': 'An order for this date already exists',
-  'order.errors.invalidDate': 'Invalid date',
-  'order.errors.skuArchived': 'This product is no longer available',
+  'order.errors.alreadyStarted': 'An order for this date already exists.',
+  'order.errors.invalidDate': 'Invalid date.',
+  'order.errors.skuArchived': 'This product is no longer available.',
   'order.errors.skuMissing':
     'This product is gone — it may have just been archived. Refresh to check.',
-  'order.errors.invalidQty': 'Invalid quantity',
-  'order.errors.qtyNegative': 'Quantity cannot be negative',
-  'order.errors.qtyNotMultipleOfStep': 'Quantity must be a multiple of {step}',
+  'order.errors.invalidQty': 'Invalid quantity.',
+  'order.errors.qtyNegative': 'Quantity cannot be negative.',
+  'order.errors.qtyNotMultipleOfStep': 'Quantity must be a multiple of {step}.',
   'order.errors.invalidStep': "This product's order step is set up wrong. Tell an admin.",
-  'order.errors.noteTooLong': 'Note is too long (max 500 characters)',
-  'order.errors.sessionNoteTooLong': 'Note is too long (max 1000 characters)',
-  'order.errors.notOwner': 'You can only edit your own draft',
+  'order.errors.noteTooLong': 'Note is too long (max 500 characters).',
+  'order.errors.sessionNoteTooLong': 'Note is too long (max 1000 characters).',
+  'order.errors.notOwner': 'You can only edit your own draft.',
   'order.errors.notSubmittable':
     'This order was already submitted. Refresh to see where it is now.',
   'order.errors.cannotSubmit':
@@ -1245,8 +1245,8 @@ export const en = {
     "You don't have permission to place orders. Ask your store manager for access.",
   'order.errors.cannotArchive':
     "You don't have permission to archive orders. Ask your store manager for access.",
-  'order.errors.cannotEditOthersLine': "You can't edit an item someone else added",
-  'order.errors.emptyOrder': 'Add at least one item before submitting',
+  'order.errors.cannotEditOthersLine': "You can't edit an item someone else added.",
+  'order.errors.emptyOrder': 'Add at least one item before submitting.',
   'order.errors.cannotClaim':
     "You don't have permission to review orders. Ask your store manager for access.",
   // M3.37 (2026-05-19, Wave2 #5): MarkExtraStatus guard rails.
@@ -1254,41 +1254,41 @@ export const en = {
   'order.errors.extraStatusOnlyDuringRun': 'Other items can only be marked once purchasing starts.',
   'order.errors.extraIndexOutOfRange':
     'This other item is gone — it may have just been removed. Refresh to check.',
-  'order.errors.notClaimable': 'This order is not awaiting review',
+  'order.errors.notClaimable': 'This order is not awaiting review.',
   'order.errors.alreadyClaimed': 'Another reviewer is already reviewing this order.',
   'order.errors.takeOverCooldown': 'This order was just taken over. Try again in a minute.',
   'order.errors.notClaimer':
     'Only the person reviewing this order or another reviewer can put it back.',
   'order.errors.cannotApprove':
     "You don't have permission to review orders. Ask your store manager for access.",
-  'order.errors.notApprovable': 'This order is not awaiting review',
-  'order.errors.claimedByOther': 'Another reviewer is currently working on this',
+  'order.errors.notApprovable': 'This order is not awaiting review.',
+  'order.errors.claimedByOther': 'Another reviewer is currently working on this.',
   'order.errors.notRejectable':
     'This order is no longer waiting for review, so it cannot be rejected. Refresh to see where it is now.',
-  'order.errors.rejectReasonRequired': 'Please provide a reason for rejection',
+  'order.errors.rejectReasonRequired': 'Please provide a reason for rejection.',
   'order.errors.notWithdrawable':
     "This order is already being reviewed or bought, so it can't be withdrawn.",
   'order.errors.withdrawDraftOpen':
-    'You already have a draft for today. Submit or clear it first, then withdraw this batch',
+    'You already have a draft for today. Submit or clear it first, then withdraw this batch.',
   'order.errors.cannotWithdraw':
     "You don't have permission to withdraw orders. Ask your store manager for access.",
   'order.errors.cannotWithdrawWhileClaimed':
     "Someone is reviewing this order, so it can't be withdrawn right now.",
   'order.errors.cannotUnapprove':
     "You don't have permission to reverse approvals. Ask your store manager for access.",
-  'order.errors.notUnapprovable': 'This order is not approved',
+  'order.errors.notUnapprovable': 'This order is not approved.',
   'order.errors.alreadyInRun': 'This order is already in a run. Refresh to see it there.',
   'order.errors.cannotAttach':
     'This order cannot be added to the run because it is no longer approved. Refresh to see its status.',
   'order.errors.cannotEject':
     'This order cannot be taken out of the run: something in it was already bought or marked unavailable, or you lack the permission. Undo those items first.',
-  'order.errors.streamMissing': 'Order has not been started',
+  'order.errors.streamMissing': 'Order has not been started.',
   'order.errors.sessionMissing':
     'This order is gone — it may have just been deleted. Refresh to check.',
-  'order.errors.archived': 'Order is archived',
+  'order.errors.archived': 'Order is archived.',
   'order.errors.lockedByStatus':
     'This order is already approved or in a run, so it can no longer be changed.',
-  'order.errors.notEditor': 'Only the owner or current reviewer can edit',
+  'order.errors.notEditor': 'Only the owner or current reviewer can edit.',
   'order.errors.targetLineNotFound':
     'That item was already removed. Refresh to see the current order.',
   'order.errors.staleSeq':
@@ -1387,7 +1387,7 @@ export const en = {
   'run.toast.couldNotEjectSession': 'Could not remove the order. Try again.',
   'run.errors.cannotEjectSession':
     "You don't have permission to remove orders from a run. Ask an admin for access.",
-  'run.errors.storeAlreadyConfirmed': 'This store has already confirmed receipt',
+  'run.errors.storeAlreadyConfirmed': 'This store has already confirmed receipt.',
   'run.errors.notVisible':
     'This run was not found or is not available to you. Refresh the list; ask an admin if you need access.',
   'run.errors.priceFormat': 'Price must be above 0, with at most 12 digits and 2 decimals.',
@@ -1445,10 +1445,10 @@ export const en = {
   'run.toast.sessionsAttached': 'Orders attached',
   'run.toast.couldNotAttach': 'Could not add the orders to the run. Refresh and try again.',
   'run.errors.cannotAttachInStatus':
-    'Can only attach orders while the run is planned or purchasing',
-  'run.errors.sessionAlreadyInRun': 'That order is already attached to this run',
-  'run.errors.allSessionsAlreadyInRun': 'Every selected order is already in this run',
-  'run.errors.noSessionsToAttach': 'No orders selected to attach',
+    'Can only attach orders while the run is planned or purchasing.',
+  'run.errors.sessionAlreadyInRun': 'That order is already attached to this run.',
+  'run.errors.allSessionsAlreadyInRun': 'Every selected order is already in this run.',
+  'run.errors.noSessionsToAttach': 'No orders selected to attach.',
   'run.action.remainingItems': '{n} left to handle',
   'run.action.waitingOtherStores': 'The rest are for the purchaser of the other stores',
   'run.action.startDelivery': 'Start delivery',
@@ -1491,9 +1491,9 @@ export const en = {
     '➕ {n, plural, one {# item} other {# items}} added beyond the original order · {total} {currency}',
   'run.toast.itemAdded': 'Item added to the run',
   'run.toast.couldNotAddItem': 'Could not add the product. Try again.',
-  'run.errors.alreadyInRun': 'This product is already in the run — use Edit on the existing item',
-  'run.errors.storeNotInRun': 'That store is not part of this run',
-  'run.errors.addReasonRequired': 'Reason is required for purchaser additions',
+  'run.errors.alreadyInRun': 'This product is already in the run — use Edit on the existing item.',
+  'run.errors.storeNotInRun': 'That store is not part of this run.',
+  'run.errors.addReasonRequired': 'Reason is required for purchaser additions.',
   // M3.44 (2026-05-22): off-catalog expenses (porter / taxi / one-off items)
   'run.action.addItem.modeSku': 'Catalog product',
   'run.action.addItem.modeExpense': 'Off-catalog',
@@ -1522,10 +1522,10 @@ export const en = {
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…and {n} more',
   'run.errors.expenseIdTaken':
-    'This expense is already recorded on another run. Add it again as a new expense',
-  'run.errors.expenseLabelRequired': 'A description is required',
-  'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
-  'run.errors.expenseReasonRequired': 'Reason is required',
+    'This expense is already recorded on another run. Add it again as a new expense.',
+  'run.errors.expenseLabelRequired': 'A description is required.',
+  'run.errors.expenseLabelTooLong': 'Description too long (200 max).',
+  'run.errors.expenseReasonRequired': 'Reason is required.',
   'run.errors.claimedByOther': 'Another purchaser is handling this run.',
   'run.errors.notClaimable': 'This run is finished or cancelled, so it cannot be taken over.',
   // M3.36 (2026-05-19): "thousands mode" lets purchasers type 147.5
@@ -1652,24 +1652,24 @@ export const en = {
   'run.errors.alreadyPlanned':
     'Someone planned a run at the same moment. Refresh to see it and use that one.',
   'run.errors.cannotCreate': "You don't have permission to plan runs. Ask an admin for access.",
-  'run.errors.noSessions': 'Pick at least one approved order',
-  'run.errors.noItems': 'No items to purchase',
+  'run.errors.noSessions': 'Pick at least one approved order.',
+  'run.errors.noItems': 'No items to purchase.',
   'run.errors.cannotStartPurchase':
     'This run is no longer being planned, so buying cannot start. Refresh to see where it is now.',
   'run.errors.cannotPurchase':
     "You don't have permission to record purchases. Ask an admin for access.",
   'run.errors.runFrozen':
     'This run is finished or cancelled and cannot be changed. To correct a finished one, ask a super admin to reopen it.',
-  'run.errors.cannotAmend': 'Only a super admin can amend a finished run',
-  'run.errors.notReopenable': 'Only a finished run can be reopened for correction',
-  'run.errors.invalidRunDate': 'Enter a valid date',
-  'run.errors.runDateUnchanged': "That is already this run's date",
+  'run.errors.cannotAmend': 'Only a super admin can amend a finished run.',
+  'run.errors.notReopenable': 'Only a finished run can be reopened for correction.',
+  'run.errors.invalidRunDate': 'Enter a valid date.',
+  'run.errors.runDateUnchanged': "That is already this run's date.",
   'run.date.label': 'Purchase date',
   'run.date.change': 'Change purchase date',
   'run.date.hint': 'The day this spend is booked under. History groups by it.',
   'run.date.changed': 'Purchase date updated',
-  'run.errors.notRefinalizable': 'This run is not in a correction state',
-  'run.errors.reopenReasonRequired': 'A reason is required to reopen the run',
+  'run.errors.notRefinalizable': 'This run is not in a correction state.',
+  'run.errors.reopenReasonRequired': 'A reason is required to reopen the run.',
   'run.action.refinalize': 'Save changes',
   'run.toast.amendSaved': 'Changes saved and totals recalculated',
   'run.confirm.refinalize.title': 'Save changes?',
@@ -1685,20 +1685,20 @@ export const en = {
   'run.errors.itemNotInRun':
     'This product is not in this run — it may have just been removed. Refresh to check.',
   'run.errors.invalidQty': 'The quantity or price is not a valid number. Enter it again.',
-  'run.errors.qtyMustBePositive': 'Quantity must be positive',
-  'run.errors.splitSumMismatch': 'Store split must sum to actual quantity',
-  'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable',
-  'run.errors.itemNotPending': 'Only a pending item can be marked unavailable',
+  'run.errors.qtyMustBePositive': 'Quantity must be positive.',
+  'run.errors.splitSumMismatch': 'Store split must sum to actual quantity.',
+  'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable.',
+  'run.errors.itemNotPending': 'Only a pending item can be marked unavailable.',
   'run.errors.itemAlreadyPurchased':
-    'This item is already recorded as bought — edit the existing record instead',
+    'This item is already recorded as bought — edit the existing record instead.',
   'run.errors.cannotCancelAfterConfirm':
-    'A store has already confirmed its delivery — this run can no longer be cancelled',
+    'A store has already confirmed its delivery — this run can no longer be cancelled.',
   'run.errors.cannotCancelAfterDelivery':
-    'Goods have been delivered to a store, so the run cannot be cancelled. Recall the delivery first',
-  'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
+    'Goods have been delivered to a store, so the run cannot be cancelled. Recall the delivery first.',
+  'run.errors.noteTooLong': 'Note is too long (max 500 characters).',
   'run.errors.notReadyToDeliver':
     'Delivery cannot start yet: the run is not at the delivery step. Refresh to see where it is.',
-  'run.errors.itemsPending': 'Some items are still pending',
+  'run.errors.itemsPending': 'Some items are still pending.',
   'run.topUp.title': 'Newly joined orders still need',
   'run.topUp.line': 'bought {bought}, still need {need}',
   'run.topUp.lineUnavailable': 'marked unavailable; a new order wants {need}',
@@ -1720,14 +1720,14 @@ export const en = {
   'run.errors.cannotDispatch':
     "You don't have permission to send out deliveries. Ask an admin for access.",
   'run.errors.cannotConfirm': "You can't confirm receipt. Ask your store manager for access.",
-  'run.errors.confirmNoteRequiredOnIssue': 'Please describe the issue',
+  'run.errors.confirmNoteRequiredOnIssue': 'Please describe the issue.',
   'run.errors.storeNotDelivered':
     'The goods were not delivered yet, or the purchaser recalled this delivery. Check them once they are delivered.',
   'run.errors.cannotFinish': "You don't have permission to finish runs. Ask an admin for access.",
   'run.errors.notFinishable':
     'A run can be finished only once delivery has started. Refresh to see where it is now.',
-  'run.errors.storeNotConfirmed': 'A store has not confirmed receipt yet',
-  'run.errors.alreadyFinished': 'Run is already finished',
+  'run.errors.storeNotConfirmed': 'A store has not confirmed receipt yet.',
+  'run.errors.alreadyFinished': 'Run is already finished.',
   'run.errors.cannotCancel': "You don't have permission to cancel runs. Ask an admin for access.",
   'run.errors.streamMissing': 'This run is gone — it may have just been deleted. Refresh to check.',
   'run.errors.sessionMissing':
@@ -1736,17 +1736,17 @@ export const en = {
     'This order is not approved yet, so it cannot go into the run. Review it first.',
   'run.errors.staleSeq':
     'Someone just changed this. Refresh to see the latest, then make your change again.',
-  'run.errors.notPurchased': 'This item has not been purchased yet',
-  'run.errors.notRevisable': 'This item has not been purchased yet',
-  'run.errors.cannotReviseAfterDelivery': 'Cannot edit — already delivered to a store',
-  'run.errors.notUnavailable': 'This item is not marked unavailable',
-  'run.errors.alreadyConfirmed': 'Cannot recall — store has already confirmed receipt',
-  'run.errors.notPurchasing': 'Run is not in the purchasing phase',
-  'run.errors.deliveryAlreadyProgressed': 'Cannot undo — a store has already received delivery',
-  'run.errors.reviseReasonRequired': 'Please describe what changed',
-  'run.errors.unmarkReasonRequired': 'Please describe why this is available now',
-  'run.errors.recallReasonRequired': 'Please describe why you are recalling this',
-  'run.errors.undoReasonRequired': 'Please describe why you are reverting',
+  'run.errors.notPurchased': 'This item has not been purchased yet.',
+  'run.errors.notRevisable': 'This item has not been purchased yet.',
+  'run.errors.cannotReviseAfterDelivery': 'Cannot edit — already delivered to a store.',
+  'run.errors.notUnavailable': 'This item is not marked unavailable.',
+  'run.errors.alreadyConfirmed': 'Cannot recall — store has already confirmed receipt.',
+  'run.errors.notPurchasing': 'Run is not in the purchasing phase.',
+  'run.errors.deliveryAlreadyProgressed': 'Cannot undo — a store has already received delivery.',
+  'run.errors.reviseReasonRequired': 'Please describe what changed.',
+  'run.errors.unmarkReasonRequired': 'Please describe why this is available now.',
+  'run.errors.recallReasonRequired': 'Please describe why you are recalling this.',
+  'run.errors.undoReasonRequired': 'Please describe why you are reverting.',
   'run.errors.splitsMustSum': 'Splits must add up to the actual quantity.',
 
   // ── 12. Confirm page (delivery acceptance) ──────────────────────
@@ -1978,7 +1978,7 @@ export const en = {
     "You can view this dish's recipe; editing the menu needs a permission an admin can give you.",
   'dishes.errors.namesRequired': 'At least one language name is required.',
   'admin.errors.displayNameSharedWithOtherOrg':
-    'This person also belongs to another workspace, so only they can change their name',
+    'This person also belongs to another workspace, so only they can change their name.',
   'admin.errors.namesRequired': 'At least one language name is required.',
   'dishes.errors.ingredientQtyMustBePositive': "An ingredient's quantity must be more than 0.",
   'dishes.errors.ingredientSkuNotFound':
@@ -2250,13 +2250,13 @@ export const en = {
   'run.switcher.option': '#{n} · {date} · {step}',
   'run.titleWithIndex': 'Run #{n}',
   'run.confirm.finish.money': 'Items {items} · expenses {expenses} · total {total} {currency}',
-  'run.errors.runDateInFuture': "The purchase date can't be in the future",
-  'run.errors.receivedQtyRequired': 'Enter how much actually arrived',
+  'run.errors.runDateInFuture': "The purchase date can't be in the future.",
+  'run.errors.receivedQtyRequired': 'Enter how much actually arrived.',
   'run.errors.receivedQtyInvalid': 'Received quantity must be a number (0 or more).',
-  'run.errors.receivedQtyExceedsSplit': "Received quantity can't exceed {max}",
+  'run.errors.receivedQtyExceedsSplit': "Received quantity can't exceed {max}.",
   'run.errors.receivedQtyNotShort':
-    '{max} is everything — choose "OK"; for a shortfall enter less than {max}',
-  'run.errors.storeItemsUnchecked': '{n} still to check before the store can be confirmed',
+    '{max} is everything — choose "OK"; for a shortfall enter less than {max}.',
+  'run.errors.storeItemsUnchecked': '{n} still to check before the store can be confirmed.',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sales',
@@ -2307,9 +2307,9 @@ export const en = {
   'order.errors.staleOfflineEdit':
     "This change was made offline on an earlier day, so it was not applied. Check today's order and make the change again if needed.",
   'order.errors.deviceDateAhead':
-    "Your phone's date is later than today, so this change was not saved. Set the phone's date and time to automatic, then try again",
+    "Your phone's date is later than today, so this change was not saved. Set the phone's date and time to automatic, then try again.",
   'order.errors.approveEmpty':
-    'This order has no items left and cannot be approved. Reject it instead',
+    'This order has no items left and cannot be approved. Reject it instead.',
   'approval.toast.orderChanged':
     'This order changed since you opened it — review the latest version',
   // 2026-10-21 frontend P1 fixes (FE-04 merge hint, FE-05 update prompt, FE-08 audit sentences).
