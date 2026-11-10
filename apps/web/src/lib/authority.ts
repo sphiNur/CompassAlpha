@@ -10,7 +10,7 @@
  * what is shown, and when a rank is unknown (an older server) the action
  * is shown and the server answers as before.
  */
-import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
+import { ADMIN_RANK, SUPER_ADMIN_RANK } from '@compass/contracts/schemas/roles';
 
 /** A role binding as the member list returns it. */
 export interface Binding {
@@ -44,6 +44,12 @@ export interface TargetMember {
   /** Every store the member is in (assignments and store bindings),
    *  paused and archived ones included. */
   storeIds: readonly string[];
+  /** Some of their stores are outside what the actor may see, so
+   *  `storeIds` is partial (memberList `statusOutOfReach`). */
+  outOfReach?: boolean;
+  /** They also belong to another organisation: only they may change
+   *  their name (memberList `nameShared`, D22). */
+  nameShared?: boolean;
 }
 
 const UNKNOWN = Number.POSITIVE_INFINITY;
@@ -134,9 +140,57 @@ export function canSetStatus(
   if (actor.isOrgAdmin) {
     return outranks(orgRankOf(actor.bindings), rankIn(target.bindings, null));
   }
-  if (target.storeIds.length === 0) return false;
+  return reachesEveryStore(actor, target);
+}
+
+/**
+ * assertAdministersEveryTargetStore: the actor manages every store the
+ * member is in, paused and archived ones too, and outranks them in each.
+ */
+function reachesEveryStore(actor: Actor, target: TargetMember): boolean {
+  if (target.outOfReach || target.storeIds.length === 0) return false;
   return target.storeIds.every(
     (id) => governs(actor, id) && outranks(rankIn(actor.bindings, id), rankIn(target.bindings, id)),
+  );
+}
+
+/**
+ * memberSetDisplayName: everyone may rename themself (ADM1-06). Someone
+ * another organisation also has keeps the name they chose (D22). An
+ * organisation admin needs to outrank the member organisation-wide, or be
+ * a super admin; anyone else needs the reach suspending takes.
+ */
+export function canRename(actor: Actor, target: TargetMember): boolean {
+  if (target.userId === actor.userId) return true;
+  if (target.nameShared) return false;
+  if (actor.isOrgAdmin) {
+    const actorRank = orgRankOf(actor.bindings);
+    return actorRank >= SUPER_ADMIN_RANK || outranks(actorRank, rankIn(target.bindings, null));
+  }
+  return reachesEveryStore(actor, target);
+}
+
+/**
+ * memberRemove: an organisation admin, never on themself, who outranks
+ * the member organisation-wide (someone holding no role at all goes).
+ * Whether they are the last admin or have attendance records only the
+ * server knows.
+ */
+export function canRemoveFromOrg(actor: Actor, target: TargetMember): boolean {
+  if (!actor.isOrgAdmin || target.userId === actor.userId) return false;
+  const targetRank = rankIn(target.bindings, null);
+  return targetRank === 0 || outranks(orgRankOf(actor.bindings), targetRank);
+}
+
+/**
+ * memberDetachFromStore: the actor manages the store, paused or archived
+ * ones included, and outranks the member there. (A member's last store
+ * is the server's call.)
+ */
+export function canDetachFromStore(actor: Actor, target: TargetMember, storeId: string): boolean {
+  return (
+    governs(actor, storeId) &&
+    outranks(rankIn(actor.bindings, storeId), rankIn(target.bindings, storeId))
   );
 }
 

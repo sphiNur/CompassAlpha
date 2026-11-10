@@ -294,6 +294,10 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     expect(err?.code).toBe('FORBIDDEN');
     expect(err?.message).toBe('admin.errors.displayNameSharedWithOtherOrg');
     expect(await nameOf(shared.id)).toEqual({ displayName: 'Shared Person', locked: false });
+    // ADM1-06: the member list says so up front; the owner, in X alone, is not.
+    const listed = await admin.admin.memberList();
+    expect(listed.find((m) => m.memberId === memberX)?.nameShared).toBe(true);
+    expect(listed.find((m) => m.memberId === ownerX.memberId)?.nameShared).toBe(false);
 
     // The person themself still can, from either organisation.
     const self = await callerAs(orgX, shared.id, memberX);

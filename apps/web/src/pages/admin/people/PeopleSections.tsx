@@ -62,7 +62,10 @@ import {
   tgIdProblem,
 } from '../../../lib/adminFields';
 import {
+  canDetachFromStore,
   canGrantRole,
+  canRemoveFromOrg,
+  canRename,
   canRevokeRole,
   canSetOverride,
   canSetStatus,
@@ -102,11 +105,15 @@ function targetOf(m: {
   roles: readonly Binding[];
   stores: ReadonlyArray<{ id: string }>;
   inactiveStores: ReadonlyArray<{ id: string }>;
+  statusOutOfReach: boolean;
+  nameShared: boolean;
 }): TargetMember {
   return {
     userId: m.userId,
     bindings: m.roles,
     storeIds: [...m.stores, ...m.inactiveStores].map((st) => st.id),
+    outOfReach: m.statusOutOfReach,
+    nameShared: m.nameShared,
   };
 }
 
@@ -219,7 +226,6 @@ export function PeopleSection({
     /** ADM1-16: paused and archived stores; the member can only leave them. */
     inactiveStores: Array<{ id: string; name: string }>;
     isSelf: boolean;
-    statusOutOfReach: boolean;
     member: TargetMember;
     /** DX-ADM-11: the roles this person may take away, with a name for each. */
     revocable: Array<{ bindingId: string; role: string; store: string | null }>;
@@ -519,7 +525,6 @@ export function PeopleSection({
                           name: inactiveName(st),
                         })),
                         isSelf,
-                        statusOutOfReach: m.statusOutOfReach ?? false,
                         member: targetOf(m),
                         revocable: m.roles
                           .filter((r) => canRevokeRole(actor, m.userId, r))
@@ -741,7 +746,6 @@ export function PeopleSection({
               </Button>
             ) : null}
             {!memberMenuFor.isSelf &&
-            !memberMenuFor.statusOutOfReach &&
             memberMenuFor.status === 'active' &&
             canSetStatus(actor, memberMenuFor.member, 'suspended') ? (
               <Button
@@ -759,7 +763,6 @@ export function PeopleSection({
               </Button>
             ) : null}
             {!memberMenuFor.isSelf &&
-            !memberMenuFor.statusOutOfReach &&
             memberMenuFor.status === 'suspended' &&
             canSetStatus(actor, memberMenuFor.member, 'active') ? (
               <Button
@@ -781,7 +784,8 @@ export function PeopleSection({
             storeCtx.kind === 'specific' &&
             [...memberMenuFor.stores, ...memberMenuFor.inactiveStores].some(
               (st) => st.id === storeCtx.storeId,
-            ) ? (
+            ) &&
+            canDetachFromStore(actor, memberMenuFor.member, storeCtx.storeId) ? (
               <Button
                 block
                 variant="pearl"
@@ -809,8 +813,9 @@ export function PeopleSection({
                 {i18n.t('admin.action.removeFromStore')}
               </Button>
             ) : null}
-            {/* 2026-10-21 audit CA-16: memberRemove is org.admin only. */}
-            {!memberMenuFor.isSelf && isGlobalAdminPeople ? (
+            {/* 2026-10-21 audit CA-16: memberRemove is org.admin only;
+                ADM1-07: and only on someone they outrank. */}
+            {canRemoveFromOrg(actor, memberMenuFor.member) ? (
               <Button
                 block
                 variant="danger"
@@ -854,6 +859,7 @@ export function PeopleSection({
       />
       <ManualInviteSheet
         mode="tgid"
+        actor={actor}
         draft={manualDraft}
         setDraft={setManualDraft}
         onSubmit={() => {
@@ -869,6 +875,7 @@ export function PeopleSection({
       />
       <ManualInviteSheet
         mode="link"
+        actor={actor}
         draft={linkDraft}
         setDraft={setLinkDraft}
         onSubmit={() => {
@@ -1302,13 +1309,11 @@ function RolePermissionsSheet({
   // Below-rank gate — only roles strictly below actor's rank are editable.
   const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
   const isBuiltIn = detail.data?.isBuiltIn ?? false;
+  // ADM1-20: every binding counts, suspended holders and lapsed grants
+  // too, as the server counts them (older servers: the listed holders).
+  const held = (detail.data?.bindingCount ?? detail.data?.assignees.length ?? 0) > 0;
   // ADM1-02: a held role keeps its side of ADMIN_RANK.
-  const rankRange = roleRankRange(
-    detail.data?.rank ?? 0,
-    (detail.data?.assignees.length ?? 0) > 0,
-    myMaxRank,
-    ADMIN_RANK,
-  );
+  const rankRange = roleRankRange(detail.data?.rank ?? 0, held, myMaxRank, ADMIN_RANK);
   const rankRead = readRank(rankText, rankRange.max, rankRange.min);
   const rank = rankRead.ok ? rankRead.rank : (detail.data?.rank ?? 0);
   // DX-ADM-28: the edit form asks before its changes are thrown away.
@@ -1410,19 +1415,28 @@ function RolePermissionsSheet({
               {i18n.t('common.edit')}
             </Button>
             {!isBuiltIn ? (
-              <Button
-                block
-                variant="danger"
-                loading={remove.isPending}
-                onClick={() => {
-                  nativeConfirm(
-                    i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
-                    () => remove.mutate({ roleId: detail.data!.id }),
-                  );
-                }}
-              >
-                {i18n.t('people.deleteRole')}
-              </Button>
+              <>
+                {/* ADM1-07: a held role cannot be deleted; say so up front. */}
+                <Button
+                  block
+                  variant="danger"
+                  loading={remove.isPending}
+                  disabled={held}
+                  onClick={() => {
+                    nativeConfirm(
+                      i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
+                      () => remove.mutate({ roleId: detail.data!.id }),
+                    );
+                  }}
+                >
+                  {i18n.t('people.deleteRole')}
+                </Button>
+                {held ? (
+                  <p className="text-old-label text-[var(--c-fg-muted)]">
+                    {i18n.t('admin.errors.roleHasBindings')}
+                  </p>
+                ) : null}
+              </>
             ) : null}
           </div>
         ) : undefined
@@ -1562,6 +1576,8 @@ function RoleAssigneesByStore({
     scopeType: 'global' | 'store';
     scopeId: string | null;
     storeName: string | null;
+    /** ADM1-20: suspended holders are listed too, marked. */
+    status?: string;
   }>;
 }) {
   const i18n = useI18n();
@@ -1615,6 +1631,11 @@ function RoleAssigneesByStore({
                   <span className="text-old-body text-[var(--c-fg)]">{a.displayName}</span>
                   {a.tgUsername ? (
                     <span className="text-old-label text-[var(--c-fg-muted)]">@{a.tgUsername}</span>
+                  ) : null}
+                  {a.status === 'suspended' || a.status === 'invited' ? (
+                    <Badge tone="warn" className="ml-auto">
+                      {i18n.t(`people.memberStatus.${a.status}`)}
+                    </Badge>
                   ) : null}
                 </li>
               ))}
@@ -1812,12 +1833,14 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
 
 function ManualInviteSheet({
   mode = 'tgid',
+  actor,
   draft,
   setDraft,
   onSubmit,
   pending,
 }: {
   mode?: 'tgid' | 'link';
+  actor: Actor;
   draft: InviteDraft | null;
   setDraft: (d: InviteDraft | null) => void;
   onSubmit: () => void;
@@ -1843,28 +1866,32 @@ function ManualInviteSheet({
   // "admin of every visible store" heuristic.
   const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
 
-  const sortedRoles = useMemo(
-    () =>
-      [...(rolesQuery.data ?? [])]
-        // Hide org-tier roles for non-global admins (mirrors server's
-        // cannotInviteOrgAdminAsStoreAdmin gate). The role still exists
-        // server-side; this is purely a UX decision.
-        .filter((r) => isGlobalAdmin || r.rank < ADMIN_RANK)
-        // ADM-16: nobody can invite at their own rank or above (a super
-        // admin was offered Super Admin, which the server always refuses).
-        .filter((r) => r.rank < (session?.myMaxRank ?? 0))
-        // DX-ADM-22: highest first, like the grant sheet (was by stored name).
-        .sort((a, b) => b.rank - a.rank),
-    [rolesQuery.data, isGlobalAdmin, session?.myMaxRank],
-  );
   const eligibleStores = useMemo(
     () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
     [storesQuery.data, adminStoreIds],
   );
+  // ADM1-07: the server weighs the role against the actor's rank in each
+  // store the invite names (org-tier roles: organisation-wide, org admins
+  // only), not against their highest rank anywhere. With no store picked
+  // yet, a role passes when some store of theirs would take it.
+  const pickedStoreIds = draft?.storeIds;
+  const rankAllows = (r: { rank: number }) => {
+    if (r.rank >= ADMIN_RANK) return canGrantRole(actor, r, { type: 'global' });
+    const ids = pickedStoreIds?.length ? pickedStoreIds : null;
+    return ids
+      ? ids.every((storeId) => canGrantRole(actor, r, { type: 'store', storeId }))
+      : eligibleStores.some((st) => canGrantRole(actor, r, { type: 'store', storeId: st.id }));
+  };
+  const sortedRoles = [...(rolesQuery.data ?? [])]
+    // Org-tier roles only for org admins (cannotInviteOrgAdminAsStoreAdmin).
+    .filter((r) => isGlobalAdmin || r.rank < ADMIN_RANK)
+    // The picked role stays listed so the reason below can name it.
+    .filter((r) => rankAllows(r) || r.slug === draft?.roleSlug)
+    // DX-ADM-22: highest first, like the grant sheet (was by stored name).
+    .sort((a, b) => b.rank - a.rank);
   // DX-ADM-1: a custom role carrying a key the actor lacks where it would
   // be bound (org-tier roles globally, others in each chosen store; with
   // no store chosen yet, in any of theirs) is shown greyed with the reason.
-  const pickedStoreIds = draft?.storeIds;
   const keysMissing = (r: (typeof sortedRoles)[number]) => {
     if (r.rank >= ADMIN_RANK) return !rolePassesOn(r, { type: 'global' });
     const ids = pickedStoreIds?.length ? pickedStoreIds : null;
@@ -1873,7 +1900,8 @@ function ManualInviteSheet({
       : !eligibleStores.some((st) => rolePassesOn(r, { type: 'store', storeId: st.id }));
   };
   const pickedRole = sortedRoles.find((r) => r.slug === draft?.roleSlug) ?? null;
-  const pickedRoleBlocked = pickedRole ? keysMissing(pickedRole) : false;
+  const pickedRoleOutranks = pickedRole ? !rankAllows(pickedRole) : false;
+  const pickedRoleBlocked = pickedRole ? keysMissing(pickedRole) || pickedRoleOutranks : false;
 
   // DX-ADM-5: the id is kept as typed; a phone number is refused with a
   // reason instead of being turned into digits.
@@ -1974,7 +2002,11 @@ function ManualInviteSheet({
                 })}
               </Select>
             )}
-            {pickedRoleBlocked ? (
+            {pickedRoleOutranks ? (
+              <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
+                {i18n.t('auth.errors.cannotGrantEqualOrHigher')}
+              </p>
+            ) : pickedRoleBlocked ? (
               <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
                 {i18n.t('people.roleHasKeysYouLack')}
               </p>
@@ -2125,10 +2157,9 @@ function ManageMemberSheet({
   );
   // 2026-10-21 audit CA-07: renaming changes the person's global name,
   // so the server requires org.admin or authority over every store the
-  // member is in (plus a higher rank there, checked server-side).
-  const canRename =
-    isGlobalAdmin ||
-    (assignedIds.size > 0 && [...assignedIds].every((id) => adminStoreIds.has(id)));
+  // member is in, and a higher rank (lib/authority canRename, ADM1-06:
+  // ranks, store roles and other organisations count; oneself always).
+  const renameAllowed = target ? canRename(actor, target.member) : false;
 
   // D2 (2026-05-06): transfer wizard state. fromStoreId is set when
   // the operator taps "Transfer..." on a particular row. The sheet
@@ -2154,7 +2185,7 @@ function ManageMemberSheet({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={200}
-                disabled={!canRename}
+                disabled={!renameAllowed}
                 placeholder={i18n.t('admin.field.memberNamePlaceholder')}
               />
               {/* md, not sm (RE-ADM-9): the field beside it is 44px, and at
@@ -2163,7 +2194,7 @@ function ManageMemberSheet({
               <Button
                 className="shrink-0"
                 loading={renameMut.isPending}
-                disabled={!canRename || !name.trim() || name.trim() === target.displayName}
+                disabled={!renameAllowed || !name.trim() || name.trim() === target.displayName}
                 onClick={() =>
                   renameMut.mutate({ memberId: target.memberId, displayName: name.trim() })
                 }
@@ -2188,8 +2219,11 @@ function ManageMemberSheet({
                   const pending = assignMut.isPending || detachMut.isPending;
                   // C2: stores you don't administer are visible (so
                   // you see the full picture) but the checkbox is
-                  // disabled. The server would reject anyway.
-                  const editable = adminStoreIds.has(st.id);
+                  // disabled. The server would reject anyway. ADM1-07:
+                  // so is taking someone who outranks you there out.
+                  const editable = checked
+                    ? canDetachFromStore(actor, target.member, st.id)
+                    : adminStoreIds.has(st.id);
                   return (
                     <label
                       key={st.id}
@@ -2197,7 +2231,7 @@ function ManageMemberSheet({
                         'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
                         (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
                       }
-                      title={editable ? undefined : i18n.t('people.notYourStore')}
+                      title={adminStoreIds.has(st.id) ? undefined : i18n.t('people.notYourStore')}
                     >
                       <Checkbox
                         checked={checked}
