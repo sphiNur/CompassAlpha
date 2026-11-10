@@ -25,7 +25,8 @@
 import { describe, it, expect } from 'bun:test';
 import { buildStoreText, buildSupplierText, formatLineForText } from '../shareText';
 import type { ShareTextDeps } from '../shareText';
-import type { PreviewLine, PreviewStoreGroup, PreviewSupplierGroup } from '../../types';
+import type { PreviewLine, PreviewStoreGroup } from '../../types';
+import { previewLine as line, previewStore, previewSupplier } from './previewFixtures';
 
 const CATALOG: Record<string, { name: string; unit: string }> = {
   'sku-tomato': { name: '西红柿', unit: '公斤' },
@@ -39,42 +40,11 @@ const deps: ShareTextDeps = {
   notesLabel: '备注',
 };
 
-function line(over: Partial<PreviewLine> = {}): PreviewLine {
-  return {
-    id: over.id ?? 'l1',
-    kind: over.kind ?? 'sku',
-    // `??` would fold an explicitly-passed null back into the default,
-    // and a null skuId is exactly what marks an off-catalog extra.
-    skuId: 'skuId' in over ? over.skuId ?? null : 'sku-tomato',
-    name: over.name ?? 'raw-name',
-    qty: over.qty ?? '1',
-    unit: over.unit ?? 'raw-unit',
-    unitPrice: over.unitPrice ?? null,
-    total: over.total ?? null,
-    note: over.note,
-  };
-}
+const store = (storeId: string, storeName: string, items: PreviewLine[], legacyNote?: string) =>
+  previewStore(storeId, items, { storeName, legacyNote });
 
-function store(
-  storeId: string,
-  storeName: string,
-  items: PreviewLine[],
-  legacyNote?: string,
-): PreviewStoreGroup {
-  return { storeId, storeName, items, total: 0, unknownCount: 0, legacyNote };
-}
-
-function supplier(stores: PreviewStoreGroup[]): PreviewSupplierGroup {
-  return {
-    supplierId: 'sup-1',
-    supplierName: 'savza abat',
-    contactPhone: null,
-    contactTg: null,
-    stores,
-    total: 0,
-    unknownCount: 0,
-  };
-}
+const supplier = (stores: PreviewStoreGroup[]) =>
+  previewSupplier('sup-1', stores, { supplierName: 'savza abat' });
 
 describe('formatLineForText', () => {
   it('uses the catalog name + localized unit when the SKU resolves', () => {

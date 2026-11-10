@@ -10,43 +10,14 @@ import {
   countStoreLines,
   countSupplierLines,
 } from '../previewFilter';
-import type { PreviewLine, PreviewStoreGroup, PreviewSupplierGroup } from '../../types';
+import type { PreviewLine } from '../../types';
+import { previewLine, previewStore, previewSupplier as supplier } from './previewFixtures';
 
-function line(over: Partial<PreviewLine> = {}): PreviewLine {
-  return {
-    id: over.id ?? 'l1',
-    kind: over.kind ?? 'sku',
-    skuId: 'skuId' in over ? over.skuId ?? null : 'sku-1',
-    name: over.name ?? 'Tomato',
-    qty: over.qty ?? '1',
-    unit: over.unit ?? 'kg',
-    unitPrice: over.unitPrice ?? null,
-    total: over.total ?? null,
-    note: over.note,
-    supplierId: over.supplierId,
-    supplierName: over.supplierName,
-  };
-}
+const line = (over: Partial<PreviewLine> = {}) =>
+  previewLine({ skuId: 'sku-1', name: 'Tomato', unit: 'kg', ...over });
 
-function store(
-  storeId: string,
-  items: PreviewLine[],
-  legacyNote?: string,
-): PreviewStoreGroup {
-  return { storeId, storeName: `Store-${storeId}`, items, total: 0, unknownCount: 0, legacyNote };
-}
-
-function supplier(supplierId: string | null, stores: PreviewStoreGroup[]): PreviewSupplierGroup {
-  return {
-    supplierId,
-    supplierName: supplierId ?? 'unassigned',
-    contactPhone: null,
-    contactTg: null,
-    stores,
-    total: 0,
-    unknownCount: 0,
-  };
-}
+const store = (storeId: string, items: PreviewLine[], legacyNote?: string) =>
+  previewStore(storeId, items, { legacyNote });
 
 const q = (s: string) => normalizeQuery(s) ?? [];
 
