@@ -11,6 +11,7 @@ import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
 import { attendanceMonthExport } from './http/attendanceExport';
+import { INTERNAL_BODY, NOT_FOUND_BODY } from './http/errorBodies';
 import { serveWebApp } from './http/webApp';
 
 /**
@@ -330,11 +331,11 @@ export function createApp() {
 
   // Last-resort notFound — only hit when SPA serving is disabled
   // (CI / dev without built web) or for paths /trpc/* didn't claim.
-  app.notFound((c) => c.json({ code: 'NOT_FOUND', i18nKey: 'common.notFound' }, 404));
+  app.notFound((c) => c.json(NOT_FOUND_BODY, 404));
 
   app.onError((err, c) => {
     logger.error({ err }, 'unhandled error');
-    return c.json({ code: 'INTERNAL', i18nKey: 'common.errors.internal' }, 500);
+    return c.json(INTERNAL_BODY, 500);
   });
 
   return app;

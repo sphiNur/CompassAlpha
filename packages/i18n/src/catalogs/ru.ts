@@ -474,6 +474,7 @@ export const ru = {
   'common.errors.idempotencyKeyReused':
     'Этот запрос повторил идентификатор предыдущего, но с другим содержимым, поэтому он не сохранён. Обновите страницу и попробуйте снова.',
   'common.errors.internal': 'Произошла ошибка на нашей стороне. Попробуйте ещё раз.',
+  'common.errors.notFound': 'Такого адреса нет.',
   'common.errors.actionFailed':
     'Не получилось. Попробуйте ещё раз; если не помогает, обновите страницу.',
   'common.errors.invalidDecimal': 'Введите число, не более 3 знаков после запятой.',
@@ -773,6 +774,10 @@ export const ru = {
   'subscription.status.past_due': 'Просрочена',
   'subscription.status.suspended': 'Приостановлена',
   'subscription.status.canceled': 'Отменена',
+  'subscription.plans.legacy': 'Корпоративный (ранний договор)',
+  'subscription.plans.starter': 'Стартовый',
+  'subscription.plans.growth': 'Рост',
+  'subscription.plans.pro': 'Профессиональный',
   'subscription.errors.readOnly':
     'Подписка закончилась, рабочее пространство доступно только для чтения.',
   'subscription.errors.storeLimit':

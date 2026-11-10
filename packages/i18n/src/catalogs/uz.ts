@@ -470,6 +470,7 @@ export const uz = {
   'common.errors.idempotencyKeyReused':
     'Bu soʻrov avvalgisining identifikatorini boshqa mazmun bilan takrorladi, shuning uchun saqlanmadi. Sahifani yangilab, qayta urinib koʻring.',
   'common.errors.internal': 'Bizning tomonda xatolik yuz berdi. Qayta urinib koʻring.',
+  'common.errors.notFound': 'Bunday manzil yoʻq.',
   'common.errors.actionFailed':
     'Amalga oshmadi. Qayta urinib koʻring; takrorlansa, sahifani yangilang.',
   'common.errors.invalidDecimal': 'Koʻpi bilan 3 kasrli son kiriting.',
@@ -774,6 +775,10 @@ export const uz = {
   'subscription.status.past_due': 'Muddati oʻtgan',
   'subscription.status.suspended': 'Toʻxtatilgan',
   'subscription.status.canceled': 'Bekor qilingan',
+  'subscription.plans.legacy': 'Korporativ (ilk shartnoma)',
+  'subscription.plans.starter': 'Boshlangʻich',
+  'subscription.plans.growth': 'Oʻsish',
+  'subscription.plans.pro': 'Kasbiy',
   'subscription.errors.readOnly': 'Obuna tugagan, ish maydoni faqat oʻqish rejimida.',
   'subscription.errors.storeLimit':
     'Tarifdagi doʻkonlar limiti tugadi. Tarifni yangilang yoki platforma administratoriga murojaat qiling.',

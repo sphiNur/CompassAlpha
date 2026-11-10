@@ -436,6 +436,7 @@ export const zh = {
   'common.errors.idempotencyKeyReused':
     '这次提交和前一次用了同一个标识，但内容不同，所以没有保存。请刷新后再试一次。',
   'common.errors.internal': '系统出了点问题，请稍后再试。',
+  'common.errors.notFound': '这个地址不存在。',
   'common.errors.actionFailed': '没有成功。再试一次；一直不行就刷新页面。',
   'common.errors.invalidDecimal': '请填写数字，最多 3 位小数。',
   'common.errors.positiveDecimal': '请填写大于 0 的数字，最多 3 位小数。',
@@ -700,6 +701,10 @@ export const zh = {
   'subscription.status.past_due': '已逾期',
   'subscription.status.suspended': '已暂停',
   'subscription.status.canceled': '已取消',
+  'subscription.plans.legacy': '企业版（早期协议）',
+  'subscription.plans.starter': '入门版',
+  'subscription.plans.growth': '成长版',
+  'subscription.plans.pro': '专业版',
   'subscription.errors.readOnly': '订阅已结束，当前工作区处于只读状态。',
   'subscription.errors.storeLimit': '当前套餐的门店数量已满，请升级或联系平台管理员。',
   'subscription.errors.memberLimit': '当前套餐的成员数量已满，请升级或联系平台管理员。',

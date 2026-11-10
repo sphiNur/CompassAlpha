@@ -16,12 +16,16 @@ import {
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../lib/errToast';
+import { planName } from '../../../lib/planName';
 import { useI18n } from '../../../hooks/useI18n';
+import { localDateValue } from '../operations/financeDates';
 
 type PlatformOrg = {
   orgId: string;
   name: string;
   slug: string;
+  /** The workspace's IANA time zone: its dates are days of this calendar. */
+  timezone: string;
   note: string | null;
   subscription: {
     planCode: string;
@@ -39,8 +43,14 @@ type PlatformOrg = {
 
 const STATUSES = ['trialing', 'active', 'past_due', 'suspended', 'canceled'] as const;
 
-function dateValue(value: string | null): string {
-  return value ? value.slice(0, 10) : '';
+/**
+ * The day of `value` in the workspace's calendar, for a date field.
+ * Review ADM1-32: it was the UTC day, so an end late in a Tashkent
+ * evening showed as the day before. The server reads a day sent back in
+ * the same calendar.
+ */
+function dateValue(value: string | null, timeZone: string): string {
+  return value ? localDateValue(new Date(value), timeZone) : '';
 }
 
 export function PlatformSection() {
@@ -75,7 +85,8 @@ export function PlatformSection() {
                     <div className="min-w-0">
                       <CardTitle>{org.name}</CardTitle>
                       <CardMeta>
-                        {sub.planName} · {i18n.t('platform.usage', { stores, members })}
+                        {planName(sub.planCode, sub.planName, i18n.locale)} ·{' '}
+                        {i18n.t('platform.usage', { stores, members })}
                       </CardMeta>
                     </div>
                     <Badge tone={sub.writeAccess ? 'info' : 'warn'}>
@@ -123,9 +134,9 @@ function SubscriptionSheet({
     const sub = target.subscription;
     setPlanCode(sub.planCode);
     setStatus(sub.status as (typeof STATUSES)[number]);
-    setTrialEndsAt(dateValue(sub.trialEndsAt));
-    setCurrentPeriodEnd(dateValue(sub.currentPeriodEnd));
-    setGraceEndsAt(dateValue(sub.graceEndsAt));
+    setTrialEndsAt(dateValue(sub.trialEndsAt, target.timezone));
+    setCurrentPeriodEnd(dateValue(sub.currentPeriodEnd, target.timezone));
+    setGraceEndsAt(dateValue(sub.graceEndsAt, target.timezone));
     setCancelAtPeriodEnd(sub.cancelAtPeriodEnd);
     setNote(target.note ?? '');
   }, [target]);
@@ -159,7 +170,7 @@ function SubscriptionSheet({
             // currentPeriodStart / the note are never cleared implicitly.
             const sub = target.subscription;
             const changed = (value: string, initial: string | null) =>
-              value === dateValue(initial) ? undefined : value || null;
+              value === dateValue(initial, target.timezone) ? undefined : value || null;
             update.mutate({
               orgId: target.orgId,
               planCode,
@@ -181,7 +192,7 @@ function SubscriptionSheet({
           <Select value={planCode} onChange={(e) => setPlanCode(e.target.value)}>
             {(plans.data ?? []).map((plan) => (
               <option key={plan.code} value={plan.code}>
-                {plan.name}
+                {planName(plan.code, plan.name, i18n.locale)}
               </option>
             ))}
           </Select>
