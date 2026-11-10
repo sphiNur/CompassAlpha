@@ -40,7 +40,15 @@ describe('refetchFailedQueries', () => {
       return unsubscribe;
     };
     const subs = [make('session', true), make('skus', true), make('categories', true), make('stores', false)];
-    await new Promise((r) => setTimeout(r, 10));
+    // Until the four first loads have settled, not a fixed 10 ms (TEST3-02).
+    await new Promise<void>((resolve) => {
+      if (client.isFetching() === 0) return resolve();
+      const stop = client.getQueryCache().subscribe(() => {
+        if (client.isFetching() > 0) return;
+        stop();
+        resolve();
+      });
+    });
     calls.length = 0;
     up = true;
     await refetchFailedQueries(client);

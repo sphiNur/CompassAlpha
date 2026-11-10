@@ -220,12 +220,15 @@ export async function clearPersistedQueries(storage: CacheStorage = keyval): Pro
 
 /**
  * Keep saving the persisted queries as they change, for whoever
- * `getOwner` names at the time. Returns the unsubscribe.
+ * `getOwner` names at the time. Changes are gathered for `saveDelayMs`
+ * and saved once; tests pass 0 rather than wait out a second each time
+ * (review TEST3-02). Returns the unsubscribe.
  */
 export function startQueryPersistence(
   queryClient: QueryClient,
   getOwner: () => string | null,
   storage: CacheStorage = keyval,
+  saveDelayMs: number = SAVE_DELAY_MS,
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const save = () => {
@@ -252,7 +255,7 @@ export function startQueryPersistence(
     });
   };
   const schedule = () => {
-    if (timer === null) timer = setTimeout(save, SAVE_DELAY_MS);
+    if (timer === null) timer = setTimeout(save, saveDelayMs);
   };
   // Per query: the data last scheduled for saving, and when it loaded.
   // A 6 s poll returning the same answer used to rewrite the whole copy

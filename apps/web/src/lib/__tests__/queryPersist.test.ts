@@ -32,7 +32,9 @@ const key = (path: string, input: unknown = undefined) => [
   path.split('.'),
   { ...(input === undefined ? {} : { input }), type: 'query' },
 ];
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Saves are gathered for a second in the app; the tests save at once
+// (delay 0) and let that timer run (review TEST3-02).
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(async () => {
   store.clear();
@@ -119,10 +121,10 @@ describe('save and restore', () => {
   it('saves listed queries and restores them for the same owner only', async () => {
     let owner: string | null = 'u1:o1';
     const a = new QueryClient();
-    const stop = startQueryPersistence(a, () => owner, kv);
+    const stop = startQueryPersistence(a, () => owner, kv, 0);
     a.setQueryData(key('run.list'), [{ id: 'r1' }]);
     a.setQueryData(key('admin.memberList'), ['secret']);
-    await wait(1_100);
+    await tick();
     stop();
 
     const same = new QueryClient();
@@ -143,14 +145,14 @@ describe('save and restore', () => {
   it('never carries one owner’s rows into another owner’s copy', async () => {
     let owner: string | null = 'u1:o1';
     const qc = new QueryClient();
-    const stop = startQueryPersistence(qc, () => owner, kv);
+    const stop = startQueryPersistence(qc, () => owner, kv, 0);
     qc.setQueryData(key('run.list'), ['org1 run']);
-    await wait(1_100);
+    await tick();
     // Organisation switch: the app clears the cache, then loads org 2.
     qc.clear();
     owner = 'u1:o2';
     qc.setQueryData(key('order.pendingList'), ['org2 order']);
-    await wait(1_100);
+    await tick();
     stop();
 
     const restored = new QueryClient();
@@ -161,9 +163,9 @@ describe('save and restore', () => {
 
   it('signing out deletes the copy', async () => {
     const qc = new QueryClient();
-    const stop = startQueryPersistence(qc, () => 'u1:o1', kv);
+    const stop = startQueryPersistence(qc, () => 'u1:o1', kv, 0);
     qc.setQueryData(key('run.list'), ['x']);
-    await wait(1_100);
+    await tick();
     stop();
     expect(store.size).toBe(1);
     await clearPersistedQueries(kv);
@@ -184,16 +186,16 @@ describe('saving only what changed (P-4)', () => {
     let writes = 0;
     const counting: CacheStorage = { ...kv, set: async (k, v) => { writes++; await kv.set(k, v); } };
     const qc = new QueryClient();
-    const stop = startQueryPersistence(qc, () => 'u1:o1', counting);
+    const stop = startQueryPersistence(qc, () => 'u1:o1', counting, 0);
     qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 1 }] });
-    await wait(1_100);
+    await tick();
     expect(writes).toBe(1);
     // Equal data: structural sharing keeps the old reference, no new write.
     qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 1 }] });
-    await wait(1_100);
+    await tick();
     expect(writes).toBe(1);
     qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 2 }] });
-    await wait(1_100);
+    await tick();
     expect(writes).toBe(2);
     stop();
   });
