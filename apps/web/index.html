@@ -2,7 +2,8 @@
 <!--
   <html lang> is intentionally empty here — /boot-guard.js sets it
   on load based on the Telegram / navigator locale (zh / ru / uz / en).
-  React's I18nProvider may further narrow it after auth resolves.
+  The app (hooks/useI18n.ts) sets it again once the user's language is
+  known.
 -->
 <html lang>
   <head>

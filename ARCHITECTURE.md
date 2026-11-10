@@ -2,7 +2,7 @@
 
 > 现状描述与路线图。**与本文不一致的实现要么改代码、要么改文档——不能并存。**
 > Status: v2.0 (现状对齐 + 路线图分离)
-> Updated: 2026-05-16 (M3.18 launch hardening)
+> Updated: 2026-11-10（按 2026-11 全面审查校对：生产链路、部署流水线、离线、限流、通知、测试）
 > Authors: Compass team
 
 ---
@@ -38,9 +38,9 @@
 | 包                   | 用途                                                                       |
 | -------------------- | -------------------------------------------------------------------------- |
 | `packages/contracts` | tRPC 路由的 Zod schema（前后端共用）                                       |
-| `packages/db`        | Drizzle schema + 24 个迁移 + RLS 策略                                      |
+| `packages/db`        | Drizzle schema + 69 个迁移 + RLS 策略                                      |
 | `packages/domain`    | 纯函数领域核心：events / decide / apply / state（无副作用，单元测试 100%） |
-| `packages/ui`        | 29 个组件（Radix 原语 + CVA 变体 + Tailwind）+ ThemeProvider               |
+| `packages/ui`        | 约 30 个组件（Radix 原语 + CVA 变体 + Tailwind）+ ThemeProvider            |
 | `packages/i18n`      | 自研轻量 ICU 解析器 + 4 个 catalog (zh/ru/uz/en)，CI 校验对齐              |
 | `packages/telemetry` | 客户端日志 + batch span，发到 api 的 `system.log` 接口                     |
 | `packages/cli`       | `compass user/org/project/test` 子命令                                     |
@@ -55,22 +55,22 @@
 | 缓存 / 限流    | Redis 8（限流目前用进程内 Map，Redis 留作 M2 迁移目标）                                                                                     |
 | 对象存储       | S3 兼容（兼容 MinIO / R2 / Tencent COS），自研 SigV4 presigned PUT                                                                          |
 | 后端单元       | systemd: `compass-api`、`compass-worker`、`compass-backup.{service,timer}`、`compass-app-tunnel`、`compass-origin-watch.{service,timer}`    |
-| 备份           | 每日 03:30 `pg_dump -Fc` + 校验 + 14d 轮转 + 可选 S3 上传                                                                                   |
+| 备份           | 每日 03:30 UTC `pg_dump -Fc` + 校验 + 14d 轮转 + 可选 S3 上传                                                                               |
 | 容器           | 生产不用；`infra/compose/docker-compose.dev.yml` 只给本地开发                                                                               |
 
 ### 1.4 安全模型（现状）
 
-| 主题       | 实现                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------- |
-| 身份认证   | Telegram initData HMAC 验证（常量时间比较，±600s 时钟漂移容忍）                       |
-| 会话       | JWT HS256；access TTL 15min，refresh TTL 30d，刷新令牌**家族 + jti + 重放检测**       |
-| 多租户隔离 | PostgreSQL Row-Level Security，`SET LOCAL app.current_org_id` 事务级注入              |
-| 鉴权       | RBAC + per-member allow/deny overrides（global + store scope）                        |
-| 限流       | 进程内 sliding-window；auth/login 5/min/IP，mutation 120/min/(user,route)             |
-| 幂等       | `X-Idempotency-Key` header + DB 缓存（24h TTL），覆盖 risky mutations                 |
-| 上传       | Presigned PUT，对象 key 强绑 `orgId/userId/`，content-type 白名单                     |
-| Web 安全头 | CSP / HSTS / X-Frame-Options / Referrer-Policy / Permissions-Policy（M3.18 全部齐备） |
-| CORS       | 白名单：FRONTEND_URL + Telegram WebView origins；trycloudflare 仅 dev/staging         |
+| 主题       | 实现                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------- |
+| 身份认证   | Telegram initData HMAC 验证（常量时间比较，±600s 时钟漂移容忍）                         |
+| 会话       | JWT HS256；access TTL 15min，refresh TTL 30d，刷新令牌**家族 + jti + 重放检测**         |
+| 多租户隔离 | PostgreSQL Row-Level Security，`SET LOCAL app.current_org_id` 事务级注入                |
+| 鉴权       | RBAC + per-member allow/deny overrides（global + store scope）                          |
+| 限流       | 进程内固定窗口（review COREAPI-26）；auth/login 5/min/IP，mutation 120/min/(user,route) |
+| 幂等       | `X-Idempotency-Key` header + DB 缓存（24h TTL），覆盖 risky mutations                   |
+| 上传       | Presigned PUT，对象 key 强绑 `orgId/userId/`，content-type 白名单                       |
+| Web 安全头 | CSP / HSTS / X-Frame-Options / Referrer-Policy / Permissions-Policy（M3.18 全部齐备）   |
+| CORS       | 白名单：FRONTEND_URL + Telegram WebView origins；trycloudflare 仅 dev/staging           |
 
 **重要确认**：当前 RBAC + override 模型**不是** ABAC（没有表达式求值器）。M4 之前不考虑加 Casbin / 自研策略引擎——over-engineering。
 
@@ -95,14 +95,14 @@
 
 ### 1.7 离线支持
 
-| 件             | 现状                                                    |
-| -------------- | ------------------------------------------------------- |
-| Service Worker | **未启用**                                              |
-| PWA manifest   | **未提供**                                              |
-| IDB outbox     | 已实现 (`useOfflineQueue`)，按 procedure 注入 replayMap |
-| 网络恢复       | `navigator.online` 事件触发顺序重放 + 服务端幂等键去重  |
+| 件             | 现状                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------- |
+| Service Worker | 已启用（N12，2026-10-30）：只缓存应用外壳，数据请求不经过它（`apps/web/public/sw.js`） |
+| PWA manifest   | **未提供**                                                                             |
+| IDB outbox     | 已实现 (`useOfflineQueue`)，按 procedure 注入 replayMap                                |
+| 网络恢复       | `navigator.online` 事件触发顺序重放 + 服务端幂等键去重                                 |
 
-**重要事实**："Offline-First" 在 M1 仅做到 **mutation outbox + 网络恢复重放**，没做 SW 缓存 / 离线访问 SPA shell。完整 PWA / Offline-First 是 M2。
+**重要事实**：离线做到了 **mutation outbox + 网络恢复重放**，加上 SW 缓存的应用外壳（断网刷新也能打开，显示离线横幅）。没有 PWA manifest，数据不能离线读取。
 
 ### 1.8 可观测性
 
@@ -116,44 +116,44 @@
 
 ### 1.9 部署流水线
 
-| 步                | 工具                                                                                                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 本地构建 → 服务器 | `scripts/deploy.ts`：tar → scp → 解包 → `pnpm install` → `pnpm db:migrate` → 写 systemd 单元 → 重启 api+worker → vite build → smoke |
-| 蓝绿 / 滚动       | **未实现**——目前是 `systemctl restart`，有几秒流量黑洞                                                                              |
-| Smoke             | `scripts/smoke.ts`（tRPC + 健康检查）+ `scripts/browser-smoke{,-deep}.ts`（Playwright）                                             |
-| 监控告警          | **无**（pager / 监控面板未接）                                                                                                      |
+| 步            | 工具                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 本地 → 服务器 | `scripts/deploy.ts`：来源闸门（工作区干净、正是 origin/main 的最新提交、CI 三个任务都绿、不比线上旧）+ 服务器上没有进行中的采购 → 单元测试 → 从 git 打包发布物（git 看得到的文件，LF）→ rsync（或 scp）→ 留存上一版 → 解包 → `pnpm install` → web 构建到 dist.next → 有待执行的迁移时先备份再迁移 → 换上新 bundle → 重启 api+worker → 等 `/health/ready` → smoke。服务器上每一步 `flock` 串行、有时限；失败用 `--rollback` 回到上一版 |
+| 蓝绿 / 滚动   | **未实现**——目前是 `systemctl restart`，有几秒流量黑洞                                                                                                                                                                                                                                                                                                                                                                                |
+| Smoke         | `scripts/smoke.ts`（tRPC + 健康检查，核对运行中的提交和重启时间）+ `scripts/browser-smoke{,-deep}.ts`（Playwright）                                                                                                                                                                                                                                                                                                                   |
+| 监控告警      | **无**（pager / 监控面板未接）                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### 1.10 测试金字塔
 
-| 层                | 现状                                       | 数量                                                                                                     |
-| ----------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| 单元（domain）    | Bun test，纯函数完整覆盖                   | order: ~500 lines, run: ~1000 lines                                                                      |
-| 集成（PG-gated）  | Bun test + GitHub Actions Postgres service | 5 个测试套件（full-lifecycle / store-scoped-admin / refreshTokens / cancel-run-cascade / rls-isolation） |
-| 契约 (tRPC)       | **零专项**                                 | —                                                                                                        |
-| E2E               | Playwright via deploy.ts                   | browser-smoke 414 lines, browser-smoke-deep 776 lines                                                    |
-| 负载 (k6)         | **未实现**                                 | —                                                                                                        |
-| bot / worker 单元 | **零**                                     | —                                                                                                        |
+| 层           | 现状                                                      | 数量                                                                               |
+| ------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 单元         | Bun test（CI "type-check + unit tests"）                  | domain / contracts / db / i18n / ui / api / worker / web / scripts，约 1800 个测试 |
+| 集成（PG）   | Bun test + GitHub Actions Postgres service                | apps/api + apps/worker，约 720 个测试，含 RLS 隔离与 RLS 目录检查                  |
+| 契约 (tRPC)  | packages/contracts 的单元测试（进了 CI，review TEST4-01） | —                                                                                  |
+| E2E          | Playwright（CI "end-to-end (Playwright)"）                | `tests/e2e`：主流程、会话、渲染次数；部署后另跑 browser-smoke{,-deep}              |
+| 负载 (k6)    | **未实现**                                                | —                                                                                  |
+| bot / worker | worker 有单元和 PG 测试；bot 没有                         | —                                                                                  |
 
 ---
 
 ## 2. 路线图（Section B · 计划但未做）
 
-> 所有以下条目在 M1 都是 **NOT IMPLEMENTED**。日期标 "tentative"。
+> 所有以下条目在 M1 都是 **NOT IMPLEMENTED**。日期标 "tentative"。2026-11-10 校对：标 ✅ 的已经做了，其余仍未做。
 
 ### M2 · Q3 2026 — 离线 / 通知 / 可观测性补齐
 
-- **Service Worker + PWA manifest**：完整 offline-first，桌面/iOS 主屏可装。
+- **Service Worker + PWA manifest**：完整 offline-first，桌面/iOS 主屏可装。✅ Service Worker（应用外壳，2026-10-30）；PWA manifest 仍未做。
 - **WebPush 通道**：VAPID + SW，与 In-App / Bot 并列三通道。
 - **`@formatjs/intl-messageformat`**：替换自研 i18n 解析器。
 - **OpenTelemetry SDK**：客户端 `@opentelemetry/sdk-trace-web` + 后端 OTel SDK，trace 单根贯通。
-- **bot / worker 测试覆盖**：每个核心 path 至少 1 个集成测试。
+- **bot / worker 测试覆盖**：每个核心 path 至少 1 个集成测试。✅ worker（单元 + PG）；bot 仍没有。
 - **Redis 限流**：滑窗 INCR + EXPIRE，替换进程内 Map。
 - **WS ticket procedure**：短 TTL 单次使用票据，替代 URL 内 JWT。
 
 ### M3 · Q4 2026 — 体验 / 性能 / 工具
 
 - **TanStack Router 真接入**：用 search params 类型安全路由替代 navStore tab 模式。
-- **AdminPage / RunPage / admin.ts 拆分**：当前 7477 / 3480 / 4539 行的单文件巨石。
+- **AdminPage / RunPage / admin.ts 拆分**：✅ AdminPage 已拆（853 行）；RunPage（3098 行）和 admin.ts（7225 行）仍是单文件巨石。
 - **Apple theme token 集**：当前 ThemeProvider 已支持 `theme=apple`，但 token 文件未分离。
 - **`compass` CLI 补齐**：`migrate`、`logs tail`、`deploy`、`impersonate` 子命令。
 - **Sourcemap → Sentry 上传**：production 不带 sourcemap，但远端解码可用。
@@ -287,7 +287,8 @@ API 在每个事务内执行 `SELECT set_config('app.current_org_id', $1, true)`
 ```
 apps/api/src/
 ├── main.ts                     # Bun.serve 入口 + WS upgrade
-├── app.ts                      # Hono app 工厂 + 安全头 + CORS + SPA serveStatic
+├── app.ts                      # Hono app 工厂 + 安全头 + CORS
+├── http/webApp.ts              # SPA 托管：静态文件、index.html 回退
 ├── env.ts                      # @t3-oss/env + Zod
 ├── infra/
 │   ├── jwt.ts                  # signAccess / signRefresh / verify*
@@ -298,7 +299,8 @@ apps/api/src/
 │   │                             (errorLog / mutationRateLimit / idempotency)
 │   ├── context.ts              # createContext: JWT 验签 + loadSession + withOrg
 │   └── routers/
-│       ├── admin.ts            (4539 行, M3 拆分目标)
+│       ├── admin.ts            (7225 行, M3 拆分目标)
+│       ├── attendance.ts       (考勤：打卡、排班、考勤表)
 │       ├── auth.ts             (telegramLogin / refresh / me / signOut /
 │       │                        setLocale / completeOnboarding)
 │       ├── order.ts            (todaySession / adjustItem / submit /
@@ -308,8 +310,11 @@ apps/api/src/
 │       ├── catalog.ts          (categories / skus / suppliers)
 │       ├── dishes.ts           (recipes / dish-defined orders, M1.16)
 │       ├── inventory.ts        (stock movements, M1.15)
+│       ├── nav.ts              (底部导航的待办角标)
+│       ├── platform.ts         (平台：套餐与各组织的订阅)
 │       ├── report.ts           (daily / weekly aggregations)
 │       ├── sales.ts            (sales records, M1.17)
+│       ├── settlement.ts       (门店日结)
 │       ├── system.ts           (log ingestion / health / version)
 │       └── upload.ts           (presigned PUT)
 ├── services/
@@ -319,7 +324,7 @@ apps/api/src/
 │   ├── notify.ts               # In-App 通知投递
 │   ├── notifyForEvent.ts       # 事件 → 通知模板路由
 │   ├── refreshTokens.ts        # issueRefresh / consumeRefresh / 家族吊销
-│   ├── rateLimit.ts            # 进程内 sliding window
+│   ├── rateLimit.ts            # 进程内固定窗口
 │   ├── s3.ts                   # 自研 SigV4 presigned PUT
 │   ├── storeScope.ts           # RBAC + override per-store 评估
 │   └── telegramAuth.ts         # initData HMAC + timing-safe
@@ -399,11 +404,11 @@ tRPC `errorFormatter` 把 `DomainError.i18nKey` 透传到客户端，客户端 `
 - auth.telegramLogin / auth.refresh: **5/min/IP**（per-route）
 - 全 mutation: **120/min/(user, route)**
 - `system.log`: **100/min/session**, body ≤ 64KB
-- 进程内 Map，M2 迁 Redis 滑窗
+- 进程内 Map，固定窗口（窗口交界处最多放过两倍，review COREAPI-26）；M2 迁 Redis 滑窗
 
 ### 4.6 SPA 托管
 
-`apps/api/src/app.ts` 通过 `serveStatic({ root: webDist })` + `app.get('*', serveStatic({ path: 'index.html' }))` 服务 `apps/web/dist`。SPA fallback 让 `/order`、`/admin` 等深链直接 200。
+`apps/api/src/http/webApp.ts` 的 `serveWebApp()` 服务 `apps/web/dist`：`serveStatic({ root: webDist })` 给静态文件；`/assets/*` 下没有的文件回 404，不回页面（否则边缘会把页面当成资源存下，review OPS-14）；其余路径回 `index.html`，用 `{ root, path: 'index.html' }` 按 root 解析，与进程的工作目录无关。生产时 nginx 在 api 前面，可能先回答这些路径。
 
 ---
 
@@ -467,7 +472,7 @@ apps/web/src/
 
 ### 5.3 设计系统
 
-- 29 个组件，基于 **Radix Primitives**（Dialog / Tooltip / Toast 等）+ **CVA**（class-variance-authority）+ Tailwind utility classes
+- 约 30 个组件，基于 **Radix Primitives**（Dialog / Tooltip / Toast 等）+ **CVA**（class-variance-authority）+ Tailwind utility classes
 - **Theme**：CSS variables，通过 `data-theme="native|apple|dark"` 切换。`native` 主题跟随 Telegram `themeChanged` 事件
 - **Typography**：M3.14 字号 scale (24/19/15/14/13/12/11/10/9)，对 Android Telegram WebView 调校
 - **Sheet 组件**：自动接管 Telegram BackButton 关闭顶层 sheet（M1.5），全局 sheet 计数让 SectionFrame 在 sheet 打开时让出 BackButton
@@ -507,11 +512,11 @@ apps/web/src/
 
 ### 6.1 通道（现状）
 
-| 通道               | 状态        | 用途                                                                     |
-| ------------------ | ----------- | ------------------------------------------------------------------------ |
-| **In-App**         | ✅ 完整     | WS 实时铃铛 + `ops.notifications` 表持久化                               |
-| **Bot (Telegram)** | ⚠️ 中转可达 | 通过 Cloudflare Worker `tg-relay` 中转 `api.telegram.org`（CN 出境受阻） |
-| **WebPush**        | ❌ 未做     | M2                                                                       |
+| 通道               | 状态        | 用途                                                                        |
+| ------------------ | ----------- | --------------------------------------------------------------------------- |
+| **In-App**         | ⚠️ 只写不读 | 写入 `ops.notifications`，但前端没有读取它的入口（review COREAPI-05，待定） |
+| **Bot (Telegram)** | ⚠️ 中转可达 | 通过 Cloudflare Worker `tg-relay` 中转 `api.telegram.org`（CN 出境受阻）    |
+| **WebPush**        | ❌ 未做     | M2                                                                          |
 
 ### 6.2 触发点（事件 → 通道）
 
@@ -578,7 +583,7 @@ run.Finished             → In-App + Bot (所有相关 store)
 
 ### 7.6 速率与滥用
 
-- M1：进程内 Map sliding window
+- M1：进程内 Map，固定窗口（review COREAPI-26）
 - M2：Redis 滑窗
 - 边缘暂无 WAF（M3 评估 Cloudflare Pro）
 

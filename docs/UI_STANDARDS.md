@@ -144,8 +144,10 @@ member to the first store).
 
 #### UI-13 — One surface
 A group of content is a `Card` (white, `--r-card`, hairline ring). Grey
-`--c-surface-2` is for controls (inputs, chips, segmented tracks) and inline
-notes, not for cards. No card inside a card.
+`--c-surface-2` is for inputs (Input, Select, Textarea) and inline notes, not
+for cards. Chips and segmented controls are not grey: a chip is clear with a
+hairline, a segment white inside a hairline (`ChipBar`, `Segmented`). No card
+inside a card.
 
 #### UI-14 — Money is the body font with tabular figures
 Amounts use `tabular-nums` in the normal font so columns line up. Monospace is
@@ -158,7 +160,8 @@ empty is `EmptyState` (15 px title); errors are `DataState`'s error or a danger
 
 #### UI-16 — Controls come from the kit
 Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page; the page's
-main action is the Telegram main button). Switching between views is
+main action is the in-page main button, `usePageMainButton` — the Telegram
+main button stays hidden since M3.49). Switching between views is
 `Segmented`; filtering a list by category is `ChipBar`. No hand-rolled pill
 buttons or toggle tracks.
 A control that cannot be used looks the same everywhere: half opacity and a

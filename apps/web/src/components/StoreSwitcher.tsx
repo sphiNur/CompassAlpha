@@ -56,7 +56,7 @@ import { useI18n } from '../hooks/useI18n';
  * `forceStoreRerender`. That crash was observed once while navigating
  * Run → Confirm (both pages call useStoreContext) on 2026-07-30.
  *
- * Returning the SAME frozen reference every time keeps the snapshot
+ * Returning the SAME reference every time keeps the snapshot
  * stable when `session` is null or `session.stores` is undefined.
  */
 const NO_STORES: AuthSession['stores'] = [];

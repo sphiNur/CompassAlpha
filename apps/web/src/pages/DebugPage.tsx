@@ -90,7 +90,8 @@ export function DebugPage() {
   // session before role assignment, or a manager whose `users.manage`
   // gate had a typo, could see internals. Add a hard server-side-aligned
   // check here: the user MUST hold `system.logs.view`. Anyone else gets
-  // the auth.noAccess copy instead.
+  // an "Access not granted" screen instead (English, like the rest of this
+  // operator page).
   if (!session.permissions.includes('system.logs.view')) {
     return (
       <div className="flex flex-col gap-3 px-4 py-8">

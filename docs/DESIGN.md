@@ -1,6 +1,7 @@
 # Concord Design System
 
-> Tokens-first, theme-switchable, a11y-by-default. Built on Tailwind v4 + Radix UI.
+> Tokens-first, theme-switchable, a11y-by-default. Built on Tailwind v3 + Radix UI.
+> What to render and what not to: [UI_STANDARDS.md](UI_STANDARDS.md).
 > Two themes: **Native** (Telegram-themed) and **Apple** (high-contrast polished).
 
 ## Tokens
@@ -40,20 +41,17 @@ so HDR + sRGB renders match perceived hue.
 
 ### Typography
 
-System font stack via `--font-sans`. Hierarchy in Tailwind utilities:
-
-| Class | Size / weight | Use |
-|---|---|---|
-| `text-[28px] font-semibold tracking-tight` | Hero / H1 | Page title |
-| `text-[20px] font-semibold tracking-tight` | H2 | Section title |
-| `text-[17px] font-semibold` | Body strong | List row title, button label |
-| `text-[15px]` | Body | Default |
-| `text-[13px] text-[var(--c-fg-muted)]` | Caption | Subtitle, timestamp |
-| `text-[12px] uppercase tracking-wide text-[var(--c-fg-muted)]` | Eyebrow | Label above metric |
+System font stack via `--font-sans`. One scale, the `text-old-*`
+utilities (apps/web/tailwind.config.js; the `old-` prefix is historical):
+display 24 · h1 19 · h2 15 · h3 14 · body 13 · body-sm 12 · label 11 ·
+tiny 9 px. Which size is for what is written above `--text-display` in
+`packages/ui/src/tokens.css`. No arbitrary `text-[15px]`, and nothing
+uppercase (UI-11): a section heading is `SectionLabel`.
 
 ## Components
 
-Re-exported from `@compass/ui`. Each is one-theme-agnostic via tokens.
+Re-exported from `@compass/ui` (the full list is `packages/ui/src/index.ts`).
+Each is theme-agnostic via tokens.
 
 | Component | Notes |
 |---|---|

@@ -9,8 +9,7 @@ import { resetNavStore } from '../stores/navStore';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
 /**
- * Self-service tenant creation. Used both from the no-membership login
- * screen and from Settings → Workspace.
+ * Self-service tenant creation, from Settings → Workspace (SettingsSheet).
  */
 export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
   const i18n = useI18n();
