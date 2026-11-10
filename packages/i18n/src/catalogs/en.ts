@@ -655,7 +655,7 @@ export const en = {
   'storeSwitcher.pickStore': 'Pick a store',
   'storeSwitcher.allOrgStores': 'All stores',
   'storeSwitcher.allOrgHint': 'See activity across every store in the workspace.',
-  'storeSwitcher.aria': 'Change store context',
+  'storeSwitcher.aria': '{name}, change store',
   'storeSwitcher.pickPrompt.title': 'Pick a store first',
   // 2026-07-30: was "open Settings (gear icon)" — the store chip in the
   // page's sticky bar is now the direct route.
@@ -663,6 +663,8 @@ export const en = {
     'This page needs one specific store. Tap the store chip at the top to choose.',
   'auth.signIn': 'Sign in',
   'auth.shareThisId': 'Send this Telegram ID to your store manager to get access:',
+  'auth.copyTelegramId': 'Telegram ID {id}, tap to copy',
+  'auth.telegramIdCopied': 'Copied. Send it to your store manager.',
   'auth.loginTimeout.title': 'Sign-in is taking too long',
   'auth.loginTimeout.body': 'Check your connection, then close and reopen the app.',
   'auth.noAccess.title': "You can't use Compass yet",
@@ -1510,7 +1512,7 @@ export const en = {
   'run.action.addItem.save': 'Save addition',
   'run.label.addedByPurchaser': 'Added by purchaser mid-run',
   'run.confirm.finish.addedByPurchaser':
-    '➕ {n, plural, one {# item} other {# items}} added beyond the original order · {total} {currency}',
+    '{n, plural, one {# item} other {# items}} added beyond the original order · {total} {currency}',
   'run.toast.itemAdded': 'Item added to the run',
   'run.toast.couldNotAddItem': 'Could not add the product. Try again.',
   'run.errors.alreadyInRun': 'This product is already in the run — use Edit on the existing item',
@@ -1537,7 +1539,7 @@ export const en = {
   'run.toast.expenseRemoved': 'Expense removed',
   'run.toast.couldNotAddExpense': 'Could not save the expense. Check the amount and try again.',
   'run.confirm.finish.expenses':
-    '🧾 {n, plural, one {# off-catalog item or expense} other {# off-catalog items or expenses}} · {total} {currency}',
+    '{n, plural, one {# off-catalog item or expense} other {# off-catalog items or expenses}} · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Per-store split:',
   'run.confirm.finish.receiptIssues':
     '{n, plural, one {# item was} other {# items were}} received with a problem; about {amount} {currency} was not received. Store bills still charge the split quantities.',
@@ -1595,7 +1597,7 @@ export const en = {
   'run.label.splitPreview': 'Split: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Mark available again: {name}',
   'run.reason.paymentMethodChanged': 'Payment method corrected on the row',
-  'run.confirm.finish.paymentBreakdown': '💵 cash {cash} · 🏦 transfer {transfer}',
+  'run.confirm.finish.paymentBreakdown': 'cash {cash} · transfer {transfer}',
   'run.confirm.cancel.title': 'Cancel the entire run?',
   'run.confirm.cancel.body':
     'This purchase is cancelled. All orders go back to Approved and can be planned again. Recorded purchases are kept but will not be delivered.',
@@ -2265,6 +2267,7 @@ export const en = {
   'confirm.runPicker.ariaLabel': 'Which delivery to check',
   'confirm.runPicker.option': '#{n} · {date}',
   'finance.label.expense': 'Expense',
+  'finance.label.expenseNamed': 'Expense: {name}',
   'finance.label.expenses': 'Off-catalog expenses',
   'run.select.title': 'Orders to buy',
   'run.select.meta': '{n} of {total} selected',
@@ -2289,7 +2292,6 @@ export const en = {
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sales',
-  'sales.page.title': 'Sales',
   'sales.action.void': 'Void',
   'sales.void.title': 'Void sale',
   'sales.void.description': '{dish} — the ingredients go back into stock.',

@@ -5,9 +5,25 @@
  * (admin.catalogImportSources), shows what an import would create
  * (admin.catalogImportPreview — a dry run on the server) and runs it
  * (admin.catalogImport). What is copied: apps/api/src/services/catalogCopy.ts.
+ *
+ * Review ADM2-39 (2026-11-11): the sources load like any list (DataState:
+ * spinner, error with retry, "none"); they used to be an empty picker
+ * while loading or after a failure. A failed preview says why, from the
+ * server's error, with a retry, instead of a bare "action failed".
  */
 import { useEffect, useState } from 'react';
-import { Banner, Button, Field, Select, Sheet, Switch, useToast } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  DataState,
+  Field,
+  QueryErrorBanner,
+  Select,
+  Sheet,
+  Spinner,
+  Switch,
+  useToast,
+} from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../lib/errToast';
 import { useI18n } from '../../../hooks/useI18n';
@@ -77,30 +93,38 @@ export function CatalogImportSheet({
         <p className="text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('catalog.import.explain')}
         </p>
-        {sources.data && sources.data.length === 0 ? (
-          <Banner tone="info" title={i18n.t('catalog.import.noSources')} />
-        ) : (
-          <Field label={i18n.t('catalog.import.source')}>
-            <Select
-              value={sourceOrgId}
-              placeholder={i18n.t('catalog.import.sourcePlaceholder')}
-              onChange={(e) => setSourceOrgId(e.target.value)}
-            >
-              {(sources.data ?? []).map((o) => (
-                <option key={o.orgId} value={o.orgId}>
-                  {o.orgName}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
+        <DataState
+          query={sources}
+          emptyWhen={(list) => list.length === 0}
+          empty={<Banner tone="info" title={i18n.t('catalog.import.noSources')} />}
+        >
+          {(list) => (
+            <Field label={i18n.t('catalog.import.source')}>
+              <Select
+                value={sourceOrgId}
+                placeholder={i18n.t('catalog.import.sourcePlaceholder')}
+                onChange={(e) => setSourceOrgId(e.target.value)}
+              >
+                {list.map((o) => (
+                  <option key={o.orgId} value={o.orgId}>
+                    {o.orgName}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+        </DataState>
         <Switch
           label={i18n.t('catalog.import.includeSuppliers')}
           checked={includeSuppliers}
           onChange={(e) => setIncludeSuppliers(e.target.checked)}
         />
         {preview.isError ? (
-          <Banner tone="danger" title={i18n.t('common.errors.actionFailed')} />
+          <QueryErrorBanner query={preview} />
+        ) : preview.isLoading ? (
+          <div className="flex justify-center py-3 text-[var(--c-fg-muted)]">
+            <Spinner />
+          </div>
         ) : p ? (
           nothingNew ? (
             <Banner tone="success" title={i18n.t('catalog.import.nothingNew')} />

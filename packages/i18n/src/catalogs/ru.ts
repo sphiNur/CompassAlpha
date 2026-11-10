@@ -602,12 +602,14 @@ export const ru = {
   'storeSwitcher.pickStore': 'Выберите магазин',
   'storeSwitcher.allOrgStores': 'Все магазины',
   'storeSwitcher.allOrgHint': 'Сводная активность по всему рабочему пространству.',
-  'storeSwitcher.aria': 'Сменить магазин',
+  'storeSwitcher.aria': '{name}, сменить магазин',
   'storeSwitcher.pickPrompt.title': 'Сначала выберите магазин',
   'storeSwitcher.pickPrompt.body':
     'Странице нужен конкретный магазин. Нажмите на чип магазина сверху, чтобы выбрать.',
   'auth.signIn': 'Войти',
   'auth.shareThisId': 'Отправьте этот Telegram ID управляющему магазином, чтобы получить доступ:',
+  'auth.copyTelegramId': 'Telegram ID {id}, нажмите, чтобы скопировать',
+  'auth.telegramIdCopied': 'Скопировано. Отправьте управляющему магазином.',
   'auth.loginTimeout.title': 'Вход занимает слишком много времени',
   'auth.loginTimeout.body': 'Проверьте подключение, затем закройте и снова откройте приложение.',
   'auth.noAccess.title': 'Пока нет доступа',
@@ -1433,7 +1435,7 @@ export const ru = {
   'run.action.addItem.save': 'Сохранить',
   'run.label.addedByPurchaser': 'Добавлено закупщиком по ходу',
   'run.confirm.finish.addedByPurchaser':
-    '➕ {n, plural, one {Добавлена # позиция} few {Добавлены # позиции} many {Добавлено # позиций} other {Добавлено # позиции}} сверх заказа · {total} {currency}',
+    '{n, plural, one {Добавлена # позиция} few {Добавлены # позиции} many {Добавлено # позиций} other {Добавлено # позиции}} сверх заказа · {total} {currency}',
   'run.toast.itemAdded': 'Позиция добавлена',
   'run.toast.couldNotAddItem': 'Не удалось добавить товар. Попробуйте ещё раз.',
   'run.errors.alreadyInRun': 'Этот товар уже в закупке — отредактируйте существующую позицию',
@@ -1461,7 +1463,7 @@ export const ru = {
   'run.toast.couldNotAddExpense':
     'Не удалось сохранить расход. Проверьте сумму и попробуйте снова.',
   'run.confirm.finish.expenses':
-    '🧾 {n, plural, one {# позиция вне каталога или расход} few {# позиции вне каталога или расхода} many {# позиций вне каталога или расходов} other {# позиции вне каталога или расхода}} · {total} {currency}',
+    '{n, plural, one {# позиция вне каталога или расход} few {# позиции вне каталога или расхода} many {# позиций вне каталога или расходов} other {# позиции вне каталога или расхода}} · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Разбивка по магазинам:',
   'run.confirm.finish.receiptIssues':
     '{n, plural, one {# позиция принята с проблемой} few {# позиции приняты с проблемой} many {# позиций принято с проблемой} other {# позиции принято с проблемой}}; не получено примерно на {amount} {currency}. Счета магазинов по-прежнему считаются по распределённому количеству.',
@@ -1512,7 +1514,7 @@ export const ru = {
   'run.label.splitPreview': 'По магазинам: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Снова доступно: {name}',
   'run.reason.paymentMethodChanged': 'Способ оплаты исправлен в списке',
-  'run.confirm.finish.paymentBreakdown': '💵 наличные {cash} · 🏦 перевод {transfer}',
+  'run.confirm.finish.paymentBreakdown': 'наличные {cash} · перевод {transfer}',
   'run.confirm.cancel.title': 'Отменить всю закупку?',
   'run.confirm.cancel.body':
     'Закупка отменяется. Все заказы вернутся в «Одобренные», их можно будет запланировать снова. Записанные покупки сохранятся, но доставляться не будут.',
@@ -2154,6 +2156,7 @@ export const ru = {
   'confirm.runPicker.ariaLabel': 'Какую поставку проверить',
   'confirm.runPicker.option': '№{n} · {date}',
   'finance.label.expense': 'Расход',
+  'finance.label.expenseNamed': 'Расход: {name}',
   'finance.label.expenses': 'Расходы вне каталога',
   'run.select.title': 'Заказы к закупке',
   'run.select.meta': 'выбрано {n} из {total}',
@@ -2180,7 +2183,6 @@ export const ru = {
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Продажи',
-  'sales.page.title': 'Продажи',
   'sales.action.void': 'Аннулировать',
   'sales.void.title': 'Аннулировать продажу',
   'sales.void.description': '{dish} — ингредиенты вернутся на склад.',

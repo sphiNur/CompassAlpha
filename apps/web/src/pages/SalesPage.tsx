@@ -8,23 +8,21 @@
  * bottom nav doesn't grow a sixth item for them.
  *
  * Renders the shared StoreSalesPanel for the current store context.
+ *
+ * Review COREWEB1-23 (2026-11-11): no visible title. A tab page is named
+ * by the bottom nav and Shell's hidden <h1> (UI-12); the store it showed
+ * under the title is the top bar's store chip.
  */
-import { EmptyState, PageHeader } from '@compass/ui';
+import { EmptyState } from '@compass/ui';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { useI18n } from '../hooks/useI18n';
-import { useAuthStore } from '../stores/authStore';
 
 export function SalesPage() {
   const i18n = useI18n();
   const storeCtx = useStoreContext();
   const noStoreYet = useNoStoreYet();
-  const storeName = useAuthStore((s) =>
-    storeCtx.kind === 'specific'
-      ? (s.session?.stores.find((store) => store.id === storeCtx.storeId)?.name ?? null)
-      : null,
-  );
 
   if (storeCtx.kind !== 'specific') {
     // Same empty states as Order / Confirm: no assignment at all, or an
@@ -50,7 +48,6 @@ export function SalesPage() {
 
   return (
     <div className="flex flex-col pb-4">
-      <PageHeader title={i18n.t('sales.page.title')} subtitle={storeName ?? undefined} />
       {/* Keyed by store so a half-picked dish never carries over a switch. */}
       <StoreSalesPanel key={storeCtx.storeId} storeId={storeCtx.storeId} />
     </div>

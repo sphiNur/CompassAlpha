@@ -14,10 +14,9 @@ import { useI18n } from '../hooks/useI18n';
  * used to be a bare 💵/🏦 with the meaning only in `title` — invisible on
  * touch. Every payment-method surface now NAMES the method in words.
  *
- * So the standing rule is: the word is the signal; the 💵/🏦 glyph is
- * decoration and may only ever appear ALONGSIDE it, never instead of it.
- * (That closes the "Phase 6 emoji sweep" question for this control — the
- * glyphs here are fine precisely because the label sits next to them.)
+ * Review COREWEB1-23 (2026-11-11): the word is the signal, so the 💵/🏦
+ * that sat next to it is gone too (UI-1: no glyph beside text that says
+ * the same thing).
  */
 export interface PaymentMethodChipsProps {
   value: 'cash' | 'transfer';
@@ -38,12 +37,7 @@ export function PaymentMethodChips({ value, onChange, className }: PaymentMethod
       ariaLabel={i18n.t('run.label.paymentMethod')}
       options={(['cash', 'transfer'] as const).map((m) => ({
         value: m,
-        label: (
-          <>
-            <span aria-hidden>{m === 'cash' ? '💵 ' : '🏦 '}</span>
-            {m === 'cash' ? i18n.t('run.label.paymentCash') : i18n.t('run.label.paymentTransfer')}
-          </>
-        ),
+        label: m === 'cash' ? i18n.t('run.label.paymentCash') : i18n.t('run.label.paymentTransfer'),
       }))}
     />
   );

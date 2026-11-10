@@ -950,7 +950,7 @@ export function AdminAuditSection() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-baseline gap-2">
                           <Badge tone={s.tone}>{badge}</Badge>
-                          {storeChip ? <Badge tone="muted">🏪 {storeChip}</Badge> : null}
+                          {storeChip ? <Badge tone="muted">{storeChip}</Badge> : null}
                         </div>
                         <div className="mt-1 text-old-body text-[var(--c-fg)]">
                           {i18n.t(s.key, s.params)}
@@ -1271,7 +1271,8 @@ export function FinanceSection() {
    * 2026-10-21 CA-11: purchaseLines now also carries off-catalog expense
    * splits (`kind: 'expense'`, skuId null, free-text label), so finance
    * shows the same money as History and the finish sheet. One name
-   * resolver for both kinds; expenses get a 🧾 marker.
+   * resolver for both kinds. Review ADM2-15 (2026-11-11): a named expense
+   * says so in words ("Expense: Taxi"), not with a 🧾 (UI-1).
    */
   const plainLineName = useCallback(
     (l: (typeof lines)[number]): string => {
@@ -1283,8 +1284,10 @@ export function FinanceSection() {
   );
   const lineName = useCallback(
     (l: (typeof lines)[number]): string =>
-      l.kind === 'expense' || !l.skuId ? `🧾 ${plainLineName(l)}` : plainLineName(l),
-    [plainLineName],
+      (l.kind === 'expense' || !l.skuId) && l.label
+        ? i18n.t('finance.label.expenseNamed', { name: l.label })
+        : plainLineName(l),
+    [plainLineName, i18n],
   );
   // HIS-15 (2026-10-31): quantities as everywhere else — trailing zeros
   // dropped, with the product's unit ("0.5 公斤", not "0.500").
@@ -1569,7 +1572,7 @@ export function FinanceSection() {
           </div>
           <div className="col-span-2 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 border-t border-[var(--c-divider)] pt-2">
             <div className="min-w-0">
-              <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
+              <SectionLabel padded={false}>{i18n.t('finance.label.total')}</SectionLabel>
               {totalsQuery.data.total !== null ? (
                 <div className="break-all text-old-h2 font-semibold tabular-nums">
                   {formatMoney(totalsQuery.data.total)}
@@ -1728,7 +1731,7 @@ export function FinanceSection() {
             const isOpen = expanded === key;
             const name =
               key === '__expense'
-                ? `🧾 ${i18n.t('finance.label.expenses')}`
+                ? i18n.t('finance.label.expenses')
                 : g.supplierId
                   ? (supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8))
                   : `— ${i18n.t('finance.label.noSupplier')}`;
