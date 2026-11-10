@@ -16,7 +16,7 @@ pnpm lint                            # eslint (CI); e.g. no-case-declarations fa
 bun run scripts/check-untranslated.ts
 
 # Unit tests, exactly as CI runs them (PG-gated tests skip themselves):
-SKIP_PG_TESTS=1 bun test packages/domain packages/i18n packages/ui apps/api apps/worker apps/web/src scripts
+SKIP_PG_TESTS=1 bun test packages/domain packages/contracts packages/db packages/i18n packages/ui apps/api apps/worker apps/web/src scripts
 bun test packages/domain/src/run/state.test.ts          # one file
 bun test packages/i18n -t "catalog lint"                 # by test name
 

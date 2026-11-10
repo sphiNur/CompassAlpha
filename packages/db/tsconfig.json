@@ -3,7 +3,9 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    // Review DB-01/DB-02 (2026-11-09): `bun:test` in src/__tests__, as in
+    // packages/contracts.
+    "types": ["node", "bun"]
   },
   "include": ["src/**/*"]
 }
