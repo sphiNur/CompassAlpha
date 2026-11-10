@@ -32,7 +32,9 @@ import {
   hostName,
   knownHostsFile,
   markIncompleteScript,
+  pendingMigrationTags,
   remoteCommand,
+  remoteStepError,
   restoreScript,
   rlsRoleProblem,
   rsyncExcludes,
@@ -246,6 +248,23 @@ describe('backup health before a deploy', () => {
   });
 });
 
+describe('migrations pending before a deploy (OPS-10)', () => {
+  test("reads migrate.ts --pending's lines, and nothing else", () => {
+    const output = [
+      '$ bun run src/migrate.ts --pending',
+      'pending: 0067_attendance_face_ring',
+      'pending: 0068_attendance_keep_records',
+      '[migrate] pending: 0070_not_ours',
+      '',
+    ].join('\n');
+    expect(pendingMigrationTags(output)).toEqual([
+      '0067_attendance_face_ring',
+      '0068_attendance_keep_records',
+    ]);
+    expect(pendingMigrationTags('$ bun run src/migrate.ts --pending\n')).toEqual([]);
+  });
+});
+
 describe('the dev login bypass in a server .env (OPS-03)', () => {
   /** A live tree with these files and no package .env (as on the server). */
   function envTree(files: Record<string, string>) {
@@ -357,6 +376,26 @@ describe('a step on the server (OPS-07)', () => {
     const stat = bash(`ps -o stat= -p ${pid}`).stdout.trim();
     return stat !== '' && !stat.startsWith('Z');
   }
+
+  test('a failed step says how it ended, not its command line', () => {
+    const failed = (status: number | null, stderr: string) =>
+      Object.assign(new Error(`Command failed: ssh -i key host "echo ZWNobw== | …"\n${stderr}`), {
+        status,
+        stderr,
+      });
+    const said = (err: unknown) => (remoteStepError(err, 1110) as Error).message;
+    expect(said(failed(124, ''))).toBe('the server stopped this step after 18.5 min');
+    expect(said(failed(255, 'ssh: connect to host x port 22: Connection timed out\n'))).toBe(
+      'ssh failed (exit 255): ssh: connect to host x port 22: Connection timed out',
+    );
+    expect(said(failed(2, 'psql: error: one\npsql: error: FATAL\n'))).toBe(
+      'exit 2 on the server: psql: error: FATAL',
+    );
+    expect(said(failed(1, ''))).toBe('exit 1 on the server');
+    // Killed here at its limit: the message runCapture gave it stays.
+    const local = new Error('ssh did not finish within 20 min');
+    expect(remoteStepError(local, 1110)).toBe(local);
+  });
 
   test('the server ends a step a minute and a half before the deploy gives up', () => {
     expect(serverLimitSecs(20 * 60_000)).toBe(1110);

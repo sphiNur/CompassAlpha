@@ -81,6 +81,24 @@ export function remoteCommand(script: string, secs: number, lock = REMOTE_LOCK):
 }
 
 /**
+ * A failed step, said in words. execSync's own message is the command
+ * line, a base64 payload nobody can read, followed by all of stderr, which
+ * it has already shown. Now: how the step ended, and its last line on
+ * stderr. An error with no exit status (killed here at its limit) is
+ * returned as it is.
+ */
+export function remoteStepError(err: unknown, secs: number): unknown {
+  const { status, stderr } = err as { status?: number | null; stderr?: string };
+  if (typeof status !== 'number') return err;
+  if (status === 124) {
+    return new Error(`the server stopped this step after ${Math.round(secs / 6) / 10} min`);
+  }
+  const how = status === 255 ? 'ssh failed (exit 255)' : `exit ${status} on the server`;
+  const last = (stderr ?? '').trim().split('\n').pop()?.trim();
+  return new Error(last ? `${how}: ${last}` : how);
+}
+
+/**
  * What a release never carries, relative to the repo root (one list for
  * the tarball and for rsync, so the two cannot drift). Patterns with a
  * slash or a leading name are anchored at the root; `*.pem` is anywhere.
@@ -384,4 +402,15 @@ export function backupProblem(
     return `the newest backup is ${Math.floor(age / 3600)} hours old (${latest})`;
   }
   return null;
+}
+
+/**
+ * Review OPS-10 (2026-11): the migrations `migrate.ts --pending` listed, one
+ * `pending: <tag>` line each. Other lines (pnpm's own) are not tags.
+ */
+export function pendingMigrationTags(output: string): string[] {
+  return output.split('\n').flatMap((line) => {
+    const tag = /^pending: (\S+)$/.exec(line.trim())?.[1];
+    return tag ? [tag] : [];
+  });
 }

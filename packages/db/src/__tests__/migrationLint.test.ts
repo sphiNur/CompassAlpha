@@ -2,6 +2,7 @@
  * Review DB-01 (2026-11-09): migrations may not BEGIN or COMMIT.
  * Review DB-07 (2026-11-10): the journal stays in order, and no database
  * passes over an entry.
+ * Review OPS-10 (2026-11): the deploy knows which entries are pending.
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -10,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   LEGACY_TRANSACTION_CONTROL,
   journalOrderProblems,
+  pendingMigrations,
   transactionControl,
   transactionControlViolations,
   unreachableMigrations,
@@ -120,6 +122,23 @@ describe('unreachableMigrations', () => {
   test('an unrecorded entry dated before the newest recorded one is passed over', () => {
     // 0001 merged after 0002 had been deployed.
     expect(unreachableMigrations(journal, [10, 30])).toEqual([entry(1, 20)]);
+  });
+});
+
+describe('pendingMigrations', () => {
+  const journal = [entry(0, 10), entry(1, 20), entry(2, 30)];
+
+  test('a new database applies every entry', () => {
+    expect(pendingMigrations(journal, [])).toEqual(journal);
+  });
+
+  test('only the entries after the newest recorded one', () => {
+    expect(pendingMigrations(journal, [10])).toEqual([entry(1, 20), entry(2, 30)]);
+    expect(pendingMigrations(journal, [10, 20, 30])).toEqual([]);
+  });
+
+  test('not one the database passed over (see unreachableMigrations)', () => {
+    expect(pendingMigrations(journal, [10, 30])).toEqual([]);
   });
 });
 

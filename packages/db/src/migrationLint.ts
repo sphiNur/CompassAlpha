@@ -106,3 +106,17 @@ export function unreachableMigrations(
   const applied = new Set(recorded);
   return entries.filter((entry) => entry.when <= newest && !applied.has(entry.when));
 }
+
+/**
+ * Review OPS-10 (2026-11): the entries the next run applies, chosen the
+ * way drizzle chooses them: dated after the newest migration the database
+ * recorded, or every entry when it recorded none.
+ */
+export function pendingMigrations(
+  entries: readonly JournalEntry[],
+  recorded: readonly number[],
+): JournalEntry[] {
+  if (recorded.length === 0) return [...entries];
+  const newest = Math.max(...recorded);
+  return entries.filter((entry) => entry.when > newest);
+}

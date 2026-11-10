@@ -46,10 +46,13 @@
  *      (the rollback target — see "Rollback" below)
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
  *      until the api restart in step 4c)
- *   4b. pnpm exec vite build --outDir dist.next, then swap it into place
- *      (dist → dist.prev, dist.next → dist). The api reads
- *      web/dist/build-id.txt for /health/version so running clients see
- *      a version mismatch and prompt reload.
+ *   3.6 pnpm exec vite build --outDir dist.next (it needs no database,
+ *      so it runs before the migrations)
+ *   3.7 when a migration is pending, a backup (compass-backup.service),
+ *      then the migrations
+ *   4b. swap the new bundle into place (dist → dist.prev, dist.next →
+ *      dist). The api reads web/dist/build-id.txt for /health/version so
+ *      running clients see a version mismatch and prompt reload.
  *   4c. systemctl restart compass-api compass-worker
  *   6. Run server-side tRPC smoke locally against the public URL
  *   7. Run browser smoke locally against the public URL
@@ -101,7 +104,9 @@ import {
   hostName,
   knownHostsFile,
   markIncompleteScript,
+  pendingMigrationTags,
   remoteCommand,
+  remoteStepError,
   restoreScript,
   rlsRoleProblem,
   rsyncExcludes,
@@ -243,10 +248,7 @@ function ssh(cmd: string, timeoutMs = LIMIT.step): string {
   try {
     return runCapture(`ssh ${SSH_OPTS} ${HOST} "${remoteCommand(cmd, secs)}"`, { timeoutMs });
   } catch (err) {
-    if ((err as { status?: number }).status === 124) {
-      throw new Error(`the server stopped this step after ${Math.round(secs / 6) / 10} min`);
-    }
-    throw err;
+    throw remoteStepError(err, secs);
   }
 }
 
@@ -692,6 +694,18 @@ if (!DRY) {
 }
 
 /** Shell script: install exactly the dependencies the tree on disk locks. */
+/**
+ * Shell script: the migration runner of the release on disk. `--pending`
+ * only lists what it would apply (review OPS-10).
+ */
+function migrateScript(...flags: string[]): string {
+  return [
+    'export PATH=$HOME/.bun/bin:$PATH',
+    `cd ${APP_DIR}`,
+    ['pnpm --filter @compass/db migrate', ...flags, '2>&1'].join(' '),
+  ].join(' && ');
+}
+
 function installScript(): string {
   // 2026-10-30: pipefail — `| tail -5` used to report tail's exit code, so
   // a failed install went on to restart the api on missing deps.
@@ -834,22 +848,81 @@ if (!DRY) {
   }
 
   if (!ROLLBACK) {
+    /**
+     * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
+     * restart, and `vite build` empties dist/ before writing it. For the
+     * length of the build the new api was serving a dist/ that was missing
+     * or half-written — every page load in that window 404'd its assets or
+     * fell through to JSON. Now the bundle is built beside the live one and
+     * renamed into place (two same-filesystem renames, microseconds apart,
+     * step 4b) BEFORE the restart, so there is no window of new api +
+     * missing assets. A failed build aborts here, before anything restarts,
+     * and leaves the live dist/ untouched.
+     *
+     * Review OPS-10 (2026-11): the build needs no database, so it runs
+     * before the migrations. It used to run after them, and the old api ran
+     * against the new schema for the whole build (minutes on this server).
+     *
+     * The previous bundle is kept as dist.prev for exactly one deploy:
+     * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
+     * (see docs/RUNBOOK.md "Roll back a bad deploy").
+     */
+    step('3.6. build web into dist.next (the live bundle is untouched)');
+    try {
+      console.log(
+        ssh(
+          [
+            'set -e',
+            'set -o pipefail',
+            'export PATH=$HOME/.bun/bin:$PATH',
+            'cd /home/ubuntu/compass-alpha/apps/web',
+            'rm -rf dist.next',
+            `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
+            'test -f dist.next/index.html',
+          ].join(' && '),
+        ),
+      );
+    } catch (err) {
+      abortAfterExtract('web build FAILED', err);
+    }
+
     step('3.7. db migrations (idempotent — drizzle skips already-applied)');
+    // Review OPS-10 (2026-11): migrations only go forward, and --rollback
+    // does not undo one: the way back is a dump. The runbook asked for one
+    // by hand before a risky deploy; now the deploy takes it whenever there
+    // is a migration to apply, instead of leaning on last night's.
+    let pending: string[] = [];
+    try {
+      pending = pendingMigrationTags(ssh(migrateScript('--pending')));
+    } catch (err) {
+      abortAfterExtract('listing the pending migrations FAILED', err);
+    }
+    if (pending.length === 0) {
+      console.log('  no migration to apply');
+    } else {
+      console.log(`  to apply: ${pending.join(', ')}`);
+      try {
+        // A oneshot: `start` returns when the backup has finished.
+        ssh('sudo systemctl start compass-backup.service');
+        const problem = backupProblem(ssh(backupHealthScript()), LIMIT.step / 1000);
+        if (problem) throw new Error(problem);
+        console.log('  ✓ backed up first');
+      } catch (err) {
+        if (!args.has('--allow-stale-backup')) {
+          abortAfterExtract('the backup before the migrations FAILED', err);
+        }
+        console.log(
+          `  \x1b[33m⚠ --allow-stale-backup: migrating without a new backup (${(err as Error).message})\x1b[0m`,
+        );
+      }
+    }
     // We previously piped to `tail -20`, which masked migrate failures
     // because the pipeline exit code is tail's (always 0). A real
     // PostgresError shipped silently for several deploys, leaving prod
     // without the display_name_locked column. Now: full output, no pipe,
     // and `ssh()` throws on non-zero so we abort before the api restart.
     try {
-      console.log(
-        ssh(
-          [
-            'export PATH=$HOME/.bun/bin:$PATH',
-            'cd /home/ubuntu/compass-alpha',
-            'pnpm --filter @compass/db migrate 2>&1',
-          ].join(' && '),
-        ),
-      );
+      console.log(ssh(migrateScript()));
     } catch (err) {
       abortAfterExtract('db migrate FAILED', err);
     }
@@ -866,41 +939,20 @@ if (!DRY) {
   }
 
   if (!ROLLBACK) {
-    /**
-     * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
-     * restart, and `vite build` empties dist/ before writing it. For the
-     * length of the build the new api was serving a dist/ that was missing
-     * or half-written — every page load in that window 404'd its assets or
-     * fell through to JSON. Now the bundle is built beside the live one and
-     * renamed into place (two same-filesystem renames, microseconds apart)
-     * BEFORE the restart, so there is no window of new api + missing
-     * assets. A failed build aborts here, before anything restarts, and
-     * leaves the live dist/ untouched.
-     *
-     * The previous bundle is kept as dist.prev for exactly one deploy:
-     * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
-     * (see docs/RUNBOOK.md "Roll back a bad deploy").
-     */
-    step('4b. build web into dist.next, then swap into place');
+    step('4b. swap the new web bundle into place (dist → dist.prev, dist.next → dist)');
     try {
-      console.log(
-        ssh(
-          [
-            'set -e',
-            'set -o pipefail',
-            'export PATH=$HOME/.bun/bin:$PATH',
-            'cd /home/ubuntu/compass-alpha/apps/web',
-            'rm -rf dist.next',
-            `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
-            'test -f dist.next/index.html',
-            'rm -rf dist.prev',
-            'if [ -d dist ]; then mv dist dist.prev; fi',
-            'mv dist.next dist',
-          ].join(' && '),
-        ),
+      ssh(
+        [
+          'set -e',
+          'cd /home/ubuntu/compass-alpha/apps/web',
+          'test -f dist.next/index.html',
+          'rm -rf dist.prev',
+          'if [ -d dist ]; then mv dist dist.prev; fi',
+          'mv dist.next dist',
+        ].join(' && '),
       );
     } catch (err) {
-      abortAfterExtract('web build FAILED', err);
+      abortAfterExtract('swapping in the web bundle FAILED', err);
     }
   }
 

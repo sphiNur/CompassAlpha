@@ -76,14 +76,14 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 ### Roll back a bad deploy
 Production is not image-based: `scripts/deploy.ts` tars the local working
 tree, extracts it over `/home/ubuntu/compass-alpha` (in place, no
-`--delete`), runs `pnpm install --frozen-lockfile` and
-`pnpm --filter @compass/db migrate`, refreshes the systemd units, builds
-the web bundle into `apps/web/dist.next` and renames it into place
-(`dist` → `dist.prev`, `dist.next` → `dist`), and only then restarts
-`compass-api` and `compass-worker` (2026-10-21, CA-37: the build used to
-run after the restart, leaving the new api serving a missing/half-written
-`dist`). A failed web build aborts the deploy before the restart and
-leaves the live `dist` untouched.
+`--delete`), runs `pnpm install --frozen-lockfile`, builds the web bundle
+into `apps/web/dist.next`, runs `pnpm --filter @compass/db migrate`,
+refreshes the systemd units, renames the bundle into place (`dist` →
+`dist.prev`, `dist.next` → `dist`), and only then restarts `compass-api`
+and `compass-worker` (2026-10-21, CA-37: the build used to run after the
+restart, leaving the new api serving a missing/half-written `dist`). A
+failed web build aborts the deploy before the restart and leaves the live
+`dist` untouched.
 
 Since 2026-11-09 (review OPS-01/OPS-02):
 - The read-only checks of the server's `.env` files and database role run
@@ -92,10 +92,10 @@ Since 2026-11-09 (review OPS-01/OPS-02):
   timer is stopped, the last run failed, or the newest dump is more than
   26 hours old. `--allow-stale-backup` overrides; `--rollback` skips it.
 - If any step between the extract and the restart fails (extract,
-  install, migrate, units, web build), the deploy puts the release kept in
-  step 2.5 back, with its own dependencies and units, and restarts
-  nothing. The disk then matches what runs again. Migrations that already
-  ran stay applied.
+  install, web build, migrate, units, bundle swap), the deploy puts the
+  release kept in step 2.5 back, with its own dependencies and units, and
+  restarts nothing. The disk then matches what runs again. Migrations
+  that already ran stay applied.
 - From the extract until a successful restart,
   `/home/ubuntu/compass-alpha/.deploy-incomplete` names the release. If it
   is still there (the undo failed too, or the api did not come up), the
@@ -148,6 +148,21 @@ Since 2026-11 (review OPS-07/OPS-08/OPS-09):
   pointing at another backend went unnoticed.
 - The realtime probe gets three tries. A pass that needed more says so.
 
+Since 2026-11 (review OPS-10/OPS-12):
+
+- When the release has a migration to apply, the deploy runs
+  `compass-backup.service` first and stops, putting the previous release
+  back, if the backup fails. `--allow-stale-backup` migrates without it.
+  `pnpm --filter @compass/db migrate --pending` lists what a run would
+  apply and changes nothing.
+- The web bundle is built into `dist.next` before the migrations and
+  swapped in just before the restart. The old api used to run against
+  the new schema for the whole build.
+- `compass-backup.timer` no longer has `Requires=compass-backup.service`.
+  Starting the timer (install, boot) no longer starts a backup, so
+  `INSTALL_SKIP_FIRST_RUN=1` works, and stopping a stuck backup no longer
+  stops the timer. The deploy's `daemon-reload` applies it.
+
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
 No restart is needed — the api serves `dist` from disk on every request
@@ -189,9 +204,9 @@ rebuild the bundle (the snapshot carries the built one).
   does not delete); they are harmless unless something imports them.
 - Migrations only move forward: rolling back does NOT undo a migration
   the bad deploy applied. If old code cannot run against the newer
-  schema, restore the pre-deploy dump (see "Restore from a dump" below —
-  take one with `sudo systemctl start compass-backup.service` before
-  risky deploys) and accept losing writes made since that dump.
+  schema, restore the dump the deploy took before migrating (see
+  "Restore from a dump" below) and accept losing writes made since that
+  dump.
 - By hand, without the deploy machine (then restart and check yourself):
   ```bash
   cd /home/ubuntu/compass-alpha
