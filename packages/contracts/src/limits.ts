@@ -100,3 +100,19 @@ export const ATTENDANCE_ACCURACY_SLACK_M = 50;
  * clock-in and, a minute later, their clock-out).
  */
 export const ATTENDANCE_UNDO_WINDOW_MS = 2 * 60_000;
+
+/**
+ * COREAPI-04 (2026-11-09): one `system.log` call carries at most this many
+ * client log events. The server refuses a bigger batch and the web sends
+ * none: it used to send its whole queue (up to 500) in one call, which was
+ * refused and queued again on every flush, so after an outage or an error
+ * storm no client log arrived at all. The server, the contracts schema and
+ * the web each had a number of their own; they share this one.
+ */
+export const CLIENT_LOG_BATCH_MAX = 200;
+
+/**
+ * And at most this many bytes of JSON: browsers refuse a `keepalive`
+ * request body above 64 KiB, and the web sends its logs with keepalive.
+ */
+export const CLIENT_LOG_BATCH_MAX_BYTES = 60_000;

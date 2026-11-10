@@ -168,6 +168,11 @@ export const authedProcedure = t.procedure
   .use(mutationRateMiddleware)
   .use(async (opts) => {
     if (!opts.ctx.session) {
+      // COREAPI-15: the database, not the sign-in, failed. The app retries
+      // (a queued write stays queued) instead of refreshing its token.
+      if (opts.ctx.sessionUnavailable) {
+        throw new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'common.errors.internal' });
+      }
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.required' });
     }
     return opts.next({ ctx: { ...opts.ctx, session: opts.ctx.session } });

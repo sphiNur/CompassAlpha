@@ -24,8 +24,14 @@
  * line with a deep link back into the Mini App.
  */
 import { eq, and, ne, inArray, or, isNull, gt } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import {
+  effectivePermissionsForStore,
+  flatEffectivePermissions,
+  type ScopedPermission,
+} from './storeScope';
 import { detectLocale, format, loadCatalog, lookup, type CatalogKey, type Locale } from '@compass/i18n';
 
 export type NotifyChannel = 'bot' | 'webpush' | 'inapp';
@@ -57,13 +63,14 @@ export interface NotifyEnvelope {
  * Resolve which user IDs should be notified for the given org + permission.
  * Used to implement "notify all approvers" / "notify all purchasers" / etc.
  *
- * SCOPE NOTE (M3.6, 2026-05-15) — this returns every user in the org
- * whose role carries `permissionKey`, ignoring whether the underlying
- * member_role_binding is global or pinned to a specific store. That's
- * correct for genuinely org-wide events (RunPlanned → all purchasers
- * regardless of which stores they're bound to). For store-scoped
- * events (OrderSubmitted at Store A → notify Store A's approvers,
- * NOT Store B's), use `findRecipientsByPermissionInStore` instead.
+ * SCOPE NOTE (M3.6, 2026-05-15) — this returns every active member for
+ * whom `permissionKey` is effective in at least one scope: globally or
+ * in any one store, through a role or an allow override, and not denied
+ * there (COREAPI-06). That's correct for genuinely org-wide events
+ * (RunPlanned → all purchasers regardless of which stores they're bound
+ * to). For store-scoped events (OrderSubmitted at Store A → notify Store
+ * A's approvers, NOT Store B's), use `findRecipientsByPermissionInStore`
+ * instead.
  *
  * The bug this distinction closes: with no scope filter, a manager
  * bound to Store B (rank 60, store-tier `order.approve`) would get
@@ -75,20 +82,38 @@ export async function findRecipientsByPermission(
   orgId: string,
   permissionKey: string,
 ): Promise<string[]> {
-  const bindings = await activeBindingsWithPermission(db, orgId, permissionKey);
-  const denied = await deniedMemberIds(db, bindings, permissionKey, null);
-  return [...new Set(bindings.filter((b) => !denied.has(b.memberId)).map((b) => b.userId))];
+  const candidates = await permissionCandidates(db, orgId, permissionKey, null);
+  if (candidates.length === 0) return [];
+  // COREAPI-06: the same rule as the session's permission set — the key
+  // is effective in at least one scope, with allows and denies applied.
+  const rows = await keyRows(
+    db,
+    candidates.map((c) => c.memberId),
+    permissionKey,
+  );
+  return userIdsOf(
+    candidates.filter((c) =>
+      flatEffectivePermissions(
+        rows.grants.get(c.memberId) ?? [],
+        rows.overrides.get(c.memberId) ?? [],
+      ).has(permissionKey),
+    ),
+  );
 }
 
 /**
- * Like `findRecipientsByPermission` but additionally filters by the
- * binding's store scope. Returns users whose role carries `permissionKey`
- * AND whose binding is either:
- *   - global (admin/super_admin reach everywhere), OR
- *   - store-scoped with `scope_id = storeId`
+ * Like `findRecipientsByPermission` but for one store: the members for
+ * whom `permissionKey` is effective in `storeId`, i.e. those the store's
+ * pages let act (storeScope.effectivePermissionsForStore):
+ *   - a role binding carrying the key, global or on this store, or an
+ *     allow override, global or on this store;
+ *   - minus a deny, global or on this store (deny wins).
  *
  * Used for store-scoped notification fan-out so a manager-of-B never
  * gets pinged about Store A's order activity.
+ *
+ * COREAPI-06 (2026-11-09): allow overrides were ignored here, so a member
+ * who could approve or receive through one heard nothing about it.
  */
 export async function findRecipientsByPermissionInStore(
   db: DB,
@@ -96,13 +121,13 @@ export async function findRecipientsByPermissionInStore(
   permissionKey: string,
   storeId: string,
 ): Promise<string[]> {
-  // Global bindings reach every store (admins overseeing the chain).
-  // Store-scoped bindings reach only their target store.
-  const bindings = (await activeBindingsWithPermission(db, orgId, permissionKey)).filter(
-    (b) => b.scopeType === 'global' || b.scopeId === storeId,
-  );
-  const denied = await deniedMemberIds(db, bindings, permissionKey, storeId);
-  return [...new Set(bindings.filter((b) => !denied.has(b.memberId)).map((b) => b.userId))];
+  const candidates = await permissionCandidates(db, orgId, permissionKey, storeId);
+  const holders: Candidate[] = [];
+  for (const c of candidates) {
+    const effective = await effectivePermissionsForStore(db, c.memberId, storeId, NO_SESSION);
+    if (effective.has(permissionKey)) holders.push(c);
+  }
+  return userIdsOf(holders);
 }
 
 export async function findStoreStaff(db: DB, orgId: string, storeId: string): Promise<string[]> {
@@ -114,88 +139,139 @@ export async function findStoreStaff(db: DB, orgId: string, storeId: string): Pr
   return findRecipientsByPermissionInStore(db, orgId, 'delivery.confirm', storeId);
 }
 
-interface PermissionBinding {
+interface Candidate {
   memberId: string;
   userId: string;
-  scopeType: string;
-  scopeId: string | null;
+}
+
+/** effectivePermissionsForStore does not read the session's own set. */
+const NO_SESSION: ReadonlySet<string> = new Set();
+
+function userIdsOf(members: readonly Candidate[]): string[] {
+  return [...new Set(members.map((m) => m.userId))];
+}
+
+/** Rows that apply in `storeId`: global ones and that store's. */
+function inScope(table: { scopeType: AnyPgColumn; scopeId: AnyPgColumn }, storeId: string | null) {
+  if (storeId === null) return undefined;
+  return or(
+    eq(table.scopeType, 'global'),
+    and(eq(table.scopeType, 'store'), eq(table.scopeId, storeId)),
+  );
 }
 
 /**
- * Role bindings in `orgId` that carry `permissionKey`, for members who can
- * still sign in. 2026-10-21 audit CA-31/F-07: the recipient queries did not
- * look at members.status or binding expiry, so suspended members and
- * expired temporary roles kept receiving store activity over Telegram.
- * Same filters as the session loader (trpc/context.ts readSession).
+ * Active members of `orgId` who might hold `permissionKey` (in `storeId`
+ * when given): a live role binding carrying it, or a live allow override
+ * of it. 2026-10-21 audit CA-31/F-07: suspended members and expired
+ * temporary grants are left out, with the same filters as the session
+ * loader (trpc/context.ts readSession).
  */
-async function activeBindingsWithPermission(
+async function permissionCandidates(
   db: DB,
   orgId: string,
   permissionKey: string,
-): Promise<PermissionBinding[]> {
-  return db
-    .select({
-      memberId: s.members.id,
-      userId: s.members.userId,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.roles.id))
-    .where(
-      and(
-        eq(s.roles.orgId, orgId),
-        eq(s.members.orgId, orgId),
-        eq(s.members.status, 'active'),
-        eq(s.rolePermissions.permissionKey, permissionKey),
-        or(
-          isNull(s.memberRoleBindings.expiresAt),
-          gt(s.memberRoleBindings.expiresAt, new Date()),
+  storeId: string | null,
+): Promise<Candidate[]> {
+  const now = new Date();
+  const [viaRole, viaAllow] = await Promise.all([
+    db
+      .selectDistinct({ memberId: s.members.id, userId: s.members.userId })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
+      .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.roles.id))
+      .where(
+        and(
+          eq(s.roles.orgId, orgId),
+          eq(s.members.orgId, orgId),
+          eq(s.members.status, 'active'),
+          eq(s.rolePermissions.permissionKey, permissionKey),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          inScope(s.memberRoleBindings, storeId),
         ),
       ),
-    );
+    db
+      .selectDistinct({ memberId: s.members.id, userId: s.members.userId })
+      .from(s.memberPermissionOverrides)
+      .innerJoin(s.members, eq(s.members.id, s.memberPermissionOverrides.memberId))
+      .where(
+        and(
+          eq(s.members.orgId, orgId),
+          eq(s.members.status, 'active'),
+          eq(s.memberPermissionOverrides.permissionKey, permissionKey),
+          eq(s.memberPermissionOverrides.effect, 'allow'),
+          or(
+            isNull(s.memberPermissionOverrides.expiresAt),
+            gt(s.memberPermissionOverrides.expiresAt, now),
+          ),
+          inScope(s.memberPermissionOverrides, storeId),
+        ),
+      ),
+  ]);
+  const byMember = new Map<string, Candidate>();
+  for (const c of [...viaRole, ...viaAllow]) byMember.set(c.memberId, c);
+  return [...byMember.values()];
 }
 
-/**
- * Members with an active deny override for `permissionKey`: global ones
- * always, store ones only when `storeId` is that store. Deny wins over the
- * role grant, as in storeScope.effectivePermissionsForStore. Allow
- * overrides are not consulted (they never removed anyone from a list).
- */
-async function deniedMemberIds(
+/** The members' live grants and overrides of one key, with their scopes. */
+async function keyRows(
   db: DB,
-  bindings: PermissionBinding[],
+  memberIds: string[],
   permissionKey: string,
-  storeId: string | null,
-): Promise<Set<string>> {
-  const memberIds = [...new Set(bindings.map((b) => b.memberId))];
-  if (memberIds.length === 0) return new Set();
-  const rows = await db
-    .select({ memberId: s.memberPermissionOverrides.memberId })
-    .from(s.memberPermissionOverrides)
-    .where(
-      and(
-        inArray(s.memberPermissionOverrides.memberId, memberIds),
-        eq(s.memberPermissionOverrides.permissionKey, permissionKey),
-        eq(s.memberPermissionOverrides.effect, 'deny'),
-        storeId
-          ? or(
-              eq(s.memberPermissionOverrides.scopeType, 'global'),
-              and(
-                eq(s.memberPermissionOverrides.scopeType, 'store'),
-                eq(s.memberPermissionOverrides.scopeId, storeId),
-              ),
-            )
-          : eq(s.memberPermissionOverrides.scopeType, 'global'),
-        or(
-          isNull(s.memberPermissionOverrides.expiresAt),
-          gt(s.memberPermissionOverrides.expiresAt, new Date()),
+): Promise<{
+  grants: Map<string, ScopedPermission[]>;
+  overrides: Map<string, (ScopedPermission & { effect: string })[]>;
+}> {
+  const now = new Date();
+  const [grantRows, overrideRows] = await Promise.all([
+    db
+      .select({
+        memberId: s.memberRoleBindings.memberId,
+        scopeType: s.memberRoleBindings.scopeType,
+        scopeId: s.memberRoleBindings.scopeId,
+      })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
+      .where(
+        and(
+          inArray(s.memberRoleBindings.memberId, memberIds),
+          eq(s.rolePermissions.permissionKey, permissionKey),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
         ),
       ),
-    );
-  return new Set(rows.map((r) => r.memberId));
+    db
+      .select({
+        memberId: s.memberPermissionOverrides.memberId,
+        effect: s.memberPermissionOverrides.effect,
+        scopeType: s.memberPermissionOverrides.scopeType,
+        scopeId: s.memberPermissionOverrides.scopeId,
+      })
+      .from(s.memberPermissionOverrides)
+      .where(
+        and(
+          inArray(s.memberPermissionOverrides.memberId, memberIds),
+          eq(s.memberPermissionOverrides.permissionKey, permissionKey),
+          or(
+            isNull(s.memberPermissionOverrides.expiresAt),
+            gt(s.memberPermissionOverrides.expiresAt, now),
+          ),
+        ),
+      ),
+  ]);
+  const grants = new Map<string, ScopedPermission[]>();
+  for (const r of grantRows) {
+    const list = grants.get(r.memberId) ?? [];
+    list.push({ key: permissionKey, scopeType: r.scopeType, scopeId: r.scopeId });
+    grants.set(r.memberId, list);
+  }
+  const overrides = new Map<string, (ScopedPermission & { effect: string })[]>();
+  for (const r of overrideRows) {
+    const list = overrides.get(r.memberId) ?? [];
+    list.push({ key: permissionKey, effect: r.effect, scopeType: r.scopeType, scopeId: r.scopeId });
+    overrides.set(r.memberId, list);
+  }
+  return { grants, overrides };
 }
 
 /**

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CLIENT_LOG_BATCH_MAX } from '../limits';
 import { UuidSchema } from './common';
 
 export const ClientLogEventSchema = z.object({
@@ -18,7 +19,7 @@ export const ClientLogEventSchema = z.object({
 });
 
 export const ClientLogBatchSchema = z.object({
-  events: z.array(ClientLogEventSchema).min(1).max(100),
+  events: z.array(ClientLogEventSchema).min(1).max(CLIENT_LOG_BATCH_MAX),
 });
 
 export const RecentLogsInputSchema = z.object({

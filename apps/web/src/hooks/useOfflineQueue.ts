@@ -244,8 +244,9 @@ export function flushOutbox(): Promise<void> {
             });
             continue;
           }
-          // No answer, or a lapsed session: the entry is not at fault.
-          // Leave it untouched and stop, preserving order for next time.
+          // No answer, a lapsed session or a server that is down: the entry
+          // is not at fault. Leave it untouched and stop, preserving order
+          // for next time.
           if (!countsTowardGiveUp(code)) break;
           const nextRetries = entry.retries + 1;
           if (shouldGiveUp(nextRetries)) {
@@ -285,11 +286,12 @@ export function isOwnEntry(
 
 /**
  * Does this failure say anything about the entry itself? No code means
- * the request never got an answer, and UNAUTHORIZED is about the session.
- * Neither is a reason to move an entry toward being abandoned.
+ * the request never got an answer, UNAUTHORIZED is about the session, and
+ * SERVICE_UNAVAILABLE about the server (its database could not be reached,
+ * COREAPI-15). None is a reason to move an entry toward being abandoned.
  */
 export function countsTowardGiveUp(code: string | undefined): boolean {
-  return code !== undefined && code !== 'UNAUTHORIZED';
+  return code !== undefined && code !== 'UNAUTHORIZED' && code !== 'SERVICE_UNAVAILABLE';
 }
 
 const RETRY_BASE_MS = 5_000;
