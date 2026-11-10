@@ -29,6 +29,11 @@ attempt changed.
 with a live browser. Each step attaches a full-page screenshot to the
 report; a failing run also keeps a trace under `test-results/`.
 
+`@playwright/test` here and `playwright` in the root package.json (the
+deploy's browser smokes) are pinned to the same exact version, so one
+browser build serves both. Bump them together;
+`scripts/__tests__/playwrightVersion.test.ts` fails otherwise (OPS-20).
+
 ## Writing a step
 
 Find things the way a person does — by role and visible name — and reach
