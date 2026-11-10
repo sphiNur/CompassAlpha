@@ -630,7 +630,7 @@ export const uz = {
   'shell.skip.mainAction': 'Asosiy amalga oʻtish',
   'shell.skip.nav': 'Navigatsiyaga oʻtish',
   'approval.offline.needsConnection':
-    'Tekshiruv uchun internet kerak: tasdiqlash va rad etish telefonda saqlanmaydi.',
+    'Tekshiruv uchun internet kerak: maʼqullash va rad etish telefonda saqlanmaydi.',
   'workspace.switchConfirm':
     '{name} ga oʻtilsinmi? Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
   'storeSwitcher.switched': '{store} tanlandi',
@@ -2026,7 +2026,7 @@ export const uz = {
     'Bu kun yakuni tafsilotlar joriy etilishidan oldin yozilgan. Tarixiy jami saqlanadi va uni qismlarga ajratib yoki oʻzgartirib boʻlmaydi.',
   'settlement.expenses.remove': 'Oʻchirish',
   'settlement.expenses.readOnly':
-    'Operatsion xarajatlarni bu yerda koʻrish mumkin, ammo ularni faqat doʻkon menejeri yoki undan yuqori rol qoʻshishi, oʻzgartirishi yoki oʻchirishi mumkin.',
+    'Operatsion xarajatlarni bu yerda koʻrish mumkin, ammo ularni faqat doʻkon boshqaruvchisi yoki undan yuqori rol qoʻshishi, oʻzgartirishi yoki oʻchirishi mumkin.',
   'settlement.expenseCategory.other': 'Boshqa',
   'settlement.wages.title': 'Ish haqi tafsiloti',
   'settlement.wages.totals': 'Toʻlangan {paid} · Toʻlanmagan {unpaid}',
@@ -2289,13 +2289,13 @@ export const uz = {
   'notify.order.approved.title': 'Buyurtma maʼqullandi',
   'notify.order.approved.body': 'Buyurtmangiz maʼqullandi va keyingi xaridga qoʻshiladi.',
   'notify.order.selfApproved.title': 'Buyurtmani muallifning oʻzi maʼqulladi',
-  'notify.order.selfApproved.body': '{store}: menejer oʻzi yuborgan buyurtmani maʼqulladi.',
+  'notify.order.selfApproved.body': '{store}: boshqaruvchi oʻzi yuborgan buyurtmani maʼqulladi.',
   'notify.order.rejected.title': 'Buyurtma rad etildi',
   'notify.order.rejected.body': 'Buyurtmangiz rad etildi — tuzatib, qayta yuboring.',
   'notify.order.unapproved.title': 'Buyurtma tekshiruvga qaytarildi',
   'notify.order.unapproved.body': 'Tekshiruvchi buyurtmangizni qayta tekshiruvga ochdi.',
   'notify.order.withdrawn.title': 'Buyurtma qoralamaga qaytarildi',
-  'notify.order.withdrawn.body': 'Menejer yuborgan buyurtmangizni qoralamaga qaytardi.',
+  'notify.order.withdrawn.body': 'Boshqaruvchi yuborgan buyurtmangizni qoralamaga qaytardi.',
   'notify.order.attachedToRun.title': 'Buyurtma xaridga qoʻshildi',
   'notify.order.attachedToRun.body': 'Buyurtmangiz hozir xarid qilinmoqda.',
   'notify.order.claimTakenOver.title': 'Tekshiruvingizni boshqasi oldi',
@@ -2392,13 +2392,13 @@ export const uz = {
   'run.confirm.startDelivery.pendingExtras':
     'Hali belgilanmagan — doʻkonlar soʻragan boshqa narsalar ({n}): {names}. Yetkazish boshlangach, ular xarid sahifasida koʻrinmaydi.',
   'approval.changed.title': 'Buyurtma siz ochganingizdan keyin oʻzgardi',
-  'approval.changed.body': 'Oʻzgargan qatorlar belgilandi. Koʻrib chiqqach tasdiqlang.',
+  'approval.changed.body': 'Oʻzgargan qatorlar belgilandi. Koʻrib chiqqach maʼqullang.',
   'approval.changed.ack': 'Koʻrdim',
   'approval.changed.line': 'Oʻzgardi: {from} → {to} {unit}',
   'approval.changed.removed': '{item}: {from} {unit} → oʻchirildi',
   'approval.zeroed': 'Tekshiruvda 0 qilindi — qaytarish uchun + ni bosing',
   'approval.allZeroRejectOnly':
-    'Barcha qatorlar 0 va boshqa narsa yoʻq, tasdiqlab boʻlmaydi. Qatorni qaytaring yoki buyurtmani rad eting.',
+    'Barcha qatorlar 0 va boshqa narsa yoʻq, maʼqullab boʻlmaydi. Qatorni qaytaring yoki buyurtmani rad eting.',
   'approval.toast.withdrawnWhileOpen': 'Buyurtmachi siz ochgan buyurtmani qaytarib oldi.',
   'approval.toast.decidedElsewhere':
     'Siz ochgan buyurtmani boshqa tekshiruvchi allaqachon koʻrib chiqdi.',
@@ -2781,7 +2781,7 @@ export const uz = {
     'Bu hamkasb hali yuz tekshiruviga rozilik bermagan. Avval oʻz telefonida rozilik beradi.',
   'attendance.errors.livenessNeeded': 'Bu safar bosh burish ham kerak.',
   'attendance.errors.notRecognized':
-    'Yuz bu doʻkondagi hech kimga mos kelmadi. Yorugʻ joyda qayta urining yoki rahbardan belgini qoʻshishni soʻrang.',
+    'Yuz bu doʻkondagi hech kimga mos kelmadi. Yorugʻ joyda qayta urining yoki boshqaruvchidan belgini qoʻshishni soʻrang.',
   'attendance.borrow.identifyHint': 'Hamkasb kameraga qaraydi, ilova kimligini oʻzi aniqlaydi.',
   'attendance.consent.title': 'Yuz tekshiruvi',
   'attendance.consent.intro':
@@ -2789,15 +2789,15 @@ export const uz = {
   'attendance.consent.kept':
     'Roʻyxatdagi yuz suratlari va belgi suratlari saqlanadi; belgi suratlari 90 kundan keyin oʻchiriladi.',
   'attendance.consent.who':
-    'Ularni faqat doʻkoningiz rahbarlari koʻradi. Faqat davomat uchun ishlatiladi.',
+    'Ularni faqat doʻkoningiz boshqaruvchilari koʻradi. Faqat davomat uchun ishlatiladi.',
   'attendance.consent.withdrawNote':
-    'Bu ekranda istalgan vaqtda rozilikni qaytarib olishingiz mumkin; roʻyxatdagi yuz oʻchiriladi, belgilarni rahbar qoʻshadi.',
+    'Bu ekranda istalgan vaqtda rozilikni qaytarib olishingiz mumkin; roʻyxatdagi yuz oʻchiriladi, belgilarni boshqaruvchi qoʻshadi.',
   'attendance.consent.agree': 'Roziman',
   'attendance.consent.notNow': 'Hozir emas',
   'attendance.consent.withdraw': 'Yuz tekshiruvi roziligini qaytarib olish',
   'attendance.consent.withdrawTitle': 'Rozilik qaytarib olinsinmi?',
   'attendance.consent.withdrawBody':
-    'Roʻyxatdagi yuz oʻchiriladi. Keyin telefonda belgilanib boʻlmaydi, belgilarni rahbar qoʻshadi.',
+    'Roʻyxatdagi yuz oʻchiriladi. Keyin telefonda belgilanib boʻlmaydi, belgilarni boshqaruvchi qoʻshadi.',
   'attendance.face.like': 'Oʻxshash: {name}',
   'attendance.live.badge.passive': 'Jonli yuz (surat)',
   'attendance.view.review': 'Tekshirish',
@@ -2812,18 +2812,19 @@ export const uz = {
   'notify.attendance.faceLike.body':
     '{name}: {store} da {time} da belgiladi, lekin yuz {like} ga oʻxshaydi. Belgilash suratlarini tekshiring.',
   'attendance.errors.faceNotEnrolled':
-    'Avval yuzingizni roʻyxatdan oʻtkazing; rahbar tasdiqlagach belgilanishingiz mumkin.',
+    'Avval yuzingizni roʻyxatdan oʻtkazing; boshqaruvchi tasdiqlagach belgilanishingiz mumkin.',
   'attendance.errors.faceMismatch': 'Yuz sizniki bilan mos kelmadi, belgi saqlanmadi.',
   'attendance.errors.enrollRejected': 'Baʼzi suratlar yaroqsiz. Qaytadan roʻyxatdan oʻting.',
   'attendance.errors.enrollmentNotFound': 'Bu yuz roʻyxati endi tasdiq kutmayapti.',
-  'attendance.errors.enrollOwn': 'Oʻz yuzingizni tasdiqlay olmaysiz: buni boshqa rahbar qiladi.',
+  'attendance.errors.enrollOwn':
+    'Oʻz yuzingizni tasdiqlay olmaysiz: buni boshqa boshqaruvchi qiladi.',
   'attendance.errors.enrollNoteRequired': 'Qaytarish sababini yozing.',
   'attendance.errors.enrollFailed': 'Yuz roʻyxatini yuborib boʻlmadi.',
   'attendance.face.refusedBody':
-    'Yaxshi yorugʻlikda kameraga qarab yana urinib koʻring. Boʻlmasa, rahbardan belgini qoʻshishni soʻrang.',
+    'Yaxshi yorugʻlikda kameraga qarab yana urinib koʻring. Boʻlmasa, boshqaruvchidan belgini qoʻshishni soʻrang.',
   'attendance.face.cannotTitle': 'Bu telefon yuz suratini ola olmaydi',
   'attendance.face.cannotBody':
-    'Bu yerda kamera yoki yuzni kuzatish ishlamaydi. Hamkasbingiz telefonida belgilaning yoki rahbardan belgini qoʻshishni soʻrang.',
+    'Bu yerda kamera yoki yuzni kuzatish ishlamaydi. Hamkasbingiz telefonida belgilaning yoki boshqaruvchidan belgini qoʻshishni soʻrang.',
   'attendance.face.cannotDenied':
     'Kameraga ruxsat oʻchirilgan. Telefon sozlamalarida Telegramga kamerani ruxsat bering va qayta urining.',
   'attendance.enroll.start': 'Yuzni roʻyxatdan oʻtkazish',
@@ -2833,15 +2834,15 @@ export const uz = {
     'Yangi yuz roʻyxati tasdiq kutmoqda; shu paytgacha avvalgisi ishlatiladi.',
   'attendance.enroll.card.none.title': 'Avval yuzingizni roʻyxatdan oʻtkazing',
   'attendance.enroll.card.none.body':
-    'Belgilanish faqat yuz orqali. Doiraga qarab boshingizni sekin aylantiring (bir daqiqadan kam); rahbar tasdiqlagach belgilanish mumkin.',
-  'attendance.enroll.card.pending.title': 'Rahbar tasdigʻi kutilmoqda',
+    'Belgilanish faqat yuz orqali. Doiraga qarab boshingizni sekin aylantiring (bir daqiqadan kam); boshqaruvchi tasdiqlagach belgilanish mumkin.',
+  'attendance.enroll.card.pending.title': 'Boshqaruvchi tasdigʻi kutilmoqda',
   'attendance.enroll.card.pending.body':
-    'Yuz suratlari rahbarga yuborildi. Tasdiqlangach belgilanish mumkin.',
+    'Yuz suratlari boshqaruvchiga yuborildi. Tasdiqlangach belgilanish mumkin.',
   'attendance.enroll.card.rejected.title': 'Yuz roʻyxati qaytarildi',
   'attendance.enroll.card.rejected.body': 'Yuzingizni qayta roʻyxatdan oʻtkazing.',
   'attendance.enroll.card.approved.title': 'Yuz roʻyxatdan oʻtgan',
   'attendance.enroll.card.approved.body': 'Yuz orqali belgilanish mumkin.',
-  'attendance.enroll.card.note': 'Rahbar izohi: {note}',
+  'attendance.enroll.card.note': 'Boshqaruvchi izohi: {note}',
   'attendance.enroll.hint':
     'Telefonni koʻz darajasida, yaxshi yorugʻlikda, shapka va niqobsiz tuting. Hech narsa bosish shart emas: suratlar oʻzi olinadi.',
   'attendance.enroll.pose.front': 'Toʻgʻriga qarang',
@@ -2875,10 +2876,10 @@ export const uz = {
   'attendance.rules.faceOnlyLine': 'Faqat yuz orqali belgilanish, suratlar oʻzi olinadi',
   'attendance.settings.faceOnly': 'Yuz tekshiruvi: doim yoqilgan',
   'attendance.settings.faceOnlyHint':
-    'Hamma yuz orqali belgilanadi. Har kim yuzini bir marta roʻyxatdan oʻtkazadi, rahbar uni «Tekshirish» boʻlimida tasdiqlaydi.',
+    'Hamma yuz orqali belgilanadi. Har kim yuzini bir marta roʻyxatdan oʻtkazadi, boshqaruvchi uni «Tekshirish» boʻlimida tasdiqlaydi.',
   'attendance.review.enrollTitle': 'Tasdiqlanadigan yuz roʻyxatlari',
   'attendance.review.enrollInUse': 'Hozir ishlatilayotgan yuz:',
-  'attendance.review.enrollOwn': 'Bu sizning yuzingiz: uni boshqa rahbar tasdiqlaydi.',
+  'attendance.review.enrollOwn': 'Bu sizning yuzingiz: uni boshqa boshqaruvchi tasdiqlaydi.',
   'attendance.review.enrollApprove': 'Tasdiqlash',
   'attendance.review.enrollReject': 'Qaytarish',
   'attendance.review.enrollReasonLabel': 'Qaytarish sababi',
@@ -2904,7 +2905,7 @@ export const uz = {
     'Ekranga qarab turing va butun doira yashil boʻlguncha boshingizni aylantiring.',
   'attendance.enroll.slowHint': 'Biroz sekinroq va doirani biroz kattaroq qiling.',
   'attendance.enroll.doneHint':
-    'Rahbarga tasdiqlash uchun yuborildi. Tasdiqlangach belgilanish mumkin.',
+    'Boshqaruvchiga tasdiqlash uchun yuborildi. Tasdiqlangach belgilanish mumkin.',
   'attendance.enroll.center': 'Yuzingizni doira markaziga olib keling',
   'attendance.enroll.pose.upleft': 'Yuqori-chap',
   'attendance.enroll.pose.upright': 'Yuqori-oʻng',
@@ -2925,13 +2926,13 @@ export const uz = {
   'admin.errors.memberHasAttendance':
     'Bu kishining davomat yozuvlari bor, shuning uchun uni olib tashlab boʻlmaydi. Oʻrniga uni toʻxtatib qoʻying — yozuvlar saqlanadi.',
   'attendance.errors.manageOwn':
-    'Oʻz davomatingiz yoki ish haqingizni oʻzgartira olmaysiz. Boshqa rahbar yoki superadmindan soʻrang.',
+    'Oʻz davomatingiz yoki ish haqingizni oʻzgartira olmaysiz. Boshqa boshqaruvchi yoki superadmindan soʻrang.',
   'attendance.errors.identifyIsOwner':
     'Bu sizning oʻz yuzingiz. Oʻzingizni belgilash uchun «Kelishni belgilash» yoki «Ketishni belgilash» tugmasini bosing.',
   'attendance.errors.photoReused':
     'Bu suratlar avval yuborilgan. Yuz tekshiruvidan qaytadan oʻting.',
   'attendance.sheet.ownHint':
-    'Oʻz davomatingiz va ish haqingizni boshqa rahbar yoki superadmin oʻzgartiradi.',
+    'Oʻz davomatingiz va ish haqingizni boshqa boshqaruvchi yoki superadmin oʻzgartiradi.',
   'attendance.flag.missedShift': 'Bir smenaga kelmadi',
   'attendance.export.flag.missedShift': 'Bir smenaga kelmadi',
   'settlement.wages.fromAttendanceReasonMissed':

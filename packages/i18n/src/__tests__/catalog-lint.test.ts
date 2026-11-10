@@ -573,11 +573,14 @@ const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
     { pattern: /[Сс]огласов/, use: 'проверка / одобрить' },
     { pattern: /[Пп]окупател/, use: 'закупщик' },
     { pattern: /[Рр]асч[её]т/, use: 'закрытие дня / разбивка' },
+    // Full review 2026-11 (I18N2-02): the manager has the role's name.
+    { pattern: /[Рр]уководител|[Мм]енеджер/, use: 'управляющий (the role «Управляющий»)' },
   ],
   uz: [
     { pattern: /SKU/, use: 'mahsulot' },
     { pattern: /xaridchi/i, use: 'xaridor' },
     { pattern: /taʼminotchi/i, use: 'yetkazib beruvchi' },
+    { pattern: /rahbar|menejer/i, use: 'boshqaruvchi (the role «Doʻkon boshqaruvchisi»)' },
   ],
 };
 
@@ -590,6 +593,29 @@ function terminology(cats: Catalogs): string[] {
         const m = text.match(pattern);
         if (m) found.push(`${lang} ${key}: "${m[0]}" — D15 says ${use}`);
       }
+    }
+  }
+  return found;
+}
+
+/**
+ * Full review 2026-11 (I18N2-03): D15 keeps approving an order apart from
+ * confirming receipt (ru одобрить / подтвердить приёмку, uz maʼqullash /
+ * Qabulni tasdiqlash). The review screen's button said «Maʼqullash» while
+ * its hints said «tasdiqlang», and the ru admin tile counted approvals as
+ * «подтверждения». An order-review string (approval.*) may not say uz
+ * tasdiq-; a ru string whose English says approve may not say подтвер-.
+ */
+function approveIsNotConfirm(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    const uzbek = cats.uz[key] ?? '';
+    const russian = cats.ru[key] ?? '';
+    if (key.startsWith('approval.') && /tasdiq/i.test(uzbek)) {
+      found.push(`uz ${key}: "${uzbek}" — approving an order is maʼqullash`);
+    }
+    if (/\bapprov/i.test(english) && /подтвер/i.test(russian)) {
+      found.push(`ru ${key}: "${russian}" — approving is одобрить`);
     }
   }
   return found;
@@ -834,6 +860,7 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['en quotes with "", uz with «»', quoteStyle],
   ['no value is left in English', untranslated],
   ['D15 terminology: one word per concept', terminology],
+  ['ru / uz: approving an order is not confirming', approveIsNotConfirm],
   ['no HTML entities in any language', htmlEntities],
   ['D23 and the copy review: workspace, no internal words', copyBanned],
   ['no mojibake and no ISO dates in copy', mojibakeAndIsoDates],
@@ -1090,6 +1117,26 @@ describe('catalog lint rules catch the original findings', () => {
     expect(
       uzbekResetIsNotRestore(one({ en: 'Reset today', uz: 'Bugungi maʼlumotlarni tozalash' })),
     ).toEqual([]);
+  });
+
+  test('I18N2-02 / I18N2-03: the manager role name, approve is not confirm', () => {
+    expect(terminology(one({ ru: 'Попросите руководителя' }))).toHaveLength(1);
+    expect(terminology(one({ ru: 'Менеджер вернул заказ' }))).toHaveLength(1);
+    expect(terminology(one({ uz: 'Rahbar izohi' }))).toHaveLength(1);
+    expect(terminology(one({ uz: 'doʻkon menejeri' }))).toHaveLength(1);
+    expect(terminology(one({ ru: 'Попросите управляющего', uz: 'Boshqaruvchi izohi' }))).toEqual(
+      [],
+    );
+    const approval = (uz: string) => one({ en: 'Approve once seen', uz }, 'approval.x');
+    expect(approveIsNotConfirm(approval('Koʻrib chiqqach tasdiqlang.'))).toHaveLength(1);
+    expect(approveIsNotConfirm(approval('Koʻrib chiqqach maʼqullang.'))).toEqual([]);
+    expect(approveIsNotConfirm(one({ en: 'Confirm', uz: 'Tasdiqlash' }))).toEqual([]);
+    expect(approveIsNotConfirm(one({ en: 'Approvals', ru: 'Ожидают подтверждения' }))).toHaveLength(
+      1,
+    );
+    expect(approveIsNotConfirm(one({ en: 'Confirm receipt', ru: 'Подтвердить приёмку' }))).toEqual(
+      [],
+    );
   });
 
   test('DX-COPY-2: a void button that reads like Cancel', () => {
