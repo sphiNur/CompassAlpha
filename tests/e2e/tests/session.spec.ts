@@ -10,24 +10,9 @@
  * token, so this signs in the way Telegram does (signed initData) to get
  * a real one, then opens the app with an access token that is no good.
  */
-import { createHmac } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { ADMIN_TG_ID, API_URL, BOT_TOKEN } from '../env';
-
-function signInitData(tgUserId: string): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({ id: Number(tgUserId), first_name: 'E2E' }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
-}
+import { ADMIN_TG_ID, API_URL } from '../env';
+import { signInitData } from './initData';
 
 test('an expired access token is refreshed and the app carries on', async ({ page, request }) => {
   const login = await request.post(`${API_URL}/trpc/auth.telegramLogin`, {

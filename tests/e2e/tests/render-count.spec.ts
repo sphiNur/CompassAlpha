@@ -12,9 +12,9 @@
  * item bought and one to buy: its project depends on main-flow's
  * (playwright.config.ts), so running this file alone runs that first.
  */
-import { createHmac } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import { ADMIN_TG_ID, API_URL, BOT_TOKEN } from '../env';
+import { ADMIN_TG_ID, API_URL } from '../env';
+import { signInitData } from './initData';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -22,21 +22,6 @@ interface Counts {
   commits: number;
   rendered: number;
   byComp: Record<string, number>;
-}
-
-function signInitData(tgUserId: string): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({ id: Number(tgUserId), first_name: 'E2E' }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
 }
 
 /** Radix parts a closed sheet used to render on every parent render. */

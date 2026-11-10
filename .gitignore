@@ -6,10 +6,10 @@ build/
 coverage/
 *.tsbuildinfo
 
-# env
-.env
-.env.local
-.env.*.local
+# env: every .env file but the examples (review OPS-40, 2026-11-11: a
+# .env.production or .env.staging was not ignored)
+.env*
+!.env.example
 
 # logs
 *.log
@@ -35,15 +35,12 @@ out/
 *.key
 *.crt
 
-# lingui
-**/locales/*/messages.js
-
 # test
 playwright-report/
 test-results/
-.k6/
-# Failure screenshots written by the browser smoke scripts.
-smoke-failure-*.png
+# Failure screenshots of the browser smoke scripts, written under
+# test-results/ since review OPS-40; this catches any written elsewhere.
+smoke-failure*.png
 
 # transient prod-repair scripts (one-shot SQL we run via SSH; never commit)
 .repair-*.sql
