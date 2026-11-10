@@ -23,6 +23,7 @@ import { pgErrorOf } from './helpers/errors';
 import {
   attendanceSuite,
   fixture,
+  anyPhoneAnywhere,
   clock,
   enrollApproved,
   expectError,
@@ -308,16 +309,8 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
     const f = fixture();
     const db = getDb(undefined, { system: 'maintenance' });
     await staffReady();
-    const rules = {
-      storeId: f.storeId,
-      requireDevice: false,
-      requireGeo: false,
-      geo: null,
-      graceMinutes: 5,
-      overtimeAfterMinutes: 30,
-    };
     // An old page that still sends the switch: it is not kept.
-    await f.manager.attendance.policySave({ ...rules, requireScene: true });
+    await f.manager.attendance.policySave({ ...anyPhoneAnywhere(f.storeId), requireScene: true });
     expect((await f.staff().attendance.me({})).stores[0]!.rules).toMatchObject({
       requirePhoto: true,
       requireFace: true,

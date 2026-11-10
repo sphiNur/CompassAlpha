@@ -5,7 +5,7 @@
  * are attendance-punch, -pay, -face, -liveness and -reminders.
  */
 import { afterAll, beforeAll, beforeEach, expect } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../../trpc/router';
 import { setFaceEngineForTests } from '../../services/face';
@@ -199,6 +199,38 @@ export async function clock(
     },
     overtimeReason: opts.overtimeReason,
   });
+}
+
+/**
+ * The store's rules with neither a bound phone nor a place asked for, and
+ * the defaults otherwise. The face and liveness checks are always on.
+ */
+export function anyPhoneAnywhere(storeId: string) {
+  return {
+    storeId,
+    requireDevice: false,
+    requireGeo: false,
+    geo: null,
+    graceMinutes: 5,
+    overtimeAfterMinutes: 30,
+  };
+}
+
+/** Who was sent a bot message from `template` in this workspace, oldest first. */
+export async function botRecipients(template: string): Promise<string[]> {
+  const f = fixture();
+  const rows = await getDb(undefined, { system: 'maintenance' })
+    .select({ to: s.notifications.recipientUserId })
+    .from(s.notifications)
+    .where(
+      and(
+        eq(s.notifications.orgId, f.orgId),
+        eq(s.notifications.channel, 'bot'),
+        eq(s.notifications.template, template),
+      ),
+    )
+    .orderBy(s.notifications.createdAt);
+  return rows.map((row) => row.to);
 }
 
 /** Void everyone's open punches, so in / out starts over. */

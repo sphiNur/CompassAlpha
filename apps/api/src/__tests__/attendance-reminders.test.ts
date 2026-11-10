@@ -14,7 +14,7 @@ import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
 import { SHOULD_RUN } from './helpers/pg';
-import { attendanceSuite, fixture, TZ } from './helpers/attendance';
+import { attendanceSuite, fixture, botRecipients, TZ } from './helpers/attendance';
 
 attendanceSuite();
 
@@ -39,20 +39,14 @@ describe.skipIf(!SHOULD_RUN)('attendance reminders', () => {
     });
     await scanAttendanceReminders(db, now);
     await scanAttendanceReminders(db, now);
-    const rows = await db
-      .select({
-        to: s.notifications.recipientUserId,
-        template: s.notifications.template,
-        title: s.notifications.title,
-      })
+    expect(await botRecipients('attendance.remindIn')).toEqual([f.staffUserId]);
+    expect(await botRecipients('attendance.absent')).toEqual([f.managerUserId]);
+    const [absent] = await db
+      .select({ title: s.notifications.title })
       .from(s.notifications)
-      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
-    expect(rows.filter((r) => r.template === 'attendance.remindIn').map((r) => r.to)).toEqual([
-      f.staffUserId,
-    ]);
-    expect(rows.filter((r) => r.template === 'attendance.absent').map((r) => r.to)).toEqual([
-      f.managerUserId,
-    ]);
-    expect(rows.find((r) => r.template === 'attendance.absent')!.title).toBe('Not clocked in');
+      .where(
+        and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.template, 'attendance.absent')),
+      );
+    expect(absent!.title).toBe('Not clocked in');
   });
 });

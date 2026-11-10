@@ -8,7 +8,7 @@
  * Skipped when DATABASE_URL is unset or SKIP_PG_TESTS=1.
  */
 import { describe, expect, test } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import { SHOULD_RUN } from './helpers/pg';
@@ -17,6 +17,7 @@ import { errorOf } from './helpers/errors';
 import {
   attendanceSuite,
   fixture,
+  botRecipients,
   clock,
   enrollApproved,
   enrollPhotos,
@@ -232,16 +233,10 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     await expectError(clock(f.staff(), { kind: 'out' }), 'attendance.errors.faceNotEnrolled');
     await enrollApproved(f.staff(), 'Ali');
 
-    const told = await db
-      .select({ to: s.notifications.recipientUserId, template: s.notifications.template })
-      .from(s.notifications)
-      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
-    const to = (template: string) => [
-      ...new Set(told.filter((r) => r.template === template).map((r) => r.to)),
-    ];
-    expect(to('attendance.faceEnrollPending')).toEqual([f.managerUserId]);
-    expect(to('attendance.faceEnrollRejected')).toEqual([f.staffUserId]);
-    expect(to('attendance.faceEnrollApproved')).toEqual([f.staffUserId]);
+    const to = async (template: string) => [...new Set(await botRecipients(template))];
+    expect(await to('attendance.faceEnrollPending')).toEqual([f.managerUserId]);
+    expect(await to('attendance.faceEnrollRejected')).toEqual([f.staffUserId]);
+    expect(await to('attendance.faceEnrollApproved')).toEqual([f.staffUserId]);
   });
 });
 

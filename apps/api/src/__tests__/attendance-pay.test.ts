@@ -15,6 +15,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import {
   attendanceSuite,
   fixture,
+  anyPhoneAnywhere,
   clock,
   expectError,
   staffReady,
@@ -226,14 +227,7 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
   test('the challenge says when a clock-out will need a reason', async () => {
     const f = fixture();
     await staffReady();
-    await f.manager.attendance.policySave({
-      storeId: f.storeId,
-      requireDevice: false,
-      requireGeo: false,
-      geo: null,
-      graceMinutes: 5,
-      overtimeAfterMinutes: 30,
-    });
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
     // Next is a clock-in: nothing to ask.
     const toIn = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
     expect(toIn.overtimeMinutes).toBe(0);

@@ -9,7 +9,7 @@
  * Skipped when DATABASE_URL is unset or SKIP_PG_TESTS=1.
  */
 import { describe, expect, test } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { attendance, dateInTz } from '@compass/domain';
 import { signLivenessToken } from '../services/face/liveness';
@@ -18,6 +18,8 @@ import { errorOf } from './helpers/errors';
 import {
   attendanceSuite,
   fixture,
+  anyPhoneAnywhere,
+  botRecipients,
   clock,
   enrollApproved,
   expectError,
@@ -43,14 +45,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       memberId: f.colleagueId,
       enabled: true,
     });
-    const rules = {
-      storeId: f.storeId,
-      requireDevice: false,
-      requireGeo: false,
-      geo: null,
-      graceMinutes: 5,
-      overtimeAfterMinutes: 30,
-    };
+    const rules = anyPhoneAnywhere(f.storeId);
     await f.manager.attendance.policySave(rules);
 
     await expectError(
@@ -212,15 +207,10 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     const moved = await clock(f.staff(), { device: DEVICE });
     expect([moved.newDevice, moved.face]).toEqual([true, 'match']);
 
-    const told = await db
-      .select({ to: s.notifications.recipientUserId, template: s.notifications.template })
-      .from(s.notifications)
-      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
-    const to = (template: string) => told.filter((r) => r.template === template).map((r) => r.to);
-    expect(to('attendance.borrowedPhone')).toEqual([f.managerUserId]);
-    expect(to('attendance.clockedInForYou')).toEqual([f.colleagueUserId]);
-    expect(to('attendance.newDevice')).toEqual([f.managerUserId]);
-    expect(to('attendance.livenessFailed')).toEqual([]);
+    expect(await botRecipients('attendance.borrowedPhone')).toEqual([f.managerUserId]);
+    expect(await botRecipients('attendance.clockedInForYou')).toEqual([f.colleagueUserId]);
+    expect(await botRecipients('attendance.newDevice')).toEqual([f.managerUserId]);
+    expect(await botRecipients('attendance.livenessFailed')).toEqual([]);
 
     // Withdrawing the consent deletes the enrolled face.
     await f.colleague().attendance.faceConsentWithdraw();
@@ -237,14 +227,7 @@ describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () 
   test('every punch: both movements, real, the same person, not a copy', async () => {
     const f = fixture();
     await staffReady();
-    await f.manager.attendance.policySave({
-      storeId: f.storeId,
-      requireDevice: false,
-      requireGeo: false,
-      geo: null,
-      graceMinutes: 5,
-      overtimeAfterMinutes: 30,
-    });
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
     // Every challenge asks for both, in either order, turns or not.
     const plain = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
     expect([...plain.acts].sort()).toEqual(['blink', 'mouth']);
@@ -303,14 +286,6 @@ describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () 
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
-  const rules = (storeId: string) => ({
-    storeId,
-    requireDevice: false,
-    requireGeo: false,
-    geo: null,
-    graceMinutes: 5,
-    overtimeAfterMinutes: 30,
-  });
   const turns = async () => {
     const f = fixture();
     const challenge = await f.staff().attendance.livenessChallenge({
@@ -323,7 +298,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
   test('a printed straight frame does not pass on the strength of live movements', async () => {
     const f = fixture();
     await staffReady();
-    await f.manager.attendance.policySave(rules(f.storeId));
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
     // Mean real-face over the frames was 0.65 and went through.
     await expectError(
       clock(f.staff(), { token: await turns(), face: 'Ali:front:print' }),
@@ -485,13 +460,8 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
     expect(sheet.overtime.filter((o) => o.punchId === out.id && o.status === 'pending')).toEqual(
       [],
     );
-    const told = await db
-      .select({ to: s.notifications.recipientUserId, template: s.notifications.template })
-      .from(s.notifications)
-      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
-    const to = (template: string) => told.filter((r) => r.template === template).map((r) => r.to);
-    expect(to('attendance.punchUndone')).toEqual([f.managerUserId]);
-    expect(to('attendance.punchUndoneForYou')).toEqual([f.colleagueUserId]);
+    expect(await botRecipients('attendance.punchUndone')).toEqual([f.managerUserId]);
+    expect(await botRecipients('attendance.punchUndoneForYou')).toEqual([f.colleagueUserId]);
 
     // ATT-02: taken back, the same face is not taken for him again on this
     // phone for a while. The person clocking is told they were not
