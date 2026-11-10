@@ -15,6 +15,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { minutesText } from '../../lib/attendanceFormat';
 import type { ErrorVars } from '../../lib/errorText';
 import { PunchCamera, type PunchPhotos, type Turn } from './PunchCamera';
+import { WAIT_CLOSABLE_MS } from './punchFlow';
 import type { Act } from './faceActs';
 
 export type PunchResult = {
@@ -52,12 +53,6 @@ export type PunchView =
 const DONE_MS = { self: 3_000, colleague: 8_000, already: 4_000 };
 /** When "checking" adds that the link is slow. */
 const SLOW_MS = 10_000;
-/**
- * When a wait can be closed (ATT-04, 2026-11-09). A punch carries photos:
- * 120 s per try and two resends could hold the sheet for six minutes.
- */
-export const WAIT_CLOSABLE_MS = 30_000;
-
 export function PunchSheet({
   view,
   title,
