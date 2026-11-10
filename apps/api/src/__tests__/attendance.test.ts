@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -234,11 +234,15 @@ async function expectError(p: Promise<unknown>, message: string) {
   expect((await errorOf(() => p))?.message).toBe(message);
 }
 
-afterAll(() => setFaceEngineForTests(null));
-
-beforeAll(async () => {
-  if (!SHOULD_RUN) return;
-  stubFaces();
+/**
+ * A workspace of the test's own (review NEW-RAND-01, 2026-11): two
+ * stores, a manager, Ali (staff) and Bob (a colleague) in the first, an
+ * outsider in the other. Nobody is switched on for clocking yet. The
+ * tests used to share one workspace, each starting from what the ones
+ * before had left: Ali switched on with an approved face, a bound phone,
+ * the pay test's shift, the notifications sent so far.
+ */
+async function attendanceOrg(): Promise<Fixture> {
   const db = getDb(undefined, { system: 'maintenance' });
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 100_000)}`;
   const [org] = await db
@@ -305,7 +309,7 @@ beforeAll(async () => {
     permissions: new Set(perms),
     roleSlugs: new Set(),
   });
-  fx = {
+  return {
     orgId: org!.id,
     storeId: store!.id,
     otherStoreId: other!.id,
@@ -322,7 +326,22 @@ beforeAll(async () => {
       callerFor({ ...session(mgr, ['attendance.manage']), roleSlugs: new Set(['super_admin']) }),
     staff: () => callerFor(session(staff, ['attendance.clock'])),
   };
+}
+
+afterAll(() => setFaceEngineForTests(null));
+beforeAll(() => {
+  if (SHOULD_RUN) stubFaces();
 });
+beforeEach(async () => {
+  if (SHOULD_RUN) fx = await attendanceOrg();
+});
+
+/** Ali switched on for clocking, with an approved face. */
+async function staffReady() {
+  const f = fx!;
+  await f.manager.attendance.memberSet({ storeId: f.storeId, memberId: f.staffId, enabled: true });
+  await enrollApproved(f.staff(), 'Ali');
+}
 
 describe.skipIf(!SHOULD_RUN)('attendance', () => {
   test('clocking needs the member switch', async () => {
@@ -368,6 +387,7 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
 
   test('first punch binds the phone; in and out alternate', async () => {
     const f = fx!;
+    await staffReady();
     // Without photos or a challenge: refused.
     await expectError(
       f.staff().attendance.punch({ storeId: f.storeId, kind: 'in', deviceId: DEVICE }),
@@ -403,6 +423,7 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
 
   test('location rules', async () => {
     const f = fx!;
+    await staffReady();
     const base = {
       storeId: f.storeId,
       requireDevice: true,
@@ -440,11 +461,11 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
     const placed = sheet.punches.find((p) => p.id === ok.id);
     expect(placed?.location?.lat).toBeCloseTo(SHOP.lat + 0.0005, 6);
     expect(placed?.location?.accuracyM).toBe(15);
-    await f.manager.attendance.policySave({ ...base, requireGeo: false, geo: null });
   });
 
   test('roster, sheet, manual punch and void', async () => {
     const f = fx!;
+    await staffReady();
     const today = todayInTz(TZ);
     const shift = await f.manager.attendance.shiftSave({
       storeId: f.storeId,
@@ -590,19 +611,17 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
-  /** The pay test's shift date, which the export test reads back. */
-  let payDate = '';
-  test('late is deducted; a late clock-out needs a reason and an approval', async () => {
+  /**
+   * Ali's shift from five hours ago to an hour ago, at 100,000 a day,
+   * clocked in 20 minutes late (the manager enters it). Returns the
+   * shift's date.
+   */
+  async function lateShift(): Promise<string> {
     const f = fx!;
-    const db = getDb(undefined, { system: 'maintenance' });
-    await db.execute(
-      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
-    );
     const now = new Date();
     const start = new Date(now.getTime() - 5 * 3600_000);
     const end = new Date(now.getTime() - 3600_000);
     const date = dateInTz(start, TZ);
-    payDate = date;
     const hhmm = (d: Date) => attendance.localTime(d, TZ);
     await f.manager.attendance.shiftSave({
       storeId: f.storeId,
@@ -627,6 +646,13 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
       time: hhmm(lateIn),
       reason: 'phone was flat',
     });
+    return date;
+  }
+
+  test('late is deducted; a late clock-out needs a reason and an approval', async () => {
+    const f = fx!;
+    await staffReady();
+    const date = await lateShift();
     // Clocking out an hour after the end needs a reason …
     await expectError(
       clock(f.staff(), { kind: 'out', device: OTHER_DEVICE }),
@@ -677,10 +703,17 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 
   test('the month exports as an xlsx behind a signed link', async () => {
     const f = fx!;
-    // The month of the pay test's shift. "This month" missed it on the
-    // first of a month between midnight and 05:00 in Tashkent, when that
-    // shift began the day before (review TEST1-08).
-    const month = payDate.slice(0, 7);
+    await staffReady();
+    const date = await lateShift();
+    await clock(f.staff(), {
+      kind: 'out',
+      device: OTHER_DEVICE,
+      overtimeReason: 'Stocktake after closing',
+    });
+    // The month of the shift. "This month" missed it on the first of a
+    // month between midnight and 05:00 in Tashkent, when the shift began
+    // the day before (review TEST1-08).
+    const month = date.slice(0, 7);
     await expectError(
       f.staff().attendance.exportLink({ storeId: f.storeId, month, locale: 'en' }),
       'auth.errors.missingPermission',
@@ -779,7 +812,7 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
   test('the face only, no place photo (2026-11-07); managers see it; 90 days', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    await resetPunches(f.staffId);
+    await staffReady();
     const rules = {
       storeId: f.storeId,
       requireDevice: false,
@@ -844,9 +877,6 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
       sql`SELECT count(*)::int AS n FROM inventory.attendance_punch_frames WHERE punch_id = ${done.id}`,
     );
     expect((prints as unknown as { n: number }[])[0]!.n).toBe(0);
-
-    await f.manager.attendance.policySave({ ...rules, requireDevice: true });
-    await resetPunches(f.staffId);
   });
 });
 
@@ -854,7 +884,7 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
   test('six checked photos, approved by a manager; only that face clocks', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    await resetPunches(f.staffId);
+    await staffReady();
     const enroll = (over: Partial<Record<string, string>> = {}) =>
       f.staff().attendance.faceEnroll({ storeId: f.storeId, photos: enrollPhotos('Ali', over) });
 
@@ -1064,7 +1094,6 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     expect(to('attendance.faceEnrollPending')).toEqual([f.managerUserId]);
     expect(to('attendance.faceEnrollRejected')).toEqual([f.staffUserId]);
     expect(to('attendance.faceEnrollApproved')).toEqual([f.staffUserId]);
-    await resetPunches(f.staffId);
   });
 });
 
@@ -1072,7 +1101,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
   test('turns and a real face pass; prints, flat turns and reused challenges do not', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    await resetPunches(f.staffId, f.colleagueId);
+    await staffReady();
     await f.manager.attendance.memberSet({
       storeId: f.storeId,
       memberId: f.colleagueId,
@@ -1087,8 +1116,6 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       overtimeAfterMinutes: 30,
     };
     await f.manager.attendance.policySave(rules);
-    // The pay test's shift ended earlier today: a clock-out is overtime.
-    const why = 'liveness test';
 
     await expectError(
       f.staff().attendance.punch({
@@ -1108,7 +1135,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     expect([first.liveness, first.face]).toEqual(['pass', 'match']);
     // One challenge, one punch.
     await expectError(
-      clock(f.staff(), { kind: 'out', token: challenge.token, overtimeReason: why }),
+      clock(f.staff(), { kind: 'out', token: challenge.token }),
       'attendance.errors.livenessExpired',
     );
     // Another member's challenge does not fit.
@@ -1117,7 +1144,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       force: true,
     });
     await expectError(
-      clock(f.staff(), { kind: 'out', token: theirs.token, overtimeReason: why }),
+      clock(f.staff(), { kind: 'out', token: theirs.token }),
       'attendance.errors.livenessExpired',
     );
     // Face only: a failed check is refused, never recorded.
@@ -1127,7 +1154,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       ['Bob:left', 'Bob:right'],
     ] as const) {
       await expectError(
-        clock(f.staff(), { kind: 'out', left, right, overtimeReason: why }),
+        clock(f.staff(), { kind: 'out', left, right }),
         'attendance.errors.livenessFailed',
       );
     }
@@ -1199,7 +1226,6 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     const passive = await clock(f.staff(), {
       kind: 'out',
       token: await passiveToken(f.staffId),
-      overtimeReason: why,
     });
     expect([passive.liveness, passive.face]).toEqual(['passive', 'match']);
     // A photo held up: its blink and open mouth are prints too (2026-11-07).
@@ -1268,20 +1294,13 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
         .from(s.attendanceFaceEnrollments)
         .where(eq(s.attendanceFaceEnrollments.memberId, f.colleagueId)),
     ).toEqual([]);
-
-    await resetPunches(f.staffId, f.colleagueId);
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.colleagueId,
-      enabled: false,
-    });
   });
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () => {
   test('every punch: both movements, real, the same person, not a copy', async () => {
     const f = fx!;
-    await resetPunches(f.staffId);
+    await staffReady();
     await f.manager.attendance.policySave({
       storeId: f.storeId,
       requireDevice: false,
@@ -1342,10 +1361,8 @@ describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () 
       token: old,
       blink: null,
       mouth: null,
-      overtimeReason: 'blink test',
     });
     expect(out.kind).toBe('out');
-    await resetPunches(f.staffId);
   });
 });
 
@@ -1363,7 +1380,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('a printed straight frame does not pass on the strength of live movements', async () => {
     const f = fx!;
-    await resetPunches(f.staffId);
+    await staffReady();
     await f.manager.attendance.policySave(rules(f.storeId));
     // Mean real-face over the frames was 0.65 and went through.
     await expectError(
@@ -1374,6 +1391,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('the movements must be the enrolled person, not someone like the photo', async () => {
     const f = fx!;
+    await staffReady();
     const challenge = await turns();
     const refused = await errorOf(() =>
       clock(f.staff(), {
@@ -1393,7 +1411,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('pictures sent before are refused: an earlier punch, an enrollment photo', async () => {
     const f = fx!;
-    await resetPunches(f.staffId);
+    await staffReady();
     const first = await clock(f.staff(), { token: await passiveToken(f.staffId), seq: 7001 });
     expect(first.kind).toBe('in');
     await expectError(
@@ -1406,17 +1424,19 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       'attendance.errors.photoReused',
     );
     // New pictures clock as usual.
-    const out = await clock(f.staff(), {
-      kind: 'out',
-      token: await passiveToken(f.staffId),
-      overtimeReason: 'review test',
-    });
+    const out = await clock(f.staff(), { kind: 'out', token: await passiveToken(f.staffId) });
     expect(out.kind).toBe('out');
-    await resetPunches(f.staffId);
   });
 
   test("a colleague's face only somewhat like them is not enough to clock them", async () => {
     const f = fx!;
+    await staffReady();
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      enabled: true,
+    });
+    await enrollApproved(f.colleague(), 'Bob');
     await expectError(
       clock(f.staff(), {
         identify: true,
@@ -1428,6 +1448,8 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       }),
       'attendance.errors.notRecognized',
     );
+    // Bob's own face is known on Ali's phone.
+    expect((await clock(f.staff(), { who: 'Bob', identify: true })).forName).toBe('Att Colleague');
   });
 
   test('a manager does not change their own attendance or wage; a super admin does', async () => {
@@ -1489,6 +1511,8 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('withdrawing face consent works in a read-only workspace', async () => {
     const f = fx!;
+    await f.colleague().attendance.faceConsentGive({ version: 1 });
+    expect((await f.colleague().attendance.me({})).faceConsent).not.toBeNull();
     const readOnly = callerFor({
       userId: f.colleagueUserId,
       memberId: f.colleagueId,
@@ -1511,6 +1535,17 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
   test('a member with attendance is suspended, not removed; the records stay', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
+    // A punch of Ali's: attendance to keep.
+    await db.insert(s.attendancePunches).values({
+      orgId: f.orgId,
+      storeId: f.storeId,
+      memberId: f.staffId,
+      kind: 'in',
+      punchedAt: new Date(Date.now() - 3600_000),
+      source: 'manual',
+      reason: 'kept',
+      createdByMemberId: f.managerId,
+    });
     // An org admin by a global binding: removing someone from the whole
     // organisation is ranked by global bindings alone (ADM1-01).
     const [adminRole] = await db
@@ -1569,7 +1604,7 @@ async function refusal(p: Promise<unknown>) {
 describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {
   test('the challenge says when a clock-out will need a reason', async () => {
     const f = fx!;
-    await resetPunches(f.staffId);
+    await staffReady();
     await f.manager.attendance.policySave({
       storeId: f.storeId,
       requireDevice: false,
@@ -1581,8 +1616,16 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
     // Next is a clock-in: nothing to ask.
     const toIn = await f.staff().attendance.livenessChallenge({ storeId: f.storeId });
     expect(toIn.overtimeMinutes).toBe(0);
-    // Clocked in at the start of the shift that ended an hour ago (the pay test's).
+    // Clocked in at the start of a shift that ended an hour ago.
     const start = new Date(Date.now() - 5 * 3600_000);
+    const end = new Date(Date.now() - 3600_000);
+    await f.manager.attendance.shiftSave({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      date: dateInTz(start, TZ),
+      start: attendance.localTime(start, TZ),
+      end: attendance.localTime(end, TZ),
+    });
     await f.manager.attendance.manualPunch({
       storeId: f.storeId,
       memberId: f.staffId,
@@ -1599,13 +1642,12 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       identify: true,
     });
     expect(colleague.overtimeMinutes).toBe(0);
-    await resetPunches(f.staffId);
   });
 
   test('a colleague: named in the overtime question, not clocked twice, "not them" for two minutes', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    await resetPunches(f.staffId, f.colleagueId);
+    await staffReady();
     await f.manager.attendance.memberSet({
       storeId: f.storeId,
       memberId: f.colleagueId,
@@ -1733,14 +1775,6 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       f.staff().attendance.punchUndo({ storeId: f.storeId, punchId: old!.id }),
       'attendance.errors.undoTooLate',
     );
-
-    await resetPunches(f.staffId, f.colleagueId);
-    await f.colleague().attendance.faceConsentWithdraw();
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.colleagueId,
-      enabled: false,
-    });
   });
 });
 
@@ -1748,8 +1782,13 @@ describe.skipIf(!SHOULD_RUN)('attendance reminders', () => {
   test('missed clock-in reminds the person, then the managers, once each', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      enabled: true,
+    });
     const now = new Date();
-    // A shift that began 40 minutes ago, after every punch the other tests made.
+    // A shift that began 40 minutes ago, and no clock-in.
     await db.insert(s.attendanceShifts).values({
       orgId: f.orgId,
       storeId: f.storeId,
@@ -1758,9 +1797,6 @@ describe.skipIf(!SHOULD_RUN)('attendance reminders', () => {
       startsAt: new Date(now.getTime() - 40 * 60_000),
       endsAt: new Date(now.getTime() + 4 * 3600_000),
     });
-    await db.execute(
-      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
-    );
     await scanAttendanceReminders(db, now);
     await scanAttendanceReminders(db, now);
     const rows = await db
