@@ -43,7 +43,12 @@ import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
 import { inviterStillAuthorized, liveInviteGrants } from '../../services/adminAuthority';
-import { effectivePermissionsForStore, flatEffectivePermissions } from '../../services/storeScope';
+import {
+  adminScopeOf,
+  adminStoresOf,
+  effectivePermissionsForStore,
+  flatEffectivePermissions,
+} from '../../services/storeScope';
 import {
   assertCanAddMember,
   assertWriteAccess,
@@ -1661,21 +1666,20 @@ async function readSessionPayload(
   for (const p of perms) {
     keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
   }
-  const permKeys = flatEffectivePermissions(
-    bindings.flatMap((b) =>
-      (keysByRole.get(b.role.id) ?? []).map((key) => ({
-        key,
-        scopeType: b.scopeType,
-        scopeId: b.scopeId,
-      })),
-    ),
-    overrides.map((o) => ({
-      key: o.permissionKey,
-      effect: o.effect,
-      scopeType: o.scopeType,
-      scopeId: o.scopeId,
+  const scopedGrants = bindings.flatMap((b) =>
+    (keysByRole.get(b.role.id) ?? []).map((key) => ({
+      key,
+      scopeType: b.scopeType,
+      scopeId: b.scopeId,
     })),
   );
+  const scopedOverrides = overrides.map((o) => ({
+    key: o.permissionKey,
+    effect: o.effect,
+    scopeType: o.scopeType,
+    scopeId: o.scopeId,
+  }));
+  const permKeys = flatEffectivePermissions(scopedGrants, scopedOverrides);
 
   // `users.manage` is store-manager authority too. Only the explicit
   // org-tier marker grants visibility over every store in the session.
@@ -1763,66 +1767,44 @@ async function readSessionPayload(
       .sort((a, b) => a.sortIndex - b.sortIndex);
   }
 
-  // C2 (2026-05-06): compute the set of stores the actor administers.
-  // A store-scoped manager who has `users.invite` only in Store A must
-  // not be able to invite into Store B; the FE filters its store
-  // pickers against this list and the server gates writes via
-  // `getActorAdminStoreIds`. We compute it here so the session payload
-  // is the single source of truth — no extra round trip per UI render.
+  // C2 (2026-05-06): the stores the actor manages people in. A
+  // store-scoped manager who has `users.manage` only in Store A must not
+  // be able to invite into Store B; the FE filters its store pickers
+  // against this list and the server gates writes via
+  // `getActorAdminStoreIds`. Computed here so the session payload is the
+  // single source of truth — no extra round trip per UI render. A global
+  // admin's list is every active store (minus any where overrides deny
+  // all admin-tier keys), so the FE uses one `Set<storeId>` lookup.
   //
-  // Algorithm: walk role-bindings + non-expired overrides, look for any
-  // of the three admin-tier perm keys, and bucket by scope. A global
-  // grant of any of those perms means "admin everywhere" — we resolve
-  // that to the full active-store list for the org so the FE can use
-  // a uniform `Set<storeId>` lookup without special-casing.
-  const ADMIN_PERM_KEYS = new Set(['users.manage', 'users.invite', 'users.grant_role']);
-  const rolePermsByRole = new Map<string, Set<string>>();
-  for (const rp of perms) {
-    const set = rolePermsByRole.get(rp.roleId) ?? new Set<string>();
-    set.add(rp.permissionKey);
-    rolePermsByRole.set(rp.roleId, set);
-  }
-  let isGlobalAdminPerm = false;
-  const storeAdminSet = new Set<string>();
-  for (const b of bindings) {
-    const rolePerms = rolePermsByRole.get(b.role.id);
-    if (!rolePerms) continue;
-    let grantsAdmin = false;
-    for (const k of ADMIN_PERM_KEYS) {
-      if (rolePerms.has(k)) {
-        grantsAdmin = true;
-        break;
-      }
-    }
-    if (!grantsAdmin) continue;
-    if (b.scopeType === 'global') isGlobalAdminPerm = true;
-    else if (b.scopeType === 'store' && b.scopeId) storeAdminSet.add(b.scopeId);
-  }
-  for (const o of overrides) {
-    if (!o.permissionKey || !ADMIN_PERM_KEYS.has(o.permissionKey)) continue;
-    if (o.effect === 'allow') {
-      if (o.scopeType === 'global') isGlobalAdminPerm = true;
-      else if (o.scopeType === 'store' && o.scopeId) storeAdminSet.add(o.scopeId);
-    } else {
-      // deny shrinks the admin set
-      if (o.scopeType === 'global') isGlobalAdminPerm = false;
-      else if (o.scopeType === 'store' && o.scopeId) storeAdminSet.delete(o.scopeId);
-    }
-  }
-  const adminStoreIds: string[] = isGlobalAdminPerm
-    ? // Global admin authority → every active store in the org.
-      // We already loaded `storeRows` above for non-admins as a UNION
-      // of MSA + scoped bindings, but that's the set of stores the
-      // actor BELONGS to (read-side). The admin set below is ALL
-      // active stores in the org — what an org-wide admin can manage,
-      // regardless of where they're personally assigned.
-      (
-        await db
-          .select({ id: s.stores.id })
+  // ADM1-03 (2026-11-10): the same rule as the admin router and invite
+  // acceptance (storeScope.adminScopeOf); it used to be a third copy.
+  // COREWEB2-11: the inactive stores they manage go separately: removing
+  // a role there stays possible (R2-ADM-2), granting does not.
+  const adminScope = adminScopeOf(scopedGrants, scopedOverrides);
+  const candidateStores =
+    adminScope.isGlobalAdmin || adminScope.storeIds.size > 0
+      ? await db
+          .select({ id: s.stores.id, isActive: s.stores.isActive })
           .from(s.stores)
-          .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)))
-      ).map((r) => r.id)
-    : [...storeAdminSet];
+          .where(
+            and(
+              eq(s.stores.orgId, orgId),
+              adminScope.isGlobalAdmin ? undefined : inArray(s.stores.id, [...adminScope.storeIds]),
+            ),
+          )
+      : [];
+  const managed = new Set(
+    adminStoresOf(
+      adminScope,
+      candidateStores.map((st) => st.id),
+    ),
+  );
+  const adminStoreIds = candidateStores
+    .filter((st) => st.isActive && managed.has(st.id))
+    .map((st) => st.id);
+  const inactiveAdminStoreIds = candidateStores
+    .filter((st) => !st.isActive && managed.has(st.id))
+    .map((st) => st.id);
 
   // Onboarding hint: the FE should show the name-confirm screen when
   // the user hasn't yet locked their displayName. Either flow reaches
@@ -1888,6 +1870,7 @@ async function readSessionPayload(
     myMaxRank,
     storeRanks,
     adminStoreIds,
+    inactiveAdminStoreIds,
     storePermissions,
     needsOnboarding,
   };

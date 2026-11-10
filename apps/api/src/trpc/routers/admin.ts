@@ -32,11 +32,14 @@ import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import {
   ORG_WIDE_PERMISSION_KEYS,
+  adminScopeOf,
+  adminStoresOf,
   effectiveGlobalPermissions,
   effectivePermissionsForStore,
+  loadScopedPermissions,
+  type AdminScope,
 } from '../../services/storeScope';
 import {
-  bindingIsLive,
   countAdminsInOrg,
   getActorMaxGlobalRank,
   getActorMaxRank,
@@ -487,109 +490,72 @@ const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
  * Returns the storeIds in which the actor is permitted to perform
  * admin-tier actions (invite a member, grant a role, assign a store).
  *
- *   - If the actor has any GLOBAL binding granting one of the admin
- *     permissions (`users.manage`, `users.invite`, `users.grant_role`),
- *     they're a "global admin" — return every active store in the org.
- *   - Otherwise, return the storeIds from store-scoped bindings whose
- *     role grants any of those perms. A store-scoped manager who can
- *     `users.invite` in Store A only is gated to Store A here.
- *   - Member-permission overrides participate too: a per-member allow
- *     `users.invite` scoped to a store extends the set; deny shrinks
- *     it. Global allow override → global admin path.
+ *   - An admin-tier key (`users.manage`, `users.grant_role`) that holds
+ *     organisation-wide makes the actor a "global admin": every active
+ *     store in the org, except a store where overrides deny both.
+ *   - Otherwise, the active stores where one holds. A store-scoped
+ *     manager who holds `users.manage` in Store A only is gated to A.
+ *   - `includeInactive` adds the paused and archived stores it covers.
+ *   - Each scope resolves role grants, then allows, then denies (deny
+ *     wins), per key: storeScope.adminScopeOf (ADM1-03).
  *
  * Returns an EMPTY array if the actor has no admin authority anywhere.
  * Callers (grantRole, memberInvite, memberAssignStore) check whether
  * the target storeId is in this set; mismatches throw FORBIDDEN.
  */
-const ADMIN_PERM_KEYS = ['users.manage', 'users.invite', 'users.grant_role'] as const;
-
 async function getActorAdminStoreIds(
   tx: import('@compass/db').DB,
   orgId: string,
   actorUserId: string,
-  // R2-ADM-2: removing someone from a paused or archived store must stay
-  // possible; granting there must not. Only revoke/detach pass true.
   opts: { includeInactive?: boolean } = {},
 ): Promise<string[]> {
-  // Step 1: load actor's bindings (with scope) + the perm keys their
-  // roles grant. Cheap: actor typically has ≤3 bindings.
+  return storesAdministeredBy(tx, orgId, await getActorAdminScope(tx, orgId, actorUserId), opts);
+}
+
+/**
+ * The actor's authority over people (storeScope.adminScopeOf, ADM1-03):
+ * the one rule the session payload and invite acceptance use too. Null
+ * when they are not a member.
+ */
+async function getActorAdminScope(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  actorUserId: string,
+): Promise<AdminScope | null> {
   const member = await tx.query.members.findFirst({
     where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, actorUserId)),
   });
-  if (!member) return [];
-  const bindings = await tx
-    .select({
-      roleId: s.memberRoleBindings.roleId,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()));
-  const roleIds = [...new Set(bindings.map((b) => b.roleId))];
-  const rolePerms =
-    roleIds.length > 0
-      ? await tx
-          .select({
-            roleId: s.rolePermissions.roleId,
-            key: s.rolePermissions.permissionKey,
-          })
-          .from(s.rolePermissions)
-          .where(inArray(s.rolePermissions.roleId, roleIds))
-      : [];
-  const adminRoleIds = new Set<string>();
-  for (const rp of rolePerms) {
-    if ((ADMIN_PERM_KEYS as readonly string[]).includes(rp.key)) {
-      adminRoleIds.add(rp.roleId);
-    }
-  }
+  if (!member) return null;
+  const { grants, overrides } = await loadScopedPermissions(tx, member.id);
+  return adminScopeOf(grants, overrides);
+}
 
-  let isGlobalAdmin = false;
-  const storeAdminSet = new Set<string>();
-  for (const b of bindings) {
-    if (!adminRoleIds.has(b.roleId)) continue;
-    if (b.scopeType === 'global') isGlobalAdmin = true;
-    else if (b.scopeType === 'store' && b.scopeId) storeAdminSet.add(b.scopeId);
-  }
-
-  // Step 2: per-member overrides. Allow extends; deny shrinks. We
-  // only care about admin-tier perm keys here.
-  const overrides = await tx
-    .select({
-      effect: s.memberPermissionOverrides.effect,
-      scopeType: s.memberPermissionOverrides.scopeType,
-      scopeId: s.memberPermissionOverrides.scopeId,
-      permissionKey: s.memberPermissionOverrides.permissionKey,
-      expiresAt: s.memberPermissionOverrides.expiresAt,
-    })
-    .from(s.memberPermissionOverrides)
-    .where(eq(s.memberPermissionOverrides.memberId, member.id));
-  const now = new Date();
-  for (const o of overrides) {
-    if (o.expiresAt && o.expiresAt <= now) continue;
-    if (!(ADMIN_PERM_KEYS as readonly string[]).includes(o.permissionKey)) continue;
-    if (o.effect === 'allow') {
-      if (o.scopeType === 'global') isGlobalAdmin = true;
-      else if (o.scopeType === 'store' && o.scopeId) storeAdminSet.add(o.scopeId);
-    } else {
-      // deny
-      if (o.scopeType === 'global') isGlobalAdmin = false;
-      else if (o.scopeType === 'store' && o.scopeId) storeAdminSet.delete(o.scopeId);
-    }
-  }
-
-  if (isGlobalAdmin) {
-    // Global admin → every active store in the org.
-    const all = await tx
-      .select({ id: s.stores.id })
-      .from(s.stores)
-      .where(
-        opts.includeInactive
-          ? eq(s.stores.orgId, orgId)
-          : and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)),
-      );
-    return all.map((r) => r.id);
-  }
-  return [...storeAdminSet];
+/** The stores of `orgId` that `scope` manages people in (getActorAdminStoreIds). */
+async function storesAdministeredBy(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  scope: AdminScope | null,
+  // R2-ADM-2: removing someone from a paused or archived store must stay
+  // possible; adding them there must not. Only removals and reads pass
+  // true; ADM1-16 (2026-11-10): for store admins too, whose list used to
+  // keep archived stores for grants and invites.
+  opts: { includeInactive?: boolean } = {},
+): Promise<string[]> {
+  if (!scope || (!scope.isGlobalAdmin && scope.storeIds.size === 0)) return [];
+  const candidates = await tx
+    .select({ id: s.stores.id })
+    .from(s.stores)
+    .where(
+      and(
+        eq(s.stores.orgId, orgId),
+        opts.includeInactive ? undefined : eq(s.stores.isActive, true),
+        scope.isGlobalAdmin ? undefined : inArray(s.stores.id, [...scope.storeIds]),
+      ),
+    );
+  return adminStoresOf(
+    scope,
+    candidates.map((r) => r.id),
+  );
 }
 
 /**
@@ -631,7 +597,11 @@ async function getAdminReadScope(
   session: { userId: string; memberId: string; orgId: string },
 ): Promise<Set<string> | null> {
   if (await hasGlobalOrgAdmin(tx, session.memberId)) return null;
-  return new Set(await getActorAdminStoreIds(tx, session.orgId, session.userId));
+  // Paused and archived stores too: their people can still be removed
+  // (R2-ADM-2).
+  return new Set(
+    await getActorAdminStoreIds(tx, session.orgId, session.userId, { includeInactive: true }),
+  );
 }
 
 /**
@@ -757,7 +727,9 @@ async function assertAdministersEveryTargetStore(
           eq(s.memberRoleBindings.scopeType, 'store'),
         ),
       ),
-    getActorAdminStoreIds(tx, orgId, session.userId),
+    // ADM1-16: a paused or archived store the actor administers does not
+    // block acting on the member; adding to it is what stays refused.
+    getActorAdminStoreIds(tx, orgId, session.userId, { includeInactive: true }),
   ]);
   const targetStoreIds = new Set<string>();
   for (const row of [...assignments, ...storeBindings]) {
@@ -1565,14 +1537,18 @@ export const adminRouter = router({
           })
           .from(s.memberStoreAssignments)
           .where(inArray(s.memberStoreAssignments.memberId, memberIds)),
+        // Paused and archived stores too (ADM1-16): their roles can still
+        // be revoked, and a card named them as organisation-wide.
         tx
           .select({
             id: s.stores.id,
             name: s.stores.name,
             code: s.stores.code,
+            isActive: s.stores.isActive,
+            archived: sql<boolean>`${s.stores.deletedAt} IS NOT NULL`,
           })
           .from(s.stores)
-          .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true))),
+          .where(eq(s.stores.orgId, orgId)),
       ]);
 
       const rolesByMember = new Map<
@@ -1629,6 +1605,9 @@ export const adminRouter = router({
         // reach so the card doesn't offer an action the server refuses.
         const statusOutOfReach =
           scope !== null && (allStoreIds.length === 0 || storeIds.length < allStoreIds.length);
+        const memberStores = storeIds
+          .map((id) => storeById.get(id))
+          .filter((st): st is NonNullable<typeof st> => !!st);
         return {
           memberId: r.memberId,
           userId: r.userId,
@@ -1642,9 +1621,12 @@ export const adminRouter = router({
           roles: (rolesByMember.get(r.memberId) ?? []).filter(
             (role) => role.scopeType !== 'store' || inScope(r.memberId, role.scopeId),
           ),
-          stores: storeIds
-            .map((id) => storeById.get(id))
-            .filter((st): st is NonNullable<typeof st> => !!st),
+          stores: memberStores
+            .filter((st) => st.isActive)
+            .map((st) => ({ id: st.id, name: st.name, code: st.code })),
+          inactiveStores: memberStores
+            .filter((st) => !st.isActive)
+            .map((st) => ({ id: st.id, name: st.name, archived: st.archived })),
           statusOutOfReach,
         };
       });
@@ -1736,24 +1718,22 @@ export const adminRouter = router({
           });
         }
 
-        const actorAdminStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        const allowedStores = new Set(actorAdminStores);
+        const adminScope = await getActorAdminScope(tx, orgId, ctx.session!.userId);
+        const allowedStores = new Set(await storesAdministeredBy(tx, orgId, adminScope));
         for (const storeId of storeIds) {
           if (!allowedStores.has(storeId)) {
             throw await notAdminOfStore(tx, orgId, [storeId]);
           }
         }
-        if (isAdminInvite) {
-          const allOrgStores = await tx
-            .select({ id: s.stores.id })
-            .from(s.stores)
-            .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)));
-          if (!allOrgStores.every((st) => allowedStores.has(st.id))) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
-            });
-          }
+        // ADM1-03: an org-tier invite needs admin authority held
+        // organisation-wide. "Administers every active store" stood in
+        // for it, which a store manager of a one-store org passes and a
+        // global admin with one denied store fails.
+        if (isAdminInvite && !adminScope?.isGlobalAdmin) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
+          });
         }
 
         const validStores =
@@ -2055,32 +2035,23 @@ export const adminRouter = router({
         // would normally block that via the rank check, but the
         // invite path inlines its own grant so we mirror the rule
         // here.
-        const actorAdminStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+        const adminScope = await getActorAdminScope(tx, orgId, ctx.session!.userId);
         if (input.storeIds.length > 0) {
-          const allowed = new Set(actorAdminStores);
+          const allowed = new Set(await storesAdministeredBy(tx, orgId, adminScope));
           for (const sid of input.storeIds) {
             if (!allowed.has(sid)) {
               throw await notAdminOfStore(tx, orgId, [sid]);
             }
           }
         }
-        if (isAdminInvite) {
-          // Granting an org-tier role requires the actor to be a global
-          // admin. Detect this by checking if the actor's adminStoreIds
-          // covers ALL active stores in the org — that's the signal we
-          // use elsewhere.
-          const allOrgStores = await tx
-            .select({ id: s.stores.id })
-            .from(s.stores)
-            .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)));
-          const allowedSet = new Set(actorAdminStores);
-          const isGlobalAdmin = allOrgStores.every((st) => allowedSet.has(st.id));
-          if (!isGlobalAdmin) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
-            });
-          }
+        // Granting an org-tier role requires admin authority held
+        // organisation-wide (ADM1-03; it used to be inferred from
+        // "administers every active store").
+        if (isAdminInvite && !adminScope?.isGlobalAdmin) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
+          });
         }
         // Find or auto-provision the user.
         let user = await tx.query.users.findFirst({
@@ -2477,8 +2448,11 @@ export const adminRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
         // C2 (2026-05-06): can only unassign from a store the actor
-        // administers. Symmetric to memberAssignStore.
-        const allowedStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+        // administers. Symmetric to memberAssignStore, but a paused or
+        // archived store counts: a removal (R2-ADM-2, ADM1-16).
+        const allowedStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId, {
+          includeInactive: true,
+        });
         if (!allowedStores.includes(input.storeId)) {
           throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
@@ -2743,9 +2717,16 @@ export const adminRouter = router({
         // could "transfer" a B-staff into A by passing fromStoreId=B —
         // they'd successfully ATTACH the member to A but the from-side
         // would silently fail (no admin authority in B). Refuse up front.
-        const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        if (!allowed.includes(input.fromStoreId) || !allowed.includes(input.toStoreId)) {
-          throw await notAdminOfStore(tx, orgId, [input.fromStoreId, input.toStoreId]);
+        // ADM1-16: leaving a paused or archived store is a removal;
+        // joining one is not allowed. Each side answers for itself.
+        const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId, {
+          includeInactive: true,
+        });
+        if (!allowed.includes(input.fromStoreId)) {
+          throw await notAdminOfStore(tx, orgId, [input.fromStoreId]);
+        }
+        if (!toStore.isActive || !allowed.includes(input.toStoreId)) {
+          throw await notAdminOfStore(tx, orgId, [input.toStoreId]);
         }
         // C1: rank gate in BOTH stores. The "from" rank must outrank
         // the target IN from-store (mirror of detach). The "to" rank

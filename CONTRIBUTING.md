@@ -215,8 +215,8 @@ runtime issues, smokes do.
   `eq(table.orgId, ctx.session.orgId)`. Both layers — RLS + app code —
   must hold.
 - **Permissions**: declared in `packages/db/src/seed-data.ts`. Use granular
-  keys (`users.invite`) over the legacy `users.manage` for new roles. Per-
-  store scope flows through `getActorAdminStoreIds`.
+  keys (`users.grant_role`) over the legacy `users.manage` for new roles.
+  Per-store scope flows through `getActorAdminStoreIds`.
 
 ## Local dev gotchas
 

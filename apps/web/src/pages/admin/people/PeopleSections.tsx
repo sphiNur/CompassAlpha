@@ -91,6 +91,7 @@ function useActor(
       userId: session?.user.id ?? '',
       isOrgAdmin: session?.permissions.includes('org.admin') ?? false,
       adminStoreIds: session?.adminStoreIds ?? [],
+      inactiveAdminStoreIds: session?.inactiveAdminStoreIds ?? [],
       bindings: self ? self.roles : [{ slug: '', scopeType: 'global', scopeId: null }],
     };
   }, [members, session]);
@@ -100,8 +101,13 @@ function targetOf(m: {
   userId: string;
   roles: readonly Binding[];
   stores: ReadonlyArray<{ id: string }>;
+  inactiveStores: ReadonlyArray<{ id: string }>;
 }): TargetMember {
-  return { userId: m.userId, bindings: m.roles, storeIds: m.stores.map((st) => st.id) };
+  return {
+    userId: m.userId,
+    bindings: m.roles,
+    storeIds: [...m.stores, ...m.inactiveStores].map((st) => st.id),
+  };
 }
 
 // ============ People ============
@@ -210,6 +216,8 @@ export function PeopleSection({
     displayName: string;
     status: 'active' | 'suspended';
     stores: Array<{ id: string; name: string }>;
+    /** ADM1-16: paused and archived stores; the member can only leave them. */
+    inactiveStores: Array<{ id: string; name: string }>;
     isSelf: boolean;
     statusOutOfReach: boolean;
     member: TargetMember;
@@ -352,6 +360,17 @@ export function PeopleSection({
                 ),
               )
             : rawRows;
+          // ADM1-16: paused and archived stores are named and marked.
+          // A role in one used to lose its store name, and the revoke
+          // list called it organisation-wide.
+          const inactiveName = (st: { name: string; archived: boolean }) =>
+            `${st.name} · ${i18n.t(st.archived ? 'stores.archived' : 'stores.paused')}`;
+          const storeNameOf = (m: (typeof rows)[number], storeId: string) => {
+            const active = m.stores.find((st) => st.id === storeId);
+            if (active) return active.name;
+            const inactive = m.inactiveStores.find((st) => st.id === storeId);
+            return inactive ? inactiveName(inactive) : null;
+          };
           // Filter / group by store context (added 2026-05-05).
           const renderCard = (m: (typeof rows)[number]) => {
             const isSelf = m.userId === session?.user.id;
@@ -395,12 +414,18 @@ export function PeopleSection({
                     spot org-level members at a glance.
                     M3.17 (2026-05-16): inline pill spans → <Badge>.
                     Same visual rhythm as the "active" status badge in
-                    the header above. */}
-                {m.stores.length > 0 ? (
+                    the header above. Paused and archived stores follow,
+                    muted, as on the store list (ADM1-16). */}
+                {m.stores.length > 0 || m.inactiveStores.length > 0 ? (
                   <div className="flex flex-wrap gap-1 px-4 pt-2 pb-1">
                     {m.stores.map((st) => (
                       <Badge key={st.id} tone="info">
                         {st.name}
+                      </Badge>
+                    ))}
+                    {m.inactiveStores.map((st) => (
+                      <Badge key={st.id} tone="muted">
+                        {inactiveName(st)}
                       </Badge>
                     ))}
                   </div>
@@ -420,9 +445,7 @@ export function PeopleSection({
                       // render as just the role name (no scope label).
                       m.roles.map((r) => {
                         const scopedStoreName =
-                          r.scopeType === 'store' && r.scopeId
-                            ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
-                            : null;
+                          r.scopeType === 'store' && r.scopeId ? storeNameOf(m, r.scopeId) : null;
                         // DX-ADM-11 (2026-11-01): the chip is a label only.
                         // Revoking was a tap on this 18 px chip, with the verb
                         // only in a tooltip; it now sits in the member's ⋯
@@ -491,6 +514,10 @@ export function PeopleSection({
                         displayName: m.displayName,
                         status: m.status as 'active' | 'suspended',
                         stores: m.stores.map((st) => ({ id: st.id, name: st.name })),
+                        inactiveStores: m.inactiveStores.map((st) => ({
+                          id: st.id,
+                          name: inactiveName(st),
+                        })),
                         isSelf,
                         statusOutOfReach: m.statusOutOfReach ?? false,
                         member: targetOf(m),
@@ -501,7 +528,7 @@ export function PeopleSection({
                             role: roleText.name(r),
                             store:
                               r.scopeType === 'store' && r.scopeId
-                                ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
+                                ? storeNameOf(m, r.scopeId)
                                 : null,
                           })),
                       })
@@ -529,7 +556,10 @@ export function PeopleSection({
 
           // Specific store: only show members assigned there.
           if (storeCtx.kind === 'specific') {
-            const filtered = rows.filter((m) => m.stores.some((s) => s.id === storeCtx.storeId));
+            // A paused store's page lists its people too (ADM1-16).
+            const filtered = rows.filter((m) =>
+              [...m.stores, ...m.inactiveStores].some((s) => s.id === storeCtx.storeId),
+            );
             if (filtered.length === 0 && tokens) return noMatch;
             if (filtered.length === 0) {
               return (
@@ -549,7 +579,9 @@ export function PeopleSection({
           // M1.4: org-level pseudo-store. Show only members with no
           // store assignments (admin / super_admin operators).
           if (storeCtx.kind === 'org-level') {
-            const orgOnly = rows.filter((m) => m.stores.length === 0);
+            const orgOnly = rows.filter(
+              (m) => m.stores.length === 0 && m.inactiveStores.length === 0,
+            );
             if (orgOnly.length === 0 && tokens) return noMatch;
             if (orgOnly.length === 0) {
               return (
@@ -569,19 +601,28 @@ export function PeopleSection({
           // ALL view: group by store. Members appear once per store
           // they belong to. Members with no stores (admins, super-
           // admins) get a separate "Org-level" section at the top.
-          const orgLevel = rows.filter((m) => m.stores.length === 0);
+          const orgLevel = rows.filter(
+            (m) => m.stores.length === 0 && m.inactiveStores.length === 0,
+          );
           // Build store → members map. Every (store, member) pair where
-          // the member is in that store contributes one entry.
-          const byStore = new Map<string, { name: string; members: typeof rows }>();
+          // the member is in that store contributes one entry. Paused and
+          // archived stores come after the active ones (ADM1-16).
+          const byStore = new Map<
+            string,
+            { name: string; inactive: boolean; members: typeof rows }
+          >();
+          const addTo = (id: string, name: string, inactive: boolean, m: (typeof rows)[number]) => {
+            const bucket = byStore.get(id) ?? { name, inactive, members: [] };
+            bucket.members.push(m);
+            byStore.set(id, bucket);
+          };
           for (const m of rows) {
-            for (const st of m.stores) {
-              const bucket = byStore.get(st.id) ?? { name: st.name, members: [] };
-              bucket.members.push(m);
-              byStore.set(st.id, bucket);
-            }
+            for (const st of m.stores) addTo(st.id, st.name, false, m);
+            for (const st of m.inactiveStores) addTo(st.id, inactiveName(st), true, m);
           }
-          const storeSections = [...byStore.entries()].sort((a, b) =>
-            a[1].name.localeCompare(b[1].name),
+          const storeSections = [...byStore.entries()].sort(
+            (a, b) =>
+              Number(a[1].inactive) - Number(b[1].inactive) || a[1].name.localeCompare(b[1].name),
           );
           if (rows.length === 0) return noMatch;
           return (
@@ -738,7 +779,9 @@ export function PeopleSection({
                 the member belongs to it. */}
             {!memberMenuFor.isSelf &&
             storeCtx.kind === 'specific' &&
-            memberMenuFor.stores.some((st) => st.id === storeCtx.storeId) ? (
+            [...memberMenuFor.stores, ...memberMenuFor.inactiveStores].some(
+              (st) => st.id === storeCtx.storeId,
+            ) ? (
               <Button
                 block
                 variant="pearl"
@@ -746,8 +789,9 @@ export function PeopleSection({
                   if (storeCtx.kind !== 'specific') return;
                   const target = memberMenuFor;
                   const storeName =
-                    target.stores.find((st) => st.id === storeCtx.storeId)?.name ??
-                    i18n.t('admin.label.thisStore');
+                    [...target.stores, ...target.inactiveStores].find(
+                      (st) => st.id === storeCtx.storeId,
+                    )?.name ?? i18n.t('admin.label.thisStore');
                   setMemberMenuFor(null);
                   nativeConfirm(
                     i18n.t('admin.confirm.removeFromStore', {

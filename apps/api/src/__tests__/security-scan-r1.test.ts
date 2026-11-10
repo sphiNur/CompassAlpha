@@ -386,6 +386,9 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     });
     const caller = await callerAs(orgX, legacy.id, legacyMember);
 
+    // ADM1-03 (2026-11-10): refused at the org-tier check, which names the
+    // reason. Holding super_admin in every store used to pass it ("covers
+    // every active store") and fall to the bare missingPermission.
     const err = await errorOf(() =>
       caller.admin.memberInviteByTgId({
         tgUserId: legacy.tgUserId.toString(),
@@ -394,12 +397,12 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
       }),
     );
     expect(err?.code).toBe('FORBIDDEN');
-    expect(err?.message).toBe('auth.errors.missingPermission');
+    expect(err?.message).toBe('admin.errors.cannotInviteOrgAdminAsStoreAdmin');
     const linkErr = await errorOf(() =>
       caller.admin.memberInviteCreate({ roleSlug: 'admin', storeIds: [], expiresInDays: 7 }),
     );
     expect(linkErr?.code).toBe('FORBIDDEN');
-    expect(linkErr?.message).toBe('auth.errors.missingPermission');
+    expect(linkErr?.message).toBe('admin.errors.cannotInviteOrgAdminAsStoreAdmin');
     const bindings = await withOrgContext(db, orgX, (tx) =>
       tx
         .select({ scopeType: s.memberRoleBindings.scopeType })
