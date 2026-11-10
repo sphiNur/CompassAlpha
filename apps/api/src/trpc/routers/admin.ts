@@ -53,6 +53,13 @@ import { assertCanAddMember, assertCanAddStore } from '../../services/subscripti
 import { isUniqueViolation } from '../../services/pgErrors';
 import { auditChanges } from '../../services/auditChanges';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
+import {
+  requirePurgeRole,
+  runDeleteBlocks,
+  runDeleteRefusal,
+  sessionDeleteBlocks,
+  sessionDeleteRefusal,
+} from '../../services/purgeGuards';
 import { recentEventContext } from '../../services/eventContext';
 import { inTexts, inUuids } from '../../services/sqlIn';
 import { env } from '../../env';
@@ -5338,12 +5345,7 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       requireAdmin(ctx.session!.permissions);
       // Extra gate: only super_admin can purge.
-      if (!ctx.session!.roleSlugs.has('super_admin')) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.purgeRequiresSuperAdmin',
-        });
-      }
+      requirePurgeRole(ctx.session!);
       // D1 (2026-10-30): off on production unless the server opts in.
       if (!bulkPurgeAllowed(env)) {
         throw new TRPCError({
@@ -5636,12 +5638,7 @@ export const adminRouter = router({
    */
   purgeByDate: authedProcedure.input(PurgeByDateInputSchema).mutation(async ({ ctx, input }) => {
     requireAdmin(ctx.session!.permissions);
-    if (!ctx.session!.roleSlugs.has('super_admin')) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'admin.errors.purgeRequiresSuperAdmin',
-      });
-    }
+    requirePurgeRole(ctx.session!);
     // D1 (2026-10-30): off on production unless the server opts in.
     if (!bulkPurgeAllowed(env)) {
       throw new TRPCError({
@@ -5986,49 +5983,15 @@ export const adminRouter = router({
         ]);
         const storeById = new Map(stores.map((st) => [st.id, st]));
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
-        const callerMemberRow = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
-        });
-        const callerMemberId = callerMemberRow?.id ?? null;
+        const callerMemberId = ctx.session!.memberId;
 
         // DX-CAT-3 (2026-11-01): say on each row whether it can be deleted
-        // here and why not — the same checks purgeSession makes, in the
-        // same order. The list offered a red Delete on every order that
-        // was not in a run, and the refusal only came after a tap.
-        const isSuperAdmin = ctx.session!.roleSlugs.has('super_admin');
-        const sessionIds = rows.map((r) => r.id);
-        const linkedRunIds = [...new Set(rows.map((r) => r.runId).filter(Boolean) as string[])];
-        const [liveRuns, foreignSessions, actedOnSessions] = await Promise.all([
-          linkedRunIds.length
-            ? tx
-                .select({ id: s.marketRunsV.id })
-                .from(s.marketRunsV)
-                .where(
-                  and(eq(s.marketRunsV.orgId, orgId), inArray(s.marketRunsV.id, linkedRunIds)),
-                )
-            : Promise.resolve([] as Array<{ id: string }>),
-          sessionsWithForeignAuthors(tx, callerMemberId, sessionIds),
-          streamsActedOnByOthers(tx, ctx.session!.userId, 'order', sessionIds),
-        ]);
-        const liveRunIds = new Set(liveRuns.map((r) => r.id));
-        const deleteBlockOf = (r: (typeof rows)[number]): SessionDeleteBlock | null => {
-          if (!isSuperAdmin) return 'notSuperAdmin';
-          const orphaned = r.runId !== null && !liveRunIds.has(r.runId);
-          if (
-            !orphaned &&
-            (r.status === 'in_run' || r.status === 'archived' || (r.runId && liveRunIds.has(r.runId)))
-          ) {
-            return 'inRun';
-          }
-          if (foreignSessions.has(r.id)) {
-            // Someone else's order, or the caller's with others' lines in it.
-            const author = r.submittedByMemberId ?? r.initiatedByMemberId;
-            return author && author !== callerMemberId ? 'othersOrder' : 'othersLines';
-          }
-          if (actedOnSessions.has(r.id)) return 'actedOnByOthers';
-          return null;
-        };
+        // here and why not. The list offered a red Delete on every order
+        // that was not in a run, and the refusal only came after a tap.
+        // ADM2-08: the rule purgeSession applies (services/purgeGuards.ts).
+        const deleteBlocks = await sessionDeleteBlocks(tx, ctx.session!, rows, {
+          requireOnlyTestSessions: true,
+        });
 
         // Per-session: aggregate qty across contributors per SKU.
         const skuTotalsBySession = new Map<string, Map<string, number>>();
@@ -6079,7 +6042,7 @@ export const adminRouter = router({
                 itemCount: agg.itemCount,
                 totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
                 updatedAt: r.updatedAt.toISOString(),
-                deleteBlock: deleteBlockOf(r),
+                deleteBlock: deleteBlocks.get(r.id) ?? null,
               };
             })
             // #4: an "empty" session (every contributor's qty is 0) shouldn't
@@ -6151,38 +6114,21 @@ export const adminRouter = router({
               .where(inArray(s.members.id, memberIds))
           : [];
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
-        // DX-CAT-3 (2026-11-01): the checks purgeRun makes, per row.
-        const isSuperAdmin = ctx.session!.roleSlugs.has('super_admin');
-        const callerMember = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
-          columns: { id: true },
-        });
-        const allSessionIds = [
-          ...new Set(rows.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
-        ];
-        const [foreignSessions, actedOnRuns, actedOnSessions] = await Promise.all([
-          sessionsWithForeignAuthors(tx, callerMember?.id ?? null, allSessionIds),
-          streamsActedOnByOthers(
-            tx,
-            ctx.session!.userId,
-            'run',
-            rows.map((r) => r.id),
-          ),
-          streamsActedOnByOthers(tx, ctx.session!.userId, 'order', allSessionIds),
-        ]);
+        // DX-CAT-3 (2026-11-01): why each run can't be deleted here, by
+        // the rule purgeRun applies (ADM2-08).
+        const sessionIdsOf = (r: (typeof rows)[number]) =>
+          (r.sessionIdsJson as unknown as string[]) ?? [];
+        const deleteBlocks = await runDeleteBlocks(
+          tx,
+          ctx.session!,
+          rows.map((r) => ({ id: r.id, sessionIds: sessionIdsOf(r) })),
+          { requireOnlyTestSessions: true },
+        );
         return rows.map((r) => {
-          const sessionIds = (r.sessionIdsJson as unknown as string[]) ?? [];
+          const sessionIds = sessionIdsOf(r);
           const m = r.purchaserMemberId ? memberById.get(r.purchaserMemberId) : null;
-          const deleteBlock: RunDeleteBlock | null = !isSuperAdmin
-            ? 'notSuperAdmin'
-            : sessionIds.some((id) => foreignSessions.has(id))
-              ? 'foreignSessions'
-              : actedOnRuns.has(r.id) || sessionIds.some((id) => actedOnSessions.has(id))
-                ? 'actedOnByOthers'
-                : null;
           return {
-            deleteBlock,
+            deleteBlock: deleteBlocks.get(r.id) ?? null,
             runId: r.id,
             runDate: r.runDate,
             runIndex: r.runIndex,
@@ -6375,12 +6321,7 @@ export const adminRouter = router({
   /** Surgical single-session purge. See PurgeSessionInputSchema doc. */
   purgeSession: authedProcedure.input(PurgeSessionInputSchema).mutation(async ({ ctx, input }) => {
     requireAdmin(ctx.session!.permissions);
-    if (!ctx.session!.roleSlugs.has('super_admin')) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'admin.errors.purgeRequiresSuperAdmin',
-      });
-    }
+    requirePurgeRole(ctx.session!);
     refuseGuardWaiverInProduction(input.requireOnlyTestSessions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
@@ -6391,42 +6332,15 @@ export const adminRouter = router({
       if (!session) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.sessionNotFound' });
       }
-      // Refuse if attached to a run — caller should purge the run. A
-      // session whose run no longer exists (left behind by an earlier
-      // purge, CAT-4) has nothing to purge it through, so it may go alone.
-      const run = session.runId
-        ? await tx.query.marketRunsV.findFirst({
-            where: (r, { eq: eq2, and: and2 }) =>
-              and2(eq2(r.id, session.runId!), eq2(r.orgId, orgId)),
-          })
-        : undefined;
-      const orphaned = session.runId !== null && !run;
-      if (!orphaned && (session.status === 'in_run' || session.status === 'archived' || run)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.sessionAttachedToRun',
-        });
-      }
-      // CAT-3 (2026-10-30): the page promises real users' orders are
-      // never touched; this used to delete anyone's.
-      if (input.requireOnlyTestSessions) {
-        if ((await foreignAuthors(tx, orgId, ctx.session!.userId, [input.sessionId])).size > 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.sessionHasForeignAuthors',
-          });
-        }
-        // RE-CAT-1: someone else approved, claimed or rejected it.
-        // R2-CAT-1: say so, rather than claiming others wrote the order.
-        if (
-          await othersActedOn(tx, ctx.session!.userId, [{ type: 'order', ids: [input.sessionId] }])
-        ) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.sessionActedOnByOthers',
-          });
-        }
-      }
+      // Refuse an order in a run, someone else's, or one someone else
+      // acted on. The maintenance list shows the same reason on its row
+      // (ADM2-08).
+      const block = (
+        await sessionDeleteBlocks(tx, ctx.session!, [session], {
+          requireOnlyTestSessions: input.requireOnlyTestSessions,
+        })
+      ).get(session.id);
+      if (block) throw sessionDeleteRefusal(block);
 
       const counts = await countSessionCascade(tx, orgId, input.sessionId);
       if (input.dryRun) {
@@ -6471,12 +6385,7 @@ export const adminRouter = router({
   /** Whole-run purge. See PurgeRunInputSchema doc. */
   purgeRun: authedProcedure.input(PurgeRunInputSchema).mutation(async ({ ctx, input }) => {
     requireAdmin(ctx.session!.permissions);
-    if (!ctx.session!.roleSlugs.has('super_admin')) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'admin.errors.purgeRequiresSuperAdmin',
-      });
-    }
+    requirePurgeRole(ctx.session!);
     refuseGuardWaiverInProduction(input.requireOnlyTestSessions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
@@ -6488,36 +6397,15 @@ export const adminRouter = router({
       }
       const sessionIds = (run.sessionIdsJson as unknown as string[]) ?? [];
 
-      // Safety: refuse if any attached session belongs to someone other
-      // than the caller, unless explicitly waived.
-      // RE-CAT-1 (2026-10-30): authorship of the orders alone let a run that
-      // a real purchaser bought, priced or delivered be wiped with its
-      // price history and stock movements. Anyone else acting on the run
-      // (or on its orders) makes it real data.
-      if (input.requireOnlyTestSessions) {
-        if (
-          sessionIds.length > 0 &&
-          (await foreignAuthors(tx, orgId, ctx.session!.userId, sessionIds)).size > 0
-        ) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.runHasForeignSessions',
-          });
-        }
-        // R2-CAT-1: the orders are the caller's own but someone else
-        // claimed, bought, delivered or approved — a separate reason.
-        if (
-          await othersActedOn(tx, ctx.session!.userId, [
-            { type: 'run', ids: [input.runId] },
-            { type: 'order', ids: sessionIds },
-          ])
-        ) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.runActedOnByOthers',
-          });
-        }
-      }
+      // Refuse a run with someone else's orders in it, or one that
+      // someone else acted on (or on its orders). The maintenance list
+      // shows the same reason on its row (ADM2-08).
+      const block = (
+        await runDeleteBlocks(tx, ctx.session!, [{ id: run.id, sessionIds }], {
+          requireOnlyTestSessions: input.requireOnlyTestSessions,
+        })
+      ).get(run.id);
+      if (block) throw runDeleteRefusal(block);
 
       const counts = await countRunCascade(tx, orgId, input.runId, sessionIds);
       if (input.dryRun) {
@@ -6622,16 +6510,6 @@ async function purgeDateScope(
   };
 }
 
-/** DX-CAT-3: why the maintenance list can't delete an order here. */
-type SessionDeleteBlock =
-  | 'notSuperAdmin'
-  | 'inRun'
-  | 'othersOrder'
-  | 'othersLines'
-  | 'actedOnByOthers';
-/** DX-CAT-3: why the maintenance list can't delete a run here. */
-type RunDeleteBlock = 'notSuperAdmin' | 'foreignSessions' | 'actedOnByOthers';
-
 /**
  * D2 / R2-CAT-2 (2026-10-31): `requireOnlyTestSessions: false` skips the
  * "someone else wrote or handled it" guard. On production that is the
@@ -6683,133 +6561,6 @@ export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof
 
 // ---------- session/run cascade helpers ----------
 type OrgTx = import('@compass/db').DB;
-
-/**
- * Members other than the caller who wrote any of these sessions. Per-store
- * sessions can have several contributors, so a session counts as the
- * caller's test only if the submitter (or, before submit, the initiator)
- * and every line author is the caller.
- */
-/**
- * RE-CAT-1: has anyone other than `userId` written an event on these
- * streams? System events (no actor) do not count.
- */
-async function othersActedOn(
-  tx: OrgTx,
-  userId: string,
-  streams: Array<{ type: 'run' | 'order'; ids: string[] }>,
-): Promise<boolean> {
-  for (const stream of streams) {
-    if (stream.ids.length === 0) continue;
-    const [row] = await tx
-      .select({ id: s.events.id })
-      .from(s.events)
-      .where(
-        and(
-          eq(s.events.streamType, stream.type),
-          inArray(s.events.streamId, stream.ids),
-          sql`${s.events.actorId} IS NOT NULL`,
-          sql`${s.events.actorId} <> ${userId}`,
-        ),
-      )
-      .limit(1);
-    if (row) return true;
-  }
-  return false;
-}
-
-/**
- * DX-CAT-3 (2026-11-01): which of these streams someone other than
- * `userId` wrote an event on — othersActedOn for a whole list at once,
- * so the maintenance list can say up front what can't be deleted.
- */
-async function streamsActedOnByOthers(
-  tx: OrgTx,
-  userId: string,
-  type: 'run' | 'order',
-  ids: string[],
-): Promise<Set<string>> {
-  if (ids.length === 0) return new Set();
-  const rows = await tx
-    .selectDistinct({ streamId: s.events.streamId })
-    .from(s.events)
-    .where(
-      and(
-        eq(s.events.streamType, type),
-        inArray(s.events.streamId, ids),
-        sql`${s.events.actorId} IS NOT NULL`,
-        sql`${s.events.actorId} <> ${userId}`,
-      ),
-    );
-  return new Set(rows.map((r) => r.streamId));
-}
-
-/**
- * DX-CAT-3: the sessions (of these) that someone other than the caller
- * wrote — the same rule as foreignAuthors, per session. `null` caller
- * member means every author is someone else.
- */
-async function sessionsWithForeignAuthors(
-  tx: OrgTx,
-  myMemberId: string | null,
-  sessionIds: string[],
-): Promise<Set<string>> {
-  if (sessionIds.length === 0) return new Set();
-  const sessions = await tx.query.orderSessionsV.findMany({
-    where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-  });
-  const items = await tx.query.orderItemsV.findMany({
-    where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-  });
-  const foreign = new Set<string>();
-  for (const sess of sessions) {
-    const author = sess.submittedByMemberId ?? sess.initiatedByMemberId;
-    if (author && author !== myMemberId) foreign.add(sess.id);
-  }
-  for (const it of items) {
-    if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
-      foreign.add(it.sessionId);
-    }
-  }
-  return foreign;
-}
-
-async function foreignAuthors(
-  tx: OrgTx,
-  orgId: string,
-  userId: string,
-  sessionIds: string[],
-): Promise<Set<string>> {
-  const myMember = await tx.query.members.findFirst({
-    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, userId)),
-  });
-  const myMemberId = myMember?.id ?? null;
-  const sessions = await tx.query.orderSessionsV.findMany({
-    where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-  });
-  const items = await tx.query.orderItemsV.findMany({
-    where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-  });
-  const foreign = new Set<string>();
-  for (const sess of sessions) {
-    if (sess.submittedByMemberId && sess.submittedByMemberId !== myMemberId) {
-      foreign.add(sess.submittedByMemberId);
-    }
-    if (
-      sess.initiatedByMemberId &&
-      sess.initiatedByMemberId !== myMemberId &&
-      !sess.submittedByMemberId
-    ) {
-      foreign.add(sess.initiatedByMemberId);
-    }
-  }
-  for (const it of items) {
-    if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
-      foreign.add(it.contributorMemberId);
-    }
-  }
-  return foreign;
-}
 
 /**
  * Grow the purge sets (in place) until no order points at a run outside

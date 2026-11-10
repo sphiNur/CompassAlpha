@@ -519,6 +519,159 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
     expect(after.find((r) => r.runId === runId)?.deleteBlock).toBe('actedOnByOthers');
   });
 
+  test('ADM2-08: what each row says is what its delete answers', async () => {
+    const { admin, staff, db, orgId, storeId, skuId, memberId } = fix!;
+    const date = '2026-08-03';
+    const theirs = await staff.order.adjustItem({ storeId, skuId, qty: '1' });
+    await db
+      .update(s.orderSessionsV)
+      .set({ orderDate: date })
+      .where(eq(s.orderSessionsV.id, theirs.sessionId));
+    const staffMemberId = (await db.query.orderSessionsV.findFirst({
+      where: (x, o) => o.eq(x.id, theirs.sessionId),
+    }))!.initiatedByMemberId!;
+    const order = async (values: Partial<typeof s.orderSessionsV.$inferInsert> = {}) => {
+      const id = randomUUID();
+      await db.insert(s.orderSessionsV).values({
+        id,
+        orgId,
+        storeId,
+        orderDate: date,
+        status: 'submitted',
+        initiatedByMemberId: memberId,
+        submittedByMemberId: memberId,
+        ...values,
+      });
+      return id;
+    };
+    const [someone] = await db
+      .insert(s.users)
+      .values({ displayName: 'Rule approver', tgUserId: freshTgId() })
+      .returning();
+    const actOn = (streamType: 'order' | 'run', streamId: string) =>
+      db.insert(s.events).values({
+        orgId,
+        streamType,
+        streamId,
+        seq: 1,
+        type: streamType === 'order' ? 'Approved' : 'ItemPurchased',
+        payload: {},
+        actorId: someone!.id,
+      });
+    const run = async (author: string, runIndex: number) => {
+      const runId = randomUUID();
+      const sessionId = randomUUID();
+      await db.insert(s.marketRunsV).values({
+        id: runId,
+        orgId,
+        runDate: date,
+        runIndex,
+        status: 'finished',
+        sessionIdsJson: [sessionId],
+      });
+      await order({
+        id: sessionId,
+        status: 'archived',
+        runId,
+        initiatedByMemberId: author,
+        submittedByMemberId: author,
+      });
+      return { runId, sessionId };
+    };
+
+    const mine = await order();
+    const withTheirLine = await order();
+    await db
+      .insert(s.orderItemsV)
+      .values({ sessionId: withTheirLine, skuId, contributorMemberId: staffMemberId, qty: '1' });
+    const reviewed = await order({ status: 'approved' });
+    await actOn('order', reviewed);
+    const orphan = await order({ status: 'archived', runId: randomUUID() });
+    const ownRun = await run(memberId, 0);
+    const boughtRun = await run(memberId, 1);
+    await actOn('run', boughtRun.runId);
+    const theirRun = await run(staffMemberId, 2);
+
+    const sessions = await admin.admin.sessionList({ date, limit: 50 });
+    expect(new Map(sessions.map((x) => [x.sessionId, x.deleteBlock]))).toEqual(
+      new Map([
+        [theirs.sessionId, 'othersOrder'],
+        [mine, null],
+        [withTheirLine, 'othersLines'],
+        [reviewed, 'actedOnByOthers'],
+        [orphan, null],
+        [ownRun.sessionId, 'inRun'],
+        [boughtRun.sessionId, 'inRun'],
+        [theirRun.sessionId, 'inRun'],
+      ]),
+    );
+    const sessionAnswer = {
+      notSuperAdmin: 'admin.errors.purgeRequiresSuperAdmin',
+      inRun: 'admin.errors.sessionAttachedToRun',
+      othersOrder: 'admin.errors.sessionHasForeignAuthors',
+      othersLines: 'admin.errors.sessionHasForeignAuthors',
+      actedOnByOthers: 'admin.errors.sessionActedOnByOthers',
+    } as const;
+    for (const row of sessions) {
+      const err = await errorOf(() =>
+        admin.admin.purgeSession({ sessionId: row.sessionId, dryRun: true }),
+      );
+      expect([row.sessionId, err?.message ?? null]).toEqual([
+        row.sessionId,
+        row.deleteBlock ? sessionAnswer[row.deleteBlock] : null,
+      ]);
+    }
+
+    const runs = await admin.admin.runList({ date, limit: 50 });
+    expect(new Map(runs.map((r) => [r.runId, r.deleteBlock]))).toEqual(
+      new Map([
+        [ownRun.runId, null],
+        [boughtRun.runId, 'actedOnByOthers'],
+        [theirRun.runId, 'foreignSessions'],
+      ]),
+    );
+    const runAnswer = {
+      notSuperAdmin: 'admin.errors.purgeRequiresSuperAdmin',
+      foreignSessions: 'admin.errors.runHasForeignSessions',
+      actedOnByOthers: 'admin.errors.runActedOnByOthers',
+    } as const;
+    for (const row of runs) {
+      const err = await errorOf(() => admin.admin.purgeRun({ runId: row.runId, dryRun: true }));
+      expect([row.runId, err?.message ?? null]).toEqual([
+        row.runId,
+        row.deleteBlock ? runAnswer[row.deleteBlock] : null,
+      ]);
+    }
+
+    // An admin without the super admin role: every row says so, and the
+    // deletes refuse before reading anything.
+    const userId = (await db.query.members.findFirst({ where: (x, o) => o.eq(x.id, memberId) }))!
+      .userId;
+    const plainAdmin = callerFor({
+      userId,
+      memberId,
+      orgId,
+      orgTimezone: 'UTC',
+      permissions: new Set(['users.manage', 'org.admin']),
+      roleSlugs: new Set(['org-admin-dx']),
+    });
+    expect(
+      (await plainAdmin.admin.sessionList({ date, limit: 50 })).map((x) => x.deleteBlock),
+    ).toEqual(sessions.map(() => 'notSuperAdmin'));
+    expect((await plainAdmin.admin.runList({ date, limit: 50 })).map((r) => r.deleteBlock)).toEqual(
+      runs.map(() => 'notSuperAdmin'),
+    );
+    for (const call of [
+      () => plainAdmin.admin.purgeSession({ sessionId: mine, dryRun: true }),
+      () => plainAdmin.admin.purgeRun({ runId: ownRun.runId, dryRun: true }),
+    ]) {
+      const err = await errorOf(call);
+      expect([err?.code, err?.message]).toEqual([
+        'FORBIDDEN',
+        'admin.errors.purgeRequiresSuperAdmin',
+      ]);
+    }
+  });
   test('DX-CAT-5: the date preview lists what goes with it from other dates', async () => {
     const { admin, db, orgId, storeId } = fix!;
     const runId = randomUUID();
