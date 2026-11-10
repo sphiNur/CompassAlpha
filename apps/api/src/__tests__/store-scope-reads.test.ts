@@ -16,14 +16,8 @@ import { testContext } from './helpers/ctx';
 import { seedFinishedPurchase } from './helpers/fixtures';
 import { scopeOrgSuite } from './helpers/scopeOrg';
 
-const {
-  fixture,
-  makeStore,
-  makeUser,
-  makeMember,
-  bindRole,
-  sessionFor,
-} = scopeOrgSuite('Store Scope Reads Tests');
+const { fixture, makeStore, makeUser, makeMember, bindRole, sessionFor } =
+  scopeOrgSuite('Store Scope Reads Tests');
 
 // ---------- M3.1: sales router store-scope assertion ---------------------
 //

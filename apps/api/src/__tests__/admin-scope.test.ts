@@ -17,25 +17,15 @@ import { describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import {
-  effectivePermissionsForStore,
-  getActorStoreIds,
-} from '../services/storeScope';
+import { effectivePermissionsForStore, getActorStoreIds } from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext, callerFor } from './helpers/ctx';
 import { codeOf, errorOf, pgErrorOf } from './helpers/errors';
 import { scopeOrgSuite } from './helpers/scopeOrg';
 
-const {
-  fixture,
-  makeStore,
-  makeUser,
-  makeMember,
-  bindRole,
-  sessionFor,
-  makeSuperAdmin,
-} = scopeOrgSuite('Admin Scope Tests');
+const { fixture, makeStore, makeUser, makeMember, bindRole, sessionFor, makeSuperAdmin } =
+  scopeOrgSuite('Admin Scope Tests');
 
 // ---------- P0: store managers never become organization-wide ----------
 
@@ -1169,7 +1159,10 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
     'store manager can allow a key they hold but not one they lack',
     async () => {
       const storeA = await makeStore(`A-${Math.random()}`);
-      const manager = await callerWith(fixture().managerRoleId, { type: 'store', storeId: storeA.id });
+      const manager = await callerWith(fixture().managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
       const target = await staffTarget(storeA.id);
       const base = {
         memberId: target,

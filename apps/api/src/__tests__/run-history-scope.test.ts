@@ -17,14 +17,8 @@ import { testContext, callerFor } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
 import { scopeOrgSuite } from './helpers/scopeOrg';
 
-const {
-  fixture,
-  makeStore,
-  makeUser,
-  makeMember,
-  bindRole,
-  sessionFor,
-} = scopeOrgSuite('Run History Scope Tests');
+const { fixture, makeStore, makeUser, makeMember, bindRole, sessionFor } =
+  scopeOrgSuite('Run History Scope Tests');
 
 // ---------- M3.2: per-store purchaser does not see foreign demand ----------
 //
@@ -927,7 +921,16 @@ describe('purchase history permission scope', () => {
       expect(first.rows).toHaveLength(10);
       expect(second.rows).toHaveLength(1);
       expect(first.rows.map((row) => row.runDate.slice(-2))).toEqual([
-        '11', '10', '09', '08', '07', '06', '05', '04', '03', '02',
+        '11',
+        '10',
+        '09',
+        '08',
+        '07',
+        '06',
+        '05',
+        '04',
+        '03',
+        '02',
       ]);
       expect(second.rows[0]!.runDate).toBe('2043-08-01');
       expect(first.pageInfo).toEqual({
@@ -1012,7 +1015,12 @@ describe('purchase history permission scope', () => {
       ]);
       expect(second.rows.map((r) => r.runDate)).toEqual(Array(12).fill('2044-09-01'));
       expect(third.rows).toHaveLength(0);
-      expect(first.pageInfo).toMatchObject({ totalPages: 2, hasNext: true, firstRun: 1, lastRun: 11 });
+      expect(first.pageInfo).toMatchObject({
+        totalPages: 2,
+        hasNext: true,
+        firstRun: 1,
+        lastRun: 11,
+      });
       expect(second.pageInfo).toMatchObject({ hasNext: false, firstRun: 12, lastRun: 23 });
     },
   );
