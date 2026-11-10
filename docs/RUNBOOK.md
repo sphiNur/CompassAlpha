@@ -112,6 +112,19 @@ warning and the deploy went on (the `.env` check even passed outright).
 - The database role check, which now refuses a superuser as well as
   BYPASSRLS: `--skip-rls-check`.
 
+Since 2026-11 (review OPS-05/OPS-06), `COMPASS_BASE` must be set before a
+deploy starts, and the provenance gates also refuse unless:
+
+- HEAD is the tip of origin/main as fetched now. A checkout that had not
+  pulled used to ship an older main over the live one.
+- CI passed for that commit: the three jobs in `.github/workflows/ci.yml`.
+  The deploy reads them with `gh`, so install it and run `gh auth login`
+  on the deploy machine.
+- The live release (`/health/version`) is HEAD or in its history. A
+  release deployed with `--force` is not compared.
+
+`--force` overrides these too, and marks the release `-unverified`.
+
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
 No restart is needed — the api serves `dist` from disk on every request

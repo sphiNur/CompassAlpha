@@ -14,7 +14,8 @@
  * DIRECTORY rather than a git ref, and both gates protect against that:
  *
  *   --force            skips the provenance gates (clean tree, on main,
- *                      pushed to origin/main). The release sha is then
+ *                      the tip of origin/main, green CI for it, not older
+ *                      than the live release). The release sha is then
  *                      suffixed `-unverified` so /health/version cannot
  *                      claim a provenance the artifact does not have.
  *   --allow-active-run skips the check for a run in purchasing/delivering.
@@ -85,6 +86,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ciProblemFor, liveReleaseAt, runGh } from './lib/provenance';
 import {
   APP_DIR,
   PREV_TARBALL,
@@ -141,6 +143,14 @@ const TARBALL = join(PARENT, 'compass-alpha-deploy.tar.gz');
 // MSYS2 tar on Windows sees `C:` and thinks it's a remote host. Use a
 // relative path from PARENT to keep tar happy.
 const TARBALL_RELATIVE = 'compass-alpha-deploy.tar.gz';
+
+/**
+ * The public URL the smokes test (they refuse to run without it). Review
+ * OPS-05/OPS-08 (2026-11): read up front, so a deploy without it stops
+ * before shipping instead of at the smoke, and the live release can be
+ * read before anything changes.
+ */
+const BASE = process.env.COMPASS_BASE?.replace(/\/+$/, '');
 
 const args = new Set(process.argv.slice(2));
 const DRY = args.has('--dry');
@@ -265,6 +275,17 @@ if (ROLLBACK && DRY) {
   process.exit(0);
 }
 
+if (!BASE) {
+  console.error('COMPASS_BASE is not set (the public URL the smokes test).');
+  console.error('  Set: export COMPASS_BASE=https://<the public app URL>');
+  process.exit(2);
+}
+
+/** Whether commit `a` is `b` or in its history (false when either is unknown). */
+function isAncestor(a: string, b: string): boolean {
+  return spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: ROOT }).status === 0;
+}
+
 /**
  * Provenance gates (2026-07-26).
  *
@@ -286,8 +307,14 @@ if (ROLLBACK && DRY) {
  * main. `--force` overrides for a genuine emergency, and when it does,
  * the release sha is suffixed so the version endpoint cannot claim a
  * provenance the artifact does not have.
+ *
+ * Review OPS-05/OPS-06 (2026-11): "pushed" meant "an ancestor of
+ * origin/main", so a checkout that had not pulled shipped an older main
+ * over the live one, and migrations do not go back. Now HEAD must be the
+ * tip of origin/main as fetched now, CI must have passed for it, and the
+ * live release must be in its history.
  */
-function provenanceGates(): string {
+async function provenanceGates(): Promise<string> {
   const gitBranch = runCapture('git rev-parse --abbrev-ref HEAD').trim();
   const gitDirty = runCapture('git status --porcelain').trim();
   const provenanceProblems: string[] = [];
@@ -301,16 +328,36 @@ function provenanceGates(): string {
     provenanceProblems.push(`HEAD is on "${gitBranch}", not main`);
   }
   try {
-    // Non-fatal on network failure: we still check against whatever
-    // origin/main we already have.
     execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe' });
   } catch {
-    console.log('  \x1b[33m⚠ could not fetch origin/main — checking against the local copy\x1b[0m');
+    provenanceProblems.push('could not fetch origin/main, so HEAD may not be the newest main');
   }
-  try {
-    execSync('git merge-base --is-ancestor HEAD origin/main', { cwd: ROOT, stdio: 'pipe' });
-  } catch {
-    provenanceProblems.push('HEAD is not an ancestor of origin/main — push and merge it first');
+  const head = runCapture('git rev-parse HEAD').trim();
+  const tip = runCapture('git rev-parse origin/main').trim();
+  if (head !== tip) {
+    provenanceProblems.push(
+      isAncestor(head, tip)
+        ? `HEAD is behind origin/main (${tip.slice(0, 12)}) — pull first`
+        : 'HEAD is not on origin/main — push and merge it first',
+    );
+  }
+  // The release the site runs must not be newer than this one. A forced
+  // release (-unverified) may be off main; the tip of main replaces it.
+  const live = await liveReleaseAt(BASE!);
+  if (!live) {
+    console.log(
+      `  \x1b[33m⚠ could not read the live release from ${BASE}/health/version — not compared\x1b[0m`,
+    );
+  } else if (live.verified && !isAncestor(live.sha, head)) {
+    provenanceProblems.push(
+      `the site runs ${live.sha}, which is not in HEAD's history — this would take it back`,
+    );
+  }
+  // CI has to have tested exactly this commit (asked only when nothing
+  // else is wrong: otherwise --force is needed anyway).
+  if (provenanceProblems.length === 0) {
+    const problem = ciProblemFor(head, runGh(ROOT));
+    if (problem) provenanceProblems.push(problem);
   }
 
   const FORCED = provenanceProblems.length > 0;
@@ -335,7 +382,7 @@ function provenanceGates(): string {
   return releaseSha;
 }
 // A rollback ships nothing from this machine, so provenance is moot.
-const releaseSha = ROLLBACK ? '' : provenanceGates();
+const releaseSha = ROLLBACK ? '' : await provenanceGates();
 
 /**
  * Pre-flight: never swap the frontend out from under a purchaser who is
