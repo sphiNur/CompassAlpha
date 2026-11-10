@@ -634,7 +634,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
                 value={browserTgUserId}
                 onChange={(e) => setBrowserTgUserId(e.target.value)}
                 autoFocus={!browserTgUserId}
-                placeholder={i18n.t('dev.browserLogin.tgIdPlaceholder', { example: '6402913074' })}
+                placeholder={i18n.t('dev.browserLogin.tgIdPlaceholder', { example: '123456789' })}
               />
             </label>
             <label className="block">

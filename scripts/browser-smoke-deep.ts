@@ -293,7 +293,7 @@ async function run() {
     {
       memberId: 'mem-smoke',
       userId: 'u-smoke',
-      tgUserId: '6402913074',
+      tgUserId: '123456789',
       tgUsername: 'smoke',
       displayName: 'Smoke',
       avatarUrl: null,

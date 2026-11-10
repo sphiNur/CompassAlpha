@@ -842,7 +842,7 @@ export const ru = {
   'admin.label.loadingRoles': 'Загрузка ролей…',
   'admin.label.loadingStores': 'Загрузка магазинов…',
   'admin.field.tgUserId': 'Telegram ID *',
-  'admin.field.tgUserIdPlaceholder': 'напр. 6402913074',
+  'admin.field.tgUserIdPlaceholder': 'напр. 123456789',
   'admin.field.displayName': 'Имя для отображения',
   'admin.field.displayNamePlaceholder':
     'необязательно · пользователь сможет подтвердить/изменить при первом входе',

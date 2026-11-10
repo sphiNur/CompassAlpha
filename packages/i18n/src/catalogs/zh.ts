@@ -761,7 +761,7 @@ export const zh = {
   'admin.label.loadingRoles': '加载角色…',
   'admin.label.loadingStores': '加载门店…',
   'admin.field.tgUserId': 'Telegram 用户 ID *',
-  'admin.field.tgUserIdPlaceholder': '例如 6402913074',
+  'admin.field.tgUserIdPlaceholder': '例如 123456789',
   'admin.field.displayName': '显示名称',
   'admin.field.displayNamePlaceholder': '可选 · 用户首次登录时可确认/修改',
   'admin.field.role': '角色',

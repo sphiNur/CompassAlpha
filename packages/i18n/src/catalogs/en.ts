@@ -912,7 +912,7 @@ export const en = {
   'admin.label.loadingRoles': 'Loading roles…',
   'admin.label.loadingStores': 'Loading stores…',
   'admin.field.tgUserId': 'Telegram user ID *',
-  'admin.field.tgUserIdPlaceholder': 'e.g. 6402913074',
+  'admin.field.tgUserIdPlaceholder': 'e.g. 123456789',
   'admin.field.displayName': 'Display name',
   'admin.field.displayNamePlaceholder': 'optional · the user can confirm/change at first sign-in',
   'admin.field.role': 'Role',

@@ -89,7 +89,7 @@ export async function launchSmoke(
 // ---------------------------------------------------------------------------
 
 export const fakeUser = {
-  id: 6402913074,
+  id: 123456789,
   first_name: 'Smoke',
   username: 'smoke',
   language_code: 'en',

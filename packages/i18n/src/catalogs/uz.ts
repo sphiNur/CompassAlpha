@@ -843,7 +843,7 @@ export const uz = {
   'admin.label.loadingRoles': 'Rollar yuklanmoqda…',
   'admin.label.loadingStores': 'Doʻkonlar yuklanmoqda…',
   'admin.field.tgUserId': 'Telegram foydalanuvchi ID *',
-  'admin.field.tgUserIdPlaceholder': 'masalan 6402913074',
+  'admin.field.tgUserIdPlaceholder': 'masalan 123456789',
   'admin.field.displayName': 'Koʻrsatiladigan ism',
   'admin.field.displayNamePlaceholder':
     'ixtiyoriy · foydalanuvchi birinchi kirganda tasdiqlay/oʻzgartiraladi',
