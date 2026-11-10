@@ -19,20 +19,10 @@ import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Db = ReturnType<typeof getDb>;
 type Caller = ReturnType<typeof appRouter.createCaller>;
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 interface Person {
   userId: string;

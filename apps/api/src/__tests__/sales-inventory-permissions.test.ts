@@ -23,6 +23,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -172,17 +173,6 @@ async function memberCaller(
     });
   }
   return callerFor(await sessionOf(fix!.orgId, who), { idempotencyKey });
-}
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
 }
 
 describe('CA-10 sales.record has no users.manage fallback', () => {

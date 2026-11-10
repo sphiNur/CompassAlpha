@@ -100,7 +100,7 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
   test('a failed attempt frees its key so the retry runs', async () => {
     const key = randomUUID();
     failNext = true;
-    await expect(caller(key).slowWrite()).rejects.toThrow();
+    await expect(caller(key).slowWrite()).rejects.toThrow('handler failed');
     const before = runs;
     const ok = await caller(key).slowWrite();
     expect(runs - before).toBe(1);

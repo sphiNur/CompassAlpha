@@ -98,7 +98,9 @@ describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
     const detail = await manager2.order.sessionDetail({ sessionId: draft.sessionId });
     expect((detail as { claimedByMemberId?: string | null }).claimedByMemberId).toBeTruthy();
     // The first claimer can no longer approve; the one who took over can.
-    await expect(manager.order.approve({ sessionId: draft.sessionId })).rejects.toThrow();
+    await expect(manager.order.approve({ sessionId: draft.sessionId })).rejects.toThrow(
+      'order.errors.claimedByOther',
+    );
     await manager2.order.approve({ sessionId: draft.sessionId });
   });
 

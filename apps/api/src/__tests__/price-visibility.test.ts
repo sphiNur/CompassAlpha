@@ -33,19 +33,9 @@ import { callerFor } from './helpers/ctx';
 import { ALL_PERMISSION_KEYS } from '@compass/db/seed-data';
 import { seedRoles } from './helpers/fixtures';
 import { runStream, type RunStream } from './helpers/streams';
+import { errorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 type Fixture = {

@@ -22,6 +22,7 @@ import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedRoles, seedMember } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -34,15 +35,6 @@ interface Fixture {
   staff: Caller;
 }
 let fix: Fixture | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;

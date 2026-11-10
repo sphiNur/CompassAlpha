@@ -85,7 +85,7 @@ describe('jwt: signRefresh / verifyRefresh', () => {
       .setIssuedAt()
       .setExpirationTime('30d')
       .sign(wrongSecret);
-    await expect(verifyRefresh(token)).rejects.toThrow();
+    await expect(verifyRefresh(token)).rejects.toThrow('signature verification failed');
   });
 });
 

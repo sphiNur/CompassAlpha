@@ -26,6 +26,7 @@ import {
   withSystemContext,
 } from '@compass/db';
 import { SHOULD_RUN } from './helpers/pg';
+import { pgErrorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -41,16 +42,6 @@ describe('D3: the database and the code agree on the system reasons', () => {
     expect(listed).toEqual([...SYSTEM_REASONS].sort());
   });
 });
-
-async function errorOf(fn: () => Promise<unknown>): Promise<string | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    const e = err as { message: string; cause?: { message?: string } };
-    return `${e.message} ${e.cause?.message ?? ''}`;
-  }
-}
 
 describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
   const fixtures = () => getDb(undefined, { system: 'maintenance' });
@@ -95,7 +86,7 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
     ).length;
 
   test('D1: the app cannot update, delete or truncate events', async () => {
-    const update = await errorOf(() =>
+    const update = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, (tx) =>
         tx
           .update(s.events)
@@ -103,30 +94,30 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
           .where(eq(s.events.streamId, ids.streamId)),
       ),
     );
-    expect(update).toContain('append-only');
-    const del = await errorOf(() =>
+    expect(update?.message).toContain('append-only');
+    const del = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, (tx) =>
         tx.delete(s.events).where(eq(s.events.streamId, ids.streamId)),
       ),
     );
-    expect(del).toContain('append-only');
-    const truncate = await errorOf(() =>
+    expect(del?.message).toContain('append-only');
+    const truncate = await pgErrorOf(() =>
       withSystemContext(app(), 'maintenance', (tx) =>
         tx.execute(sql`TRUNCATE domain.events CASCADE`),
       ),
     );
-    expect(truncate).toContain('append-only');
+    expect(truncate?.message).toContain('append-only');
     expect(await countEvents()).toBe(3);
   });
 
   test('D1: a purge may delete, still not update', async () => {
-    const update = await errorOf(() =>
+    const update = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, async (tx) => {
         await allowEventPurge(tx);
         await tx.update(s.events).set({ payload: {} }).where(eq(s.events.streamId, ids.streamId));
       }),
     );
-    expect(update).toContain('append-only');
+    expect(update?.message).toContain('append-only');
     await withOrgContext(app(), ids.orgId, async (tx) => {
       await allowEventPurge(tx);
       await tx
@@ -146,11 +137,11 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
       await conn`COMMIT`;
       await conn`BEGIN`;
       await conn`SELECT set_config('app.current_org_id', ${ids.orgId}, true)`;
-      const err = await errorOf(async () => {
+      const err = await pgErrorOf(async () => {
         await conn`DELETE FROM domain.events WHERE stream_id = ${ids.streamId}`;
       });
       await conn`ROLLBACK`;
-      expect(err).toContain('append-only');
+      expect(err?.message).toContain('append-only');
     } finally {
       conn.release();
     }
@@ -171,12 +162,12 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
       actorId: other!.id,
     });
     // Setting it by hand is refused while the user exists.
-    const byHand = await errorOf(() =>
+    const byHand = await pgErrorOf(() =>
       withSystemContext(app(), 'maintenance', (tx) =>
         tx.update(s.events).set({ actorId: null }).where(eq(s.events.streamId, streamId)),
       ),
     );
-    expect(byHand).toContain('append-only');
+    expect(byHand?.message).toContain('append-only');
     await db.delete(s.users).where(eq(s.users.id, other!.id));
     const [row] = await db.select().from(s.events).where(eq(s.events.streamId, streamId));
     expect(row?.actorId).toBeNull();

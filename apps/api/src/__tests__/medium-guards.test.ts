@@ -17,6 +17,7 @@ import { and, eq } from 'drizzle-orm';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -31,15 +32,6 @@ interface Fixture {
   admins: Array<{ memberId: string; bindingId: string }>;
 }
 let fix: Fixture | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;

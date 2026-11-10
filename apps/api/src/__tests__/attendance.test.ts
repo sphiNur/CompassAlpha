@@ -21,6 +21,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedMember } from './helpers/fixtures';
+import { pgErrorOf } from './helpers/errors';
 
 describe('attendance copy', () => {
   test('every attendance error has a sentence in every language', async () => {
@@ -520,21 +521,37 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
   test('punches are never deleted or rewritten', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
+    // A punch of its own, long ago and already voided, so the test needs
+    // no earlier one and no later count sees it.
     const [row] = await db
-      .select({ id: s.attendancePunches.id })
-      .from(s.attendancePunches)
-      .where(eq(s.attendancePunches.memberId, f.staffId))
-      .limit(1);
-    await expect(
-      (async () => db.delete(s.attendancePunches).where(eq(s.attendancePunches.id, row!.id)))(),
-    ).rejects.toThrow();
-    await expect(
-      (async () =>
+      .insert(s.attendancePunches)
+      .values({
+        orgId: f.orgId,
+        storeId: f.storeId,
+        memberId: f.staffId,
+        kind: 'in',
+        punchedAt: new Date('2020-01-06T04:00:00Z'),
+        source: 'manual',
+        reason: 'append-only check',
+        createdByMemberId: f.managerId,
+        voidedAt: new Date('2020-01-06T05:00:00Z'),
+        voidedByMemberId: f.managerId,
+        voidReason: 'append-only check',
+      })
+      .returning({ id: s.attendancePunches.id });
+    const byId = eq(s.attendancePunches.id, row!.id);
+    expect(await pgErrorOf(() => db.delete(s.attendancePunches).where(byId))).toMatchObject({
+      code: 'P0001',
+      message: 'attendance punches are never deleted; void them instead',
+    });
+    expect(
+      await pgErrorOf(() =>
         db
           .update(s.attendancePunches)
           .set({ punchedAt: sql`now() - interval '1 hour'` })
-          .where(eq(s.attendancePunches.id, row!.id)))(),
-    ).rejects.toThrow();
+          .where(byId),
+      ),
+    ).toMatchObject({ code: 'P0001', message: 'an attendance punch can only be voided, once' });
   });
 
   test('copy a week skips clashes', async () => {

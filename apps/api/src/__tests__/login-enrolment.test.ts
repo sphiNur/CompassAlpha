@@ -157,7 +157,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .where(eq(s.refreshTokens.userId, user!.id));
     await expect(
       callerFor(null).auth.refresh({ refreshToken: first.tokens.refreshToken }),
-    ).rejects.toThrow();
+    ).rejects.toThrow('auth.errors.refreshReplayDetected');
 
     const again = await callerFor(null).auth.telegramLogin({ initData });
     expect(again.session.member.memberId).toBe(member!.id);

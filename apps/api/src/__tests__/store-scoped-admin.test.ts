@@ -34,17 +34,7 @@ import {
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext, callerFor } from './helpers/ctx';
-
-// ---------- minimal context factory --------------------------------------
-
-/**
- * A direct tRPC caller can start its next request in the same JavaScript turn.
- * Yield once so postgres-js has recycled a transaction that intentionally
- * rolled back; separate HTTP requests naturally provide this boundary.
- */
-function settleRolledBackTestTransaction(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
+import { codeOf, errorOf, pgErrorOf } from './helpers/errors';
 
 // ---------- one fixture org shared across tests --------------------------
 
@@ -288,14 +278,9 @@ describe('P0 store-manager scope', () => {
       expect(orgAdminMe.stores.map((store) => store.id)).toContain(storeA.id);
       expect(orgAdminMe.stores.map((store) => store.id)).toContain(storeB.id);
 
-      let threw = false;
-      try {
-        await caller.order.todaySession({ storeId: storeB.id });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
+      await expect(caller.order.todaySession({ storeId: storeB.id })).rejects.toThrow(
+        'notAssignedToStore',
+      );
     },
   );
 
@@ -466,17 +451,12 @@ describe('C2 store-scoped admin gates', () => {
     const caller = appRouter.createCaller(ctx);
     // Try to invite into Store B → must be FORBIDDEN.
     const targetTg = String(freshTgId());
-    let threw = false;
-    try {
-      await caller.admin.memberInviteByTgId({
+    await expect(
+      caller.admin.memberInviteByTgId({
         tgUserId: targetTg,
         storeIds: [storeB.id],
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('notAdminOfStore');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('notAdminOfStore');
   });
 
   test.skipIf(!SHOULD_RUN)('manager-of-A cannot grant a role scoped to Store B', async () => {
@@ -490,44 +470,43 @@ describe('C2 store-scoped admin gates', () => {
     await makeMember(targetUser.id);
     const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
-    let threw = false;
-    try {
-      await caller.admin.grantRole({
+    await expect(
+      caller.admin.grantRole({
         userId: targetUser.id,
         roleSlug: 'staff',
         scopeType: 'store',
         scopeId: storeB.id,
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('notAdminOfStore');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('notAdminOfStore');
   });
 
   test.skipIf(!SHOULD_RUN)('store-scoped admin cannot invite an org-tier role', async () => {
     const fx = fix!;
     const storeA = await makeStore(`A-${Math.random()}`);
+    // A store the manager does not run. The invite counts an admin of every
+    // active store as the org's admin, and run alone this suite's org may
+    // have no other store yet.
+    await makeStore(`B-${Math.random()}`);
     const mgrUser = await makeUser('A-Manager');
     const mgrMember = await makeMember(mgrUser.id);
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
     const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
-    // The actor's role doesn't even include `users.manage` (manager is
-    // rank 30, doesn't carry it), so this throws on the requireAdmin
-    // gate before reaching the org-admin-role check. Either error is
-    // acceptable — both close the same hole.
-    let threw = false;
-    try {
-      await caller.admin.memberInviteByTgId({
-        tgUserId: String(freshTgId()),
-        roleSlug: 'admin',
-        storeIds: [storeA.id],
-      });
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(true);
+    // The admin role is org-tier: only an admin of every store may invite
+    // into it. (Were storeA the only store, the grant check would refuse
+    // next: a store manager holds no global org.admin.)
+    expect(
+      await errorOf(() =>
+        caller.admin.memberInviteByTgId({
+          tgUserId: String(freshTgId()),
+          roleSlug: 'admin',
+          storeIds: [storeA.id],
+        }),
+      ),
+    ).toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
+    });
   });
 });
 
@@ -560,19 +539,14 @@ describe('C1 per-store rank gate', () => {
       await makeMember(targetUser.id);
       const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
-      let threw = false;
-      try {
-        await caller.admin.grantRole({
+      await expect(
+        caller.admin.grantRole({
           userId: targetUser.id,
           roleSlug: 'manager', // rank 30
           scopeType: 'store',
           scopeId: storeA.id,
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toMatch(/cannotGrantEqualOrHigher/);
-      }
-      expect(threw).toBe(true);
+        }),
+      ).rejects.toThrow(/cannotGrantEqualOrHigher/);
     },
   );
 });
@@ -757,19 +731,14 @@ describe('D2 memberTransferStore', () => {
     const targetUser = await makeUser('Self-Transfer');
     const targetMember = await makeMember(targetUser.id);
     const caller = appRouter.createCaller(fx.superAdminCtx);
-    let threw = false;
-    try {
-      await caller.admin.memberTransferStore({
+    await expect(
+      caller.admin.memberTransferStore({
         memberId: targetMember,
         fromStoreId: storeA.id,
         toStoreId: storeA.id,
         mirrorRoles: true,
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('transferSameStore');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('transferSameStore');
   });
 });
 
@@ -807,17 +776,12 @@ describe('D3 per-store default role', () => {
     const fx = fix!;
     const storeA = await makeStore(`A-${Math.random()}`);
     const caller = appRouter.createCaller(fx.superAdminCtx);
-    let threw = false;
-    try {
-      await caller.admin.storeUpdate({
+    await expect(
+      caller.admin.storeUpdate({
         storeId: storeA.id,
         defaultRoleSlug: 'admin',
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('defaultRoleMustBeStoreTier');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('defaultRoleMustBeStoreTier');
   });
 });
 
@@ -1052,18 +1016,20 @@ describe('RE-ADM-1 role bindings are unique', () => {
     expect(again.granted).toBe(false);
     expect(again.bindingId).toBe(rows[0]!.id);
     // The index refuses a raw duplicate, global ones included (NULL scope).
-    await expect(
-      (async () => {
-        await db.insert(s.memberRoleBindings).values({
-          memberId: m,
-          roleId: fx.staffRoleId,
-          scopeType: 'store',
-          scopeId: store.id,
-        });
-      })(),
-    ).rejects.toThrow();
-    await bindRole(m, fx.managerRoleId, { type: 'global' }).catch(() => {});
-    await expect(bindRole(m, fx.managerRoleId, { type: 'global' })).rejects.toThrow();
+    const duplicate = await pgErrorOf(() =>
+      db.insert(s.memberRoleBindings).values({
+        memberId: m,
+        roleId: fx.staffRoleId,
+        scopeType: 'store',
+        scopeId: store.id,
+      }),
+    );
+    expect(duplicate).toMatchObject({ code: '23505', constraint: 'mrb_binding_unique' });
+    await bindRole(m, fx.managerRoleId, { type: 'global' });
+    expect(await pgErrorOf(() => bindRole(m, fx.managerRoleId, { type: 'global' }))).toMatchObject({
+      code: '23505',
+      constraint: 'mrb_binding_unique',
+    });
   });
 });
 
@@ -1213,14 +1179,7 @@ describe('M3.1 sales router store-scope', () => {
     expect(Array.isArray(own)).toBe(true);
 
     // NEGATIVE: foreign store throws notAssignedToStore.
-    let threw = false;
-    try {
-      await caller.sales.list({ storeId: storeB.id });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('notAssignedToStore');
-    }
-    expect(threw).toBe(true);
+    await expect(caller.sales.list({ storeId: storeB.id })).rejects.toThrow('notAssignedToStore');
   });
 
   test.skipIf(!SHOULD_RUN)(
@@ -1260,21 +1219,12 @@ describe('M3.1 sales router store-scope', () => {
       // fire BEFORE the dish-existence check, so the call must throw
       // notAssignedToStore rather than dishNotFound.
       const fakeDish = '00000000-0000-0000-0000-000000000000';
-      let threw = false;
-      try {
-        await caller.sales.record({
-          storeId: storeB.id,
-          dishId: fakeDish,
-          qty: '1',
-        });
-      } catch (err) {
-        threw = true;
-        // Critical: must be the store gate, NOT a downstream error.
-        // If the gate didn't fire, we'd see dishNotFound or permission
-        // denied — both would mean the leak still exists.
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
+      // Critical: must be the store gate, NOT a downstream error.
+      // If the gate didn't fire, we'd see dishNotFound or permission
+      // denied — both would mean the leak still exists.
+      await expect(
+        caller.sales.record({ storeId: storeB.id, dishId: fakeDish, qty: '1' }),
+      ).rejects.toThrow('notAssignedToStore');
     },
   );
 });
@@ -1319,17 +1269,12 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
       // org-wide write gate.
       const ctx = testContext(session);
       const caller = appRouter.createCaller(ctx);
-      let threw = false;
-      try {
-        await caller.dishes.create({
+      await expect(
+        caller.dishes.create({
           names: { en: 'Forbidden Pasta' },
           ingredients: [],
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('cannotManage');
-      }
-      expect(threw).toBe(true);
+        }),
+      ).rejects.toThrow('cannotManage');
     },
   );
 });
@@ -1393,14 +1338,9 @@ describe('M3.7 inventory cannot be read for a foreign store', () => {
 
       // FOREIGN store: must throw notAssignedToStore. Pre-M3.7 this
       // returned Store B's full on-hand list.
-      let threw = false;
-      try {
-        await caller.inventory.levels({ storeId: storeB.id });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
+      await expect(caller.inventory.levels({ storeId: storeB.id })).rejects.toThrow(
+        'notAssignedToStore',
+      );
     },
   );
 
@@ -1437,18 +1377,13 @@ describe('M3.7 inventory cannot be read for a foreign store', () => {
       // Real SKU UUID doesn't need to exist — the store-gate fires
       // before the SKU is looked up by the stocktake handler.
       const fakeSku = '00000000-0000-0000-0000-000000000000';
-      let threw = false;
-      try {
-        await caller.inventory.stocktake({
+      await expect(
+        caller.inventory.stocktake({
           storeId: storeB.id,
           skuId: fakeSku,
           target: '0',
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
+        }),
+      ).rejects.toThrow('notAssignedToStore');
     },
   );
 });
@@ -1473,18 +1408,13 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
       const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
-      let threw = false;
-      try {
-        await caller.report.purchaseLines({
+      await expect(
+        caller.report.purchaseLines({
           startDate: '2026-01-01',
           endDate: '2026-12-31',
           storeId: storeB.id,
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
+        }),
+      ).rejects.toThrow('notAssignedToStore');
 
       // Sanity: passing OWN storeId returns a well-formed list (likely
       // empty, but no throw).
@@ -1636,9 +1566,8 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
     const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
-    let threw = false;
-    try {
-      await caller.admin.skuCreate({
+    await expect(
+      caller.admin.skuCreate({
         names: {
           en: 'Forbidden SKU',
           uz: 'Forbidden SKU',
@@ -1652,12 +1581,8 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
         // exercises the permission boundary as intended.
         step: '0.5',
         sortIndex: 999,
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('missingPermission');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('missingPermission');
   });
 
   test.skipIf(!SHOULD_RUN)('manager cannot roleCreate (role catalog write)', async () => {
@@ -1668,19 +1593,14 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
     const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
-    let threw = false;
-    try {
-      await caller.admin.roleCreate({
+    await expect(
+      caller.admin.roleCreate({
         slug: `mgr-attempt-${Date.now()}`,
         name: 'Manager-spawned role',
         rank: 25,
         permissionKeys: [],
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('missingPermission');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('missingPermission');
   });
 
   test.skipIf(!SHOULD_RUN)('manager cannot supplierCreate (org-wide supplier list)', async () => {
@@ -1691,16 +1611,11 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
     const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
-    let threw = false;
-    try {
-      await caller.admin.supplierCreate({
+    await expect(
+      caller.admin.supplierCreate({
         name: 'Forbidden Supplier',
-      });
-    } catch (err) {
-      threw = true;
-      expect((err as Error).message).toContain('missingPermission');
-    }
-    expect(threw).toBe(true);
+      }),
+    ).rejects.toThrow('missingPermission');
   });
 
   test.skipIf(!SHOULD_RUN)(
@@ -1725,17 +1640,12 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
       // Editing FOREIGN store (B) must throw notAdminOfStore — the C2
       // gate added in M3.3 catches this; pre-M3.3 a manager-of-A could
       // rename Store B since storeUpdate had no per-store check.
-      let threw = false;
-      try {
-        await caller.admin.storeUpdate({
+      await expect(
+        caller.admin.storeUpdate({
           storeId: storeB.id,
           name: 'Hijacked B',
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAdminOfStore');
-      }
-      expect(threw).toBe(true);
+        }),
+      ).rejects.toThrow('notAdminOfStore');
     },
   );
 });
@@ -1854,19 +1764,11 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const ctx = testContext(await sessionFor(buyerMember, buyer.id));
       const caller = appRouter.createCaller(ctx);
 
-      let threw = false;
-      try {
-        await caller.run.create({
-          date: todayIso,
-          sessionIds: [foreignSession!.id],
-        });
-      } catch (err) {
-        threw = true;
-        // Same precise check as the sales test: must throw the
-        // store gate, NOT some downstream domain error.
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
+      // Same precise check as the sales test: must throw the
+      // store gate, NOT some downstream domain error.
+      await expect(
+        caller.run.create({ date: todayIso, sessionIds: [foreignSession!.id] }),
+      ).rejects.toThrow('notAssignedToStore');
     },
   );
 
@@ -2012,8 +1914,9 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       });
 
       const caller = callerFor(await sessionFor(buyerMember, buyer.id));
-      await expect(caller.run.startPurchase({ runId })).rejects.toThrow('notVisible');
-      await settleRolledBackTestTransaction();
+      expect((await errorOf(() => caller.run.startPurchase({ runId })))?.message).toContain(
+        'notVisible',
+      );
       const started = await db
         .select({ id: s.events.id })
         .from(s.events)
@@ -2505,21 +2408,13 @@ describe('purchase history permission scope', () => {
       expect(JSON.stringify(liveDetail)).not.toContain(hiddenSupplier!.id);
       expect(JSON.stringify(liveDetail)).not.toContain(`https://hidden.example/${suffix}.jpg`);
 
-      let scopedChangeDateError: unknown;
-      try {
-        await caller.run.changeDate({ runId, runDate: '2042-08-06' });
-      } catch (error) {
-        scopedChangeDateError = error;
-      }
-      expect((scopedChangeDateError as Error).message).toContain('cannotAmend');
-      await settleRolledBackTestTransaction();
-      let scopedReopenError: unknown;
-      try {
-        await caller.run.reopen({ runId, reason: 'scoped role must not reopen' });
-      } catch (error) {
-        scopedReopenError = error;
-      }
-      expect((scopedReopenError as Error).message).toContain('cannotAmend');
+      expect(
+        (await errorOf(() => caller.run.changeDate({ runId, runDate: '2042-08-06' })))?.message,
+      ).toContain('cannotAmend');
+      expect(
+        (await errorOf(() => caller.run.reopen({ runId, reason: 'scoped role must not reopen' })))
+          ?.message,
+      ).toContain('cannotAmend');
       const globalDeniedUser = await makeUser(`History globally denied ${suffix}`);
       const globalDeniedMember = await makeMember(globalDeniedUser.id);
       await bindRole(globalDeniedMember, fx.superAdminRoleId, { type: 'global' });
@@ -2572,21 +2467,18 @@ describe('purchase history permission scope', () => {
       // or even cancel the amending run.
       await superAdminCaller.run.reopen({ runId, reason: 'exercise amendment gate' });
 
-      await expect(
-        caller.run.markUnavailable({
-          runId,
-          skuId: skuA!.id,
-          note: 'scoped role must not edit an amended run',
-        }),
-      ).rejects.toThrow('cannotAmend');
-
-      await settleRolledBackTestTransaction();
-
-      await expect(caller.run.refinalize({ runId })).rejects.toThrow('cannotAmend');
-
-      await settleRolledBackTestTransaction();
-
-      await expect(caller.run.cancel({ runId, reason: '' })).rejects.toThrow('cannotAmend');
+      for (const attempt of [
+        () =>
+          caller.run.markUnavailable({
+            runId,
+            skuId: skuA!.id,
+            note: 'scoped role must not edit an amended run',
+          }),
+        () => caller.run.refinalize({ runId }),
+        () => caller.run.cancel({ runId, reason: '' }),
+      ]) {
+        expect((await errorOf(attempt))?.message).toContain('cannotAmend');
+      }
 
       const staffUser = await makeUser(`History staff ${suffix}`);
       const staffMember = await makeMember(staffUser.id);
@@ -2821,15 +2713,8 @@ describe('memberSetStatus is rank- and store-gated', () => {
   }
 
   async function expectForbidden(run: () => Promise<unknown>, memberId: string): Promise<void> {
-    let code: string | undefined;
-    try {
-      await run();
-    } catch (err) {
-      code = (err as { code?: string }).code;
-    }
-    expect(code).toBe('FORBIDDEN');
+    expect(await codeOf(run)).toBe('FORBIDDEN');
     expect(await statusOf(memberId)).toBe('active');
-    await settleRolledBackTestTransaction();
   }
 
   test.skipIf(!SHOULD_RUN)('store manager cannot suspend a super admin', async () => {
@@ -2951,16 +2836,6 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
     return memberId;
   }
 
-  async function codeOf(run: () => Promise<unknown>): Promise<string | undefined> {
-    try {
-      await run();
-      return undefined;
-    } catch (err) {
-      await settleRolledBackTestTransaction();
-      return (err as { code?: string }).code;
-    }
-  }
-
   test.skipIf(!SHOULD_RUN)(
     'store manager can allow a key they hold but not one they lack',
     async () => {
@@ -2982,7 +2857,7 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
         await codeOf(() =>
           manager.admin.memberPermissionSet({ ...base, permissionKey: 'order.approve' }),
         ),
-      ).toBeUndefined();
+      ).toBeNull();
       // Deny only removes authority, so the rank gate alone covers it.
       expect(
         await codeOf(() =>
@@ -2992,7 +2867,7 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
             permissionKey: 'run.amend',
           }),
         ),
-      ).toBeUndefined();
+      ).toBeNull();
     },
   );
 
@@ -3012,12 +2887,12 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
         await codeOf(() =>
           admin.admin.memberPermissionSet({ ...base, permissionKey: 'prices.view' }),
         ),
-      ).toBeUndefined();
+      ).toBeNull();
       const superAdmin = appRouter.createCaller(fix!.superAdminCtx);
       for (const permissionKey of ['org.admin', 'run.amend']) {
         expect(
           await codeOf(() => superAdmin.admin.memberPermissionSet({ ...base, permissionKey })),
-        ).toBeUndefined();
+        ).toBeNull();
       }
     },
   );
@@ -3048,10 +2923,9 @@ describe('expired role bindings carry no admin authority', () => {
         .select({ id: s.memberRoleBindings.id })
         .from(s.memberRoleBindings)
         .where(eq(s.memberRoleBindings.memberId, peer));
-      await expect(caller.admin.revokeRole({ bindingId: peerBinding!.id })).rejects.toMatchObject({
-        code: 'FORBIDDEN',
-      });
-      await settleRolledBackTestTransaction();
+      expect(await codeOf(() => caller.admin.revokeRole({ bindingId: peerBinding!.id }))).toBe(
+        'FORBIDDEN',
+      );
 
       // Scope: the lapsed global binding does not open other stores.
       const storeB = await makeStore(`B-${Math.random()}`);
@@ -3145,16 +3019,6 @@ describe('2026-10-21 audit admin gates', () => {
         .onConflictDoNothing();
     }
     return { memberId, userId: user.id };
-  }
-
-  async function codeOf(run: () => Promise<unknown>): Promise<string | undefined> {
-    try {
-      await run();
-    } catch (err) {
-      await settleRolledBackTestTransaction();
-      return (err as { code?: string }).code;
-    }
-    return undefined;
   }
 
   async function nameOf(userId: string): Promise<string | undefined> {
@@ -3307,14 +3171,9 @@ describe('2026-10-21 audit admin gates', () => {
     const slug = `dup-${Math.random().toString(36).slice(2, 8)}`;
     const names = { uz: 'a', ru: 'a', en: 'a', zh: 'a' };
     await admin.admin.categoryCreate({ slug, names });
-    let caught: { code?: string; message?: string } | undefined;
-    try {
-      await admin.admin.categoryCreate({ slug, names });
-    } catch (err) {
-      caught = err as { code?: string; message?: string };
-      await settleRolledBackTestTransaction();
-    }
-    expect(caught?.code).toBe('CONFLICT');
-    expect(caught?.message).toBe('admin.errors.slugTaken');
+    expect(await errorOf(() => admin.admin.categoryCreate({ slug, names }))).toMatchObject({
+      code: 'CONFLICT',
+      message: 'admin.errors.slugTaken',
+    });
   });
 });

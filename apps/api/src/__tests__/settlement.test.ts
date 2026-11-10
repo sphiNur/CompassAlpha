@@ -10,6 +10,7 @@ import { normalizeSettlementMoney, SETTLEMENT_REASON_KEYS } from '../trpc/router
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { errorOf } from './helpers/errors';
 
 /**
  * Business dates for these tests, counted back from ten days ago: new
@@ -487,13 +488,10 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     );
     expect(Object.keys(employee ?? {})).toEqual(['memberId', 'displayName', 'roles']);
 
-    let error: unknown;
-    try {
-      await fx.cashierCaller.settlement.wageRoster({ storeId: fx.foreignStoreId });
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('FORBIDDEN');
+    const error = await errorOf(() =>
+      fx.cashierCaller.settlement.wageRoster({ storeId: fx.foreignStoreId }),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
   });
 
   test('cashiers with settlement.record can create and change operating expenses', async () => {
@@ -544,20 +542,17 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('a manager-rank member without effective settlement.record cannot save operating expenses', async () => {
     const fx = fixture!;
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const error = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.assignedNoPermissionStoreId, dayBack(9), 0, {
           wagesPaid: '0',
           wagesAccrued: '0',
           wageItems: [],
         }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('FORBIDDEN');
-    expect((error as Error).message).toBe('auth.errors.missingPermission');
+      ),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
+    expect(error?.message).toBe('auth.errors.missingPermission');
     const raw = await getDb(undefined, {
       system: 'maintenance',
     }).query.storeDailySettlements.findFirst({
@@ -572,9 +567,8 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('rejects a forged wage recipient and resolves the selected employee name server-side', async () => {
     const fx = fixture!;
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const error = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.ownStoreId, dayBack(11), 0, {
           operatingExpenses: '0',
           operatingExpenseItems: [],
@@ -590,12 +584,10 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
             },
           ],
         }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((error as { message?: string }).message).toBe('settlement.errors.employeeNotInStore');
+      ),
+    );
+    expect(error?.code).toBe('BAD_REQUEST');
+    expect(error?.message).toBe('settlement.errors.employeeNotInStore');
 
     const saved = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, dayBack(12), 0, {
@@ -768,16 +760,11 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     const fx = fixture!;
     const date = dayBack(5);
 
-    let mismatch: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.ownStoreId, date, 0, { operatingExpenses: '11' }),
-      );
-    } catch (error) {
-      mismatch = error;
-    }
-    expect((mismatch as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((mismatch as { message?: string }).message).toBe('settlement.errors.totalMismatch');
+    const mismatch = await errorOf(() =>
+      fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0, { operatingExpenses: '11' })),
+    );
+    expect(mismatch?.code).toBe('BAD_REQUEST');
+    expect(mismatch?.message).toBe('settlement.errors.totalMismatch');
     expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
@@ -794,18 +781,15 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       },
     ];
 
-    let missingReason: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const missingReason = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.ownStoreId, date, created.version, {
           operatingExpenseItems: correctedExpenseItems,
         }),
-      );
-    } catch (error) {
-      missingReason = error;
-    }
-    expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((missingReason as { message?: string }).message).toBe('settlement.errors.correctionReasonRequired');
+      ),
+    );
+    expect(missingReason?.code).toBe('BAD_REQUEST');
+    expect(missingReason?.message).toBe('settlement.errors.correctionReasonRequired');
 
     const corrected = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, date, created.version, {
@@ -912,14 +896,11 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     delete input.operatingExpenseItems;
     delete input.wageItems;
 
-    let missingDetails: unknown;
-    try {
-      await fx.caller.settlement.save(input as SettlementSaveInput);
-    } catch (error) {
-      missingDetails = error;
-    }
-    expect((missingDetails as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((missingDetails as { message?: string }).message).toBe('settlement.errors.invalidDetails');
+    const missingDetails = await errorOf(() =>
+      fx.caller.settlement.save(input as SettlementSaveInput),
+    );
+    expect(missingDetails?.code).toBe('BAD_REQUEST');
+    expect(missingDetails?.message).toBe('settlement.errors.invalidDetails');
     expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(7), 0));
@@ -998,9 +979,8 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       })
       .returning();
 
-    let error: unknown;
-    try {
-      await fx.cashierCaller.settlement.save(
+    const error = await errorOf(() =>
+      fx.cashierCaller.settlement.save(
         saveInput(fx.ownStoreId, date, legacy!.version, {
           operatingExpenses: '0',
           operatingExpenseItems: [],
@@ -1009,15 +989,13 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
           wageItems: [],
           correctionReason: 'Attempted to clear historical expense',
         }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
+      ),
+    );
     // The rank gate is gone; the historical-total immutability rule still
     // applies to every recorder.
-    expect((error as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((error as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
-    expect((error as { cause?: { reason?: string } }).cause?.reason).toBe(
+    expect(error?.code).toBe('BAD_REQUEST');
+    expect(error?.message).toBe('settlement.errors.historicalTotalImmutable');
+    expect((error?.cause as { reason?: string } | undefined)?.reason).toBe(
       'historical-total-immutable',
     );
 
@@ -1045,9 +1023,8 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       })
       .returning();
 
-    let expenseError: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const expenseError = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.ownStoreId, date, legacy!.version, {
           operatingExpenses: '4',
           operatingExpenseItems: [
@@ -1059,12 +1036,10 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
           wageItems: [],
           correctionReason: 'Attempted to itemize a historical total',
         }),
-      );
-    } catch (caught) {
-      expenseError = caught;
-    }
-    expect((expenseError as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((expenseError as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
+      ),
+    );
+    expect(expenseError?.code).toBe('BAD_REQUEST');
+    expect(expenseError?.message).toBe('settlement.errors.historicalTotalImmutable');
 
     const wageInput = saveInput(fx.ownStoreId, date, legacy!.version, {
       operatingExpenses: '3',
@@ -1082,14 +1057,11 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     }) as Record<string, unknown>;
     delete wageInput.operatingExpenseItems;
 
-    let wageError: unknown;
-    try {
-      await fx.caller.settlement.save(wageInput as SettlementSaveInput);
-    } catch (caught) {
-      wageError = caught;
-    }
-    expect((wageError as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((wageError as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
+    const wageError = await errorOf(() =>
+      fx.caller.settlement.save(wageInput as SettlementSaveInput),
+    );
+    expect(wageError?.code).toBe('BAD_REQUEST');
+    expect(wageError?.message).toBe('settlement.errors.historicalTotalImmutable');
 
     const raw = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlements.findFirst({
       where: (row, { eq: eq2 }) => eq2(row.id, legacy!.id),
@@ -1110,16 +1082,11 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     );
     expect(noOp.version).toBe(1);
 
-    let missingReason: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.ownStoreId, dayBack(2), 1, { onlineRevenue: '101' }),
-      );
-    } catch (error) {
-      missingReason = error;
-    }
-    expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((missingReason as { message?: string }).message).toBe('settlement.errors.correctionReasonRequired');
+    const missingReason = await errorOf(() =>
+      fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(2), 1, { onlineRevenue: '101' })),
+    );
+    expect(missingReason?.code).toBe('BAD_REQUEST');
+    expect(missingReason?.message).toBe('settlement.errors.correctionReasonRequired');
 
     const updated = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, dayBack(2), 1, {
@@ -1130,18 +1097,15 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(updated.version).toBe(2);
     expect(updated.onlineRevenue).toBe('101.00');
 
-    let stale: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const stale = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.ownStoreId, dayBack(2), 1, {
           onlineRevenue: '102',
           correctionReason: 'Stale edit',
         }),
-      );
-    } catch (error) {
-      stale = error;
-    }
-    expect((stale as { code?: string }).code).toBe('CONFLICT');
+      ),
+    );
+    expect(stale?.code).toBe('CONFLICT');
   });
 
   test('rejects get, recent, and save for a store outside the actor scope', async () => {
@@ -1152,29 +1116,21 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       () => fx.caller.settlement.recent({ storeId: fx.foreignStoreId }),
       () => fx.caller.settlement.save(saveInput(fx.foreignStoreId, dayBack(3), 0)),
     ]) {
-      let error: unknown;
-      try {
-        await call();
-      } catch (caught) {
-        error = caught;
-      }
-      expect((error as { code?: string }).code).toBe('FORBIDDEN');
-      expect((error as Error).message).toContain('notAssignedToStore');
+      const error = await errorOf(() => call());
+      expect(error?.code).toBe('FORBIDDEN');
+      expect(error?.message).toContain('notAssignedToStore');
     }
   });
 
   test('rejects an assigned store where settlement.record is not effective', async () => {
     const fx = fixture!;
-    let error: unknown;
-    try {
-      await fx.caller.settlement.businessDate({
+    const error = await errorOf(() =>
+      fx.caller.settlement.businessDate({
         storeId: fx.assignedNoPermissionStoreId,
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('FORBIDDEN');
-    expect((error as Error).message).toContain('missingPermission');
+      }),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
+    expect(error?.message).toContain('missingPermission');
   });
 
   test('keeps archived-store history readable but blocks saves', async () => {
@@ -1207,25 +1163,17 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       }),
     ]);
 
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(saveInput(fx.inactiveStoreId, dayBack(3), 0));
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('PRECONDITION_FAILED');
+    const error = await errorOf(() =>
+      fx.caller.settlement.save(saveInput(fx.inactiveStoreId, dayBack(3), 0)),
+    );
+    expect(error?.code).toBe('PRECONDITION_FAILED');
   });
 
   test('CLS-14: a new close more than 90 days back is refused', async () => {
     const fx = fixture!;
     const old = dayBack(95);
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(saveInput(fx.ownStoreId, old, 0));
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { message?: string }).message).toBe('settlement.errors.dateTooOld');
+    const error = await errorOf(() => fx.caller.settlement.save(saveInput(fx.ownStoreId, old, 0)));
+    expect(error?.message).toBe('settlement.errors.dateTooOld');
     const recent = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(60), 0));
     expect(recent.version).toBe(1);
   });

@@ -121,7 +121,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
   test('a source the caller does not administer is refused', async () => {
     await expect(
       callerFor(session).admin.catalogImport({ sourceOrgId: orgC, includeSuppliers: true }),
-    ).rejects.toThrow();
+    ).rejects.toThrow('auth.errors.missingPermission');
   });
 
   test('preview, import, and a second import that adds nothing', async () => {

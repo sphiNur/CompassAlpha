@@ -145,7 +145,9 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     // takes the whole family down with it.
     const next = await refresh(first.tokens.refreshToken);
     await expect(refresh(tokens.refreshToken)).rejects.toThrow('auth.errors.refreshReplayDetected');
-    await expect(refresh(next.tokens.refreshToken)).rejects.toThrow();
+    await expect(refresh(next.tokens.refreshToken)).rejects.toThrow(
+      'auth.errors.refreshReplayDetected',
+    );
   });
 
   test('AUTH-12: concurrent refreshes with one token all succeed with the same successor', async () => {
