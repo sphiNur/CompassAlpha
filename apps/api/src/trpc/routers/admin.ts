@@ -37,7 +37,9 @@ import {
   adminStoresOf,
   effectiveGlobalPermissions,
   effectivePermissionsForStore,
+  flatEffectivePermissions,
   loadScopedPermissions,
+  permissionsByScope,
   type AdminScope,
 } from '../../services/storeScope';
 import {
@@ -3378,11 +3380,15 @@ export const adminRouter = router({
   /**
    * Read the role-derived baseline + the override layer for one member.
    * Returns:
-   *   roleKeys     — union of the member's role permissions
+   *   byScope      — per scope (ADM1-05): `global`, and each store a
+   *                  binding or override names (`stores[id]`; any other
+   *                  store is as `global`), its role keys and its
+   *                  effective keys after overrides
    *   overrides    — explicit per-member rows (allow + deny + scope)
-   *   effective    — final set after layering overrides on roleKeys
+   *   roleKeys     — union of the member's role permissions
+   *   effective    — keys effective in some scope (the session's set)
    *
-   * UI shows roleKeys as a grayed-out "from role" badge and
+   * UI shows the tab's role keys as a grayed-out "from role" badge and
    * overrides as the toggleable surface.
    */
   memberPermissionsList: authedProcedure
@@ -3410,31 +3416,12 @@ export const adminRouter = router({
         }
         const scopeVisible = (scopeType: string, scopeId: string | null) =>
           !scope || isSelf || scopeType !== 'store' || (!!scopeId && scope.has(scopeId));
-        // Role-derived perms (across all visible bindings).
-        const bindings = (
-          await tx
-            .select({
-              roleId: s.memberRoleBindings.roleId,
-              scopeType: s.memberRoleBindings.scopeType,
-              scopeId: s.memberRoleBindings.scopeId,
-            })
-            .from(s.memberRoleBindings)
-            // ADM1-04: a lapsed role shows no keys "from role".
-            .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()))
-        ).filter((b) => scopeVisible(b.scopeType, b.scopeId));
-        const rolePerms =
-          bindings.length > 0
-            ? await tx
-                .select({ key: s.rolePermissions.permissionKey })
-                .from(s.rolePermissions)
-                .where(
-                  inArray(
-                    s.rolePermissions.roleId,
-                    bindings.map((b) => b.roleId),
-                  ),
-                )
-            : [];
-        const roleKeys = [...new Set(rolePerms.map((r) => r.key))];
+        // Role-derived keys, each with the scope of its binding (live and
+        // visible ones; ADM1-04: a lapsed role shows nothing "from role").
+        const grants = (await loadScopedPermissions(tx, member.id)).grants.filter((g) =>
+          scopeVisible(g.scopeType, g.scopeId),
+        );
+        const roleKeys = [...new Set(grants.map((g) => g.key))];
         // Active overrides only (non-expired).
         const rawOverrides = await tx
           .select()
@@ -3452,18 +3439,20 @@ export const adminRouter = router({
             scopeId: o.scopeId,
             expiresAt: o.expiresAt?.toISOString() ?? null,
           }));
-        const effective = new Set(roleKeys);
-        for (const o of overrides) {
-          if (o.effect === 'allow') effective.add(o.permissionKey);
-        }
-        for (const o of overrides) {
-          if (o.effect === 'deny') effective.delete(o.permissionKey);
-        }
+        // ADM1-05: resolved per scope, as every permission check does; a
+        // store-scoped deny used to remove its key everywhere.
+        const scoped = overrides.map((o) => ({
+          key: o.permissionKey,
+          effect: o.effect,
+          scopeType: o.scopeType,
+          scopeId: o.scopeId,
+        }));
         return {
           memberId: member.id,
           roleKeys,
           overrides,
-          effective: [...effective].sort(),
+          effective: [...flatEffectivePermissions(grants, scoped)].sort(),
+          byScope: permissionsByScope(grants, scoped),
         };
       });
     }),

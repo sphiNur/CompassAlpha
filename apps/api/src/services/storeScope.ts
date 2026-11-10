@@ -489,6 +489,35 @@ function scopeResolver(
   return { stores, resolve };
 }
 
+/** What a role gives in one scope, and what holds there after overrides. */
+export interface ScopeKeys {
+  roleKeys: string[];
+  effective: string[];
+}
+
+/**
+ * Review ADM1-05 (2026-11-10): a member's keys per scope, for the
+ * permissions screen: the organisation, and each store the rows name (a
+ * store no row names is the organisation's). It used to show one union
+ * of every binding on every tab, so a manager of A who is staff in B read
+ * "from role" for order.approve on B's tab, and a deny in one store
+ * counted everywhere.
+ */
+export function permissionsByScope(
+  grants: readonly ScopedPermission[],
+  overrides: readonly (ScopedPermission & { effect: string })[],
+): { global: ScopeKeys; stores: Record<string, ScopeKeys> } {
+  const fromRoles = scopeResolver(grants, []);
+  const withOverrides = scopeResolver(grants, overrides);
+  const at = (storeId: string | null): ScopeKeys => ({
+    roleKeys: [...fromRoles.resolve(storeId)].sort(),
+    effective: [...withOverrides.resolve(storeId)].sort(),
+  });
+  const stores: Record<string, ScopeKeys> = {};
+  for (const storeId of withOverrides.stores) stores[storeId] = at(storeId);
+  return { global: at(null), stores };
+}
+
 /**
  * The keys that give authority over people. `users.invite`, listed with
  * them in the three old copies, was never a key of the catalog.
