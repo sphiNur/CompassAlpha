@@ -1,8 +1,10 @@
 /**
  * Every tracked text file is valid UTF-8 and holds no U+FFFD (review,
- * 2026-11-10). Five code comments had carried "�?" since the first commit:
- * an em dash whose last byte had become "?", later rewritten as the
- * replacement character. Nobody reading them could tell it was a dash.
+ * 2026-11-10). Five code comments had carried U+FFFD followed by "?" since
+ * the first commit: an em dash whose last byte had become "?", later
+ * rewritten as the replacement character. Nobody reading them could tell
+ * it was a dash. This file names the character only as an escape, so it
+ * passes its own check.
  */
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
@@ -13,6 +15,8 @@ const ROOT = join(import.meta.dir, '..', '..');
 
 /** Model files and other binaries; anything else with a NUL byte is skipped too. */
 const BINARY = /\.(onnx|task|png|jpe?g|gif|webp|ico|woff2?|ttf|otf|pdf|zip|gz|tgz|wasm)$/i;
+
+const REPLACEMENT = String.fromCharCode(0xfffd);
 
 /** Files that contain the replacement character on purpose. */
 const ALLOWED = new Set([
@@ -47,7 +51,7 @@ describe('tracked text files', () => {
       }
       if (ALLOWED.has(file)) continue;
       text.split('\n').forEach((line, i) => {
-        if (line.includes('�')) problems.push(`${file}:${i + 1}`);
+        if (line.includes(REPLACEMENT)) problems.push(`${file}:${i + 1}`);
       });
     }
     expect(problems).toEqual([]);
