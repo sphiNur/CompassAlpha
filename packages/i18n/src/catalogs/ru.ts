@@ -1285,6 +1285,8 @@ export const ru = {
   'run.preview.coverage': 'С ценой {known}/{total} · не менее {money}',
   'run.preview.noSupplierCount': 'Без прилавка: {n}',
   'run.preview.filterMatch': 'Показано {n} из {total}',
+  'run.share.line': '{name}: {qty}',
+  'run.share.heading': '{label}:',
   'run.price.fillIn': 'Указать цену',
   'run.offline.needNetworkToDeliver': 'Для начала доставки нужна сеть',
   'run.offline.waitForSync':

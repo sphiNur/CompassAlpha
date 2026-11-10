@@ -36,6 +36,15 @@ describe('groupStoreBySupplier', () => {
     expect(groups[2]!.items.map((item) => item.id)).toEqual(['4', '5']);
   });
 
+  it('sorts stalls in the UI language (RUNWEB2-30)', () => {
+    const input = store([
+      line({ id: '1', supplierId: 't', supplierName: '土豆摊' }),
+      line({ id: '2', supplierId: 'h', supplierName: '胡家摊' }),
+    ]);
+    const groups = groupStoreBySupplier(input, '未分配', 'zh');
+    expect(groups.map((group) => group.supplierName)).toEqual(['胡家摊', '土豆摊']);
+  });
+
   it('does not mutate the source store or its item order', () => {
     const input = store([
       line({ id: '1', supplierId: 'b', supplierName: 'B' }),

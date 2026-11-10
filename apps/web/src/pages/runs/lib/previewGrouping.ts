@@ -19,6 +19,8 @@ export type PreviewStoreSupplierGroup = {
 export function groupStoreBySupplier(
   store: PreviewStoreGroup,
   unassignedLabel: string,
+  /** The UI language stall names are sorted in (RUNWEB2-30). */
+  locale?: string,
 ): PreviewStoreSupplierGroup[] {
   const buckets = new Map<string | null, PreviewStoreSupplierGroup>();
 
@@ -46,6 +48,6 @@ export function groupStoreBySupplier(
     // Real stalls first, then the exception bucket at the end.
     if (a.supplierId === null) return b.supplierId === null ? 0 : 1;
     if (b.supplierId === null) return -1;
-    return a.supplierName.localeCompare(b.supplierName);
+    return a.supplierName.localeCompare(b.supplierName, locale);
   });
 }

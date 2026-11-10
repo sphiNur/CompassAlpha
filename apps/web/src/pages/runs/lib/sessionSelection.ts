@@ -80,6 +80,8 @@ export function selectedSessionIds(
 export function groupSessionsByDate<S extends SelectableSession>(
   sessions: readonly S[],
   today: string | null,
+  /** The UI language store names are sorted in (RUNWEB2-30). */
+  locale?: string,
 ): Array<SessionDateGroup<S>> {
   const byDate = new Map<string, S[]>();
   for (const s of sessions) {
@@ -93,7 +95,9 @@ export function groupSessionsByDate<S extends SelectableSession>(
     .map(([date, list]) => ({
       date,
       isToday: !!today && date === today,
-      sessions: [...list].sort((a, b) => (a.storeName ?? '').localeCompare(b.storeName ?? '')),
+      sessions: [...list].sort((a, b) =>
+        (a.storeName ?? '').localeCompare(b.storeName ?? '', locale),
+      ),
     }));
 }
 
