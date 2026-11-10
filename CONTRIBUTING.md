@@ -203,7 +203,9 @@ runtime issues, smokes do.
 - **Error keys** look like `<area>.errors.<camelCase>`. Server `TRPCError.message`
   IS the i18n key; FE auto-translates via `useErrToast()`.
 - **Inline comments matter**. Tag with `M1.x (YYYY-MM-DD)` when the change
-  is part of a numbered milestone. Audit reports live in `docs/M1.x-AUDIT.md`.
+  is part of a numbered milestone, or with the review finding it fixes
+  (`review OPS-07 (2026-11)`). Audit reports are not kept in the repo:
+  what they found is fixed in the code, with a comment where it matters.
 - **Event payloads are public contracts**. An existing type only gains
   optional fields that every reader handles when absent, each recorded in
   `docs/EVENT_CATALOG.md` with its meaning on older events. Anything else
@@ -274,7 +276,6 @@ When reviewing a PR (yours or others):
 
 ## When stuck
 
-Read the audits in `docs/M1.x-AUDIT.md` — they're real reports from real
-launch hardening passes and capture the patterns that have actually
-broken. The `inline comments tagged with M1.x markers across the source
-are a CHANGELOG you can grep.
+The inline comments tagged with M1.x markers or review finding ids
+(`review COREWEB2-01`) across the source are a CHANGELOG you can grep:
+they say what actually broke and why the code is the way it is.

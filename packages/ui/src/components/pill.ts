@@ -9,7 +9,7 @@ import { disabledClass } from './disabled';
  * keeps its own semantics (Chip = filter, Tab = roving-tabindex tablist)
  * and appends its extras; the *look* lives here so a tweak lands once.
  *
- * See FRONTEND_AUDIT_2026-07.md (T6 primitive-internal drift).
+ * From the 2026-07 frontend audit (T6 primitive-internal drift).
  */
 export function pillButtonClass(selected?: boolean): string {
   return cn(

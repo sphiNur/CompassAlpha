@@ -1,6 +1,6 @@
 /**
  * Admin → Operations sections — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 1, FRONTEND_AUDIT_2026-07.md admin split).
+ * (Phase 5 step 1 of the 2026-07 frontend audit's admin split).
  *
  *   - ActivitySection    KPI tiles + event feed (+ embedded DebugPage)
  *   - HistorySection     submission history (expandable order cards)

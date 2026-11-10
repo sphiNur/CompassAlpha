@@ -6,8 +6,8 @@
  * thousands mode the stored / network-sent value stays raw UZS and only
  * the visible string is divided/multiplied at the input boundary.
  *
- * Extracted verbatim from RunPage.tsx (Phase 4 step 1 —
- * FRONTEND_AUDIT_2026-07.md run-domain split). Pure functions; unit
+ * Extracted verbatim from RunPage.tsx (Phase 4 step 1 of the 2026-07
+ * frontend audit's run-domain split). Pure functions; unit
  * tests in __tests__/priceMath.test.ts.
  */
 import { isPurchasePrice } from '@compass/contracts/limits';

@@ -1,6 +1,6 @@
 /**
  * Admin → People & Permissions — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 4, FRONTEND_AUDIT_2026-07.md admin split).
+ * (Phase 5 step 4 of the 2026-07 frontend audit's admin split).
  *
  *   - PeopleSection          member directory (also mounted by the
  *                            store Team tab in admin/stores)

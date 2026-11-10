@@ -1,6 +1,6 @@
 /**
  * Grouped run views + the shared row leaf — extracted verbatim from
- * RunPage.tsx (Phase 4 step 4, FRONTEND_AUDIT_2026-07.md run-domain
+ * RunPage.tsx (Phase 4 step 4 of the 2026-07 frontend audit's run-domain
  * split).
  *
  *   - GroupCardHeader   one header chrome for all grouped cards

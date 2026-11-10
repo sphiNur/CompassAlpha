@@ -1,6 +1,6 @@
 /**
  * Run mid-level panels — extracted verbatim from RunPage.tsx
- * (Phase 4 step 5, FRONTEND_AUDIT_2026-07.md run-domain split).
+ * (Phase 4 step 5 of the 2026-07 frontend audit's run-domain split).
  *
  *   - ActiveRunPanel     the in-run composer: inline-edit rows across
  *                        purchasing/delivering phases; mounts the

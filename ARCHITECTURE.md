@@ -631,10 +631,7 @@ DR-020  2026-05-16  CF Worker Telegram 中转    CN 出境 api.telegram.org 受�
 | 权限矩阵           | [docs/PERMISSION_MATRIX.md](docs/PERMISSION_MATRIX.md)                               |
 | 事件 catalog       | [docs/EVENT_CATALOG.md](docs/EVENT_CATALOG.md)                                       |
 | 运维 / 备份 / 恢复 | [docs/RUNBOOK.md](docs/RUNBOOK.md)                                                   |
-| 上线前检查         | [PRODUCTION_AUDIT.md](PRODUCTION_AUDIT.md)                                           |
-| 上线修复方案       | [REMEDIATION_PLAN.md](REMEDIATION_PLAN.md)                                           |
 | 第一次部署         | [scripts/deploy.ts](scripts/deploy.ts) 顶部注释                                      |
-| 早期审计           | [docs/M1.5-AUDIT.md](docs/M1.5-AUDIT.md)                                             |
 
 ---
 

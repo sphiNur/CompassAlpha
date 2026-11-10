@@ -114,7 +114,7 @@
   /* The bottom sheet's top corners (was a literal 24px in Sheet.tsx). */
   --r-sheet: 24px;
 
-  /* Component sizing (2026-07-05, Phase 0 — FRONTEND_AUDIT_2026-07.md).
+  /* Component sizing (2026-07-05, Phase 0 of the 2026-07 frontend audit).
    * Canonical spacing/height so the SAME element renders at ONE value
    * instead of the 8 card-padding recipes / 4 control heights that had
    * accumulated across call sites. Consume via `px-[var(--card-pad)]`,

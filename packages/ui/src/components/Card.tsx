@@ -7,7 +7,7 @@ import { cn } from '../cn';
  * needs the surface look instead of re-typing the trio (it was
  * independently re-declared in Card, SectionRow, ListRow and Tile —
  * five owners guaranteed drift on any tweak). Change the surface once,
- * here. See FRONTEND_AUDIT_2026-07.md.
+ * here (2026-07 frontend audit).
  */
 export const surfaceClass = 'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline';
 

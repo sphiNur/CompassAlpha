@@ -1,5 +1,5 @@
 /**
- * Shared admin helpers (Phase 5 — FRONTEND_AUDIT_2026-07.md admin split).
+ * Shared admin helpers (Phase 5 of the 2026-07 frontend audit's admin split).
  */
 import { confirmThen } from '../../lib/confirm';
 

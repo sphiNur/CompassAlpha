@@ -1,6 +1,6 @@
 /**
  * Run history subsystem — extracted verbatim from RunPage.tsx
- * (Phase 4 step 2, FRONTEND_AUDIT_2026-07.md run-domain split).
+ * (Phase 4 step 2 of the 2026-07 frontend audit's run-domain split).
  *
  *   - RunHistoryPage       the history screen itself (list + totals).
  *   - RunHistoryDetailSheet per-run breakdown sheet (items, prices,

@@ -1,6 +1,6 @@
 /**
  * Run mutation sheets — extracted verbatim from RunPage.tsx
- * (Phase 4 step 3, FRONTEND_AUDIT_2026-07.md run-domain split).
+ * (Phase 4 step 3 of the 2026-07 frontend audit's run-domain split).
  *
  *   - PurchaseSheet  advanced per-item purchase editor (splits,
  *                    per-store pricing, receipt photo).
