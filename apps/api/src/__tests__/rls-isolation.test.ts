@@ -26,15 +26,25 @@
  * member_permission_overrides, policy_decisions, snapshots) and the
  * 2026-10-21 CA-36 additions (run_expenses_v, dishes, dish_ingredients).
  *
- * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
+ * Writes: a row cannot be inserted into another organisation or with no
+ * tenant, a row of another organisation cannot be updated or deleted,
+ * and a row cannot be moved into another organisation. Each refusal must
+ * be the policy's own (SQLSTATE 42501), not some other error.
+ *
+ * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1. Review TEST2-05
+ * (2026-11-09): a superuser or BYPASSRLS role sees through every policy,
+ * so with one the file is skipped too, and reported as skipped; it used
+ * to "pass" on made-up counts. In CI, which runs it as compass_ci_app,
+ * such a role is an error.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { closeDb, getDb, schema as s, withOrgContext } from '@compass/db';
+import { pgErrorCode } from '../services/pgErrors';
 
 (function loadEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -98,57 +108,39 @@ interface Fixture {
 }
 
 let fix: Fixture | null = null;
-let rlsBypassedByCurrentUser = false;
-let rlsBypassNoticePrinted = false;
 
-function dummyFixture(): Fixture {
-  const id = '00000000-0000-0000-0000-000000000000';
-  return {
-    orgA: { id },
-    orgB: { id },
-    memberA: { id, userId: id },
-    memberB: { id, userId: id },
-    roleA: id,
-    roleB: id,
-    storeA: id,
-    storeB: id,
-    settlementA: id,
-    settlementB: id,
-    settlementRevisionA: id,
-    settlementRevisionB: id,
-    sessionA: id,
-    sessionB: id,
-    runA: id,
-    runB: id,
-    skuA: id,
-    skuB: id,
-    snapshotStreamA: id,
-    snapshotStreamB: id,
-    expenseA: id,
-    expenseB: id,
-    dishA: id,
-    dishB: id,
-  };
+async function roleBypassesRls(): Promise<boolean> {
+  const db = getDb(undefined, { system: 'maintenance' });
+  const r = await db.execute(sql`
+    SELECT rolsuper OR rolbypassrls AS bypass FROM pg_roles WHERE rolname = current_user
+  `);
+  const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
+  return Boolean((rows[0] as { bypass?: boolean } | undefined)?.bypass);
+}
+
+const RLS_BYPASSED = SHOULD_RUN && (await roleBypassesRls());
+if (RLS_BYPASSED && process.env.CI) {
+  throw new Error(
+    'rls-isolation: the database role is a superuser or has BYPASSRLS, so these tests ' +
+      'would prove nothing. CI must run them as compass_ci_app.',
+  );
+}
+const RUN_RLS = SHOULD_RUN && !RLS_BYPASSED;
+
+/** The write was refused by a row-level policy (42501), not by another error. */
+async function expectRlsRefusal(write: Promise<unknown>): Promise<void> {
+  let error: unknown = null;
+  try {
+    await write;
+  } catch (err) {
+    error = err;
+  }
+  expect(pgErrorCode(error)).toBe('42501');
 }
 
 beforeAll(async () => {
-  if (!SHOULD_RUN) return;
+  if (!RUN_RLS) return;
   const db = getDb(undefined, { system: 'maintenance' });
-  const roleResult = await db.execute(sql`
-    SELECT rolsuper, rolbypassrls
-    FROM pg_roles
-    WHERE rolname = current_user
-    LIMIT 1
-  `);
-  const roleRows = Array.isArray(roleResult)
-    ? roleResult
-    : ((roleResult as { rows?: unknown[] }).rows ?? []);
-  const roleRow = roleRows[0] as { rolsuper?: boolean; rolbypassrls?: boolean } | undefined;
-  rlsBypassedByCurrentUser = Boolean(roleRow?.rolsuper || roleRow?.rolbypassrls);
-  if (rlsBypassedByCurrentUser) {
-    fix = dummyFixture();
-    return;
-  }
 
   const slug = `rls-${Date.now()}`;
 
@@ -495,15 +487,6 @@ async function countUnderEachContext(
   whereClause: string,
 ): Promise<{ aSeen: number; bSeen: number; totalSeen: number }> {
   if (!fix) throw new Error('fixture missing');
-  if (rlsBypassedByCurrentUser) {
-    if (!rlsBypassNoticePrinted) {
-      rlsBypassNoticePrinted = true;
-      console.warn(
-        '[rls-isolation] current database role is superuser/BYPASSRLS; RLS assertions require a non-bypass role, so this local run is treated as skipped.',
-      );
-    }
-    return { aSeen: 1, bSeen: 1, totalSeen: 2 };
-  }
   const db = getDb(undefined, { system: 'maintenance' });
   const aSeen = await withOrgContext(db, fix.orgA.id, async (tx) => {
     const r = await tx.execute(
@@ -547,26 +530,59 @@ async function countUnderEachContext(
   return { aSeen, bSeen, totalSeen };
 }
 
-describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
+describe.skipIf(!RUN_RLS)('RLS cross-org isolation (PG-gated)', () => {
   test('a row cannot be written into another organisation', async () => {
     if (!fix) throw new Error('fixture missing');
-    if (rlsBypassedByCurrentUser) return;
     const db = getDb(undefined, { system: 'maintenance' });
     const intoB = withOrgContext(db, fix.orgA.id, (tx) =>
       tx.insert(s.stores).values({ orgId: fix!.orgB.id, name: 'smuggled', code: 'SMUGGLED' }),
     );
-    await expect(intoB).rejects.toThrow();
+    await expectRlsRefusal(intoB);
   });
 
   test('a row cannot be written with no tenant at all', async () => {
     if (!fix) throw new Error('fixture missing');
-    if (rlsBypassedByCurrentUser) return;
     const db = getDb(undefined, { system: 'maintenance' });
     const orphan = db.transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('app.system_context', '', true)`);
       await tx.insert(s.stores).values({ orgId: fix!.orgA.id, name: 'orphan', code: 'ORPHAN' });
     });
-    await expect(orphan).rejects.toThrow();
+    await expectRlsRefusal(orphan);
+  });
+
+  test('a row of another organisation cannot be changed or deleted', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const db = getDb(undefined, { system: 'maintenance' });
+    // A cannot see B's row, so there is nothing to update or delete.
+    const touched = await withOrgContext(db, fix.orgA.id, async (tx) => {
+      const updated = await tx
+        .update(s.stores)
+        .set({ name: 'taken over' })
+        .where(eq(s.stores.id, fix!.storeB))
+        .returning({ id: s.stores.id });
+      const deleted = await tx
+        .delete(s.stores)
+        .where(eq(s.stores.id, fix!.storeB))
+        .returning({ id: s.stores.id });
+      return { updated: updated.length, deleted: deleted.length };
+    });
+    expect(touched).toEqual({ updated: 0, deleted: 0 });
+    const [storeB] = await db
+      .select({ name: s.stores.name })
+      .from(s.stores)
+      .where(eq(s.stores.id, fix.storeB));
+    expect(storeB?.name).toBe('Store B');
+  });
+
+  test('a row cannot be moved into another organisation', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const db = getDb(undefined, { system: 'maintenance' });
+    // A may change its own row, but not hand it to B.
+    await expectRlsRefusal(
+      withOrgContext(db, fix.orgA.id, (tx) =>
+        tx.update(s.stores).set({ orgId: fix!.orgB.id }).where(eq(s.stores.id, fix!.storeA)),
+      ),
+    );
   });
 
   test('auth.members — A sees only A, B sees only B', async () => {
@@ -776,7 +792,6 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
 
   test('read_model.run_expenses_v — cannot be written into another organisation', async () => {
     if (!fix) throw new Error('fixture missing');
-    if (rlsBypassedByCurrentUser) return;
     const db = getDb(undefined, { system: 'maintenance' });
     const intoB = withOrgContext(db, fix.orgA.id, (tx) =>
       tx.insert(s.runExpensesV).values({
@@ -791,7 +806,7 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
         addedAt: new Date(),
       }),
     );
-    await expect(intoB).rejects.toThrow();
+    await expectRlsRefusal(intoB);
   });
 
   test('inventory.dishes — direct org_id, FORCEd', async () => {
@@ -818,7 +833,6 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
 
   test('FORCE ROW LEVEL SECURITY is on for every CA-36 table', async () => {
     if (!fix) throw new Error('fixture missing');
-    if (rlsBypassedByCurrentUser) return;
     const db = getDb(undefined, { system: 'maintenance' });
     const r = await db.execute(sql`
       SELECT n.nspname || '.' || c.relname AS t, c.relrowsecurity AS on, c.relforcerowsecurity AS forced

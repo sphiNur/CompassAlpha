@@ -1,11 +1,16 @@
 /**
- * Unit-tests the SigV4 PUT presigner against AWS's documented test vectors
- * + sanity-checks the URL shape against MinIO/path-style and AWS/virtual-hosted.
+ * The SigV4 PUT presigner (services/s3.ts), and the URL shape it gives
+ * for MinIO (path-style) and AWS (virtual-hosted).
  *
- * Test vector source: AWS docs
- *   https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
- * The exact-string-match test against AWS's vector is the strongest
- * possible guarantee that our signing is byte-correct.
+ * The signature is checked byte for byte twice:
+ *   - the shared signer against AWS's documented example, a GET with host
+ *     as the only signed header:
+ *     https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
+ *   - presignPut (a PUT that also signs content-type) against a signature
+ *     computed independently with Python's hmac and hashlib.
+ * Review TEST2-06 (2026-11-09): this header claimed the AWS check before
+ * any test made it; presignPut read the clock, so no fixed value could
+ * be compared. It now takes `now`.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
@@ -25,6 +30,45 @@ afterAll(() => {
 });
 
 describe('s3 presigner', () => {
+  it("signs AWS's documented example byte for byte", async () => {
+    const { presignedUrl } = await import('../services/s3');
+    const url = presignedUrl({
+      method: 'GET',
+      url: 'https://examplebucket.s3.amazonaws.com/test.txt',
+      region: 'us-east-1',
+      accessKey: 'AKIAIOSFODNN7EXAMPLE',
+      secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      expiresIn: 86400,
+      now: new Date('2013-05-24T00:00:00Z'),
+    });
+    // AWS lists the parameters in another order; S3 does not mind.
+    expect(url).toBe(
+      'https://examplebucket.s3.amazonaws.com/test.txt' +
+        '?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
+        '&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request' +
+        '&X-Amz-Date=20130524T000000Z' +
+        '&X-Amz-Expires=86400' +
+        '&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404' +
+        '&X-Amz-SignedHeaders=host',
+    );
+  });
+
+  it('signs a PUT with its content type as computed independently', async () => {
+    const { presignPut } = await import('../services/s3');
+    const out = presignPut({
+      key: 'org-1/user-2/receipts/abc.jpg',
+      contentType: 'image/jpeg',
+      expiresInSeconds: 600,
+      now: new Date('2013-05-24T00:00:00Z'),
+    });
+    const u = new URL(out.url);
+    expect(u.searchParams.get('X-Amz-Date')).toBe('20130524T000000Z');
+    expect(u.searchParams.get('X-Amz-SignedHeaders')).toBe('content-type;host');
+    expect(u.searchParams.get('X-Amz-Signature')).toBe(
+      '8922e38b5da4320b6782cb6282f1570aed39f6a15127eddc33834cda19b9ca92',
+    );
+  });
+
   it('uses virtual-hosted style for default AWS endpoint', async () => {
     const { presignPut } = await import('../services/s3');
     const out = presignPut({

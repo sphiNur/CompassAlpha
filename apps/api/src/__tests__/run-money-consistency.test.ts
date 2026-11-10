@@ -7,7 +7,9 @@
  *    itemsTotal + expensesTotal.
  *  - CA-06: a store that confirms a 'short' line books the received qty
  *    into inventory, not the split qty (pure helper + PG projection).
- *  - CA-04: a second run can be created while the first is delivering.
+ *  - CA-04: a second run can be created while the first is delivering,
+ *    through run.create; the database refuses a second planned or
+ *    purchasing run by its partial unique index.
  *
  * PG-gated (DATABASE_URL set and SKIP_PG_TESTS !== '1'); the pure
  * receivedDelta cases always run.
@@ -30,6 +32,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { appendEvents } from '../services/eventStore';
+import { pgConstraintName, pgErrorCode } from '../services/pgErrors';
 import { projectRun, receivedDelta } from '../services/runProjection';
 
 (function loadEnv() {
@@ -120,44 +123,60 @@ const PERMS = [
   'delivery.confirm',
 ];
 
+/** An organisation with one member who holds PERMS across it. */
+async function buyerOrg(name: string) {
+  const db = getDb(undefined, { system: 'maintenance' });
+  const slug = `${name.toLowerCase().replace(/\W+/g, '-')}-${Date.now()}`;
+  const [org] = await db
+    .insert(s.organizations)
+    .values({ slug, name, localeDefault: 'en', timezone: 'UTC' })
+    .returning();
+  if (!org) throw new Error('org insert failed');
+  const [role] = await db
+    .insert(s.roles)
+    .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
+    .returning();
+  for (const key of PERMS) {
+    await db
+      .insert(s.permissions)
+      .values({ key, description: `Test perm ${key}` })
+      .onConflictDoNothing();
+    await db
+      .insert(s.rolePermissions)
+      .values({ roleId: role!.id, permissionKey: key })
+      .onConflictDoNothing();
+  }
+  const [user] = await db
+    .insert(s.users)
+    .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}71`.slice(-12)) })
+    .returning();
+  const [member] = await db
+    .insert(s.members)
+    .values({ orgId: org.id, userId: user!.id, status: 'active' })
+    .returning();
+  await db.insert(s.memberRoleBindings).values({
+    memberId: member!.id,
+    roleId: role!.id,
+    scopeType: 'global',
+  });
+  const caller = appRouter.createCaller(
+    buildCtx(db, {
+      userId: user!.id,
+      memberId: member!.id,
+      orgId: org.id,
+      orgTimezone: 'UTC',
+      permissions: new Set(PERMS),
+      roleSlugs: new Set(['super_admin']),
+    }),
+  );
+  return { db, slug, org, user: user!, member: member!, caller };
+}
+
 describe('run money consistency (PG)', () => {
   test.skipIf(!SHOULD_RUN)(
     'report.totals == run.history totals == frozen items + expenses; short line books received qty',
     async () => {
-      const db = getDb(undefined, { system: 'maintenance' });
-      const slug = `money-${Date.now()}`;
-      const [org] = await db
-        .insert(s.organizations)
-        .values({ slug, name: 'Money Consistency', localeDefault: 'en', timezone: 'UTC' })
-        .returning();
-      if (!org) throw new Error('org insert failed');
-      const [role] = await db
-        .insert(s.roles)
-        .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
-        .returning();
-      for (const key of PERMS) {
-        await db
-          .insert(s.permissions)
-          .values({ key, description: `Test perm ${key}` })
-          .onConflictDoNothing();
-        await db
-          .insert(s.rolePermissions)
-          .values({ roleId: role!.id, permissionKey: key })
-          .onConflictDoNothing();
-      }
-      const [user] = await db
-        .insert(s.users)
-        .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}71`.slice(-12)) })
-        .returning();
-      const [member] = await db
-        .insert(s.members)
-        .values({ orgId: org.id, userId: user!.id, status: 'active' })
-        .returning();
-      await db.insert(s.memberRoleBindings).values({
-        memberId: member!.id,
-        roleId: role!.id,
-        scopeType: 'global',
-      });
+      const { db, slug, org, user, member, caller } = await buyerOrg('Money Consistency');
       const [storeA] = await db
         .insert(s.stores)
         .values({ orgId: org.id, name: 'A', code: `A-${slug.slice(-6)}` })
@@ -280,16 +299,6 @@ describe('run money consistency (PG)', () => {
       expect(deltaFor(storeA.id)).toBe(1.5);
       expect(deltaFor(storeB.id)).toBe(2);
 
-      const caller = appRouter.createCaller(
-        buildCtx(db, {
-          userId: user!.id,
-          memberId: member!.id,
-          orgId: org.id,
-          orgTimezone: 'UTC',
-          permissions: new Set(PERMS),
-          roleSlugs: new Set(['super_admin']),
-        }),
-      );
       const history = await caller.run.history({ dateFrom: '2026-10-20', dateTo: '2026-10-20' });
       const totals = await caller.report.totals({
         startDate: '2026-10-20',
@@ -316,34 +325,45 @@ describe('run money consistency (PG)', () => {
   );
 
   test.skipIf(!SHOULD_RUN)(
-    'CA-04: a delivering run no longer blocks the unique index',
+    'CA-04: a delivering run does not block a new one; a planned or purchasing one does',
     async () => {
-      const db = getDb(undefined, { system: 'maintenance' });
-      const slug = `parallel-${Date.now()}`;
-      const [org] = await db
-        .insert(s.organizations)
-        .values({ slug, name: 'Parallel Runs', localeDefault: 'en', timezone: 'UTC' })
-        .returning();
-      const base = { orgId: org!.id, runDate: '2026-10-20' };
+      const { db, org, caller } = await buyerOrg('Parallel Runs');
+      const base = { orgId: org.id, runDate: '2026-10-20' };
       await db
         .insert(s.marketRunsV)
         .values({ ...base, id: randomUUID(), runIndex: 0, status: 'delivering' });
       await db
         .insert(s.marketRunsV)
         .values({ ...base, id: randomUUID(), runIndex: 1, status: 'delivering' });
+
+      // run.create hands back a live run instead of making another. With
+      // only delivering runs there is none, so it goes on to the orders it
+      // was given (here one that does not exist).
+      await expect(caller.run.create({ sessionIds: [randomUUID()] })).rejects.toThrow(
+        'run.errors.sessionMissing',
+      );
+
+      const buying = randomUUID();
       await db
         .insert(s.marketRunsV)
-        .values({ ...base, id: randomUUID(), runIndex: 2, status: 'purchasing' });
-      // A second buying run is still refused.
-      let refused = false;
+        .values({ ...base, id: buying, runIndex: 2, status: 'purchasing' });
+      expect(await caller.run.create({ sessionIds: [randomUUID()] })).toMatchObject({
+        runId: buying,
+        reused: true,
+      });
+
+      // Underneath, the database refuses a second planned or purchasing run:
+      // the partial unique index, not some other failure.
+      let error: unknown = null;
       try {
         await db
           .insert(s.marketRunsV)
           .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' });
-      } catch {
-        refused = true;
+      } catch (err) {
+        error = err;
       }
-      expect(refused).toBe(true);
+      expect(pgErrorCode(error)).toBe('23505');
+      expect(pgConstraintName(error)).toBe('mrv_one_active_per_org_unique');
     },
   );
 });

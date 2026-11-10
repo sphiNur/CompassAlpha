@@ -29,14 +29,18 @@ function normalizeLimits(value: unknown): SubscriptionLimits {
   return { stores: normalize(raw.stores), members: normalize(raw.members) };
 }
 
-function computeWriteAccess(
+/**
+ * Whether the tenant may write. Each date counts up to, not including,
+ * its own moment. Exported, with `now`, for the boundary tests.
+ */
+export function computeWriteAccess(
   status: string,
   trialEndsAt: Date | null,
   periodEnd: Date | null,
   graceEndsAt: Date | null,
+  now: number = Date.now(),
 ): boolean {
   if (status === 'suspended' || status === 'canceled') return false;
-  const now = Date.now();
   if (graceEndsAt && graceEndsAt.getTime() > now) return true;
   if (status === 'trialing') {
     return !trialEndsAt || trialEndsAt.getTime() > now;
