@@ -23,7 +23,7 @@ describe('assertRelayDelivered', () => {
   });
 
   test('the relay rejecting our shared key keeps the message queued', () => {
-    // tg-relay.js: `new Response('forbidden', { status: 403 })`
+    // tg-relay/worker.js: `new Response('forbidden', { status: 403 })`
     const err = verdict(403, 'forbidden');
     expect(err).toBeInstanceOf(RelayError);
     expect(err?.permanent).toBe(false);

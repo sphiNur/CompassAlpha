@@ -2,7 +2,7 @@
   // Review OPS-18 (2026-11): deploy, smoke and check scripts and their tests
   // belong to no package, so nothing type-checked them. The root
   // `pnpm type-check` runs this after the packages. allowJs: the app-proxy
-  // test imports infra/cloudflare/app-proxy/worker.js.
+  // and tg-relay tests import the Workers' worker.js (infra/cloudflare).
   // allowImportingTsExtensions: the browser smokes run under
   // `node --experimental-strip-types`, which needs `.ts` on relative imports.
   "extends": "../tsconfig.base.json",
