@@ -165,17 +165,24 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
   });
 
   test('ADM-15: a link whose inviter lost the authority is no longer listed', async () => {
-    const { owner, manager, storeId, db, roleIds } = fix!;
+    const { owner, storeId, db, orgId, roleIds } = fix!;
+    // An inviter of its own, so the shared manager keeps their role (review
+    // TEST2-09: this used to delete every manager binding in the org).
+    const inviter = await seedMember(db, orgId, {
+      name: 'ADM15 manager',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.manager!, storeId }],
+    });
+    const manager = callerFor(await sessionOf(orgId, inviter));
     await manager.admin.memberInviteCreate({ roleSlug: 'staff', storeIds: [storeId] });
-    const before = await owner.admin.memberInviteList();
-    const mine = before.filter((i) => i.roles.some((r) => r.slug === 'staff'));
-    expect(mine.length).toBeGreaterThan(0);
+    const theirs = (list: Awaited<ReturnType<Caller['admin']['memberInviteList']>>) =>
+      list.filter((i) => i.invitedBy?.userId === inviter.userId);
+    expect(theirs(await owner.admin.memberInviteList())).toHaveLength(1);
     // The manager stops being a manager of the store.
     await db
       .delete(s.memberRoleBindings)
-      .where(eq(s.memberRoleBindings.roleId, roleIds.manager!));
-    const after = await owner.admin.memberInviteList();
-    for (const inv of mine) expect(after.some((i) => i.id === inv.id)).toBe(false);
+      .where(eq(s.memberRoleBindings.id, inviter.bindingIds[0]!));
+    expect(theirs(await owner.admin.memberInviteList())).toEqual([]);
   });
 
   test('ADM-16: inviting into an archived store says it is archived', async () => {
