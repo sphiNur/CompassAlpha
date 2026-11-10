@@ -2210,7 +2210,7 @@ export const ru = {
   'inventory.reason.stocktake': 'Инвентаризация',
   'inventory.reason.wastage': 'Списание',
   'inventory.reason.consumption': 'Расход по продаже',
-  'inventory.reason.consumption_reversed': 'Отмена продажи',
+  'inventory.reason.consumption_reversed': 'Аннулирование продажи',
   'inventory.reason.transfer_in': 'Перемещение (приход)',
   'inventory.reason.transfer_out': 'Перемещение (расход)',
   'inventory.reason.adjustment': 'Корректировка',
