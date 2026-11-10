@@ -230,14 +230,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
       .update(s.refreshTokens)
       .set({ revokedAt: new Date(Date.now() - svc.ROTATION_RETRY_LEEWAY_MS - 1_000) })
       .where(eq(s.refreshTokens.id, root.id));
-    let replayErr: unknown = null;
-    try {
-      await rotate(root);
-    } catch (err) {
-      replayErr = err;
-    }
-    expect(replayErr).toBeTruthy();
-    expect((replayErr as Error).message).toMatch(/replay/i);
+    await expect(rotate(root)).rejects.toThrow('refresh token replay detected');
     // The replay path revokes ALL family members. Verify the child is
     // now also revoked even though we never directly touched it.
     expect((await rowOf(child.id)).revokedAt).not.toBeNull();

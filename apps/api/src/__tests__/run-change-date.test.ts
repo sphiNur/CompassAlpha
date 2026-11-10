@@ -26,6 +26,7 @@ import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { errorOf } from './helpers/errors';
 
 describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated)', () => {
   let userId = '';
@@ -148,12 +149,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
 
   test('HIS-7: a run cannot be moved to a day that has not come yet', async () => {
     const run = await plannedRun('2026-10-25', 0);
-    let message = '';
-    try {
-      await callerFor(session).run.changeDate({ runId: run, runDate: '2099-01-01' });
-    } catch (error) {
-      message = (error as Error).message;
-    }
-    expect(message).toBe('run.errors.runDateInFuture');
+    const move = () => callerFor(session).run.changeDate({ runId: run, runDate: '2099-01-01' });
+    expect(await errorOf(move)).toMatchObject({ message: 'run.errors.runDateInFuture' });
   });
 });

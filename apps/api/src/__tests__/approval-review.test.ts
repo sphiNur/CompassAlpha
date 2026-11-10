@@ -21,6 +21,7 @@ import { claimTakenFrom, TAKEOVER_COOLDOWN_MS } from '../trpc/routers/order';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -40,15 +41,6 @@ interface Fixture {
   bob: Person;
 }
 let fix: Fixture | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<string | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return (err as Error).message;
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -143,7 +135,7 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
       await errorOf(() =>
         ann.caller.order.unapprove({ sessionId: b.sessionId, expectedSeq: first.lastSeq }),
       ),
-    ).toBe('order.errors.staleSeq');
+    ).toMatchObject({ message: 'order.errors.staleSeq' });
     expect((await row(b.sessionId))!.status).toBe('approved');
   });
 
@@ -183,7 +175,9 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
     });
     expect(items.map((i) => Number(i.qty))).toEqual([5]);
     // The claim is real: the next approver is told someone is reviewing.
-    expect(await errorOf(() => edit(bob, '6', after!.lastSeq))).toBe('order.errors.notEditor');
+    expect(await errorOf(() => edit(bob, '6', after!.lastSeq))).toMatchObject({
+      message: 'order.errors.notEditor',
+    });
   });
 
   test('U2: the edit is refused when the order changed after the version shown', async () => {
@@ -205,7 +199,7 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
           expectedSeq: lastSeq,
         }),
       ),
-    ).toBe('order.errors.staleSeq');
+    ).toMatchObject({ message: 'order.errors.staleSeq' });
     expect((await row(sessionId))!.claimedByMemberId).toBeNull();
   });
 
@@ -237,7 +231,7 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
       await errorOf(() =>
         ann.caller.order.takeOverClaim({ sessionId, fromMemberId: bob.memberId }),
       ),
-    ).toBe('order.errors.takeOverCooldown');
+    ).toMatchObject({ message: 'order.errors.takeOverCooldown' });
     expect((await row(sessionId))!.claimedByMemberId).toBe(bob.memberId);
   });
 

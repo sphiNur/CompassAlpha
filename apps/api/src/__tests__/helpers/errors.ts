@@ -1,6 +1,7 @@
 /**
  * What a call threw, for the API tests to check (review TEST2-03,
- * TEST2-07, 2026-11). Ten suites had their own copies of these.
+ * TEST2-07, 2026-11). The suites used to carry their own copies of these,
+ * each a little different.
  *
  * Each returns null when the call succeeds. A test that expects a refusal
  * then fails, and `toBeNull()` says that a call is allowed.

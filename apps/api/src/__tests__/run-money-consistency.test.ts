@@ -18,12 +18,12 @@ import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
 import { type ActorCtx, type RunCommand } from '@compass/domain/run';
-import { pgConstraintName, pgErrorCode } from '../services/pgErrors';
 import { receivedDelta } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { runStream } from './helpers/streams';
+import { pgErrorOf } from './helpers/errors';
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {
@@ -289,16 +289,12 @@ describe('run money consistency (PG)', () => {
 
       // Underneath, the database refuses a second planned or purchasing run:
       // the partial unique index, not some other failure.
-      let error: unknown = null;
-      try {
-        await db
+      const refusal = await pgErrorOf(() =>
+        db
           .insert(s.marketRunsV)
-          .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' });
-      } catch (err) {
-        error = err;
-      }
-      expect(pgErrorCode(error)).toBe('23505');
-      expect(pgConstraintName(error)).toBe('mrv_one_active_per_org_unique');
+          .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' }),
+      );
+      expect(refusal).toMatchObject({ code: '23505', constraint: 'mrv_one_active_per_org_unique' });
     },
   );
 });

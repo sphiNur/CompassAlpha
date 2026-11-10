@@ -17,7 +17,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedRoles } from './helpers/fixtures';
-import { codeOf } from './helpers/errors';
+import { codeOf, errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
@@ -25,16 +25,12 @@ let runId = '';
 
 /** The catalog key a refused input came back with (first zod issue). */
 async function keyOf(fn: () => Promise<unknown>): Promise<string | null> {
+  const err = await errorOf(fn);
+  if (!err) return null;
   try {
-    await fn();
-    return null;
-  } catch (err) {
-    const message = (err as { message?: string }).message ?? '';
-    try {
-      return (JSON.parse(message) as Array<{ message: string }>)[0]?.message ?? message;
-    } catch {
-      return message;
-    }
+    return (JSON.parse(err.message) as Array<{ message: string }>)[0]?.message ?? err.message;
+  } catch {
+    return err.message;
   }
 }
 

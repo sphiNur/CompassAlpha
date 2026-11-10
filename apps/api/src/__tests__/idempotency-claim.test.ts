@@ -15,6 +15,7 @@ import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
+import { errorOf } from './helpers/errors';
 
 let session: SessionContext | null = null;
 let runs = 0;
@@ -113,13 +114,10 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
     // The same request again (keys in another order) is the cached answer.
     expect(await caller(key).buy({ qty: 1, item: 'apple' })).toEqual(first);
     const before = runs;
-    let err: { code?: string; message: string } | null = null;
-    try {
-      await caller(key).buy({ item: 'chicken', qty: 1 });
-    } catch (e) {
-      err = { code: (e as { code?: string }).code, message: (e as Error).message };
-    }
-    expect(err).toEqual({ code: 'CONFLICT', message: 'common.errors.idempotencyKeyReused' });
+    expect(await errorOf(() => caller(key).buy({ item: 'chicken', qty: 1 }))).toMatchObject({
+      code: 'CONFLICT',
+      message: 'common.errors.idempotencyKeyReused',
+    });
     expect(runs).toBe(before);
   });
 

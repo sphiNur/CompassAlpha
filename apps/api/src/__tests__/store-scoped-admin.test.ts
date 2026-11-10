@@ -871,17 +871,14 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     const target = await makeUser('D8 target');
     await makeMember(target.id);
     const danger = await dangerRole();
-    let err: Error | null = null;
-    try {
-      await admin.admin.grantRole({
+    const err = await errorOf(() =>
+      admin.admin.grantRole({
         userId: target.id,
         roleSlug: danger.slug,
         scopeType: 'store',
         scopeId: store.id,
-      });
-    } catch (e) {
-      err = e as Error;
-    }
+      }),
+    );
     expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
     // A role whose keys the admin holds still goes through.
     const db = getDb(undefined, { system: 'maintenance' });
@@ -899,13 +896,10 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     });
     expect(ok.granted).toBe(true);
     // Nor can it be a store's default role, given to every newcomer.
-    err = null;
-    try {
-      await admin.admin.storeUpdate({ storeId: store.id, defaultRoleSlug: danger.slug });
-    } catch (e) {
-      err = e as Error;
-    }
-    expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
+    const defaultErr = await errorOf(() =>
+      admin.admin.storeUpdate({ storeId: store.id, defaultRoleSlug: danger.slug }),
+    );
+    expect(defaultErr?.message).toBe('auth.errors.cannotGrantMissingPermission');
   });
 
   test.skipIf(!SHOULD_RUN)(
@@ -962,16 +956,13 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     const admin = await orgAdmin();
     const store = await makeStore(`D8i-${Math.random()}`);
     const danger = await dangerRole();
-    let err: Error | null = null;
-    try {
-      await admin.admin.memberInviteByTgId({
+    const err = await errorOf(() =>
+      admin.admin.memberInviteByTgId({
         tgUserId: String(freshTgId()),
         roleSlug: danger.slug,
         storeIds: [store.id],
-      });
-    } catch (e) {
-      err = e as Error;
-    }
+      }),
+    );
     expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
   });
 });
@@ -2376,14 +2367,9 @@ describe('purchase history permission scope', () => {
       });
       expect(hiddenSearch.rows).toHaveLength(0);
 
-      let foreignStoreThrew = false;
-      try {
-        await caller.run.history({ storeId: storeB.id, page: 1, pageSize: 10 });
-      } catch (error) {
-        foreignStoreThrew = true;
-        expect((error as Error).message).toContain('notAssignedToStore');
-      }
-      expect(foreignStoreThrew).toBe(true);
+      await expect(
+        caller.run.history({ storeId: storeB.id, page: 1, pageSize: 10 }),
+      ).rejects.toThrow('notAssignedToStore');
 
       const detail = await caller.run.historyDetail({ runId });
       expect(new Set(detail.items.map((item) => item.skuId))).toEqual(
@@ -2552,14 +2538,9 @@ describe('purchase history permission scope', () => {
       const staffMember = await makeMember(staffUser.id);
       await bindRole(staffMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
       const staffCaller = callerFor(await sessionFor(staffMember, staffUser.id));
-      let missingPermissionThrew = false;
-      try {
-        await staffCaller.run.history({ page: 1, pageSize: 10 });
-      } catch (error) {
-        missingPermissionThrew = true;
-        expect((error as Error).message).toContain('missingPermission');
-      }
-      expect(missingPermissionThrew).toBe(true);
+      await expect(staffCaller.run.history({ page: 1, pageSize: 10 })).rejects.toThrow(
+        'missingPermission',
+      );
     },
   );
 
@@ -3020,32 +3001,15 @@ describe('role binding scope is constrained by the database', () => {
     };
 
     /**
-     * The constraint must reject the row. We assert on the failure, but not
-     * on WHERE the driver put the reason: drizzle 0.45 wraps driver errors in
-     * a `DrizzleQueryError` whose `message` is the SQL text, moving the
-     * Postgres detail (constraint name, SQLSTATE) onto `cause`. Walking the
-     * cause chain keeps this test about the constraint rather than about the
-     * current error-wrapping style of the ORM.
+     * The scope check constraint must reject the row (23514, a
+     * check_violation). drizzle wraps the driver's error and moves the
+     * Postgres detail onto `cause`; pgErrorOf finds it there.
      */
     const expectScopeRejected = async (p: Promise<void>): Promise<void> => {
-      try {
-        await p;
-      } catch (err) {
-        const seen: string[] = [];
-        let cur: unknown = err;
-        for (let depth = 0; cur && depth < 5; depth += 1) {
-          const e = cur as { message?: string; constraint?: string; code?: string; cause?: unknown };
-          if (e.message) seen.push(e.message);
-          if (e.constraint) seen.push(e.constraint);
-          if (e.code) seen.push(String(e.code));
-          cur = e.cause;
-        }
-        const text = seen.join(' ');
-        // 23514 = check_violation: present no matter how the ORM wraps it.
-        if (text.includes('mrb_scope_check') || text.includes('23514')) return;
-        throw new Error(`expected the scope constraint to reject this row, got: ${text}`);
-      }
-      throw new Error('expected the scope constraint to reject this row, but it was accepted');
+      expect(await pgErrorOf(() => p)).toMatchObject({
+        code: '23514',
+        constraint: 'mrb_scope_check',
+      });
     };
 
     // 'org' is not a scope: the session would list its permissions while

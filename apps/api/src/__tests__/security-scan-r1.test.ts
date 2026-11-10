@@ -37,17 +37,7 @@ import { hub, WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED } from '../realtime/hu
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor, gateCaller } from './helpers/ctx';
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
+import { errorOf } from './helpers/errors';
 
 // ---------- F5 / D21 ------------------------------------------------------
 

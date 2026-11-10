@@ -41,9 +41,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { closeDb, getDb, schema as s, withOrgContext } from '@compass/db';
-import { pgErrorCode } from '../services/pgErrors';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { pgErrorOf } from './helpers/errors';
 
 interface Fixture {
   orgA: { id: string };
@@ -103,13 +103,7 @@ const RUN_RLS = SHOULD_RUN && !RLS_BYPASSED;
 
 /** The write was refused by a row-level policy (42501), not by another error. */
 async function expectRlsRefusal(write: Promise<unknown>): Promise<void> {
-  let error: unknown = null;
-  try {
-    await write;
-  } catch (err) {
-    error = err;
-  }
-  expect(pgErrorCode(error)).toBe('42501');
+  expect((await pgErrorOf(() => write))?.code).toBe('42501');
 }
 
 beforeAll(async () => {

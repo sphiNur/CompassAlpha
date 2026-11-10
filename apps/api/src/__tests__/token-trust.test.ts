@@ -28,6 +28,7 @@ import {
 } from '../services/rateLimit';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
+import { errorOf } from './helpers/errors';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
@@ -250,11 +251,8 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     // Bad initData fails after the rate check, so nothing is written.
     for (let i = 0; i < 5 * UNIDENTIFIED_BUDGET_FACTOR + 2; i += 1) {
       const caller = await callerWith({ 'x-forwarded-for': `10.0.${i >> 8}.${i & 255}` });
-      try {
-        await caller.auth.telegramLogin({ initData: 'hash=bad' });
-      } catch (err) {
-        if ((err as Error).message === 'auth.errors.rateLimited') limited += 1;
-      }
+      const err = await errorOf(() => caller.auth.telegramLogin({ initData: 'hash=bad' }));
+      if (err?.message === 'auth.errors.rateLimited') limited += 1;
     }
     expect(limited).toBeGreaterThan(0);
 
@@ -263,11 +261,8 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     const statuses: string[] = [];
     for (let i = 0; i < 7; i += 1) {
       const caller = await callerWith({ 'cf-connecting-ip': '203.0.113.7' });
-      try {
-        await caller.auth.telegramLogin({ initData: 'hash=bad' });
-      } catch (err) {
-        statuses.push((err as Error).message);
-      }
+      const err = await errorOf(() => caller.auth.telegramLogin({ initData: 'hash=bad' }));
+      if (err) statuses.push(err.message);
     }
     expect(statuses.slice(0, 5).every((m) => m === 'auth.errors.invalidInitData')).toBe(true);
     expect(statuses.slice(5)).toEqual(['auth.errors.rateLimited', 'auth.errors.rateLimited']);

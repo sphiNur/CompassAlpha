@@ -13,6 +13,7 @@ import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { codeOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: {
@@ -82,12 +83,8 @@ describe.skipIf(!SHOULD_RUN)('the day\'s first change from two devices (PG-gated
   });
 
   test('ORD-7: ordering where one has no order.draft is FORBIDDEN, not a server error', async () => {
-    let code: string | undefined;
-    try {
-      await fix!.noDraft.order.adjustItem({ storeId: fix!.storeId, skuId: fix!.skuIds[0]!, qty: '1' });
-    } catch (err) {
-      code = (err as { code?: string }).code;
-    }
-    expect(code).toBe('FORBIDDEN');
+    const order = () =>
+      fix!.noDraft.order.adjustItem({ storeId: fix!.storeId, skuId: fix!.skuIds[0]!, qty: '1' });
+    expect(await codeOf(order)).toBe('FORBIDDEN');
   });
 });

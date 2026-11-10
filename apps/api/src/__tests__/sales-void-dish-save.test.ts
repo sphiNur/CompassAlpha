@@ -17,6 +17,7 @@ import { duplicateIngredientSkuIds } from '../trpc/routers/dishes';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -167,17 +168,6 @@ async function onHand(storeId: string, skuId: string): Promise<number> {
     .from(s.inventoryMovements)
     .where(and(eq(s.inventoryMovements.storeId, storeId), eq(s.inventoryMovements.skuId, skuId)));
   return rows.reduce((sum, r) => sum + Number(r.delta), 0);
-}
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
 }
 
 describe('sales.void', () => {

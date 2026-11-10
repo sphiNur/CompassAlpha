@@ -26,6 +26,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor, gateCaller } from './helpers/ctx';
 import { seedMember } from './helpers/fixtures';
+import { codeOf, errorOf } from './helpers/errors';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
 const RUN = '00000000-0000-4000-8000-0000000000aa';
@@ -58,13 +59,8 @@ describe('grantRole.expiresAt contract (A-23)', () => {
       permissions: new Set(['users.manage', 'org.admin']),
       roleSlugs: new Set(),
     });
-    let code: string | undefined;
-    try {
-      await caller.admin.grantRole({ ...base, expiresAt: 'not-a-date' });
-    } catch (err) {
-      code = (err as { code?: string }).code;
-    }
-    expect(code).toBe('BAD_REQUEST');
+    const grant = () => caller.admin.grantRole({ ...base, expiresAt: 'not-a-date' });
+    expect(await codeOf(grant)).toBe('BAD_REQUEST');
   });
 });
 
@@ -165,13 +161,9 @@ describe('admin read scope + invite reach (CA-17, CA-19)', () => {
 
 // ---------- PG-gated: limits + platform subscription ----------------------
 
+/** The message of what `run` threw; undefined if it succeeded. */
 async function errorMessage(run: () => Promise<unknown>): Promise<string | undefined> {
-  try {
-    await run();
-  } catch (err) {
-    return (err as Error).message;
-  }
-  return undefined;
+  return (await errorOf(run))?.message;
 }
 
 describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)', () => {

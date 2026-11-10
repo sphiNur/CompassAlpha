@@ -21,7 +21,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedMember } from './helpers/fixtures';
-import { pgErrorOf } from './helpers/errors';
+import { errorOf, pgErrorOf } from './helpers/errors';
 
 describe('attendance copy', () => {
   test('every attendance error has a sentence in every language', async () => {
@@ -231,13 +231,7 @@ async function resetPunches(...memberIds: string[]) {
 }
 
 async function expectError(p: Promise<unknown>, message: string) {
-  let err: unknown = null;
-  try {
-    await p;
-  } catch (e) {
-    err = e;
-  }
-  expect((err as Error | null)?.message).toBe(message);
+  expect((await errorOf(() => p))?.message).toBe(message);
 }
 
 afterAll(() => setFaceEngineForTests(null));
@@ -896,14 +890,9 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     );
     await expectError(enroll({ front: 'boom' }), 'attendance.errors.faceCheckUnavailable');
     // The refusal says which photo and why.
-    let refused: unknown = null;
-    try {
-      await enroll({ up: 'Ali:up:dark', left: 'Ali:flat' });
-    } catch (e) {
-      refused = e;
-    }
+    const refused = await errorOf(() => enroll({ up: 'Ali:up:dark', left: 'Ali:flat' }));
     expect(
-      (refused as { cause?: { context?: { problems?: string } } }).cause?.context?.problems,
+      (refused?.cause as { context?: { problems?: string } } | undefined)?.context?.problems,
     ).toBe('left:notTurned');
 
     // The ring: tilts and diagonals are kept when caught, not required.
@@ -1323,15 +1312,13 @@ describe.skipIf(!SHOULD_RUN)('attendance blink and open mouth (2026-11-07)', () 
       clock(f.staff(), { token: await token(), blink: 'nobody' }),
       'attendance.errors.livenessFailed',
     );
-    let refused: unknown = null;
-    try {
-      await clock(f.staff(), { token: await token(), blink: 'Ali:front', mouth: 'Cat:mouth' });
-    } catch (e) {
-      refused = e;
-    }
+    const challenge = await token();
+    const refused = await errorOf(() =>
+      clock(f.staff(), { token: challenge, blink: 'Ali:front', mouth: 'Cat:mouth' }),
+    );
     // Either order: the server picks the order of the movements.
     expect(
-      (refused as { cause?: { context?: { failures?: string } } }).cause?.context?.failures
+      (refused?.cause as { context?: { failures?: string } } | undefined)?.context?.failures
         ?.split(',')
         .sort(),
     ).toEqual(['otherPerson', 'sameFrame']);
@@ -1387,21 +1374,19 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('the movements must be the enrolled person, not someone like the photo', async () => {
     const f = fx!;
-    let refused: unknown = null;
-    try {
-      await clock(f.staff(), {
-        token: await turns(),
+    const challenge = await turns();
+    const refused = await errorOf(() =>
+      clock(f.staff(), {
+        token: challenge,
         face: 'Ali:front:half',
         blink: 'Dan:blink',
         mouth: 'Dan:mouth',
         left: 'Dan:left',
         right: 'Dan:right',
-      });
-    } catch (e) {
-      refused = e;
-    }
-    expect((refused as Error | null)?.message).toBe('attendance.errors.livenessFailed');
-    expect((refused as { cause?: { context?: unknown } }).cause?.context).toEqual({
+      }),
+    );
+    expect(refused?.message).toBe('attendance.errors.livenessFailed');
+    expect((refused?.cause as { context?: unknown } | undefined)?.context).toEqual({
       failures: 'otherPerson',
     });
   });
@@ -1576,13 +1561,9 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
 /** A refused call's key and the placeholders it sent. */
 async function refusal(p: Promise<unknown>) {
-  try {
-    await p;
-  } catch (e) {
-    const err = e as { message?: string; cause?: { context?: Record<string, unknown> } };
-    return { message: err.message ?? null, context: err.cause?.context ?? null };
-  }
-  return { message: null, context: null };
+  const err = await errorOf(() => p);
+  const cause = err?.cause as { context?: Record<string, unknown> } | undefined;
+  return { message: err?.message ?? null, context: cause?.context ?? null };
 }
 
 describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {

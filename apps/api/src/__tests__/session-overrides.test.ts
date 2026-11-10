@@ -9,6 +9,7 @@ import { flatEffectivePermissions } from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { codeOf } from './helpers/errors';
 
 describe('flatEffectivePermissions', () => {
   const store = (key: string, id: string) => ({ key, scopeType: 'store', scopeId: id });
@@ -100,13 +101,7 @@ beforeAll(async () => {
 
 describe.skipIf(!SHOULD_RUN)('session permissions with overrides (PG-gated)', () => {
   test('ADM-1: a manager denied users.manage globally is refused by admin reads', async () => {
-    let code: string | undefined;
-    try {
-      await managers!.denied.caller.admin.memberList();
-    } catch (err) {
-      code = (err as { code?: string }).code;
-    }
-    expect(code).toBe('FORBIDDEN');
+    expect(await codeOf(() => managers!.denied.caller.admin.memberList())).toBe('FORBIDDEN');
   });
 
   test('a manager without the deny still reads them', async () => {
