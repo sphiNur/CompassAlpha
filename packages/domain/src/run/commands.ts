@@ -995,8 +995,12 @@ export function decideRun(
       // goods went out. Once a store has the goods, its quantity and split
       // stand, but price, supplier, payment method and receipt may still
       // be corrected until the run is finished.
+      // 2026-11-09 (review RUNAPI-01): the NEW splits count too. Moving
+      // part of a line onto a store that already has its goods left that
+      // store unable to receive it (its receipt is closed, so the stock
+      // never came in) while the cost and the amend note landed on it.
       if (state.status !== 'amending') {
-        const deliveredSplit = item.storeSplits.find(
+        const deliveredSplit = [...item.storeSplits, ...command.storeSplits].find(
           (split) => !!state.stores.get(split.storeId)?.deliveredAt,
         );
         if (deliveredSplit && !sameQuantities(item, command.actualQty, command.storeSplits)) {
@@ -1072,6 +1076,7 @@ export function decideRun(
           }
         }
       }
+      assertListOpen(state);
       // Reason was demoted to optional 2026-05-04 — see UndoPurchaseInputSchema
       // for the full rationale. The event still fires (projector needs it
       // to flip the row back to `pending`), but `reason` is just an empty
@@ -1113,6 +1118,7 @@ export function decideRun(
       if (item.status !== 'unavailable') {
         throw preconditionFailed('run.errors.notUnavailable', { status: item.status });
       }
+      assertListOpen(state);
       const reason = command.reason.trim();
       if (!reason) throw validation('run.errors.unmarkReasonRequired');
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
@@ -1465,6 +1471,20 @@ function sameQuantities(
     if (Math.abs((before.get(id) ?? 0) - (after.get(id) ?? 0)) > TOLERANCE) return false;
   }
   return true;
+}
+
+/**
+ * Review RUNAPI-02 (2026-11-09): while the goods are going out, no line
+ * may go back to "still to buy". Buying and "won't be bought" are frozen
+ * once delivery starts (StartDelivery requires every line handled), so a
+ * line put back then had no way forward: it could not be bought, marked
+ * again, or taken back to purchasing once a store had its goods, and the
+ * run finished with it still pending. Back to purchase first.
+ */
+function assertListOpen(state: RunState): void {
+  if (state.status === 'delivering') {
+    throw preconditionFailed('run.errors.listFrozenWhileDelivering');
+  }
 }
 
 function assertEditablePhase(state: RunState, actor: ActorCtx): void {

@@ -110,13 +110,44 @@ function req<T>(r: IDBRequest<T>): Promise<T> {
   });
 }
 
-let nextClientSeq: number | null = null;
-export async function nextSeq(): Promise<number> {
-  if (nextClientSeq === null) {
-    const persisted = await keyval.get<number>('outbox:nextSeq');
-    nextClientSeq = persisted ?? Date.now();
-  }
-  nextClientSeq += 1;
-  await keyval.set('outbox:nextSeq', nextClientSeq);
-  return nextClientSeq;
+/**
+ * Hands out outbox ids: increasing, never the same one twice, persisted
+ * so a reload carries on above the last one.
+ *
+ * Review COREWEB2-01 (2026-11-09): the old version read the shared counter
+ * back AFTER awaiting its own write, so two writes queued at the same
+ * moment (a reconnect, the app coming back to the front) could both get
+ * the later number. `outbox.add` is a put, so the second replaced the
+ * first, after the screen had already said "saved offline". The number
+ * is now taken before any await, and the first load is shared.
+ */
+export function createSeq(
+  store: { load: () => Promise<number | undefined>; save: (n: number) => Promise<void> },
+  now: () => number = Date.now,
+): () => Promise<number> {
+  let last: number | null = null;
+  let loading: Promise<void> | null = null;
+  return async () => {
+    if (last === null) {
+      loading ??= store.load().then(
+        (persisted) => {
+          last ??= persisted ?? now();
+        },
+        (err: unknown) => {
+          loading = null;
+          throw err;
+        },
+      );
+      await loading;
+    }
+    const seq = (last ?? now()) + 1;
+    last = seq;
+    await store.save(seq);
+    return seq;
+  };
 }
+
+export const nextSeq = createSeq({
+  load: () => keyval.get<number>('outbox:nextSeq'),
+  save: (n) => keyval.set('outbox:nextSeq', n),
+});

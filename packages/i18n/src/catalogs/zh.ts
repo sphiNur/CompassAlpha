@@ -2641,4 +2641,6 @@ export const zh = {
   'attendance.location.outside.title': '不在打卡范围内',
   'attendance.location.inaccurate.title': '定位不够准',
   'attendance.punch.preparing': '正在准备…',
+  'run.errors.listFrozenWhileDelivering':
+    '已经开始配送，清单不能再改。如果还没有门店收到货，请先回到采购阶段。',
 } as const satisfies Record<CatalogKey, string>;

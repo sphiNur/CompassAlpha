@@ -1807,6 +1807,56 @@ describe('run.reversals', () => {
     ).toThrow('run.errors.notPurchased');
   });
 
+  // Review RUNAPI-02 (2026-11-09): a line put back during delivery had
+  // no way forward (buy and mark are frozen then) and the run finished
+  // with it still pending.
+  test('nothing goes back to "to buy" once delivery has started', () => {
+    let s = planAndPurchase();
+    s = decideRun(
+      s,
+      {
+        type: 'AttachSessions',
+        sessionIds: ['s2'],
+        addedPlannedItems: [{ skuId: 'sku-2', qty: '1' }],
+        actor: purchaser(),
+      } as RunCommand,
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'MarkUnavailable', skuId: 'sku-2', note: 'none today', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    expect(() =>
+      decideRun(
+        s,
+        { type: 'UnmarkUnavailable', skuId: 'sku-2', reason: 'found it', actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.listFrozenWhileDelivering');
+    expect(() =>
+      decideRun(
+        s,
+        { type: 'UndoPurchase', skuId: 'sku-1', reason: 'wrong row', actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.listFrozenWhileDelivering');
+    // Back to purchase first, and both work again.
+    s = decideRun(
+      s,
+      { type: 'UndoStartDelivery', reason: 'one more', actor: purchaser() } as RunCommand,
+      clock,
+    ).reduce(applyRun, s);
+    expect(
+      decideRun(
+        s,
+        { type: 'UnmarkUnavailable', skuId: 'sku-2', reason: 'found it', actor: purchaser() },
+        clock,
+      ),
+    ).toHaveLength(1);
+  });
+
   test('UndoPurchase blocked after store has accepted delivery', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
@@ -2714,5 +2764,61 @@ describe('run.priceAfterDelivery (2026-10-30)', () => {
     expect(() => decideRun(deliveredRun(), revise('15000', '5'), clock)).toThrow(
       'run.errors.cannotReviseAfterDelivery',
     );
+  });
+
+  // Review RUNAPI-01 (2026-11-09): a line bound only for store B may not
+  // be moved onto store A once A has its goods.
+  test('a line may not be moved onto a store that already has its goods', () => {
+    let s = emptyRunState('run-2');
+    const buy = (skuId: string, storeId: string, qty: string): RunCommand => ({
+      type: 'PurchaseItem',
+      skuId,
+      supplierId: null,
+      unitPrice: '10',
+      actualQty: qty,
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId, qty }],
+      paymentMethod: 'cash',
+      actor: purchaser(),
+    });
+    const cmds: RunCommand[] = [
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s1', 's2'],
+        plannedItems: [
+          { skuId: 'x', qty: '2' },
+          { skuId: 'y', qty: '1' },
+        ],
+        actor: purchaser(),
+      },
+      { type: 'StartPurchase', actor: purchaser() },
+      buy('x', 'A', '2'),
+      buy('y', 'B', '1'),
+      { type: 'StartDelivery', actor: purchaser() },
+      { type: 'DeliverToStore', storeId: 'A', actor: purchaser() },
+    ];
+    for (const cmd of cmds) s = decideRun(s, cmd, clock).reduce(applyRun, s);
+    const moveOntoA: RunCommand = {
+      type: 'RevisePurchase',
+      skuId: 'y',
+      supplierId: null,
+      unitPrice: '10',
+      actualQty: '2',
+      receiptPhotoUrl: null,
+      storeSplits: [
+        { storeId: 'B', qty: '1' },
+        { storeId: 'A', qty: '1' },
+      ],
+      reason: 'A wants one',
+      paymentMethod: 'cash',
+      actor: purchaser(),
+    };
+    expect(() => decideRun(s, moveOntoA, clock)).toThrow('run.errors.cannotReviseAfterDelivery');
+    // The line's own store, not yet delivered, may still change.
+    const growB: RunCommand = { ...moveOntoA, storeSplits: [{ storeId: 'B', qty: '2' }] };
+    expect(decideRun(s, growB, clock)).toHaveLength(1);
   });
 });

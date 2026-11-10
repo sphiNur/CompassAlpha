@@ -3074,4 +3074,6 @@ export const en = {
   'attendance.location.outside.title': 'Too far from the store',
   'attendance.location.inaccurate.title': 'Location not precise enough',
   'attendance.punch.preparing': 'Getting ready…',
+  'run.errors.listFrozenWhileDelivering':
+    "Delivery has started, so the list can't change now. If no store has its goods yet, go back to purchase first.",
 } as const;

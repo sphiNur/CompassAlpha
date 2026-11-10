@@ -150,6 +150,10 @@ export function QtyControl({
   /** pointerdown: arm the hold timer, but DON'T adjust yet. */
   const armHold = (direction: 1 | -1, name: 'plus' | 'minus') => {
     if (disabled) return;
+    // Review UI-05 (2026-11-09): a second press used to arm a second timer
+    // over the first one's refs; stop() then cleared only the last, and
+    // the other kept changing the quantity until the page was reloaded.
+    stop();
     setPressing(name);
     rampedRef.current = false;
     holdTimeoutRef.current = setTimeout(() => {
@@ -226,7 +230,7 @@ export function QtyControl({
           aria-label={labels.decrement}
           className={tone(pressing === 'minus')}
           disabled={disabled || value <= min}
-          onPointerDown={() => armHold(-1, 'minus')}
+          onPointerDown={(e) => e.isPrimary && armHold(-1, 'minus')}
           onPointerUp={stop}
           onPointerLeave={stop}
           onPointerCancel={stop}
@@ -293,7 +297,7 @@ export function QtyControl({
           aria-label={labels.increment}
           className={tone(pressing === 'plus')}
           disabled={disabled || value >= max}
-          onPointerDown={() => armHold(1, 'plus')}
+          onPointerDown={(e) => e.isPrimary && armHold(1, 'plus')}
           onPointerUp={stop}
           onPointerLeave={stop}
           onPointerCancel={stop}
