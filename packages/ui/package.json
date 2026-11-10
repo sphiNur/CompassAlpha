@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./tailwind.preset": "./tailwind.preset.js"
   },
   "scripts": {
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"

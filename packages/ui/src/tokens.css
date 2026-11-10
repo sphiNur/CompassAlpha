@@ -339,3 +339,49 @@
   height: max(100%, 44px);
   transform: translate(-50%, -50%);
 }
+
+/* Review UI-15 (2026-11-10): what the components use that a host would
+ * otherwise have to define. They lived in apps/web's index.css, so another
+ * host got sheets without their motion and chip bars with a scrollbar. */
+
+/* Hide scrollbars while keeping scroll behaviour (ChipBar, Tabs). */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+
+/* Sheet: the panel slides, the backdrop fades. */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes slideDown {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
