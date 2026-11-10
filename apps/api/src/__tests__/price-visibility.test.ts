@@ -238,14 +238,16 @@ beforeAll(async () => {
 describe.skipIf(!SHOULD_RUN)('D6: money only with prices.view, per store', () => {
   test('sales.list and dishes.list: no selling price where the reader is staff', async () => {
     const { owner, mixed, storeA, storeB, dishId } = fix!;
-    await mixed.sales.record({ storeId: storeA, dishId, qty: '1' });
-    await mixed.sales.record({ storeId: storeB, dishId, qty: '2' });
+    // Other tests sell at A too, so this one reads only its own sales.
+    const { saleId: soldAtA } = await mixed.sales.record({ storeId: storeA, dishId, qty: '1' });
+    const { saleId: soldAtB } = await mixed.sales.record({ storeId: storeB, dishId, qty: '2' });
     const atA = await mixed.sales.list({ storeId: storeA });
-    expect(atA).toHaveLength(1);
-    expect(atA[0]!.unitPrice).toBeNull();
-    expect(atA[0]!.qty).toBe('1.000');
+    expect(atA.map((row) => row.id)).not.toContain(soldAtB);
+    const mineAtA = atA.find((row) => row.id === soldAtA)!;
+    expect(mineAtA.unitPrice).toBeNull();
+    expect(mineAtA.qty).toBe('1.000');
     const atB = await mixed.sales.list({ storeId: storeB });
-    expect(Number(atB[0]!.unitPrice)).toBe(35000);
+    expect(Number(atB.find((row) => row.id === soldAtB)!.unitPrice)).toBe(35000);
 
     const dishAt = async (caller: Caller, storeId?: string) =>
       (await caller.dishes.list(storeId ? { storeId } : undefined)).dishes.find((d) => d.id === dishId)!;
@@ -471,7 +473,7 @@ describe.skipIf(!SHOULD_RUN)('inputs', () => {
 
 describe.skipIf(!SHOULD_RUN)('D5: History and finance count finished and amending runs', () => {
   test('an amending run stays listed and counted; a run being bought counts nowhere', async () => {
-    const { owner, exec, actor, runId, orgId, skuId, storeA } = fix!;
+    const { db, owner, exec, actor, runId, orgId, storeA } = fix!;
     const range = { startDate: RUN_DATE, endDate: RUN_DATE };
     await exec(runId, { type: 'ReopenRun', reason: 'fix a price', actor });
     const history = await owner.run.history({ dateFrom: RUN_DATE, dateTo: RUN_DATE });
@@ -484,7 +486,20 @@ describe.skipIf(!SHOULD_RUN)('D5: History and finance count finished and amendin
     expect(Number((await owner.report.totals(range)).total)).toBe(48000);
     await exec(runId, { type: 'RefinalizeRun', actor });
 
-    // A second run on another day, still purchasing.
+    // A second run on another day, still purchasing. It buys a product of
+    // its own: on the fixture's product, its 10,000 would become the last
+    // purchase price, which other tests expect to be 12,000.
+    const [pear] = await db
+      .insert(s.skus)
+      .values({
+        orgId,
+        code: `PER-${randomUUID().slice(0, 8)}`,
+        names: { en: 'Pear' },
+        unit: 'kg',
+        step: '0.5',
+      })
+      .returning();
+    const skuId = pear!.id;
     const buying = randomUUID();
     const day = '2026-10-21';
     await exec(buying, {
