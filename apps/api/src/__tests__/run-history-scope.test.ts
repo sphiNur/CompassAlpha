@@ -751,6 +751,106 @@ describe('purchase history permission scope', () => {
   );
 
   test.skipIf(!SHOULD_RUN)(
+    "the detail's money is the History row's, for one store and for all (RUNWEB2-03)",
+    async () => {
+      const fx = fixture();
+      const { runId, runDate, storeA, storeB, skuA, skuC, manager } = await seedScopedHistoryRun();
+      const historyRow = async (caller: ReturnType<typeof callerFor>) => {
+        const history = await caller.run.history({
+          dateFrom: runDate,
+          dateTo: runDate,
+          page: 1,
+          pageSize: 10,
+          sort: 'newest',
+        });
+        return history.rows.find((row) => row.id === runId)!;
+      };
+
+      // Store A only: skuA 1 × 100 and skuC 1 × 50 in cash, a third of the
+      // taxi (1 × 10) by transfer.
+      const managerCaller = callerFor(manager.session);
+      const scoped = await managerCaller.run.historyDetail({ runId });
+      const storeAMoney = {
+        total: '160.00',
+        itemsTotal: '150.00',
+        expensesTotal: '10.00',
+        cash: '150.00',
+        transfer: '10.00',
+      };
+      expect(scoped.money).toEqual({
+        ...storeAMoney,
+        byStore: [{ storeId: storeA.id, ...storeAMoney, itemCount: 2, expenseCount: 1 }],
+      });
+      expect(scoped.items.find((item) => item.skuId === skuA)).toMatchObject({
+        amount: '100.00',
+        cashAmount: '100.00',
+        transferAmount: '0.00',
+      });
+      expect(scoped.items.find((item) => item.skuId === skuC)!.amount).toBe('50.00');
+      expect(scoped.splits.find((split) => split.skuId === skuA)!.amount).toBe('100.00');
+      expect(scoped.expenses[0]!.amount).toBe('10.00');
+      const scopedRow = await historyRow(managerCaller);
+      expect(scopedRow).toMatchObject({
+        actualTotal: scoped.money.total,
+        itemsTotal: scoped.money.itemsTotal,
+        expensesTotal: scoped.money.expensesTotal,
+        actualCashTotal: scoped.money.cash,
+        actualTransferTotal: scoped.money.transfer,
+      });
+
+      // Every store: Store B adds skuA 1 × 200 by transfer (the inherited
+      // item price and method), skuB 2 × 200 in cash and 2 × 10 of the taxi.
+      const adminCaller = callerFor(await sessionFor(fx.superAdminMemberId, fx.superAdminUserId));
+      const full = await adminCaller.run.historyDetail({ runId });
+      expect(full.money).toEqual({
+        total: '780.00',
+        itemsTotal: '750.00',
+        expensesTotal: '30.00',
+        cash: '550.00',
+        transfer: '230.00',
+        byStore: [
+          {
+            storeId: storeB.id,
+            total: '620.00',
+            itemsTotal: '600.00',
+            expensesTotal: '20.00',
+            cash: '400.00',
+            transfer: '220.00',
+            itemCount: 2,
+            expenseCount: 1,
+          },
+          { storeId: storeA.id, ...storeAMoney, itemCount: 2, expenseCount: 1 },
+        ],
+      });
+      expect(full.items.find((item) => item.skuId === skuA)).toMatchObject({
+        amount: '300.00',
+        cashAmount: '100.00',
+        transferAmount: '200.00',
+      });
+      expect(full.expenses[0]!.amount).toBe('30.00');
+      const fullRow = await historyRow(adminCaller);
+      expect(fullRow).toMatchObject({
+        actualTotal: full.money.total,
+        itemsTotal: full.money.itemsTotal,
+        expensesTotal: full.money.expensesTotal,
+        actualCashTotal: full.money.cash,
+        actualTransferTotal: full.money.transfer,
+      });
+      expect(fullRow.storeTotals).toEqual(
+        full.money.byStore.map((store) => ({
+          storeId: store.storeId,
+          total: store.total,
+          itemsTotal: store.itemsTotal,
+          expensesTotal: store.expensesTotal,
+          cash: store.cash,
+          transfer: store.transfer,
+          itemCount: store.itemCount,
+        })),
+      );
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
     "a live read of the run is Store A's projection, not the row for both stores",
     async () => {
       const fx = fixture();

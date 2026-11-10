@@ -31,7 +31,7 @@
  * Columns: run_id, store_id, kind ('item' | 'expense'), sku_id,
  * expense_id, label, supplier_id, unit_price, qty, amount, payment_method.
  */
-import { sumMoney } from '@compass/contracts';
+import { sumMoney, toCents } from '@compass/contracts';
 import { sql, type SQL } from 'drizzle-orm';
 
 export function runMoneyLinesSql(args: {
@@ -105,4 +105,89 @@ export function uuidListSql(ids: readonly string[] | null): SQL | null {
  */
 export function moneyText(value: string | null | undefined): string {
   return sumMoney([value ?? '0']);
+}
+
+/** One row of `runMoneyLinesSql`, as `run.historyDetail` reads it. */
+export interface RunMoneyLine {
+  storeId: string;
+  kind: 'item' | 'expense';
+  skuId: string | null;
+  expenseId: string | null;
+  amount: string;
+  paymentMethod: string | null;
+}
+
+/** Items / expenses / total of some money lines, and how they were paid. */
+export interface MoneyTotals {
+  total: string;
+  itemsTotal: string;
+  expensesTotal: string;
+  cash: string;
+  transfer: string;
+}
+
+/**
+ * The same sums run.history makes in SQL (`visible_totals`): a line counts
+ * as cash or transfer only when its method says so.
+ */
+export function moneyTotals(lines: readonly RunMoneyLine[]): MoneyTotals {
+  const sum = (keep: (line: RunMoneyLine) => boolean) =>
+    sumMoney(lines.filter(keep).map((line) => line.amount));
+  return {
+    total: sum(() => true),
+    itemsTotal: sum((line) => line.kind === 'item'),
+    expensesTotal: sum((line) => line.kind === 'expense'),
+    cash: sum((line) => line.paymentMethod === 'cash'),
+    transfer: sum((line) => line.paymentMethod === 'transfer'),
+  };
+}
+
+function groupLines(
+  lines: readonly RunMoneyLine[],
+  key: (line: RunMoneyLine) => string | null,
+): Map<string, RunMoneyLine[]> {
+  const groups = new Map<string, RunMoneyLine[]>();
+  for (const line of lines) {
+    const k = key(line);
+    if (k === null) continue;
+    const group = groups.get(k) ?? [];
+    group.push(line);
+    groups.set(k, group);
+  }
+  return groups;
+}
+
+/**
+ * Review RUNWEB2-03 (2026-11): a run's money for the History detail, made
+ * from its money lines in the stores the reader may see prices in: the
+ * rows the History list and report.* add up. The detail page used to
+ * recompute it in the browser with a fourth copy of the rule, so a change
+ * to the rule could make the detail disagree with the list row it opened.
+ *
+ *   - the run, and each store (largest first), as `MoneyTotals`, with the
+ *     number of products and expenses that store pays for;
+ *   - per product (SKU) and per split (`skuId|storeId`): what it cost;
+ *   - per expense: its share in those stores.
+ */
+export function runDetailMoney(lines: readonly RunMoneyLine[]) {
+  const byStore = [...groupLines(lines, (line) => line.storeId)].map(([storeId, storeLines]) => ({
+    storeId,
+    ...moneyTotals(storeLines),
+    itemCount: new Set(storeLines.flatMap((line) => (line.skuId ? [line.skuId] : []))).size,
+    expenseCount: new Set(storeLines.flatMap((line) => (line.expenseId ? [line.expenseId] : [])))
+      .size,
+  }));
+  byStore.sort((a, b) => {
+    const diff = toCents(b.total) - toCents(a.total);
+    return diff > 0n ? 1 : diff < 0n ? -1 : a.storeId < b.storeId ? -1 : 1;
+  });
+  const sums = (key: (line: RunMoneyLine) => string | null) =>
+    new Map([...groupLines(lines, key)].map(([k, group]) => [k, moneyTotals(group)]));
+  return {
+    ...moneyTotals(lines),
+    byStore,
+    bySku: sums((line) => line.skuId),
+    bySplit: sums((line) => (line.skuId ? `${line.skuId}|${line.storeId}` : null)),
+    byExpense: sums((line) => line.expenseId),
+  };
 }

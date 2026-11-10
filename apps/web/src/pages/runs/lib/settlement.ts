@@ -21,6 +21,11 @@
  * server's report, history and frozen totals use), and running totals
  * stay on whole cents (`addMoney`). This page used to multiply in floats
  * and show 1.005 where finance showed 1.01 (R2-HIS-1).
+ *
+ * Review RUNWEB2-03 (2026-11): the History detail no longer uses this. It
+ * shows the server's figures (run.historyDetail's money, from the lines
+ * the History list and report.* add up). What is left here is the run
+ * still being bought: RunPage's finish summary, before anything is saved.
  */
 import { addMoney, lineAmountNumber } from '@compass/contracts/money';
 
@@ -59,8 +64,9 @@ export function splitSubtotal(
  *
  * This is the one bug-prone bit of run money math (the override/flat
  * branch + cash/transfer allocation) that was typed IDENTICALLY inside
- * both `finishSummary` and the history-detail `breakdown`. One copy now;
- * callers add the returned deltas into their own running totals.
+ * both `finishSummary` and the history-detail `breakdown` (the latter now
+ * reads the server's money). Callers add the returned deltas into their
+ * own running totals.
  */
 export function settleItemLine(
   item: { unitPrice?: string | null; purchasedQty?: string | null; paymentMethod?: string | null },
