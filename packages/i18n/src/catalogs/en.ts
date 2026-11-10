@@ -58,7 +58,6 @@ export const en = {
   'common.archive': 'Archive',
   'common.archived': 'archived',
   'common.unarchive': 'Unarchive',
-  'common.name': 'Name',
   'common.remove': 'Remove',
   'common.save': 'Save',
   'common.back': 'Back',
@@ -202,8 +201,6 @@ export const en = {
   'ops.maint.resetSheetTitle': 'Reset {date}',
   'ops.maint.resetSheetBody': 'Review what will be deleted, then confirm.',
   'ops.maint.confirmPurgeTitle': 'Confirm purge',
-  'ops.maint.confirmPurgeBody': 'Type the workspace code "{slug}" to confirm.',
-  'ops.maint.confirmPurgeLabel': 'Workspace code',
   // 2026-07-30: the last and largest pocket of untranslated admin copy.
   // The transfer sheet even carried a comment deferring "its own dedicated
   // i18n pass with all the other admin transfer copy" — this is that pass.
@@ -377,7 +374,6 @@ export const en = {
   'ops.history.decidedIn': '· decided in {n} min',
   'ops.history.decidedBy': '· by {name}',
   'ops.history.skuCount': '{n, plural, one {# product} other {# products}}',
-  'ops.purge.inRun': 'in a run',
   'ops.purge.runLabel': 'Run {date} #{n}',
   'ops.purge.unknownStore': 'Unknown store',
   'ops.purge.deleteSessionTitle': 'Delete order',
@@ -1095,8 +1091,6 @@ export const en = {
   'upload.errors.unsupportedContentType': 'This file type is not allowed',
 
   // ── 8. Order page (UI + actions + toasts) ──────────────────────
-  'order.empty.title': 'No items selected yet',
-  'order.empty.description': 'Tap + next to a product to start.',
   // M1.9-fix (2026-05-07): SKU row meta + chip-bar labels were
   // hardcoded English. These appear on every product row of the main
   // staff page.
@@ -1162,7 +1156,6 @@ export const en = {
   'order.submitted.extrasOriginal': 'Other items as submitted',
   'order.submitted.changedShort': 'Changed in review',
   'order.submitted.unchanged': 'Same as submitted',
-  'order.review.remove': 'Remove',
   'order.review.estimatedTotal': 'Estimated total',
   'order.review.estimateHint': '~ at the last price paid · {known} priced · {unknown} unknown',
   'approval.estimateUnpriced': '+ {n} unpriced',
@@ -1404,8 +1397,6 @@ export const en = {
   'run.step.done': 'Done',
   'run.action.startPurchase': 'Start purchase',
   'run.action.ejectSession': 'Remove from purchase',
-  'run.section.sessions': 'Orders in this run',
-  'run.sessions.meta': '{n, plural, one {# order} other {# orders}}',
   'run.sessions.stats':
     '{items, plural, one {# product} other {# products}} · {extras, plural, one {# other item} other {# other items}}',
   'run.sessions.statsNoExtras': '{items, plural, one {# product} other {# products}}',
@@ -1788,7 +1779,6 @@ export const en = {
   // ── 12. Confirm page (delivery acceptance) ──────────────────────
   'confirm.empty.noItems': 'No items for this store',
   'confirm.empty.nothingToConfirm': 'Nothing to receive',
-  'confirm.empty.nothingDesc': 'A run will show up here once items are delivered to your store.',
   'confirm.runOnDate': 'Run {date}',
   'confirm.confirmStore': 'Confirm receipt',
   // 2026-07-30 (flow review): receiving used to open with every line
@@ -2219,7 +2209,6 @@ export const en = {
   'settlement.noEligibleStores.body':
     'You do not have daily-close permission in any assigned store. Ask your store manager to check your store role.',
   'settlement.errors.invalidMoney': 'Enter a valid amount with up to two decimal places.',
-  'settlement.errors.fieldMoney': '{field}: enter a number with at most two decimals.',
   'settlement.errors.fieldsToFix':
     '{n, plural, one {# field needs correcting} other {# fields need correcting}}',
   'settlement.errors.goToFirst': 'Go to it',
@@ -2828,15 +2817,11 @@ export const en = {
     'No face found in the photo. Face the camera in good light and take it again.',
   'attendance.errors.faceCheckUnavailable':
     'The face check is not available right now. Try again later.',
-  'attendance.errors.photoNotFound': 'This photo is no longer here.',
   'attendance.export.col.face': 'Face',
   'attendance.export.face.match': 'Matches',
   'attendance.export.face.mismatch': 'Does not match',
   'attendance.export.face.enrolled': 'Registered',
   'attendance.export.face.unchecked': 'Not checked',
-  'notify.attendance.faceMismatch.title': 'Face does not match',
-  'notify.attendance.faceMismatch.body':
-    '{name} clocked at {store} at {time}, and the face does not match the registered one. Check the punch photos.',
   'attendance.errors.livenessRequired':
     'This store needs the live face check to clock. Update the app and try again.',
   'attendance.errors.livenessExpired': 'The face check took too long. Start again.',
@@ -2873,9 +2858,6 @@ export const en = {
   'attendance.export.check.livenessFailed': 'Liveness failed',
   'attendance.export.check.borrowed': "On {name}'s phone",
   'attendance.export.check.newDevice': 'New phone',
-  'notify.attendance.livenessFailed.title': 'Liveness check failed',
-  'notify.attendance.livenessFailed.body':
-    '{name} clocked at {store} at {time}, but the live face check did not pass. Check the punch photos.',
   'notify.attendance.borrowedPhone.title': "Clocked on a colleague's phone",
   'notify.attendance.borrowedPhone.body':
     "{name} clocked at {store} at {time} on {owner}'s phone. The face matched.",
@@ -2925,9 +2907,6 @@ export const en = {
   'attendance.review.overtimeTitle': 'Overtime waiting for you',
   'attendance.review.overtimeBody': 'Waiting: {count}. Approve or reject it on the sheet.',
   'attendance.export.check.faceLike': 'Looks like {name}',
-  'notify.attendance.faceLike.title': 'Face looks like someone else',
-  'notify.attendance.faceLike.body':
-    '{name} clocked at {store} at {time}, but the face looks like {like}. Check the punch photos.',
   'attendance.errors.faceNotEnrolled':
     'Enroll your face first; you can clock once a manager approves it.',
   'attendance.errors.faceMismatch':
