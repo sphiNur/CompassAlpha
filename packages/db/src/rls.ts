@@ -85,7 +85,7 @@ export async function clearOrgContext(db: DB): Promise<void> {
 
 /**
  * Run `fn` inside a transaction with `app.current_org_id = orgId`.
- * If `orgId` is null, the transaction runs WITHOUT org context �?caller must
+ * If `orgId` is null, the transaction runs WITHOUT org context — caller must
  * ensure the queries are admin-only and explicitly cross-tenant safe.
  */
 export async function withOrgContext<T>(

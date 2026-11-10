@@ -1,5 +1,5 @@
 /**
- * Compass DB schema â€?Drizzle definitions.
+ * Compass DB schema â€” Drizzle definitions.
  *
  * Schemas (Postgres logical schemas):
  *   auth.*         organizations, users, members, roles, policies
