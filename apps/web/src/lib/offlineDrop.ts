@@ -8,7 +8,7 @@
 import { useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import type { OfflineDropInfo } from '../hooks/useOfflineQueue';
-import { I18N_KEY_RE } from './errorText';
+import { I18N_KEY_RE, withoutFinalStop } from './errorText';
 
 type Key = Parameters<ReturnType<typeof useI18n>['t']>[0];
 
@@ -37,8 +37,11 @@ export function offlineDropText(
   const action = t(actionKey);
   if (info.reason === 'rejected' && info.message && I18N_KEY_RE.test(info.message)) {
     const reason = t(info.message as Key);
-    // An unknown key comes back as itself; do not show a raw key.
-    if (reason !== info.message) return t('offline.drop.withReason', { action, reason });
+    // An unknown key comes back as itself; do not show a raw key. The
+    // template ends the reason's sentence itself (I18N1-20: errors end
+    // with a full stop), so drop the reason's own.
+    if (reason !== info.message)
+      return t('offline.drop.withReason', { action, reason: withoutFinalStop(reason) });
   }
   return t('offline.drop.generic', { action });
 }
