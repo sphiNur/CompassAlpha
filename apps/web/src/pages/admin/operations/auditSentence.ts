@@ -24,6 +24,8 @@ export interface AuditRowLike {
   labels?: {
     memberName: string | null;
     roleName: string | null;
+    /** Older servers omit it. */
+    roleSlug?: string | null;
     storeName: string | null;
     toStoreName: string | null;
     targetName: string | null;
@@ -146,6 +148,8 @@ export function describeAuditRow(
     unknown: string;
     /** The actor of a row no person wrote. */
     system: string;
+    /** A role's name in the UI language (lib/roleLabels.ts). */
+    roleName: (role: { slug: string; name?: string | null }) => string;
     /** Localizes an i18n names map (SKU / category). */
     localName: (names: Record<string, string>) => string;
     /** Formats an ISO calendar date (a purged order's or run's day). */
@@ -161,7 +165,9 @@ export function describeAuditRow(
   const member = or(
     l?.memberName ?? (typeof inputs.displayName === 'string' ? inputs.displayName : null),
   );
-  const role = or(l?.roleName ?? (typeof inputs.roleSlug === 'string' ? inputs.roleSlug : null));
+  // A built-in role reads in the UI language unless an admin renamed it.
+  const roleSlug = l?.roleSlug ?? (typeof inputs.roleSlug === 'string' ? inputs.roleSlug : null);
+  const role = or(roleSlug ? loc.roleName({ slug: roleSlug, name: l?.roleName }) : l?.roleName);
   const store = or(l?.storeName);
   const category = auditCategory(row.action);
   const tone = object === 'purge' ? 'danger' : toneOf(verb, inputs);

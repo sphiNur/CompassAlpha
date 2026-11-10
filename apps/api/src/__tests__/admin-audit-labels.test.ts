@@ -25,6 +25,7 @@ function lookups(over: Partial<AuditLookups> = {}): AuditLookups {
     userNameById: new Map(),
     roleNameBySlug: new Map(),
     roleNameById: new Map(),
+    roleSlugById: new Map(),
     storeNameById: new Map(),
     catalogNameById: new Map(),
     catalogNamesById: new Map(),
@@ -53,8 +54,14 @@ describe('auditRowRefs', () => {
     });
     expect(refs).toMatchObject({ memberId: M, roleSlug: null, roleId: R });
     expect(
-      buildAuditLabels(refs, lookups({ roleNameById: new Map([[R, 'Super admin']]) })).roleName,
-    ).toBe('Super admin');
+      buildAuditLabels(
+        refs,
+        lookups({
+          roleNameById: new Map([[R, 'Super Admin']]),
+          roleSlugById: new Map([[R, 'super_admin']]),
+        }),
+      ),
+    ).toMatchObject({ roleName: 'Super Admin', roleSlug: 'super_admin' });
   });
 
   test('role.revoke: binding resource still yields the user and role', () => {

@@ -287,7 +287,11 @@ describe.skipIf(!SHOULD_RUN)('a grant from the command line', () => {
     const seen = await owner.as.admin.adminAuditList({ limit: 200 });
     const cli = seen.find((r) => (r.inputs as { bindingId?: string }).bindingId === bindingId);
     expect(cli).toMatchObject({ actor: null, bySystem: true });
-    expect(cli?.labels).toMatchObject({ memberName: staffA.name, roleName: role!.name });
+    expect(cli?.labels).toMatchObject({
+      memberName: staffA.name,
+      roleName: role!.name,
+      roleSlug: 'manager',
+    });
     expect(seen.find((r) => r.actor !== null)?.bySystem).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ import {
 const loc = {
   unknown: '?',
   system: 'System',
+  roleName: (role: { slug: string; name?: string | null }) => role.name ?? role.slug,
   localName: (names: Record<string, string>) => names.en ?? Object.values(names)[0] ?? '',
   day: (iso: string) => `day(${iso})`,
 };
@@ -177,6 +178,27 @@ describe('describeAuditRow', () => {
     });
     // A row whose author is gone is not the system's.
     expect(describeAuditRow({ ...row, bySystem: false }, loc).params.actor).toBe('?');
+  });
+
+  test('a role is named through the role localizer, with its slug', () => {
+    const seen: { slug: string; name?: string | null }[] = [];
+    const s = describeAuditRow(
+      {
+        action: 'admin.role.grant',
+        inputs: { memberId: 'm1', roleId: 'r1' },
+        actor,
+        labels: labels({ memberName: 'Ali', roleName: 'Super Admin', roleSlug: 'super_admin' }),
+      },
+      {
+        ...loc,
+        roleName: (role) => {
+          seen.push(role);
+          return 'Super administrator';
+        },
+      },
+    );
+    expect(seen).toEqual([{ slug: 'super_admin', name: 'Super Admin' }]);
+    expect(s.params.role).toBe('Super administrator');
   });
 
   test('rows from an older server (no labels) still render', () => {
