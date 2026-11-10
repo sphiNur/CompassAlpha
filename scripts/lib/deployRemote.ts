@@ -136,6 +136,30 @@ export function stageTarScript(stageDir = STAGE_DIR, tarball = DEPLOY_TARBALL): 
 }
 
 /**
+ * Review OPS-01 (2026-11-09): written into the live tree just before a
+ * deploy extracts over it, removed once the api and worker run the release
+ * on disk (or once the previous release is put back). While it is there,
+ * the tree is something that never ran: new code beside the old bundle, a
+ * database maybe not migrated, dependencies maybe half installed. The next
+ * deploy must not keep that as its rollback point.
+ */
+export const INCOMPLETE_MARKER = '.deploy-incomplete';
+
+/** Shell script: mark the live tree as mid-deploy (release and UTC time). */
+export function markIncompleteScript(release: string, appDir = APP_DIR): string {
+  return [
+    'set -e',
+    `cd "${appDir}"`,
+    `printf '%s %s\\n' ${JSON.stringify(release)} "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > ${INCOMPLETE_MARKER}`,
+  ].join('\n');
+}
+
+/** Shell script: the live tree is a release that runs again. */
+export function clearIncompleteScript(appDir = APP_DIR): string {
+  return ['set -e', `rm -f "${appDir}/${INCOMPLETE_MARKER}"`].join('\n');
+}
+
+/**
  * Exclusions for the rollback snapshot: dependencies (reinstalled from the
  * snapshot's own lockfile), the web bundle's own spare copies, and the
  * server's .env files, which belong to the server and are never part of a
@@ -163,6 +187,13 @@ export function snapshotScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): st
   return [
     'set -e',
     `cd "${appDir}"`,
+    // OPS-01: the last deploy stopped after extracting and nothing put the
+    // old release back. Keep the snapshot from before that deploy.
+    `if [ -f ${INCOMPLETE_MARKER} ]; then`,
+    `  test -f "${prevTarball}" || { echo "the last deploy did not finish ($(cat ${INCOMPLETE_MARKER})) and there is no earlier snapshot" >&2; exit 4; }`,
+    `  echo "the last deploy did not finish ($(cat ${INCOMPLETE_MARKER})): kept the snapshot from before it"`,
+    '  exit 0',
+    'fi',
     'test -f apps/web/dist/index.html',
     `tar ${ex} -czf "${prevTarball}.tmp" .`,
     `mv -f "${prevTarball}.tmp" "${prevTarball}"`,
@@ -200,6 +231,62 @@ export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): str
     `tar -xzf "${prevTarball}" -C .`,
     'test -f apps/web/dist/index.html',
     'rm -rf apps/web/dist.bad',
+    // OPS-01: the source tree is the kept release again.
+    `rm -f ${INCOMPLETE_MARKER}`,
     `echo "restored $(cat apps/web/dist/build-id.txt 2>/dev/null || echo unknown-build)"`,
   ].join('\n');
+}
+
+/** Where compass-backup.sh writes the nightly dumps (BACKUP_DIR there). */
+export const BACKUP_DIR = '/home/ubuntu/compass-backups';
+
+/** A nightly timer plus two hours of slack. */
+export const BACKUP_MAX_AGE_SECONDS = 26 * 3600;
+
+/**
+ * Review OPS-02 (2026-11-09): read-only shell script. Prints the backup
+ * timer's state, whether the last backup run failed, the newest dump and
+ * its age in seconds (-1 when there is none), one `key=value` per line.
+ */
+export function backupHealthScript(dir = BACKUP_DIR): string {
+  return [
+    'timer=$(systemctl is-active compass-backup.timer 2>/dev/null || true)',
+    'unit=$(systemctl is-failed compass-backup.service 2>/dev/null || true)',
+    `latest=$(ls -1t "${dir}"/compass-*.dump 2>/dev/null | head -1 || true)`,
+    'age=-1',
+    'if [ -n "$latest" ]; then age=$(( $(date +%s) - $(stat -c %Y "$latest") )); fi',
+    'echo "timer=$timer"',
+    'echo "unit=$unit"',
+    'echo "latest=$latest"',
+    'echo "age=$age"',
+  ].join('\n');
+}
+
+/**
+ * What is wrong with the backups, from `backupHealthScript`'s output, or
+ * null when the timer runs, the last run did not fail and the newest dump
+ * is recent. Backups failed silently twice before (CRLF in the script;
+ * the backup role missing SELECT on a new table, 2026-08 to 2026-11).
+ */
+export function backupProblem(
+  output: string,
+  maxAgeSeconds = BACKUP_MAX_AGE_SECONDS,
+): string | null {
+  const kv = new Map<string, string>();
+  for (const line of output.split('\n')) {
+    const i = line.indexOf('=');
+    if (i > 0) kv.set(line.slice(0, i).trim(), line.slice(i + 1).trim());
+  }
+  const timer = kv.get('timer') ?? '';
+  if (timer !== 'active') {
+    return `the nightly backup timer is not running (compass-backup.timer: ${timer || 'not installed'})`;
+  }
+  if (kv.get('unit') === 'failed') return 'the last backup run failed (compass-backup.service)';
+  const latest = kv.get('latest') ?? '';
+  const age = Number(kv.get('age'));
+  if (!latest || !Number.isFinite(age) || age < 0) return 'there is no backup file';
+  if (age > maxAgeSeconds) {
+    return `the newest backup is ${Math.floor(age / 3600)} hours old (${latest})`;
+  }
+  return null;
 }

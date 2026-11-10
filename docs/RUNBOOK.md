@@ -83,6 +83,23 @@ run after the restart, leaving the new api serving a missing/half-written
 `dist`). A failed web build aborts the deploy before the restart and
 leaves the live `dist` untouched.
 
+Since 2026-11-09 (review OPS-01/OPS-02):
+- The read-only checks of the server's `.env` files and database role run
+  before anything is uploaded.
+- A deploy refuses to start when the nightly backup looks broken: the
+  timer is stopped, the last run failed, or the newest dump is more than
+  26 hours old. `--allow-stale-backup` overrides; `--rollback` skips it.
+- If any step between the extract and the restart fails (extract,
+  install, migrate, units, web build), the deploy puts the release kept in
+  step 2.5 back, with its own dependencies and units, and restarts
+  nothing. The disk then matches what runs again. Migrations that already
+  ran stay applied.
+- From the extract until a successful restart,
+  `/home/ubuntu/compass-alpha/.deploy-incomplete` names the release. If it
+  is still there (the undo failed too, or the api did not come up), the
+  next deploy keeps the older snapshot instead of that tree, and
+  `--rollback` removes the file.
+
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
 No restart is needed — the api serves `dist` from disk on every request
@@ -284,7 +301,10 @@ optional off-site upload to any S3-compatible bucket.
   the local dump is kept. (Until 2026-10-30 both only logged WARN and exited 0.)
 - **Failures** print one `[backup] FAILED (exit N) at line L: <command>` or
   `[backup] ERROR: …` line and exit non-zero, so the unit shows `failed`.
-  Nothing alerts on that yet. To add alerting the owner needs to choose:
+  A deploy refuses to start while that is so, or while the timer is
+  stopped or the newest dump is over 26 hours old (`--allow-stale-backup`
+  overrides), so a broken backup is noticed at the next deploy at the
+  latest. Nothing alerts when it happens yet. To add alerting the owner needs to choose:
   where alerts go (Telegram chat/bot, email, ntfy topic, …), who receives
   them, and whether a missing nightly run (not only a failed one) should
   alert — e.g. an `OnFailure=` unit that posts to the chosen channel plus a
@@ -299,7 +319,11 @@ sudo bash /home/ubuntu/compass-alpha/infra/backup/install.sh
 # Skips the immediate first run if you don't want it:
 INSTALL_SKIP_FIRST_RUN=1 sudo bash …/install.sh
 ```
-The installer is idempotent — re-run any time to pick up unit changes.
+The installer is idempotent — re-run any time to pick up unit changes. It
+also gives the backup role (the user in `BACKUP_DATABASE_URL`) SELECT on
+every table and sequence, and on those later migrations create
+(`infra/backup/grant-backup-role.sql`, default privileges for the user in
+`DATABASE_URL_DIRECT`). Re-run it after a migration adds a schema.
 
 ### Verify it's running
 ```bash

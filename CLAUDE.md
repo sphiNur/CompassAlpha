@@ -59,7 +59,8 @@ COMPASS_DEPLOY_HOST=ubuntu@<host> COMPASS_DEPLOY_KEY=<key> \
 bun run scripts/deploy.ts --rollback --dry   # show what a rollback would restore
 ```
 
-- The script refuses a dirty tree, an unpushed HEAD, or any run in purchasing/delivering/amending (`--allow-active-run` exists; don't use it without the owner).
+- The script refuses a dirty tree, an unpushed HEAD, or any run in purchasing/delivering/amending (`--allow-active-run` exists; don't use it without the owner). It also refuses when the nightly backup looks broken (`--allow-stale-backup`, same rule).
+- A failure between the extract and the restart puts the previous release back without restarting; `.deploy-incomplete` on the server marks a tree that never ran.
 - It runs the unit tests locally first, then: snapshot of the live release for `--rollback`, upload (rsync of changed files into a staging copy on the server, which builds the tarball; scp of the whole tarball where rsync is missing), migrations, restart, and three smokes against `COMPASS_BASE`: server (`scripts/smoke.ts`, including the realtime probe and "dev login is off"), render, and a deep browser walk that stubs login and every mutation.
 - The SSH host key is pinned in `infra/deploy/known_hosts`.
 - Browser smokes and `tests/e2e` honour `PLAYWRIGHT_CHANNEL=chrome` to run on an installed Google Chrome instead of Playwright's bundled build (needed where Playwright ships no build, e.g. Ubuntu 26.04).
