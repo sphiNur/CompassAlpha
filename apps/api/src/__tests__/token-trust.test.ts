@@ -11,7 +11,7 @@
  *
  * The PG half is skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { SignJWT } from 'jose';
@@ -113,6 +113,12 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     }));
     orgA = provisioned.a.orgId;
     orgB = provisioned.b.orgId;
+  });
+
+  // Each test signs in to A, as the user last left it. Some switch to B;
+  // a test that fails half-way must not leave the next one in B (review
+  // TEST2-09: each test used to move the user back at its end).
+  beforeEach(async () => {
     await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
@@ -202,7 +208,6 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
 
     const after = await refresh(switched.tokens.refreshToken);
     expect(after.session.member.orgId).toBe(orgB);
-    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
   test('R2-ADM-1: a token rotated before the switch is also told the session moved', async () => {
@@ -225,7 +230,6 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     await expect(refresh(rotated.tokens.refreshToken)).rejects.toThrow(
       'auth.errors.refreshChainSwitched',
     );
-    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
   test('AUTH-11: an access token from before the change still switches', async () => {
@@ -242,7 +246,6 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
       orgId: orgB,
     });
     expect(switched.session.member.orgId).toBe(orgB);
-    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
   test('AUTH-6: a new x-forwarded-for per request no longer escapes the login limit', async () => {
