@@ -30,34 +30,57 @@ import {
 attendanceSuite();
 
 describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
-  test('six checked photos, approved by a manager; only that face clocks', async () => {
+  /** Ali switched on and agreed to the face checks, with no face yet. */
+  async function consented() {
     const f = fixture();
-    const db = getDb(undefined, { system: 'maintenance' });
-    await staffReady();
-    const enroll = (over: Partial<Record<string, string>> = {}) =>
-      f.staff().attendance.faceEnroll({ storeId: f.storeId, photos: enrollPhotos('Ali', over) });
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      enabled: true,
+    });
+    await f.staff().attendance.faceConsentGive({ version: 1 });
+  }
+  /** Ali's photos, `over` in place of some. */
+  const enroll = (over: Partial<Record<string, string>> = {}) => {
+    const f = fixture();
+    return f
+      .staff()
+      .attendance.faceEnroll({ storeId: f.storeId, photos: enrollPhotos('Ali', over) });
+  };
+  const decide = (enrollmentId: string, approve: boolean, note?: string) => {
+    const f = fixture();
+    return f.manager.attendance.faceEnrollDecide({
+      storeId: f.storeId,
+      enrollmentId,
+      approve,
+      ...(note === undefined ? {} : { note }),
+    });
+  };
+  const posesOf = async (enrollmentId: string) =>
+    (
+      await getDb(undefined, { system: 'maintenance' })
+        .select({ pose: s.attendanceFaceSamples.pose })
+        .from(s.attendanceFaceSamples)
+        .where(eq(s.attendanceFaceSamples.enrollmentId, enrollmentId))
+    ).map((x) => x.pose);
 
-    // Withdrawing the consent deletes the enrolled face; enrolling needs it again.
+  test('withdrawing the consent deletes the enrolled face; enrolling needs it again', async () => {
+    const f = fixture();
+    await staffReady();
     await f.staff().attendance.faceConsentWithdraw();
     expect((await f.staff().attendance.me({})).face.status).toBe('none');
     await expectError(enroll(), 'attendance.errors.consentRequired');
     await f.staff().attendance.faceConsentGive({ version: 1 });
+    expect((await enroll()).status).toBe('pending');
+  });
 
-    // Every photo is checked: a poor required one refuses the enrollment...
+  test('every photo is checked: a poor required one refuses, a poor tilt is left out', async () => {
+    await consented();
     await expectError(enroll({ left: 'Ali:flat' }), 'attendance.errors.enrollRejected');
     await expectError(enroll({ front2: 'Bob:front2' }), 'attendance.errors.enrollRejected');
-    // ...a poor tilt is only left out (2026-11-07).
+    // A poor tilt is only left out (2026-11-07).
     const partial = await enroll({ up: 'Ali:up:dark', down: 'nobody' });
-    expect(
-      (
-        await db
-          .select({ pose: s.attendanceFaceSamples.pose })
-          .from(s.attendanceFaceSamples)
-          .where(eq(s.attendanceFaceSamples.enrollmentId, partial.id))
-      )
-        .map((x) => x.pose)
-        .sort(),
-    ).toEqual(['front', 'front2', 'left', 'right']);
+    expect((await posesOf(partial.id)).sort()).toEqual(['front', 'front2', 'left', 'right']);
     await expectError(
       enroll({
         left: 'Ali:left:print',
@@ -73,8 +96,12 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     expect(
       (refused?.cause as { context?: { problems?: string } } | undefined)?.context?.problems,
     ).toBe('left:notTurned');
+  });
 
-    // The ring: tilts and diagonals are kept when caught, not required.
+  test('the ring: tilts and diagonals are kept when caught, not required', async () => {
+    const f = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
+    await consented();
     const minimal = await f.staff().attendance.faceEnroll({
       storeId: f.storeId,
       photos: {
@@ -95,14 +122,7 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
         downright: jpeg('Ali:downright'),
       },
     });
-    expect(
-      (
-        await db
-          .select({ pose: s.attendanceFaceSamples.pose })
-          .from(s.attendanceFaceSamples)
-          .where(eq(s.attendanceFaceSamples.enrollmentId, ring.id))
-      ).length,
-    ).toBe(10);
+    expect((await posesOf(ring.id)).length).toBe(10);
     // The newer one replaced the waiting one.
     expect(
       await db
@@ -110,7 +130,11 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
         .from(s.attendanceFaceEnrollments)
         .where(eq(s.attendanceFaceEnrollments.id, minimal.id)),
     ).toEqual([]);
+  });
 
+  test('a waiting face does not clock; a manager refuses it with a note, and its photos go', async () => {
+    const f = fixture();
+    await consented();
     const first = await enroll();
     expect(first.status).toBe('pending');
     let me = await f.staff().attendance.me({});
@@ -118,7 +142,7 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     await expectError(clock(f.staff()), 'attendance.errors.faceNotEnrolled');
     // A new enrollment replaces the one still waiting.
     const second = await enroll();
-    let queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    const queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
     expect(queue.enrollments.map((e) => [e.id, e.name, e.own])).toEqual([
       [second.id, 'Att Staff', false],
     ]);
@@ -130,44 +154,27 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
       }),
       'auth.errors.missingPermission',
     );
-    await expect(
-      f.manager.attendance.faceEnrollDecide({
-        storeId: f.storeId,
-        enrollmentId: second.id,
-        approve: false,
-      }),
-    ).rejects.toThrow('attendance.errors.enrollNoteRequired');
-    await f.manager.attendance.faceEnrollDecide({
-      storeId: f.storeId,
-      enrollmentId: second.id,
-      approve: false,
-      note: 'Too dark',
-    });
+    await expect(decide(second.id, false)).rejects.toThrow('attendance.errors.enrollNoteRequired');
+    await decide(second.id, false, 'Too dark');
     me = await f.staff().attendance.me({});
     expect(me.face).toMatchObject({ status: 'rejected', rejectedNote: 'Too dark' });
     // Sent back: its photos are gone.
-    expect(
-      await db
-        .select()
-        .from(s.attendanceFaceSamples)
-        .where(eq(s.attendanceFaceSamples.enrollmentId, second.id)),
-    ).toEqual([]);
-    await expectError(
-      f.manager.attendance.faceEnrollDecide({
-        storeId: f.storeId,
-        enrollmentId: second.id,
-        approve: true,
-      }),
-      'attendance.errors.enrollmentNotFound',
-    );
+    expect(await posesOf(second.id)).toEqual([]);
+    await expectError(decide(second.id, true), 'attendance.errors.enrollmentNotFound');
+    // Each waiting face told the managers; the refusal told Ali.
+    expect(await botRecipients('attendance.faceEnrollPending')).toEqual([
+      f.managerUserId,
+      f.managerUserId,
+    ]);
+    expect(await botRecipients('attendance.faceEnrollRejected')).toEqual([f.staffUserId]);
+  });
 
-    const third = await enroll();
-    await f.manager.attendance.faceEnrollDecide({
-      storeId: f.storeId,
-      enrollmentId: third.id,
-      approve: true,
-    });
-    me = await f.staff().attendance.me({});
+  test('the managers see the approved face, not a refused one', async () => {
+    const f = fixture();
+    await consented();
+    await decide((await enroll()).id, false, 'Too dark');
+    await decide((await enroll()).id, true);
+    const me = await f.staff().attendance.me({});
     expect(me.face).toMatchObject({ status: 'approved', pending: false });
     expect(me.face.approvedAt).not.toBeNull();
     const shown = await f.manager.attendance.faceEnrollment({
@@ -186,29 +193,29 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     const today = todayInTz(TZ);
     const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: today, to: today });
     expect(sheet.members.find((m) => m.memberId === f.staffId)!.face).toBe('approved');
+    expect(await botRecipients('attendance.faceEnrollApproved')).toEqual([f.staffUserId]);
+  });
 
-    // Only that face clocks; anything else leaves no punch behind.
+  test('only the approved face clocks; anything else leaves no punch behind', async () => {
+    const f = fixture();
+    await staffReady();
     await expectError(clock(f.staff(), { who: 'Bob' }), 'attendance.errors.faceMismatch');
     await expectError(clock(f.staff(), { who: 'nobody' }), 'attendance.errors.faceNotFound');
     await expectError(clock(f.staff(), { who: 'boom' }), 'attendance.errors.faceCheckUnavailable');
     expect((await clock(f.staff())).face).toBe('match');
+  });
 
-    // Nobody approves their own face.
+  test('nobody approves their own face, except a super admin', async () => {
+    const f = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
     const [own] = await db
       .insert(s.attendanceFaceEnrollments)
       .values({ orgId: f.orgId, memberId: f.managerId, storeId: f.storeId })
       .returning();
-    queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    const queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
     expect(queue.enrollments.find((e) => e.id === own!.id)!.own).toBe(true);
-    await expectError(
-      f.manager.attendance.faceEnrollDecide({
-        storeId: f.storeId,
-        enrollmentId: own!.id,
-        approve: true,
-      }),
-      'attendance.errors.enrollOwn',
-    );
-    // ...except a super admin (owner, 2026-11-07): nobody is above them.
+    await expectError(decide(own!.id, true), 'attendance.errors.enrollOwn');
+    // A super admin may (owner, 2026-11-07): nobody is above them.
     const asSuper = await f.superAdmin().attendance.reviewQueue({ storeId: f.storeId });
     expect(asSuper.enrollments.find((e) => e.id === own!.id)!.own).toBe(false);
     await f.superAdmin().attendance.faceEnrollDecide({
@@ -221,22 +228,20 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
       .from(s.attendanceFaceEnrollments)
       .where(eq(s.attendanceFaceEnrollments.id, own!.id));
     expect(decided).toMatchObject({ status: 'approved', decidedByMemberId: f.managerId });
-    await db.delete(s.attendanceFaceEnrollments).where(eq(s.attendanceFaceEnrollments.id, own!.id));
+  });
 
-    // A manager asks for it again: no punch until a new one is approved.
+  test('a manager asks for the face again: no punch until a new one is approved', async () => {
+    const f = fixture();
+    await staffReady();
     await expectError(
       f.staff().attendance.faceEnrollReset({ storeId: f.storeId, memberId: f.staffId }),
       'auth.errors.missingPermission',
     );
     await f.manager.attendance.faceEnrollReset({ storeId: f.storeId, memberId: f.staffId });
     expect((await f.staff().attendance.me({})).face.status).toBe('none');
-    await expectError(clock(f.staff(), { kind: 'out' }), 'attendance.errors.faceNotEnrolled');
+    await expectError(clock(f.staff()), 'attendance.errors.faceNotEnrolled');
     await enrollApproved(f.staff(), 'Ali');
-
-    const to = async (template: string) => [...new Set(await botRecipients(template))];
-    expect(await to('attendance.faceEnrollPending')).toEqual([f.managerUserId]);
-    expect(await to('attendance.faceEnrollRejected')).toEqual([f.staffUserId]);
-    expect(await to('attendance.faceEnrollApproved')).toEqual([f.staffUserId]);
+    expect((await clock(f.staff())).face).toBe('match');
   });
 });
 
