@@ -1021,7 +1021,8 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
 
     // The last price is still the later trip's (it became 900).
     const stats = await loadSkuPriceStats(db, orgId, [skuIds[0]]);
-    expect(stats.get(skuIds[0])?.lastPrice).toBe(1000);
+    // Number(): #232 makes lastPrice a two-decimal string ("1000.00").
+    expect(Number(stats.get(skuIds[0])?.lastPrice)).toBe(1000);
     // The corrected price is dated with the trip's last purchase.
     const observed = await db
       .select()
