@@ -13,8 +13,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { emptyRunState, type RunEvent, type RunExpense } from '@compass/domain/run';
 import { dispatchRunEventNotifications } from '../services/notifyForEvent';
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
 
 /** An expense line; only qty and price count here. */
 function expense(qty: string, unitPrice: string): RunExpense {

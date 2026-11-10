@@ -1,34 +1,11 @@
 import type { Command } from 'commander';
 import kleur from 'kleur';
 import { eq } from 'drizzle-orm';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { closeDb, getDb, schema as s } from '@compass/db';
+import { loadRepoEnv } from '@compass/db/env';
 
-(function loadRootEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+loadRepoEnv(import.meta.url);
 
 /** A refusal: said in red, nothing written. */
 class Refusal extends Error {}

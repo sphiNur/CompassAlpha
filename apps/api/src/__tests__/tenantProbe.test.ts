@@ -15,8 +15,8 @@ import {
   withSystemContext,
 } from '@compass/db';
 import type { TenantlessQuery } from '@compass/db';
+import { SHOULD_RUN } from './helpers/pg';
 
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 const SOME_ORG = '00000000-0000-4000-8000-000000000001';
 
 describe.skipIf(!SHOULD_RUN)('tenantless query probe (PG-gated)', () => {

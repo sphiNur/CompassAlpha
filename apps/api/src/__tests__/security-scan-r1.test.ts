@@ -35,8 +35,7 @@ import { appRouter } from '../trpc/router';
 import { createContext, loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { isLocalDevPeer, isLocalPeerAddress } from '../services/devLocality';
 import { hub, WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED } from '../realtime/hub';
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
 
 async function errorOf(
   fn: () => Promise<unknown>,

@@ -30,8 +30,7 @@ import {
   withUniqueKey,
 } from '../trpc/routers/admin';
 import { inviterCoversInvite } from '../services/adminAuthority';
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
 const RUN = '00000000-0000-4000-8000-0000000000aa';

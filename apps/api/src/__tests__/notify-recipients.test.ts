@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDb, schema as s } from '@compass/db';
 import { findRecipientsByPermission, findRecipientsByPermissionInStore } from '../services/notify';
+import { SHOULD_RUN } from './helpers/pg';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -20,7 +21,6 @@ const { BUILTIN_ROLES } = (await import(
   resolve(HERE, '../../../../packages/db/src/seed-data.ts')
 )) as SeedData;
 
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 const KEY = 'order.approve';
 
 /**

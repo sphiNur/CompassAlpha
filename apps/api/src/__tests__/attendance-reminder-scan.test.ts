@@ -11,8 +11,7 @@ import { describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
 
 type Db = ReturnType<typeof getDb>;
 

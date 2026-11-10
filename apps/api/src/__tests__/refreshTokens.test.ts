@@ -19,44 +19,15 @@
  * "let's just simplify this back" PR fails the suite.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { signRefresh, verifyRefresh } from '../infra/jwt';
-
-// ---------- bootstrap .env so DATABASE_URL + JWT_*_SECRET are on the env
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 
 // JWT secrets must exist for the pure tests to run too. Provide
 // defaults so a `bun test` without .env still works for the unit
 // half (the service half needs DATABASE_URL anyway).
 process.env.JWT_SECRET ??= 'test-access-secret-aaaaaaaaaaaaaaaaaaaa';
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret-aaaaaaaaaaaaaaaaaa';
-
-const SHOULD_RUN_PG = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
 // ============ PURE: jwt.ts round-trip ============
 

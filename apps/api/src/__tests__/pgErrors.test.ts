@@ -8,8 +8,7 @@ import {
   pgErrorCode,
   withStreamConflictRetry,
 } from '../services/pgErrors';
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
 
 describe('pgErrorCode', () => {
   test('reads the code off a bare driver error', () => {

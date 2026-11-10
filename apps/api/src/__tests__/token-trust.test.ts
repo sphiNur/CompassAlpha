@@ -26,9 +26,9 @@ import {
   checkClientRate,
   UNIDENTIFIED_BUDGET_FACTOR,
 } from '../services/rateLimit';
+import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 
-const SHOULD_RUN =
-  !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1' && !!env.TELEGRAM_BOT_TOKEN;
+const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
 function signInitData(tgUserId: bigint): string {
   const fields: Record<string, string> = {

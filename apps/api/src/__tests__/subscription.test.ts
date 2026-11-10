@@ -28,8 +28,8 @@ import {
   computeWriteAccess,
   readSubscriptionState,
 } from '../services/subscription';
+import { SHOULD_RUN } from './helpers/pg';
 
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 const DAY = 24 * 60 * 60 * 1000;
 
 function caller(session: SessionContext | null) {

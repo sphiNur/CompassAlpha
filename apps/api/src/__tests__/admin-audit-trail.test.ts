@@ -20,6 +20,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { auditAdmin } from '../trpc/routers/admin';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -28,8 +29,6 @@ type SeedData = {
 const { BUILTIN_ROLES } = (await import(
   resolve(HERE, '../../../../packages/db/src/seed-data.ts')
 )) as SeedData;
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
 type Db = ReturnType<typeof getDb>;
 type Caller = ReturnType<typeof appRouter.createCaller>;
