@@ -118,7 +118,7 @@ export const zh = {
     '打开后，来源门店的成员连同他们在那里的角色一起加到目标门店，他们能同时看到并操作两家。默认关闭：只带过去门店的默认角色，不带任何人。',
   'admin.clone.whatTitle': '这个操作会做什么',
   'admin.clone.whatBody':
-    '角色本身（名称、等级、权限）是整个工作区共用的，不需要带入。这里会把来源门店的新成员默认角色设到 {store}。只有勾选上面一项，才会把人员和他们的角色加进 {store}；在 {store} 级别不低于你、或含有你没有的权限的角色会被跳过，单独计数。',
+    '角色本身（名称、等级、权限）是整个工作区共用的，不需要带入。这里会把来源门店的新成员默认角色设到 {store}。只有勾选上面一项，才会把人员和他们的角色加进 {store}；在 {store} 等级不低于你、或含有你没有的权限的角色会被跳过，单独计数。',
   'ops.activity.emptyTitle': '暂无动态',
   'ops.activity.emptyBody': '订单或采购单有进展后，动态会出现在这里。',
   'ops.history.emptyTitle': '还没有人提交过',
@@ -388,7 +388,7 @@ export const zh = {
   'catalog.supplier.newButton': '新建供应商',
   'people.builtInLocked': '等级 {rank}（内置，锁定）',
   'people.builtInRankBody': '内置角色的等级不能改。自定义角色可以任选等级。',
-  'people.rankOutranksYou': '你的等级 ≤ 它',
+  'people.rankOutranksYou': '等级不低于你',
   'people.roleFallback': '角色',
   'people.rankLine': '等级 {rank}',
   'people.roleMetaLine': '等级 {rank} · {perms}',
