@@ -1,6 +1,6 @@
 /**
  * Run history subsystem — extracted verbatim from RunPage.tsx
- * (Phase 4 step 2, FRONTEND_AUDIT_2026-07.md run-domain split).
+ * (Phase 4 step 2 of the 2026-07 frontend audit's run-domain split).
  *
  *   - RunHistoryPage       the history screen itself (list + totals).
  *   - RunHistoryDetailSheet per-run breakdown sheet (items, prices,
@@ -27,6 +27,7 @@ import {
   Chip,
   ChipBar,
   Input,
+  NameCell,
   SectionLabel,
   Sheet,
   Spinner,
@@ -38,7 +39,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
-import type { useI18n, useProductName } from '../../../hooks/useI18n';
+import type { useI18n, useProductNameParts } from '../../../hooks/useI18n';
 import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
@@ -129,7 +130,7 @@ export function RunHistoryPage({
   onClearSearchOrFilters,
   storeById,
   skuById,
-  productName,
+  productNameParts,
   i18n,
   onBack,
 }: {
@@ -163,7 +164,7 @@ export function RunHistoryPage({
       categoryId?: string | null;
     }
   >;
-  productName: ReturnType<typeof useProductName>;
+  productNameParts: ReturnType<typeof useProductNameParts>;
   i18n: ReturnType<typeof useI18n>;
   /**
    * Omit when this renders as a top-level destination.
@@ -470,7 +471,7 @@ export function RunHistoryPage({
         target={detailFor}
         skuById={skuById}
         storeById={storeById}
-        productName={productName}
+        productNameParts={productNameParts}
         i18n={i18n}
         onClose={() => setDetailFor(null)}
       />
@@ -674,7 +675,7 @@ export function RunHistoryDetailSheet({
   target,
   skuById,
   storeById,
-  productName,
+  productNameParts,
   i18n,
   onClose,
 }: {
@@ -690,7 +691,7 @@ export function RunHistoryDetailSheet({
     }
   >;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
-  productName: ReturnType<typeof useProductName>;
+  productNameParts: ReturnType<typeof useProductNameParts>;
   i18n: ReturnType<typeof useI18n>;
   onClose: () => void;
 }) {
@@ -1117,7 +1118,8 @@ export function RunHistoryDetailSheet({
               {visibleHistoryRows.map((row) => {
                 const it = row.item;
                 const sku = skuById.get(it.skuId);
-                const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
+                const nm = sku ? productNameParts(sku) : null;
+                const skuName = nm ? nm.primary : it.skuId.slice(0, 8);
                 const lineTotal = row.lineTotal;
                 const perStoreSplits = row.perStoreSplits;
                 const displayedUnitPrice = activeStoreId
@@ -1140,7 +1142,13 @@ export function RunHistoryDetailSheet({
                     className="border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-old-body font-semibold">{skuName}</span>
+                      {/* UI-4 (review RUNWEB2-06): two lines, not truncated. */}
+                      <NameCell
+                        primary={skuName}
+                        secondary={nm?.secondary}
+                        primaryLang={nm?.primaryLang}
+                        secondaryLang={nm?.secondaryLang}
+                      />
                       {it.status === 'purchased' ? (
                         <span className="text-old-body font-semibold tabular-nums">
                           {formatMoney(lineTotal)}

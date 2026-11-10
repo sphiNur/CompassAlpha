@@ -1,8 +1,9 @@
 /* Pre-React shell styles. Loaded as an external stylesheet so the
    strict CSP (no inline scripts; styles still allow 'unsafe-inline'
    for Tailwind/Radix runtime styles) keeps inline <style> out of
-   index.html. The .ready class is added by main.tsx on successful
-   mount, hiding the splash. */
+   index.html. main.tsx removes the splash once the app has its strings;
+   the `ready` class it sets on <html> tells boot-guard.js the app
+   started. */
 
 html,
 body {
@@ -31,11 +32,6 @@ body {
   gap: 16px;
   text-align: center;
   padding: 24px;
-  transition: opacity 200ms ease;
-}
-.ready #boot-splash {
-  opacity: 0;
-  pointer-events: none;
 }
 #boot-spinner {
   width: 28px;

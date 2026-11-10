@@ -1,6 +1,6 @@
 /**
  * Grouped run views + the shared row leaf — extracted verbatim from
- * RunPage.tsx (Phase 4 step 4, FRONTEND_AUDIT_2026-07.md run-domain
+ * RunPage.tsx (Phase 4 step 4 of the 2026-07 frontend audit's run-domain
  * split).
  *
  *   - GroupCardHeader   one header chrome for all grouped cards
@@ -298,7 +298,8 @@ export function PerVendorView({
   onMarkNa: (skuId: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   /** M3.37 (Wave2 #5): tap-to-cycle extras status. */
   onMarkExtraStatus: (
     sessionId: string,
@@ -396,11 +397,8 @@ export function PerVendorView({
         const totalQty = b.items.reduce((s, r) => s + Number(r.plannedQty || 0), 0);
         return (
           <Card key={b.supplierId ?? '__unassigned__'}>
-            {/* 🛒/❓ encode assigned-vs-unassigned supplier state (UI-1:
-                state-carrying, not decorative) — the Phase 6 sweep
-                decides whether to swap them for text/color. */}
             <GroupCardHeader
-              title={b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+              title={b.supplierName}
               meta={i18n.t('run.label.skuCountAndQty', {
                 n: b.items.length,
                 qty: formatQty(String(totalQty)),
@@ -969,7 +967,8 @@ export function PerCategoryView({
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onSetPaymentMethod: (
     item: ActiveRun['items'][number],
@@ -1127,6 +1126,13 @@ const ROW_TRACKS = '1.25rem minmax(0,1fr) minmax(3rem,auto) minmax(4.25rem,auto)
  * space between adjacent commit targets (today's row: 13px). Density is
  * not what this redesign buys — see the note on the PurchaseRow doc. */
 const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
+
+/* A row's product name: up to two lines, then an ellipsis (WALK-02).
+ * Hyphenated where the page language allows (<html lang> is set), broken
+ * anywhere only when a word still does not fit. */
+const RUN_ROW_NAME_BASE =
+  'min-w-0 line-clamp-2 break-words hyphens-auto text-old-body font-semibold';
+const RUN_ROW_NAME = `${RUN_ROW_NAME_BASE} text-[var(--c-fg)]`;
 
 /* self-stretch (V4, 2026-10-30): the body fills the 52px row, so it
  * taps across the row's height instead of only its 18px text line. */
@@ -1322,7 +1328,8 @@ export function PurchaseRow({
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
-  onUnmark: (skuId: string, skuName: string) => void;
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  onUnmark?: (skuId: string, skuName: string) => void;
   onOpenAdvanced: (item: ActiveRun['items'][number]) => void;
   /**
    * Correct the payment method of an ALREADY purchased row, from the row
@@ -1837,11 +1844,13 @@ export function PurchaseRow({
                 ("...рафинированное" vs "...нерафинированное",
                 "охлаждённое" vs "замороженное") and CSS ellipsis eats
                 exactly that suffix. Long-press is the recovery; opening
-                the row is the other. */}
-            <span
-              className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg)]"
-              title={skuName}
-            >
+                the row is the other.
+                Review WALK-02 (2026-11-09): two lines before the
+                ellipsis. At 320px in Russian the payment label, the
+                quantity and the money took their floors and left the
+                name one to five letters ("Я…" for Яблоко); two 13px
+                lines fit the 52px row. */}
+            <span className={RUN_ROW_NAME} title={skuName}>
               {skuName}
             </span>
 
@@ -2224,7 +2233,7 @@ export function PurchaseRow({
               {/* One ink level down: finished work recedes so the eye
                   finds what is left. */}
               <span
-                className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg-muted)]"
+                className={`${RUN_ROW_NAME_BASE} text-[var(--c-fg-muted)]`}
                 title={skuName}
               >
                 {skuName}
@@ -2348,7 +2357,7 @@ export function PurchaseRow({
               not subtle: --c-fg-subtle is 3.22:1 and the purchaser still
               has to find this row by name when the vendor restocks. */}
           <span
-            className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg-muted)] line-through"
+            className={`${RUN_ROW_NAME_BASE} text-[var(--c-fg-muted)] line-through`}
             title={skuName}
           >
             {skuName}
@@ -2375,17 +2384,22 @@ export function PurchaseRow({
         </div>
 
         {/* This state's one control: put it back. Already routes through
-            RunPage's ConfirmSheet. */}
-        <button
-          type="button"
-          disabled={pendingSync}
-          onClick={() => onUnmark(item.skuId, skuName)}
-          aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
-          title={i18n.t('run.action.unmarkUnavailable')}
-          className={`${ROW_CTRL} ${CTRL_QUIET}`}
-        >
-          <span aria-hidden>↺</span>
-        </button>
+            RunPage's ConfirmSheet. Not offered while the goods are going
+            out (review RUNAPI-02): the line could not be bought then. */}
+        {onUnmark ? (
+          <button
+            type="button"
+            disabled={pendingSync}
+            onClick={() => onUnmark(item.skuId, skuName)}
+            aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
+            title={i18n.t('run.action.unmarkUnavailable')}
+            className={`${ROW_CTRL} ${CTRL_QUIET}`}
+          >
+            <span aria-hidden>↺</span>
+          </button>
+        ) : (
+          <span aria-hidden className={`${ROW_CTRL} invisible`} />
+        )}
       </div>
 
       {/* The note is prose, so it cannot live in a number track. Second

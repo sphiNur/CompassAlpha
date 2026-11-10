@@ -127,3 +127,131 @@ describe('sw.js shell precache and origin-down fallback', () => {
     expect((await answer!).status).toBe(502);
   });
 });
+
+// COREWEB1-06 (2026-11-09): the asset cache keeps what is in use. The
+// fake keeps entries in the order the Cache API does: a put of a URL
+// already stored removes it and appends the new one.
+function orderedCache() {
+  const entries: Array<{ url: string; body: string }> = [];
+  const href = (k: unknown) =>
+    new URL(typeof k === 'string' ? k : (k as { url: string }).url, O).href;
+  const at = (k: unknown) => entries.findIndex((e) => e.url === href(k));
+  let puts = 0;
+  const cache = {
+    entries,
+    puts: () => puts,
+    keys: async () => entries.map((e) => ({ url: e.url })),
+    match: async (k: unknown) => {
+      const e = entries[at(k)];
+      return e ? new Response(e.body) : undefined;
+    },
+    put: async (k: unknown, res: Response) => {
+      puts++;
+      const body = await res.text();
+      const i = at(k);
+      if (i >= 0) entries.splice(i, 1);
+      entries.push({ url: href(k), body });
+    },
+    add: async (u: string) => cache.put(u, new Response('fetched')),
+    delete: async (k: unknown) => {
+      const i = at(k);
+      if (i >= 0) entries.splice(i, 1);
+      return i >= 0;
+    },
+  };
+  return cache;
+}
+
+function loadWorkerWith(cache: ReturnType<typeof orderedCache>) {
+  const src = readFileSync(join(import.meta.dir, '../../../public/sw.js'), 'utf8');
+  const listeners: Record<string, Listener> = {};
+  const caches = { open: async () => cache, match: cache.match, keys: async () => [] };
+  const fakeSelf: Record<string, unknown> = {
+    addEventListener: (type: string, fn: Listener) => (listeners[type] = fn),
+    location: { origin: O },
+  };
+  const fetchImpl = async () => {
+    const res = new Response('network');
+    Object.defineProperty(res, 'type', { value: 'basic' });
+    return res;
+  };
+  new Function('self', 'caches', 'fetch', src)(fakeSelf, caches, fetchImpl);
+  return {
+    listeners,
+    trim: fakeSelf.__compassTrimAssets as (c: unknown, keep?: string[]) => Promise<unknown>,
+  };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 5));
+const paths = (cache: ReturnType<typeof orderedCache>) =>
+  cache.entries.map((e) => new URL(e.url).pathname);
+
+describe('sw.js asset cache trimming (COREWEB1-06)', () => {
+  it("drops the oldest beyond 300, never the shell's own files or the ones just reported", async () => {
+    const cache = orderedCache();
+    await cache.put(
+      '/index.html',
+      new Response(
+        '<script type="module" src="/assets/a0.js"></script><link rel="modulepreload" href="/assets/a1.js">',
+      ),
+    );
+    for (let i = 0; i < 305; i++) await cache.put(`/assets/a${i}.js`, new Response(''));
+    const { trim } = loadWorkerWith(cache);
+    await trim(cache, [`${O}/assets/a2.js`]);
+    const left = paths(cache);
+    expect(left.filter((p) => p.startsWith('/assets/')).length).toBe(300);
+    for (const kept of ['/assets/a0.js', '/assets/a1.js', '/assets/a2.js', '/index.html']) {
+      expect(left).toContain(kept);
+    }
+    for (const gone of ['/assets/a3.js', '/assets/a7.js']) expect(left).not.toContain(gone);
+    expect(left).toContain('/assets/a8.js');
+  });
+
+  it('leaves a cache within the limit alone', async () => {
+    const cache = orderedCache();
+    for (let i = 0; i < 10; i++) await cache.put(`/assets/b${i}.js`, new Response(''));
+    const { trim } = loadWorkerWith(cache);
+    await trim(cache);
+    expect(cache.entries.length).toBe(10);
+  });
+
+  it('a cache hit is written again once per worker, so it counts as recently used', async () => {
+    const cache = orderedCache();
+    await cache.put('/assets/old.js', new Response('old'));
+    await cache.put('/assets/new.js', new Response('new'));
+    const { listeners } = loadWorkerWith(cache);
+    const hit = async () => {
+      let answer: Promise<Response> | null = null;
+      listeners.fetch!({
+        request: { method: 'GET', url: `${O}/assets/old.js`, mode: 'cors' },
+        respondWith: (p: Promise<Response>) => (answer = p),
+      });
+      expect(await (await answer!).text()).toBe('old');
+      await settle();
+    };
+    const before = cache.puts();
+    await hit();
+    expect(paths(cache)).toEqual(['/assets/new.js', '/assets/old.js']);
+    await hit();
+    expect(cache.puts()).toBe(before + 1);
+    // Stored under its URL alone, as before: one entry, not two.
+    expect(cache.entries.length).toBe(2);
+  });
+
+  it('the files a page reports are marked as used, and the cache is trimmed after', async () => {
+    const cache = orderedCache();
+    for (let i = 0; i < 301; i++) await cache.put(`/assets/c${i}.js`, new Response(''));
+    const { listeners } = loadWorkerWith(cache);
+    let done: Promise<unknown> = Promise.resolve();
+    listeners.message!({
+      data: { type: 'compass:cache-urls', urls: [`${O}/assets/c0.js`] },
+      waitUntil: (p: Promise<unknown>) => (done = p),
+    });
+    await done;
+    const left = paths(cache);
+    expect(left.length).toBe(300);
+    expect(left).toContain('/assets/c0.js');
+    expect(left).not.toContain('/assets/c1.js');
+    expect(left.at(-1)).toBe('/assets/c0.js');
+  });
+});

@@ -23,10 +23,11 @@ export const ru = {
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Доступна новая версия',
   'common.cancel': 'Отмена',
+  'common.reason': 'Причина',
+  'common.clearSearch': 'Сбросить поиск',
   'common.archive': 'Архивировать',
   'common.archived': 'в архиве',
   'common.unarchive': 'Восстановить',
-  'common.name': 'Название',
   'common.remove': 'Убрать',
   'common.save': 'Сохранить',
   'common.back': 'Назад',
@@ -152,7 +153,7 @@ export const ru = {
     'Действия обслуживания могут навсегда удалить данные. Этот раздел доступен только суперадминам.',
   'ops.maint.targetedTitle': 'Удалить конкретный тестовый заказ или закупку',
   'ops.maint.targetedBody':
-    'Используйте, когда тестовые и реальные данные попали на один день. Откройте список, выберите тестовый заказ или закупку, посмотрите, что удалится каскадом, затем подтвердите. Заказы реальных пользователей не затрагиваются.',
+    'Используйте, когда тестовые и реальные данные попали на один день. Откройте список, выберите тестовый заказ или закупку, посмотрите, что удалится вместе с ним, затем подтвердите. Заказы реальных пользователей не затрагиваются.',
   'ops.maint.resetToday': 'Сбросить сегодня',
   'ops.maint.resetDateTitle': 'Сбросить конкретную дату',
   'ops.maint.resetDateBody': 'Та же область, другой день. Выберите дату ниже.',
@@ -162,14 +163,11 @@ export const ru = {
     'Кнопка ниже удалит все события, закупки, заказы и уведомления (включая ещё не отправленные), которые когда-либо создавало это рабочее пространство — независимо от даты. Только для полного старта с нуля.',
   'ops.maint.purgeAllTitle': 'Удалить ВСЕ тестовые данные',
   'ops.maint.purgeAllBody':
-    'Шаг 1 показывает количество строк. Шаг 2 удаляет после того, как вы введёте идентификатор рабочего пространства.',
+    'Шаг 1 показывает, сколько записей будет удалено. Шаг 2 удаляет после того, как вы введёте идентификатор рабочего пространства.',
   'ops.maint.previewEverything': 'Предпросмотр всего',
   'ops.maint.resetSheetTitle': 'Сбросить {date}',
   'ops.maint.resetSheetBody': 'Проверьте, что будет удалено, затем подтвердите.',
   'ops.maint.confirmPurgeTitle': 'Подтвердите удаление',
-  'ops.maint.confirmPurgeBody':
-    'Введите идентификатор рабочего пространства «{slug}» для подтверждения.',
-  'ops.maint.confirmPurgeLabel': 'Идентификатор пространства',
   'people.readOnlyStore': 'Только просмотр',
   'people.orgLevelGroup': 'Всё рабочее пространство ({n})',
   'people.orgLevelEmptyTitle': 'Нет участников уровня рабочего пространства',
@@ -185,11 +183,13 @@ export const ru = {
   'people.newRoleHint': 'Пользовательские роли могут иметь уровень от 1 до {max}.',
   'people.rolePlaceholderName': 'Старший смены',
   'people.rolePlaceholderDesc': 'Необязательно',
-  'people.rankField': 'Уровень (1–{max})',
+  'people.rankField': 'Уровень ({min}–{max})',
   'people.slugRule': 'Строчные латинские буквы, цифры и дефис, например night-shift.',
   'people.slugInvalid': 'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
   'people.slugRequired': 'Обязательное поле.',
-  'people.rankInvalid': 'Введите целое число от 1 до {max}.',
+  'people.rankInvalid': 'Введите целое число от {min} до {max}.',
+  'people.rankTierLocked':
+    'Эта роль уже назначена участникам, поэтому её уровень не может пересечь отметку {rank}: если уровень не ниже {rank}, роль действует во всём рабочем пространстве, если ниже — в отдельных магазинах.',
   'people.roleHasKeysYouLack':
     'В этой роли есть права, которых нет у вас, — здесь её выдать нельзя.',
   'people.roleNameKeysYouLack': '{name} (есть права, которых у вас нет)',
@@ -233,7 +233,7 @@ export const ru = {
   'people.mirrorRolesHint':
     'Если включено (по умолчанию), каждая роль этого участника в {store} дублируется в магазине назначения, роль сохраняется. Выключите, чтобы не давать роль на новом месте — полезно, когда перевод означает повышение или понижение.',
   'people.transferWhatTitle': 'Что произойдёт',
-  'people.transferWhatIntro': 'Атомарно, в одной транзакции:',
+  'people.transferWhatIntro': 'Всё за один шаг:',
   'people.transferWhatAdded': '{name} добавляется в магазин назначения',
   'people.transferWhatMirrored':
     'его назначения ролей из исходного магазина воссоздаются в магазине назначения',
@@ -242,7 +242,7 @@ export const ru = {
   'people.transferWhatRemoved':
     'его назначение, роли и отдельные настройки прав в {store} удаляются',
   'people.transferWhatOutro':
-    'Другие магазины участника не затрагиваются. При любой ошибке весь перевод откатывается.',
+    'Другие магазины участника не затрагиваются. Если что-то не получится, ничего не изменится.',
   'people.scopeGlobal': 'Глобально',
   'people.overridesHowTitle': 'Как это работает',
   'people.overridesHowGlobal':
@@ -334,7 +334,6 @@ export const ru = {
   'ops.history.decidedBy': '· {name}',
   'ops.history.skuCount':
     '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
-  'ops.purge.inRun': 'в закупке',
   'ops.purge.runLabel': 'Закупка {date} #{n}',
   'ops.purge.unknownStore': 'Неизвестный магазин',
   'ops.purge.deleteSessionTitle': 'Удалить заказ',
@@ -367,7 +366,7 @@ export const ru = {
   'ops.maint.nothingToDelete': 'Нечего удалять',
   'ops.maint.alreadyClean': 'За {date} данных нет — уже чисто.',
   'ops.maint.rowsFromDate':
-    '{n, plural, one {# строка} few {# строки} many {# строк} other {# строки}} за {date}',
+    '{n, plural, one {# запись} few {# записи} many {# записей} other {# записи}} за {date}',
   'people.memberStatus.suspended': 'Приостановлен',
   'people.memberStatus.invited': 'Приглашён',
   'people.revokeRoleConfirm': 'Снять роль «{role}» у {name}?',
@@ -426,7 +425,7 @@ export const ru = {
   'catalog.supplier.newButton': 'Новый поставщик',
   'people.builtInLocked': 'Уровень {rank} (встроенная, заблокирована)',
   'people.builtInRankBody':
-    'Уровень встроенной роли изменить нельзя — на нём держится лестница прав. Для пользовательских ролей уровень выбираете вы.',
+    'Уровень встроенной роли изменить нельзя. Для пользовательских ролей уровень выбираете вы.',
   'people.rankOutranksYou': 'ваш уровень ≤ этого',
   'people.roleFallback': 'Роль',
   'people.rankLine': 'уровень {rank}',
@@ -489,7 +488,7 @@ export const ru = {
   'run.errors.cannotPlan':
     'У вас нет права планировать закупки. Если нужно, попросите доступ у администратора.',
   'common.errors.controlCharacters':
-    'Название не может содержать управляющие символы (табуляцию, перенос строки)',
+    'Название не может содержать перенос строки, табуляцию и другие невидимые символы',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
   'common.offlineNotSaved': 'Нет сети — изменение не сохранено. Повторите, когда появится связь.',
@@ -843,7 +842,7 @@ export const ru = {
   'admin.label.loadingRoles': 'Загрузка ролей…',
   'admin.label.loadingStores': 'Загрузка магазинов…',
   'admin.field.tgUserId': 'Telegram ID *',
-  'admin.field.tgUserIdPlaceholder': 'напр. 6402913074',
+  'admin.field.tgUserIdPlaceholder': 'напр. 123456789',
   'admin.field.displayName': 'Имя для отображения',
   'admin.field.displayNamePlaceholder':
     'необязательно · пользователь сможет подтвердить/изменить при первом входе',
@@ -880,8 +879,8 @@ export const ru = {
   'admin.empty.noSkus.description': 'Добавьте товары, которые магазины заказывают регулярно.',
   'admin.label.you': 'вы',
   'admin.label.noTelegram': 'без Telegram',
-  'admin.label.seen': 'был {date}',
-  'admin.label.neverSeen': 'никогда не входил',
+  'admin.label.seen': 'последний вход: {date}',
+  'admin.label.neverSeen': 'входов не было',
   'admin.label.readOnly': 'только просмотр',
   'admin.label.orgLevel': 'Уровень пространства',
   'admin.label.orgLevelHint': 'Админы / суперадмины без назначения в магазин',
@@ -891,7 +890,7 @@ export const ru = {
   'admin.workspace.name': 'Название',
   'admin.workspace.yourRole': 'Ваша роль',
   'admin.workspace.telegram': 'Telegram',
-  'auth.errors.sessionStale': 'Данные устарели — обновите страницу',
+  'auth.errors.sessionStale': 'Данные аккаунта изменились — обновите страницу',
   'auth.errors.storeArchived': 'Этот магазин в архиве. Выберите другой магазин.',
   'auth.errors.storeForbidden':
     'Вы не назначены в этот магазин. Выберите другой магазин или попросите администратора добавить вас.',
@@ -914,9 +913,9 @@ export const ru = {
   'admin.errors.cannotLeaveZeroStores': 'У участника должен оставаться хотя бы один магазин',
   'admin.errors.cannotRemoveLastAdmin':
     'Нельзя удалить последнего администратора рабочего пространства. Сначала назначьте администратором кого-то другого.',
-  'admin.errors.cannotRemoveSelf': 'Нельзя удалить самого себя',
+  'admin.errors.cannotRemoveSelf': 'Нельзя удалить себя',
   'admin.errors.cannotRevokeSelfAdmin': 'Нельзя отозвать свою же роль администратора',
-  'admin.errors.cannotSuspendSelf': 'Нельзя приостановить самого себя',
+  'admin.errors.cannotSuspendSelf': 'Нельзя приостановить себя',
   'admin.errors.categoryNotFound':
     'Категория не найдена — возможно, её только что архивировали. Обновите страницу.',
   'admin.errors.inviteNeedsStore': 'Для приглашения не-админа нужен хотя бы один магазин',
@@ -967,6 +966,8 @@ export const ru = {
   'admin.errors.cannotDeleteBuiltinRole':
     'Встроенные роли удалить нельзя, но можно изменить их название, описание и права.',
   'admin.errors.roleHasBindings': 'Эта роль ещё назначена участникам — сначала отзовите назначения',
+  'admin.errors.rankTierChangeHasBindings':
+    'Эта роль ещё назначена участникам — её уровень не может пересечь отметку {rank}. Сначала отзовите назначения или создайте новую роль.',
   'admin.errors.permissionNotFound': 'Такого права нет.',
   'admin.errors.notAdminOfStore': 'Вы не администрируете этот магазин — операция запрещена',
   'admin.errors.memberNotInSourceStore':
@@ -1011,7 +1012,7 @@ export const ru = {
     'Закупка удалена — {n, plural, one {# запись} few {# записи} many {# записей} other {# записи}}',
   'admin.toast.dateReset':
     'Сброшено {date}: {n, plural, one {удалена # запись} few {удалены # записи} many {удалено # записей} other {удалено # записи}}',
-  'admin.toast.dataPurged': 'Очищено записей: {n} (таблиц: {tables})',
+  'admin.toast.dataPurged': 'Удалено записей: {n}',
 
   // ── 7. Upload errors ───────────────────────────────────────────
   'upload.errors.notConfigured':
@@ -1019,8 +1020,6 @@ export const ru = {
   'upload.errors.unsupportedContentType': 'Этот тип файла не разрешён',
 
   // ── 8. Order page ──────────────────────────────────────────────
-  'order.empty.title': 'Пока ничего не выбрано',
-  'order.empty.description': 'Нажмите + рядом с товаром, чтобы начать заказ.',
   'order.categoriesAriaLabel': 'Категории товаров',
   'order.categories.all': 'Все',
   'order.search.placeholder': 'Поиск товаров (любой язык)…',
@@ -1037,7 +1036,7 @@ export const ru = {
   'order.status.in_run': 'В закупке',
   'order.status.archived': 'В архиве',
   'order.banner.claimed': 'Проверяет {who}',
-  'order.banner.claimedAfterHandoff': 'Проверяет {who} (принял от {prev})',
+  'order.banner.claimedAfterHandoff': 'Проверяет {who} (раньше — {prev})',
   'order.banner.approved.title': 'Одобрено · ждёт закупки',
   'order.banner.approved.body': 'Заказ одобрен. Закупщик включит его в следующую закупку.',
   'order.banner.inRun.title': 'В работе · идёт закупка',
@@ -1077,7 +1076,6 @@ export const ru = {
   'order.submitted.extrasOriginal': 'Прочее при отправке',
   'order.submitted.changedShort': 'Изменён при проверке',
   'order.submitted.unchanged': 'Как при отправке',
-  'order.review.remove': 'Убрать',
   'order.review.estimatedTotal': 'Оценка стоимости',
   'order.review.estimateHint': '~ по последней цене покупки · {known} с ценой · {unknown} без цены',
   'approval.estimateUnpriced': '+ {n} без цены',
@@ -1316,13 +1314,10 @@ export const ru = {
   'run.step.done': 'Готово',
   'run.action.startPurchase': 'Начать закупку',
   'run.action.ejectSession': 'Убрать из закупки',
-  'run.section.sessions': 'Заказы в этой закупке',
-  'run.sessions.meta':
-    '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
   'run.sessions.stats':
-    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед. · прочее {extras}',
+    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · прочее {extras}',
   'run.sessions.statsNoExtras':
-    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед.',
+    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
   'run.sessions.unknownSubmitter': 'Неизвестный отправитель',
   'run.eject.reasonPlaceholder': 'Причина (необязательно)',
   'run.confirm.ejectSession.title': 'Убрать заказ {store} / {who} из закупки?',
@@ -1544,7 +1539,7 @@ export const ru = {
   'run.label.reasonForChange': 'Причина изменения',
   'run.label.addReasonOptional': '+ Добавить заметку (опционально)',
   'run.label.itemsTotal': 'Итого по товарам',
-  'run.label.reasonPlaceholder': 'например: ошибся при чтении чека',
+  'run.label.reasonPlaceholder': 'например: ошибка при чтении чека',
   'run.toast.runPlanned': 'Закупка запланирована',
   'run.toast.purchaseStarted': 'Закупка начата',
   'run.toast.deliveryStarted': 'Доставка начата',
@@ -1694,8 +1689,6 @@ export const ru = {
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Для этого магазина нет позиций',
   'confirm.empty.nothingToConfirm': 'Нечего принимать',
-  'confirm.empty.nothingDesc':
-    'Когда товар привезут в ваш магазин — здесь появится список на приёмку.',
   'confirm.runOnDate': 'Закупка {date}',
   'confirm.confirmStore': 'Подтвердить приёмку',
   'confirm.progress': 'Проверено {done}/{total}',
@@ -1812,7 +1805,7 @@ export const ru = {
   'admin.tile.stores': 'Магазины',
   'admin.tile.activeSkus': 'Активные товары',
   'admin.tile.totalRuns': 'Всего закупок',
-  'admin.tile.pendingApprovals': 'Ожидают подтверждения',
+  'admin.tile.pendingApprovals': 'Ждут проверки',
   'admin.tile.ordersThisWeek': 'Заказы / 7 дн',
   'admin.aria.back': 'Назад',
 
@@ -2033,7 +2026,7 @@ export const ru = {
     'Это закрытие дня сделано до появления детализации. Историческая сумма сохранена и не может быть разбита на строки или изменена.',
   'settlement.expenses.remove': 'Удалить',
   'settlement.expenses.readOnly':
-    'Расходы можно просматривать здесь, но добавлять, изменять и удалять их может только менеджер магазина или роль выше.',
+    'Расходы можно просматривать здесь, но добавлять, изменять и удалять их может только управляющий магазином или роль выше.',
   'settlement.expenseCategory.other': 'Другое',
   'settlement.wages.title': 'Детали зарплаты',
   'settlement.wages.totals': 'Выплачено {paid} · Не выплачено {unpaid}',
@@ -2103,7 +2096,6 @@ export const ru = {
   'settlement.noEligibleStores.body':
     'У вас нет права закрывать день ни в одном назначенном магазине. Попросите управляющего магазином проверить вашу роль.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
-  'settlement.errors.fieldMoney': '{field}: введите число, не более двух знаков после запятой.',
   'settlement.errors.fieldsToFix':
     '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
   'settlement.errors.goToFirst': 'Перейти',
@@ -2210,7 +2202,7 @@ export const ru = {
   'inventory.reason.stocktake': 'Инвентаризация',
   'inventory.reason.wastage': 'Списание',
   'inventory.reason.consumption': 'Расход по продаже',
-  'inventory.reason.consumption_reversed': 'Отмена продажи',
+  'inventory.reason.consumption_reversed': 'Аннулирование продажи',
   'inventory.reason.transfer_in': 'Перемещение (приход)',
   'inventory.reason.transfer_out': 'Перемещение (расход)',
   'inventory.reason.adjustment': 'Корректировка',
@@ -2252,6 +2244,8 @@ export const ru = {
   'ops.audit.emptyStoreBody': 'Старые записи без магазина не видны при фильтре по магазину.',
   'ops.audit.emptyFilterTitle': 'Нет действий этого типа',
   'ops.audit.unknown': '(неизвестно)',
+  'ops.audit.change': '{field}: {before} → {after}',
+  'ops.audit.field.status': 'Статус',
   'ops.audit.s.roleGrant': '{actor}: выдана роль «{role}» для {member}',
   'ops.audit.s.roleRevoke': '{actor}: снята роль «{role}» у {member}',
   'ops.audit.s.roleCreate': '{actor}: создана роль «{role}»',
@@ -2283,6 +2277,10 @@ export const ru = {
   'ops.audit.s.catalogRestore': '{actor}: восстановлено «{name}»',
   'ops.audit.s.financeUpdate': '{actor}: изменены финансовые настройки',
   'ops.audit.s.subscriptionUpdate': '{actor}: обновлена подписка',
+  'ops.audit.s.purgeSession': '{actor}: удалён заказ от {date} в магазине {store} ({member})',
+  'ops.audit.s.purgeRun': '{actor}: удалена закупка {date} №{n}',
+  'ops.audit.s.purgeDate': '{actor}: удалены все заказы и закупки за {date}',
+  'ops.audit.s.purgeAll': '{actor}: удалены все данные рабочего пространства',
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.
@@ -2291,13 +2289,13 @@ export const ru = {
   'notify.order.approved.title': 'Заказ одобрен',
   'notify.order.approved.body': 'Ваш заказ одобрен и попадёт в следующую закупку.',
   'notify.order.selfApproved.title': 'Заказ одобрил сам автор',
-  'notify.order.selfApproved.body': '{store}: менеджер одобрил собственный заказ.',
+  'notify.order.selfApproved.body': '{store}: управляющий одобрил собственный заказ.',
   'notify.order.rejected.title': 'Заказ отклонён',
   'notify.order.rejected.body': 'Ваш заказ отклонён — исправьте и отправьте снова.',
   'notify.order.unapproved.title': 'Заказ возвращён на проверку',
   'notify.order.unapproved.body': 'Проверяющий снова открыл ваш заказ на проверку.',
   'notify.order.withdrawn.title': 'Заказ возвращён в черновик',
-  'notify.order.withdrawn.body': 'Менеджер вернул ваш отправленный заказ в черновик.',
+  'notify.order.withdrawn.body': 'Управляющий вернул ваш отправленный заказ в черновик.',
   'notify.order.attachedToRun.title': 'Заказ добавлен в закупку',
   'notify.order.attachedToRun.body': 'Ваш заказ сейчас закупается.',
   'notify.order.claimTakenOver.title': 'Вашу проверку взял другой',
@@ -2397,7 +2395,7 @@ export const ru = {
     'Не отмечено — прочие товары от магазинов ({n}): {names}. После начала доставки они пропадут со страницы закупки.',
   'approval.changed.title': 'Заказ изменился после того, как вы его открыли',
   'approval.changed.body': 'Изменённые позиции отмечены. Одобряйте, когда посмотрите их.',
-  'approval.changed.ack': 'Посмотрел',
+  'approval.changed.ack': 'Понятно',
   'approval.changed.line': 'Изменено: {from} → {to} {unit}',
   'approval.changed.removed': '{item}: {from} {unit} → удалено',
   'approval.zeroed': 'При проверке поставлено 0 — нажмите +, чтобы вернуть',
@@ -2464,15 +2462,17 @@ export const ru = {
   'attendance.kind.in': 'Приход',
   'attendance.kind.out': 'Уход',
   'attendance.source.manual': 'добавил управляющий',
-  'attendance.source.self': 'отметился сам',
+  'attendance.source.self': 'своя отметка',
   'attendance.clock.in': 'Отметить приход',
   'attendance.clock.out': 'Отметить уход',
   'attendance.clock.locating': 'Определяем место…',
   'attendance.clock.doneIn': 'Приход отмечен в {time}',
   'attendance.clock.doneOut': 'Уход отмечен в {time}',
-  'attendance.clock.punches': 'Отметки за сегодня',
+  'attendance.clock.punches': 'Последние отметки',
   'attendance.clock.noShiftToday': 'Сегодня смены нет',
   'attendance.clock.shiftToday': 'Смена сегодня: {times}',
+  'attendance.clock.shiftFromYesterday': 'Смена со вчерашнего дня: {times}',
+  'attendance.clock.yesterday': 'Вчера',
   'attendance.clock.upcoming': 'Следующие смены',
   'attendance.clock.offlineTitle': 'Нет связи',
   'attendance.clock.offlineBody': 'Для отметки нужна связь; она не сохраняется для отправки позже.',
@@ -2504,12 +2504,12 @@ export const ru = {
   'attendance.duration.hoursMinutes': '{h} ч {m} мин',
   'attendance.flag.onDuty': 'На работе',
   'attendance.flag.upcoming': 'Ещё не началась',
-  'attendance.flag.absent': 'Не пришёл',
+  'attendance.flag.absent': 'Неявка',
   'attendance.flag.missingIn': 'Нет отметки прихода',
   'attendance.flag.missingOut': 'Нет отметки ухода',
   'attendance.flag.unscheduled': 'Без смены',
   'attendance.flag.lateBy': 'Опоздание {m} мин',
-  'attendance.flag.earlyBy': 'Ушёл на {m} мин раньше',
+  'attendance.flag.earlyBy': 'Ранний уход: {m} мин',
   'attendance.sheet.emptyTitle': 'Пока некого показать',
   'attendance.sheet.emptyBody':
     'Включите отметку для сотрудников в «Настройках» или составьте смены в «Сменах».',
@@ -2520,12 +2520,13 @@ export const ru = {
     'Отметки за этот день. Ошибочные аннулируются с причиной и никогда не удаляются.',
   'attendance.sheet.noPunches': 'В этот день отметок нет.',
   'attendance.sheet.manualBy': 'Добавил {name}: {reason}',
+  'attendance.sheet.madeOn': '{label} ({date})',
   'attendance.sheet.selfAt': 'Отметился сам, {m} м от магазина',
   'attendance.sheet.voidedBy': 'аннулировал {name}: {reason}',
   'attendance.void.action': 'Аннулировать',
   'attendance.void.confirm': 'Аннулировать отметку',
   'attendance.void.reasonLabel': 'Почему аннулировать отметку в {time}?',
-  'attendance.void.reasonPlaceholder': 'Например: нажал по ошибке',
+  'attendance.void.reasonPlaceholder': 'Например: случайное нажатие',
   'attendance.manual.title': 'Добавить пропущенную отметку',
   'attendance.manual.time': 'Время',
   'attendance.manual.reason': 'Причина',
@@ -2609,7 +2610,7 @@ export const ru = {
     '{name}: нет отметки прихода в {store}; смена началась в {start}.',
   'attendance.pay.owed': 'К выплате {net}',
   'attendance.pay.owedDeducted': 'К выплате {net} (опоздание / ранний уход: −{deduction})',
-  'attendance.pay.absent': 'Не пришёл: без оплаты',
+  'attendance.pay.absent': 'Неявка: без оплаты',
   'attendance.pay.needsReview': 'Оплата после проверки учёта времени',
   'attendance.pay.noRate': 'Дневная ставка не задана',
   'attendance.overtime.askTitle': 'Почему вы уходите позже?',
@@ -2648,11 +2649,11 @@ export const ru = {
   'attendance.export.button': 'Выгрузить в Excel',
   'attendance.export.failed': 'Не удалось выгрузить. Попробуйте снова.',
   'attendance.export.fileName': 'Учёт-времени-{store}-{month}.xlsx',
-  'attendance.export.manualMark': '(вручную)',
+  'attendance.export.manualMark': '{time} (вручную)',
   'attendance.export.sheetSummary': 'Итого',
   'attendance.export.sheetDays': 'По дням',
   'attendance.export.status.payable': 'Оплачивается',
-  'attendance.export.status.absent': 'Не пришёл',
+  'attendance.export.status.absent': 'Неявка',
   'attendance.export.status.needsReview': 'Проверить',
   'attendance.export.status.inProgress': 'Не завершено',
   'attendance.export.status.noRate': 'Нет ставки',
@@ -2685,7 +2686,7 @@ export const ru = {
   'attendance.export.col.overtimePending': 'Сверхурочно ждёт решения (мин)',
   'attendance.export.col.attendance': 'Явка',
   'attendance.export.flag.ok': 'По графику',
-  'attendance.export.flag.absent': 'Не пришёл',
+  'attendance.export.flag.absent': 'Неявка',
   'attendance.export.flag.missingIn': 'Нет прихода',
   'attendance.export.flag.missingOut': 'Нет ухода',
   'attendance.export.flag.unscheduled': 'Без смены',
@@ -2708,21 +2709,19 @@ export const ru = {
   'attendance.errors.faceNotFound':
     'На фото не найдено лицо. Смотрите в камеру при хорошем свете и сделайте фото снова.',
   'attendance.errors.faceCheckUnavailable': 'Проверка лица сейчас недоступна. Попробуйте позже.',
-  'attendance.errors.photoNotFound': 'Этого фото больше нет.',
   'attendance.export.col.face': 'Лицо',
   'attendance.export.face.match': 'Совпадает',
   'attendance.export.face.mismatch': 'Не совпадает',
   'attendance.export.face.enrolled': 'Записано',
   'attendance.export.face.unchecked': 'Не проверено',
-  'notify.attendance.faceMismatch.title': 'Лицо не совпадает',
-  'notify.attendance.faceMismatch.body':
-    '{name}: отметка в {store} в {time}, лицо не совпадает с записанным. Проверьте фото отметки.',
   'attendance.errors.livenessRequired':
     'В этом магазине для отметки нужна проверка живого лица. Обновите приложение и попробуйте снова.',
   'attendance.errors.livenessExpired':
     'Проверка лица заняла слишком много времени. Начните заново.',
   'attendance.errors.livenessFailed':
-    'Проверка живого лица не пройдена. Смотрите в камеру при хорошем свете и поворачивайте голову по подсказке.',
+    'Проверка живого лица не пройдена: выполните каждое движение, о котором просит экран.',
+  'attendance.errors.livenessOtherFace':
+    'Движения не удалось сопоставить с вашим лицом: оставьте в кадре только своё лицо.',
   'attendance.errors.borrowNoFace': 'Этот коллега ещё не зарегистрировал лицо.',
   'attendance.errors.borrowFaceMismatch': 'Лицо не совпадает с этим коллегой.',
   'attendance.errors.notColleague':
@@ -2753,9 +2752,6 @@ export const ru = {
   'attendance.export.check.livenessFailed': 'Живое лицо не подтверждено',
   'attendance.export.check.borrowed': 'С телефона: {name}',
   'attendance.export.check.newDevice': 'Новый телефон',
-  'notify.attendance.livenessFailed.title': 'Проверка живого лица не пройдена',
-  'notify.attendance.livenessFailed.body':
-    '{name}: отметка в {store} в {time}, проверка живого лица не пройдена. Проверьте фото отметки.',
   'notify.attendance.borrowedPhone.title': 'Отметка с телефона коллеги',
   'notify.attendance.borrowedPhone.body':
     '{name}: отметка в {store} в {time} с телефона, владелец: {owner}. Лицо совпало.',
@@ -2774,10 +2770,10 @@ export const ru = {
   'attendance.live.slow': 'Сеть медленная, отслеживание лица ещё загружается. Подождите.',
   'attendance.errors.consentRequired': 'Сначала согласитесь на проверку лица.',
   'attendance.errors.borrowNoConsent':
-    'Этот коллега ещё не согласился на проверку лица. Сначала он соглашается на своём телефоне.',
+    'У этого коллеги ещё нет согласия на проверку лица. Согласие даётся на собственном телефоне.',
   'attendance.errors.livenessNeeded': 'На этот раз нужны ещё и повороты головы.',
   'attendance.errors.notRecognized':
-    'Лицо не распознано ни как один сотрудник этого магазина. Попробуйте при хорошем свете или попросите руководителя добавить отметку.',
+    'Лицо не совпало ни с одним сотрудником этого магазина. Попробуйте при хорошем свете или попросите управляющего добавить отметку.',
   'attendance.borrow.identifyHint': 'Коллега смотрит в камеру, приложение само узнаёт, кто это.',
   'attendance.consent.title': 'Проверка лица',
   'attendance.consent.intro':
@@ -2785,15 +2781,15 @@ export const ru = {
   'attendance.consent.kept':
     'Хранятся фото зарегистрированного лица и фото отметок; фото отметок удаляются через 90 дней.',
   'attendance.consent.who':
-    'Их видят только руководители вашего магазина. Они нужны только для учёта времени.',
+    'Их видят только управляющие вашего магазина. Они нужны только для учёта времени.',
   'attendance.consent.withdrawNote':
-    'Отозвать согласие можно на этом экране в любой момент; зарегистрированное лицо удаляется, отметки добавляет руководитель.',
+    'Отозвать согласие можно на этом экране в любой момент; зарегистрированное лицо удаляется, отметки добавляет управляющий.',
   'attendance.consent.agree': 'Согласен',
   'attendance.consent.notNow': 'Не сейчас',
   'attendance.consent.withdraw': 'Отозвать согласие на проверку лица',
   'attendance.consent.withdrawTitle': 'Отозвать согласие?',
   'attendance.consent.withdrawBody':
-    'Зарегистрированное лицо удаляется. Отмечаться на телефоне будет нельзя, отметки добавляет руководитель.',
+    'Зарегистрированное лицо удаляется. Отмечаться на телефоне будет нельзя, отметки добавляет управляющий.',
   'attendance.face.like': 'Похоже на: {name}',
   'attendance.live.badge.passive': 'Живое лицо (фото)',
   'attendance.view.review': 'Проверить',
@@ -2804,22 +2800,19 @@ export const ru = {
   'attendance.review.overtimeTitle': 'Переработка ждёт решения',
   'attendance.review.overtimeBody': 'Ожидают: {count}. Одобрите или отклоните в табеле.',
   'attendance.export.check.faceLike': 'Похоже на: {name}',
-  'notify.attendance.faceLike.title': 'Лицо похоже на другого сотрудника',
-  'notify.attendance.faceLike.body':
-    '{name}: отметка в {store} в {time}, но лицо похоже на: {like}. Проверьте фото отметки.',
   'attendance.errors.faceNotEnrolled':
-    'Сначала зарегистрируйте лицо; отмечаться можно после одобрения руководителем.',
+    'Сначала зарегистрируйте лицо; отмечаться можно после одобрения управляющим.',
   'attendance.errors.faceMismatch': 'Лицо не совпадает с вашим, отметка не сохранена.',
   'attendance.errors.enrollRejected': 'Некоторые фото не подошли. Пройдите регистрацию ещё раз.',
   'attendance.errors.enrollmentNotFound': 'Эта регистрация лица уже не ждёт одобрения.',
-  'attendance.errors.enrollOwn': 'Нельзя одобрить своё лицо: это делает другой руководитель.',
+  'attendance.errors.enrollOwn': 'Нельзя одобрить своё лицо: это делает другой управляющий.',
   'attendance.errors.enrollNoteRequired': 'Укажите причину возврата.',
   'attendance.errors.enrollFailed': 'Не удалось отправить регистрацию лица.',
   'attendance.face.refusedBody':
-    'Попробуйте ещё раз, глядя в камеру при хорошем свете. Если не получится, попросите руководителя добавить отметку.',
+    'Попробуйте ещё раз, глядя в камеру при хорошем свете. Если не получится, попросите управляющего добавить отметку.',
   'attendance.face.cannotTitle': 'На этом телефоне нельзя сделать фото лица',
   'attendance.face.cannotBody':
-    'Камера или отслеживание лица здесь не работают. Отметьтесь на телефоне коллеги или попросите руководителя добавить отметку.',
+    'Камера или отслеживание лица здесь не работают. Отметьтесь на телефоне коллеги или попросите управляющего добавить отметку.',
   'attendance.face.cannotDenied':
     'Доступ к камере выключен. Разрешите Telegram камеру в настройках телефона и попробуйте снова.',
   'attendance.enroll.start': 'Зарегистрировать лицо',
@@ -2829,15 +2822,15 @@ export const ru = {
     'Новая регистрация лица ждёт одобрения; до этого используется прежняя.',
   'attendance.enroll.card.none.title': 'Сначала зарегистрируйте лицо',
   'attendance.enroll.card.none.body':
-    'Отметка только по лицу. Посмотрите в круг и медленно поверните голову (меньше минуты); отмечаться можно после одобрения руководителем.',
-  'attendance.enroll.card.pending.title': 'Ждёт одобрения руководителя',
+    'Отметка только по лицу. Посмотрите в круг и медленно поверните голову (меньше минуты); отмечаться можно после одобрения управляющим.',
+  'attendance.enroll.card.pending.title': 'Ждёт одобрения управляющего',
   'attendance.enroll.card.pending.body':
-    'Фото лица отправлены руководителю. Отмечаться можно после одобрения.',
+    'Фото лица отправлены управляющему. Отмечаться можно после одобрения.',
   'attendance.enroll.card.rejected.title': 'Регистрация лица возвращена',
   'attendance.enroll.card.rejected.body': 'Зарегистрируйте лицо ещё раз.',
   'attendance.enroll.card.approved.title': 'Лицо зарегистрировано',
   'attendance.enroll.card.approved.body': 'Можно отмечаться по лицу.',
-  'attendance.enroll.card.note': 'Комментарий руководителя: {note}',
+  'attendance.enroll.card.note': 'Комментарий управляющего: {note}',
   'attendance.enroll.hint':
     'Держите телефон на уровне глаз при хорошем свете, без шапки и маски. Нажимать ничего не нужно: фото делаются сами.',
   'attendance.enroll.pose.front': 'Смотрите прямо',
@@ -2871,10 +2864,10 @@ export const ru = {
   'attendance.rules.faceOnlyLine': 'Отметка только по лицу, фото делаются сами',
   'attendance.settings.faceOnly': 'Проверка лица: всегда включена',
   'attendance.settings.faceOnlyHint':
-    'Все отмечаются по лицу. Каждый один раз регистрирует лицо, руководитель одобряет его в разделе «Проверить».',
+    'Все отмечаются по лицу. Каждый один раз регистрирует лицо, управляющий одобряет его в разделе «Проверить».',
   'attendance.review.enrollTitle': 'Регистрации лица на одобрение',
   'attendance.review.enrollInUse': 'Лицо, используемое сейчас:',
-  'attendance.review.enrollOwn': 'Это ваше лицо: его одобряет другой руководитель.',
+  'attendance.review.enrollOwn': 'Это ваше лицо: его одобряет другой управляющий.',
   'attendance.review.enrollApprove': 'Одобрить',
   'attendance.review.enrollReject': 'Вернуть',
   'attendance.review.enrollReasonLabel': 'Причина возврата',
@@ -2900,7 +2893,7 @@ export const ru = {
     'Смотрите на экран и поворачивайте голову, пока весь круг не станет зелёным.',
   'attendance.enroll.slowHint': 'Чуть медленнее и чуть шире круг.',
   'attendance.enroll.doneHint':
-    'Отправлено руководителю на одобрение. После одобрения можно отмечаться.',
+    'Отправлено управляющему на одобрение. После одобрения можно отмечаться.',
   'attendance.enroll.center': 'Переместите лицо в центр круга',
   'attendance.enroll.pose.upleft': 'Вверх и влево',
   'attendance.enroll.pose.upright': 'Вверх и вправо',
@@ -2913,7 +2906,7 @@ export const ru = {
   'attendance.map.inside': 'Вы в зоне отметки, {m} м от магазина.',
   'attendance.map.outside': 'Вы вне зоны отметки: до неё ещё {m} м по прямой.',
   'attendance.map.accuracy': 'Точность ±{m} м',
-  'attendance.map.punches': 'Где отмечался',
+  'attendance.map.punches': 'Места отметок',
   'attendance.live.blinkTitle': 'Моргните',
   'attendance.live.mouthTitle': 'Откройте рот',
   'attendance.live.guide.openEyes': 'Откройте глаза',
@@ -2921,13 +2914,12 @@ export const ru = {
   'admin.errors.memberHasAttendance':
     'У этого человека есть записи учёта времени, поэтому его нельзя удалить. Вместо этого приостановите его — записи сохранятся.',
   'attendance.errors.manageOwn':
-    'Нельзя менять собственный учёт времени или ставку. Попросите другого руководителя или суперадмина.',
+    'Нельзя менять собственный учёт времени или ставку. Попросите другого управляющего или суперадмина.',
   'attendance.errors.identifyIsOwner':
-    'Это ваше собственное лицо. Чтобы отметиться самому, нажмите «Отметить приход» или «Отметить уход».',
+    'Это ваше собственное лицо. Чтобы отметить себя, нажмите «Отметить приход» или «Отметить уход».',
   'attendance.errors.photoReused':
     'Эти снимки уже отправлялись раньше. Пройдите проверку лица заново.',
-  'attendance.sheet.ownHint':
-    'Ваш учёт времени и ставку меняет другой руководитель или суперадмин.',
+  'attendance.sheet.ownHint': 'Ваш учёт времени и ставку меняет другой управляющий или суперадмин.',
   'attendance.flag.missedShift': 'Пропустил смену',
   'attendance.export.flag.missedShift': 'Пропустил смену',
   'settlement.wages.fromAttendanceReasonMissed':
@@ -2948,6 +2940,8 @@ export const ru = {
   'attendance.punch.checking': 'Проверяем, подождите…',
   'attendance.punch.checkingSlow':
     'Связь медленная, отправка продолжается. Пожалуйста, не закрывайте.',
+  'attendance.punch.checkingLong':
+    'Ответа всё ещё нет. Можно закрыть: в разделе «Учёт времени» будет видно, записана ли отметка. Если нет, отметьтесь ещё раз.',
   'attendance.punch.okIn': 'Приход отмечен',
   'attendance.punch.okOut': 'Уход отмечен',
   'attendance.punch.told': '{name} и управляющие получили уведомление.',
@@ -2958,19 +2952,21 @@ export const ru = {
   'attendance.punch.done': 'Хорошо',
   'attendance.punch.oneMore': 'Ещё один шаг: поверните голову, как показано.',
   'attendance.punch.restart': 'Время вышло. Пожалуйста, пройдите ещё раз.',
-  'attendance.punch.netFailed': 'Нет связи: отметка не записана.',
+  'attendance.punch.netFailed': 'Ответа нет: отметка, возможно, уже записана.',
   'attendance.punch.netFailedBody':
-    'Фото пока сохранены: нажмите «Попробовать ещё раз», чтобы отправить их снова.',
+    'Нажмите «Попробовать ещё раз», чтобы проверить с теми же фото. Дважды отметка не запишется.',
   'attendance.punch.alreadyIn': 'Вы уже отметили приход в {time}. Повторять не нужно.',
   'attendance.punch.alreadyOut': 'Вы уже отметили уход в {time}. Повторять не нужно.',
   'attendance.punch.alreadyInFor': 'Приход {name} уже отмечен в {time}. Повторять не нужно.',
   'attendance.punch.alreadyOutFor': 'Уход {name} уже отмечен в {time}. Повторять не нужно.',
   'attendance.punch.notRecognizedHint':
-    'Сначала коллега регистрирует лицо на своём телефоне, и управляющий его подтверждает; только потом можно отмечаться с чужого телефона. Плохой свет тоже мешает.',
+    'Сначала коллега регистрирует лицо на своём телефоне, и управляющий его одобряет; только потом можно отмечаться с чужого телефона. Плохой свет тоже мешает.',
   'attendance.overtime.askBodyFor':
     '{name}: после конца смены прошло: {duration}. Сверхурочные учитываются после одобрения управляющего.',
   'attendance.overtime.continue': 'Продолжить',
   'attendance.location.outside.title': 'Слишком далеко от магазина',
   'attendance.location.inaccurate.title': 'Местоположение неточное',
   'attendance.punch.preparing': 'Подготовка…',
+  'run.errors.listFrozenWhileDelivering':
+    'Доставка уже началась, список сейчас менять нельзя. Если ни один магазин ещё не получил товар, сначала вернитесь к закупке.',
 } as const satisfies Record<CatalogKey, string>;

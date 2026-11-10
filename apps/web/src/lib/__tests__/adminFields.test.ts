@@ -3,6 +3,7 @@ import {
   defaultNewRoleRank,
   normaliseSlugInput,
   readRank,
+  roleRankRange,
   slugIsValid,
   tgIdProblem,
 } from '../adminFields';
@@ -17,6 +18,28 @@ describe('readRank (DX-ADM-4)', () => {
     for (const t of ['', '0', '80', '12.7', '12,7', '-3', 'abc', '1e2']) {
       expect(readRank(t, 79)).toEqual({ ok: false, max: 79 });
     }
+  });
+});
+
+describe('readRank with a lower bound (ADM1-02)', () => {
+  test('values below min are refused like those above max', () => {
+    expect(readRank('80', 99, 80)).toEqual({ ok: true, rank: 80 });
+    expect(readRank('79', 99, 80)).toEqual({ ok: false, max: 99 });
+  });
+});
+
+describe('roleRankRange (ADM1-02)', () => {
+  test('a role nobody holds may take any level below the actor', () => {
+    expect(roleRankRange(70, false, 100, 80)).toEqual({ min: 1, max: 99, locked: false });
+    expect(roleRankRange(85, false, 100, 80)).toEqual({ min: 1, max: 99, locked: false });
+  });
+  test('a held role stays on its side of the admin tier', () => {
+    expect(roleRankRange(70, true, 100, 80)).toEqual({ min: 1, max: 79, locked: true });
+    expect(roleRankRange(85, true, 100, 80)).toEqual({ min: 80, max: 99, locked: true });
+  });
+  test('nothing is narrowed when the actor could not cross the tier anyway', () => {
+    expect(roleRankRange(30, true, 80, 80)).toEqual({ min: 1, max: 79, locked: false });
+    expect(roleRankRange(30, true, 60, 80)).toEqual({ min: 1, max: 59, locked: false });
   });
 });
 

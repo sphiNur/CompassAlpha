@@ -1,6 +1,6 @@
 /**
  * Admin → Operations sections — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 1, FRONTEND_AUDIT_2026-07.md admin split).
+ * (Phase 5 step 1 of the 2026-07 frontend audit's admin split).
  *
  *   - ActivitySection    KPI tiles + event feed (+ embedded DebugPage)
  *   - HistorySection     submission history (expandable order cards)
@@ -43,6 +43,7 @@ import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
 import { auditCategory, describeAuditRow, type AuditCategory } from './auditSentence';
+import { auditChangeLines, type ChangeFormat } from './auditChangeLines';
 import { purgeCountsByKind, resetConfirmMatches, wipeConfirmMatches } from './purgeCounts';
 import { activityDetail } from './activityDetail';
 
@@ -795,6 +796,18 @@ export function AdminAuditSection() {
   const i18n = useI18n();
   const dateFmt = useDateFormat();
   const productName = useProductName();
+  const unitLabel = useUnitLabel();
+  // ADM2-06: how the before / after values of an edit read.
+  const changeFormat: ChangeFormat = {
+    empty: '—',
+    localName: (names) => productName({ names }),
+    unit: unitLabel,
+    paymentMethod: (method) =>
+      method === 'transfer'
+        ? i18n.t('run.history.payment.transfer')
+        : i18n.t('run.history.payment.cash'),
+    active: (on) => (on ? i18n.t('admin.label.active') : i18n.t('stores.paused')),
+  };
   // B2 (2026-05-06): per-store filter. The pill row at the top lets an
   // admin scope the log to one store; rows pre-2026-05-06 (NULL scope)
   // disappear under the filter, which is correct — they predate the
@@ -915,7 +928,9 @@ export function AdminAuditSection() {
                 const s = describeAuditRow(r, {
                   unknown: i18n.t('ops.audit.unknown'),
                   localName: (names) => productName({ names }),
+                  day: (d) => dateFmt.calendarDay(d),
                 });
+                const changes = auditChangeLines(r.inputs, changeFormat);
                 const badge =
                   s.category === 'catalog'
                     ? (kindLabel[s.object] ?? s.object)
@@ -940,6 +955,19 @@ export function AdminAuditSection() {
                         <div className="mt-1 text-old-body text-[var(--c-fg)]">
                           {i18n.t(s.key, s.params)}
                         </div>
+                        {changes.length > 0 ? (
+                          <ul className="mt-1 flex flex-col gap-0.5 text-old-label text-[var(--c-fg-muted)]">
+                            {changes.map((c, i) => (
+                              <li key={`${c.field}-${i}`} className="break-words">
+                                {i18n.t('ops.audit.change', {
+                                  field: i18n.t(c.field),
+                                  before: c.before,
+                                  after: c.after,
+                                })}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
                         <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                           {r.actor?.tgUsername ? `@${r.actor.tgUsername} · ` : ''}
                           {when}
@@ -1907,12 +1935,7 @@ export function MaintenanceSection() {
   });
   const allCommit = trpc.admin.purgeAllTestData.useMutation({
     onSuccess: (data) => {
-      toast.success(
-        i18n.t('admin.toast.dataPurged', {
-          n: data.total,
-          tables: Object.keys(data.byTable).length,
-        }),
-      );
+      toast.success(i18n.t('admin.toast.dataPurged', { n: data.total }));
       setAllOpen(false);
       setConfirmText('');
       void utils.invalidate();

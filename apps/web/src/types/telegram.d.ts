@@ -11,11 +11,15 @@
  * Declaring the interface globally here lets call sites write the
  * direct window.Telegram?.WebApp and TypeScript picks the right type.
  *
- * The canonical shape lives in apps/web/src/hooks/useTelegram.ts as
- * TelegramWebApp. We re-declare a minimal-but-compatible shape here
- * so this file stays a true ambient declaration (no runtime imports).
- * Hooks that need the full typed interface should still call getTg()
- * from useTelegram.ts.
+ * This is the one shape of the SDK in apps/web. Review COREWEB2-13
+ * (2026-11): useTelegram.ts, fileDownload.ts and the two attendance
+ * helpers each kept their own copy, every copy had fields the others
+ * lacked, and `as` casts hid the difference. Add a field here, never a
+ * local type. (packages/ui cannot see this file and keeps the few fields
+ * it reads in telegramBackStack.ts and theme.tsx.)
+ *
+ * Fields marked with a Bot API version are missing on older clients:
+ * check `isVersionAtLeast` before calling them.
  *
  * The trailing 'export {}' turns this file into a module, which is
  * required for the 'declare global' block to be additive instead of
@@ -64,6 +68,30 @@ declare global {
     bottom: number;
     left: number;
     right: number;
+  }
+
+  /** Bot API 8.0. */
+  interface TelegramLocationData {
+    latitude: number;
+    longitude: number;
+    horizontal_accuracy?: number | null;
+  }
+
+  /** Bot API 8.0. */
+  interface TelegramLocationManagerGlobal {
+    isInited: boolean;
+    isLocationAvailable: boolean;
+    isAccessRequested: boolean;
+    isAccessGranted: boolean;
+    init(cb?: () => void): void;
+    getLocation(cb: (data: TelegramLocationData | null) => void): void;
+    openSettings(): void;
+  }
+
+  /** Bot API 9.0. Callbacks are node-style: (error, value). */
+  interface TelegramDeviceStorageGlobal {
+    getItem(key: string, cb: (err: unknown, value?: string | null) => void): void;
+    setItem(key: string, value: string, cb?: (err: unknown, ok?: boolean) => void): void;
   }
 
   interface TelegramWebAppGlobal {
@@ -123,8 +151,19 @@ declare global {
     showConfirm(message: string, cb: (ok: boolean) => void): void;
     setHeaderColor(color: string): void;
     setBackgroundColor(color: string): void;
+    /** Bot API 7.10. */
+    setBottomBarColor?(color: string): void;
+    /** Bot API 7.7: stop a downward swipe from minimising the Mini App. */
+    disableVerticalSwipes?(): void;
+    isVersionAtLeast?(version: string): boolean;
     openTelegramLink(url: string): void;
     openLink(url: string, options?: { try_instant_view?: boolean }): void;
+    /** Bot API 8.0: Telegram's own download dialog. */
+    downloadFile?(params: { url: string; file_name: string }, cb?: (ok: boolean) => void): void;
+    /** Bot API 8.0. */
+    LocationManager?: TelegramLocationManagerGlobal;
+    /** Bot API 9.0. */
+    DeviceStorage?: TelegramDeviceStorageGlobal;
   }
 
   interface Window {

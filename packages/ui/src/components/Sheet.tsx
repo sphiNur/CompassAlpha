@@ -60,10 +60,9 @@ export function useSheetCount(): number {
 
 /**
  * What every sheet owes the rest of the app while it is open: a place in
- * the open-sheet count, and a Telegram BackButton that closes it. Shared
- * by this Sheet and the redesigned one in ../kit so the two can coexist.
+ * the open-sheet count, and a Telegram BackButton that closes it.
  */
-export function useSheetPresence(open: boolean, onOpenChange: (open: boolean) => void): void {
+function useSheetPresence(open: boolean, onOpenChange: (open: boolean) => void): void {
   // 2026-10-21 audit CA-34: the close callback lives in a ref so a parent
   // re-render (inline `onOpenChange`) doesn't re-register this sheet and
   // jump it above a child sheet in the BackButton stack.

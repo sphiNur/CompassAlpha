@@ -1,6 +1,6 @@
 /**
  * Admin → Stores sections — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 3, FRONTEND_AUDIT_2026-07.md admin split).
+ * (Phase 5 step 3 of the 2026-07 frontend audit's admin split).
  *
  *   - StoresHomeSection  store tiles + create-store sheet
  *   - StoreDetailScreen  drilled-in store: Team | Settings | Inventory

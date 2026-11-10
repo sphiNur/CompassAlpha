@@ -56,7 +56,7 @@ import { useI18n } from '../hooks/useI18n';
  * `forceStoreRerender`. That crash was observed once while navigating
  * Run → Confirm (both pages call useStoreContext) on 2026-07-30.
  *
- * Returning the SAME frozen reference every time keeps the snapshot
+ * Returning the SAME reference every time keeps the snapshot
  * stable when `session` is null or `session.stores` is undefined.
  */
 const NO_STORES: AuthSession['stores'] = [];
@@ -98,7 +98,9 @@ export async function requestStoreChange(nextStoreId: StoreContext): Promise<boo
  * "all organisation stores" row stays `org.admin`-only (see
  * StorePickerSection and authStore's canUseAllStores).
  */
-export function canSwitchStore(session: AuthSession | null | undefined): boolean {
+export function canSwitchStore(
+  session: Pick<AuthSession, 'permissions' | 'stores'> | null | undefined,
+): boolean {
   if (!session) return false;
   return session.permissions.includes('org.admin') || session.stores.length >= 2;
 }

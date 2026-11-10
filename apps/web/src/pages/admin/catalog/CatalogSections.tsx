@@ -1,6 +1,6 @@
 /**
  * Admin → Catalog CRUD sections — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 2, FRONTEND_AUDIT_2026-07.md admin split).
+ * (Phase 5 step 2 of the 2026-07 frontend audit's admin split).
  *
  *   - CategoriesSection / SkusSection / SuppliersSection /
  *     ExpenseTemplatesSection / DishesSection — the five list-editor
@@ -506,7 +506,9 @@ export function SkusSection() {
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      <div className="mb-3 flex items-center gap-2">
+      {/* Review WALK-04 (2026-11-09): wraps. At 320px in Russian the two
+          buttons shrank to "+ Новый …" and "Имп…" beside the switch. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {canWrite ? (
           <Button
             size="sm"

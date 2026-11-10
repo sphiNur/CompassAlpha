@@ -38,8 +38,12 @@ import {
   UnmarkUnavailableInputSchema,
   DismissTopUpInputSchema,
   centsToMoney,
+  estimateOrder,
   lineAmount,
+  milliQty,
+  qtyMilli,
   sumMoney,
+  sumQty,
   toCents,
 } from '@compass/contracts';
 import {
@@ -71,13 +75,19 @@ import {
   withoutPrices,
 } from '../../services/priceRedaction';
 import { appendEvents, readStream } from '../../services/eventStore';
-import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
+import {
+  isStreamSeqConflict,
+  isUniqueViolation,
+  pgConstraintName,
+  withStreamConflictRetry,
+} from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
 import { runCorrections } from '../../services/runCorrections';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
 import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { inUuids } from '../../services/sqlIn';
 import { todayInTz } from '@compass/domain';
 import {
   hiddenSplits,
@@ -101,6 +111,9 @@ const runReadProcedure = authedProcedure.use(async (opts) => {
   return result;
 });
 
+/** Runs not finished or cancelled: run.list keeps them whatever their age (RUNAPI-06). */
+const OPEN_RUN_STATUSES = ['planned', 'purchasing', 'delivering', 'amending'];
+
 function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
   return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
 }
@@ -114,27 +127,40 @@ function executeRows<T>(result: unknown): T[] {
   return [];
 }
 
-/** Exact decimal addition for quantities represented as DB strings. */
-function sumDecimalStrings(values: readonly string[]): string {
-  if (values.length === 0) return '0';
-  const scale = values.reduce((max, value) => {
-    const point = value.indexOf('.');
-    return Math.max(max, point < 0 ? 0 : value.length - point - 1);
-  }, 0);
-  let total = 0n;
-  for (const value of values) {
-    const negative = value.startsWith('-');
-    const unsigned = negative ? value.slice(1) : value;
-    const [whole = '0', fraction = ''] = unsigned.split('.');
-    const units = BigInt(`${whole || '0'}${fraction.padEnd(scale, '0')}`);
-    total += negative ? -units : units;
-  }
-  const negative = total < 0n;
-  const digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
-  if (scale === 0) return `${negative ? '-' : ''}${digits}`;
-  const whole = digits.slice(0, -scale) || '0';
-  const fraction = digits.slice(-scale).replace(/0+$/, '');
-  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+/**
+ * A run's active expenses as a reader sees them: only the splits of the
+ * reader's stores, the quantity summed over those, and no receipt photo
+ * when a split was cut off. The photo shows the whole amount, and with it
+ * the other stores' shares. Review RUNAPI-11 (2026-11-09): run.get had
+ * this rule and historyDetail returned the photo; both use this now.
+ */
+function expensesForReader(
+  rawExpenses: ReadonlyArray<typeof s.runExpensesV.$inferSelect>,
+  allowedStoreSet: ReadonlySet<string> | null,
+) {
+  return rawExpenses.flatMap((expense) => {
+    const allStoreSplits = expense.storeSplitsJson as Array<{ storeId: string; qty: string }>;
+    const storeSplits = allowedStoreSet
+      ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
+      : allStoreSplits;
+    if (storeSplits.length === 0) return [];
+    return [
+      {
+        id: expense.id,
+        label: expense.label,
+        unitHint: expense.unitHint,
+        qty: sumQty(storeSplits.map((split) => split.qty)),
+        unitPrice: expense.unitPrice,
+        storeSplits,
+        paymentMethod: expense.paymentMethod,
+        receiptPhotoUrl:
+          storeSplits.length !== allStoreSplits.length ? null : expense.receiptPhotoUrl,
+        reason: expense.reason,
+        addedByMemberId: expense.addedByMemberId,
+        addedAt: expense.addedAt.toISOString(),
+      },
+    ];
+  });
 }
 
 export const runRouter = router({
@@ -300,23 +326,24 @@ export const runRouter = router({
       const storeBySession = new Map<string, string>();
       for (const sess of sessions) storeBySession.set(sess.id, sess.storeId);
 
-      const aggregated = new Map<string, number>();
-      const perStoreSkuQty = new Map<string, Map<string, number>>(); // storeId → skuId → qty
+      // RUNAPI-05: quantities in whole thousandths (bigint), not floats.
+      const aggregated = new Map<string, bigint>();
+      const perStoreSkuQty = new Map<string, Map<string, bigint>>(); // storeId → skuId → qty
       // 2026-10-21 CA-03: demand per SESSION, so the client can
       // re-aggregate the preview over the sessions the purchaser ticked
       // without a round trip per checkbox.
-      const perSessionSkuQty = new Map<string, Map<string, number>>();
+      const perSessionSkuQty = new Map<string, Map<string, bigint>>();
       for (const it of items) {
-        const qty = Number(it.qty);
-        if (qty <= 0) continue;
-        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
-        const bySession = perSessionSkuQty.get(it.sessionId) ?? new Map<string, number>();
-        bySession.set(it.skuId, (bySession.get(it.skuId) ?? 0) + qty);
+        const qty = qtyMilli(it.qty);
+        if (qty <= 0n) continue;
+        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
+        const bySession = perSessionSkuQty.get(it.sessionId) ?? new Map<string, bigint>();
+        bySession.set(it.skuId, (bySession.get(it.skuId) ?? 0n) + qty);
         perSessionSkuQty.set(it.sessionId, bySession);
         const sid = storeBySession.get(it.sessionId);
         if (!sid) continue;
-        const inner = perStoreSkuQty.get(sid) ?? new Map<string, number>();
-        inner.set(it.skuId, (inner.get(it.skuId) ?? 0) + qty);
+        const inner = perStoreSkuQty.get(sid) ?? new Map<string, bigint>();
+        inner.set(it.skuId, (inner.get(it.skuId) ?? 0n) + qty);
         perStoreSkuQty.set(sid, inner);
       }
 
@@ -328,13 +355,10 @@ export const runRouter = router({
       const involvedStoreIds = [
         ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
       ];
-      // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
-      // array as a single parameter — `IN ${array}` becomes
-      // `IN ($1)` with $1 being the entire array, not an IN-list.
-      // Postgres compares the UUID column to the text representation
-      // of the array and returns no rows; storeName silently became
-      // '—' for every store on the by-store preview. Use the
-      // `inArray()` builder, which expands to a proper IN-list.
+      // M1.9-fix (2026-05-07): storeName was '—' for every store on the
+      // by-store preview; the store lookup now uses `inArray()`, which
+      // expands to a proper IN-list. (Review RUNAPI-16: in drizzle 0.45 a
+      // bare `IN ${array}` expands too, but `= ANY(${array})` does not.)
       const storeRows = involvedStoreIds.length
         ? await tx
             .select({ id: s.stores.id, name: s.stores.name })
@@ -356,7 +380,7 @@ export const runRouter = router({
             storeId: sid,
             storeName,
             skuId,
-            qty: qty.toString(),
+            qty: milliQty(qty),
           });
         }
       }
@@ -455,7 +479,7 @@ export const runRouter = router({
             FROM inventory.price_history ph
             WHERE ph.org_id = ${ctx.session!.orgId}
               AND ph.superseded_at IS NULL
-              AND ph.sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
+              AND ph.sku_id IN ${inUuids(skuIds)}
             ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
           `);
         const prices = Array.isArray(priceRows)
@@ -526,30 +550,28 @@ export const runRouter = router({
         sessionExtrasByStore[sid] = arr;
       }
 
+      // ORD-01: D1 money lines added in cents, as every estimate is.
       const perStoreBudgets = involvedStoreIds.map((storeId) => {
-        let estimatedTotal = 0;
-        let unknownPriceCount = 0;
-        for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
-          const estimatedUnitPrice =
-            lastPurchasePriceBySku[skuId] ?? supplierBySku[skuId]?.estimatedUnitPrice ?? null;
-          if (!estimatedUnitPrice) {
-            unknownPriceCount += 1;
-            continue;
-          }
-          estimatedTotal += Number(qty) * Number(estimatedUnitPrice);
-        }
+        const est = estimateOrder(
+          [...(perStoreSkuQty.get(storeId)?.entries() ?? [])].map(([skuId, qty]) => ({
+            skuId,
+            qty: milliQty(qty),
+          })),
+          (skuId) =>
+            lastPurchasePriceBySku[skuId] ?? supplierBySku[skuId]?.estimatedUnitPrice ?? null,
+        );
         return {
           storeId,
           storeName: storeNameById.get(storeId) ?? '—',
-          estimatedTotal: estimatedTotal.toFixed(2),
-          unknownPriceCount,
+          estimatedTotal: est.total,
+          unknownPriceCount: est.unknown,
         };
       });
 
       const perSessionDemand: Array<{ sessionId: string; skuId: string; qty: string }> = [];
       for (const [sessionId, inner] of perSessionSkuQty.entries()) {
         for (const [skuId, qty] of inner.entries()) {
-          perSessionDemand.push({ sessionId, skuId, qty: qty.toString() });
+          perSessionDemand.push({ sessionId, skuId, qty: milliQty(qty) });
         }
       }
 
@@ -607,7 +629,7 @@ export const runRouter = router({
         })),
         plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
           skuId,
-          qty: qty.toString(),
+          qty: milliQty(qty),
         })),
         perStoreDemand,
         perSessionDemand,
@@ -745,6 +767,7 @@ export const runRouter = router({
   create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
     // BUY-12 (2026-10-30): a double tap raced on the orders' streams and
     // answered 500; decided again, the second finds the run the first made.
+    // RUNAPI-04: the same for a race on the run's own unique indexes.
     return withRunStreamRetry(ctx, async (tx) => {
       const today = todayStr(ctx);
       const date = input.date ?? today;
@@ -837,15 +860,16 @@ export const runRouter = router({
       const items = await tx.query.orderItemsV.findMany({
         where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, input.sessionIds),
       });
-      const aggregated = new Map<string, number>();
+      // RUNAPI-05: in whole thousandths; the strings go into RunPlanned.
+      const aggregated = new Map<string, bigint>();
       for (const it of items) {
-        const qty = Number(it.qty);
-        if (qty <= 0) continue;
-        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+        const qty = qtyMilli(it.qty);
+        if (qty <= 0n) continue;
+        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
       }
       const plannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
         skuId,
-        qty: qty.toString(),
+        qty: milliQty(qty),
       }));
 
       const runId = randomUUID();
@@ -916,12 +940,14 @@ export const runRouter = router({
         // `live` check above and this insert. Outside the try, either
         // surfaced as a 500.
         //
-        // CONFLICT rather than a server-side retry: the transaction is
-        // already aborted here, so we cannot re-read to find the winner.
-        // One client retry resolves it — the second attempt hits the
-        // `live` short-circuit and gets the run that won.
+        // The transaction is aborted by then, so it cannot re-read to
+        // find the winner. RUNAPI-04 (2026-11-09): the error goes out as
+        // it is, and withRunStreamRetry runs the whole transaction again;
+        // the next attempt hits the `live` short-circuit and returns the
+        // run that won.
         await projectRun(tx, ctx.session!.orgId, events);
       } catch (err) {
+        if (isRunSlotConflict(err)) throw err;
         if (isUniqueViolation(err)) {
           throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.alreadyPlanned' });
         }
@@ -995,7 +1021,7 @@ export const runRouter = router({
         lastSeq: events[events.length - 1]?.seq ?? 0,
         reused: false,
       };
-    });
+    }, runCreateRetryable);
   }),
 
   /**
@@ -1058,15 +1084,16 @@ export const runRouter = router({
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, dedupedNewIds),
         });
-        const aggregated = new Map<string, number>();
+        // RUNAPI-05: in whole thousandths, as in run.create.
+        const aggregated = new Map<string, bigint>();
         for (const it of items) {
-          const qty = Number(it.qty);
-          if (qty <= 0) continue;
-          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+          const qty = qtyMilli(it.qty);
+          if (qty <= 0n) continue;
+          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
         }
         const addedPlannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
           skuId,
-          qty: qty.toString(),
+          qty: milliQty(qty),
         }));
 
         // Replay the run aggregate, then decide AttachSessions.
@@ -1166,17 +1193,44 @@ export const runRouter = router({
       // provenance first; store-scoped readers receive a redacted projection
       // below rather than the raw cross-store run row.
       const allowedStoreIds = await resolveRunReadStoreScope(tx, ctx);
-      const runs = await tx
+      if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+      // Review RUNAPI-06 (2026-11-09): the store scope is applied in SQL,
+      // before the limit, as run.history does; and a run still open is
+      // listed however old it is. The org's newest 50 were taken first and
+      // filtered after, so a store reader could get far fewer than 50, and
+      // a run waiting for a store's receipt fell off the receiving page
+      // once 50 newer runs existed: that store could never confirm it, and
+      // the run could never finish.
+      const visibleToReader =
+        allowedStoreIds === null
+          ? undefined
+          : sql`EXISTS (
+              SELECT 1 FROM read_model.order_sessions_v os
+              WHERE os.org_id = ${ctx.session!.orgId}
+                AND os.store_id IN (${uuidListSql(allowedStoreIds)})
+                AND os.id IN (
+                  SELECT (jsonb_array_elements_text(${s.marketRunsV.sessionIdsJson}))::uuid
+                )
+            )`;
+      const orgRuns = and(eq(s.marketRunsV.orgId, ctx.session!.orgId), visibleToReader);
+      const newestFirst = [desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex)] as const;
+      const open = await tx
         .select()
         .from(s.marketRunsV)
-        .where(eq(s.marketRunsV.orgId, ctx.session!.orgId))
-        .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
+        .where(and(orgRuns, inArray(s.marketRunsV.status, OPEN_RUN_STATUSES)))
+        .orderBy(...newestFirst);
+      const recent = await tx
+        .select()
+        .from(s.marketRunsV)
+        .where(orgRuns)
+        .orderBy(...newestFirst)
         .limit(50);
-      let visibleRuns = runs;
-      if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+      const recentIds = new Set(recent.map((r) => r.id));
+      const runs = [...recent, ...open.filter((r) => !recentIds.has(r.id))].sort(
+        (a, b) => b.runDate.localeCompare(a.runDate) || b.runIndex - a.runIndex,
+      );
       // Resolve every involved storeId in one shot; cheap join on a
-      // bounded result set. Filter runs whose sessions touch any
-      // allowed store.
+      // bounded result set.
       const allSessionIds = [
         ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
       ];
@@ -1195,16 +1249,7 @@ export const runRouter = router({
         });
         for (const row of sessionStoreRows) sessionStore.set(row.id, row.storeId);
       }
-      if (allowedStoreSet) {
-        if (allSessionIds.length === 0) return [];
-        visibleRuns = runs.filter((r) => {
-          const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
-          return ids.some((sid) => {
-            const storeId = sessionStore.get(sid);
-            return storeId !== undefined && allowedStoreSet.has(storeId);
-          });
-        });
-      }
+      const visibleRuns = runs;
       if (visibleRuns.length === 0) return [];
 
       // 2026-10-21 CA-11: per-store money now comes from the shared
@@ -1884,7 +1929,7 @@ export const runRouter = router({
         }
         const perStoreDemand = [...demandParts.entries()].map(([key, qtyParts]) => {
           const [storeId, skuId] = key.split('|');
-          return { storeId: storeId!, skuId: skuId!, qty: sumDecimalStrings(qtyParts) };
+          return { storeId: storeId!, skuId: skuId!, qty: sumQty(qtyParts) };
         });
 
         const splitQtyParts = new Map<string, string[]>();
@@ -1909,8 +1954,8 @@ export const runRouter = router({
                     : demandQtyParts.has(item.skuId),
                 )
                 .map((item) => {
-                  const splitQty = sumDecimalStrings(splitQtyParts.get(item.skuId) ?? []);
-                  const demandQty = sumDecimalStrings(demandQtyParts.get(item.skuId) ?? []);
+                  const splitQty = sumQty(splitQtyParts.get(item.skuId) ?? []);
+                  const demandQty = sumQty(demandQtyParts.get(item.skuId) ?? []);
                   const itemSplits = splits.filter((split) => split.skuId === item.skuId);
                   const unitPrices = new Set(
                     itemSplits
@@ -1986,7 +2031,7 @@ export const runRouter = router({
               ? (displayNameByMemberId.get(submitterId) ?? null)
               : null,
             itemCount: sessionSkuIds.get(session.id)?.size ?? 0,
-            totalQty: sumDecimalStrings(sessionQtyParts.get(session.id) ?? []),
+            totalQty: sumQty(sessionQtyParts.get(session.id) ?? []),
             extrasCount: Array.isArray(extras) ? extras.length : 0,
             status: session.status,
           };
@@ -2036,28 +2081,7 @@ export const runRouter = router({
             and2(eq2(expense.runId, run.id), isNull(expense.removedAt)),
           orderBy: (expense, { asc }) => asc(expense.addedAt),
         });
-        const expenses = rawExpenses.flatMap((expense) => {
-          const allStoreSplits = expense.storeSplitsJson as Array<{ storeId: string; qty: string }>;
-          const storeSplits = allowedStoreSet
-            ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
-            : allStoreSplits;
-          if (storeSplits.length === 0) return [];
-          return [
-            {
-              id: expense.id,
-              label: expense.label,
-              unitHint: expense.unitHint,
-              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
-              unitPrice: expense.unitPrice,
-              storeSplits,
-              paymentMethod: expense.paymentMethod,
-              receiptPhotoUrl: expense.receiptPhotoUrl,
-              reason: expense.reason,
-              addedByMemberId: expense.addedByMemberId,
-              addedAt: expense.addedAt.toISOString(),
-            },
-          ];
-        });
+        const expenses = expensesForReader(rawExpenses, allowedStoreSet);
 
         // DX-HIS-6 (2026-11-01): the detail names each line's supplier.
         // Names come with the payload: catalog.suppliers is not readable
@@ -2242,7 +2266,7 @@ export const runRouter = router({
                 })
               : [];
           const sessionStoreById = new Map<string, string>();
-          const sessionStats = new Map<string, { itemCount: number; totalQty: number }>();
+          const sessionStats = new Map<string, { itemCount: number; totalQty: bigint }>();
           const noteAccumulator = new Map<string, string[]>();
           const extrasAccumulator = new Map<string, ExtraItem[]>();
           for (const s of sessions) {
@@ -2270,9 +2294,9 @@ export const runRouter = router({
             }
           }
           for (const it of sessionItems) {
-            const qty = Number(it.qty);
-            if (qty <= 0) continue;
-            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0 };
+            const qty = qtyMilli(it.qty);
+            if (qty <= 0n) continue;
+            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0n };
             stat.itemCount += 1;
             stat.totalQty += qty;
             sessionStats.set(it.sessionId, stat);
@@ -2297,7 +2321,7 @@ export const runRouter = router({
             for (const row of rows) displayNameByMemberId.set(row.memberId, row.displayName);
           }
           runSessions = sessions.map((sess) => {
-            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0 };
+            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0n };
             const submitterId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
             const extras = (sess.extrasJson ?? []) as unknown[];
             return {
@@ -2309,7 +2333,7 @@ export const runRouter = router({
                 ? (displayNameByMemberId.get(submitterId) ?? null)
                 : null,
               itemCount: stat.itemCount,
-              totalQty: stat.totalQty.toString(),
+              totalQty: milliQty(stat.totalQty),
               extrasCount: Array.isArray(extras) ? extras.length : 0,
               status: sess.status,
             };
@@ -2321,21 +2345,23 @@ export const runRouter = router({
             sessionExtrasByStore[sid] = arr;
           }
           // Aggregate qty by (storeId, skuId).
-          const acc = new Map<string, number>();
+          // RUNAPI-05: in whole thousandths. The run page puts these in
+          // the per-store fields, which refuse more than 3 decimals.
+          const acc = new Map<string, bigint>();
           for (const it of sessionItems) {
             const storeId = sessionStoreById.get(it.sessionId);
             if (!storeId) continue;
-            const qty = Number(it.qty);
-            if (qty <= 0) continue;
+            const qty = qtyMilli(it.qty);
+            if (qty <= 0n) continue;
             const key = `${storeId}|${it.skuId}`;
-            acc.set(key, (acc.get(key) ?? 0) + qty);
+            acc.set(key, (acc.get(key) ?? 0n) + qty);
           }
           for (const [key, qty] of acc) {
             const [storeId, skuId] = key.split('|');
             perStoreDemand.push({
               storeId: storeId!,
               skuId: skuId!,
-              qty: qty.toString(),
+              qty: milliQty(qty),
             });
           }
         }
@@ -2360,8 +2386,8 @@ export const runRouter = router({
                 : demandQtyParts.has(item.skuId),
             )
             .map((item) => {
-              const splitQty = sumDecimalStrings(splitQtyParts.get(item.skuId) ?? []);
-              const demandQty = sumDecimalStrings(demandQtyParts.get(item.skuId) ?? []);
+              const splitQty = sumQty(splitQtyParts.get(item.skuId) ?? []);
+              const demandQty = sumQty(demandQtyParts.get(item.skuId) ?? []);
               const itemSplits = splits.filter((split) => split.skuId === item.skuId);
               const unitPrices = new Set(
                 itemSplits
@@ -2534,7 +2560,7 @@ export const runRouter = router({
                 WHERE org_id = ${ctx.session!.orgId}
                   AND superseded_at IS NULL
                   ${priceStoreScope}
-                  AND sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
+                  AND sku_id IN ${inUuids(skuIds)}
                   -- 2026-07-27: exclude THIS run's own observations.
                   --
                   -- Every ItemPurchased inserts a price_history row
@@ -2611,34 +2637,7 @@ export const runRouter = router({
             and2(eq2(e.runId, run.id), isNull(e.removedAt)),
           orderBy: (e, { asc }) => asc(e.addedAt),
         });
-        const expenses = rawExpenses.flatMap((expense) => {
-          const allStoreSplits = expense.storeSplitsJson as Array<{
-            storeId: string;
-            qty: string;
-          }>;
-          const storeSplits = allowedStoreSet
-            ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
-            : allStoreSplits;
-          if (storeSplits.length === 0) return [];
-          return [
-            {
-              id: expense.id,
-              label: expense.label,
-              unitHint: expense.unitHint,
-              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
-              unitPrice: expense.unitPrice,
-              storeSplits,
-              paymentMethod: expense.paymentMethod,
-              receiptPhotoUrl:
-                allowedStoreSet && storeSplits.length !== allStoreSplits.length
-                  ? null
-                  : expense.receiptPhotoUrl,
-              reason: expense.reason,
-              addedByMemberId: expense.addedByMemberId,
-              addedAt: expense.addedAt.toISOString(),
-            },
-          ];
-        });
+        const expenses = expensesForReader(rawExpenses, allowedStoreSet);
 
         const visibleMoney = {
           total: [] as string[],
@@ -3237,11 +3236,13 @@ export const runRouter = router({
    *   be re-used in a future run — silently wedged forever.
    *
    *   Now the entire cascade runs inside `ctx.withOrg` (one tx).
-   *   We collect every session's failure into `archiveFailures`;
-   *   if the list is non-empty after the loop we throw, which rolls
-   *   back BOTH the RunFinished event AND any partial session
-   *   archives. The operator gets a structured error with the full
-   *   failure list and retries after fixing the cause.
+   *   Every session the domain refuses to archive goes into
+   *   `archiveFailures`; if the list is non-empty after the loop we
+   *   throw, which rolls back BOTH the RunFinished event AND any
+   *   partial session archives. The operator gets a structured error
+   *   with the full failure list and retries after fixing the cause.
+   *   A database error ends the transaction at once (RUNAPI-09): a
+   *   sequence race is decided again by withRunStreamRetry.
    *
    *   Re-running `finish` on a partially-archived state is safe
    *   thanks to the `if (oState.status === 'archived') continue`
@@ -3331,35 +3332,26 @@ export const runRouter = router({
           throw err;
         }
         if (ev.length > 0) {
-          try {
-            await appendEvents(tx, {
-              streamType: 'order',
-              streamId: sessionId,
-              orgId: ctx.session!.orgId,
-              events: ev.map((e) => ({ ...e })),
-            });
-            await projectOrder(tx, ctx.session!.orgId, ev);
-          } catch (err) {
-            // M3.4: append/project failures count too. A seq
-            // collision or projection error here would leave the
-            // session partially advanced; record + roll back.
-            archiveFailures.push({
-              sessionId,
-              reason: err instanceof Error ? err.message : String(err),
-            });
-            ctx.log.warn(
-              { sessionId, runId: run.id, err: archiveFailures.at(-1)!.reason },
-              'finish: append/project failed for session archive — will roll back the run-finish',
-            );
-            continue;
-          }
+          // RUNAPI-09 (2026-11-09): a database error here is not collected.
+          // It aborts the transaction, so the next session's read failed
+          // anyway, and a sequence race (someone marking an extra at that
+          // moment) answered 500 instead of being decided again. It goes
+          // out as it is: withRunStreamRetry runs the whole finish again
+          // on the fresh streams, and anything else rolls it back.
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: sessionId,
+            orgId: ctx.session!.orgId,
+            events: ev.map((e) => ({ ...e })),
+          });
+          await projectOrder(tx, ctx.session!.orgId, ev);
         }
       }
 
-      // M3.4 atomicity bar — if any session failed, abort the whole
-      // tx by throwing. ctx.withOrg's transaction roll-back undoes the
-      // Step-1 RunFinished event AND any partial archives we may have
-      // committed in this loop iteration before the failure.
+      // M3.4 atomicity bar — if the domain refused any session, abort
+      // the whole tx by throwing. ctx.withOrg's transaction roll-back
+      // undoes the Step-1 RunFinished event AND the archives written in
+      // this loop before it.
       if (archiveFailures.length > 0) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -3846,15 +3838,16 @@ export const runRouter = router({
         }
       }
 
-      const removedBySku = new Map<string, number>();
+      // RUNAPI-05: in whole thousandths, as in run.create.
+      const removedBySku = new Map<string, bigint>();
       for (const item of sessionItems) {
-        const qty = Number(item.qty);
-        if (qty <= 0) continue;
-        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0) + qty);
+        const qty = qtyMilli(item.qty);
+        if (qty <= 0n) continue;
+        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0n) + qty);
       }
       const removedPlannedItems = [...removedBySku.entries()].map(([skuId, qty]) => ({
         skuId,
-        qty: qty.toString(),
+        qty: milliQty(qty),
       }));
 
       try {
@@ -3958,13 +3951,32 @@ function actorFromCtx(
  * "edited by someone else — try again" (and a replayed offline write was
  * dropped). A race lost on every attempt is still reported as CONFLICT.
  */
+/**
+ * Review RUNAPI-04 (2026-11-09): another run.create took the
+ * organisation's live-run slot (mrv_one_active_per_org_unique) or this
+ * day's run index (mrv_org_date_index_unique) between this one's checks
+ * and its insert.
+ */
+function isRunSlotConflict(err: unknown): boolean {
+  if (!isUniqueViolation(err)) return false;
+  const name = pgConstraintName(err);
+  return name === 'mrv_one_active_per_org_unique' || name === 'mrv_org_date_index_unique';
+}
+
+const runCreateRetryable = (err: unknown): boolean =>
+  isStreamSeqConflict(err) || isRunSlotConflict(err);
+
 async function withRunStreamRetry<T>(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   fn: (tx: import('@compass/db').DB) => Promise<T>,
+  retryable: (err: unknown) => boolean = isStreamSeqConflict,
 ): Promise<T> {
   try {
-    return await withStreamConflictRetry(() => ctx.withOrg(fn));
+    return await withStreamConflictRetry(() => ctx.withOrg(fn), 3, retryable);
   } catch (err) {
+    if (isRunSlotConflict(err)) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.alreadyPlanned' });
+    }
     if (isUniqueViolation(err)) {
       throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.staleSeq' });
     }

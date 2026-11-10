@@ -16,7 +16,7 @@ pnpm lint                            # eslint (CI); e.g. no-case-declarations fa
 bun run scripts/check-untranslated.ts
 
 # Unit tests, exactly as CI runs them (PG-gated tests skip themselves):
-SKIP_PG_TESTS=1 bun test packages/domain packages/i18n packages/ui apps/api apps/worker apps/web/src scripts
+SKIP_PG_TESTS=1 bun test packages/domain packages/contracts packages/db packages/i18n packages/ui apps/api apps/worker apps/web/src scripts
 bun test packages/domain/src/run/state.test.ts          # one file
 bun test packages/i18n -t "catalog lint"                 # by test name
 
@@ -27,6 +27,7 @@ DATABASE_URL=postgres://…/compass_test_x JWT_SECRET=<≥32 chars> JWT_REFRESH_
 
 - `packages/db` migrate reads `DATABASE_URL_DIRECT` (from `.env`) before `DATABASE_URL`. Always set both explicitly to the database you mean; a copied `.env` once pointed migrations at the shared dev DB.
 - CI runs the integration tests as a non-owner, non-BYPASSRLS role (`compass_ci_app`). A few event-store guard tests fail locally when you run them as the table owner; that is expected.
+- A test run (`bun test` sets `NODE_ENV=test`) uses only a database with `test` or `e2e` in its name; for any other, `getDb` hands out a handle that throws on every query. Bun loads the root `.env` (the dev database) by itself, so a run that forgot `SKIP_PG_TESTS=1` used to write its fixtures there. `ALLOW_ANY_TEST_DB=1` lifts the rule for one run.
 - Workspace packages are linked through `node_modules`. If a package gains a dependency on another workspace package (e.g. `@compass/domain` → `@compass/contracts`), a checkout or worktree that was not reinstalled needs the link (`packages/domain/node_modules/@compass/contracts → ../../../contracts`) or local tsc and the deploy's unit-test gate fail.
 
 ### Running the web app locally
@@ -35,7 +36,7 @@ DATABASE_URL=postgres://…/compass_test_x JWT_SECRET=<≥32 chars> JWT_REFRESH_
 
 ## Architecture in brief
 
-- **Event sourced.** `packages/domain` holds pure aggregates: `events.ts` (payloads are frozen public contracts; change = new event type), `state.ts` (`apply`), `commands.ts` (`decide`). The API appends to `domain.events` and projects into `read_model.*` in the same transaction (`apps/api/src/services/*Projection.ts`). The web reads the read models through tRPC.
+- **Event sourced.** `packages/domain` holds pure aggregates: `events.ts` (payloads are public contracts: only optional fields every reader tolerates when absent, anything else is a new event type; `docs/EVENT_CATALOG.md`), `state.ts` (`apply`), `commands.ts` (`decide`). The API appends to `domain.events` and projects into `read_model.*` in the same transaction (`apps/api/src/services/*Projection.ts`). The web reads the read models through tRPC.
 - **Event store is append-only in the database.** A trigger refuses UPDATE/DELETE/TRUNCATE on `domain.events`. Paths that must delete events (maintenance purges, `purge-fake-data.ts`) call `allowEventPurge(tx)` first, which is transaction-local.
 - **Multi-tenancy is enforced by RLS** (FORCE RLS). API code runs inside `ctx.withOrg(...)`. Worker/maintenance code uses a system context; `app_is_system()` accepts only the `SystemReason` values (`auth`, `worker`, `health`, `maintenance`, `telemetry`). For read-only psql checks: `select set_config('app.system_context','maintenance',false);`.
 - **Realtime.** `hub.publish` defers messages until the transaction commits (nothing is sent on rollback). The worker announces its own changes with `pg_notify('compass_realtime', …)`, relayed by the API (`apps/api/src/realtime/dbRelay.ts`). `/ws?probe=1` is a token-less probe used by the deploy smoke.
@@ -59,8 +60,11 @@ COMPASS_DEPLOY_HOST=ubuntu@<host> COMPASS_DEPLOY_KEY=<key> \
 bun run scripts/deploy.ts --rollback --dry   # show what a rollback would restore
 ```
 
-- The script refuses a dirty tree, an unpushed HEAD, or any run in purchasing/delivering/amending (`--allow-active-run` exists; don't use it without the owner).
-- It runs the unit tests locally first, then: snapshot of the live release for `--rollback`, upload (rsync of changed files into a staging copy on the server, which builds the tarball; scp of the whole tarball where rsync is missing), migrations, restart, and three smokes against `COMPASS_BASE`: server (`scripts/smoke.ts`, including the realtime probe and "dev login is off"), render, and a deep browser walk that stubs login and every mutation.
+- The script refuses a dirty tree, a HEAD that is not the tip of origin/main, a commit without green CI (read with `gh`, so it must be installed and logged in), a release older than the live one, or any run in purchasing/delivering/amending (`--allow-active-run` exists; don't use it without the owner). It also refuses when the nightly backup looks broken (`--allow-stale-backup`, same rule), and when it cannot confirm that the database role is subject to row-level security (`--skip-rls-check`, same rule). A check that cannot run counts as failed.
+- A failure between the extract and the restart puts the previous release back without restarting; `.deploy-incomplete` on the server marks a tree that never ran.
+- When the release has a migration to apply (`pnpm --filter @compass/db migrate --pending` lists them), the deploy takes a backup first and stops if it fails (`--allow-stale-backup`, same rule). The web bundle is built before the migrations and swapped in just before the restart.
+- Every step has a time limit, and ssh drops a connection that has not answered for two minutes. On the server, steps run one at a time under `/home/ubuntu/.compass-deploy.lock` and end before the deploy gives up on them. Before shipping, the deploy checks that the smoke browser starts; after the restart it waits for `/health/ready`, and the server smoke requires `/health/version` to name the release just deployed, from an api started after the restart.
+- It runs the unit tests locally first, then: snapshot of the live release for `--rollback`, upload of the release git sees (never an ignored file, an `.env` or a key: `scripts/lib/release.ts`; rsync of changed files into a staging copy on the server, which builds the tarball; scp of the whole tarball where rsync is missing), migrations, restart, and three smokes against `COMPASS_BASE`: server (`scripts/smoke.ts`, including the realtime probe and "dev login is off"), render, and a deep browser walk that stubs login and every mutation.
 - The SSH host key is pinned in `infra/deploy/known_hosts`.
 - Browser smokes and `tests/e2e` honour `PLAYWRIGHT_CHANNEL=chrome` to run on an installed Google Chrome instead of Playwright's bundled build (needed where Playwright ships no build, e.g. Ubuntu 26.04).
 - The smokes assert some English UI strings and nav labels. Renaming copy can fail a deploy smoke: update `scripts/browser-smoke*.ts` in the same PR.

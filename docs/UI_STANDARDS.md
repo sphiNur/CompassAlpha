@@ -128,6 +128,11 @@ look (colors, nav, flows); they only stop each page from inventing its own.
 Section headings are `SectionLabel` (13 px semibold, muted, sentence case);
 form labels are `FieldLabel`. Nothing is styled `uppercase`: it means nothing in
 Chinese, reads badly in Russian/Uzbek, and every copy drifted in size.
+A field with one input is a `Field`: its title labels that input. A titled set
+of controls (checkboxes, a segmented choice, a switch with its own label) is a
+`FieldGroup`. A label around several controls hands a tap on its title to the
+first of them (2026-11-09, review UI-01: tapping "Assigned stores" assigned the
+member to the first store).
 **Enforcement:** CI "Typography guard" fails on any `uppercase` class.
 
 #### UI-12 — One page frame
@@ -139,8 +144,10 @@ Chinese, reads badly in Russian/Uzbek, and every copy drifted in size.
 
 #### UI-13 — One surface
 A group of content is a `Card` (white, `--r-card`, hairline ring). Grey
-`--c-surface-2` is for controls (inputs, chips, segmented tracks) and inline
-notes, not for cards. No card inside a card.
+`--c-surface-2` is for inputs (Input, Select, Textarea) and inline notes, not
+for cards. Chips and segmented controls are not grey: a chip is clear with a
+hairline, a segment white inside a hairline (`ChipBar`, `Segmented`). No card
+inside a card.
 
 #### UI-14 — Money is the body font with tabular figures
 Amounts use `tabular-nums` in the normal font so columns line up. Monospace is
@@ -153,9 +160,14 @@ empty is `EmptyState` (15 px title); errors are `DataState`'s error or a danger
 
 #### UI-16 — Controls come from the kit
 Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page; the page's
-main action is the Telegram main button). Switching between views is
+main action is the in-page main button, `usePageMainButton` — the Telegram
+main button stays hidden since M3.49). Switching between views is
 `Segmented`; filtering a list by category is `ChipBar`. No hand-rolled pill
 buttons or toggle tracks.
+A control that cannot be used looks the same everywhere: half opacity and a
+not-allowed cursor, from the kit's `disabledClass` (on the element) or
+`disabledLook` (on a label around it). A field someone may not edit must not
+look editable (2026-11-10, review UI-11).
 
 ---
 

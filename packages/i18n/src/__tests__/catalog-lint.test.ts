@@ -187,6 +187,20 @@ function uzbekApostrophes(cats: Catalogs): string[] {
 
 // ── 3. Developer vocabulary ─────────────────────────────────────────────
 
+/**
+ * The namespaces of permission keys (`delivery.confirm`): the catalog's
+ * own permission groups, `permission.group.<prefix>`, which a web test
+ * keeps in step with the seeded permissions. A new namespace is covered
+ * without a list here; the old list missed attendance, delivery, dishes,
+ * prices, org and system (review TEST4-09). `catalog` is kept from it.
+ */
+const PERMISSION_NAMESPACES: readonly string[] = [
+  ...Object.keys(en)
+    .filter((key) => key.startsWith('permission.group.'))
+    .map((key) => key.slice('permission.group.'.length)),
+  'catalog',
+];
+
 const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   // The role's display name (Super admin / Суперадмин / Superadmin) is fine;
   // the id and its hyphenated spellings are not.
@@ -195,7 +209,7 @@ const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   { pattern: /db:seed|pnpm |bun run/, what: 'developer command' },
   { pattern: /\bM\d+(?:\.\d+)*[a-z]?\b/, what: 'milestone name' },
   {
-    pattern: /\b(?:users|inventory|sales|reports|catalog|orders?|runs?|settlement)\.[a-z_]+\b/,
+    pattern: new RegExp(`\\b(?:${PERMISSION_NAMESPACES.join('|')})s?\\.[a-z_]+\\b`),
     what: 'permission key',
   },
   // The buttons say Allow / Deny (Разрешить / Запретить …); lower-case
@@ -216,6 +230,17 @@ const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   { pattern: /(?<!\p{L})[Сс]есси/u, what: 'session (say заказ / вход)' },
   { pattern: /\bservers?\b|сервер|服务器|服务端/i, what: 'server (say what happened to the user)' },
   { pattern: /\bsync(?:s|ed|ing)?\b|синхрон|sinxron|同步/i, what: 'sync (say send / 发送)' },
+  // Review I18N1-06 (2026-11-10): the transaction words a member transfer
+  // explained itself with, and zh's words for session, parameter and
+  // cascade. ru «откатить» stays: undoing a purchase is a real action.
+  { pattern: /会话/, what: 'session (say 登录)' },
+  {
+    pattern:
+      /事务|原子|回滚|\btransactions?\b|\batomic|\brolls? back\b|\brolled back\b|транзакци|атомарн|tranzaksiya|atomar/i,
+    what: 'transaction (say "in one step" / "nothing is changed")',
+  },
+  { pattern: /入参/, what: 'parameter (say 输入内容)' },
+  { pattern: /级联|cascade|каскад|kaskad/i, what: 'cascade (say "deleted with it")' },
 ];
 
 /** `lang key` prefixes whose screens only developers see. */
@@ -436,6 +461,14 @@ function chinesePunctuation(cats: Catalogs): string[] {
       if (CJK.test(m[1]!)) found.push(`zh ${key}: half-width parentheses in "${value}"`);
     }
     if (/["“”]/.test(text)) found.push(`zh ${key}: use 「」 instead of "" / “” in "${value}"`);
+    // TEST4-10 (2026-11-10): a full stop, an ellipsis and a single quote
+    // written the English way. A dot before a letter or digit is a file
+    // name or a number ({month}.xlsx, 1.5), and three are the ellipsis.
+    if (/[\u3400-\u9fff]\.(?![A-Za-z0-9.])/u.test(text)) {
+      found.push(`zh ${key}: half-width "." in "${value}"`);
+    }
+    if (/\.{3}/.test(text)) found.push(`zh ${key}: use … instead of ... in "${value}"`);
+    if (/'/.test(text)) found.push(`zh ${key}: use 「」 instead of ' in "${value}"`);
     if (/—/.test(text.replace(/——/g, ''))) {
       found.push(`zh ${key}: use —— instead of a single dash in "${value}"`);
     }
@@ -516,6 +549,8 @@ function untranslated(cats: Catalogs): string[] {
  *   daily close       日结      daily close          закрытие дня     kun yakuni
  *
  * Each entry is a word that names one of these concepts the other way.
+ * Something outside the catalog is therefore not a 商品: it is 其他物品 /
+ * 目录外物品 (full review 2026-11, I18N1-03).
  */
 const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
   zh: [
@@ -524,6 +559,7 @@ const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
     { pattern: /SKU/, use: '商品' },
     { pattern: /买手/, use: '采购员' },
     { pattern: /结算/, use: '日结 (or 计算 for run totals)' },
+    { pattern: /其他商品|目录外商品/, use: '其他物品 / 目录外物品' },
   ],
   en: [
     { pattern: /\bSKUs?\b/, use: 'product' },
@@ -537,11 +573,14 @@ const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
     { pattern: /[Сс]огласов/, use: 'проверка / одобрить' },
     { pattern: /[Пп]окупател/, use: 'закупщик' },
     { pattern: /[Рр]асч[её]т/, use: 'закрытие дня / разбивка' },
+    // Full review 2026-11 (I18N2-02): the manager has the role's name.
+    { pattern: /[Рр]уководител|[Мм]енеджер/, use: 'управляющий (the role «Управляющий»)' },
   ],
   uz: [
     { pattern: /SKU/, use: 'mahsulot' },
     { pattern: /xaridchi/i, use: 'xaridor' },
     { pattern: /taʼminotchi/i, use: 'yetkazib beruvchi' },
+    { pattern: /rahbar|menejer/i, use: 'boshqaruvchi (the role «Doʻkon boshqaruvchisi»)' },
   ],
 };
 
@@ -554,6 +593,29 @@ function terminology(cats: Catalogs): string[] {
         const m = text.match(pattern);
         if (m) found.push(`${lang} ${key}: "${m[0]}" — D15 says ${use}`);
       }
+    }
+  }
+  return found;
+}
+
+/**
+ * Full review 2026-11 (I18N2-03): D15 keeps approving an order apart from
+ * confirming receipt (ru одобрить / подтвердить приёмку, uz maʼqullash /
+ * Qabulni tasdiqlash). The review screen's button said «Maʼqullash» while
+ * its hints said «tasdiqlang», and the ru admin tile counted approvals as
+ * «подтверждения». An order-review string (approval.*) may not say uz
+ * tasdiq-; a ru string whose English says approve may not say подтвер-.
+ */
+function approveIsNotConfirm(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    const uzbek = cats.uz[key] ?? '';
+    const russian = cats.ru[key] ?? '';
+    if (key.startsWith('approval.') && /tasdiq/i.test(uzbek)) {
+      found.push(`uz ${key}: "${uzbek}" — approving an order is maʼqullash`);
+    }
+    if (/\bapprov/i.test(english) && /подтвер/i.test(russian)) {
+      found.push(`ru ${key}: "${russian}" — approving is одобрить`);
     }
   }
   return found;
@@ -583,6 +645,10 @@ function htmlEntities(cats: Catalogs): string[] {
  * step is not a "step length", a permission is not "in the dictionary",
  * a run is not per "slot", and a review is not "claimed" and "released".
  * Placeholders ({org}) are code and are not checked.
+ *
+ * Full review 2026-11: a receipt is 收据 in zh, never 发票 (a tax invoice a
+ * market stall cannot give), 票据, 小票 or 凭证 (I18N1-07); en spells
+ * cancelled / cancelling one way (I18N1-05).
  */
 const COPY_BANNED: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
   zh: [
@@ -596,9 +662,11 @@ const COPY_BANNED: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
     { pattern: /认领/, use: '我来审核 / 接手' },
     { pattern: /释放/, use: '放回' },
     { pattern: /后台自动/, use: '稍后会…' },
+    { pattern: /发票|票据|小票|凭证/, use: '收据' },
   ],
   en: [
     { pattern: /\borgs?\b|organi[sz]ation/i, use: 'workspace (D23)' },
+    { pattern: /\bcancel(?:ed|ing)\b/i, use: 'cancelled / cancelling' },
     { pattern: /\binbox\b/i, use: 'orders waiting for review' },
     { pattern: /\bfrozen\b/i, use: 'finished or cancelled' },
     { pattern: /\bslot\b/i, use: 'say what happened' },
@@ -674,7 +742,55 @@ function russianGenderShortcuts(cats: Catalogs): string[] {
     .map(([k, v]) => `ru ${k}: ${v}`);
 }
 
+/**
+ * Full review 2026-11 (I18N2-04): the same rule without the shortcut. A
+ * woman was marked «Не пришёл» on her own attendance row and had to tap
+ * «Согласен». Copy about a person says what happened, not who did it in
+ * the masculine: «Неявка», «Своя отметка», «Даю согласие», «Понятно».
+ * Generic subjects stay («Кто пришёл», «кто-то изменил», «Закупщик
+ * добавил»), so only the forms that stand for a person are listed.
+ */
+const RU_MASCULINE_PERSON =
+  /(?<!\p{L})(?:не пришёл|ушёл на|отметился|согласен|согласился|пропустил|посмотрел|ошибся|нажал|никогда не входил|самому|самого себя)(?!\p{L})/iu;
+
+/** `ru key` → why it may keep a masculine form for now. */
+const RU_MASCULINE_ALLOW: Record<string, string> = {
+  'ru attendance.sheet.selfAt': 'I18N2-04 follow-up: changes after #253 merges',
+  'ru attendance.consent.agree': 'I18N2-04 follow-up: changes after #260 merges',
+  'ru attendance.flag.missedShift': 'I18N2-04 follow-up: changes after #260 merges',
+  'ru attendance.export.flag.missedShift': 'I18N2-04 follow-up: changes after #260 merges',
+};
+
+function russianMasculinePerson(cats: Catalogs): string[] {
+  return Object.entries(cats.ru)
+    .filter(([k, v]) => !RU_MASCULINE_ALLOW[`ru ${k}`] && RU_MASCULINE_PERSON.test(v))
+    .map(([k, v]) => `ru ${k}: ${v}`);
+}
+
 // ── 13. Words that must not mean two things ─────────────────────────────
+
+/**
+ * I18N2-01 (review, 2026-11-09): "void" is one word in each language, used
+ * by attendance and sales alike, and not the word for cancel or delete. A
+ * void keeps the record with its reason; the attendance hint says it is
+ * "never deleted". uz had «Bekor qilish» (cancel) in attendance and
+ * «Oʻchirish» (delete) in sales; ru had «Отмена» in the stock history.
+ */
+const VOID_WORD: Partial<Record<Lang, string>> = { ru: 'аннулир', uz: 'yaroqsiz', zh: '作废' };
+
+function voidIsOneWord(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    if (!/\bvoid/i.test(english)) continue;
+    for (const [lang, word] of Object.entries(VOID_WORD) as Array<[Lang, string]>) {
+      const text = cats[lang][key] ?? '';
+      if (!text.toLowerCase().includes(word)) {
+        found.push(`${lang} ${key}: "${text}" — say «${word}…»`);
+      }
+    }
+  }
+  return found;
+}
 
 /**
  * DX-COPY-1 (2026-11-01): uz «tiklash» is "restore". It was the label of
@@ -702,6 +818,11 @@ function uzbekResetIsNotRestore(cats: Catalogs): string[] {
 const MUST_DIFFER: Array<[string, string, string]> = [
   ['sales.void.confirmBtn', 'common.cancel', 'void-sale sheet'],
   ['sales.action.void', 'common.cancel', 'sales row'],
+  // I18N2-01 (review, 2026-11-09): attendance came back with the same word
+  // as cancel, and sales had moved to the word for delete.
+  ['attendance.void.action', 'common.cancel', 'attendance review row'],
+  ['attendance.void.confirm', 'common.cancel', 'void-clock-in sheet'],
+  ['sales.action.void', 'common.delete', 'sales row'],
   ['run.action.undoPurchase', 'common.cancel', 'undo-purchase sheet'],
   ['approval.undo', 'common.cancel', 'approval undo toast'],
   ['approval.unapprove', 'common.cancel', 'reverse-approval sheet'],
@@ -716,6 +837,33 @@ function distinctActions(cats: Catalogs): string[] {
       const va = cats[lang][a];
       const vb = cats[lang][b];
       if (va !== undefined && va === vb) found.push(`${lang} ${a} = ${b} = "${va}" (${where})`);
+    }
+  }
+  return found;
+}
+
+/**
+ * Full review 2026-11 (I18N1-04, I18N1-05): zh used one word for two
+ * things. A cancelled run was 作废 in its notification but 取消 on its
+ * button, while 作废 is what voiding a sale or a clock-in says; the people
+ * who added items to an order were 提交人, the word for the one person who
+ * submitted it. A key whose English names the first may not use the word
+ * for the second.
+ */
+const ZH_KEEPS_APART: Array<{ english: RegExp; zh: RegExp; why: string }> = [
+  { english: /\bcancel/i, zh: /作废/, why: '作废 is void; a cancel is 取消' },
+  { english: /\bvoid/i, zh: /取消/, why: '取消 is cancel; a void is 作废' },
+  { english: /\bcontributor/i, zh: /提交人/, why: '提交人 is the submitter; say 参与人' },
+];
+
+function chineseWordsKeepApart(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    const chinese = cats.zh[key] ?? '';
+    for (const rule of ZH_KEEPS_APART) {
+      if (rule.english.test(english) && rule.zh.test(chinese)) {
+        found.push(`zh ${key}: "${chinese}" — ${rule.why}`);
+      }
     }
   }
   return found;
@@ -737,12 +885,16 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['en quotes with "", uz with «»', quoteStyle],
   ['no value is left in English', untranslated],
   ['D15 terminology: one word per concept', terminology],
+  ['ru / uz: approving an order is not confirming', approveIsNotConfirm],
   ['no HTML entities in any language', htmlEntities],
   ['D23 and the copy review: workspace, no internal words', copyBanned],
   ['no mojibake and no ISO dates in copy', mojibakeAndIsoDates],
   ['ru: no «(а)» gender shortcuts', russianGenderShortcuts],
+  ['ru: no masculine past tense for a person', russianMasculinePerson],
   ['uz: a reset is not «tiklash» (restore)', uzbekResetIsNotRestore],
+  ['void is one word per language, not cancel or delete', voidIsOneWord],
   ['actions on the same screen read differently', distinctActions],
+  ['zh: cancel, void and contributor keep their own words', chineseWordsKeepApart],
 ];
 
 describe('catalog lint', () => {
@@ -828,10 +980,22 @@ describe('catalog lint rules catch the original findings', () => {
       'Enter a date (YYYY-MM-DD)',
       'after onboarding',
       'Mirror role bindings',
+      // TEST4-09: namespaces the hand-written list did not have.
+      'Needs delivery.confirm',
+      'Only with attendance.manage',
+      'Ask for prices.view',
+      'Give dishes.manage',
+      'org.admin only',
     ]) {
       expect(devTerms(one({ en: bad }))).not.toEqual([]);
     }
     expect(devTerms(one({ en: 'Super admin only · level {rank}' }))).toEqual([]);
+  });
+
+  test('TEST4-09: the permission namespaces come from the catalog', () => {
+    for (const ns of ['order', 'run', 'attendance', 'delivery', 'dishes', 'prices', 'org']) {
+      expect(PERMISSION_NAMESPACES).toContain(ns);
+    }
   });
 
   test('«2 ЗАЯВОК» and "1 lines": a count glued to a noun', () => {
@@ -922,6 +1086,15 @@ describe('catalog lint rules catch the original findings', () => {
     expect(chinesePunctuation(one({ zh: '保存失败——请重试（{n} 项）：好？' }))).toEqual([]);
   });
 
+  test('TEST4-10: a full stop, an ellipsis and a single quote in Chinese', () => {
+    expect(chinesePunctuation(one({ zh: '保存成功.' }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: '已发给 {name}.' }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: '加载中...' }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: "点击'保存'" }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: '保存成功。加载中…点击「保存」' }))).toEqual([]);
+    expect(chinesePunctuation(one({ zh: '考勤-{store}-{month}.xlsx，约 1.5 公斤' }))).toEqual([]);
+  });
+
   test('еще, curly English apostrophes and untranslated values', () => {
     expect(russianYo(one({ ru: 'и еще {n}' }))).toHaveLength(1);
     expect(englishApostrophes(one({ en: 'A built-in role’s level' }))).toHaveLength(1);
@@ -939,6 +1112,20 @@ describe('catalog lint rules catch the original findings', () => {
     expect(devTerms(one({ en: 'Only for people on the server allowlist' }, 'dev.x'))).toEqual([]);
   });
 
+  test('I18N1-06: transaction, session, parameter and cascade words', () => {
+    expect(devTerms(one({ en: 'Atomic in one transaction:' }))).not.toEqual([]);
+    expect(devTerms(one({ en: 'the whole transfer rolls back' }))).toHaveLength(1);
+    expect(devTerms(one({ ru: 'Атомарно, в одной транзакции:' }))).toHaveLength(1);
+    expect(devTerms(one({ uz: 'Bitta tranzaksiyada atomar bajariladi:' }))).toHaveLength(1);
+    expect(devTerms(one({ zh: '会话已过期——请刷新' }))).toHaveLength(1);
+    expect(devTerms(one({ zh: '入参' }))).toHaveLength(1);
+    expect(devTerms(one({ en: 'see what gets cascade-deleted' }))).toHaveLength(1);
+    expect(devTerms(one({ ru: 'посмотрите, что удалится каскадом' }))).toHaveLength(1);
+    // Undoing a purchase is a real action in ru.
+    expect(devTerms(one({ ru: 'Нельзя откатить — магазин уже принял' }))).toEqual([]);
+    expect(devTerms(one({ en: 'All in one step:', zh: '登录已过期——请重新登录' }))).toEqual([]);
+  });
+
   test('DX-COPY-18 / DX-COPY-15: mojibake and ISO dates', () => {
     expect(mojibakeAndIsoDates(one({ en: 'this storeâ€™s personnel' }))).toHaveLength(1);
     expect(mojibakeAndIsoDates(one({ ru: 'Пишите так: 2026-10-31.' }))).toHaveLength(1);
@@ -950,12 +1137,41 @@ describe('catalog lint rules catch the original findings', () => {
     expect(russianGenderShortcuts(one({ ru: '{actor}: участник {member} удалён' }))).toEqual([]);
   });
 
+  test('I18N2-04: ru masculine past tense for a person', () => {
+    for (const ru of ['Не пришёл', 'Отметился сам', 'Согласен', 'Посмотрел', 'Нажал по ошибке']) {
+      expect(russianMasculinePerson(one({ ru }))).toHaveLength(1);
+    }
+    for (const ru of ['Неявка', 'Кто пришёл, график смен', 'Остаток ушёл в минус', 'Понятно']) {
+      expect(russianMasculinePerson(one({ ru }))).toEqual([]);
+    }
+  });
+
   test('DX-COPY-1: uz reset written as restore', () => {
     expect(uzbekResetIsNotRestore(one({ en: 'Reset today', uz: 'Bugunni tiklash' }))).toHaveLength(1);
     expect(uzbekResetIsNotRestore(one({ en: 'Unarchive', uz: 'Tiklash' }))).toEqual([]);
     expect(
       uzbekResetIsNotRestore(one({ en: 'Reset today', uz: 'Bugungi maʼlumotlarni tozalash' })),
     ).toEqual([]);
+  });
+
+  test('I18N2-02 / I18N2-03: the manager role name, approve is not confirm', () => {
+    expect(terminology(one({ ru: 'Попросите руководителя' }))).toHaveLength(1);
+    expect(terminology(one({ ru: 'Менеджер вернул заказ' }))).toHaveLength(1);
+    expect(terminology(one({ uz: 'Rahbar izohi' }))).toHaveLength(1);
+    expect(terminology(one({ uz: 'doʻkon menejeri' }))).toHaveLength(1);
+    expect(terminology(one({ ru: 'Попросите управляющего', uz: 'Boshqaruvchi izohi' }))).toEqual(
+      [],
+    );
+    const approval = (uz: string) => one({ en: 'Approve once seen', uz }, 'approval.x');
+    expect(approveIsNotConfirm(approval('Koʻrib chiqqach tasdiqlang.'))).toHaveLength(1);
+    expect(approveIsNotConfirm(approval('Koʻrib chiqqach maʼqullang.'))).toEqual([]);
+    expect(approveIsNotConfirm(one({ en: 'Confirm', uz: 'Tasdiqlash' }))).toEqual([]);
+    expect(approveIsNotConfirm(one({ en: 'Approvals', ru: 'Ожидают подтверждения' }))).toHaveLength(
+      1,
+    );
+    expect(approveIsNotConfirm(one({ en: 'Confirm receipt', ru: 'Подтвердить приёмку' }))).toEqual(
+      [],
+    );
   });
 
   test('DX-COPY-2: a void button that reads like Cancel', () => {
@@ -975,5 +1191,22 @@ describe('catalog lint rules catch the original findings', () => {
     expect(htmlEntities(one({ en: 'Salt &amp; pepper' }))).toHaveLength(1);
     expect(htmlEntities(one({ ru: 'Д&#39;Артаньян' }))).toHaveLength(1);
     expect(htmlEntities(one({ en: 'Salt & pepper; to taste' }))).toEqual([]);
+  });
+
+  test('I18N1-03 / 04 / 05 / 07: other items, contributors, cancel and receipts', () => {
+    expect(terminology(one({ zh: '+ 添加其他商品' }))).toHaveLength(1);
+    expect(terminology(one({ zh: '目录外商品和开销' }))).toHaveLength(1);
+    expect(terminology(one({ zh: '为别的商品盘点' }))).toEqual([]);
+    expect(copyBanned(one({ zh: '发票（可选）' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '例如：小票上的单价看错了' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '收据照片' }))).toEqual([]);
+    expect(copyBanned(one({ en: 'Run canceled' }))).toHaveLength(1);
+    expect(copyBanned(one({ en: 'Why are you canceling?' }))).toHaveLength(1);
+    expect(copyBanned(one({ en: 'Run cancelled · Cancel' }))).toEqual([]);
+    expect(chineseWordsKeepApart(one({ en: 'Run cancelled', zh: '采购单已作废' }))).toHaveLength(1);
+    expect(chineseWordsKeepApart(one({ en: 'Void sale', zh: '取消销售' }))).toHaveLength(1);
+    expect(chineseWordsKeepApart(one({ en: '3 contributors', zh: '3 位提交人' }))).toHaveLength(1);
+    expect(chineseWordsKeepApart(one({ en: 'Run cancelled', zh: '采购单已取消' }))).toEqual([]);
+    expect(chineseWordsKeepApart(one({ en: 'Rejected', zh: '提交人会看到原因' }))).toEqual([]);
   });
 });

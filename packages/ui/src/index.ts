@@ -72,6 +72,7 @@ export {
   DetailRow,
   Tile,
   Field,
+  FieldGroup,
   FieldLabel,
   PickerRow,
   PickerGroup,

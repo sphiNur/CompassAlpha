@@ -102,15 +102,18 @@ export function Segmented<V extends string>({
               'press hit-44 inline-flex items-center justify-center whitespace-nowrap font-medium tabular-nums',
               'first:rounded-l-[var(--r-utility)] last:rounded-r-[var(--r-utility)]',
               isSm ? 'px-2 text-old-label' : 'px-3 text-old-body-sm',
-              // 2026-11-05: min-w-0 + truncate on equal segments — a long
-              // ru/uz label used to widen the bar past a narrow screen.
-              equalWidth ? 'min-w-0 flex-1 truncate' : 'shrink-0',
+              // 2026-11-05: min-w-0 on equal segments — a long ru/uz label
+              // used to widen the bar past a narrow screen. The label span
+              // truncates, not the button: a button that hides its overflow
+              // clips its own hit-44 area (review UI-06, 2026-11-09), as in
+              // Button.
+              equalWidth ? 'min-w-0 flex-1' : 'shrink-0',
               active
                 ? `${activeBg} ${activeFg} font-semibold`
                 : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
             )}
           >
-            {opt.label}
+            <span className={equalWidth ? 'min-w-0 truncate' : undefined}>{opt.label}</span>
           </button>
         );
       })}

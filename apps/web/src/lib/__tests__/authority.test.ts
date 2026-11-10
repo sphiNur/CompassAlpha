@@ -4,6 +4,7 @@ import {
   canRevokeRole,
   canSetOverride,
   canSetStatus,
+  orgRankOf,
   rankIn,
   rolePassesOn,
   transferTargets,
@@ -52,6 +53,34 @@ describe('rankIn', () => {
   });
 });
 
+/**
+ * ADM1-01 (2026-11-09): Nurzat is an org admin (80) who also kept a
+ * legacy super_admin (100) binding in store A. Organisation-wide she
+ * weighs 80, as the server now ranks her (getActorMaxGlobalRank).
+ */
+const legacyAdmin: Actor = { ...admin, bindings: [g('admin', 80), st('super_admin', 100, 'A')] };
+const peerAdmin = { userId: 'a2', bindings: [g('admin', 80)], storeIds: [] };
+
+describe('orgRankOf (ADM1-01)', () => {
+  test('only global bindings count organisation-wide', () => {
+    expect(orgRankOf(legacyAdmin.bindings)).toBe(80);
+    expect(rankIn(legacyAdmin.bindings, null)).toBe(100);
+    expect(orgRankOf([st('manager', 50, 'A')])).toBe(0);
+  });
+  test('a global binding without a rank (older server) is unknown; a store one is ignored', () => {
+    expect(orgRankOf([{ slug: 'x', scopeType: 'global', scopeId: null }])).toBe(Infinity);
+    expect(orgRankOf([g('admin', 80), { slug: 'x', scopeType: 'store', scopeId: 'A' }])).toBe(80);
+  });
+  test('a store binding gives no organisation-wide reach to the actor', () => {
+    expect(canGrantRole(legacyAdmin, { rank: 80 }, { type: 'global' })).toBe(false);
+    expect(canSetStatus(legacyAdmin, peerAdmin, 'suspended')).toBe(false);
+    expect(canSetOverride(legacyAdmin, peerAdmin, null)).toBe(false);
+    expect(canRevokeRole(legacyAdmin, 'a2', g('admin', 80))).toBe(false);
+    // In store A the legacy binding still counts, as on the server.
+    expect(canSetOverride(legacyAdmin, { ...peerAdmin, storeIds: ['A'] }, 'A')).toBe(true);
+  });
+});
+
 describe('canRevokeRole (CMP-ADM-1)', () => {
   test('a manager cannot take away their own manager role (was: confirm, then 403)', () => {
     expect(canRevokeRole(manager, 'aziz', st('manager', 50, 'A'))).toBe(false);
@@ -62,6 +91,14 @@ describe('canRevokeRole (CMP-ADM-1)', () => {
   });
   test('an admin never removes their own admin role', () => {
     expect(canRevokeRole(admin, 'nurzat', g('admin', 80))).toBe(false);
+  });
+  test('a global binding needs an org admin, whatever the rank (ADM1-17)', () => {
+    const legacyStaff = g('staff', 10);
+    expect(canRevokeRole(manager, 'dilnoza', legacyStaff)).toBe(false);
+    expect(canRevokeRole(admin, 'dilnoza', legacyStaff)).toBe(true);
+    expect(
+      canRevokeRole(manager, 'dilnoza', { slug: 'staff', scopeType: 'global', scopeId: null }),
+    ).toBe(false);
   });
   test('without a rank the × stays and the server decides', () => {
     expect(canRevokeRole(manager, 'dilnoza', { slug: 'staff', scopeType: 'store', scopeId: 'A' })).toBe(

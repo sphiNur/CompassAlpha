@@ -246,6 +246,8 @@ jobs:
         run: |
           bun test \
             packages/domain \
+            packages/contracts \
+            packages/db \
             packages/i18n \
             packages/ui \
             apps/api \
@@ -305,10 +307,29 @@ jobs:
       - name: Install workspace deps
         run: pnpm install --frozen-lockfile
 
+      - name: Every migration is pending on a new database
+        # Review OPS-10: the deploy takes a backup first when
+        # `migrate --pending` lists anything. This step and the one after
+        # "Apply migrations" hold that list to what drizzle applies.
+        run: |
+          listed=$(pnpm --filter @compass/db migrate --pending | grep -c '^pending: ' || true)
+          journal=$(jq '.entries | length' packages/db/migrations/meta/_journal.json)
+          echo "pending: $listed of $journal"
+          test "$listed" -eq "$journal"
+
       - name: Apply migrations
         # Same runner the deploy script uses. Order: PRE raw SQL →
         # drizzle generated SQL → POST raw SQL (RLS policies). Idempotent.
         run: pnpm --filter @compass/db migrate
+
+      - name: Nothing is pending after migrating
+        run: |
+          out=$(pnpm --filter @compass/db migrate --pending)
+          echo "$out"
+          if grep -q '^pending: ' <<<"$out"; then
+            echo "migrate --pending still lists entries after a migrate"
+            exit 1
+          fi
 
       - name: Create non-owner test role
         # The service POSTGRES_USER owns the schema and is a superuser,
@@ -344,10 +365,13 @@ jobs:
         # a hand-kept file list — invite-acceptance, multi-tenant and
         # subscription were silently never run. Tests that sign Telegram
         # initData use the stub TELEGRAM_BOT_TOKEN above as their own key.
+        # Review TEST4-17 (2026-11): the worker's claim-timeout SQL tests
+        # too; they had only ever run on a developer's machine.
         run: |
           bun test \
             apps/api/src/__tests__ \
-            apps/api/src/services/__tests__
+            apps/api/src/services/__tests__ \
+            apps/worker/src
 
   # ============ Job 3: the app in a real browser ============
   e2e:

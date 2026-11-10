@@ -11,65 +11,18 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/purge-guards.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { loadSession } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
+import { BUILTIN_ROLES } from '@compass/db/seed-data';
+import { seedRoles, seedMember } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -83,33 +36,21 @@ interface Fixture {
 }
 let fix: Fixture | null = null;
 
-async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
-
-beforeAll(async () => {
-  if (!SHOULD_RUN) return;
+/**
+ * A workspace with a store, a product, an admin and a staff member. The
+ * tests share one. A test that would change it for the others, or needs
+ * to know everything in it, makes its own.
+ */
+async function purgeWorkspace(name: string): Promise<Fixture> {
   const db = getDb(undefined, { system: 'maintenance' });
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `purge-${suffix}`, name: 'Purge guards', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `purge-${suffix}`, name, localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
   const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
-  const [staffRole] = await db
-    .insert(s.roles)
-    .values({ orgId, slug: 'staff', name: 'staff', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db.insert(s.rolePermissions).values({ roleId: staffRole!.id, permissionKey: key }).onConflictDoNothing();
-  }
+  const staffRoleId = (await seedRoles(db, orgId, ['staff'])).staff!;
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `P-${suffix.slice(-6)}` }).returning();
   const [sku] = await db
     .insert(s.skus)
@@ -117,33 +58,31 @@ beforeAll(async () => {
     .returning();
 
   const user = async (n: number) => {
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Purge ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    return { userId: u!.id, memberId: m!.id };
+    const who = await seedMember(db, orgId, { name: `Purge ${n}`, stores: [store!.id] });
+    return { userId: who.userId, memberId: who.memberId };
   };
   const a = await user(1);
-  const admin = appRouter.createCaller(
-    buildCtx(db, {
-      userId: a.userId,
-      memberId: a.memberId,
-      orgId,
-      orgTimezone: 'UTC',
-      permissions: new Set(['users.manage', 'org.admin', ...def.permissions]),
-      roleSlugs: new Set(['super_admin']),
-    }),
-  );
+  const admin = callerFor({
+    userId: a.userId,
+    memberId: a.memberId,
+    orgId,
+    orgTimezone: 'UTC',
+    permissions: new Set(['users.manage', 'org.admin', ...def.permissions]),
+    roleSlugs: new Set(['super_admin']),
+  });
   const b = await user(2);
   await db
     .insert(s.memberRoleBindings)
-    .values({ memberId: b.memberId, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id });
+    .values({ memberId: b.memberId, roleId: staffRoleId, scopeType: 'store', scopeId: store!.id });
   const staffSession = await loadSession(db, b.userId, orgId, b.memberId);
   if (!staffSession) throw new Error('session failed to load');
-  const staff = appRouter.createCaller(buildCtx(db, staffSession));
-  fix = { db, orgId, storeId: store!.id, skuId: sku!.id, memberId: a.memberId, admin, staff };
+  const staff = callerFor(staffSession);
+  return { db, orgId, storeId: store!.id, skuId: sku!.id, memberId: a.memberId, admin, staff };
+}
+
+beforeAll(async () => {
+  if (!SHOULD_RUN) return;
+  fix = await purgeWorkspace('Purge guards');
 });
 
 describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
@@ -176,7 +115,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const { admin, db, orgId } = fix!;
     const [purchaser] = await db
       .insert(s.users)
-      .values({ displayName: 'Real buyer', tgUserId: BigInt(`8${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Real buyer', tgUserId: freshTgId() })
       .returning();
     const runId = randomUUID();
     await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-06-03', status: 'finished' });
@@ -203,7 +142,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const { admin, db, orgId, storeId, memberId } = fix!;
     const [approver] = await db
       .insert(s.users)
-      .values({ displayName: 'Real approver', tgUserId: BigInt(`7${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Real approver', tgUserId: freshTgId() })
       .returning();
     const sessionId = randomUUID();
     await db.insert(s.orderSessionsV).values({
@@ -232,7 +171,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const { admin, db, orgId } = fix!;
     const [buyer] = await db
       .insert(s.users)
-      .values({ displayName: 'Waiver buyer', tgUserId: BigInt(`6${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Waiver buyer', tgUserId: freshTgId() })
       .returning();
     const runId = randomUUID();
     await db
@@ -340,7 +279,19 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
   });
 
   test('CAT-5: emptying the workspace keeps the admin audit', async () => {
-    const { admin, db, orgId } = fix!;
+    // Its own workspace, since it empties it. Deleting one order first
+    // gives the audit an entry to keep.
+    const { admin, db, orgId, storeId, memberId } = await purgeWorkspace('Purge everything');
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId,
+      storeId,
+      orderDate: '2026-06-20',
+      status: 'draft',
+      initiatedByMemberId: memberId,
+    });
+    await admin.admin.purgeSession({ sessionId, dryRun: false });
     const before = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
     expect(before.length).toBeGreaterThan(0);
     const preview = await admin.admin.purgeAllTestData({ dryRun: true });
@@ -355,7 +306,6 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       (await errorOf(() => admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'default' })))
         ?.message,
     ).toBe('admin.errors.purgeConfirmMismatch');
-    // Runs before the CAT-2 test adds a daily close (which blocks this).
     await admin.admin.purgeAllTestData({ dryRun: false, confirmText: ` ${org!.name} ` });
     const after = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
     expect(after.length).toBe(before.length + 1);
@@ -409,7 +359,9 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
   });
 
   test('CAT-2: a date with a daily close says why it cannot be reset', async () => {
-    const { admin, db, orgId, storeId, memberId } = fix!;
+    // Its own workspace: a daily close cannot be deleted, and while one
+    // exists the workspace purge refuses, its preview too.
+    const { admin, db, orgId, storeId, memberId } = await purgeWorkspace('Purge daily close');
     const [settlement] = await db
       .insert(s.storeDailySettlements)
       .values({ orgId, storeId, settlementDate: '2026-06-10' })
@@ -518,7 +470,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
     });
     const [approver] = await db
       .insert(s.users)
-      .values({ displayName: 'List approver', tgUserId: BigInt(`5${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'List approver', tgUserId: freshTgId() })
       .returning();
     await db.insert(s.events).values({
       orgId,

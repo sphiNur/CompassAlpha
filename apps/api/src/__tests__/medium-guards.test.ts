@@ -5,69 +5,19 @@
  *   ORD-9  a 1,000,000,000 quantity overflowed numeric(12,3) as a 500;
  *   ADM-6  a suspended admin could not be removed or lose the admin role
  *          while one other admin remained;
- *   ADM-7  two grants of one role at once made two bindings (this test
- *          guards the outcome; the race shows over HTTP, not in-process).
+ *   ADM-7  two grants of one role at once made two bindings.
  *
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/medium-guards.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-import { and, eq } from 'drizzle-orm';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { countAdminsInOrg } from '../services/adminAuthority';
+import { and, eq, like } from 'drizzle-orm';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor, openConnections } from './helpers/ctx';
+import { seedOwnedOrg, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -79,18 +29,9 @@ interface Fixture {
   staff: Caller;
   staffUserId: string;
   staffMemberId: string;
-  admins: Array<{ memberId: string; bindingId: string }>;
+  admins: Array<{ userId: string; memberId: string; bindingId: string }>;
 }
 let fix: Fixture | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -101,19 +42,7 @@ beforeAll(async () => {
     .values({ slug: `medium-${suffix}`, name: 'Medium guards', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'admin', 'staff', 'purchaser']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key }).onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'admin', 'staff', 'purchaser']);
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `M-${suffix.slice(-6)}` }).returning();
   const [sku] = await db
     .insert(s.skus)
@@ -123,19 +52,13 @@ beforeAll(async () => {
   let n = 0;
   const member = async (slug: string, scope: 'global' | 'store') => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Medium ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    const [b] = await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: roleIds[slug]!, scopeType: scope, scopeId: scope === 'store' ? store!.id : null })
-      .returning();
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return { caller: appRouter.createCaller(buildCtx(db, session)), userId: u!.id, memberId: m!.id, bindingId: b!.id };
+    const who = await seedMember(db, orgId, {
+      name: `Medium ${n}`,
+      stores: [store!.id],
+      roles: [{ roleId: roleIds[slug]!, storeId: scope === 'store' ? store!.id : null }],
+    });
+    const caller = callerFor(await sessionOf(orgId, who));
+    return { caller, userId: who.userId, memberId: who.memberId, bindingId: who.bindingIds[0]! };
   };
   const owner = await member('super_admin', 'global');
   const staff = await member('staff', 'store');
@@ -188,11 +111,21 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
     await owner.order.submit({ sessionId: draft.sessionId });
     await owner.order.claim({ sessionId: draft.sessionId });
     await owner.order.approve({ sessionId: draft.sessionId });
-    const rows = await db
-      .select({ template: s.notifications.template })
+    const told = await db
+      .select({ to: s.notifications.recipientUserId })
       .from(s.notifications)
-      .where(eq(s.notifications.orgId, orgId));
-    expect(rows.some((r) => r.template === 'order.selfApproved')).toBe(true);
+      .where(
+        and(
+          eq(s.notifications.orgId, orgId),
+          eq(s.notifications.template, 'order.selfApproved'),
+          like(s.notifications.dedupKey, `order:${draft.sessionId}:selfApproved:%`),
+        ),
+      );
+    // The other approvers here are the two admins; the owner, who approved
+    // it, is not told.
+    expect([...new Set(told.map((r) => r.to))].sort()).toEqual(
+      fix!.admins.map((a) => a.userId).sort(),
+    );
   });
 
   test('ADM-21: unknown keys and past expiries are refused; revoking nothing writes no audit', async () => {
@@ -217,8 +150,10 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
   });
 
   test('ADM-7: five grants of one role at once leave one binding', async () => {
-    const { owner, staffUserId, staffMemberId, storeId, db } = fix!;
-    await Promise.all(
+    const { owner, orgId, staffUserId, staffMemberId, storeId, db } = fix!;
+    // Without open connections the grants would run one after another.
+    await openConnections(orgId, 5);
+    const replies = await Promise.all(
       Array.from({ length: 5 }, () =>
         owner.admin.grantRole({ userId: staffUserId, roleSlug: 'purchaser', scopeType: 'store', scopeId: storeId }),
       ),
@@ -229,15 +164,75 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
       .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
       .where(and(eq(s.memberRoleBindings.memberId, staffMemberId), eq(s.roles.slug, 'purchaser')));
     expect(rows).toHaveLength(1);
+    // One grant made the binding; the other four were pointed at it.
+    expect(replies.filter((r) => r.granted)).toHaveLength(1);
+    expect([...new Set(replies.map((r) => r.bindingId))]).toEqual([rows[0]!.id]);
   });
 
   test('ADM-6: a suspended admin can lose the admin role and be removed', async () => {
-    const { owner, db, admins } = fix!;
-    const [a1, a2] = admins as [Fixture['admins'][0], Fixture['admins'][0]];
-    // Leave the owner as the one other active admin-rank member.
-    await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, a1.memberId));
-    await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, a2.memberId));
-    expect(await errorOf(() => owner.admin.revokeRole({ bindingId: a1.bindingId }))).toBeNull();
+    // An organisation of the test's own, where the owner is the one other
+    // active admin-rank member. The test used to suspend the shared admins,
+    // and run before APR-6 it left APR-6 nobody to tell (review NEW-RAND-01).
+    const db = fix!.db;
+    const org = await seedOwnedOrg(db, 'ADM-6 suspended admins');
+    const owner = callerFor(org.session);
+    const suspendedAdmin = (name: string) =>
+      seedMember(db, org.orgId, {
+        name,
+        status: 'suspended',
+        roles: [{ roleId: org.roleIds.admin! }],
+      });
+    const a1 = await suspendedAdmin('Suspended admin 1');
+    const a2 = await suspendedAdmin('Suspended admin 2');
+    expect(
+      await errorOf(() => owner.admin.revokeRole({ bindingId: a1.bindingIds[0]! })),
+    ).toBeNull();
     expect(await errorOf(() => owner.admin.memberRemove({ memberId: a2.memberId }))).toBeNull();
+  });
+
+  test('ADM-6: with the last active admin taken away, none is left to count', async () => {
+    // The API does not reach this today: whoever removes, suspends or
+    // demotes an admin must outrank them org-wide, and so is an active
+    // admin who still counts. The count is checked here so that the guard
+    // still refuses if those gates ever change.
+    const db = fix!.db;
+    const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const [org] = await db
+      .insert(s.organizations)
+      .values({
+        slug: `last-admin-${suffix}`,
+        name: 'Last admin',
+        localeDefault: 'en',
+        timezone: 'UTC',
+      })
+      .returning();
+    const orgId = org!.id;
+    const roles = await seedRoles(db, orgId, ['super_admin', 'admin']);
+    const owner = await seedMember(db, orgId, {
+      name: 'Owner',
+      roles: [{ roleId: roles.super_admin! }],
+    });
+    const twice = await seedMember(db, orgId, {
+      name: 'Admin twice',
+      roles: [{ roleId: roles.admin! }, { roleId: roles.super_admin! }],
+    });
+    const away = await seedMember(db, orgId, {
+      name: 'Suspended admin',
+      status: 'suspended',
+      roles: [{ roleId: roles.admin! }],
+    });
+    const left = (except?: { memberId?: string; bindingId?: string }) =>
+      withOrgContext(getDb(), orgId, (tx) => countAdminsInOrg(tx, orgId, except));
+
+    // The suspended admin is not counted, so taking them away leaves two.
+    expect(await left()).toBe(2);
+    expect(await left({ memberId: away.memberId })).toBe(2);
+    // One of two admin roles: the member stays an admin.
+    expect(await left({ bindingId: twice.bindingIds[0] })).toBe(2);
+    expect(await left({ memberId: owner.memberId })).toBe(1);
+    // With the other one suspended, the owner is the last admin.
+    await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, twice.memberId));
+    expect(await left({ memberId: owner.memberId })).toBe(0);
+    expect(await left({ bindingId: owner.bindingIds[0] })).toBe(0);
   });
 });

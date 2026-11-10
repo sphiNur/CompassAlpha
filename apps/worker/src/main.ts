@@ -26,9 +26,6 @@
  *   FRONTEND_URL          optional; used as base for deep-link buttons
  */
 import { randomUUID } from 'node:crypto';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 import { Bot, GrammyError, HttpError } from 'grammy';
 import {
@@ -41,7 +38,13 @@ import {
 } from '@compass/db';
 import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
-import { escapeMd } from './markdown';
+import {
+  botMessage,
+  MAX_RETRIES,
+  nextAttempt,
+  outboxPayloadProblem,
+  type OutboxPayload,
+} from './outbox';
 import { orphanRepairFor } from './orphanRepair';
 import { deleteInBatches, RETENTION_RULES, retentionDeleteSql } from './retention';
 import {
@@ -51,34 +54,16 @@ import {
   releaseClaimIfExpired,
   staleClaimCandidatesSql,
 } from './claimTimeout';
+import { loadRepoEnv } from '@compass/db/env';
 
-(function loadRootEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+loadRepoEnv(import.meta.url);
 
 const FLUSH_INTERVAL_MS = 5_000;
-const MAX_RETRIES = 8;
-// Exponential backoff: 5 s, 10 s, 30 s, 1 min, 5 min, 15 min, 1 h, 3 h
-const BACKOFF_SECONDS = [5, 10, 30, 60, 300, 900, 3600, 10_800];
+/**
+ * COREAPI-14: how long shutdown waits for the pass in progress; longer
+ * than one relay call (RELAY_TIMEOUT_MS).
+ */
+const SHUTDOWN_GRACE_MS = 20_000;
 
 const db = getDb(process.env.DATABASE_URL);
 
@@ -136,17 +121,6 @@ if (!botDeliveryEnabled) {
   );
 }
 
-interface OutboxPayload {
-  orgId: string;
-  recipientUserId: string;
-  template: string;
-  title: string;
-  body?: string;
-  deepLink?: string;
-  dedupKey?: string;
-  extra?: Record<string, unknown>;
-}
-
 /**
  * Drain up to 50 pending outbox rows.
  *
@@ -170,74 +144,116 @@ interface OutboxPayload {
  * and the dedup_key on notifications already de-dupes the user-
  * facing record.
  */
+type RowOutcome = 'sent' | 'deferred' | 'failed';
+
 async function processOnce(): Promise<{ sent: number; deferred: number; failed: number }> {
   let sent = 0;
   let deferred = 0;
   let failed = 0;
 
   // Loop one row at a time, each in its own tx, until SKIP LOCKED
-  // returns nothing (queue drained for this pass) or we hit 50.
-  for (let i = 0; i < 50; i++) {
-    const claimed = await withSystemContext(db, 'worker', async (tx) => {
-      // Atomic claim: pick the oldest unsent row that's due, locking
-      // it so concurrent workers skip it. Order by created_at for
-      // FIFO fairness — older notifications go out first.
-      const rows = (await tx.execute(sql`
-        SELECT id, channel, payload, retries
-        FROM sync.outbox
-        WHERE sent_at IS NULL
-          AND next_attempt_at <= NOW()
-        ORDER BY created_at
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED
-      `)) as unknown as Array<{
-        id: string;
-        channel: string;
-        payload: unknown;
-        retries: number;
-      }>;
-      const row = rows[0];
-      if (!row) return null;
+  // returns nothing (queue drained for this pass) or we hit 50. On
+  // shutdown the pass ends after the row in hand (COREAPI-14).
+  for (let i = 0; i < 50 && !stopped; i++) {
+    const claim: { id?: string; retries?: number } = {};
+    let outcome: RowOutcome | null;
+    try {
+      outcome = await withSystemContext(db, 'worker', (tx) => handleNextRow(tx, claim));
+    } catch (err) {
+      // COREAPI-03: the row's transaction failed and wrote nothing back,
+      // so the next pass would take the same row first again, ahead of
+      // every other notification. Retry it later, with the usual backoff,
+      // and go on with the others. A failure before any row was claimed
+      // is the database's: the loop logs it and waits for the next pass.
+      if (claim.id === undefined) throw err;
+      console.error('[worker] outbox row failed', claim.id, err);
+      const id = claim.id;
+      const retries = claim.retries ?? 0;
+      await withSystemContext(db, 'worker', (tx) => deferOutboxTx(tx, id, retries, errorText(err)));
+      outcome = 'deferred';
+    }
 
-      const now = new Date();
-
-      if (row.channel === 'bot') {
-        const canDeliver = botDeliveryEnabled && (relayConfigured || !!bot);
-        if (!canDeliver) {
-          await tx
-            .update(s.outbox)
-            .set({ sentAt: now, lastError: 'bot delivery disabled' })
-            .where(eq(s.outbox.id, row.id));
-          return 'sent' as const;
-        }
-        const ok = await deliverBot(row.payload as OutboxPayload);
-        if (ok) {
-          await tx.update(s.outbox).set({ sentAt: now }).where(eq(s.outbox.id, row.id));
-          return 'sent' as const;
-        }
-        await deferOutboxTx(tx, row.id, row.retries);
-        return 'deferred' as const;
-      }
-      if (row.channel === 'webpush') {
-        await tx
-          .update(s.outbox)
-          .set({ sentAt: now, lastError: 'webpush not implemented (M2)' })
-          .where(eq(s.outbox.id, row.id));
-        return 'failed' as const;
-      }
-      await tx
-        .update(s.outbox)
-        .set({ sentAt: now, lastError: `unknown channel "${row.channel}"` })
-        .where(eq(s.outbox.id, row.id));
-      return 'failed' as const;
-    });
-
-    if (!claimed) break; // queue drained for this pass
-    if (claimed === 'sent') sent++;
-    else if (claimed === 'deferred') deferred++;
+    if (!outcome) break; // queue drained for this pass
+    if (outcome === 'sent') sent++;
+    else if (outcome === 'deferred') deferred++;
     else failed++;
   }
   return { sent, deferred, failed };
+}
+
+/**
+ * Claim the oldest due row and handle it, inside the caller's
+ * transaction; null when no row is due. `claim` learns the row as soon as
+ * it is locked, so the caller can push it back if this throws.
+ */
+async function handleNextRow(
+  tx: Tx,
+  claim: { id?: string; retries?: number },
+): Promise<RowOutcome | null> {
+  // Atomic claim: pick the oldest unsent row that's due, locking
+  // it so concurrent workers skip it. Order by created_at for
+  // FIFO fairness — older notifications go out first.
+  const rows = (await tx.execute(sql`
+    SELECT id, channel, payload, retries
+    FROM sync.outbox
+    WHERE sent_at IS NULL
+      AND next_attempt_at <= NOW()
+    ORDER BY created_at
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+  `)) as unknown as Array<{
+    id: string;
+    channel: string;
+    payload: unknown;
+    retries: number;
+  }>;
+  const row = rows[0];
+  if (!row) return null;
+  claim.id = row.id;
+  claim.retries = row.retries;
+
+  const now = new Date();
+
+  if (row.channel === 'bot') {
+    const canDeliver = botDeliveryEnabled && (relayConfigured || !!bot);
+    if (!canDeliver) {
+      await tx
+        .update(s.outbox)
+        .set({ sentAt: now, lastError: 'bot delivery disabled' })
+        .where(eq(s.outbox.id, row.id));
+      return 'sent' as const;
+    }
+    // COREAPI-03: a payload that can never become a message is closed
+    // with the reason, instead of throwing on every pass at the head
+    // of the queue.
+    const problem = outboxPayloadProblem(row.payload);
+    if (problem) {
+      await tx
+        .update(s.outbox)
+        .set({ sentAt: now, lastError: `undeliverable: ${problem}` })
+        .where(eq(s.outbox.id, row.id));
+      return 'failed' as const;
+    }
+    const ok = await deliverBot(row.payload as OutboxPayload);
+    if (ok) {
+      await tx.update(s.outbox).set({ sentAt: now }).where(eq(s.outbox.id, row.id));
+      return 'sent' as const;
+    }
+    await deferOutboxTx(tx, row.id, row.retries);
+    return 'deferred' as const;
+  }
+  if (row.channel === 'webpush') {
+    await tx
+      .update(s.outbox)
+      .set({ sentAt: now, lastError: 'webpush not implemented (M2)' })
+      .where(eq(s.outbox.id, row.id));
+    return 'failed' as const;
+  }
+  await tx
+    .update(s.outbox)
+    .set({ sentAt: now, lastError: `unknown channel "${row.channel}"` })
+    .where(eq(s.outbox.id, row.id));
+  return 'failed' as const;
 }
 
 async function deliverBot(payload: OutboxPayload): Promise<boolean> {
@@ -253,26 +269,7 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
   }
 
   const chatId = Number(user.tgUserId);
-  const text = payload.body
-    ? `*${escapeMd(payload.title)}*\n${escapeMd(payload.body)}`
-    : `*${escapeMd(payload.title)}*`;
-  const opts: Record<string, unknown> = {
-    parse_mode: 'MarkdownV2',
-    ...(payload.deepLink
-      ? {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: 'Open Compass',
-                  web_app: { url: resolveDeepLink(payload.deepLink) },
-                },
-              ],
-            ],
-          },
-        }
-      : {}),
-  };
+  const { text, opts } = botMessage(payload, process.env.FRONTEND_URL);
 
   try {
     if (relayConfigured) {
@@ -349,30 +346,36 @@ async function sendViaRelay(
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tx = DB;
-async function deferOutboxTx(tx: Tx, id: string, currentRetries: number): Promise<void> {
-  const next = currentRetries + 1;
-  if (next >= MAX_RETRIES) {
+async function deferOutboxTx(
+  tx: Tx,
+  id: string,
+  currentRetries: number,
+  error?: string,
+): Promise<void> {
+  const next = nextAttempt(currentRetries);
+  if (next.giveUp) {
     await tx
       .update(s.outbox)
-      .set({ sentAt: new Date(), lastError: `gave up after ${MAX_RETRIES} retries` })
+      .set({
+        sentAt: new Date(),
+        lastError: `gave up after ${MAX_RETRIES} retries${error ? `: ${error}` : ''}`,
+      })
       .where(eq(s.outbox.id, id));
     return;
   }
-  const delay = BACKOFF_SECONDS[Math.min(next, BACKOFF_SECONDS.length - 1)]!;
   await tx
     .update(s.outbox)
     .set({
-      retries: next,
-      nextAttemptAt: sql`now() + ${delay}::int * interval '1 second'`,
+      retries: next.retries,
+      nextAttemptAt: sql`now() + ${next.delaySeconds}::int * interval '1 second'`,
+      ...(error ? { lastError: error } : {}),
     })
     .where(eq(s.outbox.id, id));
 }
 
-function resolveDeepLink(path: string): string {
-  const base = process.env.FRONTEND_URL?.replace(/\/$/, '') ?? '';
-  if (path.startsWith('http')) return path;
-  if (!base) return path;
-  return base + (path.startsWith('/') ? path : '/' + path);
+/** An error as one short line for sync.outbox.last_error. */
+function errorText(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).slice(0, 500);
 }
 
 let stopped = false;
@@ -702,99 +705,150 @@ async function applyRetention(): Promise<void> {
   }
 }
 
-async function loop() {
-  while (!stopped) {
-    try {
-      const r = await processOnce();
-      if (r.sent || r.deferred || r.failed) {
-        console.log(`[worker] flushed: sent=${r.sent} deferred=${r.deferred} failed=${r.failed}`);
-      }
-      // Heartbeat regardless of queue activity. Lets post-deploy smoke
-      // verify the loop is alive even when the outbox is empty (M1.9).
-      if (Date.now() - lastHeartbeat >= HEARTBEAT_MS) {
-        console.log('[worker] heartbeat');
-        lastHeartbeat = Date.now();
-      }
-      // Idempotency keys cleanup. Hourly cadence; failure logs but
-      // doesn't break the outer loop — next attempt picks up rows
-      // that were not deleted on the prior failure.
-      if (Date.now() - lastIdempotencyCleanup >= IDEMPOTENCY_CLEANUP_MS) {
-        try {
-          const deleted = await cleanupIdempotencyKeys();
-          if (deleted > 0) {
-            console.log(`[worker] idempotency cleanup: ${deleted} expired keys deleted`);
-          }
-        } catch (err) {
-          console.error('[worker] idempotency cleanup failed', err);
-        }
-        // F-14: same hourly cadence for expired refresh tokens.
-        try {
-          const purged = await purgeExpiredRefreshTokens();
-          if (purged > 0) {
-            console.log(`[worker] refresh token cleanup: ${purged} expired tokens deleted`);
-          }
-        } catch (err) {
-          console.error('[worker] refresh token cleanup failed', err);
-        }
-        // CA-38: retention sweep on the same hourly cadence.
-        await applyRetention();
-        lastIdempotencyCleanup = Date.now();
-      }
-      // M3.20: claim-timeout sweep — see releaseStaleClaims() above.
-      // C.2 (M3.38): same cadence now also sweeps run-level claims via
-      // releaseStaleRunClaims. Both share CLAIM_TIMEOUT_MINUTES.
-      if (CLAIM_TIMEOUT_MINUTES > 0 && Date.now() - lastClaimTimeoutScan >= CLAIM_TIMEOUT_SCAN_MS) {
-        try {
-          const releasedOrders = await releaseStaleClaims();
-          if (releasedOrders > 0) {
-            console.log(
-              `[worker] order claim timeout sweep: ${releasedOrders} stale claim(s) released`,
-            );
-          }
-        } catch (err) {
-          console.error('[worker] order claim timeout sweep failed', err);
-        }
-        try {
-          const releasedRuns = await releaseStaleRunClaims();
-          if (releasedRuns > 0) {
-            console.log(
-              `[worker] run claim timeout sweep: ${releasedRuns} stale claim(s) released`,
-            );
-          }
-        } catch (err) {
-          console.error('[worker] run claim timeout sweep failed', err);
-        }
-        // Wave2 #15 (M3.40, 2026-05-20): orphaned-session repair. Same
-        // cadence as the claim sweep — cheap query, bounded result,
-        // very low expected match rate (only catches drift from before
-        // the EjectFromRun loosening shipped, or future regressions).
-        try {
-          const repaired = await repairOrphanedSessions();
-          if (repaired > 0) {
-            console.log(
-              `[worker] orphaned-session repair: ${repaired} session(s) archived (finished run) or ejected (cancelled run)`,
-            );
-          }
-        } catch (err) {
-          console.error('[worker] orphaned-session repair failed', err);
-        }
-        lastClaimTimeoutScan = Date.now();
-      }
-    } catch (err) {
-      console.error('[worker] processOnce threw', err);
+/**
+ * One outbox pass. COREAPI-03: it fails on its own; when it threw, the
+ * maintenance below was skipped with it, pass after pass.
+ */
+async function flushOutbox(): Promise<void> {
+  try {
+    const r = await processOnce();
+    if (r.sent || r.deferred || r.failed) {
+      console.log(`[worker] flushed: sent=${r.sent} deferred=${r.deferred} failed=${r.failed}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, FLUSH_INTERVAL_MS));
+  } catch (err) {
+    console.error('[worker] outbox flush failed', err);
   }
 }
 
+async function loop() {
+  while (!stopped) {
+    await flushOutbox();
+    if (stopped) break;
+    try {
+      await maintenance();
+    } catch (err) {
+      console.error('[worker] maintenance threw', err);
+    }
+    await pause(FLUSH_INTERVAL_MS);
+  }
+}
+
+/** Woken early by shutdown, so it does not wait out the interval. */
+let wake: (() => void) | null = null;
+function pause(ms: number): Promise<void> {
+  if (stopped) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      wake = null;
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    wake = done;
+  });
+}
+
+/** The heartbeat and the timed clean-ups; each task fails on its own. */
+async function maintenance(): Promise<void> {
+  // Heartbeat regardless of queue activity. Lets post-deploy smoke
+  // verify the loop is alive even when the outbox is empty (M1.9).
+  if (Date.now() - lastHeartbeat >= HEARTBEAT_MS) {
+    console.log('[worker] heartbeat');
+    lastHeartbeat = Date.now();
+  }
+  // Idempotency keys cleanup. Hourly cadence; failure logs but
+  // doesn't break the outer loop — next attempt picks up rows
+  // that were not deleted on the prior failure.
+  if (Date.now() - lastIdempotencyCleanup >= IDEMPOTENCY_CLEANUP_MS) {
+    try {
+      const deleted = await cleanupIdempotencyKeys();
+      if (deleted > 0) {
+        console.log(`[worker] idempotency cleanup: ${deleted} expired keys deleted`);
+      }
+    } catch (err) {
+      console.error('[worker] idempotency cleanup failed', err);
+    }
+    // F-14: same hourly cadence for expired refresh tokens.
+    try {
+      const purged = await purgeExpiredRefreshTokens();
+      if (purged > 0) {
+        console.log(`[worker] refresh token cleanup: ${purged} expired tokens deleted`);
+      }
+    } catch (err) {
+      console.error('[worker] refresh token cleanup failed', err);
+    }
+    // CA-38: retention sweep on the same hourly cadence.
+    await applyRetention();
+    lastIdempotencyCleanup = Date.now();
+  }
+  // M3.20: claim-timeout sweep — see releaseStaleClaims() above.
+  // C.2 (M3.38): same cadence now also sweeps run-level claims via
+  // releaseStaleRunClaims. Both share CLAIM_TIMEOUT_MINUTES.
+  if (CLAIM_TIMEOUT_MINUTES > 0 && Date.now() - lastClaimTimeoutScan >= CLAIM_TIMEOUT_SCAN_MS) {
+    try {
+      const releasedOrders = await releaseStaleClaims();
+      if (releasedOrders > 0) {
+        console.log(
+          `[worker] order claim timeout sweep: ${releasedOrders} stale claim(s) released`,
+        );
+      }
+    } catch (err) {
+      console.error('[worker] order claim timeout sweep failed', err);
+    }
+    try {
+      const releasedRuns = await releaseStaleRunClaims();
+      if (releasedRuns > 0) {
+        console.log(`[worker] run claim timeout sweep: ${releasedRuns} stale claim(s) released`);
+      }
+    } catch (err) {
+      console.error('[worker] run claim timeout sweep failed', err);
+    }
+    // Wave2 #15 (M3.40, 2026-05-20): orphaned-session repair. Same
+    // cadence as the claim sweep — cheap query, bounded result,
+    // very low expected match rate (only catches drift from before
+    // the EjectFromRun loosening shipped, or future regressions).
+    try {
+      const repaired = await repairOrphanedSessions();
+      if (repaired > 0) {
+        console.log(
+          `[worker] orphaned-session repair: ${repaired} session(s) archived (finished run) or ejected (cancelled run)`,
+        );
+      }
+    } catch (err) {
+      console.error('[worker] orphaned-session repair failed', err);
+    }
+    lastClaimTimeoutScan = Date.now();
+  }
+}
+
+console.log('[worker] online · outbox flush every', FLUSH_INTERVAL_MS, 'ms');
+const running = loop();
+
+/**
+ * COREAPI-14 (2026-11-09): shutdown closed the database under the pass in
+ * progress. A message the relay had already sent, but the pass had not
+ * yet marked, went out again after the restart. Now the pass ends after
+ * its current row and is waited for (up to SHUTDOWN_GRACE_MS).
+ */
 const shutdown = async (signal: string) => {
+  if (stopped) return;
   console.log(`[worker] shutdown (${signal})`);
   stopped = true;
+  wake?.();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const finished = await Promise.race([
+    running.then(
+      () => true,
+      () => true,
+    ),
+    new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), SHUTDOWN_GRACE_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (!finished) console.warn('[worker] pass still running at shutdown; closing anyway');
   await closeDb();
   process.exit(0);
 };
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
-
-console.log('[worker] online · outbox flush every', FLUSH_INTERVAL_MS, 'ms');
-void loop();

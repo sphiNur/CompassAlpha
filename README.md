@@ -11,7 +11,7 @@
 ```bash
 # 1. 准备环境（要求 Bun 1.4.4, pnpm 12.16, Node 26 LTS, PostgreSQL 18, Redis 8.10 —— 生产、CI、本地三边一致）
 cp .env.example .env
-docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis + MinIO + Otel
+docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis + MinIO + Adminer
 # 注意：dev compose 把 PG 暴露在 5433，Redis 在 6380（避开本机已有进程）。
 # .env.example 里的 DATABASE_URL/REDIS_URL 已对应这两个端口。
 
@@ -28,8 +28,10 @@ pnpm dev
 # Web:  http://localhost:5173
 # Adminer (DB):  http://localhost:8080
 
-# 5. 给自己授超管
-pnpm compass user grant <你的 Telegram user id> --role super_admin --org default
+# 5. 给自己授超管（第一次授权时你还没有账号，所以加 --new-user）
+pnpm compass user grant <你的 Telegram user id> --role super_admin --org default --new-user
+# 管理员以下的角色在门店上授予：
+pnpm compass user grant <tgUserId> --role staff --org default --scope store --scope-id <storeId> --new-user
 ```
 
 > **Telegram 调试**：本地开发可用 `VITE_DEV_MOCK_INIT_DATA=1` 跳过 BotFather 真实签名，
@@ -59,19 +61,19 @@ packages/
 └── cli/         compass 命令行
 
 infra/
-├── docker/      Dockerfile 多阶段
-├── caddy/       Caddyfile
-├── compose/     docker-compose.{dev,prod}.yml
-├── systemd/     compass-api / compass-worker .service
-└── backup/      pg_dump 夜间备份 + 还原脚本（见 docs/RUNBOOK.md）
+├── compose/     docker-compose.dev.yml（只给本地开发；生产不用容器）
+├── systemd/     compass-api / compass-worker / 隧道与源站发布的单元
+├── backup/      pg_dump 夜间备份 + 还原脚本（见 docs/RUNBOOK.md）
+├── cloudflare/  边缘 Worker（app-proxy）与 Telegram 中转（tg-relay）
+├── tunnel/      compass-origin-watch.sh：把隧道地址发布给 Worker
+└── deploy/      生产服务器的主机密钥（部署时校验）
 
 docs/
 ├── EVENT_CATALOG.md
 ├── PERMISSION_MATRIX.md
 ├── API.md
 ├── DESIGN.md
-├── RUNBOOK.md
-└── M1.5-AUDIT.md     一次大审计的结果，可作为 audit 报告模板
+└── RUNBOOK.md
 ```
 
 ## 常用命令
@@ -107,7 +109,7 @@ bun run scripts/deploy.ts --dry   # 只跑 smoke，不部署
 9. **测**：`packages/domain/.../*.test.ts` 加 unit；服务层 / API 层在 `apps/api/src/__tests__/` 加（PG-gated 用 `SKIP_PG_TESTS` 在 CI 跳过）。
 10. **smoke**：`scripts/smoke.ts` 是 server 端，`scripts/browser-smoke*.ts` 是浏览器端，部署脚本都会跑。
 
-> 历史决策放在仓库根的 `ARCHITECTURE.md` 第 "DR-XXX" 段；阶段性大审计放在 `docs/M1.x-AUDIT.md`。
+> 历史决策放在仓库根的 `ARCHITECTURE.md` 第 "DR-XXX" 段。审计报告不放进仓库：发现的问题修在代码里，必要处留注释（如 `review OPS-07 (2026-11)`）。
 
 ## 核心设计原则
 

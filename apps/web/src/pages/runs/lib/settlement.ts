@@ -2,8 +2,8 @@
  * Run settlement money math — how a purchased item's cost resolves
  * against per-store split overrides and allocates into cash vs transfer.
  *
- * Extracted verbatim from RunPage.tsx (Phase 4 step 1 —
- * FRONTEND_AUDIT_2026-07.md run-domain split). All functions are pure
+ * Extracted verbatim from RunPage.tsx (Phase 4 step 1 of the 2026-07
+ * frontend audit's run-domain split). All functions are pure
  * and structurally typed (duck-typed against the tRPC row shapes) so
  * they stay decoupled from the API client. Unit tests in
  * __tests__/settlement.test.ts.
@@ -93,7 +93,7 @@ export function settleItemLine(
 export function expenseLine(ex: {
   qty: string;
   unitPrice: string;
-  storeSplits?: ReadonlyArray<{ qty: string }> | null;
+  storeSplits?: ReadonlyArray<{ qty: string; unitPrice?: string | null }> | null;
 }): number {
   const splits = ex.storeSplits?.length ? ex.storeSplits : [{ qty: ex.qty }];
   return splits.reduce((sum, sp) => addMoney(sum, splitSubtotal(sp, ex)), 0);

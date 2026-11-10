@@ -30,7 +30,13 @@ import {
   QueryErrorBanner,
 } from '@compass/ui';
 import type { SettlementWageItem } from '@compass/contracts';
-import { BACKDATE_LIMIT_DAYS, isoDateDaysBefore } from '@compass/contracts/limits';
+import {
+  BACKDATE_LIMIT_DAYS,
+  isoDateDaysBefore,
+  SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS,
+  SETTLEMENT_MAX_CENTS,
+  settlementMoneyProblem,
+} from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
 import { PendingSpinner } from '../components/PendingSpinner';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
@@ -43,6 +49,7 @@ import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
+import { useRefreshSession } from '../lib/refreshSession';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 import {
@@ -52,7 +59,7 @@ import {
   readDraft,
   writeDraft,
 } from './settlement/draftStore';
-import { addMoney } from '@compass/contracts/money';
+import { addMoney, centsToMoney, toCents } from '@compass/contracts/money';
 import {
   ITEM_MONEY_PROBLEM_MESSAGE,
   MONEY_PROBLEM_MESSAGE,
@@ -147,11 +154,7 @@ const DIRECT_MONEY_FIELDS: readonly Exclude<
   'cashOnHand',
 ];
 
-const POSITIVE_MONEY = /^\d{1,12}(?:\.\d{1,2})?$/;
-const SIGNED_MONEY = /^-?\d{1,12}(?:\.\d{1,2})?$/;
 const BUSINESS_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_SETTLEMENT_CENTS = 99_999_999_999_999n;
-const MAX_DETAIL_ITEMS = 100;
 function emptyDraft(): SettlementDraft {
   return {
     onlineRevenue: '0',
@@ -178,7 +181,7 @@ function newDetailId(): string {
 /** Keep database decimal strings safe for a number input without rounding. */
 function toMoneyInput(value: string | null | undefined): string {
   const raw = String(value ?? '0').trim();
-  if (!SIGNED_MONEY.test(raw)) return raw || '0';
+  if (settlementMoneyProblem(raw, { signed: true })) return raw || '0';
   return raw.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
 }
 
@@ -240,33 +243,24 @@ function moneyNumber(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** Match the API's two-decimal normalization when deciding if this is a correction. */
+/**
+ * Match the API's two-decimal normalization when deciding if this is a
+ * correction. CONF-08: the amount rule and the cents are the shared ones
+ * (contracts limits / money), as on the server.
+ */
 function normalizedMoney(value: string): string {
   const raw = value.trim();
-  if (!SIGNED_MONEY.test(raw)) return raw;
-  const negative = raw.startsWith('-');
-  const cents = moneyToCents(negative ? raw.slice(1) : raw);
-  if (cents === null) return raw;
-  return `${negative && cents !== 0n ? '-' : ''}${centsToMoneyInput(cents)}`;
+  return isMoney(raw, true) ? centsToMoney(toCents(raw)) : raw;
 }
 
 function isMoney(value: string, signed = false): boolean {
-  const raw = value.trim();
-  const expression = signed ? SIGNED_MONEY : POSITIVE_MONEY;
-  if (!expression.test(raw)) return false;
-  return moneyToCents(raw.startsWith('-') ? raw.slice(1) : raw) !== null;
+  return settlementMoneyProblem(value.trim(), { signed }) === null;
 }
 
+/** A valid, unsigned amount in cents; null otherwise. */
 function moneyToCents(value: string): bigint | null {
   const raw = value.trim();
-  if (!POSITIVE_MONEY.test(raw)) return null;
-  const [whole = '0', fraction = ''] = raw.split('.');
-  const cents = BigInt(whole || '0') * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2));
-  return cents <= MAX_SETTLEMENT_CENTS ? cents : null;
-}
-
-function centsToMoneyInput(cents: bigint): string {
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
+  return isMoney(raw) ? toCents(raw) : null;
 }
 
 function sumItemAmounts(items: readonly { amount: string }[]): {
@@ -278,9 +272,9 @@ function sumItemAmounts(items: readonly { amount: string }[]): {
     const itemCents = moneyToCents(item.amount);
     if (itemCents === null || itemCents <= 0n) return { value: '0.00', valid: false };
     cents += itemCents;
-    if (cents > MAX_SETTLEMENT_CENTS) return { value: '0.00', valid: false };
+    if (cents > SETTLEMENT_MAX_CENTS) return { value: '0.00', valid: false };
   }
-  return { value: centsToMoneyInput(cents), valid: true };
+  return { value: centsToMoney(cents), valid: true };
 }
 
 function isValidOperatingExpense(item: OperatingExpenseDraft): boolean {
@@ -518,6 +512,16 @@ export function SettlementPage() {
       setCurrentStore(currentStoreId);
     }
   }, [currentStoreId, requestedStoreId, setCurrentStore]);
+  // CONF-02 (2026-11-09): a store assigned since the session was read is
+  // in this page's list but not yet in the session, so it never became
+  // the shell's store and the page waited for that forever. Read the
+  // session again; the store then joins it.
+  const refreshSession = useRefreshSession();
+  const storeNotInSession =
+    !!currentStoreId && !(session?.stores ?? []).some((store) => store.id === currentStoreId);
+  useEffect(() => {
+    if (storeNotInSession) void refreshSession();
+  }, [storeNotInSession, refreshSession]);
 
   // The server owns "today" because this is a store business date, not a
   // device date. Reset to that date whenever the selected store changes.
@@ -629,13 +633,21 @@ export function SettlementPage() {
       draft.note.trim() !== (existing.note ?? '').trim()
     );
   }, [currentMoney, draft.note, existing, operatingExpenseItemsChanged, wageItemsChanged]);
+  // The draft for the record on screen is in. In the render that brings a
+  // record, the form still holds the previous one's (or an empty) draft
+  // until the effect above replaces it: nothing anyone typed. Counted as
+  // changes, a tap on another tab right then asked "discard the changes
+  // you have not saved?" about a close saved a moment ago (seen in CI just
+  // after a reload).
+  const draftLoaded = draftRecordKey === recordKey;
   const hasUnsavedChanges =
-    existing !== null
+    draftLoaded &&
+    (existing !== null
       ? hasChanges
       : DIRECT_MONEY_FIELDS.some((field) => normalizedMoney(draft[field]) !== '0.00') ||
         draft.note.trim().length > 0 ||
         draft.operatingExpenseItems.length > 0 ||
-        draft.wageItems.length > 0;
+        draft.wageItems.length > 0);
   const confirmDiscard = () =>
     hasUnsavedChanges
       ? confirmSettlement(i18n.t('settlement.confirm.discard'))
@@ -643,7 +655,6 @@ export function SettlementPage() {
   // F18: keep unsaved input on the device while it differs from the record,
   // and drop it once it matches again (saved, or typed back).
   const storedDraftKey = session ? draftKey(session.user.id, recordKey) : null;
-  const draftLoaded = draftRecordKey === recordKey;
   useEffect(() => {
     if (!storedDraftKey || !draftLoaded) return;
     if (hasUnsavedChanges) writeDraft(draftStorage(), storedDraftKey, draft);
@@ -1108,7 +1119,9 @@ export function SettlementPage() {
         {pageHeading}
         {storeSelector}
         <div className="flex justify-center py-8" aria-label={i18n.t('settlement.title')}>
-          <Spinner size={20} />
+          {/* CONF-02: offline with no saved copy of this day, say so; a
+              bare spinner turned until the network came back. */}
+          <PendingSpinner query={closeQuery} />
         </div>
       </div>
     );
@@ -1375,12 +1388,6 @@ export function SettlementPage() {
               <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} className="" />
             ) : null}
           </section>
-        ) : null}
-
-        {closeQuery.isPending ? (
-          <div className="flex justify-center py-4" aria-label={i18n.t('settlement.title')}>
-            <PendingSpinner query={closeQuery} />
-          </div>
         ) : null}
 
         {closeQuery.isError ? (

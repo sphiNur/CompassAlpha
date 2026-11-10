@@ -32,3 +32,17 @@ pg_url_split() {
     PG_URL_NOPASS="$url"
   fi
 }
+
+# pg_url_parts "$URL" sets PG_URL_USER and PG_URL_DB, empty when the URL
+# names no user or no database (review OPS-02, 2026-11-09): install.sh
+# grants the backup role by name, and the default privileges for future
+# tables belong to the role the migrations connect as.
+pg_url_parts() {
+  local url="$1"
+  PG_URL_USER=""
+  PG_URL_DB=""
+  if [[ "$url" =~ ^[A-Za-z][A-Za-z0-9+.-]*://([^:/@]+)(:[^@]*)?@[^/]*/([^?]+) ]]; then
+    PG_URL_USER="${BASH_REMATCH[1]}"
+    PG_URL_DB="${BASH_REMATCH[3]}"
+  fi
+}

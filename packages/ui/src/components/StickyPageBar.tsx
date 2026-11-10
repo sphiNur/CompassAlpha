@@ -27,7 +27,7 @@ import { cn } from '../cn';
  *   - 'col' — stacked (Order's SearchInput over ChipBar, Approval's
  *     Tabs).
  *
- * See FRONTEND_AUDIT_2026-07.md (T2 primitive-gap: sticky top strip).
+ * From the 2026-07 frontend audit (T2 primitive-gap: sticky top strip).
  */
 /** Below this viewport height the bar stops being sticky. */
 export const STICKY_BAR_SHORT_VIEWPORT = '[@media(max-height:500px)]:static';

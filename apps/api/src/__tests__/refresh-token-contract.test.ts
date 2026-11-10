@@ -17,8 +17,8 @@ describe('refresh token contract', () => {
     expect(parsed.success).toBe(true);
   });
 
-  test('the schema still turns away junk', () => {
-    expect(RefreshInputSchema.safeParse({ refreshToken: 'short' }).success).toBe(false);
-    expect(RefreshInputSchema.safeParse({ refreshToken: 'x'.repeat(5000) }).success).toBe(false);
+  test('the schema turns away fewer than 20 or more than 4096 characters', () => {
+    const ok = (n: number) => RefreshInputSchema.safeParse({ refreshToken: 'x'.repeat(n) }).success;
+    expect([ok(19), ok(20), ok(4096), ok(4097)]).toEqual([false, true, true, false]);
   });
 });

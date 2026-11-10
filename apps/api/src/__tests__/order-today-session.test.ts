@@ -22,39 +22,13 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import type { RequestContext } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
 
 /** The date under test: today in the org's zone (UTC). A past date may not
  *  lazy-create a draft (CA-25) and since ORD-11 (2026-10-30) neither may a
@@ -62,23 +36,6 @@ const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '
 const ORDER_DATE = new Date().toISOString().slice(0, 10);
 const EXTRAS_DATE = ORDER_DATE;
 const SEQ_DATE = ORDER_DATE;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -103,11 +60,11 @@ beforeAll(async () => {
     .returning();
   const [staffUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Staff', tgUserId: BigInt(`8${Date.now()}1`.slice(-12)) })
+    .values({ displayName: 'Staff', tgUserId: freshTgId() })
     .returning();
   const [mgrUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Manager Mia', tgUserId: BigInt(`8${Date.now()}2`.slice(-12)) })
+    .values({ displayName: 'Manager Mia', tgUserId: freshTgId() })
     .returning();
   const [staffMember] = await db
     .insert(s.members)
@@ -179,7 +136,7 @@ beforeAll(async () => {
     extrasStoreId: extrasStore!.id,
     seqStoreId: seqStore!.id,
     skuId: sku!.id,
-    staff: buildCtx(db, {
+    staff: testContext({
       userId: staffUser!.id,
       memberId: staffMember!.id,
       orgId: org!.id,
@@ -187,7 +144,7 @@ beforeAll(async () => {
       permissions: new Set(['order.draft', 'order.submit']),
       roleSlugs: new Set(['staff']),
     }),
-    manager: buildCtx(db, {
+    manager: testContext({
       userId: mgrUser!.id,
       memberId: mgrMember!.id,
       orgId: org!.id,
@@ -197,6 +154,15 @@ beforeAll(async () => {
     }),
   };
 });
+
+/** How many events order `sessionId` has; a no-op retry adds none. */
+async function eventCount(sessionId: string): Promise<number> {
+  const rows = await getDb(undefined, { system: 'maintenance' })
+    .select({ seq: s.events.seq })
+    .from(s.events)
+    .where(and(eq(s.events.streamType, 'order'), eq(s.events.streamId, sessionId)));
+  return rows.length;
+}
 
 describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)', () => {
   test('claimed batch stays visible; rejected batch is edited in place and re-submitted', async () => {
@@ -210,7 +176,9 @@ describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)'
     const sessionId = first.sessionId;
     await staff.order.submit({ sessionId });
     // CA-26: double tap / lost-response retry is a no-op success.
-    await expect(staff.order.submit({ sessionId })).resolves.toBeDefined();
+    const submitted = await eventCount(sessionId);
+    await staff.order.submit({ sessionId });
+    expect(await eventCount(sessionId)).toBe(submitted);
 
     // CA-01: claimed → still returned, with the claimer's name.
     await mgr.order.claim({ sessionId });
@@ -253,7 +221,9 @@ describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)'
     // CA-26: repeated approve by the same decider is a no-op success.
     await mgr.order.claim({ sessionId });
     await mgr.order.approve({ sessionId });
-    await expect(mgr.order.approve({ sessionId })).resolves.toBeDefined();
+    const approved = await eventCount(sessionId);
+    await mgr.order.approve({ sessionId });
+    expect(await eventCount(sessionId)).toBe(approved);
   });
 });
 
@@ -345,9 +315,11 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
     // Fresh look → the approver's own claim after it does not count.
     const fresh = (await mgr.order.pendingList(input)).find((r) => r.id === sessionId)!.lastSeq;
     await mgr.order.claim({ sessionId });
-    await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
+    await mgr.order.approve({ sessionId, expectedSeq: fresh });
     // CA-26 retry with the same (now behind) seq stays a no-op success.
-    await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
+    const approved = await eventCount(sessionId);
+    await mgr.order.approve({ sessionId, expectedSeq: fresh });
+    expect(await eventCount(sessionId)).toBe(approved);
   });
   test('RE-ORD-5: an emptied draft no longer blocks withdrawing an earlier batch, and is not listed', async () => {
     if (!fix) throw new Error('fixture missing');

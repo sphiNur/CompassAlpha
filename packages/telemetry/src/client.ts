@@ -8,7 +8,7 @@
  *   - Dedupe identical events fired within 200 ms.
  */
 import type { LogEvent, LogLevel, Transport } from './common';
-import { sessionId as makeSessionId } from './common';
+import { BatchRefused, logBatches, sessionId as makeSessionId } from './common';
 
 interface LoggerConfig {
   appVersion: string;
@@ -18,6 +18,12 @@ interface LoggerConfig {
   storageKey?: string;
   /** When false the logger drops debug-level events to keep prod traffic low. */
   includeDebug?: boolean;
+  /**
+   * The most events, and bytes of JSON, one transport call may carry
+   * (COREAPI-04): the server's limits, which the app passes in.
+   */
+  maxBatchEvents: number;
+  maxBatchBytes: number;
 }
 
 const DEFAULTS = {
@@ -100,16 +106,43 @@ class Logger {
     for (const fn of this.listeners) fn([evt]);
   }
 
+  /**
+   * Send the queue in batches the server accepts (COREAPI-04, 2026-11-09).
+   * The whole queue used to go in one call: above the server's limit it
+   * was refused, queued again and refused again on every flush. A batch
+   * the server refuses is now dropped; one that did not get through is
+   * queued again, in order, with the ones after it.
+   */
   async flush(beacon = false): Promise<void> {
-    if (!this.transport || this.pending.length === 0) return;
-    const batch = this.pending.splice(0, this.pending.length);
-    try {
-      await this.transport(batch);
-    } catch (err) {
-      // Re-queue on failure unless we're in beacon mode (page unloading).
-      if (!beacon) this.pending.unshift(...batch);
-      // eslint-disable-next-line no-console
-      console.warn('[telemetry] flush failed', err);
+    const transport = this.transport;
+    if (!transport || this.pending.length === 0) return;
+    const batches = logBatches(
+      this.pending.splice(0, this.pending.length),
+      this.config.maxBatchEvents,
+      this.config.maxBatchBytes,
+    );
+    if (beacon) {
+      // The page is going away: send everything at once, nothing to queue.
+      for (const batch of batches) void transport(batch).catch(() => undefined);
+      return;
+    }
+    for (let i = 0; i < batches.length; i++) {
+      try {
+        await transport(batches[i]!);
+      } catch (err) {
+        if (err instanceof BatchRefused) {
+          // eslint-disable-next-line no-console
+          console.warn('[telemetry] batch refused, dropped', err.status);
+          continue;
+        }
+        this.pending.unshift(...batches.slice(i).flat());
+        if (this.pending.length > MAX_PENDING) {
+          this.pending.splice(0, this.pending.length - MAX_PENDING);
+        }
+        // eslint-disable-next-line no-console
+        console.warn('[telemetry] flush failed', err);
+        return;
+      }
     }
   }
 

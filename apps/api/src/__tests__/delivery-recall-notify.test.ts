@@ -6,41 +6,13 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/delivery-recall-notify.test.ts
  */
 import { describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { emptyRunState, type RunEvent } from '@compass/domain/run';
 import { dispatchRunEventNotifications } from '../services/notifyForEvent';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
   test('deliver → recall → deliver again tells the store three times', async () => {
@@ -60,7 +32,7 @@ describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
     const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `D-${suffix.slice(-6)}` }).returning();
     const [user] = await db
       .insert(s.users)
-      .values({ displayName: 'Store staff', tgUserId: BigInt(`${suffix}1`.slice(-12)) })
+      .values({ displayName: 'Store staff', tgUserId: freshTgId() })
       .returning();
     const [member] = await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' }).returning();
     await db
@@ -78,14 +50,33 @@ describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
       dispatchRunEventNotifications(tx, orgId, randomUUID(), emptyRunState(runId), events),
     );
     const rows = await db
-      .select({ template: s.notifications.template, dedupKey: s.notifications.dedupKey })
+      .select({
+        template: s.notifications.template,
+        dedupKey: s.notifications.dedupKey,
+        to: s.notifications.recipientUserId,
+        channel: s.notifications.channel,
+      })
       .from(s.notifications)
       .where(eq(s.notifications.orgId, orgId));
-    const keysOf = (template: string) =>
-      new Set(rows.filter((r) => r.template === template).map((r) => r.dedupKey)).size;
-    // One key per channel; both deliveries got their own, as did the recall.
-    const recalled = keysOf('run.storeDeliveryRecalled');
-    expect(recalled).toBeGreaterThan(0);
-    expect(keysOf('run.storeDelivered')).toBe(2 * recalled);
+    // A row's key is the event's, then its recipient and channel.
+    const eventKeysOf = (template: string) => [
+      ...new Set(
+        rows
+          .filter((r) => r.template === template)
+          .map((r) => {
+            const own = `:${r.to}:${r.channel}`;
+            return r.dedupKey?.endsWith(own) ? r.dedupKey.slice(0, -own.length) : r.dedupKey;
+          }),
+      ),
+    ];
+    const key = (what: string, seq: number) => `run:${runId}:store:${store!.id}:${what}:${seq}`;
+    // Each event has a key of its own: both deliveries, and the recall
+    // between them. All of them go to the store's staff.
+    expect(eventKeysOf('run.storeDelivered').sort()).toEqual([
+      key('delivered', 5),
+      key('delivered', 7),
+    ]);
+    expect(eventKeysOf('run.storeDeliveryRecalled')).toEqual([key('recalled', 6)]);
+    expect([...new Set(rows.map((r) => r.to))]).toEqual([user!.id]);
   });
 });

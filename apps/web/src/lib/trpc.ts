@@ -1,7 +1,7 @@
 import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
-import { getLogger, type LogEvent } from '@compass/telemetry';
+import { BatchRefused, getLogger, type LogEvent } from '@compass/telemetry';
 import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -27,7 +27,12 @@ export async function sendClientLogs(events: LogEvent[]): Promise<void> {
     keepalive: true,
   });
   // The endpoint is public and treats a stale token as anonymous, so a
-  // non-2xx is about the batch or the server; throwing re-queues it.
+  // non-2xx is about the batch or the server. COREAPI-04: a batch the
+  // server refused is dropped (sending it again gets the same answer);
+  // anything else, a 429 included, is queued again.
+  if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+    throw new BatchRefused(res.status);
+  }
   if (!res.ok) throw new Error(`system.log answered ${res.status}`);
 }
 
@@ -193,6 +198,8 @@ export function requestTimeoutMs(url: string, method: string): number {
 }
 /** What a proxy says when the API behind it is restarting or unreachable. */
 const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530]);
+/** Statuses a Response may not carry a body with. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 
 /**
  * One request that cannot hang and does not mistake a proxy's error page
@@ -203,6 +210,9 @@ const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 5
  *   - a 502/503/52x HTML page from nginx or Cloudflare while the API
  *     restarts (every deploy) failed JSON parsing as an ordinary error,
  *     so the write was refused instead of queued; it is a network failure.
+ *   - COREWEB2-05: the timeout used to end when the headers arrived, so
+ *     an answer whose body stalled after them hung the caller again. The
+ *     body is now read inside the same timeout and abort.
  * A caller's own abort (a cancelled query) still surfaces as an abort.
  */
 export async function guardedFetch(
@@ -234,7 +244,12 @@ export async function guardedFetch(
     ) {
       throw new TypeError(`Failed to fetch (gateway ${res.status})`);
     }
-    return res;
+    const body = NULL_BODY_STATUSES.has(res.status) ? null : await res.arrayBuffer();
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
   } catch (err) {
     if (timedOut) throw new TypeError('Failed to fetch (timed out)');
     throw err;

@@ -213,6 +213,28 @@ async function loadAssignedStoreIds(db: DB, memberId: string): Promise<string[]>
 }
 
 /**
+ * Keys that mean authority over the whole organisation. Only a global role
+ * binding or a global override yields them; the same key granted in one
+ * store counts nowhere.
+ *
+ * - `org.admin`: the organisation-admin marker.
+ * - `dishes.manage` (review CONF-04, 2026-11-09): dishes and recipes are
+ *   shared by every store, and each store's sales deduct stock by the same
+ *   recipe. A store-level grant let one store change the menu, the recipes
+ *   and the selling prices of all of them, which M3.2 took away from store
+ *   managers on purpose.
+ */
+export const ORG_WIDE_PERMISSION_KEYS: ReadonlySet<string> = new Set([
+  'org.admin',
+  'dishes.manage',
+]);
+
+/** Whether a grant of `key` at this scope counts at all. */
+export function grantCounts(key: string, scopeType: string): boolean {
+  return !ORG_WIDE_PERMISSION_KEYS.has(key) || scopeType === 'global';
+}
+
+/**
  * Compute permissions that apply to one concrete store.
  *
  * The session permission set is intentionally flat for client-side feature
@@ -276,17 +298,17 @@ export async function effectivePermissionsForStore(
   ]);
 
   // A store-scoped role/override must never yield org-wide authority, even
-  // when a legacy row happens to carry the `org.admin` key.
+  // when a legacy row happens to carry an org-wide key.
   const effective = new Set(
     rolePermissionRows
-      .filter((row) => row.permissionKey !== 'org.admin' || row.scopeType === 'global')
+      .filter((row) => grantCounts(row.permissionKey, row.scopeType))
       .map((row) => row.permissionKey),
   );
   for (const override of overrides) {
     if (
       override.effect === 'allow' &&
       override.permissionKey &&
-      (override.permissionKey !== 'org.admin' || override.scopeType === 'global')
+      grantCounts(override.permissionKey, override.scopeType)
     ) {
       effective.add(override.permissionKey);
     }
@@ -295,7 +317,7 @@ export async function effectivePermissionsForStore(
     if (
       override.effect === 'deny' &&
       override.permissionKey &&
-      (override.permissionKey !== 'org.admin' || override.scopeType === 'global')
+      grantCounts(override.permissionKey, override.scopeType)
     ) {
       effective.delete(override.permissionKey);
     }
@@ -417,7 +439,8 @@ export interface ScopedPermission {
  * The flat permission set: every key that is effective in at least one
  * scope — globally, or in some store. Each scope resolves like
  * `effectivePermissionsForStore`: global + that store's role grants, then
- * allows, then denies (deny wins); `org.admin` only ever from a global row.
+ * allows, then denies (deny wins); an org-wide key only ever from a global
+ * row (`ORG_WIDE_PERMISSION_KEYS`).
  *
  * ADM-1/2/3 (2026-10-30): the server's session set ignored overrides (a
  * global deny of users.manage still passed every admin gate; a global
@@ -436,8 +459,7 @@ export function flatEffectivePermissions(
   const applies = (row: ScopedPermission, storeId: string | null) =>
     row.scopeType === 'global' ||
     (storeId !== null && row.scopeType === 'store' && row.scopeId === storeId);
-  const usable = (row: ScopedPermission) =>
-    Boolean(row.key) && (row.key !== 'org.admin' || row.scopeType === 'global');
+  const usable = (row: ScopedPermission) => Boolean(row.key) && grantCounts(row.key, row.scopeType);
   const resolve = (storeId: string | null): Set<string> => {
     const effective = new Set<string>();
     for (const g of grants) if (applies(g, storeId) && usable(g)) effective.add(g.key);

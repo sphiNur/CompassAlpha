@@ -5,12 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css",
-    "./kit": "./src/kit/index.ts",
-    "./tailwind-preset": "./tailwind-preset.js"
+    "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

@@ -12,13 +12,38 @@ type CompassDb = IDBDatabase;
 
 let dbPromise: Promise<CompassDb> | null = null;
 
+/**
+ * How long an open may wait for another tab to let go of an older version.
+ * Every write waits on the open, so a blocked one must not hang them all.
+ */
+const OPEN_BLOCKED_MS = 5_000;
+
+/**
+ * The shared connection, opened on first use.
+ *
+ * COREWEB2-04 (2026-11-09): a failed open was cached, and so was a
+ * connection the browser had closed (iOS WebKit after a long time in the
+ * background: "Connection to Indexed Database server lost"). Every later
+ * call failed until the page was reloaded, and queued writes with it. A
+ * failed open is now forgotten, and so is a connection that closes or that
+ * another tab needs to upgrade: the next call opens a fresh one. An open
+ * that another tab blocks fails after OPEN_BLOCKED_MS.
+ */
 function open(): Promise<CompassDb> {
   if (dbPromise) return dbPromise;
   if (typeof indexedDB === 'undefined') {
     return Promise.reject(new Error('IndexedDB not available'));
   }
-  dbPromise = new Promise<CompassDb>((resolve, reject) => {
+  const opening = new Promise<CompassDb>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let blocked: ReturnType<typeof setTimeout> | undefined;
+    let gaveUp = false;
+    req.onblocked = () => {
+      blocked ??= setTimeout(() => {
+        gaveUp = true;
+        reject(new Error('IndexedDB open blocked'));
+      }, OPEN_BLOCKED_MS);
+    };
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('outbox')) {
@@ -28,18 +53,50 @@ function open(): Promise<CompassDb> {
         db.createObjectStore('keyval');
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      clearTimeout(blocked);
+      const db = req.result;
+      // Unblocked after this open gave up: the next call opens its own.
+      if (gaveUp) {
+        db.close();
+        return;
+      }
+      db.onclose = () => forget(opening);
+      db.onversionchange = () => {
+        db.close();
+        forget(opening);
+      };
+      resolve(db);
+    };
+    req.onerror = () => {
+      clearTimeout(blocked);
+      reject(req.error);
+    };
   });
-  return dbPromise;
+  dbPromise = opening;
+  opening.catch(() => forget(opening));
+  return opening;
+}
+
+/** Drop the cached connection, unless a newer one replaced it already. */
+function forget(connection: Promise<CompassDb>): void {
+  if (dbPromise === connection) dbPromise = null;
 }
 
 async function tx(
   store: 'outbox' | 'keyval',
   mode: IDBTransactionMode,
 ): Promise<IDBObjectStore> {
-  const db = await open();
-  return db.transaction(store, mode).objectStore(store);
+  const connection = open();
+  const db = await connection;
+  try {
+    return db.transaction(store, mode).objectStore(store);
+  } catch {
+    // The connection went away without saying so (InvalidStateError):
+    // try once more on a fresh one.
+    forget(connection);
+    return (await open()).transaction(store, mode).objectStore(store);
+  }
 }
 
 export interface OutboxEntry<P = unknown> {
@@ -110,13 +167,44 @@ function req<T>(r: IDBRequest<T>): Promise<T> {
   });
 }
 
-let nextClientSeq: number | null = null;
-export async function nextSeq(): Promise<number> {
-  if (nextClientSeq === null) {
-    const persisted = await keyval.get<number>('outbox:nextSeq');
-    nextClientSeq = persisted ?? Date.now();
-  }
-  nextClientSeq += 1;
-  await keyval.set('outbox:nextSeq', nextClientSeq);
-  return nextClientSeq;
+/**
+ * Hands out outbox ids: increasing, never the same one twice, persisted
+ * so a reload carries on above the last one.
+ *
+ * Review COREWEB2-01 (2026-11-09): the old version read the shared counter
+ * back AFTER awaiting its own write, so two writes queued at the same
+ * moment (a reconnect, the app coming back to the front) could both get
+ * the later number. `outbox.add` is a put, so the second replaced the
+ * first, after the screen had already said "saved offline". The number
+ * is now taken before any await, and the first load is shared.
+ */
+export function createSeq(
+  store: { load: () => Promise<number | undefined>; save: (n: number) => Promise<void> },
+  now: () => number = Date.now,
+): () => Promise<number> {
+  let last: number | null = null;
+  let loading: Promise<void> | null = null;
+  return async () => {
+    if (last === null) {
+      loading ??= store.load().then(
+        (persisted) => {
+          last ??= persisted ?? now();
+        },
+        (err: unknown) => {
+          loading = null;
+          throw err;
+        },
+      );
+      await loading;
+    }
+    const seq = (last ?? now()) + 1;
+    last = seq;
+    await store.save(seq);
+    return seq;
+  };
 }
+
+export const nextSeq = createSeq({
+  load: () => keyval.get<number>('outbox:nextSeq'),
+  save: (n) => keyval.set('outbox:nextSeq', n),
+});

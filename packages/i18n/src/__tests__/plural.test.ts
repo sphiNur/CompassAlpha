@@ -92,8 +92,15 @@ describe('plural selection — Russian three-way split', () => {
   });
 
   test('a count in the middle of a sentence agrees with its noun', () => {
-    expect(t('run.sessions.meta', 2)).toBe('2 заказа');
-    expect(t('run.sessions.meta', 5)).toBe('5 заказов');
+    expect(t('run.toast.runCancelledWithOrphans', 1)).toBe(
+      'Закупка отменена. 1 заказ скоро вернётся в «Одобренные».',
+    );
+    expect(t('run.toast.runCancelledWithOrphans', 2)).toBe(
+      'Закупка отменена. 2 заказа скоро вернутся в «Одобренные».',
+    );
+    expect(t('run.toast.runCancelledWithOrphans', 5)).toBe(
+      'Закупка отменена. 5 заказов скоро вернутся в «Одобренные».',
+    );
     expect(t('run.history.lastDays', 1)).toBe('Последний 1 день');
     expect(t('run.history.lastDays', 3)).toBe('Последние 3 дня');
   });
@@ -103,8 +110,8 @@ describe('plural selection — locales without number inflection', () => {
   test('zh renders the same noun for every count', () => {
     const t = (n: number) =>
       createI18n('zh').t('approval.contributorsCount' as CatalogKey, { n });
-    expect(t(1)).toBe('1 位提交人');
-    expect(t(9)).toBe('9 位提交人');
+    expect(t(1)).toBe('1 位参与人');
+    expect(t(9)).toBe('9 位参与人');
   });
 
   test('uz selects its two authored forms', () => {

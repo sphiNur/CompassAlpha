@@ -12,6 +12,8 @@
  *   is known, and then the same photos go again with the reason.
  * - "Not <name>": a colleague clocked on this phone can be taken back
  *   for two minutes; the face check then starts again.
+ * - A wait can be closed once it has lasted WAIT_CLOSABLE_MS. An answer
+ *   that comes after that updates the page, not the sheet.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ATTENDANCE_UNDO_WINDOW_MS } from '@compass/contracts/limits';
@@ -24,7 +26,7 @@ import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import type { Act } from './faceActs';
 import type { PunchPhotos, Turn } from './PunchCamera';
 import { punchOutcome, refusalHint, type PunchKind } from './punchOutcome';
-import type { PunchResult, PunchView } from './PunchSheet';
+import { WAIT_CLOSABLE_MS, type PunchResult, type PunchView } from './PunchSheet';
 
 type Fix = { lat: number; lng: number; accuracy: number };
 type Challenge = { token: string; steps: Turn[]; acts: Act[]; at: number };
@@ -167,9 +169,12 @@ export function usePunchFlow(opts: {
 
   /** Another face check for the same punch: a fresh challenge, the camera again. */
   const again = async (f: Flow, force: boolean, notice: CatalogKey | null) => {
-    setFlow({ ...f, view: { at: 'wait', label: 'preparing' } });
+    const waiting: Flow = { ...f, view: { at: 'wait', label: 'preparing', since: Date.now() } };
+    setFlow(waiting);
     try {
       const { challenge } = await fetchChallenge(f.attempt.identify, f.attempt.location, force);
+      // Closed while it was coming (ATT-04): stays closed.
+      if (flowRef.current !== waiting) return;
       const attempt = { ...f.attempt, challenge };
       const round = f.round + 1;
       setFlow({
@@ -181,6 +186,7 @@ export function usePunchFlow(opts: {
         view: cameraView(attempt, round, notice),
       });
     } catch (err) {
+      if (flowRef.current !== waiting) return;
       const shown = errorTextOf(err, 'attendance.errors.punchFailed');
       setFlow({ ...f, view: failedView(shown.key, 'retry', shown.vars) });
     }
@@ -200,11 +206,18 @@ export function usePunchFlow(opts: {
       undoUntil: data.forName ? Date.now() + ATTENDANCE_UNDO_WINDOW_MS - UNDO_MARGIN_MS : null,
     };
     setLast(result);
-    setFlow({ ...f, view: { at: 'done', result } });
+    // Closed while it was on its way (ATT-04): the page's own line says it.
+    if (flowRef.current === f) setFlow({ ...f, view: { at: 'done', result } });
     void utils.attendance.me.invalidate();
   };
 
   const refused = (f: Flow, err: unknown) => {
+    // Closed while it was on its way (ATT-04): the page shows what was
+    // recorded, and nothing is sent again behind the person's back.
+    if (flowRef.current !== f) {
+      void utils.attendance.me.invalidate();
+      return;
+    }
     const out = punchOutcome(err, f.attempt.identify ? null : f.attempt.kind);
     switch (out.next) {
       case 'resend': {
@@ -216,6 +229,9 @@ export function usePunchFlow(opts: {
           }, wait);
           return;
         }
+        // No answer is not "not recorded" (ATT-03): it may have got
+        // through. The sheet says so, the same photos and key check it,
+        // and the page underneath reads what is recorded.
         haptic('error');
         setFlow({
           ...f,
@@ -226,6 +242,7 @@ export function usePunchFlow(opts: {
             'attendance.punch.netFailedBody',
           ),
         });
+        void utils.attendance.me.invalidate();
         return;
       }
       case 'turns':
@@ -286,7 +303,9 @@ export function usePunchFlow(opts: {
   /** Sends the photos; the same photos always go with the same key. */
   const send = (f: Flow, photos: PunchPhotos, key: string) => {
     if (!deviceId) return;
-    const sending: Flow = { ...f, photos, key, view: { at: 'wait', label: 'checking' } };
+    // An automatic resend goes on with the same wait.
+    const since = f.view.at === 'wait' ? f.view.since : Date.now();
+    const sending: Flow = { ...f, photos, key, view: { at: 'wait', label: 'checking', since } };
     setFlow(sending);
     idem.idempotencyKey = key;
     const a = f.attempt;
@@ -354,8 +373,10 @@ export function usePunchFlow(opts: {
   };
 
   const onClose = useCallback(() => {
-    // Not while the punch is on its way: it may be recorded already.
-    if (flowRef.current?.view.at === 'wait') return;
+    // Not while the punch is on its way (it may be recorded already), until
+    // it has waited WAIT_CLOSABLE_MS (ATT-04).
+    const view = flowRef.current?.view;
+    if (view?.at === 'wait' && Date.now() - view.since < WAIT_CLOSABLE_MS) return;
     setFlow(null);
   }, [setFlow]);
 

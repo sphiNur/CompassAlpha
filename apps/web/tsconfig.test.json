@@ -1,0 +1,11 @@
+{
+  // Review OPS-18 / TEST3-01 (2026-11): tsconfig.json leaves the tests out
+  // (they use bun's types, which the app must not see). This checks them;
+  // `pnpm type-check` runs both.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "bun"]
+  },
+  "include": ["src/**/*.d.ts", "src/**/__tests__/**/*", "src/**/*.test.ts", "src/**/*.test.tsx"],
+  "exclude": []
+}

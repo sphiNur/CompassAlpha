@@ -107,6 +107,16 @@ export interface UiLabels {
    * browser's own.
    */
   confirmDiscard: (message: string) => Promise<boolean>;
+
+  // --- ConfirmSheet ---
+  /** UI-08: the cancel button, when the caller passes no `cancelLabel`. */
+  cancel: string;
+  /** UI-08: the reason field's label, when the caller passes no `reasonLabel`. */
+  reason: string;
+
+  // --- SearchInput ---
+  /** UI-08: name of the clear button, when the caller passes no `clearAriaLabel`. */
+  clearSearch: string;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
@@ -139,6 +149,9 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   discardChanges: 'Discard your changes?',
   confirmDiscard: (message) =>
     Promise.resolve(typeof window === 'undefined' ? true : window.confirm(message)),
+  cancel: 'Cancel',
+  reason: 'Reason',
+  clearSearch: 'Clear search',
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

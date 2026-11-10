@@ -1,5 +1,5 @@
 /**
- * Shared run-domain types (Phase 4 step 4 — FRONTEND_AUDIT_2026-07.md).
+ * Shared run-domain types (Phase 4 step 4 of the 2026-07 frontend audit).
  *
  * ActiveRun is the FE-side shape of run.get's payload that the
  * orchestrator (RunPage) and every grouped view / row leaf agree on.

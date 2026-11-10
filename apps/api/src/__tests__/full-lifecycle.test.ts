@@ -19,56 +19,20 @@
  * runs.
  */
 import { describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
-import {
-  apply as applyOrder,
-  decide as decideOrder,
-  emptyState as emptyOrderState,
-} from '@compass/domain/order';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type RunEvent,
-} from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
-import { projectOrder } from '../services/orderProjection';
+import { decideRun, type RunEvent } from '@compass/domain/run';
 import { projectRun } from '../services/runProjection';
 import { loadSkuPriceStats } from '../services/priceStats';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { orderStream, runStream } from './helpers/streams';
 
 // Run only when DATABASE_URL is set AND points at a reachable host. We
 // can't easily ping the DB synchronously here, so we treat localhost
 // + a non-default port as a probable dev compose; if it's down, the
 // test is skipped via SKIP_PG_TESTS=1 from the deploy script.
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
 const fixtureSlug = `lifecycle-${Date.now()}`;
 const allPerms = new Set([
@@ -99,23 +63,17 @@ describe('full lifecycle (PG)', () => {
       .returning();
     if (!org) throw new Error('failed to insert org');
 
-    // tgUserId uniqueness: the disambiguator must TRAIL the timestamp, not
-    // lead it. `Date.now()` is already 13 digits, so a leading `100`/`200`/
-    // `300` prefix was sliced off by `.slice(-12)` — when these three inserts
-    // landed in the same millisecond the three users collided on
-    // users_tg_user_id_unique. A trailing 41/42/43 survives the slice and
-    // keeps them distinct regardless of timing (matches the other PG tests).
     const [staffUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Staff', tgUserId: BigInt(`${Date.now()}41`.slice(-12)) })
+      .values({ displayName: 'Staff', tgUserId: freshTgId() })
       .returning();
     const [managerUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Manager', tgUserId: BigInt(`${Date.now()}42`.slice(-12)) })
+      .values({ displayName: 'Manager', tgUserId: freshTgId() })
       .returning();
     const [purchaserUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Purchaser', tgUserId: BigInt(`${Date.now()}43`.slice(-12)) })
+      .values({ displayName: 'Purchaser', tgUserId: freshTgId() })
       .returning();
     if (!staffUser || !managerUser || !purchaserUser) throw new Error('user inserts failed');
 
@@ -153,54 +111,30 @@ describe('full lifecycle (PG)', () => {
 
     // ---- Stage 1: staff drafts an order ----
     const sessionId = randomUUID();
-    let oState = emptyOrderState(sessionId);
+    const orderLog = orderStream(org.id, sessionId);
     const staffActor = {
       userId: staffUser.id,
       memberId: staffMember.id,
       permissions: allPerms,
       isClaimer: false,
     };
-    const start = decideOrder(oState, {
+    await orderLog.exec({
       type: 'StartDraft',
       orgId: org.id,
       storeId: store.id,
       orderDate: '2026-05-02',
       actor: staffActor,
     });
-    for (const e of start) oState = applyOrder(oState, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org.id,
-      events: start.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org.id, start);
 
-    const adjust = decideOrder(oState, {
+    await orderLog.exec({
       type: 'AdjustItem',
       skuId: sku.id,
       qty: '5',
       sku: { id: sku.id, step: sku.step, unit: sku.unit, isArchived: false },
       actor: staffActor,
     });
-    for (const e of adjust) oState = applyOrder(oState, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org.id,
-      events: adjust.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org.id, adjust);
 
-    const submit = decideOrder(oState, { type: 'Submit', actor: staffActor });
-    for (const e of submit) oState = applyOrder(oState, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org.id,
-      events: submit.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org.id, submit);
+    await orderLog.exec({ type: 'Submit', actor: staffActor });
 
     // Verify projection.
     const submitted = await db.query.orderSessionsV.findFirst({
@@ -215,28 +149,12 @@ describe('full lifecycle (PG)', () => {
       permissions: allPerms,
       isClaimer: false,
     };
-    const claim = decideOrder(oState, { type: 'Claim', actor: managerActor });
-    for (const e of claim) oState = applyOrder(oState, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org.id,
-      events: claim.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org.id, claim);
+    await orderLog.exec({ type: 'Claim', actor: managerActor });
 
-    const approve = decideOrder(oState, {
+    await orderLog.exec({
       type: 'Approve',
       actor: { ...managerActor, isClaimer: true },
     });
-    for (const e of approve) oState = applyOrder(oState, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org.id,
-      events: approve.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org.id, approve);
 
     const approved = await db.query.orderSessionsV.findFirst({
       where: (sess, { eq: eq2 }) => eq2(sess.id, sessionId),
@@ -251,8 +169,8 @@ describe('full lifecycle (PG)', () => {
       permissions: allPerms,
     };
     const runId = randomUUID();
-    let rState = emptyRunState(runId);
-    const plan = decideRun(rState, {
+    const runLog = runStream(org.id, runId);
+    await runLog.exec({
       type: 'PlanRun',
       orgId: org.id,
       runDate: '2026-05-01',
@@ -261,16 +179,8 @@ describe('full lifecycle (PG)', () => {
       plannedItems: [{ skuId: sku.id, qty: '5' }],
       actor: purchaserActor,
     });
-    for (const e of plan) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: plan.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, plan);
 
-    const purchase = decideRun(rState, {
+    await runLog.exec({
       type: 'PurchaseItem',
       skuId: sku.id,
       supplierId: null,
@@ -281,14 +191,6 @@ describe('full lifecycle (PG)', () => {
       paymentMethod: 'cash',
       actor: purchaserActor,
     });
-    for (const e of purchase) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: purchase.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, purchase);
 
     // Price history should have a row from the projection.
     const phRows = await db.query.priceHistory.findMany({
@@ -301,15 +203,7 @@ describe('full lifecycle (PG)', () => {
     // in what the product is taken to cost. The mistake is kept as a
     // row, marked; only the correction counts.
     const run = async (command: Parameters<typeof decideRun>[1]): Promise<void> => {
-      const events = decideRun(rState, command);
-      for (const e of events) rState = applyRun(rState, e);
-      await appendEvents(db, {
-        streamType: 'run',
-        streamId: runId,
-        orgId: org.id,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectRun(db, org.id, events);
+      await runLog.exec(command);
     };
     const correction = {
       type: 'RevisePurchase' as const,
@@ -330,7 +224,7 @@ describe('full lifecycle (PG)', () => {
     const current = afterFix.filter((row) => row.supersededAt === null);
     expect(current.map((row) => row.unitPrice)).toEqual(['15000.00']);
     const stats = await loadSkuPriceStats(db, org.id, [sku.id]);
-    expect(stats.get(sku.id)?.lastPrice).toBe(15000);
+    expect(stats.get(sku.id)?.lastPrice).toBe('15000.00');
     expect(stats.get(sku.id)?.avg7d).toBe(15000);
     expect(stats.get(sku.id)?.observations30d).toBe(1);
 
@@ -348,31 +242,15 @@ describe('full lifecycle (PG)', () => {
       paymentMethod: 'cash',
       actor: purchaserActor,
     });
-    expect((await loadSkuPriceStats(db, org.id, [sku.id])).get(sku.id)?.lastPrice).toBe(15000);
+    expect((await loadSkuPriceStats(db, org.id, [sku.id])).get(sku.id)?.lastPrice).toBe('15000.00');
 
-    const startDeliver = decideRun(rState, { type: 'StartDelivery', actor: purchaserActor });
-    for (const e of startDeliver) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: startDeliver.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, startDeliver);
+    await runLog.exec({ type: 'StartDelivery', actor: purchaserActor });
 
-    const deliver = decideRun(rState, {
+    await runLog.exec({
       type: 'DeliverToStore',
       storeId: store.id,
       actor: purchaserActor,
     });
-    for (const e of deliver) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: deliver.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, deliver);
 
     // ---- Stage 4: store confirms ----
     const staffConfirmActor = {
@@ -380,7 +258,7 @@ describe('full lifecycle (PG)', () => {
       memberId: staffMember.id,
       permissions: allPerms,
     };
-    const confirmItem = decideRun(rState, {
+    await runLog.exec({
       type: 'ConfirmStoreItem',
       storeId: store.id,
       skuId: sku.id,
@@ -389,39 +267,15 @@ describe('full lifecycle (PG)', () => {
       photoUrl: null,
       actor: staffConfirmActor,
     });
-    for (const e of confirmItem) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: confirmItem.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, confirmItem);
 
-    const confirmStore = decideRun(rState, {
+    await runLog.exec({
       type: 'ConfirmStore',
       storeId: store.id,
       actor: staffConfirmActor,
     });
-    for (const e of confirmStore) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: confirmStore.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, confirmStore);
 
     // ---- Stage 5: finish ----
-    const finish = decideRun(rState, { type: 'FinishRun', actor: purchaserActor });
-    for (const e of finish) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: org.id,
-      events: finish.map((e) => ({ ...e })),
-    });
-    await projectRun(db, org.id, finish);
+    await runLog.exec({ type: 'FinishRun', actor: purchaserActor });
 
     const finalRun = await db.query.marketRunsV.findFirst({
       where: (r, { eq: eq2 }) => eq2(r.id, runId),
@@ -435,7 +289,30 @@ describe('full lifecycle (PG)', () => {
     expect(finalSplit?.confirmStatus).toBe('ok');
     expect(finalSplit?.confirmedAt).not.toBeNull();
 
-    // ---- Replay determinism: drop read model rows for this run + replay ----
+    // ---- Replay determinism: the read model rebuilt from the events alone
+    // is the one the commands wrote: the run, its items and their splits.
+    // A run's and an item's updatedAt say when the row was last projected,
+    // so a replay moves them.
+    const projected = <Row extends { updatedAt: Date }>(rows: Row[]) =>
+      rows.map(({ updatedAt: _projectedAt, ...row }) => row);
+    const readModel = async () => ({
+      run: projected(await db.select().from(s.marketRunsV).where(eq(s.marketRunsV.id, runId))),
+      items: projected(
+        await db
+          .select()
+          .from(s.runItemsV)
+          .where(eq(s.runItemsV.runId, runId))
+          .orderBy(asc(s.runItemsV.skuId)),
+      ),
+      splits: await db
+        .select()
+        .from(s.runItemStoresV)
+        .where(eq(s.runItemStoresV.runId, runId))
+        .orderBy(asc(s.runItemStoresV.skuId), asc(s.runItemStoresV.storeId)),
+    });
+    const written = await readModel();
+    expect(written.items.length).toBeGreaterThan(0);
+    expect(written.splits.length).toBeGreaterThan(0);
     await db.delete(s.runItemsV).where(eq(s.runItemsV.runId, runId));
     await db.delete(s.runItemStoresV).where(eq(s.runItemStoresV.runId, runId));
     await db.delete(s.marketRunsV).where(eq(s.marketRunsV.id, runId));
@@ -454,11 +331,7 @@ describe('full lifecycle (PG)', () => {
       payload: row.payload,
     } as unknown as RunEvent));
     await projectRun(db, org.id, replayed);
-    const rebuilt = await db.query.marketRunsV.findFirst({
-      where: (r, { eq: eq2 }) => eq2(r.id, runId),
-    });
-    expect(rebuilt?.status).toBe('finished');
-    expect(rebuilt?.actualTotal).toBe('75000.00');
+    expect(await readModel()).toEqual(written);
   });
 });
 

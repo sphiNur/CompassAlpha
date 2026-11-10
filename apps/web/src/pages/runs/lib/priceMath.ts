@@ -6,8 +6,8 @@
  * thousands mode the stored / network-sent value stays raw UZS and only
  * the visible string is divided/multiplied at the input boundary.
  *
- * Extracted verbatim from RunPage.tsx (Phase 4 step 1 —
- * FRONTEND_AUDIT_2026-07.md run-domain split). Pure functions; unit
+ * Extracted verbatim from RunPage.tsx (Phase 4 step 1 of the 2026-07
+ * frontend audit's run-domain split). Pure functions; unit
  * tests in __tests__/priceMath.test.ts.
  */
 import { isPurchasePrice } from '@compass/contracts/limits';
@@ -48,6 +48,22 @@ function shiftDecimal(value: string, places: number): string | null {
 export function toDisplayPrice(rawStr: string, inThousands: boolean): string {
   if (!inThousands || !rawStr) return rawStr;
   return shiftDecimal(rawStr.trim(), -3) ?? rawStr;
+}
+
+/**
+ * What a price field shows: the text being typed while it still means
+ * the stored price, else the stored price in the current unit.
+ *
+ * Review RUNWEB2-01 (2026-11-09): the per-store price field read its
+ * value back from the stored raw UZS on every keystroke, so in
+ * thousands mode "12." (on the way to 12.5) came back as "12", the
+ * point was lost, and 12.5 was stored as 125,000. Keeping the typed
+ * text while it round-trips to the same raw value fixes that; a change
+ * from outside (the main price, the unit switch) still shows through.
+ */
+export function shownPrice(raw: string, typed: string | undefined, inThousands: boolean): string {
+  if (typed !== undefined && fromDisplayPrice(typed, inThousands) === raw) return typed;
+  return toDisplayPrice(raw, inThousands);
 }
 
 /** Inverse of toDisplayPrice — used when committing back to the

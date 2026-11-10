@@ -7,55 +7,23 @@
  *    itemsTotal + expensesTotal.
  *  - CA-06: a store that confirms a 'short' line books the received qty
  *    into inventory, not the split qty (pure helper + PG projection).
- *  - CA-04: a second run can be created while the first is delivering.
+ *  - CA-04: a second run can be created while the first is delivering,
+ *    through run.create; the database refuses a second planned or
+ *    purchasing run by its partial unique index.
  *
  * PG-gated (DATABASE_URL set and SKIP_PG_TESTS !== '1'); the pure
  * receivedDelta cases always run.
  */
 import { describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
-import { appendEvents } from '../services/eventStore';
-import { projectRun, receivedDelta } from '../services/runProjection';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { getDb, schema as s } from '@compass/db';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
+import { receivedDelta } from '../services/runProjection';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { runStream } from './helpers/streams';
+import { seedOwnedOrg } from './helpers/fixtures';
+import { pgErrorOf } from './helpers/errors';
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {
@@ -91,85 +59,35 @@ describe('receivedDelta (CA-06)', () => {
   });
 });
 
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
+/** A new organisation whose owner does the buying. */
+async function buyerOrg(name: string) {
+  const db = getDb(undefined, { system: 'maintenance' });
+  const { orgId, slug, session } = await seedOwnedOrg(db, name);
+  const actor: ActorCtx = {
+    userId: session.userId,
+    memberId: session.memberId,
+    permissions: session.permissions,
   };
+  return { db, orgId, slug, actor, caller: callerFor(session) };
 }
-
-const PERMS = [
-  'users.manage',
-  'prices.view',
-  'org.admin',
-  'run.create',
-  'run.create.org',
-  'run.purchase',
-  'run.finish',
-  'delivery.dispatch',
-  'delivery.confirm',
-];
 
 describe('run money consistency (PG)', () => {
   test.skipIf(!SHOULD_RUN)(
     'report.totals == run.history totals == frozen items + expenses; short line books received qty',
     async () => {
-      const db = getDb(undefined, { system: 'maintenance' });
-      const slug = `money-${Date.now()}`;
-      const [org] = await db
-        .insert(s.organizations)
-        .values({ slug, name: 'Money Consistency', localeDefault: 'en', timezone: 'UTC' })
-        .returning();
-      if (!org) throw new Error('org insert failed');
-      const [role] = await db
-        .insert(s.roles)
-        .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
-        .returning();
-      for (const key of PERMS) {
-        await db
-          .insert(s.permissions)
-          .values({ key, description: `Test perm ${key}` })
-          .onConflictDoNothing();
-        await db
-          .insert(s.rolePermissions)
-          .values({ roleId: role!.id, permissionKey: key })
-          .onConflictDoNothing();
-      }
-      const [user] = await db
-        .insert(s.users)
-        .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}71`.slice(-12)) })
-        .returning();
-      const [member] = await db
-        .insert(s.members)
-        .values({ orgId: org.id, userId: user!.id, status: 'active' })
-        .returning();
-      await db.insert(s.memberRoleBindings).values({
-        memberId: member!.id,
-        roleId: role!.id,
-        scopeType: 'global',
-      });
+      const { db, orgId, slug, actor, caller } = await buyerOrg('Money Consistency');
       const [storeA] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'A', code: `A-${slug.slice(-6)}` })
+        .values({ orgId, name: 'A', code: `A-${slug.slice(-6)}` })
         .returning();
       const [storeB] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'B', code: `B-${slug.slice(-6)}` })
+        .values({ orgId, name: 'B', code: `B-${slug.slice(-6)}` })
         .returning();
       const [sku] = await db
         .insert(s.skus)
         .values({
-          orgId: org.id,
+          orgId,
           code: `APL-${slug.slice(-6)}`,
           names: { en: 'Apple' },
           unit: 'kg',
@@ -178,29 +96,13 @@ describe('run money consistency (PG)', () => {
         .returning();
       if (!storeA || !storeB || !sku) throw new Error('fixture insert failed');
 
-      const actor: ActorCtx = {
-        userId: user!.id,
-        memberId: member!.id,
-        permissions: new Set(PERMS),
-      };
       const runId = randomUUID();
-      let state: RunState = emptyRunState(runId);
-      const exec = async (cmd: RunCommand) => {
-        const evs = decideRun(state, cmd);
-        for (const e of evs) state = applyRun(state, e);
-        await appendEvents(db, {
-          streamType: 'run',
-          streamId: runId,
-          orgId: org.id,
-          events: evs.map((e) => ({ ...e })),
-        });
-        await projectRun(db, org.id, evs);
-        return evs;
-      };
+      const runLog = runStream(orgId, runId);
+      const exec = (cmd: RunCommand) => runLog.exec(cmd);
 
       await exec({
         type: 'PlanRun',
-        orgId: org.id,
+        orgId,
         runDate: '2026-10-20',
         runIndex: 0,
         sessionIds: [randomUUID()],
@@ -280,16 +182,6 @@ describe('run money consistency (PG)', () => {
       expect(deltaFor(storeA.id)).toBe(1.5);
       expect(deltaFor(storeB.id)).toBe(2);
 
-      const caller = appRouter.createCaller(
-        buildCtx(db, {
-          userId: user!.id,
-          memberId: member!.id,
-          orgId: org.id,
-          orgTimezone: 'UTC',
-          permissions: new Set(PERMS),
-          roleSlugs: new Set(['super_admin']),
-        }),
-      );
       const history = await caller.run.history({ dateFrom: '2026-10-20', dateTo: '2026-10-20' });
       const totals = await caller.report.totals({
         startDate: '2026-10-20',
@@ -316,34 +208,41 @@ describe('run money consistency (PG)', () => {
   );
 
   test.skipIf(!SHOULD_RUN)(
-    'CA-04: a delivering run no longer blocks the unique index',
+    'CA-04: a delivering run does not block a new one; a planned or purchasing one does',
     async () => {
-      const db = getDb(undefined, { system: 'maintenance' });
-      const slug = `parallel-${Date.now()}`;
-      const [org] = await db
-        .insert(s.organizations)
-        .values({ slug, name: 'Parallel Runs', localeDefault: 'en', timezone: 'UTC' })
-        .returning();
-      const base = { orgId: org!.id, runDate: '2026-10-20' };
+      const { db, orgId, caller } = await buyerOrg('Parallel Runs');
+      const base = { orgId, runDate: '2026-10-20' };
       await db
         .insert(s.marketRunsV)
         .values({ ...base, id: randomUUID(), runIndex: 0, status: 'delivering' });
       await db
         .insert(s.marketRunsV)
         .values({ ...base, id: randomUUID(), runIndex: 1, status: 'delivering' });
+
+      // run.create hands back a live run instead of making another. With
+      // only delivering runs there is none, so it goes on to the orders it
+      // was given (here one that does not exist).
+      await expect(caller.run.create({ sessionIds: [randomUUID()] })).rejects.toThrow(
+        'run.errors.sessionMissing',
+      );
+
+      const buying = randomUUID();
       await db
         .insert(s.marketRunsV)
-        .values({ ...base, id: randomUUID(), runIndex: 2, status: 'purchasing' });
-      // A second buying run is still refused.
-      let refused = false;
-      try {
-        await db
+        .values({ ...base, id: buying, runIndex: 2, status: 'purchasing' });
+      expect(await caller.run.create({ sessionIds: [randomUUID()] })).toMatchObject({
+        runId: buying,
+        reused: true,
+      });
+
+      // Underneath, the database refuses a second planned or purchasing run:
+      // the partial unique index, not some other failure.
+      const refusal = await pgErrorOf(() =>
+        db
           .insert(s.marketRunsV)
-          .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' });
-      } catch {
-        refused = true;
-      }
-      expect(refused).toBe(true);
+          .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' }),
+      );
+      expect(refusal).toMatchObject({ code: '23505', constraint: 'mrv_one_active_per_org_unique' });
     },
   );
 });

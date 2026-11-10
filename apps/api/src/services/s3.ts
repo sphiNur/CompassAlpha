@@ -62,6 +62,8 @@ export interface PresignPutInput {
   contentLength?: number;
   /** Default 600 (10 min). Min 60, max 86400 (24 h). */
   expiresInSeconds?: number;
+  /** The signing time. Defaults to now; tests pin it. */
+  now?: Date;
 }
 
 export class S3NotConfiguredError extends Error {
@@ -93,49 +95,19 @@ export function presignPut(input: PresignPutInput): PresignedPut {
   // dev (no DNS magic for buckets); virtual-hosted for AWS/R2/COS.
   const { host, protocol, basePath } = resolveEndpoint(bucket, cfg.endpoint, cfg.region);
 
-  const now = new Date();
-  const amzDate = formatAmzDate(now);
-  const dateStamp = amzDate.slice(0, 8);
-  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
-  const credential = `${accessKey}/${credentialScope}`;
-
-  // Signed headers: just `host` + `content-type` (so the browser MUST
-  // send the same content-type or the signature mismatches).
-  const signedHeaders = 'content-type;host';
-
-  const params = new URLSearchParams();
-  params.set('X-Amz-Algorithm', 'AWS4-HMAC-SHA256');
-  params.set('X-Amz-Credential', credential);
-  params.set('X-Amz-Date', amzDate);
-  params.set('X-Amz-Expires', String(expiresIn));
-  params.set('X-Amz-SignedHeaders', signedHeaders);
-
-  // Canonical request.
   const canonicalUri = `${basePath}${encodedKey}`;
-  const canonicalQueryString = sortedQueryString(params);
-  const canonicalHeaders = `content-type:${input.contentType}\nhost:${host}\n`;
-  const payloadHash = 'UNSIGNED-PAYLOAD';
-  const canonicalRequest = [
-    'PUT',
-    canonicalUri,
-    canonicalQueryString,
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join('\n');
-
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    credentialScope,
-    sha256Hex(canonicalRequest),
-  ].join('\n');
-
-  const signingKey = deriveSigningKey(secretKey, dateStamp, region, 's3');
-  const signature = hmacHex(signingKey, stringToSign);
-  params.set('X-Amz-Signature', signature);
-
-  const url = `${protocol}//${host}${canonicalUri}?${sortedQueryString(params)}`;
+  const url = presignedUrl({
+    method: 'PUT',
+    url: `${protocol}//${host}${canonicalUri}`,
+    // The browser MUST send the same Content-Type, or the signature
+    // does not match.
+    headers: { 'content-type': input.contentType },
+    region,
+    accessKey,
+    secretKey,
+    expiresIn,
+    now: input.now ?? new Date(),
+  });
 
   // Public read URL: prefer S3_PUBLIC_BASE if set (e.g. CDN), otherwise
   // build from the same endpoint without the signing query.
@@ -152,6 +124,61 @@ export function presignPut(input: PresignPutInput): PresignedPut {
       'Content-Type': input.contentType,
     },
   };
+}
+
+/**
+ * SigV4 query-string signing of one request, with an unsigned payload:
+ * `url` plus the X-Amz-* parameters. `url` is the canonical URI (already
+ * encoded) on its host; `headers` (lower-case names) are the ones the
+ * client must send besides host, and each is signed.
+ *
+ * Exported for the test against AWS's documented example
+ * (sigv4-query-string-auth: a GET with host as the only signed header).
+ */
+export function presignedUrl(input: {
+  method: 'GET' | 'PUT';
+  url: string;
+  headers?: Record<string, string>;
+  region: string;
+  accessKey: string;
+  secretKey: string;
+  expiresIn: number;
+  now: Date;
+}): string {
+  const target = new URL(input.url);
+  const amzDate = formatAmzDate(input.now);
+  const dateStamp = amzDate.slice(0, 8);
+  const credentialScope = `${dateStamp}/${input.region}/s3/aws4_request`;
+
+  const headers: Record<string, string> = { ...input.headers, host: target.host };
+  const names = Object.keys(headers).sort();
+  const signedHeaders = names.join(';');
+
+  const params = new URLSearchParams();
+  params.set('X-Amz-Algorithm', 'AWS4-HMAC-SHA256');
+  params.set('X-Amz-Credential', `${input.accessKey}/${credentialScope}`);
+  params.set('X-Amz-Date', amzDate);
+  params.set('X-Amz-Expires', String(input.expiresIn));
+  params.set('X-Amz-SignedHeaders', signedHeaders);
+
+  const canonicalRequest = [
+    input.method,
+    target.pathname,
+    sortedQueryString(params),
+    names.map((name) => `${name}:${headers[name]}\n`).join(''),
+    signedHeaders,
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+  const signingKey = deriveSigningKey(input.secretKey, dateStamp, input.region, 's3');
+  params.set('X-Amz-Signature', hmacHex(signingKey, stringToSign));
+
+  return `${target.protocol}//${target.host}${target.pathname}?${sortedQueryString(params)}`;
 }
 
 // ---------- helpers ----------

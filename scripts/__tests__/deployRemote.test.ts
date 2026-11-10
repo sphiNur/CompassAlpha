@@ -7,22 +7,40 @@
  * tar against a scratch tree laid out like /home/ubuntu/compass-alpha.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  BACKUP_MAX_AGE_SECONDS,
+  INCOMPLETE_MARKER,
+  backupHealthScript,
+  backupProblem,
+  clearIncompleteScript,
   describeSnapshotScript,
+  devBypassFiles,
+  devBypassScript,
   hostName,
   knownHostsFile,
+  markIncompleteScript,
+  pendingMigrationTags,
+  remoteCommand,
+  remoteStepError,
   restoreScript,
-  rsyncExcludes,
+  rlsRoleProblem,
+  serverLimitSecs,
   snapshotScript,
   sshOptions,
   stageSeedScript,
-  stageTarScript,
-  tarExcludes,
 } from '../lib/deployRemote';
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -136,6 +154,181 @@ describe('rollback snapshot', () => {
   });
 });
 
+// Review OPS-01 (2026-11-09): a deploy that failed after extracting left a
+// tree that never ran, and the next deploy kept it as its rollback point.
+describe('a deploy that stopped after extracting', () => {
+  test('is not kept as the rollback point: the snapshot from before it stays', () => {
+    const { app, prev } = liveTree();
+    expect(bash(snapshotScript(app, prev)).status).toBe(0);
+    expect(bash(markIncompleteScript('bbbbbbbbbbbb', app)).status).toBe(0);
+    expect(read(app, INCOMPLETE_MARKER)).toMatch(/^bbbbbbbbbbbb \d{4}-\d\d-\d\dT/);
+    put(app, 'apps/api/src/main.ts', 'new api, never started');
+
+    const snap = bash(snapshotScript(app, prev));
+    expect(snap.status).toBe(0);
+    expect(snap.stdout).toContain('the last deploy did not finish (bbbbbbbbbbbb');
+    expect(bash(`tar -xzOf "${prev}" ./apps/api/src/main.ts`).stdout).toBe('old api');
+  });
+
+  test('with no earlier snapshot the deploy stops before extracting', () => {
+    const { app, prev } = liveTree();
+    bash(markIncompleteScript('bbbbbbbbbbbb', app));
+    const snap = bash(snapshotScript(app, prev));
+    expect(snap.status).toBe(4);
+    expect(snap.stderr).toContain('no earlier snapshot');
+    expect(existsSync(prev)).toBe(false);
+  });
+
+  test('putting the kept release back clears the mark', () => {
+    const { app, prev } = liveTree();
+    bash(snapshotScript(app, prev));
+    bash(markIncompleteScript('bbbbbbbbbbbb', app));
+    deployOver(app);
+    expect(bash(restoreScript(app, prev)).status).toBe(0);
+    expect(read(app, 'apps/api/src/main.ts')).toBe('old api');
+    expect(existsSync(join(app, INCOMPLETE_MARKER))).toBe(false);
+  });
+
+  test('a finished deploy clears the mark and is kept next time', () => {
+    const { app, prev } = liveTree();
+    bash(markIncompleteScript('bbbbbbbbbbbb', app));
+    expect(bash(clearIncompleteScript(app)).status).toBe(0);
+    expect(existsSync(join(app, INCOMPLETE_MARKER))).toBe(false);
+    expect(bash(snapshotScript(app, prev)).stdout).toContain('kept aaaaaaaaaaaa');
+  });
+});
+
+// Review OPS-02 (2026-11-09): backups failed silently from 2026-08 to 11.
+describe('backup health before a deploy', () => {
+  const healthy = 'timer=active\nunit=inactive\nlatest=/b/compass-2026-11-09-033000.dump\nage=3600';
+
+  test('a running timer, a clean last run and a recent dump pass', () => {
+    expect(backupProblem(healthy)).toBeNull();
+  });
+
+  test('each way of failing is named', () => {
+    expect(backupProblem(healthy.replace('timer=active', 'timer=inactive'))).toContain(
+      'timer is not running (compass-backup.timer: inactive)',
+    );
+    expect(backupProblem(healthy.replace('timer=active', 'timer='))).toContain('not installed');
+    expect(backupProblem(healthy.replace('unit=inactive', 'unit=failed'))).toContain(
+      'last backup run failed',
+    );
+    expect(backupProblem('timer=active\nunit=inactive\nlatest=\nage=-1')).toBe(
+      'there is no backup file',
+    );
+    expect(backupProblem(healthy.replace('age=3600', `age=${BACKUP_MAX_AGE_SECONDS + 7200}`))).toBe(
+      'the newest backup is 28 hours old (/b/compass-2026-11-09-033000.dump)',
+    );
+  });
+
+  test('the script finds the newest dump and its age', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'backups-'));
+    dirs.push(dir);
+    put(dir, 'compass-2026-11-07-033000.dump', 'old');
+    put(dir, 'compass-2026-11-08-033000.dump', 'new');
+    bash(`touch -d '50 hours ago' "${dir}/compass-2026-11-07-033000.dump"`);
+    bash(`touch -d '2 hours ago' "${dir}/compass-2026-11-08-033000.dump"`);
+    const out = bash(backupHealthScript(dir)).stdout;
+    expect(out).toContain(`latest=${dir}/compass-2026-11-08-033000.dump`);
+    const age = Number(/^age=(-?\d+)$/m.exec(out)?.[1]);
+    expect(age).toBeGreaterThanOrEqual(7200);
+    expect(age).toBeLessThan(7300);
+  });
+
+  test('an empty folder reports no dump', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'backups-'));
+    dirs.push(dir);
+    const out = bash(backupHealthScript(dir)).stdout;
+    expect(out).toContain('latest=\n');
+    expect(out).toContain('age=-1');
+  });
+});
+
+describe('migrations pending before a deploy (OPS-10)', () => {
+  test("reads migrate.ts --pending's lines, and nothing else", () => {
+    const output = [
+      '$ bun run src/migrate.ts --pending',
+      'pending: 0067_attendance_face_ring',
+      'pending: 0068_attendance_keep_records',
+      '[migrate] pending: 0070_not_ours',
+      '',
+    ].join('\n');
+    expect(pendingMigrationTags(output)).toEqual([
+      '0067_attendance_face_ring',
+      '0068_attendance_keep_records',
+    ]);
+    expect(pendingMigrationTags('$ bun run src/migrate.ts --pending\n')).toEqual([]);
+  });
+});
+
+describe('the dev login bypass in a server .env (OPS-03)', () => {
+  /** A live tree with these files and no package .env (as on the server). */
+  function envTree(files: Record<string, string>) {
+    const app = mkdtempSync(join(tmpdir(), 'deploy-env-'));
+    dirs.push(app);
+    for (const [rel, body] of Object.entries(files)) put(app, rel, body);
+    return app;
+  }
+  const check = (app: string) => bash(devBypassScript(app));
+
+  test('a bypass in the root .env is found, though no package has an .env', () => {
+    const app = envTree({
+      '.env': 'DATABASE_URL=x\nVITE_DEV_MOCK_INIT_DATA=user=1\n',
+      'apps/web/.env': 'VITE_X=1\n',
+    });
+    const r = check(app);
+    expect(r.status).toBe(0);
+    expect(devBypassFiles(r.stdout)).toEqual([join(app, '.env')]);
+  });
+
+  test("an app's .env is searched too", () => {
+    const app = envTree({
+      '.env': 'DATABASE_URL=x\n',
+      'apps/web/.env': 'VITE_DEV_MOCK_INIT_DATA=user=1\n',
+    });
+    expect(devBypassFiles(check(app).stdout)).toEqual([join(app, 'apps/web/.env')]);
+  });
+
+  test('empty or commented out is clean, and so is a tree with no .env at all', () => {
+    const app = envTree({ '.env': 'VITE_DEV_MOCK_INIT_DATA=\n# VITE_DEV_MOCK_INIT_DATA=user=1\n' });
+    expect(devBypassFiles(check(app).stdout)).toEqual([]);
+    expect(devBypassFiles(check(envTree({})).stdout)).toEqual([]);
+  });
+
+  // root reads any file, so the unreadable one would not be.
+  test.skipIf(process.getuid?.() === 0)('an .env grep cannot read fails the check', () => {
+    const app = envTree({
+      '.env': 'VITE_DEV_MOCK_INIT_DATA=user=1\n',
+      'apps/web/.env': 'VITE_X=1\n',
+    });
+    chmodSync(join(app, 'apps/web/.env'), 0o000);
+    const r = check(app);
+    expect(r.status).toBe(2);
+    expect(() => devBypassFiles(r.stdout)).toThrow('unexpected output');
+  });
+
+  test('output that is not a verdict is not a pass', () => {
+    expect(() => devBypassFiles('')).toThrow();
+    expect(() => devBypassFiles('bypass\n')).toThrow();
+    expect(() => devBypassFiles('/app/.env\nclean\n')).toThrow();
+  });
+});
+
+describe('the database role (OPS-04)', () => {
+  test('a role subject to row-level security passes', () => {
+    expect(rlsRoleProblem('false,false\n')).toBeNull();
+  });
+
+  test('BYPASSRLS, a superuser, or any other answer stops the deploy', () => {
+    expect(rlsRoleProblem('true,false')).toContain('BYPASSRLS');
+    expect(rlsRoleProblem('true,true')).toContain('BYPASSRLS');
+    expect(rlsRoleProblem('false,true')).toContain('superuser');
+    expect(rlsRoleProblem('')).toContain('unexpected');
+    expect(rlsRoleProblem('f,f')).toContain('unexpected');
+  });
+});
+
 describe('host key verification', () => {
   test('ssh options require a pinned key and never add one', () => {
     const o = sshOptions('/k/key.pem', '/repo/infra/deploy/known_hosts');
@@ -146,103 +339,116 @@ describe('host key verification', () => {
 
   test('ssh resolves those options as written (ssh -G, no connection)', () => {
     const kh = knownHostsFile(ROOT, {});
-    const g = bash(`ssh -G ${sshOptions('/dev/null', kh)} ubuntu@129.204.59.183`);
+    // TEST-NET-3: ssh -G resolves options without connecting anywhere.
+    const g = bash(`ssh -G ${sshOptions('/dev/null', kh)} ubuntu@203.0.113.10`);
     expect(g.status).toBe(0);
     expect(g.stdout).toMatch(/^stricthostkeychecking (yes|true)$/m);
     expect(g.stdout).toContain(`userknownhostsfile ${kh}`);
+    // OPS-07: a dead link ends the session instead of hanging the deploy.
+    expect(g.stdout).toMatch(/^connecttimeout 20$/m);
+    expect(g.stdout).toMatch(/^serveraliveinterval 15$/m);
+    expect(g.stdout).toMatch(/^serveralivecountmax 8$/m);
   });
 
   test('the production host is pinned in the repo file; env overrides the file', () => {
     const kh = knownHostsFile(ROOT, {});
     expect(kh).toBe(join(ROOT, 'infra', 'deploy', 'known_hosts'));
     expect(knownHostsFile(ROOT, { COMPASS_DEPLOY_KNOWN_HOSTS: '/x/kh' })).toBe('/x/kh');
-    const host = hostName('ubuntu@129.204.59.183');
-    expect(host).toBe('129.204.59.183');
-    expect(bash(`ssh-keygen -F ${host} -f "${kh}"`).status).toBe(0);
+    expect(hostName('ubuntu@203.0.113.10')).toBe('203.0.113.10');
+    expect(hostName('203.0.113.10')).toBe('203.0.113.10');
+    // One host, three key types, its name hashed: the repo is public and
+    // does not name the server (2026-11-10).
+    const lines = readFileSync(kh, 'utf8').trim().split('\n');
+    expect(lines.map((l) => l.split(' ')[1]).sort()).toEqual([
+      'ecdsa-sha2-nistp256',
+      'ssh-ed25519',
+      'ssh-rsa',
+    ]);
+    for (const line of lines) expect(line).toMatch(/^\|1\|[A-Za-z0-9+/=]+\|[A-Za-z0-9+/=]+ /);
     expect(bash(`ssh-keygen -F compass-pro.com -f "${kh}"`).status).not.toBe(0);
+    // With the address at hand (the deploy's own env), all three are its.
+    const target = process.env.COMPASS_DEPLOY_HOST;
+    if (target) {
+      const found = bash(`ssh-keygen -F ${hostName(target)} -f "${kh}"`);
+      expect(found.stdout.split('\n').filter((l) => l.startsWith('|1|'))).toHaveLength(3);
+    }
+  });
+});
+
+describe('a step on the server (OPS-07)', () => {
+  const hasTools = bash('command -v timeout && command -v flock').status === 0;
+  /** A lock file in a scratch directory, for one test. */
+  function scratchLock() {
+    const dir = mkdtempSync(join(tmpdir(), 'remote-step-'));
+    dirs.push(dir);
+    return join(dir, 'deploy.lock');
+  }
+  /** Whether `pid` is still running (a zombie has ended). */
+  function running(pid: number) {
+    const stat = bash(`ps -o stat= -p ${pid}`).stdout.trim();
+    return stat !== '' && !stat.startsWith('Z');
+  }
+
+  test('a failed step says how it ended, not its command line', () => {
+    const failed = (status: number | null, stderr: string) =>
+      Object.assign(new Error(`Command failed: ssh -i key host "echo ZWNobw== | …"\n${stderr}`), {
+        status,
+        stderr,
+      });
+    const said = (err: unknown) => (remoteStepError(err, 1110) as Error).message;
+    expect(said(failed(124, ''))).toBe('the server stopped this step after 18.5 min');
+    expect(said(failed(255, 'ssh: connect to host x port 22: Connection timed out\n'))).toBe(
+      'ssh failed (exit 255): ssh: connect to host x port 22: Connection timed out',
+    );
+    expect(said(failed(2, 'psql: error: one\npsql: error: FATAL\n'))).toBe(
+      'exit 2 on the server: psql: error: FATAL',
+    );
+    expect(said(failed(1, ''))).toBe('exit 1 on the server');
+    // Killed here at its limit: the message runCapture gave it stays.
+    const local = new Error('ssh did not finish within 20 min');
+    expect(remoteStepError(local, 1110)).toBe(local);
+  });
+
+  test('the server ends a step a minute and a half before the deploy gives up', () => {
+    expect(serverLimitSecs(20 * 60_000)).toBe(1110);
+    expect(serverLimitSecs(60_000)).toBe(1);
+  });
+
+  test.skipIf(!hasTools)('runs the script as written, exit code and all', () => {
+    const r = bash(remoteCommand(`echo "it's $((6 * 7))"; exit 3`, 60, scratchLock()));
+    expect([r.status, r.stdout]).toEqual([3, "it's 42\n"]);
+  });
+
+  test.skipIf(!hasTools)('ends at its limit, with what it started', async () => {
+    const lock = scratchLock();
+    const pidFile = join(dirname(lock), 'child.pid');
+    const started = Date.now();
+    const r = bash(remoteCommand(`sleep 30 & echo $! > "${pidFile}"; sleep 30`, 1, lock));
+    expect(r.status).toBe(124);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const child = Number(readFileSync(pidFile, 'utf8'));
+    for (let i = 0; i < 20 && running(child); i++) await Bun.sleep(100);
+    expect(running(child)).toBe(false);
+  });
+
+  test.skipIf(!hasTools)('waits for a step that still runs, within its limit', async () => {
+    const lock = scratchLock();
+    const held = join(dirname(lock), 'held');
+    // A step from a lost connection, still holding the lock for 3 s.
+    const earlier = spawn('flock', [lock, 'sh', '-c', `touch "${held}"; sleep 3`]);
+    const done = new Promise((resolve) => earlier.on('exit', resolve));
+    while (!existsSync(held)) await Bun.sleep(20);
+    // Waiting counts toward the limit.
+    expect(bash(remoteCommand('echo next', 1, lock)).status).toBe(124);
+    const started = Date.now();
+    const r = bash(remoteCommand('echo next', 60, lock));
+    expect(r.stdout).toBe('next\n');
+    expect(Date.now() - started).toBeGreaterThan(1000);
+    await done;
   });
 });
 
 describe('incremental upload', () => {
-  const hasRsync = spawnSync('rsync', ['--version']).status === 0;
-  /** A repo tree with things that must never ship. */
-  function repo(base: string) {
-    const r = join(base, 'CompassAlpha');
-    put(r, 'package.json', '{}');
-    put(r, 'apps/api/src/main.ts', 'main v1');
-    put(r, 'apps/web/src/a.ts', 'a');
-    put(r, 'apps/web/dist/index.html', 'built');
-    put(r, 'apps/api/node_modules/x/index.js', 'dep');
-    put(r, 'node_modules/y/index.js', 'dep');
-    put(r, '.env', 'SECRET=1');
-    put(r, 'apps/web/.env.local', 'VITE_DEV=1');
-    put(r, 'packages/db/.env', 'DB=1');
-    put(r, '.git/HEAD', 'ref');
-    put(r, '.claude/worktrees/w/x', 'x');
-    put(r, '.worktrees/w/.env', 'BOT=1');
-    put(r, 'infra/key.pem', 'KEY');
-    put(r, 'deploy.log', 'log');
-    return r;
-  }
-  function listing(tarball: string) {
-    const out = bash(`tar tzf "${tarball}" | grep -v '/$' | sort`);
-    expect(out.status).toBe(0);
-    return out.stdout.trim().split('\n');
-  }
-
-  test.skipIf(!hasRsync)(
-    'the staged tarball equals a full one; deletions and changes carry over',
-    () => {
-      const base = mkdtempSync(join(tmpdir(), 'ship-'));
-      dirs.push(base);
-      const local = join(base, 'local');
-      const r = repo(local);
-      const server = join(base, 'server');
-      mkdirSync(server);
-      const stage = join(server, 'src');
-      const tarball = join(server, 'deploy.tar.gz');
-
-      // The last full upload is still on the server: the stage is seeded from it.
-      expect(
-        bash(`cd "${local}" && tar ${tarExcludes()} -czf "${tarball}" CompassAlpha`).status,
-      ).toBe(0);
-      const full = listing(tarball);
-      expect(full).toEqual([
-        'CompassAlpha/apps/api/src/main.ts',
-        'CompassAlpha/apps/web/src/a.ts',
-        'CompassAlpha/package.json',
-      ]);
-      const seeded = bash(stageSeedScript(stage, tarball));
-      expect([seeded.status, seeded.stdout.trim()]).toEqual([0, 'seeded']);
-      expect(bash(stageSeedScript(stage, tarball)).stdout.trim()).toBe('ready');
-
-      // A change, a new file and a deleted file; then rsync and rebuild.
-      put(r, 'apps/api/src/main.ts', 'main v2');
-      put(r, 'apps/api/src/new.ts', 'new');
-      rmSync(join(r, 'apps/web/src/a.ts'));
-      const sync = bash(
-        `cd "${r}" && rsync -rlptc --delete --delete-excluded ${rsyncExcludes()} ./ "${stage}/CompassAlpha/"`,
-      );
-      expect(sync.status).toBe(0);
-      expect(bash(stageTarScript(stage, tarball)).status).toBe(0);
-
-      const fresh = join(base, 'fresh.tar.gz');
-      expect(
-        bash(`cd "${local}" && tar ${tarExcludes()} -czf "${fresh}" CompassAlpha`).status,
-      ).toBe(0);
-      expect(listing(tarball)).toEqual(listing(fresh));
-      expect(listing(tarball)).toEqual([
-        'CompassAlpha/apps/api/src/main.ts',
-        'CompassAlpha/apps/api/src/new.ts',
-        'CompassAlpha/package.json',
-      ]);
-      const out = join(base, 'out');
-      mkdirSync(out);
-      expect(bash(`tar xzf "${tarball}" -C "${out}"`).status).toBe(0);
-      expect(read(out, 'CompassAlpha/apps/api/src/main.ts')).toBe('main v2');
-    },
-  );
-
   test('no earlier tarball: an empty stage, and rsync sends everything', () => {
     const base = mkdtempSync(join(tmpdir(), 'ship-'));
     dirs.push(base);

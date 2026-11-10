@@ -32,6 +32,7 @@ import {
   DetailRow,
   EmptyState,
   Field,
+  FieldGroup,
   IconActivity,
   IconAttendance,
   IconCatalog,
@@ -216,11 +217,15 @@ export function AdminPage() {
   }
 
   // A restored navigation state can point at a section this member no
-  // longer lists; fall back to the home list.
+  // longer lists; fall back to the home list. The state is kept per
+  // device, so it can also be another member's (review WALK-07: a
+  // platform admin's "platform" section reopened for an org admin, who
+  // got a 403).
   const sectionHidden =
     ((section === 'organization' || section === 'permissions') && !isOrgAdmin) ||
     (section === 'catalog' && !seesCatalog) ||
-    (section === 'attendance' && !seesAttendance);
+    (section === 'attendance' && !seesAttendance) ||
+    (section === 'platform' && !isPlatformAdmin);
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
@@ -772,7 +777,7 @@ function WorkspaceSection() {
               placeholder="0"
             />
           </Field>
-          <Field label={i18n.t('admin.workspace.pricesIncludeTax')}>
+          <FieldGroup label={i18n.t('admin.workspace.pricesIncludeTax')}>
             <Switch
               checked={draftInclTax}
               onChange={(e) => setDraftInclTax(e.target.checked)}
@@ -782,7 +787,7 @@ function WorkspaceSection() {
                   : i18n.t('admin.workspace.pricesIncludeTaxOff')
               }
             />
-          </Field>
+          </FieldGroup>
           <Banner tone="info" title={i18n.t('admin.workspace.financeSheet.warning')} />
         </div>
       </Sheet>

@@ -6,21 +6,22 @@
 ## Topology
 
 ```
-            Caddy (TLS, edge)
-               │
-        ┌──────┴───────┐
-        │              │
-    api (3000)     bot (long-poll)   worker (BullMQ)
-        │
-   ┌────┴────┬───────────┐
-   │         │           │
-Postgres  Redis        S3/R2
+Telegram
+  → Cloudflare Worker app-proxy (infra/cloudflare/app-proxy): finds
+    the origin's current tunnel URL in KV, which compass-origin-watch
+    publishes (infra/tunnel)
+  → cloudflared quick tunnel (compass-app-tunnel.service)
+  → nginx on :80 (its config is not in the repo yet: review OPS-23)
+  → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
+worker (compass-worker.service): the outbox; bot messages go out
+  through the tg-relay Worker (infra/cloudflare/tg-relay.js)
+Postgres 18, Redis 8 and S3-compatible storage behind both
 ```
 
-Production does not run the docker images in `infra/compose/`: the code is
-shipped as a tarball by `scripts/deploy.ts` to `/home/ubuntu/compass-alpha`
-and run with bun under systemd (`infra/systemd/compass-api.service`,
-`compass-worker.service`). See "Roll back a bad deploy" below.
+Production runs no containers (`infra/compose/` is the local dev
+stack): `scripts/deploy.ts` ships the code to
+`/home/ubuntu/compass-alpha`, where bun runs it under systemd
+(`infra/systemd/`). See "Roll back a bad deploy" below.
 
 The upload is incremental where both ends have rsync: the server keeps the
 last shipped source in `/home/ubuntu/compass-alpha-src/CompassAlpha`, only
@@ -68,20 +69,110 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 
 ### Grant super_admin to a new user
 1. User opens the Mini App → lands on the NoAccess screen → copies their Telegram id.
-2. Operator: `pnpm compass user grant <tgUserId> --role super_admin --org default`.
+2. Operator: `pnpm compass user grant <tgUserId> --role super_admin --org default --new-user`.
+   Opening the app does not create an account; `--new-user` does. Without it an
+   id that has no account is refused, which catches a mistyped id.
 3. User reloads the Mini App.
 
 ### Roll back a bad deploy
-Production is not image-based: `scripts/deploy.ts` tars the local working
-tree, extracts it over `/home/ubuntu/compass-alpha` (in place, no
-`--delete`), runs `pnpm install --frozen-lockfile` and
-`pnpm --filter @compass/db migrate`, refreshes the systemd units, builds
-the web bundle into `apps/web/dist.next` and renames it into place
-(`dist` → `dist.prev`, `dist.next` → `dist`), and only then restarts
-`compass-api` and `compass-worker` (2026-10-21, CA-37: the build used to
-run after the restart, leaving the new api serving a missing/half-written
-`dist`). A failed web build aborts the deploy before the restart and
-leaves the live `dist` untouched.
+Production is not image-based: `scripts/deploy.ts` ships what git sees
+in the local checkout, extracts it over `/home/ubuntu/compass-alpha` (in
+place, no `--delete`), runs `pnpm install --frozen-lockfile`, builds the
+web bundle into `apps/web/dist.next`, runs
+`pnpm --filter @compass/db migrate`, refreshes the systemd units, renames
+the bundle into place (`dist` → `dist.prev`, `dist.next` → `dist`), and
+only then restarts `compass-api` and `compass-worker` (2026-10-21, CA-37:
+the build used to run after the restart, leaving the new api serving a
+missing/half-written `dist`). A failed web build aborts the deploy before
+the restart and leaves the live `dist` untouched.
+
+Since 2026-11-09 (review OPS-01/OPS-02):
+- The read-only checks of the server's `.env` files and database role run
+  before anything is uploaded.
+- A deploy refuses to start when the nightly backup looks broken: the
+  timer is stopped, the last run failed, or the newest dump is more than
+  26 hours old. `--allow-stale-backup` overrides; `--rollback` skips it.
+- If any step between the extract and the restart fails (extract,
+  install, web build, migrate, units, bundle swap), the deploy puts the
+  release kept in step 2.5 back, with its own dependencies and units, and
+  restarts nothing. The disk then matches what runs again. Migrations
+  that already ran stay applied.
+- From the extract until a successful restart,
+  `/home/ubuntu/compass-alpha/.deploy-incomplete` names the release. If it
+  is still there (the undo failed too, or the api did not come up), the
+  next deploy keeps the older snapshot instead of that tree, and
+  `--rollback` removes the file.
+
+Since 2026-11 (review OPS-03/OPS-04), a server check that cannot run
+stops the deploy, the same as one that fails. Before, it printed a
+warning and the deploy went on (the `.env` check even passed outright).
+
+- The run-in-progress check: `--allow-active-run` skips it.
+- The backup check: `--allow-stale-backup`.
+- The `.env` check: no override; fix the server.
+- The database role check, which now refuses a superuser as well as
+  BYPASSRLS: `--skip-rls-check`.
+
+Since 2026-11 (review OPS-05/OPS-06), `COMPASS_BASE` must be set before a
+deploy starts, and the provenance gates also refuse unless:
+
+- HEAD is the tip of origin/main as fetched now. A checkout that had not
+  pulled used to ship an older main over the live one.
+- CI passed for that commit: the three jobs in `.github/workflows/ci.yml`.
+  The deploy reads them with `gh`, so install it and run `gh auth login`
+  on the deploy machine.
+- The live release (`/health/version`) is HEAD or in its history. A
+  release deployed with `--force` is not compared.
+
+`--force` overrides these too, and marks the release `-unverified`.
+
+Since 2026-11 (review OPS-07/OPS-08/OPS-09):
+
+- Every step has a time limit: 20 minutes (the unit tests, a step on the
+  server), 30 for one rsync attempt, 60 for the scp of the whole
+  tarball, 10 for each smoke. ssh gives up on a connection that has not
+  answered for two minutes. A step that runs over fails like any other
+  failure. Before, a connection that died quietly hung the deploy.
+- On the server, a step ends after 18.5 minutes, with everything it
+  started, and steps run one at a time
+  (`/home/ubuntu/.compass-deploy.lock`). After a lost connection, the
+  undo waits for a step that is still running instead of working beside
+  it.
+- Step 0.4 starts the browser the smokes use, before anything is
+  shipped, and refuses when it cannot. `--rollback` only warns.
+- After the restart, the deploy waits up to 90 seconds for
+  `$COMPASS_BASE/health/ready` to answer 200 before the smokes start. If
+  it never does, the deploy stops there and `.deploy-incomplete` stays.
+- The server smoke checks that `/health/version` names the release just
+  deployed (after `--rollback`, the restored one), from an api started
+  after the restart. Any commit used to pass, so a Worker or tunnel
+  pointing at another backend went unnoticed.
+- The realtime probe gets three tries. A pass that needed more says so.
+
+Since 2026-11 (review OPS-10/OPS-12):
+
+- When the release has a migration to apply, the deploy runs
+  `compass-backup.service` first and stops, putting the previous release
+  back, if the backup fails. `--allow-stale-backup` migrates without it.
+  `pnpm --filter @compass/db migrate --pending` lists what a run would
+  apply and changes nothing.
+- The web bundle is built into `dist.next` before the migrations and
+  swapped in just before the restart. The old api used to run against
+  the new schema for the whole build.
+- `compass-backup.timer` no longer has `Requires=compass-backup.service`.
+  Starting the timer (install, boot) no longer starts a backup, so
+  `INSTALL_SKIP_FIRST_RUN=1` works, and stopping a stuck backup no longer
+  stops the timer. The deploy's `daemon-reload` applies it.
+
+Since 2026-11 (review OPS-13), a release is what git sees in the local
+checkout: tracked files with their local changes, and new files that
+`.gitignore` does not hide (`scripts/lib/release.ts`). An ignored file
+never ships, and neither does any `.env`, `*.pem`, `*.key`, `*.crt`,
+`.claude/` or `.worktrees/`, even if tracked. It used to be the working
+tree minus a hand-kept list, which let ignored files through (nested
+`node_modules`, `.turbo` caches, test reports) and required the checkout
+to be named `CompassAlpha`. Text files ship with LF line endings, whatever
+the machine's `core.autocrlf`.
 
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
@@ -124,9 +215,9 @@ rebuild the bundle (the snapshot carries the built one).
   does not delete); they are harmless unless something imports them.
 - Migrations only move forward: rolling back does NOT undo a migration
   the bad deploy applied. If old code cannot run against the newer
-  schema, restore the pre-deploy dump (see "Restore from a dump" below —
-  take one with `sudo systemctl start compass-backup.service` before
-  risky deploys) and accept losing writes made since that dump.
+  schema, restore the dump the deploy took before migrating (see
+  "Restore from a dump" below) and accept losing writes made since that
+  dump.
 - By hand, without the deploy machine (then restart and check yourself):
   ```bash
   cd /home/ubuntu/compass-alpha
@@ -147,13 +238,16 @@ git checkout main
 
 ### Deploy host key (N9)
 `scripts/deploy.ts` connects with `StrictHostKeyChecking=yes` against the
-keys pinned in `infra/deploy/known_hosts` (129.204.59.183; taken with
-`ssh-keyscan` on 2026-10-30 and identical to the keys the deploy Mac had
-already accepted). A host that is not in that file, or presents another
-key, is refused. If the server is rebuilt or moves: read the new key
-fingerprints from the provider console, compare them with
-`ssh-keyscan <host> | ssh-keygen -lf -`, and only then replace the lines
-in the file (or point `COMPASS_DEPLOY_KNOWN_HOSTS` at another file).
+keys pinned in `infra/deploy/known_hosts` (taken with `ssh-keyscan` on
+2026-10-30 and identical to the keys the deploy Mac had already
+accepted). The host names in that file are hashed, so the public repo
+does not name the server; `ssh-keygen -F <host> -f
+infra/deploy/known_hosts` finds them. A host that is not in that file,
+or presents another key, is refused. If the server is rebuilt or moves:
+read the new key fingerprints from the provider console, compare them
+with `ssh-keyscan <host> | ssh-keygen -lf -`, and only then replace the
+lines in the file with `ssh-keyscan -H <host>` (hashed), or point
+`COMPASS_DEPLOY_KNOWN_HOSTS` at another file.
 
 ### Workspace-wide purges are off on production (D1/D5)
 `admin.purgeAllTestData` (清空整个工作区) and `admin.purgeByDate`
@@ -210,8 +304,15 @@ project rebuild` is not implemented; it only points here.)
 
 ### Add a new built-in permission
 1. Add to `packages/db/src/seed-data.ts` `PERMISSIONS`.
-2. Add to relevant role's permissions list.
-3. Run `pnpm db:seed` (idempotent — only inserts the missing rows).
+2. Add to relevant role's permissions list. New organisations get it from
+   `provisionOrganization`.
+3. Existing organisations: write a numbered migration that inserts the key
+   into `auth.permissions` and grants it to the built-in roles that should
+   hold it, `ON CONFLICT DO NOTHING`, never removing anything. Copy 0048 /
+   0054 / 0059. Deploys run `migrate`, not `seed`. Never run `pnpm db:seed`
+   on a server: it is the local-development seed and refuses to run in
+   production. It would write demo stores and products into a real tenant
+   and give back keys an admin had removed.
 4. Wire the check in the relevant tRPC router via `permissionProcedure('your.new.key')`.
 5. Update `docs/PERMISSION_MATRIX.md`.
 
@@ -277,7 +378,10 @@ optional off-site upload to any S3-compatible bucket.
   the local dump is kept. (Until 2026-10-30 both only logged WARN and exited 0.)
 - **Failures** print one `[backup] FAILED (exit N) at line L: <command>` or
   `[backup] ERROR: …` line and exit non-zero, so the unit shows `failed`.
-  Nothing alerts on that yet. To add alerting the owner needs to choose:
+  A deploy refuses to start while that is so, or while the timer is
+  stopped or the newest dump is over 26 hours old (`--allow-stale-backup`
+  overrides), so a broken backup is noticed at the next deploy at the
+  latest. Nothing alerts when it happens yet. To add alerting the owner needs to choose:
   where alerts go (Telegram chat/bot, email, ntfy topic, …), who receives
   them, and whether a missing nightly run (not only a failed one) should
   alert — e.g. an `OnFailure=` unit that posts to the chosen channel plus a
@@ -292,7 +396,11 @@ sudo bash /home/ubuntu/compass-alpha/infra/backup/install.sh
 # Skips the immediate first run if you don't want it:
 INSTALL_SKIP_FIRST_RUN=1 sudo bash …/install.sh
 ```
-The installer is idempotent — re-run any time to pick up unit changes.
+The installer is idempotent — re-run any time to pick up unit changes. It
+also gives the backup role (the user in `BACKUP_DATABASE_URL`) SELECT on
+every table and sequence, and on those later migrations create
+(`infra/backup/grant-backup-role.sql`, default privileges for the user in
+`DATABASE_URL_DIRECT`). Re-run it after a migration adds a schema.
 
 ### Verify it's running
 ```bash

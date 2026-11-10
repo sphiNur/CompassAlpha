@@ -1,46 +1,23 @@
 import { describe, expect, test } from 'bun:test';
 import { decide } from './commands';
-import { apply, emptyState, replay, itemKey } from './state';
+import { apply, emptyState, replay, itemKey, type OrderState } from './state';
 import type { OrderEvent } from './events';
-import type { ActorCtx, SkuCtx } from './commands';
+import type { ActorCtx } from './commands';
 import { fixedClock } from '../shared/clock';
+import { manager, orderStepper, sku, staff } from '../testing';
 
 const NOW = new Date('2026-05-02T10:00:00Z');
 const clock = fixedClock(NOW);
+const { step, steps } = orderStepper(clock);
 
-const sku = (id: string, step = '0.5'): SkuCtx => ({ id, step, unit: 'kg', isArchived: false });
-
-const staff = (perms: string[] = ['order.draft', 'order.submit'], memberId = 'mem-staff-a'): ActorCtx => ({
-  userId: `user-${memberId}`,
-  memberId,
-  permissions: new Set(perms),
-  isClaimer: false,
-});
-
-const manager = (
-  perms: string[] = ['order.claim', 'order.approve'],
-  memberId = 'mem-mgr',
-): ActorCtx => ({
-  userId: `user-${memberId}`,
-  memberId,
-  permissions: new Set(perms),
-  isClaimer: false,
-});
-
-function startedDraft(streamId = 'sess-1', actor: ActorCtx = staff()): typeof state {
-  const state = emptyState(streamId);
-  const events = decide(
-    state,
-    {
-      type: 'StartDraft',
-      orgId: 'org-1',
-      storeId: 'store-1',
-      orderDate: '2026-05-02',
-      actor,
-    },
-    { clock },
-  );
-  return events.reduce(apply, state);
+function startedDraft(streamId = 'sess-1', actor: ActorCtx = staff()): OrderState {
+  return step(emptyState(streamId), {
+    type: 'StartDraft',
+    orgId: 'org-1',
+    storeId: 'store-1',
+    orderDate: '2026-05-02',
+    actor,
+  });
 }
 
 describe('order.decide (per-contributor lines)', () => {
@@ -52,11 +29,13 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('AdjustItem creates a row keyed by (sku, contributor)', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'sku-1', qty: '1.5', sku: sku('sku-1'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'sku-1',
+      qty: '1.5',
+      sku: sku('sku-1'),
+      actor: staff(),
+    });
     const row = state.items.get(itemKey('sku-1', 'mem-staff-a'));
     expect(row?.qty).toBe('1.5');
     expect(row?.contributorMemberId).toBe('mem-staff-a');
@@ -65,11 +44,13 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('ORD-10: a product archived while in a draft can be set to zero, not raised', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'towel', qty: '1', sku: sku('towel'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'towel',
+      qty: '1',
+      sku: sku('towel'),
+      actor: staff(),
+    });
     const archived = { ...sku('towel'), isArchived: true };
     expect(() =>
       decide(
@@ -77,12 +58,14 @@ describe('order.decide (per-contributor lines)', () => {
         { type: 'AdjustItem', skuId: 'towel', qty: '1.5', sku: archived, actor: staff() },
         { clock },
       ),
-    ).toThrow();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'towel', qty: '0', sku: archived, actor: staff() },
-      { clock },
-    ).reduce(apply, state);
+    ).toThrow('order.errors.skuArchived');
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'towel',
+      qty: '0',
+      sku: archived,
+      actor: staff(),
+    });
     expect(Number(state.items.get(itemKey('towel', 'mem-staff-a'))?.qty ?? 0)).toBe(0);
   });
 
@@ -105,11 +88,13 @@ describe('order.decide (per-contributor lines)', () => {
   test('owner edits their own session normally', () => {
     const memA = staff(['order.draft'], 'mem-A');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '3', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '3',
+      sku: sku('apple'),
+      actor: memA,
+    });
     const a = state.items.get(itemKey('apple', 'mem-A'));
     expect(a?.qty).toBe('3');
   });
@@ -120,25 +105,23 @@ describe('order.decide (per-contributor lines)', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     const mgr = manager(['order.claim', 'order.approve'], 'mem-mgr');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '3', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: memA }, { clock }).reduce(apply, state);
-    state = decide(state, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, state);
-    state = decide(
-      state,
-      {
-        type: 'AdjustItem',
-        skuId: 'apple',
-        qty: '4',
-        sku: sku('apple'),
-        actor: { ...mgr, isClaimer: true },
-        targetMemberId: 'mem-A',
-      },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '3',
+      sku: sku('apple'),
+      actor: memA,
+    });
+    state = step(state, { type: 'Submit', actor: memA });
+    state = step(state, { type: 'Claim', actor: mgr });
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '4',
+      sku: sku('apple'),
+      actor: { ...mgr, isClaimer: true },
+      targetMemberId: 'mem-A',
+    });
     const row = state.items.get(itemKey('apple', 'mem-A'));
     expect(row?.qty).toBe('4');
     expect(row?.contributorMemberId).toBe('mem-A');
@@ -151,13 +134,15 @@ describe('order.decide (per-contributor lines)', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     const mgr = manager(['order.claim', 'order.approve'], 'mem-mgr');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'banana', qty: '1', sku: sku('banana'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: memA }, { clock }).reduce(apply, state);
-    state = decide(state, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'banana',
+      qty: '1',
+      sku: sku('banana'),
+      actor: memA,
+    });
+    state = step(state, { type: 'Submit', actor: memA });
+    state = step(state, { type: 'Claim', actor: mgr });
     expect(() =>
       decide(
         state,
@@ -176,11 +161,13 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('AdjustItem with same qty is a no-op', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'sku-1', qty: '1.5', sku: sku('sku-1'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'sku-1',
+      qty: '1.5',
+      sku: sku('sku-1'),
+      actor: staff(),
+    });
     expect(
       decide(
         state,
@@ -204,11 +191,13 @@ describe('order.decide (per-contributor lines)', () => {
   test('Submit counts SKUs with non-zero qty', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '1',
+      sku: sku('apple'),
+      actor: memA,
+    });
     const out = decide(state, { type: 'Submit', actor: memA }, { clock });
     expect(out).toHaveLength(1);
     expect(out[0]!.type).toBe('Submitted');
@@ -217,16 +206,20 @@ describe('order.decide (per-contributor lines)', () => {
   test('Submit fails when the owner has zeroed everything out', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '0', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '1',
+      sku: sku('apple'),
+      actor: memA,
+    });
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '0',
+      sku: sku('apple'),
+      actor: memA,
+    });
     expect(() => decide(state, { type: 'Submit', actor: memA }, { clock })).toThrow(
       'order.errors.emptyOrder',
     );
@@ -238,15 +231,11 @@ describe('order.decide (per-contributor lines)', () => {
     // 'emptyOrder'. Now the order can be submitted just on extras.
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      {
-        type: 'SetSessionExtras',
-        extras: [{ name: '辣椒粉', qty: '200', unit: 'g' }],
-        actor: memA,
-      },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'SetSessionExtras',
+      extras: [{ name: '辣椒粉', qty: '200', unit: 'g' }],
+      actor: memA,
+    });
     const events = decide(state, { type: 'Submit', actor: memA }, { clock });
     expect(events).toHaveLength(1);
     expect(events[0]!.type).toBe('Submitted');
@@ -258,11 +247,13 @@ describe('order.decide (per-contributor lines)', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     const memB = staff(['order.draft', 'order.submit'], 'mem-B');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '1',
+      sku: sku('apple'),
+      actor: memA,
+    });
     expect(() => decide(state, { type: 'Submit', actor: memB }, { clock })).toThrow(
       'order.errors.notOwner',
     );
@@ -273,39 +264,41 @@ describe('order.decide (per-contributor lines)', () => {
     // SEPARATE sessions; here we test the single-owner happy path.
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '2', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'beef', qty: '1', sku: sku('beef'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '2',
+      sku: sku('apple'),
+      actor: memA,
+    });
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'beef',
+      qty: '1',
+      sku: sku('beef'),
+      actor: memA,
+    });
     expect(state.items.size).toBe(2);
-    state = decide(state, { type: 'Submit', actor: memA }, { clock }).reduce(apply, state);
+    state = step(state, { type: 'Submit', actor: memA });
     expect(state.status).toBe('submitted');
     expect(state.submittedByMemberId).toBe('mem-A');
 
-    state = decide(state, { type: 'Claim', actor: manager() }, { clock }).reduce(apply, state);
-    state = decide(
-      state,
-      { type: 'Approve', actor: { ...manager(), isClaimer: true } },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, { type: 'Claim', actor: manager() });
+    state = step(state, { type: 'Approve', actor: { ...manager(), isClaimer: true } });
     expect(state.status).toBe('approved');
   });
 
   test('claim by second manager fails when already claimed', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
-    state = decide(state, { type: 'Claim', actor: manager() }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '1',
+      sku: sku('s'),
+      actor: staff(),
+    });
+    state = step(state, { type: 'Submit', actor: staff() });
+    state = step(state, { type: 'Claim', actor: manager() });
     const otherMgr: ActorCtx = {
       userId: 'user-mgr2',
       memberId: 'mem-mgr2',
@@ -323,14 +316,16 @@ describe('order.decide (per-contributor lines)', () => {
     // byMemberId with reason='override' for audit. Without this, A's
     // stale claim would freeze the order indefinitely.
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '1',
+      sku: sku('s'),
+      actor: staff(),
+    });
+    state = step(state, { type: 'Submit', actor: staff() });
     const mgrA = manager(['order.claim', 'order.approve'], 'mem-mgrA');
-    state = decide(state, { type: 'Claim', actor: mgrA }, { clock }).reduce(apply, state);
+    state = step(state, { type: 'Claim', actor: mgrA });
     expect(state.claimedByMemberId).toBe('mem-mgrA');
 
     const mgrB = manager(['order.claim', 'order.approve'], 'mem-mgrB');
@@ -341,13 +336,11 @@ describe('order.decide (per-contributor lines)', () => {
     );
     expect(events).toHaveLength(1);
     const ev = events[0]!;
-    expect(ev.type).toBe('ClaimReleased');
-    if (ev.type === 'ClaimReleased') {
-      expect(ev.payload.byMemberId).toBe('mem-mgrB');
-      expect(ev.payload.reason).toBe('override');
-      // RE-APR-2: and whose claim it ended.
-      expect(ev.payload.reason === 'override' && ev.payload.fromMemberId).toBe('mem-mgrA');
-    }
+    if (ev.type !== 'ClaimReleased') throw new Error(`expected ClaimReleased, got ${ev.type}`);
+    expect(ev.payload.byMemberId).toBe('mem-mgrB');
+    expect(ev.payload.reason).toBe('override');
+    // RE-APR-2: and whose claim it ended.
+    expect(ev.payload.reason === 'override' && ev.payload.fromMemberId).toBe('mem-mgrA');
     state = events.reduce(apply, state);
     expect(state.claimedByMemberId).toBeNull();
     expect(state.status).toBe('submitted'); // queue is unstuck, still awaits decision
@@ -355,17 +348,18 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('release-claim by non-approver fails (claim-only role cannot force-release)', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
-    state = decide(
-      state,
-      { type: 'Claim', actor: manager(['order.claim', 'order.approve'], 'mem-mgrA') },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '1',
+      sku: sku('s'),
+      actor: staff(),
+    });
+    state = step(state, { type: 'Submit', actor: staff() });
+    state = step(state, {
+      type: 'Claim',
+      actor: manager(['order.claim', 'order.approve'], 'mem-mgrA'),
+    });
 
     // mem-mgrC has order.claim but NOT order.approve — must not be able
     // to force-release somebody else's claim.
@@ -385,14 +379,16 @@ describe('order.decide (per-contributor lines)', () => {
     // timeout / manual to round-trip through the event so downstream
     // consumers (audit views, analytics) can distinguish them.
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '1',
+      sku: sku('s'),
+      actor: staff(),
+    });
+    state = step(state, { type: 'Submit', actor: staff() });
     const mgr = manager(['order.claim', 'order.approve'], 'mem-mgrA');
-    state = decide(state, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, state);
+    state = step(state, { type: 'Claim', actor: mgr });
     const events = decide(
       state,
       { type: 'ReleaseClaim', reason: 'pagehide', actor: mgr },
@@ -400,21 +396,22 @@ describe('order.decide (per-contributor lines)', () => {
     );
     expect(events).toHaveLength(1);
     const ev = events[0]!;
-    if (ev.type === 'ClaimReleased') {
-      expect(ev.payload.byMemberId).toBe('mem-mgrA');
-      expect(ev.payload.reason).toBe('pagehide');
-    }
+    if (ev.type !== 'ClaimReleased') throw new Error(`expected ClaimReleased, got ${ev.type}`);
+    expect(ev.payload.byMemberId).toBe('mem-mgrA');
+    expect(ev.payload.reason).toBe('pagehide');
   });
 
   test('reject requires non-empty reason', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
-    state = decide(state, { type: 'Claim', actor: manager() }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '1',
+      sku: sku('s'),
+      actor: staff(),
+    });
+    state = step(state, { type: 'Submit', actor: staff() });
+    state = step(state, { type: 'Claim', actor: manager() });
     expect(() =>
       decide(
         state,
@@ -426,12 +423,14 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('withdraw allowed for the original submitter', () => {
     let state = startedDraft();
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '1',
+      sku: sku('s'),
+      actor: staff(),
+    });
+    state = step(state, { type: 'Submit', actor: staff() });
     expect(decide(state, { type: 'Withdraw', actor: staff() }, { clock })).toHaveLength(1);
   });
 
@@ -441,12 +440,8 @@ describe('order.decide (per-contributor lines)', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     const memB = staff(['order.draft', 'order.submit'], 'mem-B');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: memA }, { clock }).reduce(apply, state);
+    state = step(state, { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: memA });
+    state = step(state, { type: 'Submit', actor: memA });
     expect(() => decide(state, { type: 'Withdraw', actor: memB }, { clock })).toThrow(
       'order.errors.cannotWithdraw',
     );
@@ -456,12 +451,8 @@ describe('order.decide (per-contributor lines)', () => {
   // idempotent successes; a different actor still gets the error.
   function submittedState(): ReturnType<typeof startedDraft> {
     let st = startedDraft();
-    st = decide(
-      st,
-      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, st);
-    return decide(st, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, st);
+    st = step(st, { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() });
+    return step(st, { type: 'Submit', actor: staff() });
   }
 
   test('repeated Submit by the same owner is a no-op', () => {
@@ -471,7 +462,7 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('Submit on a session approved by someone else still fails', () => {
     let st = submittedState();
-    st = decide(st, { type: 'Approve', actor: manager() }, { clock }).reduce(apply, st);
+    st = step(st, { type: 'Approve', actor: manager() });
     expect(() => decide(st, { type: 'Submit', actor: staff() }, { clock })).toThrow(
       'order.errors.notSubmittable',
     );
@@ -479,7 +470,7 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('repeated Approve by the same decider is a no-op; other approver errors', () => {
     let st = submittedState();
-    st = decide(st, { type: 'Approve', actor: manager() }, { clock }).reduce(apply, st);
+    st = step(st, { type: 'Approve', actor: manager() });
     expect(decide(st, { type: 'Approve', actor: manager() }, { clock })).toEqual([]);
     expect(() =>
       decide(st, { type: 'Approve', actor: manager(undefined, 'mem-mgr2') }, { clock }),
@@ -492,20 +483,16 @@ describe('order.decide (per-contributor lines)', () => {
   test('APR-9: an order the approver brought to zero cannot be approved', () => {
     let st = submittedState();
     const mgr = manager(['order.claim', 'order.approve']);
-    st = decide(st, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, st);
+    st = step(st, { type: 'Claim', actor: mgr });
     const owner = staff().memberId;
-    st = decide(
-      st,
-      {
-        type: 'AdjustItem',
-        skuId: 's',
-        qty: '0',
-        sku: sku('s'),
-        actor: { ...mgr, isClaimer: true },
-        targetMemberId: owner,
-      },
-      { clock },
-    ).reduce(apply, st);
+    st = step(st, {
+      type: 'AdjustItem',
+      skuId: 's',
+      qty: '0',
+      sku: sku('s'),
+      actor: { ...mgr, isClaimer: true },
+      targetMemberId: owner,
+    });
     expect(() => decide(st, { type: 'Approve', actor: mgr }, { clock })).toThrow(
       'order.errors.approveEmpty',
     );
@@ -514,7 +501,7 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('APR-8: unapproving an order a run has taken says so', () => {
     let st = submittedState();
-    st = decide(st, { type: 'Approve', actor: manager() }, { clock }).reduce(apply, st);
+    st = step(st, { type: 'Approve', actor: manager() });
     st = { ...st, status: 'in_run', runId: 'run-1' };
     expect(() =>
       decide(st, { type: 'Unapprove', reason: 'x', actor: manager(['order.unapprove', 'order.approve']) }, { clock }),
@@ -523,10 +510,7 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('repeated Reject by the same decider is a no-op; other approver errors', () => {
     let st = submittedState();
-    st = decide(st, { type: 'Reject', reason: 'no', actor: manager() }, { clock }).reduce(
-      apply,
-      st,
-    );
+    st = step(st, { type: 'Reject', reason: 'no', actor: manager() });
     expect(decide(st, { type: 'Reject', reason: 'no', actor: manager() }, { clock })).toEqual([]);
     expect(() =>
       decide(st, { type: 'Reject', reason: 'no', actor: manager(undefined, 'mem-mgr2') }, { clock }),
@@ -535,16 +519,9 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('rejected session: owner edits in place and re-submits (CA-02)', () => {
     let st = submittedState();
-    st = decide(st, { type: 'Reject', reason: 'too much', actor: manager() }, { clock }).reduce(
-      apply,
-      st,
-    );
-    st = decide(
-      st,
-      { type: 'AdjustItem', skuId: 's', qty: '0.5', sku: sku('s'), actor: staff() },
-      { clock },
-    ).reduce(apply, st);
-    st = decide(st, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, st);
+    st = step(st, { type: 'Reject', reason: 'too much', actor: manager() });
+    st = step(st, { type: 'AdjustItem', skuId: 's', qty: '0.5', sku: sku('s'), actor: staff() });
+    st = step(st, { type: 'Submit', actor: staff() });
     expect(st.status).toBe('submitted');
     expect(st.streamId).toBe('sess-1');
   });
@@ -591,17 +568,14 @@ describe('order.decide (per-contributor lines)', () => {
     // Drive the session into in_run via the AttachToRun path.
     const me = staff(['order.draft', 'order.submit']);
     const mgr = manager(['order.claim', 'order.approve']);
-    const evs: OrderEvent[] = [];
-    function step(es: OrderEvent[]) {
-      evs.push(...es);
-      s = es.reduce(apply, s);
-    }
-    step(decide(s, { type: 'StartDraft', orgId: 'o', storeId: 'st', orderDate: '2026-05-02', actor: me }, { clock }));
-    step(decide(s, { type: 'AdjustItem', skuId: 'k', qty: '3', sku: sku('k'), actor: me }, { clock }));
-    step(decide(s, { type: 'Submit', actor: me }, { clock }));
-    step(decide(s, { type: 'Claim', actor: { ...mgr, isClaimer: false } }, { clock }));
-    step(decide(s, { type: 'Approve', actor: { ...mgr, isClaimer: true } }, { clock }));
-    step(decide(s, { type: 'AttachToRun', runId: 'r1', actor: { ...mgr, isClaimer: true } }, { clock }));
+    s = steps(s, [
+      { type: 'StartDraft', orgId: 'o', storeId: 'st', orderDate: '2026-05-02', actor: me },
+      { type: 'AdjustItem', skuId: 'k', qty: '3', sku: sku('k'), actor: me },
+      { type: 'Submit', actor: me },
+      { type: 'Claim', actor: { ...mgr, isClaimer: false } },
+      { type: 'Approve', actor: { ...mgr, isClaimer: true } },
+      { type: 'AttachToRun', runId: 'r1', actor: { ...mgr, isClaimer: true } },
+    ]).state;
     expect(s.status).toBe('in_run');
     const arch = decide(
       s,
@@ -616,24 +590,30 @@ describe('order.decide (per-contributor lines)', () => {
 
   test('RE-ORD-5: an emptied draft can be archived as empty_draft; one with items cannot', () => {
     let s = startedDraft();
-    s = decide(
-      s,
-      { type: 'AdjustItem', skuId: 'sku-1', qty: '1', sku: sku('sku-1'), actor: staff() },
-      { clock },
-    ).reduce(apply, s);
+    s = step(s, {
+      type: 'AdjustItem',
+      skuId: 'sku-1',
+      qty: '1',
+      sku: sku('sku-1'),
+      actor: staff(),
+    });
     expect(() =>
       decide(s, { type: 'Archive', reason: 'empty_draft', actor: staff() }, { clock }),
-    ).toThrow();
-    s = decide(
-      s,
-      { type: 'AdjustItem', skuId: 'sku-1', qty: '0', sku: sku('sku-1'), actor: staff() },
-      { clock },
-    ).reduce(apply, s);
+    ).toThrow('order.errors.cannotArchive');
+    s = step(s, {
+      type: 'AdjustItem',
+      skuId: 'sku-1',
+      qty: '0',
+      sku: sku('sku-1'),
+      actor: staff(),
+    });
     const out = decide(s, { type: 'Archive', reason: 'empty_draft', actor: staff() }, { clock });
     expect(out.map((e) => e.type)).toEqual(['Archived']);
     expect(out.reduce(apply, s).status).toBe('archived');
     // Any other reason still needs in_run / approved.
-    expect(() => decide(s, { type: 'Archive', reason: 'manual', actor: staff() }, { clock })).toThrow();
+    expect(() =>
+      decide(s, { type: 'Archive', reason: 'manual', actor: staff() }, { clock }),
+    ).toThrow('order.errors.cannotArchive');
   });
 
   test('Archive on an already-archived session is a no-op', () => {
@@ -686,28 +666,16 @@ describe('order.SetSessionNote', () => {
   test('clearing the note (null / empty) results in null', () => {
     const me = staff(['order.draft'], 'mem-A');
     let state = startedDraft('sess-1', me);
-    state = decide(
-      state,
-      { type: 'SetSessionNote', note: 'something', actor: me },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, { type: 'SetSessionNote', note: 'something', actor: me });
     expect(state.notes).toBe('something');
-    state = decide(
-      state,
-      { type: 'SetSessionNote', note: '   ', actor: me },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, { type: 'SetSessionNote', note: '   ', actor: me });
     expect(state.notes).toBeNull();
   });
 
   test('idempotent — same value is a no-op', () => {
     const me = staff(['order.draft'], 'mem-A');
     let state = startedDraft('sess-1', me);
-    state = decide(
-      state,
-      { type: 'SetSessionNote', note: 'apples please', actor: me },
-      { clock },
-    ).reduce(apply, state);
+    state = step(state, { type: 'SetSessionNote', note: 'apples please', actor: me });
     const out = decide(
       state,
       { type: 'SetSessionNote', note: 'apples please', actor: me },
@@ -738,14 +706,16 @@ describe('order.SetSessionNote', () => {
     const memA = staff(['order.draft', 'order.submit'], 'mem-A');
     const mgr = manager(['order.claim', 'order.approve'], 'mem-mgr');
     let state = startedDraft('sess-1', memA);
-    state = decide(
-      state,
-      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: memA },
-      { clock },
-    ).reduce(apply, state);
-    state = decide(state, { type: 'Submit', actor: memA }, { clock }).reduce(apply, state);
-    state = decide(state, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, state);
-    state = decide(state, { type: 'Approve', actor: mgr }, { clock }).reduce(apply, state);
+    state = step(state, {
+      type: 'AdjustItem',
+      skuId: 'apple',
+      qty: '1',
+      sku: sku('apple'),
+      actor: memA,
+    });
+    state = step(state, { type: 'Submit', actor: memA });
+    state = step(state, { type: 'Claim', actor: mgr });
+    state = step(state, { type: 'Approve', actor: mgr });
     expect(() =>
       decide(state, { type: 'SetSessionNote', note: 'too late', actor: memA }, { clock }),
     ).toThrow('order.errors.lockedByStatus');

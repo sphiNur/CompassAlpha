@@ -1,6 +1,6 @@
 /**
  * Admin → People & Permissions — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 4, FRONTEND_AUDIT_2026-07.md admin split).
+ * (Phase 5 step 4 of the 2026-07 frontend audit's admin split).
  *
  *   - PeopleSection          member directory (also mounted by the
  *                            store Team tab in admin/stores)
@@ -25,6 +25,7 @@ import {
   DataState,
   EmptyState,
   Field,
+  FieldGroup,
   IconChevronRight,
   IconShare,
   Input,
@@ -56,6 +57,7 @@ import {
   defaultNewRoleRank,
   normaliseSlugInput,
   readRank,
+  roleRankRange,
   slugIsValid,
   tgIdProblem,
 } from '../../../lib/adminFields';
@@ -64,6 +66,7 @@ import {
   canRevokeRole,
   canSetOverride,
   canSetStatus,
+  orgRankOf,
   rankIn,
   rolePassesOn,
   transferTargets,
@@ -910,21 +913,22 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                   <li key={r.id}>
                     <ListRow
                       label={
-                        <span className="flex items-center gap-2">
+                        // Review WALK-04 (2026-11-09): the badges follow the
+                        // name and wrap under it. Beside it they left the
+                        // name 85px at 320px in Russian ("Суперадмин" cut).
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           {roleText.name(r)}
                           {r.isBuiltIn ? (
                             <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
                           ) : null}
+                          {/* UIUX-B1: 'grantable' is the common case → silent;
+                              only the blocking state earns a badge. */}
+                          {grantable ? null : (
+                            <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
+                          )}
                         </span>
                       }
                       hint={subtitle}
-                      badge={
-                        // UIUX-B1: 'grantable' is the common case → silent;
-                        // only the blocking state earns a badge.
-                        grantable ? null : (
-                          <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
-                        )
-                      }
                       onClick={() => setDrilldownSlug(r.slug)}
                     />
                   </li>
@@ -1172,18 +1176,22 @@ function RoleCreateSheet({
 function RankField({
   text,
   onText,
+  min = 1,
   max,
+  hint,
 }: {
   text: string;
   onText: (text: string) => void;
+  min?: number;
   max: number;
+  hint?: string;
 }) {
   const i18n = useI18n();
   const errorId = useId();
   const [touched, setTouched] = useState(false);
-  const bad = touched && !readRank(text, max).ok;
+  const bad = touched && !readRank(text, max, min).ok;
   return (
-    <Field label={`${i18n.t('people.rankField', { max })} *`}>
+    <Field label={`${i18n.t('people.rankField', { min, max })} *`} hint={hint}>
       <Input
         value={text}
         onChange={(e) => onText(e.target.value)}
@@ -1195,7 +1203,7 @@ function RankField({
       />
       {bad ? (
         <p id={errorId} className="mt-1 text-old-label text-[var(--c-danger)]">
-          {i18n.t('people.rankInvalid', { max })}
+          {i18n.t('people.rankInvalid', { min, max })}
         </p>
       ) : null}
     </Field>
@@ -1250,7 +1258,14 @@ function RolePermissionsSheet({
   // Below-rank gate — only roles strictly below actor's rank are editable.
   const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
   const isBuiltIn = detail.data?.isBuiltIn ?? false;
-  const rankRead = readRank(rankText, myMaxRank - 1);
+  // ADM1-02: a held role keeps its side of ADMIN_RANK.
+  const rankRange = roleRankRange(
+    detail.data?.rank ?? 0,
+    (detail.data?.assignees.length ?? 0) > 0,
+    myMaxRank,
+    ADMIN_RANK,
+  );
+  const rankRead = readRank(rankText, rankRange.max, rankRange.min);
   const rank = rankRead.ok ? rankRead.rank : (detail.data?.rank ?? 0);
   // DX-ADM-28: the edit form asks before its changes are thrown away.
   const editChanged =
@@ -1396,7 +1411,17 @@ function RolePermissionsSheet({
                   {i18n.t('people.builtInRankBody')}
                 </Banner>
               ) : (
-                <RankField text={rankText} onText={setRankText} max={myMaxRank - 1} />
+                <RankField
+                  text={rankText}
+                  onText={setRankText}
+                  min={rankRange.min}
+                  max={rankRange.max}
+                  hint={
+                    rankRange.locked
+                      ? i18n.t('people.rankTierLocked', { rank: ADMIN_RANK })
+                      : undefined
+                  }
+                />
               )}
               {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
               <SectionLabel className="px-0">
@@ -1912,7 +1937,7 @@ function ManualInviteSheet({
             ) : null}
           </Field>
           {requiresStore ? (
-            <Field
+            <FieldGroup
               label={
                 hasStore
                   ? i18n.t('admin.field.storesSelected', { n: draft.storeIds.length })
@@ -1960,7 +1985,7 @@ function ManualInviteSheet({
                 {i18n.t('admin.invite.staffNeedStoreHint')}
                 {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
               </p>
-            </Field>
+            </FieldGroup>
           ) : (
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.invite.adminBypassHint')}
@@ -2107,7 +2132,7 @@ function ManageMemberSheet({
             </p>
           </Field>
 
-          <Field label={i18n.t('admin.field.assignedStores')}>
+          <FieldGroup label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
               <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                 <Spinner size={14} /> {i18n.t('common.loading')}
@@ -2197,7 +2222,7 @@ function ManageMemberSheet({
             <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.storeScopeHint')}
             </p>
-          </Field>
+          </FieldGroup>
         </div>
       ) : null}
       {target && transferFrom ? (
@@ -2822,7 +2847,7 @@ function GrantRoleSheet({
   // as the server does; the old max(myMaxRank, storeRanks[id]) let a
   // manager of A look like a manager of B.
   const effectiveRank = useMemo(() => {
-    if (scopeMode === 'global') return rankIn(actor.bindings, null);
+    if (scopeMode === 'global') return orgRankOf(actor.bindings);
     if (selectedStoreIds.size === 0) return 0;
     return Math.min(...[...selectedStoreIds].map((id) => rankIn(actor.bindings, id)));
   }, [scopeMode, selectedStoreIds, actor]);
@@ -2943,7 +2968,7 @@ function GrantRoleSheet({
         {/* M3.17 (2026-05-16): SegBtn → Segmented. The "Globally" option
             is greyed-out via the disabled prop when the actor isn't an
             org-admin; the click handler short-circuits. */}
-        <Field label={i18n.t('admin.field.scope')}>
+        <FieldGroup label={i18n.t('admin.field.scope')}>
           <Segmented<'store' | 'global'>
             value={scopeMode}
             options={[
@@ -2966,11 +2991,11 @@ function GrantRoleSheet({
               {i18n.t('people.globalGrantLockedHint')}
             </p>
           ) : null}
-        </Field>
+        </FieldGroup>
 
         {/* Store multi-select (visible in store mode) */}
         {scopeMode === 'store' ? (
-          <Field label={i18n.t('admin.field.stores')}>
+          <FieldGroup label={i18n.t('admin.field.stores')}>
             {eligibleStores.length === 0 ? (
               <Banner tone="warn" title={i18n.t('people.noGrantStoresTitle')}>
                 {i18n.t('people.noGrantStoresBody')}
@@ -2994,7 +3019,7 @@ function GrantRoleSheet({
                 })}
               </div>
             )}
-          </Field>
+          </FieldGroup>
         ) : null}
 
         {/* Step 2 — role list (filtered by chosen scope + effectiveRank) */}

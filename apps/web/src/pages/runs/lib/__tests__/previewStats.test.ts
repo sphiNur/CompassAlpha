@@ -8,25 +8,7 @@
  */
 import { describe, it, expect } from 'bun:test';
 import { computePreviewStats } from '../previewStats';
-import type { PreviewLine, PreviewStoreGroup } from '../../types';
-
-function line(over: Partial<PreviewLine> = {}): PreviewLine {
-  return {
-    id: over.id ?? 'l1',
-    kind: over.kind ?? 'sku',
-    skuId: 'skuId' in over ? over.skuId ?? null : 'sku-tomato',
-    name: over.name ?? 'raw-name',
-    qty: over.qty ?? '1',
-    unit: over.unit ?? 'raw-unit',
-    unitPrice: over.unitPrice ?? null,
-    total: over.total ?? null,
-    note: over.note,
-  };
-}
-
-function store(storeId: string, items: PreviewLine[]): PreviewStoreGroup {
-  return { storeId, storeName: `Store-${storeId}`, items, total: 0, unknownCount: 0 };
-}
+import { previewLine as line, previewStore as store } from './previewFixtures';
 
 const allAssigned = () => true;
 const noneAssigned = () => false;

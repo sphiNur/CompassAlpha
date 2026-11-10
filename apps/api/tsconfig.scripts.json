@@ -1,0 +1,10 @@
+{
+  // Review OPS-18 (2026-11): the maintenance scripts (reproject, repair,
+  // copy-catalog) sit outside src/ and were never type-checked. `pnpm
+  // type-check` runs this after tsconfig.json.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*"]
+}

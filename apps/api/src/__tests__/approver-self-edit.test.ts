@@ -35,67 +35,18 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import {
-  apply as applyOrder,
-  decide as decideOrder,
-  emptyState as emptyOrderState,
-} from '@compass/domain/order';
-import { appendEvents } from '../services/eventStore';
-import { projectOrder } from '../services/orderProjection';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import type { RequestContext } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
+import { orderStream } from './helpers/streams';
 
 /** The date under test. Fixed, so "today" drift can't affect the lookup. */
 const ORDER_DATE = '2026-05-11';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -121,7 +72,7 @@ beforeAll(async () => {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Owner', tgUserId: BigInt(`9${Date.now()}3`.slice(-12)) })
+    .values({ displayName: 'Owner', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)
@@ -156,39 +107,24 @@ beforeAll(async () => {
     isClaimer: false,
   };
   const sessionId = randomUUID();
-  let state = emptyOrderState(sessionId);
+  const order = orderStream(org!.id, sessionId);
 
-  const push = async (events: ReturnType<typeof decideOrder>) => {
-    for (const e of events) state = applyOrder(state, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org!.id,
-      events: events.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org!.id, events);
-  };
-
-  await push(
-    decideOrder(state, {
-      type: 'StartDraft',
-      orgId: org!.id,
-      storeId: store!.id,
-      orderDate: ORDER_DATE,
-      actor,
-    }),
-  );
-  await push(
-    decideOrder(state, {
-      type: 'AdjustItem',
-      skuId: sku!.id,
-      qty: '0.5',
-      sku: { id: sku!.id, step: '0.5', unit: 'kg', isArchived: false },
-      actor,
-    }),
-  );
-  await push(decideOrder(state, { type: 'Submit', actor }));
-  await push(decideOrder(state, { type: 'Claim', actor }));
+  await order.exec({
+    type: 'StartDraft',
+    orgId: org!.id,
+    storeId: store!.id,
+    orderDate: ORDER_DATE,
+    actor,
+  });
+  await order.exec({
+    type: 'AdjustItem',
+    skuId: sku!.id,
+    qty: '0.5',
+    sku: { id: sku!.id, step: '0.5', unit: 'kg', isArchived: false },
+    actor,
+  });
+  await order.exec({ type: 'Submit', actor });
+  await order.exec({ type: 'Claim', actor });
 
   fix = {
     orgId: org!.id,
@@ -197,7 +133,7 @@ beforeAll(async () => {
     memberId: member!.id,
     userId: user!.id,
     sessionId,
-    ctx: buildCtx(db, {
+    ctx: testContext({
       userId: user!.id,
       memberId: member!.id,
       orgId: org!.id,
@@ -287,42 +223,36 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
     const caller = appRouter.createCaller(fix.ctx);
     const perms = new Set(['order.draft', 'order.submit', 'order.approve', 'order.claim']);
     const actor = { userId: fix.userId, memberId: fix.memberId, permissions: perms, isClaimer: false };
-
-    // A second batch, submitted and claimed AFTER the first: the most
+    // Both batches on a day of the test's own: the fixture's session stays
+    // the only one on ORDER_DATE, which the first test counts on (review
+    // NEW-RAND-01: run after this test, it found two).
+    const date = '2026-05-13';
+    const batch = async (qty: string): Promise<string> => {
+      const sessionId = randomUUID();
+      const order = orderStream(fix!.orgId, sessionId);
+      await order.exec({
+        type: 'StartDraft',
+        orgId: fix!.orgId,
+        storeId: fix!.storeId,
+        orderDate: date,
+        actor,
+      });
+      await order.exec({
+        type: 'AdjustItem',
+        skuId: fix!.skuId,
+        qty,
+        sku: { id: fix!.skuId, step: '0.5', unit: 'kg', isArchived: false },
+        actor,
+      });
+      await order.exec({ type: 'Submit', actor });
+      await order.exec({ type: 'Claim', actor });
+      return sessionId;
+    };
+    // The second is submitted and claimed AFTER the first: the most
     // recently updated one, which the old (store, date, submitter,
     // claimer) guess would pick.
-    const secondId = randomUUID();
-    let second = emptyOrderState(secondId);
-    const push = async (events: ReturnType<typeof decideOrder>) => {
-      for (const e of events) second = applyOrder(second, e);
-      await appendEvents(db, {
-        streamType: 'order',
-        streamId: secondId,
-        orgId: fix!.orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectOrder(db, fix!.orgId, events);
-    };
-    await push(
-      decideOrder(second, {
-        type: 'StartDraft',
-        orgId: fix.orgId,
-        storeId: fix.storeId,
-        orderDate: ORDER_DATE,
-        actor,
-      }),
-    );
-    await push(
-      decideOrder(second, {
-        type: 'AdjustItem',
-        skuId: fix.skuId,
-        qty: '4',
-        sku: { id: fix.skuId, step: '0.5', unit: 'kg', isArchived: false },
-        actor,
-      }),
-    );
-    await push(decideOrder(second, { type: 'Submit', actor }));
-    await push(decideOrder(second, { type: 'Claim', actor }));
+    const firstId = await batch('0.5');
+    const secondId = await batch('4');
 
     const qtyOf = async (sessionId: string) => {
       const [row] = await db
@@ -331,34 +261,70 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
         .where(eq(s.orderItemsV.sessionId, sessionId));
       return Number(row?.qty);
     };
-    const firstBefore = await qtyOf(fix.sessionId);
 
     const res = await caller.order.adjustItem({
-      sessionId: fix.sessionId,
+      sessionId: firstId,
       storeId: fix.storeId,
-      date: ORDER_DATE,
+      date,
       skuId: fix.skuId,
-      qty: String(firstBefore + 0.5),
+      qty: '1',
       targetMemberId: fix.memberId,
     });
 
-    expect(res.sessionId).toBe(fix.sessionId);
-    expect(await qtyOf(fix.sessionId)).toBe(firstBefore + 0.5);
+    expect(res.sessionId).toBe(firstId);
+    expect(await qtyOf(firstId)).toBe(1);
     expect(await qtyOf(secondId)).toBe(4);
   });
 
   test('APR-1: a sessionId from another store or submitter is refused', async () => {
     if (!fix) throw new Error('fixture missing');
+    const db = getDb(undefined, { system: 'maintenance' });
     const caller = appRouter.createCaller(fix.ctx);
-    await expect(
+    // Review TEST1-12 (2026-11): a second store the approver also works
+    // at, and a second member, so the real session is named under the
+    // wrong store and the wrong submitter (it only ever tried a made-up id).
+    const [otherStore] = await db
+      .insert(s.stores)
+      .values({ orgId: fix.orgId, name: 'Self-edit Store 2' })
+      .returning();
+    await db
+      .insert(s.memberStoreAssignments)
+      .values({ memberId: fix.memberId, storeId: otherStore!.id, assignedBy: fix.userId });
+    const [otherUser] = await db.insert(s.users).values({ displayName: 'Staff' }).returning();
+    const [otherMember] = await db
+      .insert(s.members)
+      .values({ orgId: fix.orgId, userId: otherUser!.id })
+      .returning();
+    const qtyBefore = await db
+      .select({ qty: s.orderItemsV.qty })
+      .from(s.orderItemsV)
+      .where(eq(s.orderItemsV.sessionId, fix.sessionId));
+
+    const adjust = (over: { sessionId?: string; storeId?: string; targetMemberId?: string }) =>
       caller.order.adjustItem({
-        sessionId: randomUUID(),
-        storeId: fix.storeId,
+        sessionId: fix!.sessionId,
+        storeId: fix!.storeId,
         date: ORDER_DATE,
-        skuId: fix.skuId,
+        skuId: fix!.skuId,
         qty: '1',
-        targetMemberId: fix.memberId,
-      }),
-    ).rejects.toThrow(/sessionMissing/);
+        targetMemberId: fix!.memberId,
+        ...over,
+      });
+    await expect(adjust({ storeId: otherStore!.id })).rejects.toThrow(/sessionMissing/);
+    await expect(adjust({ targetMemberId: otherMember!.id })).rejects.toThrow(/sessionMissing/);
+    await expect(adjust({ sessionId: randomUUID() })).rejects.toThrow(/sessionMissing/);
+
+    // Nothing was written: the session kept its quantity, and no draft
+    // was started in the other store.
+    const qtyAfter = await db
+      .select({ qty: s.orderItemsV.qty })
+      .from(s.orderItemsV)
+      .where(eq(s.orderItemsV.sessionId, fix.sessionId));
+    expect(qtyAfter).toEqual(qtyBefore);
+    const otherStoreSessions = await db
+      .select({ id: s.orderSessionsV.id })
+      .from(s.orderSessionsV)
+      .where(eq(s.orderSessionsV.storeId, otherStore!.id));
+    expect(otherStoreSessions).toEqual([]);
   });
 });

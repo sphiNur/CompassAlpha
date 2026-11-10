@@ -5,7 +5,15 @@
  * `.toFixed(3)` clamp turned 92,000.50 into 92,001 (R2-BUY-3).
  */
 import { describe, it, expect } from 'bun:test';
-import { toDisplayPrice, fromDisplayPrice, isUnusualFirstPrice, isUnusualPrice, readDisplayPrice } from '../priceMath';
+import { readDecimalText } from '@compass/ui';
+import {
+  toDisplayPrice,
+  fromDisplayPrice,
+  isUnusualFirstPrice,
+  isUnusualPrice,
+  readDisplayPrice,
+  shownPrice,
+} from '../priceMath';
 
 describe('toDisplayPrice', () => {
   it('divides by 1000 in thousands mode', () => {
@@ -101,5 +109,51 @@ describe('isUnusualFirstPrice', () => {
     expect(isUnusualFirstPrice('999999.99')).toBe(false);
     expect(isUnusualFirstPrice('85000')).toBe(false);
     expect(isUnusualFirstPrice('abc')).toBe(false);
+  });
+});
+
+describe('shownPrice (review RUNWEB2-01, 2026-11-09)', () => {
+  // The per-store price field, key by key, the way the pieces pass the
+  // text around: useDecimalField reports what it read and keeps showing
+  // its own text while the value it gets back is what it reported; the
+  // sheet stores raw UZS and hands back shownPrice(raw, typed).
+  const type = (keys: string, inThousands = true) => {
+    let raw = '';
+    let typed: string | undefined;
+    let fieldText: string | null = null;
+    let reported: string | null = null;
+    const shown = () => {
+      const external = shownPrice(raw, typed, inThousands);
+      return fieldText !== null && external === reported ? fieldText : external;
+    };
+    for (const key of keys) {
+      const text = shown() + key;
+      const read = readDecimalText(text);
+      const out = read.ok ? read.value : text;
+      fieldText = text;
+      reported = out;
+      typed = out;
+      raw = fromDisplayPrice(out, inThousands);
+    }
+    return { shown: shown(), raw };
+  };
+
+  it('keeps the point while a thousands price is typed', () => {
+    // Before the fix: 12.5 → 125000, 0.5 → 5000, 12.05 → 1205000.
+    expect(type('12.5')).toEqual({ shown: '12.5', raw: '12500' });
+    expect(type('0.5')).toEqual({ shown: '0.5', raw: '500' });
+    expect(type('12.05')).toEqual({ shown: '12.05', raw: '12050' });
+    expect(type('147.5')).toEqual({ shown: '147.5', raw: '147500' });
+  });
+
+  it('whole numbers and plain UZS are unchanged', () => {
+    expect(type('125')).toEqual({ shown: '125', raw: '125000' });
+    expect(type('12500', false)).toEqual({ shown: '12500', raw: '12500' });
+  });
+
+  it('a change from outside still shows', () => {
+    expect(shownPrice('15000', '12.', true)).toBe('15');
+    expect(shownPrice('12000', '12.', true)).toBe('12.');
+    expect(shownPrice('12000', undefined, true)).toBe('12');
   });
 });

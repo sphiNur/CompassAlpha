@@ -136,6 +136,35 @@ describe('compass-backup.sh', () => {
   }, 15_000);
 });
 
+// Review OPS-02 (2026-11-09): install.sh grants the backup role by name and
+// sets default privileges for the role the migrations connect as.
+describe('pg_url_parts', () => {
+  const parts = (url: string) =>
+    spawnSync(
+      'bash',
+      [
+        '-c',
+        `. "${join(ROOT, 'infra/backup/pg-url.sh')}"; pg_url_parts "$1"; echo "$PG_URL_USER|$PG_URL_DB"`,
+        '_',
+        url,
+      ],
+      { encoding: 'utf8' },
+    ).stdout.trim();
+
+  test('reads the user and the database, never the password', () => {
+    expect(parts('postgres://compass_backup:p%40ss@localhost:5432/compass')).toBe(
+      'compass_backup|compass',
+    );
+    expect(parts('postgres://compass@127.0.0.1/compass?sslmode=disable')).toBe('compass|compass');
+  });
+
+  test('a URL without a user or a database gives nothing', () => {
+    expect(parts('postgres://localhost/compass')).toBe('|');
+    expect(parts('postgres://compass@localhost')).toBe('|');
+    expect(parts('')).toBe('|');
+  });
+});
+
 describe('restore.sh (F11)', () => {
   test('the password reaches pg_restore through PGPASSWORD, never argv', () => {
     const home = mkdtempSync(join(tmpdir(), 'restore-'));

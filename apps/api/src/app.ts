@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { serveStatic } from 'hono/bun';
 import { trpcServer } from '@hono/trpc-server';
 import { sql } from 'drizzle-orm';
 import { getDb, inSystem } from '@compass/db';
@@ -12,6 +11,7 @@ import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
 import { attendanceMonthExport } from './http/attendanceExport';
+import { serveWebApp } from './http/webApp';
 
 /**
  * Read the web build's id (emitted by vite.config.ts → buildShaPlugin)
@@ -282,19 +282,11 @@ export function createApp() {
       createContext: createContext as unknown as Parameters<typeof trpcServer>[0]['createContext'],
       // The client only gets a generic key for these (trpc.ts
       // errorFormatter), so this log is the one place the cause is kept.
+      // Refusals (attendance's included, 2026-11-07) are logged by the
+      // procedures' own middleware (trpc.ts logFailedCall).
       onError({ error, path, type }) {
         if (error.code === 'INTERNAL_SERVER_ERROR') {
           logger.error({ err: error.cause ?? error, path, type }, 'trpc internal error');
-        } else if (path?.startsWith('attendance.') && type === 'mutation') {
-          // Attendance refusals (2026-11-07): an enrollment or punch that
-          // failed left nothing in the journal, so "it fails" could not be
-          // traced. The key and its context only (which photo, why); no
-          // photos, names or locations.
-          const cause = error.cause as { context?: unknown } | undefined;
-          logger.info(
-            { path, code: error.code, key: error.message, context: cause?.context },
-            'attendance refused',
-          );
         }
       },
     }),
@@ -328,12 +320,7 @@ export function createApp() {
   const webDist = webDistCandidates.find((p) => existsSync(join(p, 'index.html')));
   if (webDist) {
     logger.info({ webDist }, 'SPA static serving enabled');
-    // 1) Real files (assets/*.js, build-id.txt, favicon, /boot-guard.js, /boot.css)
-    app.use('/*', serveStatic({ root: webDist }));
-    // 2) SPA fallback — any unmatched GET returns index.html so the
-    //    React router takes over. tRPC + /health/* are already mounted
-    //    above so they short-circuit before reaching here.
-    app.get('*', serveStatic({ path: join(webDist, 'index.html') }));
+    serveWebApp(app, webDist);
   } else {
     logger.warn(
       { tried: webDistCandidates },

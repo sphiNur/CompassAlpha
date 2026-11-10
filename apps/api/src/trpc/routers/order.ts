@@ -27,6 +27,9 @@ import {
   TodayBatchesInputSchema,
   TodaySessionInputSchema,
   UnapproveInputSchema,
+  UuidSchema,
+  milliQty,
+  qtyMilli,
 } from '@compass/contracts';
 import {
   apply,
@@ -214,6 +217,31 @@ async function approverStoreIds(
   ]);
   if (approve === null || claim === null) return null;
   return [...new Set([...approve, ...claim])];
+}
+
+/**
+ * APR-4: an order is read by the one who placed it, or by someone who
+ * approves or claims orders at its store. Review ORD-05 (2026-11-09):
+ * submittedVersion checked only the store assignment, so any member of
+ * the store could read another member's order as submitted, which
+ * sessionDetail refused. Both use this now.
+ */
+async function assertCanReadSession(
+  tx: import('@compass/db').DB,
+  session: { memberId: string; permissions: ReadonlySet<string> },
+  order: { storeId: string; initiatedByMemberId: string | null },
+): Promise<void> {
+  await assertActorAssignedToStore(tx, session.memberId, order.storeId, session.permissions);
+  if (order.initiatedByMemberId === session.memberId) return;
+  const effective = await effectivePermissionsForStore(
+    tx,
+    session.memberId,
+    order.storeId,
+    session.permissions,
+  );
+  if (!effective.has('order.approve') && !effective.has('order.claim')) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'order.errors.cannotApprove' });
+  }
 }
 
 /**
@@ -486,12 +514,13 @@ export const orderRouter = router({
 
         // Per-session distinct-SKU totals, so itemCount matches what the
         // review sheet and the approval card call "N 项".
-        const qtyBySession = new Map<string, Map<string, number>>();
+        // Whole thousandths, not floats (RUNAPI-05).
+        const qtyBySession = new Map<string, Map<string, bigint>>();
         for (const it of items) {
-          const qty = Number(it.qty);
-          if (!(qty > 0)) continue;
-          const perSku = qtyBySession.get(it.sessionId) ?? new Map<string, number>();
-          perSku.set(it.skuId, (perSku.get(it.skuId) ?? 0) + qty);
+          const qty = qtyMilli(it.qty);
+          if (qty <= 0n) continue;
+          const perSku = qtyBySession.get(it.sessionId) ?? new Map<string, bigint>();
+          perSku.set(it.skuId, (perSku.get(it.skuId) ?? 0n) + qty);
           qtyBySession.set(it.sessionId, perSku);
         }
 
@@ -519,9 +548,9 @@ export const orderRouter = router({
             ),
         );
         return listed.map((sess, idx) => {
-          const perSku = qtyBySession.get(sess.id) ?? new Map<string, number>();
+          const perSku = qtyBySession.get(sess.id) ?? new Map<string, bigint>();
           const est = estimateLines(
-            [...perSku.entries()].map(([skuId, qty]) => ({ skuId, qty })),
+            [...perSku.entries()].map(([skuId, qty]) => ({ skuId, qty: milliQty(qty) })),
             priceStats,
           );
           return {
@@ -533,7 +562,7 @@ export const orderRouter = router({
             claimedByMemberId: sess.claimedByMemberId,
             itemCount: perSku.size,
             extrasCount: (sess.extrasJson as unknown[] | null)?.length ?? 0,
-            estimatedTotal: est.known > 0 ? est.total.toFixed(2) : null,
+            estimatedTotal: est.known > 0 ? est.total : null,
             /** ORD-4: the reason, so a rejected batch can say why. */
             rejectReason: sess.status === 'rejected' ? (sess.rejectReason ?? null) : null,
           };
@@ -552,24 +581,7 @@ export const orderRouter = router({
         if (!session) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
         }
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
-        // APR-4: someone else's order is for approvers of that store.
-        if (session.initiatedByMemberId !== ctx.session!.memberId) {
-          const effective = await effectivePermissionsForStore(
-            tx,
-            ctx.session!.memberId,
-            session.storeId,
-            ctx.session!.permissions,
-          );
-          if (!effective.has('order.approve') && !effective.has('order.claim')) {
-            throw new TRPCError({ code: 'FORBIDDEN', message: 'order.errors.cannotApprove' });
-          }
-        }
+        await assertCanReadSession(tx, ctx.session!, session);
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),
         });
@@ -659,8 +671,8 @@ export const orderRouter = router({
   /** 2026-11-05: the order as it was submitted (its last `Submitted`),
    *  so a receipt can show what the store asked for next to what review
    *  approved. Reviewer edits overwrite the read model; the event log
-   *  keeps the original. Null for a draft. Visible to whoever may see the
-   *  store's orders. */
+   *  keeps the original. Null for a draft. Read by the same people as
+   *  sessionDetail (ORD-05). */
   submittedVersion: authedProcedure
     .input(SessionDetailInputSchema)
     .query(async ({ ctx, input }) => {
@@ -672,12 +684,7 @@ export const orderRouter = router({
         if (!session) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
         }
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
+        await assertCanReadSession(tx, ctx.session!, session);
         if (session.status === 'draft') return null;
         const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
         const snap = submittedSnapshot(session.id, events);
@@ -789,28 +796,29 @@ export const orderRouter = router({
       const memberById = new Map(members.map((x) => [x.memberId, x]));
 
       // Per (session, sku) aggregate first, then per-session summary.
-      const skuTotalsBySession = new Map<string, Map<string, number>>();
+      // Whole thousandths, not floats (RUNAPI-05).
+      const skuTotalsBySession = new Map<string, Map<string, bigint>>();
       const contributorsBySession = new Map<string, Set<string>>();
       for (const it of items) {
-        const qty = Number(it.qty);
-        const skuTotals = skuTotalsBySession.get(it.sessionId) ?? new Map<string, number>();
-        if (qty > 0) {
-          skuTotals.set(it.skuId, (skuTotals.get(it.skuId) ?? 0) + qty);
+        const qty = qtyMilli(it.qty);
+        const skuTotals = skuTotalsBySession.get(it.sessionId) ?? new Map<string, bigint>();
+        if (qty > 0n) {
+          skuTotals.set(it.skuId, (skuTotals.get(it.skuId) ?? 0n) + qty);
         }
         skuTotalsBySession.set(it.sessionId, skuTotals);
         const cs = contributorsBySession.get(it.sessionId) ?? new Set<string>();
-        if (it.contributorMemberId && qty > 0) cs.add(it.contributorMemberId);
+        if (it.contributorMemberId && qty > 0n) cs.add(it.contributorMemberId);
         contributorsBySession.set(it.sessionId, cs);
       }
       const aggregateBySession = new Map<
         string,
-        { itemCount: number; totalQty: number; contributors: Set<string> }
+        { itemCount: number; totalQty: bigint; contributors: Set<string> }
       >();
       for (const [sessionId, skuTotals] of skuTotalsBySession) {
         let count = 0;
-        let total = 0;
+        let total = 0n;
         for (const v of skuTotals.values()) {
-          if (v > 0) {
+          if (v > 0n) {
             count += 1;
             total += v;
           }
@@ -830,12 +838,14 @@ export const orderRouter = router({
       // to open every card just to learn whether it held 1 line or 80.
       //
       // We ship the count (already aggregated above) plus an estimated
-      // value, priced by the same avg-7d rule the detail view and the
-      // order review sheet use, so the two never disagree. One extra
-      // price-history scan for the whole page, not one per card.
+      // value. ORD-01 (2026-11-09): priced by estimateOrder
+      // (@compass/contracts), the rule the detail view and the order
+      // review sheet run too, so the card and the detail agree to the
+      // cent. One extra price-history scan for the whole page, not one per
+      // card.
       const allSkuIds = new Set<string>();
       for (const skuTotals of skuTotalsBySession.values()) {
-        for (const [skuId, qty] of skuTotals) if (qty > 0) allSkuIds.add(skuId);
+        for (const [skuId, qty] of skuTotals) if (qty > 0n) allSkuIds.add(skuId);
       }
       // D12 (2026-10-31): the card's amount only for those with
       // prices.view, like the batches list (HIS-4 / ORD-12).
@@ -856,7 +866,7 @@ export const orderRouter = router({
         estimateBySession.set(
           sessionId,
           estimateLines(
-            [...skuTotals.entries()].map(([skuId, qty]) => ({ skuId, qty })),
+            [...skuTotals.entries()].map(([skuId, qty]) => ({ skuId, qty: milliQty(qty) })),
             priceStats,
             { usual: usualPayment, storeId: storeIdBySession.get(sessionId) ?? '' },
           ),
@@ -866,15 +876,15 @@ export const orderRouter = router({
       return sessions.map((sess) => {
         const agg = aggregateBySession.get(sess.id) ?? {
           itemCount: 0,
-          totalQty: 0,
+          totalQty: 0n,
           contributors: new Set<string>(),
         };
         const est = estimateBySession.get(sess.id) ?? {
-          total: 0,
+          total: '0.00',
           known: 0,
           unknown: 0,
-          cash: 0,
-          transfer: 0,
+          cash: '0.00',
+          transfer: '0.00',
         };
         const priced = pricesVisibleFor(priceStores, [sess.storeId]);
         const store = storeById.get(sess.storeId);
@@ -906,22 +916,23 @@ export const orderRouter = router({
            *  state change. */
           previousClaimerDisplayName: prevClaimer?.displayName ?? null,
           itemCount: agg.itemCount,
-          totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
+          totalQty: milliQty(agg.totalQty),
           contributorCount: agg.contributors.size,
           /**
-           * Estimated order value (2026-07-30), avg-7d per SKU with
-           * last-price fallback — identical rule to `catalog.skuPriceStats`
-           * consumers. `estimatedKnown` / `estimatedUnknown` count the
-           * lines that could and could not be priced, so the FE can say
-           * "~450K" honestly instead of passing off a partial sum as the
-           * whole order. Null total when nothing could be priced at all.
+           * Estimated order value (2026-07-30): estimateOrder at the last
+           * price paid (ORD-01), the rule the web runs on
+           * `catalog.skuPriceStats`. `estimatedKnown` / `estimatedUnknown`
+           * count the lines that could and could not be priced, so the FE
+           * can say "~450K" honestly instead of passing off a partial sum
+           * as the whole order. Null total when nothing could be priced at
+           * all.
            */
-          estimatedTotal: priced && est.known > 0 ? est.total.toFixed(2) : null,
+          estimatedTotal: priced && est.known > 0 ? est.total : null,
           estimatedKnown: priced ? est.known : 0,
           estimatedUnknown: priced ? est.unknown : 0,
           /** The same total, split by how each product was last paid. */
-          estimatedCash: priced && est.known > 0 ? est.cash.toFixed(2) : null,
-          estimatedTransfer: priced && est.known > 0 ? est.transfer.toFixed(2) : null,
+          estimatedCash: priced && est.known > 0 ? est.cash : null,
+          estimatedTransfer: priced && est.known > 0 ? est.transfer : null,
         };
       });
     });
@@ -1173,7 +1184,13 @@ export const orderRouter = router({
           sku,
           actor: buildActor(ctx, state, effectivePerms),
           targetMemberId: input.targetMemberId,
-          correlationId: input.idempotencyKey,
+          // ORD-04 (2026-11-09): correlation_id is a uuid column. The key
+          // may be any 8-128 characters, and a key that is not a uuid
+          // failed the insert with a 500. It is still stored as the
+          // event's idempotency_key below.
+          correlationId: UuidSchema.safeParse(input.idempotencyKey).success
+            ? input.idempotencyKey
+            : undefined,
         });
         if (adjustEvents.length === 0 && collected.length === 0) {
           // No-op: existing qty equals incoming qty and no implicit start needed.

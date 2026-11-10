@@ -1,45 +1,28 @@
 import { describe, expect, test } from 'bun:test';
-import { decide } from './commands';
+import { decide, type ActorCtx, type OrderCommand } from './commands';
 import { apply, emptyState } from './state';
 import type { OrderEvent } from './events';
-import type { ActorCtx, SkuCtx } from './commands';
 import { changedByOthersSince, isPastBusinessDate } from './staleness';
 import { fixedClock } from '../shared/clock';
+import { manager, orderStepper, sku, staff } from '../testing';
 
 const clock = fixedClock(new Date('2026-10-21T10:00:00Z'));
-const sku: SkuCtx = { id: 'apple', step: '0.5', unit: 'kg', isArchived: false };
-const actor = (memberId: string, perms: string[]): ActorCtx => ({
-  userId: `user-${memberId}`,
-  memberId,
-  permissions: new Set(perms),
-  isClaimer: false,
-});
-const staffA = actor('mem-A', ['order.draft', 'order.submit']);
-const mgr = actor('mem-mgr', ['order.claim', 'order.approve']);
+const staffA = staff(undefined, 'mem-A');
+const mgr = manager();
 
-/** Run commands, collecting the appended events like the router does. */
-function run(cmds: Array<(s: ReturnType<typeof emptyState>) => Parameters<typeof decide>[1]>) {
-  let state = emptyState('sess-1');
-  const events: OrderEvent[] = [];
-  for (const mk of cmds) {
-    for (const e of decide(state, mk(state), { clock })) {
-      state = apply(state, e);
-      events.push(e);
-    }
-  }
-  return { state, events };
-}
+/** `cmds` on order sess-1, with the events they append, as the router does. */
+const run = (cmds: OrderCommand[]) => orderStepper(clock).steps(emptyState('sess-1'), cmds);
 
-const submitted = [
-  () => ({
-    type: 'StartDraft' as const,
+const submitted: OrderCommand[] = [
+  {
+    type: 'StartDraft',
     orgId: 'org-1',
     storeId: 'store-1',
     orderDate: '2026-10-21',
     actor: staffA,
-  }),
-  () => ({ type: 'AdjustItem' as const, skuId: 'apple', qty: '1', sku, actor: staffA }),
-  () => ({ type: 'Submit' as const, actor: staffA }),
+  },
+  { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: staffA },
+  { type: 'Submit', actor: staffA },
 ];
 
 describe('changedByOthersSince (CA-43 approve what you saw)', () => {
@@ -50,7 +33,7 @@ describe('changedByOthersSince (CA-43 approve what you saw)', () => {
 
   test("the approver's own claim does not count as a change", () => {
     const seen = run(submitted).state.seq;
-    const { events } = run([...submitted, () => ({ type: 'Claim' as const, actor: mgr })]);
+    const { events } = run([...submitted, { type: 'Claim', actor: mgr }]);
     expect(changedByOthersSince(events, seen, mgr.userId)).toBe(false);
   });
 
@@ -58,9 +41,9 @@ describe('changedByOthersSince (CA-43 approve what you saw)', () => {
     const seen = run(submitted).state.seq;
     const { events } = run([
       ...submitted,
-      () => ({ type: 'Withdraw' as const, actor: staffA }),
-      () => ({ type: 'AdjustItem' as const, skuId: 'apple', qty: '5', sku, actor: staffA }),
-      () => ({ type: 'Submit' as const, actor: staffA }),
+      { type: 'Withdraw', actor: staffA },
+      { type: 'AdjustItem', skuId: 'apple', qty: '5', sku: sku('apple'), actor: staffA },
+      { type: 'Submit', actor: staffA },
     ]);
     expect(changedByOthersSince(events, seen, mgr.userId)).toBe(true);
   });
@@ -73,14 +56,14 @@ describe('changedByOthersSince (CA-43 approve what you saw)', () => {
     // eventStore.readStream returns actorMemberId: null; only actorUserId
     // survives persistence. The approver's own claim must not count.
     const seen = run(submitted).state.seq;
-    const { events } = run([...submitted, () => ({ type: 'Claim' as const, actor: mgr })]);
+    const { events } = run([...submitted, { type: 'Claim', actor: mgr }]);
     const persisted = events.map((e) => ({ ...e, actorMemberId: null }));
     expect(changedByOthersSince(persisted, seen, mgr.userId)).toBe(false);
   });
 });
 
 describe('changedByOthersSince — worker timeout release + re-claim', () => {
-  const mgr2 = actor('mem-mgr2', ['order.claim', 'order.approve']);
+  const mgr2 = manager(undefined, 'mem-mgr2');
 
   /** The worker's event: no actor, reason timeout (apps/worker releaseStaleClaims). */
   const timeoutRelease = (seq: number): OrderEvent => ({
@@ -95,7 +78,7 @@ describe('changedByOthersSince — worker timeout release + re-claim', () => {
 
   /** Append `claimer`'s claim after a timeout release of `holder`'s claim. */
   function timedOut(holder: ActorCtx, claimer: ActorCtx) {
-    const claimed = run([...submitted, () => ({ type: 'Claim' as const, actor: holder })]);
+    const claimed = run([...submitted, { type: 'Claim', actor: holder }]);
     const seen = claimed.state.seq;
     const release = timeoutRelease(seen + 1);
     const state = apply(claimed.state, release);
@@ -138,7 +121,7 @@ describe('changedByOthersSince — worker timeout release + re-claim', () => {
   });
 
   test('an override release by another approver still counts', () => {
-    const claimed = run([...submitted, () => ({ type: 'Claim' as const, actor: mgr })]);
+    const claimed = run([...submitted, { type: 'Claim', actor: mgr }]);
     const seen = claimed.state.seq;
     const override = decide(
       claimed.state,

@@ -203,7 +203,8 @@ export const catalogRouter = router({
         const stats = await loadSkuPriceStats(tx, ctx.session!.orgId, input?.skuIds);
         return [...stats.values()].map((a) => ({
           skuId: a.skuId,
-          lastPrice: a.lastPrice != null ? a.lastPrice.toFixed(2) : null,
+          // Already rounded to cents (ORD-01).
+          lastPrice: a.lastPrice,
           lastObservedAt: a.lastObservedAt ? a.lastObservedAt.toISOString() : null,
           avg7d: a.avg7d != null ? a.avg7d.toFixed(2) : null,
           avg30d: a.avg30d != null ? a.avg30d.toFixed(2) : null,

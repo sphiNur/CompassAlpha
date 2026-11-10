@@ -28,23 +28,39 @@ import {
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
+import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import {
+  ORG_WIDE_PERMISSION_KEYS,
   effectiveGlobalPermissions,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
-import { isPlatformAdmin } from '../../services/platformAdmin';
+import {
+  bindingIsLive,
+  countAdminsInOrg,
+  getActorMaxGlobalRank,
+  getActorMaxRank,
+  getActorMaxRankInStore,
+  grantRefusal,
+  inviterStillAuthorized,
+  missingRoleKey as missingRoleKeyOf,
+  passesOnAnyKey,
+  roleTier,
+  type Granter,
+  type GrantRefusal,
+} from '../../services/adminAuthority';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
+import { auditChanges } from '../../services/auditChanges';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
 import { recentEventContext } from '../../services/eventContext';
+import { inTexts, inUuids } from '../../services/sqlIn';
 import { env } from '../../env';
 import {
   applyCatalogCopy,
   readCatalogSnapshot,
   type CatalogSnapshot,
 } from '../../services/catalogCopy';
-import { inviterStillAuthorized } from './auth';
 import { logger } from '../../infra/log';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
@@ -303,6 +319,26 @@ async function memberStoreIdsForAudit(tx: OrgTx, memberId: string): Promise<stri
   return [...ids];
 }
 
+/** ADM2-06: a role's name for an audit change line (null for none). */
+async function roleNameForAudit(tx: OrgTx, roleId: string | null): Promise<string | null> {
+  if (!roleId) return null;
+  const [row] = await tx.select({ name: s.roles.name }).from(s.roles).where(eq(s.roles.id, roleId));
+  return row?.name ?? null;
+}
+
+/** ADM2-06: a category's names map for an audit change line (null for none). */
+async function categoryNamesForAudit(
+  tx: OrgTx,
+  categoryId: string | null,
+): Promise<Record<string, string> | null> {
+  if (!categoryId) return null;
+  const [row] = await tx
+    .select({ names: s.categories.names })
+    .from(s.categories)
+    .where(eq(s.categories.id, categoryId));
+  return (row?.names as Record<string, string> | undefined) ?? null;
+}
+
 /** Audit rows scoped to any of `storeIds`, including a transfer's from-store. */
 function auditTouchesStores(storeIds: string[]) {
   const list = sql.join(
@@ -314,16 +350,26 @@ function auditTouchesStores(storeIds: string[]) {
     sql`(${s.policyDecisions.inputs} ->> 'fromStoreId') in (${list})`,
     // ADM-13: member actions list every store the member was in.
     sql`jsonb_exists_any(${s.policyDecisions.inputs} -> 'memberStoreIds', array[${list}]::text[])`,
+    // ADM2-05: rows about several stores (a purged run, a multi-store
+    // invite) list them all; scope_store_id holds one store at most.
+    sql`jsonb_exists_any(${s.policyDecisions.inputs} -> 'storeIds', array[${list}]::text[])`,
   );
 }
 
-async function auditAdmin(
+export async function auditAdmin(
   tx: any,
   ctx: { session?: { userId: string; orgId: string } | null },
   action: string,
   resourceType: string,
   resourceId: string | null,
   inputs: unknown,
+  /**
+   * ADM2-05 (2026-11-09): `strict` rolls the action back with the audit
+   * row, as the daily settlement does. A purge cannot be undone, so it is
+   * not done unrecorded; elsewhere the action stands and the failure is
+   * logged.
+   */
+  options: { strict?: boolean } = {},
 ): Promise<void> {
   try {
     // B19 (2026-10-30): inside a savepoint. In Postgres a failed statement
@@ -358,6 +404,7 @@ async function auditAdmin(
     });
   } catch (err) {
     logger.warn({ err, action }, 'admin audit insert failed');
+    if (options.strict) throw err;
   }
 }
 
@@ -433,143 +480,6 @@ function broadcastPeople(orgId: string): void {
  * filters share the threshold (M1.5).
  */
 const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
-
-/** A binding with an expiry in the past grants nothing. */
-function bindingIsLive() {
-  return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
-}
-
-/**
- * Active admin-rank members of the org. ADM-6 (2026-10-30): the guards
- * ask how many would be LEFT, so they pass the member or binding being
- * removed; counting the target used to refuse removing a suspended admin
- * (not counted at all) whenever only one other admin remained.
- */
-async function countAdminsInOrg(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  except: { memberId?: string; bindingId?: string } = {},
-): Promise<number> {
-  const rows = await tx
-    .select({ memberId: s.memberRoleBindings.memberId, bindingId: s.memberRoleBindings.id })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(
-      and(
-        eq(s.members.orgId, orgId),
-        eq(s.members.status, 'active'),
-        gte(s.roles.rank, ADMIN_RANK_THRESHOLD),
-        bindingIsLive(),
-      ),
-    );
-  // Distinct member ids — one member with two admin-level roles still
-  // counts as ONE admin for "last admin" purposes.
-  const distinct = new Set(
-    rows
-      .filter((r) => r.memberId !== except.memberId && r.bindingId !== except.bindingId)
-      .map((r) => r.memberId),
-  );
-  return distinct.size;
-}
-
-async function getActorMaxRank(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  actorUserId: string,
-): Promise<number> {
-  const rows = await tx
-    .select({ rank: s.roles.rank })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
-  let max = 0;
-  for (const r of rows) {
-    if (r.rank > max) max = r.rank;
-  }
-  return max;
-}
-
-/**
- * Highest rank among the actor's GLOBAL bindings only (security scan F8,
- * 2026-10-31). `getActorMaxRank` also counts store-scoped bindings, so a
- * legacy store-scoped super_admin binding outranked `admin` for an
- * org-wide grant.
- */
-async function getActorMaxGlobalRank(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  actorUserId: string,
-): Promise<number> {
-  const rows = await tx
-    .select({ rank: s.roles.rank })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(
-      and(
-        eq(s.members.orgId, orgId),
-        eq(s.members.userId, actorUserId),
-        eq(s.memberRoleBindings.scopeType, 'global'),
-        bindingIsLive(),
-      ),
-    );
-  let max = 0;
-  for (const r of rows) {
-    if (r.rank > max) max = r.rank;
-  }
-  return max;
-}
-
-/**
- * C1 (2026-05-06): per-store rank gate.
- *
- * `getActorMaxRank` returns the actor's max rank ANYWHERE in the org —
- * which silently lets a "manager of Store A" (rank 30 in A, nothing in
- * B) grant a manager-rank role bound to Store B, because the global
- * gate would see rank 30 ≥ 30 and refuse, but rank 30 < 30 succeeds…
- * wait, actually the global gate refuses correctly for SAME store.
- * The bug bites when granting INTO a different store: actor has rank
- * 30 globally (from their A binding), tries to bind manager (rank 30)
- * to Store B — gate says "30 ≥ 30, no" — correct refusal but for the
- * wrong reason. The dangerous case is the inverse: actor has rank 50
- * (some bespoke role) in Store A, tries to grant rank 40 in Store B
- * where they have ZERO authority. Global gate says "50 > 40, ok" —
- * WRONG. They had no business managing Store B.
- *
- * Rules for evaluating "actor's rank IN scope":
- *   - global bindings always count (admin/super_admin reach everywhere)
- *   - store-scoped bindings count only if scope_id == storeId
- *
- * For granting/revoking a 'global' binding, use `getActorMaxRank`
- * (unchanged). Granting a global binding is by definition org-wide and
- * the only people who should do it are themselves global admins, whose
- * global rank already gates them correctly.
- */
-async function getActorMaxRankInStore(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  actorUserId: string,
-  storeId: string,
-): Promise<number> {
-  const rows = await tx
-    .select({
-      rank: s.roles.rank,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
-  let max = 0;
-  for (const r of rows) {
-    const counts = r.scopeType === 'global' || (r.scopeType === 'store' && r.scopeId === storeId);
-    if (counts && r.rank > max) max = r.rank;
-  }
-  return max;
-}
 
 /**
  * C2 (2026-05-06): "store-scoped admins can only manage their stores".
@@ -796,7 +706,8 @@ const SUPER_ADMIN_RANK = 100;
  * Gate for suspending / reactivating a member.
  *
  *   - An org admin (global `org.admin`) may act on anyone strictly
- *     below their own org-wide rank.
+ *     below their own org-wide rank: their global bindings alone
+ *     (ADM1-01); the target counts every binding they hold.
  *   - Anyone else must administer EVERY store the target belongs to and
  *     outrank the target in each. A target with no store at all, or
  *     with a foot in a store the actor does not manage, is out of reach.
@@ -810,7 +721,7 @@ async function assertCanSetMemberStatus(
   if (await hasGlobalOrgAdmin(tx, session.memberId)) {
     const [targetRank, actorRank] = await Promise.all([
       getActorMaxRank(tx, orgId, target.userId),
-      getActorMaxRank(tx, orgId, session.userId),
+      getActorMaxGlobalRank(tx, orgId, session.userId),
     ]);
     if (targetRank >= actorRank) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
@@ -1894,20 +1805,8 @@ export const adminRouter = router({
             });
           } else {
             for (const storeId of storeIds) {
-              const actorRankInStore = await getActorMaxRankInStore(
-                tx,
-                orgId,
-                ctx.session!.userId,
-                storeId,
-              );
-              if (role.rank >= actorRankInStore) {
-                throw new TRPCError({
-                  code: 'FORBIDDEN',
-                  message: 'auth.errors.cannotGrantEqualOrHigher',
-                });
-              }
-              // D8: an invite with a role is a grant of it.
-              await assertCanPassOnRole(tx, ctx, role.id, storeId);
+              // An invite with a role is a grant of it (C1, D8).
+              await assertCanInviteIntoStore(tx, ctx, role, storeId);
               grants.push({
                 roleId: role.id,
                 rank: role.rank,
@@ -1926,14 +1825,8 @@ export const adminRouter = router({
               where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
             });
             if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
-            const actorRankInStore = await getActorMaxRankInStore(
-              tx,
-              orgId,
-              ctx.session!.userId,
-              store.id,
-            );
-            if (role.rank >= actorRankInStore) continue;
-            if (await missingRoleKey(tx, ctx, role.id, store.id)) continue;
+            const scope = { type: 'store', storeId: store.id } as const;
+            if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
             grants.push({
               roleId: role.id,
               rank: role.rank,
@@ -2019,7 +1912,13 @@ export const adminRouter = router({
       // authority are refused on accept; stop listing them as pending.
       const visible: typeof inScope = [];
       for (const r of inScope) {
-        if (await inviterStillAuthorized(tx, { orgId, invitedBy: r.invitedBy, storeIds: r.storeIds })) {
+        const invite = {
+          orgId,
+          invitedBy: r.invitedBy,
+          storeIds: r.storeIds,
+          grants: r.grants ?? [],
+        };
+        if (await inviterStillAuthorized(ctx.db, tx, invite)) {
           visible.push(r);
         }
       }
@@ -2269,20 +2168,7 @@ export const adminRouter = router({
           const globalGrant = await assertCanInviteWithRole(tx, ctx, role);
           if (!globalGrant) {
             for (const storeId of input.storeIds) {
-              const actorRankInStore = await getActorMaxRankInStore(
-                tx,
-                orgId,
-                ctx.session!.userId,
-                storeId,
-              );
-              if (role.rank >= actorRankInStore) {
-                throw new TRPCError({
-                  code: 'FORBIDDEN',
-                  message: 'auth.errors.cannotGrantEqualOrHigher',
-                });
-              }
-              // D8: the actor must hold the role's keys there too.
-              await assertCanPassOnRole(tx, ctx, role.id, storeId);
+              await assertCanInviteIntoStore(tx, ctx, role, storeId);
             }
           }
           if (role.rank >= ADMIN_RANK) {
@@ -2377,14 +2263,8 @@ export const adminRouter = router({
                 where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
               });
               if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
-              const actorRankInStore = await getActorMaxRankInStore(
-                tx,
-                orgId,
-                ctx.session!.userId,
-                store.id,
-              );
-              if (role.rank >= actorRankInStore) continue;
-              if (await missingRoleKey(tx, ctx, role.id, store.id)) continue;
+              const scope = { type: 'store', storeId: store.id } as const;
+              if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
               const existing = await tx.query.memberRoleBindings.findFirst({
                 where: (b, { eq: eq2, and: and2 }) =>
                   and2(
@@ -2464,7 +2344,7 @@ export const adminRouter = router({
           // may rename themself.
           const [targetRank, actorRank] = await Promise.all([
             getActorMaxRank(tx, orgId, member.userId),
-            getActorMaxRank(tx, orgId, ctx.session!.userId),
+            getActorMaxGlobalRank(tx, orgId, ctx.session!.userId),
           ]);
           if (actorRank < SUPER_ADMIN_RANK && targetRank >= actorRank) {
             throw new TRPCError({
@@ -3068,7 +2948,7 @@ export const adminRouter = router({
       // another admin (rank 80) by deleting the member row, which
       // cascade-drops their bindings and ends up the same as a revoke.
       const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
-      const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+      const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
       if (targetMaxRank >= actorRank && targetMaxRank > 0) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -3295,14 +3175,14 @@ export const adminRouter = router({
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+        const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (input.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
-        if (!(await exemptFromKeyCheck(ctx))) {
+        if (!(await exemptFromKeyCheck(tx, ctx))) {
           // DX-ADM-2: a role applies in every store, so only keys the
           // actor holds org-wide may go into it.
           assertHoldsKeys(
@@ -3382,7 +3262,7 @@ export const adminRouter = router({
         if (!role) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
         }
-        const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+        const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         // Rank gate — both the existing rank AND the proposed new rank
         // must be strictly below the actor's rank. Without the existing-
         // rank check, an admin (80) could "edit" super_admin (100) by
@@ -3404,6 +3284,28 @@ export const adminRouter = router({
         if (input.rank !== undefined && role.isBuiltIn && input.rank !== role.rank) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.builtinRankLocked' });
         }
+        // ADM1-02 (2026-11-09): the tier decides where a role is bound —
+        // from ADMIN_RANK up only globally, below it only in stores
+        // (grantRole). Moving a held role across it left its bindings in
+        // the wrong scope: store bindings that outranked the org admins in
+        // their store and counted as admins, or global bindings of a store
+        // role (what migration 0007 cleaned up). Every binding counts, as
+        // for roleDelete: a suspended member's comes back with them.
+        const orgTier = (rank: number) => rank >= ADMIN_RANK;
+        if (input.rank !== undefined && orgTier(input.rank) !== orgTier(role.rank)) {
+          const [held] = await tx
+            .select({ id: s.memberRoleBindings.id })
+            .from(s.memberRoleBindings)
+            .where(eq(s.memberRoleBindings.roleId, role.id))
+            .limit(1);
+          if (held) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'admin.errors.rankTierChangeHasBindings',
+              cause: { context: { rank: ADMIN_RANK } },
+            });
+          }
+        }
         const patch: Record<string, unknown> = {};
         if (input.name !== undefined) patch.name = input.name;
         if (input.description !== undefined) patch.description = input.description;
@@ -3416,7 +3318,7 @@ export const adminRouter = router({
             .from(s.rolePermissions)
             .where(eq(s.rolePermissions.roleId, role.id));
           const had = new Set(current.map((r) => r.key));
-          if (!(await exemptFromKeyCheck(ctx))) {
+          if (!(await exemptFromKeyCheck(tx, ctx))) {
             assertHoldsKeys(
               await effectiveGlobalPermissions(tx, ctx.session!.memberId),
               input.permissionKeys.filter((key) => !had.has(key)),
@@ -3471,7 +3373,7 @@ export const adminRouter = router({
             message: 'admin.errors.cannotDeleteBuiltinRole',
           });
         }
-        const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+        const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (role.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -3647,9 +3549,11 @@ export const adminRouter = router({
         }
         // Global overrides change authority across the whole organization.
         // Store managers may manage their own store, but cannot mint or
-        // alter organization-wide grants. `org.admin` itself is global-only
-        // even when cleaning up a malformed historical row.
-        if (input.permissionKey === 'org.admin' && input.scopeType !== 'global') {
+        // alter organization-wide grants. An org-wide key (`org.admin`,
+        // `dishes.manage`) is global-only even when cleaning up a malformed
+        // historical row: in one store it would count nowhere (review
+        // CONF-04).
+        if (ORG_WIDE_PERMISSION_KEYS.has(input.permissionKey) && input.scopeType !== 'global') {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'admin.errors.orgAdminMustBeGlobal',
@@ -3700,7 +3604,7 @@ export const adminRouter = router({
         const actorRank =
           input.scopeType === 'store' && input.scopeId
             ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-            : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+            : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -3716,7 +3620,7 @@ export const adminRouter = router({
           // D8: the super admin and platform admins are not limited to
           // their own keys.
           const actorHoldsKey =
-            (await exemptFromKeyCheck(ctx)) ||
+            (await exemptFromKeyCheck(tx, ctx)) ||
             (input.scopeType === 'store' && input.scopeId
               ? (
                   await effectivePermissionsForStore(
@@ -3852,7 +3756,7 @@ export const adminRouter = router({
         const actorRank =
           input.scopeType === 'store' && input.scopeId
             ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-            : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+            : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -3994,8 +3898,9 @@ export const adminRouter = router({
       // C1 (2026-05-06): rank gate — "no equal/higher grants", but
       // evaluated IN THE SCOPE the binding is being created in.
       //
-      //   - 'global' grant → use global getActorMaxRank (admin/super_admin
-      //     are themselves global, so global rank is the right yardstick).
+      //   - 'global' grant → getActorMaxGlobalRank: the actor's global
+      //     bindings alone (F8, ADM1-01). Counting their store bindings
+      //     let a legacy store-scoped super_admin grant `admin` org-wide.
       //   - 'store' grant → use getActorMaxRankInStore: a manager rank-50
       //     in Store A cannot grant rank-50 INTO Store A, AND cannot
       //     grant ANYTHING into Store B (where their effective rank is 0
@@ -4006,7 +3911,7 @@ export const adminRouter = router({
       const actorRank =
         input.scopeType === 'store' && input.scopeId
           ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-          : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+          : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
       if (role.rank >= actorRank) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -4135,6 +4040,11 @@ export const adminRouter = router({
           message: 'admin.errors.cannotRevokeSelfAdmin',
         });
       }
+      // ADM1-17 (2026-11-09): a global binding is organisation-wide
+      // authority; taking one away needs the global org admin that
+      // granting it does. A store manager outranking a legacy low-rank
+      // global binding could revoke it in every store at once.
+      if (bindingScopeType === 'global') requireOrgAdmin(ctx.session!.permissions);
       // C2 (2026-05-06): if the binding being revoked is store-scoped,
       // the actor must be admin-of-that-store. Without this gate a
       // manager-of-A could revoke a manager-of-B binding and silently
@@ -4159,7 +4069,7 @@ export const adminRouter = router({
       const actorRank =
         bindingScopeType === 'store' && bindingScopeId
           ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, bindingScopeId)
-          : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+          : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
       if (targetRank >= actorRank) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -4372,7 +4282,24 @@ export const adminRouter = router({
         tx.update(s.stores).set(patch).where(eq(s.stores.id, input.storeId)),
         'admin.errors.codeTaken',
       );
-      await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, input);
+      // ADM2-06 (2026-11-09): from what to what, not only the new values.
+      const changes = auditChanges(existing, patch, [
+        'name',
+        'code',
+        'address',
+        'timezone',
+        'isActive',
+      ]);
+      if (patch.defaultRoleId !== undefined && patch.defaultRoleId !== existing.defaultRoleId) {
+        changes.defaultRole = [
+          await roleNameForAudit(tx, existing.defaultRoleId),
+          await roleNameForAudit(tx, patch.defaultRoleId as string | null),
+        ];
+      }
+      await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, {
+        ...input,
+        changes,
+      });
       broadcastCatalog(orgId, 'store');
       return { ok: true };
     });
@@ -4538,6 +4465,7 @@ export const adminRouter = router({
             .select({
               memberId: s.memberRoleBindings.memberId,
               roleId: s.memberRoleBindings.roleId,
+              roleSlug: s.roles.slug,
               roleRank: s.roles.rank,
             })
             .from(s.memberRoleBindings)
@@ -4579,8 +4507,23 @@ export const adminRouter = router({
               })
               .onConflictDoNothing()
               .returning({ id: s.memberRoleBindings.id });
-            if (inserted.length > 0) cloned++;
-            else skippedExisting++;
+            if (inserted.length === 0) {
+              skippedExisting++;
+              continue;
+            }
+            cloned++;
+            // ADM2-07 (2026-11-09): each copied binding is a grant, and is
+            // audited as one (who got which role where), as grantRole does;
+            // the summary row below only counted them.
+            await auditAdmin(tx, ctx, 'admin.role.grant', 'member', b.memberId, {
+              roleSlug: b.roleSlug,
+              scopeType: 'store',
+              scopeId: input.targetStoreId,
+              bindingId: inserted[0]!.id,
+              roleRank: b.roleRank,
+              via: 'storeCloneRoles',
+              sourceStoreId: input.sourceStoreId,
+            });
           }
           // Also populate the target's store assignments from the source's.
           const sourceMsa = await tx
@@ -4597,7 +4540,13 @@ export const adminRouter = router({
               })
               .onConflictDoNothing()
               .returning({ memberId: s.memberStoreAssignments.memberId });
-            if (inserted.length > 0) assigned++;
+            if (inserted.length === 0) continue;
+            assigned++;
+            await auditAdmin(tx, ctx, 'admin.memberAssignStore', 'member', r.memberId, {
+              memberId: r.memberId,
+              storeId: input.targetStoreId,
+              via: 'storeCloneRoles',
+            });
           }
         }
         await auditAdmin(tx, ctx, 'admin.store.cloneRoles', 'store', input.targetStoreId, {
@@ -4691,7 +4640,10 @@ export const adminRouter = router({
           tx.update(s.categories).set(patch).where(eq(s.categories.id, input.categoryId)),
           'admin.errors.slugTaken',
         );
-        await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, input);
+        await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, {
+          ...input,
+          changes: auditChanges(existing, patch, ['slug', 'names', 'sortIndex']),
+        });
         broadcastCatalog(orgId, 'category');
         return { ok: true };
       });
@@ -4822,7 +4774,19 @@ export const adminRouter = router({
         tx.update(s.skus).set(patch).where(eq(s.skus.id, input.skuId)),
         'admin.errors.codeTaken',
       );
-      await auditAdmin(tx, ctx, 'admin.sku.update', 'sku', input.skuId, input);
+      const changes = auditChanges(
+        existing,
+        patch,
+        ['code', 'names', 'unit', 'step', 'sortIndex'],
+        ['step'],
+      );
+      if (patch.categoryId !== undefined && patch.categoryId !== existing.categoryId) {
+        changes.category = [
+          await categoryNamesForAudit(tx, existing.categoryId),
+          await categoryNamesForAudit(tx, patch.categoryId as string | null),
+        ];
+      }
+      await auditAdmin(tx, ctx, 'admin.sku.update', 'sku', input.skuId, { ...input, changes });
       broadcastCatalog(orgId, 'sku');
       return { ok: true };
     });
@@ -4930,7 +4894,16 @@ export const adminRouter = router({
         if (input.notes !== undefined) patch.notes = input.notes;
         if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
         await tx.update(s.suppliers).set(patch).where(eq(s.suppliers.id, input.supplierId));
-        await auditAdmin(tx, ctx, 'admin.supplier.update', 'supplier', input.supplierId, input);
+        await auditAdmin(tx, ctx, 'admin.supplier.update', 'supplier', input.supplierId, {
+          ...input,
+          changes: auditChanges(existing, patch, [
+            'name',
+            'contactPhone',
+            'contactTg',
+            'address',
+            'notes',
+          ]),
+        });
         broadcastCatalog(orgId, 'supplier');
         return { ok: true };
       });
@@ -5104,13 +5077,26 @@ export const adminRouter = router({
           .update(s.expenseTemplates)
           .set(patch)
           .where(eq(s.expenseTemplates.id, input.templateId));
+        const changes = auditChanges(
+          existing,
+          patch,
+          [
+            'label',
+            'unitHint',
+            'defaultQty',
+            'defaultUnitPrice',
+            'defaultPaymentMethod',
+            'sortIndex',
+          ],
+          ['defaultQty', 'defaultUnitPrice'],
+        );
         await auditAdmin(
           tx,
           ctx,
           'admin.expenseTemplate.update',
           'expenseTemplate',
           input.templateId,
-          input,
+          { ...input, changes },
         );
         broadcastCatalog(orgId, 'expenseTemplate');
         return { ok: true };
@@ -5210,6 +5196,11 @@ export const adminRouter = router({
               .where(inArray(s.users.id, userIds))
           : [];
         const userById = new Map(users.map((u) => [u.id, u]));
+        // Review ADM2-01 (2026-11-09): run payloads carry unit prices and
+        // expense amounts. They are returned as stored only to a reader
+        // who may price every store; anyone else gets them nulled, as on
+        // the run page. (The feed itself shows none of them.)
+        const showMoney = (await priceStoreIds(tx, ctx.session!)) === null;
         return rows.map((r) => ({
           id: r.id,
           streamId: r.streamId,
@@ -5218,7 +5209,7 @@ export const adminRouter = router({
           type: r.type,
           actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
           occurredAt: r.occurredAt.toISOString(),
-          payload: r.payload as unknown,
+          payload: showMoney ? (r.payload as unknown) : withoutPrices(r.payload as unknown),
           context: context.get(r.id) ?? null,
         }));
       });
@@ -5609,7 +5600,15 @@ export const adminRouter = router({
         // CAT-5 (2026-10-30): the admin audit (domain.policy_decisions)
         // stays, as this procedure's contract says; it used to be wiped
         // with everything else. The purge itself is recorded in it.
-        await auditAdmin(tx, ctx, 'admin.purge.all', 'org', orgId, { total, byTable: counts });
+        await auditAdmin(
+          tx,
+          ctx,
+          'admin.purge.all',
+          'org',
+          orgId,
+          { total, byTable: counts },
+          { strict: true },
+        );
 
         broadcastPurged(orgId, [], []);
         return { dryRun: false, total, byTable: counts, orgSlug: org.slug };
@@ -5737,25 +5736,25 @@ export const adminRouter = router({
       if (sessionIds.length > 0) {
         const r = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-                WHERE session_id IN ${sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE session_id IN ${inUuids(sessionIds)}`,
         );
         counts['read_model.order_items_v'] = (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
       }
       if (runIds.length > 0) {
         const r1 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.run_items_v
-                WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE run_id IN ${inUuids(runIds)}`,
         );
         counts['read_model.run_items_v'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r2 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
-                WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE run_id IN ${inUuids(runIds)}`,
         );
         counts['read_model.run_item_stores_v'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r3 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM inventory.price_history
                 WHERE org_id = ${orgId}
-                  AND run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                  AND run_id IN ${inUuids(runIds)}`,
         );
         counts['inventory.price_history'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r4 = await tx.execute(
@@ -5767,7 +5766,7 @@ export const adminRouter = router({
         // the preview matches what is deleted.
         const r5 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM read_model.run_expenses_v
-                WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE run_id IN ${inUuids(runIds)}`,
         );
         counts['read_model.run_expenses_v'] = (r5 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
       }
@@ -5775,12 +5774,12 @@ export const adminRouter = router({
         const r1 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM domain.events
                 WHERE org_id = ${orgId}
-                  AND stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}`,
+                  AND stream_id IN ${inUuids(allStreamIds)}`,
         );
         counts['domain.events'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r2 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM domain.snapshots
-                WHERE stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}`,
+                WHERE stream_id IN ${inUuids(allStreamIds)}`,
         );
         counts['domain.snapshots'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r3 = await tx.execute(
@@ -5793,8 +5792,8 @@ export const adminRouter = router({
           sql`SELECT count(*)::int AS n FROM ops.notifications
                 WHERE org_id = ${orgId}
                   AND (
-                    payload->>'sessionId' IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
-                    OR payload->>'runId' IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
+                    payload->>'sessionId' IN ${inTexts(allStreamIds)}
+                    OR payload->>'runId' IN ${inTexts(allStreamIds)}
                   )`,
         );
         counts['ops.notifications'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
@@ -5808,7 +5807,7 @@ export const adminRouter = router({
 
       // Commit pass — same id sets, dependency-safe order.
       if (runIds.length > 0) {
-        const inRuns = sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`);
+        const inRuns = inUuids(runIds);
         await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`);
         await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id IN ${inRuns}`);
         await tx.execute(
@@ -5822,7 +5821,7 @@ export const adminRouter = router({
         );
       }
       if (sessionIds.length > 0) {
-        const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
+        const inSessions = inUuids(sessionIds);
         await tx.execute(
           sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`,
         );
@@ -5832,14 +5831,15 @@ export const adminRouter = router({
         );
       }
       if (allStreamIds.length > 0) {
-        const inStreams = sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`);
+        const inStreams = inUuids(allStreamIds);
+        const inStreamTexts = inTexts(allStreamIds);
         // Notifications first (cheap; doesn't depend on events).
         await tx.execute(
           sql`DELETE FROM ops.notifications
                 WHERE org_id = ${orgId}
                   AND (
-                    payload->>'sessionId' IN ${inStreams}
-                    OR payload->>'runId' IN ${inStreams}
+                    payload->>'sessionId' IN ${inStreamTexts}
+                    OR payload->>'runId' IN ${inStreamTexts}
                   )`,
         );
         // Outbox before events (event_id FK).
@@ -5870,13 +5870,15 @@ export const adminRouter = router({
           ),
         );
 
-      await auditAdmin(tx, ctx, 'admin.purge.date', 'org', orgId, {
-        date,
-        total,
-        byTable: counts,
-        sessionIds,
-        runIds,
-      });
+      await auditAdmin(
+        tx,
+        ctx,
+        'admin.purge.date',
+        'org',
+        orgId,
+        { date, total, byTable: counts, sessionIds, runIds },
+        { strict: true },
+      );
       broadcastPurged(orgId, sessionIds, runIds);
       return { dryRun: false, total, byTable: counts, date, scope };
     });
@@ -6436,10 +6438,26 @@ export const adminRouter = router({
         };
       }
       await deleteSessionCascade(tx, orgId, input.sessionId);
-      await auditAdmin(tx, ctx, 'admin.purge.session', 'session', input.sessionId, {
-        ...input,
-        byTable: counts,
-      });
+      // ADM2-05 (2026-11-09): what went, while it can still be read — the
+      // store (which also shows the row to that store's admins), the day,
+      // the status and whose order it was. Ids alone named nothing once
+      // the rows were gone.
+      await auditAdmin(
+        tx,
+        ctx,
+        'admin.purge.session',
+        'session',
+        input.sessionId,
+        {
+          ...input,
+          byTable: counts,
+          storeId: session.storeId,
+          orderDate: session.orderDate,
+          status: session.status,
+          memberId: session.initiatedByMemberId ?? session.submittedByMemberId,
+        },
+        { strict: true },
+      );
       broadcastPurged(orgId, [input.sessionId], []);
       return {
         dryRun: false,
@@ -6511,12 +6529,36 @@ export const adminRouter = router({
           sessionIds,
         };
       }
+      // ADM2-05 (2026-11-09): the run's day and number, its purchaser and
+      // the stores whose orders it held, read before they are deleted.
+      const runStores =
+        sessionIds.length > 0
+          ? await tx
+              .selectDistinct({ storeId: s.orderSessionsV.storeId })
+              .from(s.orderSessionsV)
+              .where(
+                and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
+              )
+          : [];
       await deleteRunCascade(tx, orgId, input.runId, sessionIds);
-      await auditAdmin(tx, ctx, 'admin.purge.run', 'run', input.runId, {
-        ...input,
-        sessionIds,
-        byTable: counts,
-      });
+      await auditAdmin(
+        tx,
+        ctx,
+        'admin.purge.run',
+        'run',
+        input.runId,
+        {
+          ...input,
+          sessionIds,
+          byTable: counts,
+          runDate: run.runDate,
+          runIndex: run.runIndex,
+          status: run.status,
+          storeIds: runStores.map((r) => r.storeId),
+          memberId: run.purchaserMemberId,
+        },
+        { strict: true },
+      );
       broadcastPurged(orgId, sessionIds, [input.runId]);
       return {
         dryRun: false,
@@ -6623,31 +6665,20 @@ export function outboxOfOrg(orgId: string): ReturnType<typeof sql> {
  */
 export function outboxOfStreams(orgId: string, streamIds: string[]): ReturnType<typeof sql> {
   if (streamIds.length === 0) return sql`false`;
-  const uuids = sql.join(
-    streamIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  const texts = sql.join(
-    streamIds.map((id) => sql`${id}::text`),
-    sql`, `,
-  );
+  const texts = inTexts(streamIds);
   return sql`(event_id IN (
-      SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN (${uuids})
+      SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inUuids(streamIds)}
     )
     OR (aggregate = 'notification' AND payload->>'orgId' = ${orgId}
-      AND (payload->'extra'->>'sessionId' IN (${texts})
-        OR payload->'extra'->>'runId' IN (${texts}))))`;
+      AND (payload->'extra'->>'sessionId' IN ${texts}
+        OR payload->'extra'->>'runId' IN ${texts})))`;
 }
 
 /** 2026-10-21 audit CA-28 (D-08): stock movements written for these runs. */
 export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof sql> {
   if (runIds.length === 0) return sql`false`;
-  const ids = sql.join(
-    runIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
   // DLV-3: corrections of a finished run book 'run_amend' rows too.
-  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN (${ids}))`;
+  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN ${inUuids(runIds)})`;
 }
 
 // ---------- session/run cascade helpers ----------
@@ -6842,55 +6873,43 @@ function assertHoldsKeys(perms: ReadonlySet<string>, keys: Iterable<string>): vo
   }
 }
 
-/**
- * D8 / RE-ADM-10 (2026-10-31): the workspace's super admin and platform
- * administrators may pass on keys they do not hold themselves; everyone
- * else only what they have.
- */
-async function exemptFromKeyCheck(ctx: AdminCtx): Promise<boolean> {
-  if (ctx.session!.roleSlugs.has('super_admin')) return true;
-  return isPlatformAdmin(ctx.db, ctx.session!.userId);
+/** The signed-in actor, as the grant rules in services/adminAuthority take them. */
+function granterOf(ctx: AdminCtx): Granter {
+  return {
+    orgId: ctx.session!.orgId,
+    memberId: ctx.session!.memberId,
+    userId: ctx.session!.userId,
+  };
 }
 
 /**
- * D8 / RE-ADM-10 (2026-10-31): granting a role hands over every key in
- * it, so the actor must hold each of them where the binding applies (a
- * store's effective set for a store binding, the org-wide set for a
- * global one). The rank gate alone let an admin grant a custom rank-70 role
- * carrying super-admin keys. Returns the first missing key, or null.
- *
- * Built-in roles keep the rank rule alone: their keys are fixed by the
- * seed, and a store manager inviting a purchaser (whose run.* keys the
- * manager does not hold) is a live workflow.
+ * D8 / RE-ADM-10 (2026-10-31): the workspace's super admin and platform
+ * administrators may pass on keys they do not hold themselves; everyone
+ * else only what they have (passesOnAnyKey).
  */
-async function missingRoleKey(
+function exemptFromKeyCheck(tx: OrgTx, ctx: AdminCtx): Promise<boolean> {
+  return passesOnAnyKey(ctx.db, tx, granterOf(ctx));
+}
+
+/** D8 for the signed-in actor: the first key of the role they lack there, or null. */
+function missingRoleKey(
   tx: OrgTx,
   ctx: AdminCtx,
   roleId: string,
   storeId: string | null,
 ): Promise<string | null> {
-  if (await exemptFromKeyCheck(ctx)) return null;
-  const [role] = await tx
-    .select({ isBuiltIn: s.roles.isBuiltIn })
-    .from(s.roles)
-    .where(eq(s.roles.id, roleId));
-  if (!role || role.isBuiltIn) return null;
-  const rows = await tx
-    .select({ key: s.rolePermissions.permissionKey })
-    .from(s.rolePermissions)
-    .where(eq(s.rolePermissions.roleId, roleId));
-  if (rows.length === 0) return null;
-  // DX-ADM-2: a global binding applies in every store, so it is checked
-  // against the keys the actor holds org-wide, not the flat session set.
-  const held = storeId
-    ? await effectivePermissionsForStore(
-        tx,
-        ctx.session!.memberId,
-        storeId,
-        ctx.session!.permissions,
-      )
-    : await effectiveGlobalPermissions(tx, ctx.session!.memberId);
-  return rows.find((r) => !held.has(r.key))?.key ?? null;
+  return missingRoleKeyOf(ctx.db, tx, granterOf(ctx), roleId, storeId);
+}
+
+function throwRefusal(refusal: GrantRefusal | null): void {
+  if (!refusal) return;
+  throw new TRPCError({
+    code: refusal.code,
+    message: refusal.message,
+    ...(refusal.missingPermission
+      ? { cause: { missingPermission: refusal.missingPermission } }
+      : {}),
+  });
 }
 
 /**
@@ -6906,24 +6925,28 @@ async function assertCanInviteWithRole(
   ctx: AdminCtx,
   role: { id: string; rank: number },
 ): Promise<boolean> {
-  const carriesOrgAdmin = !!(await tx.query.rolePermissions.findFirst({
-    where: (rp, { eq: eq2, and: and2 }) =>
-      and2(eq2(rp.roleId, role.id), eq2(rp.permissionKey, 'org.admin')),
-  }));
-  if (role.rank < ADMIN_RANK) {
-    if (carriesOrgAdmin) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.orgAdminMustBeGlobal' });
-    }
-    return false;
+  const tier = await roleTier(tx, role);
+  if (tier === 'invalid') {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.orgAdminMustBeGlobal' });
   }
+  if (tier === 'store') return false;
   requireOrgAdmin(ctx.session!.permissions);
-  if (!(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) requireOrgAdmin(new Set());
-  const actorRank = await getActorMaxGlobalRank(tx, ctx.session!.orgId, ctx.session!.userId);
-  if (role.rank >= actorRank) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotGrantEqualOrHigher' });
-  }
-  await assertCanPassOnRole(tx, ctx, role.id, null);
+  throwRefusal(await grantRefusal(ctx.db, tx, granterOf(ctx), role, { type: 'global' }));
   return true;
+}
+
+/**
+ * The store half of an invite's grant (C1, D8): the actor outranks the
+ * role in that store and holds its keys there. The same rule decides
+ * again when the link is opened (inviterStillAuthorized).
+ */
+async function assertCanInviteIntoStore(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  role: { id: string; rank: number },
+  storeId: string,
+): Promise<void> {
+  throwRefusal(await grantRefusal(ctx.db, tx, granterOf(ctx), role, { type: 'store', storeId }));
 }
 
 /**
@@ -6947,7 +6970,7 @@ async function rolePassOnScopes(
   const out = new Map<string, { global: boolean; storeIds: string[] }>();
   const everywhere = () => ({ global: true, storeIds: [...storeIds] });
   const custom = roles.filter((r) => !r.isBuiltIn);
-  const exempt = custom.length === 0 || (await exemptFromKeyCheck(ctx));
+  const exempt = custom.length === 0 || (await exemptFromKeyCheck(tx, ctx));
   const keysByRole = new Map<string, string[]>();
   if (!exempt) {
     const rows = await tx
@@ -7132,32 +7155,31 @@ async function countRunCascade(
   );
   // All streams = run + all attached sessions.
   const allStreams = [runId, ...sessionIds];
-  if (allStreams.length > 0) {
-    const inStreams = sql.raw(`(${allStreams.map((id) => `'${id}'`).join(',')})`);
-    await exec(
-      'domain.events',
-      sql`SELECT count(*)::int AS n FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-    );
-    await exec(
-      'domain.snapshots',
-      sql`SELECT count(*)::int AS n FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
-    );
-    await exec(
-      'sync.outbox',
-      sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`,
-    );
-    await exec(
-      'ops.notifications',
-      sql`SELECT count(*)::int AS n FROM ops.notifications
-          WHERE org_id = ${orgId}
-            AND (payload->>'sessionId' IN ${inStreams} OR payload->>'runId' IN ${inStreams})`,
-    );
-    await exec(
-      'read_model.order_items_v',
-      sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-          WHERE session_id IN ${sessionIds.length > 0 ? sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`) : sql.raw(`('00000000-0000-0000-0000-000000000000')`)}`,
-    );
-  }
+  const inStreams = inUuids(allStreams);
+  const inStreamTexts = inTexts(allStreams);
+  await exec(
+    'domain.events',
+    sql`SELECT count(*)::int AS n FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
+  );
+  await exec(
+    'domain.snapshots',
+    sql`SELECT count(*)::int AS n FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
+  );
+  await exec(
+    'sync.outbox',
+    sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`,
+  );
+  await exec(
+    'ops.notifications',
+    sql`SELECT count(*)::int AS n FROM ops.notifications
+        WHERE org_id = ${orgId}
+          AND (payload->>'sessionId' IN ${inStreamTexts} OR payload->>'runId' IN ${inStreamTexts})`,
+  );
+  await exec(
+    'read_model.order_items_v',
+    sql`SELECT count(*)::int AS n FROM read_model.order_items_v
+        WHERE session_id IN ${inUuids(sessionIds)}`,
+  );
   return c;
 }
 
@@ -7169,20 +7191,19 @@ async function deleteRunCascade(
 ): Promise<void> {
   const allStreams = [runId, ...sessionIds];
   // Notifications first.
-  if (allStreams.length > 0) {
-    const inStreams = sql.raw(`(${allStreams.map((id) => `'${id}'`).join(',')})`);
-    await tx.execute(
-      sql`DELETE FROM ops.notifications
-          WHERE org_id = ${orgId}
-            AND (payload->>'sessionId' IN ${inStreams} OR payload->>'runId' IN ${inStreams})`,
-    );
-    await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
-    await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
-    await allowEventPurge(tx);
-    await tx.execute(
-      sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-    );
-  }
+  const inStreams = inUuids(allStreams);
+  const inStreamTexts = inTexts(allStreams);
+  await tx.execute(
+    sql`DELETE FROM ops.notifications
+        WHERE org_id = ${orgId}
+          AND (payload->>'sessionId' IN ${inStreamTexts} OR payload->>'runId' IN ${inStreamTexts})`,
+  );
+  await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
+  await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
+  await allowEventPurge(tx);
+  await tx.execute(
+    sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
+  );
   // Run-side projections.
   await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id = ${runId}`);
   await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id = ${runId}`);
@@ -7195,7 +7216,7 @@ async function deleteRunCascade(
   );
   // Session-side projections (attached sessions).
   if (sessionIds.length > 0) {
-    const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
+    const inSessions = inUuids(sessionIds);
     await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`);
     await tx.execute(
       sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id IN ${inSessions}`,

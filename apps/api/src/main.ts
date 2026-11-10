@@ -18,13 +18,18 @@ import { createApp } from './app';
 import { logger } from './infra/log';
 import { getDb, closeDb, inSystem, unprobed } from '@compass/db';
 import { verifyAccess } from './infra/jwt';
-import { hub } from './realtime/hub';
+import { hub, WS_CLOSE_GOING_AWAY } from './realtime/hub';
 import { relayDatabaseNotices } from './realtime/dbRelay';
 import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
 import { scanAttendanceReminders } from './services/attendanceReminders';
 import { purgeOldAttendancePhotos, purgeOldFramePrints } from './services/attendancePhotoRetention';
 import { trustedClientIp } from './services/clientIp';
 import { loadSession } from './trpc/context';
+import { every, settlesWithin } from './infra/periodic';
+
+/** How long shutdown waits for requests and jobs in flight. */
+const SHUTDOWN_GRACE_MS = 10_000;
+const ATTENDANCE_JOB_MS = 5 * 60_000;
 
 async function main() {
   const db = getDb(env.DATABASE_URL);
@@ -100,32 +105,67 @@ async function main() {
 
   // 2026-11-05: attendance reminders (forgot to clock in / out, absent →
   // managers). Each is deduped per shift, so a missed or doubled tick is
-  // harmless.
-  let scanningAttendance = false;
-  const attendanceInterval = setInterval(() => {
-    if (scanningAttendance) return;
-    scanningAttendance = true;
-    scanAttendanceReminders(db)
-      .then(async (sent) => {
+  // harmless. COREAPI-13 (2026-11-09): the photo and frame-print retention
+  // ran after the scan and was skipped whenever the scan failed; each is
+  // now a job of its own (infra/periodic.ts).
+  const jobs = [
+    every(
+      'attendance reminders',
+      ATTENDANCE_JOB_MS,
+      async () => {
+        const sent = await scanAttendanceReminders(db, new Date(), {
+          onShiftError: (shiftId, err) =>
+            logger.warn({ err, shiftId }, 'attendance reminder failed'),
+        });
         if (sent > 0) logger.info({ sent }, 'attendance reminders');
+      },
+      logger,
+    ),
+    every(
+      'attendance photo retention',
+      ATTENDANCE_JOB_MS,
+      async () => {
         const purged = await purgeOldAttendancePhotos(db);
         if (purged > 0) logger.info({ purged }, 'old attendance photos deleted');
+      },
+      logger,
+    ),
+    every(
+      'attendance frame-print retention',
+      ATTENDANCE_JOB_MS,
+      async () => {
         const prints = await purgeOldFramePrints(db);
         if (prints > 0) logger.info({ prints }, 'old attendance frame prints deleted');
-      })
-      .catch((err: unknown) => logger.warn({ err }, 'attendance reminder scan failed'))
-      .finally(() => {
-        scanningAttendance = false;
-      });
-  }, 5 * 60_000);
-  attendanceInterval.unref?.();
+      },
+      logger,
+    ),
+  ];
 
   logger.info({ port: server.port, host: env.HOST }, 'API listening');
 
+  // COREAPI-14 (2026-11-09): shutdown cut every connection at once and
+  // closed the database under the requests still running, so a write
+  // could commit without its idempotency record (the app's retry then hit
+  // requestInFlight for a minute). Now: stop taking connections, close
+  // the sockets (Bun's graceful stop waits for them too; clients
+  // reconnect, to the new process on a deploy), let requests and jobs in
+  // flight finish, and only then cut what is left and close the database.
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info({ signal }, 'Shutting down');
     clearInterval(pingInterval);
-    server.stop(true);
+    const drained = server.stop();
+    hub.closeAll(WS_CLOSE_GOING_AWAY);
+    const settled = await settlesWithin(
+      Promise.all([drained, ...jobs.map((job) => job.stop())]),
+      SHUTDOWN_GRACE_MS,
+    );
+    if (!settled) {
+      logger.warn({ graceMs: SHUTDOWN_GRACE_MS }, 'work still running at shutdown; cutting it');
+      await server.stop(true);
+    }
     await closeDb();
     process.exit(0);
   };

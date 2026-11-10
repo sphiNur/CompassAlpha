@@ -117,7 +117,7 @@ export function daysOld(date: string, today: string | null): number {
   return Math.max(0, Math.round((b - a) / 86_400_000));
 }
 
-type PreviewShape = {
+export type PreviewShape = {
   sessions: ReadonlyArray<SelectableSession & { notes?: string | null }>;
   plannedItems: ReadonlyArray<{ skuId: string; qty: string }>;
   perStoreDemand: ReadonlyArray<{ storeId: string; storeName: string; skuId: string; qty: string }>;

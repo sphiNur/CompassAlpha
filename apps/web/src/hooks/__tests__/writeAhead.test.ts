@@ -42,20 +42,39 @@ describe('sendWriteAhead', () => {
 
   it('a network failure leaves the entry queued (and no longer live)', async () => {
     const store = fakeStore();
-    let queued: boolean | null = null;
+    const queued: boolean[] = [];
     const err = await sendWriteAhead(
       'order.adjustItem',
       { qty: '1' },
       () => Promise.reject(new TypeError('Failed to fetch')),
       undefined,
-      (q) => (queued = q),
+      (q) => queued.push(q),
       store,
     ).catch((e) => e);
     expect(err).toBeInstanceOf(TypeError);
-    expect(queued).toBe(true);
+    expect(queued).toEqual([true]);
     const [entry] = [...store.rows.values()];
     expect(entry).toBeDefined();
     expect(isLiveEntry(entry!.clientSeq)).toBe(false);
+  });
+
+  it('a refused session leaves the entry queued too, as the replay does (COREWEB2-02)', async () => {
+    const store = fakeStore();
+    const queued: boolean[] = [];
+    const signedOut = Object.assign(new Error('auth.errors.required'), {
+      data: { code: 'UNAUTHORIZED' },
+    });
+    const err = await sendWriteAhead(
+      'order.adjustItem',
+      { qty: '3' },
+      () => Promise.reject(signedOut),
+      undefined,
+      (q) => queued.push(q),
+      store,
+    ).catch((e) => e);
+    expect(err).toBe(signedOut);
+    expect(queued).toEqual([true]);
+    expect([...store.rows.values()].map((e) => e.input)).toEqual([{ qty: '3' }]);
   });
 
   it('a server rejection removes the entry and is rethrown', async () => {

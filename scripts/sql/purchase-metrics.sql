@@ -1,6 +1,6 @@
 -- Purchasing baseline, from the event log (read-only).
 -- How long a purchase trip takes, how fast prices get entered, how often
--- an entry is corrected. Used to judge the purchaser-screen redesign:
+-- an entry is corrected. Used to judge changes to the purchaser screen:
 -- run before and after, per org. Times are wall clock between events, so
 -- a gap includes walking between stalls — compare medians, not means.
 --

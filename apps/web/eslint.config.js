@@ -24,12 +24,6 @@ export default [
       '.vite/**',
       '.turbo/**',
       'node_modules/**',
-      // public/ is vanilla browser JS served at /public/* paths.
-      // It uses runtime browser globals (window, document, etc.) and
-      // has no module system. The build copies it into dist as-is.
-      // Lint with a browser-globals config separately if we ever
-      // want to enforce style on these files.
-      'public/**',
       // ESLint can't parse these as ES modules even with --no-warn-ignored;
       // exclude declaratively so we never try.
       'vite.config.ts.timestamp-*',
@@ -42,6 +36,39 @@ export default [
   // 3) TypeScript recommended rules. typescript-eslint's flat preset
   //    auto-detects .ts/.tsx and applies the right parser.
   ...tseslint.configs.recommended,
+
+  // 3b) public/: plain scripts the build copies as they are. boot-guard.js
+  //     runs before (and without) the app bundle, sw.js is the service
+  //     worker. COREWEB1-01 (2026-11-09): they used to be ignored, so a
+  //     mistake in the one script that must work when nothing else does
+  //     was caught by no one.
+  {
+    files: ['public/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2017,
+      sourceType: 'script',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        navigator: 'readonly',
+        location: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        // sw.js
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        Response: 'readonly',
+        URL: 'readonly',
+      },
+    },
+    rules: {
+      // `catch (_)`: these scripts keep the ES5 form for old WebViews.
+      '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }],
+    },
+  },
 
   // 4) Project overrides — turn down rules that bite the existing
   //    codebase without fixing real bugs, turn up the ones that

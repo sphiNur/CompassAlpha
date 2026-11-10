@@ -68,6 +68,20 @@ describe('punch outcome', () => {
     expect(punchOutcome(refused('attendance.errors.identifyIsOwner'), null).next).toBe('forSelf');
   });
 
+  test('a failed live check says which part failed (I18N1-01)', () => {
+    // A blink or an open mouth not seen: do the moves.
+    expect(
+      punchOutcome(refused('attendance.errors.livenessFailed', { failures: 'blink' }), 'in'),
+    ).toEqual({ next: 'retry', key: 'attendance.errors.livenessFailed' });
+    // The moves were seen, but not on this face.
+    const other = punchOutcome(
+      refused('attendance.errors.livenessFailed', { failures: 'otherPerson' }),
+      'in',
+    );
+    expect(other).toEqual({ next: 'retry', key: 'attendance.errors.livenessOtherFace' });
+    expect(refusalHint('attendance.errors.livenessOtherFace')).toBe('attendance.face.refusedBody');
+  });
+
   test('consent and enrollment go to their own sheets', () => {
     expect(punchOutcome(refused('attendance.errors.consentRequired'), 'in').next).toBe('consent');
     expect(punchOutcome(refused('attendance.errors.faceNotEnrolled'), 'in').next).toBe('enroll');

@@ -5,56 +5,12 @@
  * PG-gated like the other router tests.
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import type { RequestContext } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
 
 let ctx: RequestContext | null = null;
 let codes: string[] = [];
@@ -69,7 +25,7 @@ beforeAll(async () => {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Reader', tgUserId: BigInt(`7${Date.now()}3`.slice(-12)) })
+    .values({ displayName: 'Reader', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)
@@ -94,7 +50,7 @@ beforeAll(async () => {
     })),
   );
   codes = [`Z-${suffix}`, `B-${suffix}`, `C-${suffix}`, `A-${suffix}`];
-  ctx = buildCtx(db, {
+  ctx = testContext({
     userId: user!.id,
     memberId: member!.id,
     orgId: org!.id,

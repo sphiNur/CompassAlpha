@@ -13,6 +13,7 @@ export class QtyDrafts {
   private drafts = new Map<string, number>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private saving = new Set<string>();
+  private inflight = new Set<Promise<unknown>>();
 
   constructor(
     private readonly send: (key: string, value: number) => Promise<unknown>,
@@ -55,9 +56,12 @@ export class QtyDrafts {
     if (value === undefined) return;
     this.saving.add(key);
     this.onChange();
+    const sent = this.send(key, value);
+    this.inflight.add(sent);
     try {
-      await this.send(key, value);
+      await sent;
     } finally {
+      this.inflight.delete(sent);
       this.saving.delete(key);
       // A newer tap made while this was saving keeps its own draft.
       if (!this.timers.has(key) && this.drafts.get(key) === value) this.drafts.delete(key);
@@ -65,8 +69,24 @@ export class QtyDrafts {
     }
   }
 
-  dispose(): void {
-    for (const t of this.timers.values()) clearTimeout(t);
-    this.timers.clear();
+  /** Send every row still waiting (the page is going away). */
+  flushAll(): Promise<void> {
+    return Promise.allSettled([...this.timers.keys()].map((key) => this.flush(key))).then(
+      () => undefined,
+    );
+  }
+
+  /**
+   * The card is going away: collapsed, another tab, the app closing.
+   *
+   * Review ORD-02 (2026-11-09): this used to cancel the timers, so a tap
+   * made just before collapsing was never sent, and 「通过」 unlocked on
+   * the old number. The taps still waiting are sent now; the promise
+   * settles once they and any write already in flight are answered, so
+   * the caller can keep 「通过」 held until then.
+   */
+  dispose(): Promise<void> {
+    const waiting = [...this.timers.keys()].map((key) => this.flush(key));
+    return Promise.allSettled([...waiting, ...this.inflight]).then(() => undefined);
   }
 }

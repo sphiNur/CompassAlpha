@@ -96,6 +96,9 @@ export function punchOutcome(err: unknown, attempted: PunchKind | null): PunchOu
       return { next: 'stop', key, vars };
     }
   }
+  // I18N1-01: the blink and the open mouth matched, but not this face.
+  if (key === 'attendance.errors.livenessFailed' && vars.failures === 'otherPerson')
+    return { next: 'retry', key: 'attendance.errors.livenessOtherFace' };
   if (FACE_REFUSALS.has(key)) return { next: 'retry', key };
   return { next: 'stop', key, vars };
 }
@@ -105,6 +108,7 @@ export function refusalHint(key: string): string | null {
   if (key === 'attendance.errors.notRecognized') return 'attendance.punch.notRecognizedHint';
   if (
     key === 'attendance.errors.livenessFailed' ||
+    key === 'attendance.errors.livenessOtherFace' ||
     key === 'attendance.errors.faceMismatch' ||
     key === 'attendance.errors.faceNotFound' ||
     key === 'attendance.errors.photoReused' ||

@@ -8,6 +8,9 @@
  *                                                        # SKU/category whose
  *                                                        # code/slug isn't in
  *                                                        # the new catalog
+ *   bun run packages/db/src/import-catalog.ts --apply --update-existing
+ *                                                        # also overwrite rows
+ *                                                        # that differ from it
  *
  * Lives under packages/db/src so it picks up the package's drizzle-orm
  * dependency (the root scripts/ folder has no node_modules).
@@ -22,6 +25,13 @@
  * Idempotent. Re-runs after a successful apply do nothing (no inserts,
  * no updates) unless catalog-uzbek.ts has changed.
  *
+ * DB-04 (2026-11-09): rows already there are the tenant's. By default only
+ * missing rows are added; rows that differ are listed, and overwritten only
+ * with --update-existing. An update never un-archives a row an admin
+ * archived. Steps compare as numbers ('1.000' from the database is '1')
+ * and names as JSON with sorted keys (jsonb reorders them), so a re-run
+ * finds nothing to do. --apply writes in one transaction.
+ *
  * Targets the org with `slug='default'` (the only org in v1).
  *
  * SAFETY:
@@ -30,37 +40,30 @@
  *   - prints a final summary of insert/update/archive counts so you can
  *     sanity-check before exiting
  */
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { eq, and, inArray } from 'drizzle-orm';
 import { getDb, closeDb, schema as s } from './index';
 import { printable } from './printable';
 import { CATEGORIES, SKUS } from './catalog-uzbek';
+import { loadRepoEnv } from './repoEnv';
 
-(function loadRootEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line.slice(idx + 1).trim().replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+loadRepoEnv(import.meta.url);
 
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply');
 const ARCHIVE_OLD = args.has('--archive-old');
+const UPDATE_EXISTING = args.has('--update-existing');
+
+/** JSON with object keys sorted, so two jsonb values compare by content. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)),
+        )
+      : v,
+  );
+}
+const sameJson = (a: unknown, b: unknown) => canonical(a ?? {}) === canonical(b ?? {});
 
 // --- ANSI colors (zero deps) -------------------------------------------------
 const c = {
@@ -80,6 +83,7 @@ async function main() {
   console.log(c.bold('CompassAlpha — real-catalog import'));
   console.log(c.dim(`  mode: ${APPLY ? 'APPLY' : 'DRY-RUN (no writes)'}`));
   console.log(c.dim(`  archive-old: ${ARCHIVE_OLD ? 'yes' : 'no'}`));
+  console.log(c.dim(`  update-existing: ${UPDATE_EXISTING ? 'yes' : 'no'}`));
   console.log(c.dim(`  source: packages/db/src/catalog-uzbek.ts`));
   console.log(c.dim(`  cats: ${CATEGORIES.length} · skus: ${SKUS.length}`));
 
@@ -93,6 +97,15 @@ async function main() {
   const orgId = org.id;
   console.log(c.dim(`  org: ${printable(org.name)} (${orgId})`));
 
+  // One transaction: a failure part way leaves the catalog as it was. A
+  // dry run only reads.
+  await db.transaction((tx) => importInto(tx, orgId));
+  await closeDb();
+}
+
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
+
+async function importInto(db: Tx, orgId: string) {
   // --- Diff categories ------------------------------------------------------
   step('Categories — diffing against DB');
   const dbCats = await db.query.categories.findMany({
@@ -110,11 +123,10 @@ async function main() {
     if (!have) {
       catInsert.push(want);
     } else {
-      const namesMatch = JSON.stringify(have.names) === JSON.stringify(want.names);
+      const namesMatch = sameJson(have.names, want.names);
       const sortMatch = have.sortIndex === want.sortIndex;
       const iconMatch = (have.icon ?? null) === (want.icon ?? null);
-      const archMatch = have.isArchived === false;
-      if (!(namesMatch && sortMatch && iconMatch && archMatch)) {
+      if (!(namesMatch && sortMatch && iconMatch)) {
         catUpdate.push(want);
       }
     }
@@ -127,7 +139,9 @@ async function main() {
     }
   }
   console.log(`  ${c.green('+')} insert: ${catInsert.length}`);
-  console.log(`  ${c.yellow('~')} update: ${catUpdate.length}`);
+  console.log(
+    `  ${c.yellow('~')} ${UPDATE_EXISTING ? 'update' : 'differ (kept)'}: ${catUpdate.length}`,
+  );
   console.log(`  ${c.red('-')} archive: ${catArchive.length}`);
   for (const cat of catInsert) console.log(c.dim(`    + ${cat.slug.padEnd(14)} ${cat.names.zh}`));
   for (const cat of catUpdate) console.log(c.dim(`    ~ ${cat.slug.padEnd(14)} ${cat.names.zh}`));
@@ -146,14 +160,13 @@ async function main() {
         })),
       );
     }
-    for (const c2 of catUpdate) {
+    for (const c2 of UPDATE_EXISTING ? catUpdate : []) {
       await db
         .update(s.categories)
         .set({
           names: c2.names,
           icon: c2.icon ?? null,
           sortIndex: c2.sortIndex,
-          isArchived: false,
           updatedAt: new Date(),
         })
         .where(and(eq(s.categories.orgId, orgId), eq(s.categories.slug, c2.slug)));
@@ -198,17 +211,16 @@ async function main() {
       continue;
     }
     const wantCatId = catIdBySlug.get(want.catSlug) ?? null;
-    const namesMatch = JSON.stringify(have.names) === JSON.stringify(want.names);
-    const aliasesMatch =
-      JSON.stringify((have as any).aliases ?? {}) === JSON.stringify(want.aliases ?? {});
-    const descMatch =
-      JSON.stringify((have as any).description ?? {}) === JSON.stringify(want.description ?? {});
+    const namesMatch = sameJson(have.names, want.names);
+    const aliasesMatch = sameJson(have.aliases, want.aliases);
+    const descMatch = sameJson(have.description, want.description);
     const unitMatch = have.unit === want.unit;
-    const stepMatch = have.step === want.step;
+    const stepMatch = Number(have.step) === Number(want.step);
     const sortMatch = have.sortIndex === want.sortIndex;
     const catMatch = have.categoryId === wantCatId;
-    const archMatch = have.isArchived === false;
-    if (!(namesMatch && aliasesMatch && descMatch && unitMatch && stepMatch && sortMatch && catMatch && archMatch)) {
+    if (
+      !(namesMatch && aliasesMatch && descMatch && unitMatch && stepMatch && sortMatch && catMatch)
+    ) {
       skuUpdate.push(want);
     }
   }
@@ -220,7 +232,9 @@ async function main() {
     }
   }
   console.log(`  ${c.green('+')} insert: ${skuInsert.length}`);
-  console.log(`  ${c.yellow('~')} update: ${skuUpdate.length}`);
+  console.log(
+    `  ${c.yellow('~')} ${UPDATE_EXISTING ? 'update' : 'differ (kept)'}: ${skuUpdate.length}`,
+  );
   console.log(`  ${c.red('-')} archive: ${skuArchive.length}`);
   // Print per-category summary instead of every single SKU (165 lines is too noisy)
   const insertByCat = new Map<string, number>();
@@ -246,7 +260,7 @@ async function main() {
         })),
       );
     }
-    for (const k of skuUpdate) {
+    for (const k of UPDATE_EXISTING ? skuUpdate : []) {
       await db
         .update(s.skus)
         .set({
@@ -257,7 +271,6 @@ async function main() {
           unit: k.unit,
           step: k.step,
           sortIndex: k.sortIndex,
-          isArchived: false,
           updatedAt: new Date(),
         })
         .where(and(eq(s.skus.orgId, orgId), eq(s.skus.code, k.code)));
@@ -278,16 +291,21 @@ async function main() {
   // --- Summary --------------------------------------------------------------
   step('Summary');
   if (APPLY) {
+    const catUpdated = UPDATE_EXISTING ? catUpdate.length : 0;
+    const skuUpdated = UPDATE_EXISTING ? skuUpdate.length : 0;
     console.log(c.green('  ✔ APPLIED'));
-    console.log(`     categories: +${catInsert.length} ~${catUpdate.length} -${catArchive.length}`);
-    console.log(`     skus:       +${skuInsert.length} ~${skuUpdate.length} -${skuArchive.length}`);
+    console.log(`     categories: +${catInsert.length} ~${catUpdated} -${catArchive.length}`);
+    console.log(`     skus:       +${skuInsert.length} ~${skuUpdated} -${skuArchive.length}`);
     console.log(c.dim(`     (archives are soft — no rows deleted)`));
   } else {
     console.log(c.yellow('  DRY-RUN — nothing was written.'));
-    console.log(c.yellow('  Re-run with `--apply` to commit, optionally `--archive-old` to retire stale rows.'));
+    console.log(
+      c.yellow(
+        '  Re-run with `--apply` to commit, optionally `--archive-old` to retire stale rows' +
+          ' and `--update-existing` to overwrite rows that differ.',
+      ),
+    );
   }
-
-  await closeDb();
 }
 
 main().catch((err) => {

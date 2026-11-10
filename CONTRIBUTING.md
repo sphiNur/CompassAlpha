@@ -36,9 +36,13 @@ Adding a feature means walking through 8–10 steps. None are optional.
 ### 1. Define the event
 
 `packages/domain/src/<aggregate>/events.ts`. Add a TS type to the union and
-the `OrderEventType` literal. Payload is part of the **public contract** —
-once shipped, it's frozen. To change it, add a new TYPE (e.g.
-`ItemAdjustedV2`) and update the projector to handle both.
+the `OrderEventType` literal, a row to `docs/EVENT_CATALOG.md`, and the type
+to `packages/domain/src/eventCatalog.test.ts`. Payload is part of the
+**public contract**: written events are never rewritten. A payload may gain
+an optional field, or an enum a new value, when every reader handles its
+absence; the catalog records what absence means. Anything else (changing a
+field's meaning, making one required) needs a new TYPE (e.g.
+`ItemAdjustedV2`) and a projector that handles both.
 
 ### 2. Update the reducer (`apply`)
 
@@ -72,6 +76,22 @@ packages/db/migrations/meta/_journal.json   ← add the `idx` entry
 Both are required. CI fails-closed on orphan SQL files (the bug that broke
 0009 in prod for a week). Drizzle migrator skips the SQL file silently
 if the journal entry is missing.
+
+The new entry goes last: `idx` one more than the entry before, and `when`
+later than its `when`. Drizzle applies an entry only when its `when` is
+later than the newest migration the database recorded, and passes over an
+earlier one without a word. Two branches can both take "the last `when` +
+1"; the one that merges second moves its entry to the end. `migrate`
+refuses a journal out of order, and a database that recorded a migration
+dated after an entry it never applied (DB-07).
+
+No `BEGIN`, `COMMIT` or `ROLLBACK` in a migration: the runner applies each
+batch in one transaction, and a file's own `COMMIT` ends it early for every
+file after it (`migrate` refuses such a file; 23 early ones are
+grandfathered in `packages/db/src/migrationLint.ts`). The runner also sets
+the `maintenance` system context for its whole session, so a backfill
+under FORCE RLS sees every tenant without a `set_config` of its own. Do not
+set or clear `app.system_context` in a migration.
 
 Write the SQL by hand. Do not run `drizzle-kit generate` (`pnpm
 db:generate` now refuses): `meta/` only has the snapshot of 0000, and
@@ -154,7 +174,7 @@ users see English.
 | Layer | Tool | Where | Notes |
 |---|---|---|---|
 | Domain unit | `bun test` | `packages/domain/src/<a>/*.test.ts` | Pure decide/apply tests, no DB. Always cheap. |
-| API integration | `bun test` (PG-gated) | `apps/api/src/__tests__/*.test.ts` | Spin up real Postgres + Drizzle migrate first. Skipped in CI via `SKIP_PG_TESTS=1`. |
+| API integration | `bun test` (PG-gated) | `apps/api/src/__tests__/*.test.ts` | Migrate a throwaway Postgres first, named like `compass_test`: a test run refuses a database without `test` or `e2e` in its name. CI's unit job skips them with `SKIP_PG_TESTS=1`; its integration job runs them. |
 | FE lib | `bun test` | `apps/web/src/lib/__tests__/`, `apps/web/src/hooks/__tests__/` | Pure utility tests. |
 | Smoke | `bun run scripts/smoke.ts` | server-side tRPC against the live URL | 29 checks, ~5–10 s. |
 | Browser smoke | `node scripts/browser-smoke*.ts` | Playwright against the live URL | Shallow render + deep walk. |
@@ -183,9 +203,13 @@ runtime issues, smokes do.
 - **Error keys** look like `<area>.errors.<camelCase>`. Server `TRPCError.message`
   IS the i18n key; FE auto-translates via `useErrToast()`.
 - **Inline comments matter**. Tag with `M1.x (YYYY-MM-DD)` when the change
-  is part of a numbered milestone. Audit reports live in `docs/M1.x-AUDIT.md`.
-- **Event payloads are public contracts**. Adding a field to an existing
-  type is breaking. Use a V2 type instead.
+  is part of a numbered milestone, or with the review finding it fixes
+  (`review OPS-07 (2026-11)`). Audit reports are not kept in the repo:
+  what they found is fixed in the code, with a comment where it matters.
+- **Event payloads are public contracts**. An existing type only gains
+  optional fields that every reader handles when absent, each recorded in
+  `docs/EVENT_CATALOG.md` with its meaning on older events. Anything else
+  is a V2 type.
 - **Multi-tenant safety**: every API path uses `ctx.withOrg(...)` (sets the
   `app.current_org_id` GUC for RLS). Or has explicit
   `eq(table.orgId, ctx.session.orgId)`. Both layers — RLS + app code —
@@ -209,10 +233,12 @@ runtime issues, smokes do.
 
 ## What NOT to do
 
-- **Never** mutate an existing event's payload schema — add a V2 type.
-- **Never** call `tx.execute(sql.raw(\`'${id}'\`))` style. Use Drizzle's
-  `inArray()`. Existing call-sites with raw IDs are db-loaded UUIDs, but
-  the pattern is one PR away from an injection sink.
+- **Never** rewrite a stored event, or change what an existing payload
+  field means — add a V2 type.
+- **Never** splice ids into SQL (`sql.raw(\`'${id}'\`)`): the pattern is one
+  PR away from an injection sink. Use Drizzle's `inArray()`, or `inUuids()` /
+  `inTexts()` from `apps/api/src/services/sqlIn.ts` inside a `sql` template.
+  `no-raw-sql.test.ts` fails on any `sql.raw` in the API's source.
 - **Never** skip the i18n catalog for ru/uz/zh. The English fallback is
   silent and embarrassing in front of real users.
 - **Never** add a button without a permission check. Server gates first;
@@ -225,7 +251,8 @@ runtime issues, smokes do.
 When reviewing a PR (yours or others):
 
 - [ ] Domain layer is pure (no DB, no clock leak)
-- [ ] Event payload schema is documented in `docs/EVENT_CATALOG.md`
+- [ ] New event types and payload fields are in `docs/EVENT_CATALOG.md`
+      (a new field is optional, with its meaning when absent)
 - [ ] Migration has a journal entry
 - [ ] All user-visible strings exist in all 4 catalogs
 - [ ] Mutation has a test (unit or integration)
@@ -249,7 +276,6 @@ When reviewing a PR (yours or others):
 
 ## When stuck
 
-Read the audits in `docs/M1.x-AUDIT.md` — they're real reports from real
-launch hardening passes and capture the patterns that have actually
-broken. The `inline comments tagged with M1.x markers across the source
-are a CHANGELOG you can grep.
+The inline comments tagged with M1.x markers or review finding ids
+(`review COREWEB2-01`) across the source are a CHANGELOG you can grep:
+they say what actually broke and why the code is the way it is.

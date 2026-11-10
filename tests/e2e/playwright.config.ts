@@ -17,7 +17,10 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // No retries. globalSetup resets the database once per run, so a retry
+  // would start the story again on what the first attempt left behind:
+  // it could only fail, at its first step, far from the real failure.
+  retries: 0,
   timeout: 120_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
@@ -32,12 +35,23 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
+  projects: [
+    // Walks the app from a fresh database.
+    { name: 'story', testMatch: /main-flow\.spec\.ts$/ },
+    // Measures the screens the story leaves: a run in buying with one
+    // item bought and one to buy.
+    { name: 'after-story', testMatch: /render-count\.spec\.ts$/, dependencies: ['story'] },
+    // Need no particular state.
+    { name: 'standalone', testIgnore: [/main-flow\.spec\.ts$/, /render-count\.spec\.ts$/] },
+  ],
+  // Never reuse a server already on the port: it may be connected to
+  // another database, and only E2E_DATABASE_URL is reset for the run.
   webServer: [
     {
       command: 'bun run src/main.ts',
       cwd: resolve(ROOT, 'apps/api'),
       url: `${API_URL}/health/live`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 60_000,
       env: {
         DATABASE_URL: APP_DATABASE_URL,
@@ -59,7 +73,7 @@ export default defineConfig({
       command: `pnpm exec vite --port ${WEB_PORT} --strictPort`,
       cwd: resolve(ROOT, 'apps/web'),
       url: WEB_URL,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 60_000,
       env: {
         VITE_API_URL: API_URL,

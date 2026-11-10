@@ -23,10 +23,12 @@ export interface GetDbOptions {
 }
 
 export function getDb(url?: string, options: GetDbOptions = {}): DB {
+  const connectionString = url ?? process.env.DATABASE_URL;
+  const refusal = connectionString ? testDatabaseRefusal(connectionString) : null;
+  if (refusal) return refusingHandle(refusal);
   const kind: Kind = options.system ? 'maintenance' : 'app';
   const existing = pools.get(kind);
   if (existing) return existing.db;
-  const connectionString = url ?? process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL not set');
   const client = postgres(connectionString, {
     max: 20,
@@ -43,6 +45,56 @@ export function getDb(url?: string, options: GetDbOptions = {}): DB {
   const db = options.system ? raw : probed(raw);
   pools.set(kind, { client, db });
   return db;
+}
+
+/**
+ * Tests insert fixtures and delete rows, so a test run (`bun test` sets
+ * NODE_ENV=test) uses only a database whose name says it is throwaway:
+ * one containing "test" or "e2e", like CI's compass_test and the
+ * end-to-end run's compass_e2e. Bun reads the repository's .env by
+ * itself, and there DATABASE_URL is the development database, so a run
+ * that forgot SKIP_PG_TESTS=1 used to write its fixtures into it.
+ *
+ * Returns why the database is refused, or null. ALLOW_ANY_TEST_DB=1
+ * lifts the rule for one run.
+ */
+export function testDatabaseRefusal(
+  connectionString: string,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  if (env.NODE_ENV !== 'test' || env.ALLOW_ANY_TEST_DB === '1') return null;
+  const name = databaseName(connectionString);
+  if (/e2e|test/i.test(name)) return null;
+  return (
+    'A test run may use only a throwaway database, one with "test" or "e2e" in its name, ' +
+    `and this one is ${name ? `"${name}"` : 'unnamed'}. Tests write and delete rows: point ` +
+    'DATABASE_URL at a database such as compass_test (bun takes it from .env when the shell ' +
+    'sets none), or set ALLOW_ANY_TEST_DB=1.'
+  );
+}
+
+/**
+ * What getDb hands out for a refused database: no pool, no connection,
+ * and every use throws the refusal. Code that only builds a context
+ * around the handle, as several unit tests do through createContext,
+ * still runs.
+ */
+function refusingHandle(refusal: string): DB {
+  return new Proxy({} as DB, {
+    get(_target, prop) {
+      // Awaiting the handle, or returning it from an async function, is not a use.
+      if (typeof prop === 'symbol' || prop === 'then') return undefined;
+      throw new Error(refusal);
+    },
+  });
+}
+
+function databaseName(connectionString: string): string {
+  try {
+    return decodeURIComponent(new URL(connectionString).pathname.slice(1));
+  } catch {
+    return '';
+  }
 }
 
 /**

@@ -22,7 +22,10 @@ import {
   UuidSchema,
   BACKDATE_LIMIT_DAYS,
   isoDateDaysBefore,
+  centsToMoney,
+  toCents,
 } from '@compass/contracts';
+import { SETTLEMENT_MAX_CENTS } from '@compass/contracts/limits';
 import { z } from 'zod';
 import { todayInTz } from '@compass/domain';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
@@ -54,7 +57,6 @@ const MONEY_FIELDS = [
 
 const DETAIL_FIELDS = ['operatingExpenseItems', 'wageItems'] as const;
 const CREATED_FIELDS = [...MONEY_FIELDS, ...DETAIL_FIELDS, 'note'] as const;
-const MAX_SETTLEMENT_CENTS = 99_999_999_999_999n;
 
 type RawOperatingExpenseItem = SettlementRow['operatingExpenseItems'][number];
 type RawWageItem = SettlementRow['wageItems'][number];
@@ -91,29 +93,12 @@ type WageRosterMember = {
 /**
  * Normalize a contract-validated amount to the same two-decimal shape that
  * Postgres NUMERIC(14,2) returns. This prevents a value such as `10` from
- * being reported as a change to an existing `10.00` row.
+ * being reported as a change to an existing `10.00` row. CONF-08: through
+ * the shared cents helpers, which get a negative amount right (the private
+ * pair here made `-4.50` into -350 cents and -450 cents into "-4.-50").
  */
 export function normalizeSettlementMoney(value: string): string {
-  const negative = value.startsWith('-');
-  const unsigned = negative ? value.slice(1) : value;
-  const [wholeRaw = '0', fractionRaw = ''] = unsigned.split('.');
-  const whole = BigInt(wholeRaw || '0').toString();
-  const fraction = fractionRaw.padEnd(2, '0').slice(0, 2);
-  const isZero = whole === '0' && fraction === '00';
-  return `${negative && !isZero ? '-' : ''}${whole}.${fraction}`;
-}
-
-/** Convert a validated positive decimal amount to integer cents without float drift. */
-function settlementMoneyToCents(value: string): bigint {
-  const normalized = normalizeSettlementMoney(value);
-  const [whole, fraction] = normalized.split('.');
-  return BigInt(whole ?? '0') * 100n + BigInt(fraction ?? '0');
-}
-
-function centsToSettlementMoney(cents: bigint): string {
-  const whole = cents / 100n;
-  const fraction = (cents % 100n).toString().padStart(2, '0');
-  return `${whole}.${fraction}`;
+  return centsToMoney(toCents(value));
 }
 
 /**
@@ -149,10 +134,10 @@ function detailValidation(
 function sumSettlementItems(values: readonly string[], field: string): string {
   let cents = 0n;
   for (const value of values) {
-    cents += settlementMoneyToCents(value);
-    if (cents > MAX_SETTLEMENT_CENTS) detailValidation(field, 'total-too-large');
+    cents += toCents(value);
+    if (cents > SETTLEMENT_MAX_CENTS) detailValidation(field, 'total-too-large');
   }
-  return centsToSettlementMoney(cents);
+  return centsToMoney(cents);
 }
 
 function rawOperatingExpenseItems(row: SettlementRow): RawOperatingExpenseItem[] {

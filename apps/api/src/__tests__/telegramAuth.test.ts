@@ -30,32 +30,16 @@
  *   secret = HMAC-SHA256("WebAppData", botToken)
  *   hash   = HMAC-SHA256(secret, dataCheckString)
  * where dataCheckString is the alphabetically-sorted "k=v" lines of
- * the initData params with the "hash" key removed. We mirror that
- * here in `signInitData` so the tests don't depend on the
- * implementation under test for their own setup.
+ * the initData params with the "hash" key removed. `signFields`
+ * (helpers/telegram.ts) computes it on its own, so the tests don't
+ * depend on the implementation under test for their own setup.
  */
 import { describe, expect, test } from 'bun:test';
-import { createHmac } from 'node:crypto';
 import { verifyInitData } from '../services/telegramAuth';
+import { signFields } from './helpers/telegram';
 
 const BOT_TOKEN = '111111:test-bot-token';
-
-/** Build a real, signature-valid initData string for the given fields. */
-function signInitData(fields: Record<string, string>): string {
-  // Filter out any explicit hash entry; we always sign fresh.
-  const filtered = Object.entries(fields).filter(([k]) => k !== 'hash');
-  const dataCheckString = filtered
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-  const hash = createHmac('sha256', secret).update(dataCheckString).digest('hex');
-  // URLSearchParams to match the format the FE actually sends.
-  const params = new URLSearchParams();
-  for (const [k, v] of filtered) params.set(k, v);
-  params.set('hash', hash);
-  return params.toString();
-}
+const sign = (fields: Record<string, string>) => signFields(fields, BOT_TOKEN);
 
 const FRESH_AUTH_DATE = () => Math.floor(Date.now() / 1000).toString();
 
@@ -69,7 +53,7 @@ const SAMPLE_USER = JSON.stringify({
 
 describe('verifyInitData (Telegram WebApp)', () => {
   test('accepts a valid signature with a fresh auth_date', () => {
-    const initData = signInitData({
+    const initData = sign({
       auth_date: FRESH_AUTH_DATE(),
       query_id: 'q1',
       user: SAMPLE_USER,
@@ -88,7 +72,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
   });
 
   test('rejects when hash is one byte different (tampered replay)', () => {
-    const initData = signInitData({
+    const initData = sign({
       auth_date: FRESH_AUTH_DATE(),
       user: SAMPLE_USER,
     });
@@ -103,7 +87,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
   });
 
   test('rejects when hash length mismatches (guards timingSafeEqual)', () => {
-    const initData = signInitData({
+    const initData = sign({
       auth_date: FRESH_AUTH_DATE(),
       user: SAMPLE_USER,
     });
@@ -120,7 +104,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
     // Sign with a real token but predate by 2 hours; default maxAge=86400
     // so we use a tighter cap of 60s here to land in 'expired' fast.
     const oldDate = Math.floor(Date.now() / 1000) - 7200;
-    const initData = signInitData({
+    const initData = sign({
       auth_date: oldDate.toString(),
       user: SAMPLE_USER,
     });
@@ -130,21 +114,21 @@ describe('verifyInitData (Telegram WebApp)', () => {
   });
 
   test('rejects when auth_date is missing', () => {
-    const initData = signInitData({ user: SAMPLE_USER });
+    const initData = sign({ user: SAMPLE_USER });
     const result = verifyInitData(initData, BOT_TOKEN);
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('no auth_date');
   });
 
   test('rejects when user field is absent', () => {
-    const initData = signInitData({ auth_date: FRESH_AUTH_DATE() });
+    const initData = sign({ auth_date: FRESH_AUTH_DATE() });
     const result = verifyInitData(initData, BOT_TOKEN);
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('no user');
   });
 
   test('rejects when user JSON is malformed', () => {
-    const initData = signInitData({
+    const initData = sign({
       auth_date: FRESH_AUTH_DATE(),
       user: '{not valid json',
     });
@@ -157,7 +141,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
     // Sign with one token, verify with another. This is a different
     // failure surface than tampered-hash: the dataCheckString matches,
     // but the secret derivation diverges.
-    const initData = signInitData({
+    const initData = sign({
       auth_date: FRESH_AUTH_DATE(),
       user: SAMPLE_USER,
     });
@@ -175,7 +159,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
     // Push the auth_date to 500 seconds in the past with maxAge=60.
     // ageSec=500 > maxAge=60 but < maxAge+600 so it passes.
     const skewedAuth = Math.floor(Date.now() / 1000) - 500;
-    const initData = signInitData({
+    const initData = sign({
       auth_date: skewedAuth.toString(),
       user: SAMPLE_USER,
     });
@@ -186,7 +170,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
   test('rejects initData clearly past maxAgeSec + tolerance', () => {
     // 1000 seconds old, maxAge=60, tolerance=600 → 1000 > 660 = expired.
     const oldAuth = Math.floor(Date.now() / 1000) - 1000;
-    const initData = signInitData({
+    const initData = sign({
       auth_date: oldAuth.toString(),
       user: SAMPLE_USER,
     });
@@ -199,7 +183,7 @@ describe('verifyInitData (Telegram WebApp)', () => {
     // Phone clock 1 hour ahead of server: auth_date 3600 seconds
     // in the future. > 600 tolerance → reject with explicit reason.
     const futureAuth = Math.floor(Date.now() / 1000) + 3600;
-    const initData = signInitData({
+    const initData = sign({
       auth_date: futureAuth.toString(),
       user: SAMPLE_USER,
     });

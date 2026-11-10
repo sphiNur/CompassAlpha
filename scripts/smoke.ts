@@ -48,13 +48,6 @@ function record(name: string, pass: boolean, detail?: string) {
   results.push({ name, pass, ...(detail !== undefined ? { detail } : {}) });
 }
 
-async function head(path: string) {
-  const res = await fetch(BASE + path, {
-    method: 'HEAD',
-    headers: { 'cache-control': 'no-cache' },
-  });
-  return res;
-}
 async function get(path: string, init?: RequestInit) {
   return fetch(BASE + path, {
     ...init,
@@ -143,6 +136,28 @@ async function checkHealth() {
   const verData = (await ver.json()) as { commit?: string; startedAt?: string };
   record('/health/version has commit', !!verData.commit, JSON.stringify(verData));
   record('/health/version has startedAt', !!verData.startedAt);
+
+  // Review OPS-09 (2026-11): deploy.ts says which release it just put live
+  // and when it restarted the api. Any commit used to pass, so a Worker or
+  // tunnel pointing at another backend, or a bundle that was not swapped
+  // in, went unnoticed.
+  const expectSha = Bun.env.COMPASS_EXPECT_SHA;
+  if (expectSha) {
+    record(
+      `/health/version is the release just deployed (${expectSha})`,
+      verData.commit === expectSha,
+      `commit=${verData.commit}`,
+    );
+  }
+  const startedAfter = Bun.env.COMPASS_EXPECT_STARTED_AFTER;
+  if (startedAfter) {
+    const started = Date.parse(verData.startedAt ?? '');
+    record(
+      `the api answering started after the restart (${startedAfter})`,
+      started >= Date.parse(startedAfter),
+      `startedAt=${verData.startedAt}`,
+    );
+  }
 }
 
 async function checkTrpcPublic() {
@@ -247,11 +262,21 @@ async function checkWebSocket() {
   // N1 (2026-10-30): the check above never attempts an upgrade, so a
   // proxy that breaks the 101 handshake passed it. Do a real upgrade
   // through BASE with the API's token-less probe (scripts/lib/realtimeProbe.ts).
-  const probe = await probeRealtime(BASE);
+  //
+  // Review OPS-08 (2026-11): the first probe after a restart often failed
+  // where a re-run was green, and red deploys that are fine teach people to
+  // ignore red. Up to three tries; a pass that needed more than one says so.
+  let probe = await probeRealtime(BASE);
+  let tries = 1;
+  while (!probe.ok && tries < 3) {
+    await Bun.sleep(tries * 2_000);
+    probe = await probeRealtime(BASE);
+    tries++;
+  }
   record(
     'realtime: WebSocket upgrade through BASE works (probe 101 + frame + close 4002)',
     probe.ok,
-    probe.detail,
+    tries > 1 ? `${probe.detail} (try ${tries} of 3)` : probe.detail,
   );
 }
 

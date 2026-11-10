@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Field, Input, SearchInput, Select, Sheet } from '@compass/ui';
 import { trpc } from '../lib/trpc';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useI18n, useProductNameParts } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
 // 2026-10-21 audit CA-23: shared with the Finance presets (one local-
 // calendar date helper instead of two copies).
@@ -45,7 +45,8 @@ function presetRange(days: number, timeZone?: string): Pick<HistoryFilters, 'dat
 export function HistoryPage() {
   const i18n = useI18n();
   const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
-  const productName = useProductName();
+  // UI-4 (review RUNWEB2-06): names on two lines, never "primary (secondary)".
+  const productNameParts = useProductNameParts();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [otherFilters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
@@ -230,18 +231,11 @@ export function HistoryPage() {
         description={i18n.t('run.history.filterDescription')}
         disableAutoFocus
         footer={
-          <div className="flex gap-2">
+          // Review RUNWEB2-10: stacked like every two-button sheet footer.
+          // Side by side at 1:2, "Reset filters" was cut short on a phone.
+          <div className="flex flex-col gap-2">
             <Button
-              variant="secondary"
-              size="lg"
-              className="flex-1"
-              onClick={() => setDraftFilters(EMPTY_FILTERS)}
-            >
-              {i18n.t('run.history.resetFilters')}
-            </Button>
-            <Button
-              size="lg"
-              className="flex-[2]"
+              block
               disabled={invalidDateRange}
               onClick={() => {
                 applyFilters(draftFilters);
@@ -249,6 +243,9 @@ export function HistoryPage() {
               }}
             >
               {i18n.t('run.history.applyFilters')}
+            </Button>
+            <Button block variant="pearl" onClick={() => setDraftFilters(EMPTY_FILTERS)}>
+              {i18n.t('run.history.resetFilters')}
             </Button>
           </div>
         }
@@ -387,7 +384,7 @@ export function HistoryPage() {
       onClearSearchOrFilters={clearAll}
       storeById={storeById}
       skuById={skuById}
-      productName={productName}
+      productNameParts={productNameParts}
       i18n={i18n}
     />
   );

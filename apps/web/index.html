@@ -2,7 +2,8 @@
 <!--
   <html lang> is intentionally empty here — /boot-guard.js sets it
   on load based on the Telegram / navigator locale (zh / ru / uz / en).
-  React's I18nProvider may further narrow it after auth resolves.
+  The app (hooks/useI18n.ts) sets it again once the user's language is
+  known.
 -->
 <html lang>
   <head>
@@ -29,6 +30,13 @@
          /health/version and compares; mismatch shows a reload prompt. -->
     <meta name="compass-build" content="%VITE_BUILD_SHA%" />
     <title>Compass</title>
+    <!-- Review WALK-06 (2026-11-09): no icon, so each browser session
+         asked for /favicon.ico. The dev server answered 404 (which failed
+         the e2e "nothing went wrong" check when main-flow ran alone) and
+         production answered with the whole index.html, uncached. The app
+         lives inside Telegram and shows no tab icon; an empty one ends
+         the request. -->
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/boot.css" />
     <!-- Telegram WebApp SDK. Listed in CSP's script-src whitelist
          (the only third-party script we accept).

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { disabledClass, disabledLook } from '../components/disabled';
 
 /**
  * V3 / V7 / V8 / V9 (2026-10-30): the colour tokens are checked by
@@ -14,19 +15,29 @@ const UI_SRC = join(import.meta.dir, '..');
 const WEB_SRC = join(UI_SRC, '../../../apps/web/src');
 const css = readFileSync(join(UI_SRC, 'tokens.css'), 'utf8');
 
-function block(selectorStart: string): Record<string, string> {
-  const at = css.indexOf(selectorStart);
-  if (at < 0) throw new Error(`no block ${selectorStart}`);
-  const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('\n}', at));
+/**
+ * Every custom property on <html> for one set of attributes, through the
+ * cascade below (parseRules / computedOnRoot). Review TEST4-15: this used
+ * to cut the light and dark blocks out of the file by string offsets, so
+ * merging two selectors threw "no block", and the apple theme was never
+ * measured.
+ */
+function themeOf(attrs: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const m of body.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)) {
-    out[m[1]!] = m[2]!.trim();
+  for (const rule of parseRules(css)) {
+    for (const name of Object.keys(rule.decls)) {
+      if (!name.startsWith('--') || name in out) continue;
+      const value = computedOnRoot(name, attrs, { reducedMotion: false });
+      if (value !== undefined) out[name] = value;
+    }
   }
   return out;
 }
 
-const light = block(':root,\n:root[data-theme=');
-const dark = { ...light, ...block(":root[data-theme='dark'],") };
+const light = themeOf({ 'data-theme': 'native' });
+const dark = themeOf({ 'data-theme': 'dark' });
+const nativeDark = themeOf({ 'data-theme': 'native', 'data-color-scheme': 'dark' });
+const apple = themeOf({ 'data-theme': 'apple' });
 
 type Rgba = [number, number, number, number];
 
@@ -107,6 +118,8 @@ const TEXT_PAIRS: Array<[fg: string, bg: string]> = [
 describe.each([
   ['light', light],
   ['dark', dark],
+  ['Telegram dark', nativeDark],
+  ['apple', apple],
 ] as const)('%s theme contrast', (_name, theme) => {
   for (const fg of TEXT_ON_SURFACES) {
     for (const bg of SURFACES) {
@@ -228,12 +241,32 @@ describe('tap areas', () => {
     expect(base).not.toContain('overflow-hidden');
   });
 
+  test('Segmented does not clip its own tap area (review UI-06)', () => {
+    // `truncate` is overflow:hidden. On the segment button it cut the
+    // hit-44 area back to the visible 28/36px; the label span truncates.
+    const segment = /<button[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/.exec(read('Segmented.tsx'))![1]!;
+    expect(segment).toContain('hit-44');
+    expect(segment).not.toMatch(/\btruncate\b|overflow-hidden|overflow-clip/);
+  });
+
   test('hit-44 is at least 44px in both directions', () => {
     const rule = /\.hit-44::after\s*\{([^}]*)\}/.exec(css)![1]!;
     expect(rule).toContain('width: max(100%, 44px)');
     expect(rule).toContain('height: max(100%, 44px)');
   });
 });
+
+/** The text of a JSX className value: `"…"` or a balanced `{…}`. */
+function classNameValue(after: string): string {
+  if (after.startsWith('"')) return after.slice(1, after.indexOf('"', 1));
+  if (!after.startsWith('{')) return '';
+  let depth = 0;
+  for (let i = 0; i < after.length; i++) {
+    if (after[i] === '{') depth++;
+    else if (after[i] === '}' && --depth === 0) return after.slice(1, i);
+  }
+  return after.slice(1);
+}
 
 describe('D18: text fields are 44px', () => {
   const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
@@ -256,6 +289,10 @@ describe('D18: text fields are 44px', () => {
   });
 
   test('no raw <input>, <select> or <textarea> in the web app is shorter than 44px', () => {
+    // TEST4-15: the scan read only `className="…"`; a `className={cn(…)}`
+    // or a template string went unchecked, and so did `h-[36px]`.
+    const SHORT =
+      /(^|[\s'"`])(h-(?:[0-9]|10)|h-\[(?:[0-9]|[1-3][0-9]|4[0-3])px\]|py-1)(?=$|[\s'"`])/;
     const short: string[] = [];
     for (const file of sources(WEB_SRC)) {
       if (!file.endsWith('.tsx')) continue;
@@ -263,15 +300,23 @@ describe('D18: text fields are 44px', () => {
       for (const m of src.matchAll(/<(input|select|textarea)\b/g)) {
         // The element's own attributes: up to its first className.
         const attrs = src.slice(m.index!, m.index! + 1200);
-        const cls = /className="([^"]*)"/.exec(attrs)?.[1] ?? '';
-        const type = /type="([a-z]+)"/.exec(attrs.slice(0, attrs.indexOf('className=')))?.[1];
+        const at = attrs.indexOf('className=');
+        const type = /type="([a-z]+)"/.exec(at < 0 ? attrs : attrs.slice(0, at))?.[1];
         if (type && ['checkbox', 'radio', 'hidden', 'file'].includes(type)) continue;
-        if (/(^|\s)(h-([0-9]|10)|py-1)(\s|$)/.test(cls)) {
-          short.push(`${file.slice(WEB_SRC.length)}: ${cls}`);
-        }
+        const cls = at < 0 ? '' : classNameValue(attrs.slice(at + 'className='.length));
+        if (SHORT.test(cls))
+          short.push(`${file.slice(WEB_SRC.length)}: ${cls.replace(/\s+/g, ' ')}`);
       }
     }
     expect(short).toEqual([]);
+  });
+
+  test('the scan reads every way a className is written', () => {
+    expect(classNameValue('"h-9 w-full" />')).toBe('h-9 w-full');
+    expect(classNameValue("{cn('h-[36px] px-2', a && 'b')} />")).toBe(
+      "cn('h-[36px] px-2', a && 'b')",
+    );
+    expect(classNameValue('{`h-10 ${x}`} />')).toBe('`h-10 ${x}`');
   });
 });
 
@@ -456,5 +501,66 @@ describe('DX-VIS-8: wrapped tap areas do not overlap', () => {
     const src = readFileSync(join(UI_SRC, 'components', 'QtyControl.tsx'), 'utf8');
     const gap = /Preset chips[\s\S]*?gap-y-\[(\d+)px\]/.exec(src);
     expect(Number(gap?.[1] ?? 0)).toBeGreaterThanOrEqual((44 - 26) / 2 * 2);
+  });
+});
+
+describe('UI-10: checkbox and switch show their edge and state', () => {
+  const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
+
+  test('the unchecked box and the off track use the 3:1 field edge, not the hairline', () => {
+    // --c-field-border clears 3:1 on every surface (above); --c-divider is
+    // a 1.2–1.4:1 hairline.
+    for (const name of ['Checkbox.tsx', 'Switch.tsx']) {
+      const src = read(name);
+      expect({
+        name,
+        field: src.includes('ring-field'),
+        hairline: src.includes('ring-hairline'),
+      }).toEqual({ name, field: true, hairline: false });
+    }
+  });
+
+  test('the switch thumb is the field border when off and the action text colour when on', () => {
+    // Both pairs are measured above: --c-field-border on --c-surface-2 ≥ 3,
+    // --c-action-fg on --c-action ≥ 4.5.
+    const src = read('Switch.tsx');
+    expect(src).toMatch(/h-4 w-4 rounded-full bg-\[var\(--c-field-border\)\]/);
+    expect(src).toContain('peer-checked:[&>span]:bg-[var(--c-action-fg)]');
+  });
+});
+
+describe('UI-11: one disabled look', () => {
+  const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
+
+  test('the kit controls take the shared disabled classes, not their own opacity', () => {
+    for (const name of [
+      'Input.tsx',
+      'NumberInput.tsx',
+      'Textarea.tsx',
+      'Select.tsx',
+      'Button.tsx',
+      'pill.ts',
+    ]) {
+      const src = read(name);
+      expect({
+        name,
+        shared: src.includes('disabledClass'),
+        own: /disabled:opacity-|disabled \? 'opacity-/.test(src),
+      }).toEqual({ name, shared: true, own: false });
+    }
+    // A labelled checkbox or switch dims once, on the label; the bare box
+    // or track dims itself.
+    for (const name of ['Checkbox.tsx', 'Switch.tsx']) {
+      const src = read(name);
+      expect({
+        name,
+        label: src.includes('disabled && disabledLook'),
+        bare: src.includes("label === undefined && 'peer-disabled:opacity-50'"),
+      }).toEqual({ name, label: true, bare: true });
+    }
+  });
+
+  test('the element and the wrapper look are the same', () => {
+    expect(disabledClass.replace(/disabled:/g, '')).toBe(disabledLook);
   });
 });

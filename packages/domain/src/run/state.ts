@@ -1,3 +1,4 @@
+import { milliQty, storedQtyMilli } from '../shared/quantity';
 import type { RunEvent, StoreSplitPayload } from './events';
 
 /**
@@ -176,7 +177,8 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       for (const p of event.payload.plannedItems) {
         items.set(p.skuId, {
           skuId: p.skuId,
-          plannedQty: p.qty,
+          // RUNAPI-05: older payloads can carry float noise.
+          plannedQty: milliQty(storedQtyMilli(p.qty)),
           purchasedQty: null,
           supplierId: null,
           unitPrice: null,
@@ -372,11 +374,11 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       // only what was actually added counts against it (RE-BUY-2: a
       // price-only or partial revision used to wipe the whole top-up).
       const boughtMore =
-        Number(event.payload.actualQty) - Number(existing.purchasedQty ?? 0);
-      const topUpLeft = Number(existing.topUpQty ?? 0) - Math.max(0, boughtMore);
+        storedQtyMilli(event.payload.actualQty) - storedQtyMilli(existing.purchasedQty);
+      const topUpLeft = storedQtyMilli(existing.topUpQty) - (boughtMore > 0n ? boughtMore : 0n);
       items.set(event.payload.skuId, {
         ...existing,
-        topUpQty: topUpLeft > 1e-9 ? String(Number(topUpLeft.toFixed(3))) : null,
+        topUpQty: topUpLeft > 0n ? milliQty(topUpLeft) : null,
         purchasedQty: event.payload.actualQty,
         supplierId: event.payload.supplierId,
         unitPrice: event.payload.unitPrice,
@@ -526,9 +528,9 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       // M3.31 A.2 (2026-05-18): merge additional demand into the run.
       // Existing items grow in plannedQty; new SKUs get fresh pending
       // rows. NEVER touch purchasedQty / status / unitPrice — those
-      // belong to the buyer's decisions. Numeric add as JS number is
-      // fine here: qty strings flow from the run.create aggregation
-      // which already does this kind of accumulation.
+      // belong to the buyer's decisions. Quantities add in whole
+      // thousandths (RUNAPI-05): as JS numbers 0.1 + 0.2 was
+      // "0.30000000000000004".
       const items = new Map(state.items);
       for (const p of event.payload.addedPlannedItems) {
         const existing = items.get(p.skuId);
@@ -538,21 +540,21 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
           // row (planned = that demand). Left flagged, undoing the purchase
           // deleted the row and the stores' demand with it.
           const merged = existing.addedByPurchaser
-            ? p.qty
-            : (Number(existing.plannedQty) + Number(p.qty)).toString();
+            ? milliQty(storedQtyMilli(p.qty))
+            : milliQty(storedQtyMilli(existing.plannedQty) + storedQtyMilli(p.qty));
           const decided = existing.status === 'purchased' || existing.status === 'unavailable';
           items.set(p.skuId, {
             ...existing,
             plannedQty: merged,
             addedByPurchaser: false,
             ...(decided
-              ? { topUpQty: (Number(existing.topUpQty ?? 0) + Number(p.qty)).toString() }
+              ? { topUpQty: milliQty(storedQtyMilli(existing.topUpQty) + storedQtyMilli(p.qty)) }
               : {}),
           });
         } else {
           items.set(p.skuId, {
             skuId: p.skuId,
-            plannedQty: p.qty,
+            plannedQty: milliQty(storedQtyMilli(p.qty)),
             purchasedQty: null,
             supplierId: null,
             unitPrice: null,
@@ -577,11 +579,11 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       for (const removed of event.payload.removedPlannedItems) {
         const existing = items.get(removed.skuId);
         if (!existing) continue;
-        const remaining = Number(existing.plannedQty) - Number(removed.qty);
-        if (remaining <= 1e-6) {
+        const remaining = storedQtyMilli(existing.plannedQty) - storedQtyMilli(removed.qty);
+        if (remaining <= 0n) {
           items.delete(removed.skuId);
         } else {
-          items.set(removed.skuId, { ...existing, plannedQty: remaining.toString() });
+          items.set(removed.skuId, { ...existing, plannedQty: milliQty(remaining) });
         }
       }
       return {

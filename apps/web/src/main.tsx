@@ -4,7 +4,6 @@ import { ensureCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
 import { reloadForStaleChunk } from './lib/reload';
-import { waitAtMost } from './lib/bootLocale';
 import { startLocale } from './lib/startLocale';
 import { preloadPage, savedTab } from './app/pageChunks';
 
@@ -41,13 +40,6 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   });
 }
 
-/**
- * Longest the splash waits for the catalog: well inside boot-guard.js's
- * 12 s failsafe. Past it the screens stay hidden (I18nGate) until the
- * catalog lands rather than showing keys.
- */
-const SPLASH_MAX_MS = 8_000;
-
 const container = document.getElementById('root');
 if (!container) throw new Error('Root not found');
 
@@ -59,10 +51,16 @@ if (!container) throw new Error('Root not found');
 //     when it cannot be fetched — ensureCatalog).
 //   - React renders at once underneath it, so auth, the saved-data restore
 //     and the page's queries run while the catalog downloads; I18nGate keeps
-//     the screens hidden until the catalog is in, so no raw key is ever shown
-//     (also after the splash's time limit below).
+//     the screens hidden until the catalog is in, so no raw key is ever shown.
+//   - Review COREWEB1-02 (2026-11-09): the splash waits for the catalog
+//     however long it takes. It used to give up after 8 s: the splash went,
+//     I18nGate still hid the screens, and `.ready` told boot-guard.js's 12 s
+//     failsafe that the app had started, so a slow or stuck catalog left a
+//     blank screen with no spinner and no way out. Now the failsafe shows its
+//     message and reload button over the splash; a catalog that lands later
+//     still removes both.
 //   - DX-PFE-3: the page the app reopens on is a lazy chunk; start it now.
-const catalogReady = waitAtMost(ensureCatalog(startLocale()), SPLASH_MAX_MS);
+const catalogReady = ensureCatalog(startLocale());
 const reopenTab = (() => {
   try {
     return savedTab(window.localStorage);
@@ -86,25 +84,10 @@ void catalogReady.then(() => {
   splash?.remove();
 });
 
-// `/?kit` shows the component kit on its own, without signing in. The
-// condition is a build-time constant, so a production bundle contains
-// neither the branch nor the page.
 function render(container: HTMLElement): void {
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('kit')) {
-    // The kit draws no translated text: no splash to wait under.
-    document.getElementById('boot-splash')?.remove();
-    void import('./pages/KitGallery').then(({ KitGallery }) => {
-      createRoot(container).render(
-        <StrictMode>
-          <KitGallery />
-        </StrictMode>,
-      );
-    });
-  } else {
-    createRoot(container).render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    );
-  }
+  createRoot(container).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
 }

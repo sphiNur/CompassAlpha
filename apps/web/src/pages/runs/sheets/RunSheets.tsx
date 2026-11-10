@@ -1,6 +1,6 @@
 /**
  * Run mutation sheets — extracted verbatim from RunPage.tsx
- * (Phase 4 step 3, FRONTEND_AUDIT_2026-07.md run-domain split).
+ * (Phase 4 step 3 of the 2026-07 frontend audit's run-domain split).
  *
  *   - PurchaseSheet  advanced per-item purchase editor (splits,
  *                    per-store pricing, receipt photo).
@@ -19,6 +19,7 @@ import {
   Banner,
   Button,
   Input,
+  NameCell,
   PhotoCapture,
   Segmented,
   Select,
@@ -31,14 +32,26 @@ import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { normalizeQuery, rankNameLike } from '../../../lib/searchMatch';
-import { useUnitLabel } from '../../../hooks/useI18n';
+import { useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
-import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } from '../lib/priceMath';
+import {
+  toDisplayPrice,
+  fromDisplayPrice,
+  isStorablePrice,
+  readDisplayPrice,
+  shownPrice,
+} from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { lineAmountNumber } from '@compass/contracts/money';
 import { useDraftChanged } from '../../../hooks/useDraftChanged';
+import {
+  addItemDraftEdits,
+  purchaseDraftCheck,
+  purchaseDraftEdits,
+  splitsAddUp,
+} from '../lib/purchaseForm';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -172,11 +185,8 @@ export function PurchaseSheet({
   const sku = draft ? skuById.get(draft.skuId) : null;
   const candidateStores = useMemo(() => [...storeById.values()], [storeById]);
   // CMP-BUY-4: what the buyer typed is not dropped by Esc / backdrop / back.
-  const changed = useDraftChanged(
-    draft,
-    (d) => `${d.skuId}:${d.isEdit}`,
-    (d) => [d.actualQty, d.unitPrice, d.reason, d.supplierId, d.receiptPhotoUrl, d.paymentMethod],
-  );
+  // RUNWEB2-07: the stores' quantities, prices and methods count too.
+  const changed = useDraftChanged(draft, (d) => `${d.skuId}:${d.isEdit}`, purchaseDraftEdits);
 
   // M3.36: local display state for the price input. Decoupled from
   // draft.unitPrice (which always holds raw UZS) so intermediate
@@ -184,7 +194,11 @@ export function PurchaseSheet({
   // String(Number()) and lose the trailing decimal. Resynced when
   // the sheet opens on a different row or the mode flips.
   const [priceInput, setPriceInput] = useState<string>('');
+  // Review RUNWEB2-01: the per-store price fields keep their typed text
+  // the same way (see shownPrice), per store, reset with the main one.
+  const typedSplitPrice = useRef(new Map<string, string>());
   useEffect(() => {
+    typedSplitPrice.current.clear();
     if (!draft) {
       setPriceInput('');
       return;
@@ -209,30 +223,10 @@ export function PurchaseSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.actualQty]);
 
-  const splitTotal = useMemo(() => {
-    if (!draft) return 0;
-    let s = 0;
-    for (const v of draft.splits.values()) s += Number(v) || 0;
-    return s;
-  }, [draft]);
-
-  const splitMatches = draft && Math.abs(splitTotal - Number(draft.actualQty || 0)) < 0.001;
-  const reasonOk = !draft?.isEdit || draft.reason.trim().length > 0;
-  // R2-BUY-2: prices in the server's format (above 0, ≤12 digits, ≤2
-  // decimals), so a refused figure never reaches the 5× check or the API.
-  const splitPricesOk =
-    !draft?.perStorePricing ||
-    [...draft.splits.entries()]
-      .filter(([, qty]) => Number(qty) > 0)
-      .every(([storeId]) => isStorablePrice(draft.splitPrices.get(storeId) || draft.unitPrice));
-  const canSubmit = !!(
-    draft &&
-    Number(draft.actualQty) > 0 &&
-    isStorablePrice(draft.unitPrice) &&
-    splitMatches &&
-    reasonOk &&
-    splitPricesOk
-  );
+  // RUNWEB2-04: the one rule, which the page's main button reads too.
+  const { splitTotal, splitMatches, reasonOk, canSubmit } = draft
+    ? purchaseDraftCheck(draft)
+    : { splitTotal: 0, splitMatches: false, reasonOk: true, canSubmit: false };
 
   // M3.49 (2026-05-23): the sheet's own footer button is now ALWAYS
   // rendered — the in-page PageMainButton is hidden behind the sheet
@@ -491,11 +485,13 @@ export function PurchaseSheet({
                           type="number"
                           inputMode="decimal"
                           aria-label={i18n.t('run.alloc.priceFor', { store: store.name })}
-                          value={toDisplayPrice(
+                          value={shownPrice(
                             draft.splitPrices.get(store.id) ?? draft.unitPrice,
+                            typedSplitPrice.current.get(store.id),
                             priceInThousands,
                           )}
                           onChange={(e) => {
+                            typedSplitPrice.current.set(store.id, e.target.value);
                             const next = new Map(draft.splitPrices);
                             next.set(store.id, fromDisplayPrice(e.target.value, priceInThousands));
                             onChange({ ...draft, splitPrices: next });
@@ -656,11 +652,8 @@ export function AddItemSheet({
   const [search, setSearch] = useState('');
   const [priceInput, setPriceInput] = useState('');
   const initializedExpenseScopeRef = useRef<string | null>(null);
-  const changed = useDraftChanged(
-    draft,
-    (d) => `${d.mode}:${d.expenseId}`,
-    (d) => [d.skuId, d.label, d.unitHint, d.actualQty, d.unitPrice, d.reason, d.receiptPhotoUrl],
-  );
+  // RUNWEB2-07: the payment method, scope, cost mode and store count too.
+  const changed = useDraftChanged(draft, (d) => `${d.mode}:${d.expenseId}`, addItemDraftEdits);
 
   // Reset local input states when the sheet opens/closes for a new draft.
   useEffect(() => {
@@ -699,10 +692,14 @@ export function AddItemSheet({
     ).slice(0, 20);
   }, [skus, existingStoreIdsBySku, search, i18n.locale]);
 
+  // UI-4 (review RUNWEB2-06): the picked product and the search results
+  // show the name on two lines, never "primary (secondary)" cut short.
+  const productNameParts = useProductNameParts();
   const selectedSku = useMemo(
     () => (draft?.skuId ? skus.find((s) => s.id === draft.skuId) : null),
     [draft?.skuId, skus],
   );
+  const selectedName = selectedSku ? productNameParts(selectedSku) : null;
 
   // Existing storeIds for the picked SKU (if any). Drives cost-mode hints
   // and marks store choices that should be recorded as independent costs.
@@ -743,17 +740,10 @@ export function AddItemSheet({
   // no paper receipt is available was the wrong trade. The photo stays
   // available but optional.
 
-  // Mode-aware split-sum check: in expense mode the split is multi-
-  // store auto-divided, so the sum may drift by 1 UZS due to integer
-  // rounding. Tolerate that small delta; the domain layer uses the
-  // same TOLERANCE constant.
-  const splitTotal = useMemo(() => {
-    if (!draft) return 0;
-    let s = 0;
-    for (const v of draft.splits.values()) s += Number(v) || 0;
-    return s;
-  }, [draft]);
-  const splitMatches = !!draft && Math.abs(splitTotal - Number(draft.actualQty || 0)) < 0.001;
+  // The store quantities add up to the quantity, by the server's measure
+  // (lib/purchaseForm.ts). An even split does exactly: evenSplitQty gives
+  // the last store the remainder.
+  const splitMatches = !!draft && splitsAddUp(draft.splits, draft.actualQty).splitMatches;
 
   const canSubmit = !!(
     draft &&
@@ -881,9 +871,12 @@ export function AddItemSheet({
             selectedSku ? (
               <div className="flex items-center justify-between rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2">
                 <div className="min-w-0">
-                  <div className="truncate text-old-body font-semibold">
-                    {productName(selectedSku)}
-                  </div>
+                  <NameCell
+                    primary={selectedName?.primary}
+                    secondary={selectedName?.secondary}
+                    primaryLang={selectedName?.primaryLang}
+                    secondaryLang={selectedName?.secondaryLang}
+                  />
                   <div className="text-old-label text-[var(--c-fg-muted)]">
                     {unitLabel(selectedSku.unit)}
                   </div>
@@ -915,33 +908,40 @@ export function AddItemSheet({
                       {i18n.t('run.action.addItem.noMatch')}
                     </li>
                   ) : (
-                    filteredSkus.map((sku) => (
-                      <li
-                        key={sku.id}
-                        className="border-b border-[var(--c-divider)] last:border-b-0"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onChange({
-                              ...draft,
-                              skuId: sku.id,
-                              skuCostMode: existingStoreIdsBySku.has(sku.id)
-                                ? 'separateExpense'
-                                : 'merge',
-                            })
-                          }
-                          className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                    filteredSkus.map((sku) => {
+                      const nm = productNameParts(sku);
+                      return (
+                        <li
+                          key={sku.id}
+                          className="border-b border-[var(--c-divider)] last:border-b-0"
                         >
-                          <span className="min-w-0 truncate text-old-body">
-                            {productName(sku)}
-                          </span>
-                          <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
-                            {unitLabel(sku.unit)}
-                          </span>
-                        </button>
-                      </li>
-                    ))
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onChange({
+                                ...draft,
+                                skuId: sku.id,
+                                skuCostMode: existingStoreIdsBySku.has(sku.id)
+                                  ? 'separateExpense'
+                                  : 'merge',
+                              })
+                            }
+                            className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                          >
+                            <NameCell
+                              as="span"
+                              primary={nm.primary}
+                              secondary={nm.secondary}
+                              primaryLang={nm.primaryLang}
+                              secondaryLang={nm.secondaryLang}
+                            />
+                            <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
+                              {unitLabel(sku.unit)}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })
                   )}
                 </ul>
               </>

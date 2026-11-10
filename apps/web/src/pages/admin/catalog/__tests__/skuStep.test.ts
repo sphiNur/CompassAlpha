@@ -11,7 +11,9 @@ describe('snapStepToCanonical', () => {
   });
 
   test('passes exact canonical strings through', () => {
-    for (const step of ['0.5', '1', '10', '50', '100']) expect(snapStepToCanonical(step)).toBe(step);
+    for (const step of ['0.5', '1', '10', '50', '100'] as const) {
+      expect(snapStepToCanonical(step)).toBe(step);
+    }
   });
 
   test('collapses legacy off-grid steps without up-snapping to a bulk step', () => {

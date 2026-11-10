@@ -7,7 +7,7 @@
     "dev": "bun run --watch src/main.ts",
     "build": "bun build src/main.ts --outdir dist --target bun --minify",
     "start": "bun run dist/main.js",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
     "test": "bun test",
     "reproject": "bun run scripts/reproject.ts"
   },

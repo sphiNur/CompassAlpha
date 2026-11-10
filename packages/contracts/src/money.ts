@@ -17,31 +17,11 @@
  * the non-negative amounts money lines hold). All arithmetic here is on
  * decimal strings with BigInt — no floats.
  */
+import { numberText, roundShift, toUnits } from './decimal';
 
 /** R2-ENG-2: the largest amount one money line may reach (qty × price). */
 export const MAX_LINE_AMOUNT = '1000000000000';
 const MAX_LINE_CENTS = 100_000_000_000_000n;
-
-/** A decimal string as an integer number of `10^-scale` units. */
-function toUnits(value: string): { units: bigint; scale: number } {
-  const text = value.trim();
-  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(text)) throw new RangeError(`not a decimal: ${value}`);
-  const negative = text.startsWith('-');
-  const unsigned = negative ? text.slice(1) : text;
-  const [whole = '', fraction = ''] = unsigned.split('.');
-  const units = BigInt(`${whole || '0'}${fraction}`);
-  return { units: negative ? -units : units, scale: fraction.length };
-}
-
-/** Divide by 10^shift, rounding half away from zero. */
-function roundShift(units: bigint, shift: number): bigint {
-  if (shift <= 0) return units * 10n ** BigInt(-shift);
-  const divisor = 10n ** BigInt(shift);
-  const negative = units < 0n;
-  const abs = negative ? -units : units;
-  const rounded = (abs + divisor / 2n) / divisor;
-  return negative ? -rounded : rounded;
-}
 
 /** A decimal string ("12.5", "1005", "0.005") in cents, half-up. */
 export function toCents(value: string | number): bigint {
@@ -62,6 +42,24 @@ export function centsToMoney(cents: bigint): string {
   const negative = cents < 0n;
   const digits = (negative ? -cents : cents).toString().padStart(3, '0');
   return `${negative ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+/**
+ * Review COREAPI-18 (2026-11-09): an amount as people read it, for text
+ * the server writes (notifications). It is the app's display rule
+ * (formatMoney in apps/web/src/lib/format.ts), the same in every
+ * language by the owner's decision: comma thousands, a whole amount
+ * without decimals, any other with both cents. Exact, on cents:
+ * "1234567.5" → "1,234,567.50", "1000.00" → "1,000".
+ */
+export function moneyText(value: string | number): string {
+  const cents = toCents(value);
+  const negative = cents < 0n;
+  const abs = negative ? -cents : cents;
+  const whole = (abs / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const minor = abs % 100n;
+  const shown = minor === 0n ? whole : `${whole}.${minor.toString().padStart(2, '0')}`;
+  return negative ? `-${shown}` : shown;
 }
 
 /** One money line as a string: `lineCents` formatted. */
@@ -104,10 +102,56 @@ export function lineWithinCap(qty: string, unitPrice: string): boolean {
   return (cents < 0n ? -cents : cents) <= MAX_LINE_CENTS;
 }
 
-/** A JS number as plain decimal text (no exponent), for already-summed figures. */
-function numberText(value: number): string {
-  if (!Number.isFinite(value)) throw new RangeError(`not a finite number: ${value}`);
-  // 6 decimals is past any money value's float noise; toFixed never uses
-  // an exponent below 1e21, far above any amount here.
-  return value.toFixed(6);
+/** What an order should cost (see estimateOrder). Money strings have two decimals. */
+export interface OrderEstimate {
+  total: string;
+  cash: string;
+  transfer: string;
+  /** Lines that had a price, and lines that had none. */
+  known: number;
+  unknown: number;
+}
+
+/**
+ * Review ORD-01 (2026-11-09): the one estimate rule. Each product with a
+ * quantity is a money line at the price `priceOf` gives (the last price
+ * paid), and the lines add up in cents, split by how `methodOf` says the
+ * product is usually paid.
+ *
+ * The server used to multiply and add floats with the unrounded weighted
+ * price, and the web followed this rule with the price rounded to cents,
+ * so an approval card's "~" and the estimate inside it could be a cent
+ * apart. Both now call this. A product without a price counts in
+ * `unknown`, so a screen can say the sum is partial.
+ */
+export function estimateOrder(
+  lines: Iterable<{ skuId: string; qty: string }>,
+  priceOf: (skuId: string) => string | null | undefined,
+  methodOf: (skuId: string) => 'cash' | 'transfer' = () => 'cash',
+): OrderEstimate {
+  let total = 0n;
+  let cash = 0n;
+  let transfer = 0n;
+  let known = 0;
+  let unknown = 0;
+  for (const line of lines) {
+    if (!(Number(line.qty) > 0)) continue;
+    const price = priceOf(line.skuId);
+    if (price === null || price === undefined || price === '') {
+      unknown += 1;
+      continue;
+    }
+    const cents = lineCents(line.qty, price);
+    total += cents;
+    known += 1;
+    if (methodOf(line.skuId) === 'transfer') transfer += cents;
+    else cash += cents;
+  }
+  return {
+    total: centsToMoney(total),
+    cash: centsToMoney(cash),
+    transfer: centsToMoney(transfer),
+    known,
+    unknown,
+  };
 }

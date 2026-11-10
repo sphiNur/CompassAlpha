@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { lineAmount, sumMoney } from '@compass/contracts/money';
-import { topUpRevision, type TopUpRevision } from '../topUp';
+import { topUpPrefill, topUpRevision, type TopUpRevision } from '../topUp';
 
 const paid = (r: TopUpRevision) =>
   sumMoney(r.storeSplits.map((sp) => lineAmount(sp.qty, sp.unitPrice ?? r.unitPrice)));
@@ -83,5 +83,70 @@ describe('topUpRevision (DX-BUY-2)', () => {
     expect(
       topUpRevision({ item, base, next: new Map([['CK', '2']]), topUpPrice: '1', topUpMethod: 'cash' }),
     ).toBeNull();
+  });
+
+  test('a store whose field was cleared has nothing now: not a top-up (RUNWEB2-08)', () => {
+    // A 2 and B 2 before; the sheet clears A and sets B to 4. It shows a
+    // total of 4; the old code kept A's 2 and saved 6.
+    const r = topUpRevision({
+      item: { unitPrice: '80000', paymentMethod: 'cash' },
+      base: [
+        { storeId: 'A', qty: '2', unitPrice: '80000', paymentMethod: 'cash' },
+        { storeId: 'B', qty: '2', unitPrice: '80000', paymentMethod: 'cash' },
+      ],
+      next: new Map([['B', '4']]),
+      topUpPrice: '82000',
+      topUpMethod: 'cash',
+    });
+    // A went down, so the caller saves an ordinary revision of what the
+    // sheet shows.
+    expect(r).toBeNull();
+  });
+});
+
+describe('topUpPrefill (RUNWEB1-03)', () => {
+  test('fills uncovered demand in order, in whole thousandths', () => {
+    const r = topUpPrefill({
+      splits: new Map([['A', '0.1']]),
+      demand: [
+        { storeId: 'A', qty: '0.4' },
+        { storeId: 'B', qty: '0.3' },
+      ],
+      extra: '0.6',
+    });
+    // As floats B was "0.29999999999999993".
+    expect([...r.splits]).toEqual([
+      ['A', '0.4'],
+      ['B', '0.3'],
+    ]);
+    expect(r.actualQty).toBe('0.7');
+  });
+
+  test('what no demand asks for stays on the total', () => {
+    const r = topUpPrefill({
+      splits: new Map([['A', '0.3']]),
+      demand: [{ storeId: 'A', qty: '0.9' }],
+      extra: '1',
+    });
+    // As floats A was "0.9000000000000001".
+    expect(r.splits.get('A')).toBe('0.9');
+    expect(r.actualQty).toBe('1.3');
+  });
+
+  test('nothing extra leaves the sheet as it was', () => {
+    const r = topUpPrefill({
+      splits: new Map([['A', '2']]),
+      demand: [{ storeId: 'A', qty: '3' }],
+      extra: null,
+    });
+    expect([...r.splits]).toEqual([['A', '2']]);
+    expect(r.actualQty).toBe('2');
+  });
+});
+
+describe('top-up quantities a number field can hold', () => {
+  test('"1e3" reads as 1000, as Number did', () => {
+    const r = topUpPrefill({ splits: new Map([['A', '1e3']]), demand: [], extra: '1' });
+    expect(r.actualQty).toBe('1001');
   });
 });

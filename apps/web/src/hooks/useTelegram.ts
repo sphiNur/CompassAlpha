@@ -2,86 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { pushTelegramBackHandler } from '@compass/ui';
 import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
 
-export interface TelegramMainButton {
-  text: string;
-  isVisible: boolean;
-  isActive: boolean;
-  show(): void;
-  hide(): void;
-  enable(): void;
-  disable(): void;
-  setText(text: string): void;
-  onClick(cb: () => void): void;
-  offClick(cb: () => void): void;
-  setParams(params: {
-    text?: string;
-    color?: string;
-    text_color?: string;
-    is_visible?: boolean;
-    is_active?: boolean;
-  }): void;
-}
-
-export interface TelegramBackButton {
-  isVisible: boolean;
-  show(): void;
-  hide(): void;
-  onClick(cb: () => void): void;
-  offClick(cb: () => void): void;
-}
-
-/**
- * Telegram WebApp's built-in "settings" button — a gear icon that
- * appears in the bot's overflow menu (the `⋯` next to the bot title).
- * Available since Bot API 6.10. Older Telegram clients silently no-op.
- * Per Telegram docs the button is one-per-WebApp; show/hide controls
- * its visibility globally, onClick fires for any tap.
- */
-export interface TelegramSettingsButton {
-  isVisible: boolean;
-  show(): void;
-  hide(): void;
-  onClick(cb: () => void): void;
-  offClick(cb: () => void): void;
-}
-
-interface TelegramWebApp {
-  initData: string;
-  initDataUnsafe: {
-    /** Payload from https://t.me/<bot>?startapp=<payload>. */
-    start_param?: string;
-    user?: { id: number; first_name: string; username?: string; language_code?: string };
-  };
-  themeParams: Record<string, string>;
-  colorScheme: 'light' | 'dark';
-  viewportHeight: number;
-  viewportStableHeight?: number;
-  isExpanded: boolean;
-  expand(): void;
-  ready(): void;
-  close(): void;
-  MainButton: TelegramMainButton;
-  BackButton: TelegramBackButton;
-  /** Optional — may be undefined on older Telegram clients. */
-  SettingsButton?: TelegramSettingsButton;
-  HapticFeedback: {
-    impactOccurred(style: 'light' | 'medium' | 'heavy'): void;
-    notificationOccurred(type: 'error' | 'success' | 'warning'): void;
-  };
-  showAlert(message: string, cb?: () => void): void;
-  showConfirm(message: string, cb: (ok: boolean) => void): void;
-  setHeaderColor(color: string): void;
-  setBackgroundColor(color: string): void;
-  /** Bot API 7.10+. */
-  setBottomBarColor?: (color: string) => void;
-  /** Bot API 7.7+: stop a downward swipe from minimising the Mini App. */
-  disableVerticalSwipes?: () => void;
-  isVersionAtLeast?: (version: string) => boolean;
-  openTelegramLink(url: string): void;
-  openLink(url: string, options?: { try_instant_view?: boolean }): void;
-  onEvent?: (name: string, cb: () => void) => void;
-  offEvent?: (name: string, cb: () => void) => void;
-}
+/** The SDK object; its one shape is the global in src/types/telegram.d.ts. */
+type TelegramWebApp = TelegramWebAppGlobal;
 
 /**
  * Read window.Telegram.WebApp with safe optional chaining.
@@ -95,9 +17,7 @@ interface TelegramWebApp {
  */
 export function getTg(): TelegramWebApp | null {
   if (typeof window === 'undefined') return null;
-  // Cast to local TelegramWebApp (richer than the d.ts mirror that
-  // is intentionally minimal to avoid runtime imports).
-  return (window.Telegram?.WebApp as TelegramWebApp | undefined) ?? null;
+  return window.Telegram?.WebApp ?? null;
 }
 
 /**

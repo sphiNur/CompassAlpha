@@ -7,10 +7,12 @@
 # text file out as CRLF. Normally that is invisible: git converts back on
 # commit, and CI/Linux only ever see the LF version in the object store.
 #
-# It is NOT invisible here, because `scripts/deploy.ts` ships the WORKING
-# TREE — it tars the checked-out directory rather than using `git
-# archive`. So whatever line endings are on the Windows disk are the line
-# endings that land on the production box. `infra/backup/compass-backup.sh`
+# It was NOT invisible here, because `scripts/deploy.ts` shipped the
+# WORKING TREE: it tarred the checked-out directory rather than using `git
+# archive`. So whatever line endings were on the Windows disk were the
+# line endings that landed on the production box. (Since 2026-11, review
+# OPS-13, the deploy ships `git archive` with LF line endings; the pins
+# below stay as a second guard.) `infra/backup/compass-backup.sh`
 # arrived with a `#!/usr/bin/env bash\r` shebang, and systemd reported:
 #
 #     /usr/bin/env: 'bash\r': No such file or directory
@@ -29,10 +31,6 @@
 # ExecStart values silently inherit the CR.
 *.service text eol=lf
 *.timer text eol=lf
-
-# Read by Linux daemons / builders.
-Caddyfile text eol=lf
-Dockerfile text eol=lf
 
 # Binary-ish assets git should never touch.
 *.png binary

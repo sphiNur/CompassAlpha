@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { cn } from '../cn';
 
 /**
- * SectionLabel — the standardised eyebrow row for grouping cards or
+ * SectionLabel — the standard heading row for grouping cards or
  * heading nested sub-sections.
  *
  * Added 2026-05-08 (M2.1) to replace ~10 ad-hoc divs scattered across
@@ -17,22 +17,18 @@ import { cn } from '../cn';
  *   <SectionLabel meta={`${done}/${total}`}>Items</SectionLabel>
  *
  *   <SectionLabel as="h3" padded={false} className="mb-2">
- *     🏪 Store
+ *     Store
  *   </SectionLabel>
  *
  * Visual rules (read these BEFORE customising):
  *
- *   - Text size: `text-old-label` (11 px — see --text-label in tokens.css;
- *     this comment said 12 px, which stopped being true at M3.14 and is
- *     exactly the drift this component exists to prevent) — small
- *     enough to feel like
- *     metadata, not a heading.
+ *   - Text: `text-old-body font-semibold` (13 px), sentence case
+ *     (UI_STANDARDS UI-11). Nothing is uppercase: it means nothing in
+ *     Chinese and reads badly in Russian and Uzbek.
  *   - Color: `--c-fg-muted` (default `muted` tone) — keeps it visually
  *     lower than card titles which sit at text-old-h2 / --c-fg. Use
- *     `tone="strong"` only when the section needs the eyebrow to read
+ *     `tone="strong"` only when the section needs the label to read
  *     as a header without a CardTitle above it.
- *   - Casing: UPPERCASE with `tracking-eyebrow` for the eyebrow effect.
- *     Strong differentiation from regular sentence-case body copy.
  *   - Padding (default): `px-4 py-1.5` — matches the rhythm of cards
  *     when grouped with `flex flex-col gap-2`. Set `padded={false}`
  *     when this lives INSIDE a card or already-padded section so the
@@ -43,22 +39,23 @@ import { cn } from '../cn';
  *
  * Why a dedicated component (vs Tailwind utility classes inlined):
  *
- *   - Single source of truth for the eyebrow style → easy to retune
- *     site-wide if we ever want to e.g. drop the uppercase.
+ *   - Single source of truth for the heading style → easy to retune
+ *     site-wide.
  *   - Type-safe `meta` slot — encourages right-aligned counters
  *     instead of operators inventing ad-hoc layouts for them.
  *   - Searchability — grepping for `<SectionLabel>` finds every
  *     section grouping; grepping for the raw class string finds
  *     nothing.
- *   - A grep-based CI check (M3.13) bans the raw class string outside
- *     this file so the inline pattern can't sneak back in.
+ *   - CI's typography guard fails on any `uppercase` class, so the old
+ *     hand-rolled eyebrow cannot come back (review UI-17: this said a
+ *     CI check banned the raw class string; there is no such check).
  */
 export interface SectionLabelProps {
   /** Main label text — usually a noun phrase like "Items" / "Stores". */
   children: ReactNode;
   /** Optional right-aligned auxiliary text (e.g. "5/12"). */
   meta?: ReactNode;
-  /** Tone modifier. `muted` (default) for the standard eyebrow,
+  /** Tone modifier. `muted` (default) for the standard heading,
    *  `strong` when the section needs more weight (rare — usually
    *  the card title carries the weight). */
   tone?: 'muted' | 'strong';

@@ -50,12 +50,14 @@ export const en = {
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'A new version is ready',
   'common.cancel': 'Cancel',
+  // UI-08: what @compass/ui's ConfirmSheet and SearchInput show by default.
+  'common.reason': 'Reason',
+  'common.clearSearch': 'Clear search',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',
   'common.archived': 'archived',
   'common.unarchive': 'Unarchive',
-  'common.name': 'Name',
   'common.remove': 'Remove',
   'common.save': 'Save',
   'common.back': 'Back',
@@ -184,7 +186,7 @@ export const en = {
     'Maintenance actions can permanently delete data. Only super admins can use this section.',
   'ops.maint.targetedTitle': 'Delete a specific test order or run',
   'ops.maint.targetedBody':
-    "Use this when test data and real data exist on the same day. Browse a list, pick the test order or run, see exactly what gets cascade-deleted, then commit. Real users' orders are NOT touched.",
+    "Use this when test data and real data exist on the same day. Browse a list, pick the test order or run, see exactly what will be deleted with it, then confirm. Real users' orders are NOT touched.",
   'ops.maint.resetToday': 'Reset today',
   'ops.maint.resetDateTitle': 'Reset a specific date',
   'ops.maint.resetDateBody': 'Same scope as above, different day. Pick the date below.',
@@ -194,13 +196,11 @@ export const en = {
     'The button below deletes every event, run, order and notification (including ones not sent yet) this workspace has ever produced — regardless of date. Use only if you need a clean-slate restart.',
   'ops.maint.purgeAllTitle': 'Purge ALL test data',
   'ops.maint.purgeAllBody':
-    'Step 1 previews the row counts. Step 2 deletes after you type the workspace code to confirm.',
+    'Step 1 shows how many records would be deleted. Step 2 deletes after you type the workspace code to confirm.',
   'ops.maint.previewEverything': 'Preview everything',
   'ops.maint.resetSheetTitle': 'Reset {date}',
   'ops.maint.resetSheetBody': 'Review what will be deleted, then confirm.',
   'ops.maint.confirmPurgeTitle': 'Confirm purge',
-  'ops.maint.confirmPurgeBody': 'Type the workspace code "{slug}" to confirm.',
-  'ops.maint.confirmPurgeLabel': 'Workspace code',
   // 2026-07-30: the last and largest pocket of untranslated admin copy.
   // The transfer sheet even carried a comment deferring "its own dedicated
   // i18n pass with all the other admin transfer copy" — this is that pass.
@@ -225,11 +225,13 @@ export const en = {
   'people.newRoleHint': 'Custom roles can have any level from 1 to {max}.',
   'people.rolePlaceholderName': 'Shift Lead',
   'people.rolePlaceholderDesc': 'Optional',
-  'people.rankField': 'Level (1–{max})',
+  'people.rankField': 'Level ({min}–{max})',
   'people.slugRule': 'Lowercase Latin letters, digits and hyphens, e.g. night-shift.',
   'people.slugInvalid': 'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
   'people.slugRequired': 'Required.',
-  'people.rankInvalid': 'Enter a whole number from 1 to {max}.',
+  'people.rankInvalid': 'Enter a whole number from {min} to {max}.',
+  'people.rankTierLocked':
+    "Members hold this role, so its level can't cross {rank}: at {rank} and above a role covers the whole workspace, below it single stores.",
   'people.roleHasKeysYouLack':
     "This role has permissions you don't have yourself, so you can't give it here.",
   'people.roleNameKeysYouLack': '{name} (has permissions you lack)',
@@ -272,7 +274,7 @@ export const en = {
   'people.mirrorRolesHint':
     'When on (default), every per-store role this member has in {store} is duplicated in the destination so they keep the same role. Turn off to give them no role at the new store — useful when the move also implies a promotion or demotion.',
   'people.transferWhatTitle': 'What this does',
-  'people.transferWhatIntro': 'Atomic in one transaction:',
+  'people.transferWhatIntro': 'All in one step:',
   'people.transferWhatAdded': '{name} is added to the destination store',
   'people.transferWhatMirrored':
     'their per-store role assignments in the source are recreated in the destination',
@@ -281,13 +283,13 @@ export const en = {
   'people.transferWhatRemoved':
     'their assignment, roles and per-store permission settings in {store} are removed',
   'people.transferWhatOutro':
-    'Other stores they belong to are untouched. If anything fails, the whole transfer rolls back.',
+    'Other stores they belong to are untouched. If anything fails, nothing is changed.',
   'people.scopeGlobal': 'Global',
   'people.overridesHowTitle': 'How this works',
   'people.overridesHowGlobal':
     'Each row shows what the role would grant (gray) and lets you override it for this member: "Allow" forces it on, "Deny" forces it off. "Deny" always wins on conflict.',
   'people.overridesHowStore':
-    'Overrides on this tab apply only in {store}. The role-derived baseline is the same across stores; per-store "Allow" / "Deny" lets you fine-tune what this member can do in this location specifically.',
+    'Overrides on this tab apply only in {store}. Permissions from roles are the same in every store; per-store "Allow" / "Deny" lets you fine-tune what this member can do in this location specifically.',
   'people.toastRoleGranted': 'Role granted',
   'people.toastRoleAlready': 'Role already assigned',
   'people.grantRoleTitle': 'Grant role',
@@ -372,7 +374,6 @@ export const en = {
   'ops.history.decidedIn': '· decided in {n} min',
   'ops.history.decidedBy': '· by {name}',
   'ops.history.skuCount': '{n, plural, one {# product} other {# products}}',
-  'ops.purge.inRun': 'in a run',
   'ops.purge.runLabel': 'Run {date} #{n}',
   'ops.purge.unknownStore': 'Unknown store',
   'ops.purge.deleteSessionTitle': 'Delete order',
@@ -393,16 +394,17 @@ export const en = {
   'ops.purge.kind.other': 'Other',
   'ops.maint.confirmResetBody': 'Type the date {date} to confirm. This cannot be undone.',
   'ops.maint.confirmResetLabel': 'Date to reset',
-  'ops.purge.deleteRows': 'Delete {n, plural, one {# row} other {# rows}}',
+  'ops.purge.deleteRows': 'Delete {n, plural, one {# record} other {# records}}',
   'ops.purge.counting': 'Counting…',
-  'ops.purge.rowsWouldBeDeleted': '{n, plural, one {# row would} other {# rows would}} be deleted',
+  'ops.purge.rowsWouldBeDeleted':
+    '{n, plural, one {# record would} other {# records would}} be deleted',
   'ops.price.avg7d': '7-day avg',
   'ops.price.avg30d': '30-day avg',
   'ops.price.observations': '{n, plural, one {# record} other {# records}}',
   'ops.maint.resetting': 'Resetting…',
   'ops.maint.nothingToDelete': 'Nothing to delete',
   'ops.maint.alreadyClean': 'Nothing on {date} — already clean.',
-  'ops.maint.rowsFromDate': '{n, plural, one {# row} other {# rows}} from {date}',
+  'ops.maint.rowsFromDate': '{n, plural, one {# record} other {# records}} from {date}',
   'people.memberStatus.suspended': 'Suspended',
   'people.memberStatus.invited': 'Invited',
   'people.revokeRoleConfirm': 'Revoke "{role}" from {name}?',
@@ -460,7 +462,7 @@ export const en = {
   'catalog.supplier.newButton': 'New supplier',
   'people.builtInLocked': 'Level {rank} (built-in, locked)',
   'people.builtInRankBody':
-    "A built-in role's level can't be changed — it anchors the permission ladder. Custom roles let you pick any level.",
+    "A built-in role's level can't be changed. Custom roles let you pick any level.",
   'people.rankOutranksYou': 'your level ≤ this',
   'people.roleFallback': 'Role',
   'people.rankLine': 'level {rank}',
@@ -473,7 +475,7 @@ export const en = {
   'run.status.purchasing': 'Purchasing',
   'run.status.delivering': 'Delivering',
   'run.status.finished': 'Finished',
-  'run.status.cancelled': 'Canceled',
+  'run.status.cancelled': 'Cancelled',
   'run.status.amending': 'Amending',
   'time.justNow': 'just now',
   'time.minutesAgo': '{n}m ago',
@@ -547,7 +549,7 @@ export const en = {
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchases. Ask an admin for access.",
   'common.errors.controlCharacters':
-    'Names cannot contain control characters (such as tabs or line breaks)',
+    'Names cannot contain line breaks, tabs or other hidden characters',
   'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────
@@ -721,8 +723,8 @@ export const en = {
   // ── 5. Auth errors (server-thrown TRPCError messages) ──────────
   'auth.errors.botTokenMissing':
     'Sign-in through Telegram is not set up yet. Tell the platform admin.',
-  'auth.errors.invalidInitData': 'Telegram session is invalid — please re-open the app',
-  'auth.errors.invalidRefresh': 'Session expired — please sign in again',
+  'auth.errors.invalidInitData': 'Telegram sign-in could not be verified — please reopen the app',
+  'auth.errors.invalidRefresh': 'Your sign-in has expired — please sign in again',
   'auth.errors.refreshReplayDetected':
     'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
   'auth.errors.refreshChainSwitched':
@@ -829,7 +831,7 @@ export const en = {
   'subscription.status.active': 'Active',
   'subscription.status.past_due': 'Past due',
   'subscription.status.suspended': 'Suspended',
-  'subscription.status.canceled': 'Canceled',
+  'subscription.status.canceled': 'Cancelled',
   'subscription.errors.readOnly': 'This workspace is read-only because its subscription has ended.',
   'subscription.errors.storeLimit':
     "This plan's store limit has been reached. Upgrade or ask the platform admin.",
@@ -910,7 +912,7 @@ export const en = {
   'admin.label.loadingRoles': 'Loading roles…',
   'admin.label.loadingStores': 'Loading stores…',
   'admin.field.tgUserId': 'Telegram user ID *',
-  'admin.field.tgUserIdPlaceholder': 'e.g. 6402913074',
+  'admin.field.tgUserIdPlaceholder': 'e.g. 123456789',
   'admin.field.displayName': 'Display name',
   'admin.field.displayNamePlaceholder': 'optional · the user can confirm/change at first sign-in',
   'admin.field.role': 'Role',
@@ -958,7 +960,7 @@ export const en = {
   'admin.workspace.name': 'Name',
   'admin.workspace.yourRole': 'Your role',
   'admin.workspace.telegram': 'Telegram',
-  'auth.errors.sessionStale': 'Your session is out of date — please reload',
+  'auth.errors.sessionStale': 'Your account has changed — please reload',
   'auth.errors.storeArchived': 'This store has been archived. Pick another store.',
   'auth.errors.storeForbidden':
     'You are not assigned to this store. Pick another store, or ask an admin to add you.',
@@ -1034,6 +1036,8 @@ export const en = {
     "Built-in roles can't be deleted, but you can change their name, description and permissions.",
   'admin.errors.roleHasBindings':
     'This role is still assigned to members — revoke those grants first',
+  'admin.errors.rankTierChangeHasBindings':
+    "Members hold this role, so its level can't cross {rank}. Revoke it from them first, or create a new role.",
   'admin.errors.permissionNotFound': 'There is no such permission.',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action",
@@ -1079,8 +1083,7 @@ export const en = {
   'admin.toast.sessionDeleted': 'Deleted order — {n, plural, one {# row} other {# rows}} removed',
   'admin.toast.runDeleted': 'Deleted run — {n, plural, one {# row} other {# rows}} removed',
   'admin.toast.dateReset': 'Reset {date}: {n, plural, one {# row} other {# rows}} deleted',
-  'admin.toast.dataPurged':
-    'Purged {n, plural, one {# row} other {# rows}} across {tables, plural, one {# table} other {# tables}}',
+  'admin.toast.dataPurged': 'Deleted {n, plural, one {# record} other {# records}}',
 
   // ── 7. Upload errors ───────────────────────────────────────────
   'upload.errors.notConfigured':
@@ -1088,8 +1091,6 @@ export const en = {
   'upload.errors.unsupportedContentType': 'This file type is not allowed',
 
   // ── 8. Order page (UI + actions + toasts) ──────────────────────
-  'order.empty.title': 'No items selected yet',
-  'order.empty.description': 'Tap + next to a product to start.',
   // M1.9-fix (2026-05-07): SKU row meta + chip-bar labels were
   // hardcoded English. These appear on every product row of the main
   // staff page.
@@ -1155,7 +1156,6 @@ export const en = {
   'order.submitted.extrasOriginal': 'Other items as submitted',
   'order.submitted.changedShort': 'Changed in review',
   'order.submitted.unchanged': 'Same as submitted',
-  'order.review.remove': 'Remove',
   'order.review.estimatedTotal': 'Estimated total',
   'order.review.estimateHint': '~ at the last price paid · {known} priced · {unknown} unknown',
   'approval.estimateUnpriced': '+ {n} unpriced',
@@ -1397,12 +1397,9 @@ export const en = {
   'run.step.done': 'Done',
   'run.action.startPurchase': 'Start purchase',
   'run.action.ejectSession': 'Remove from purchase',
-  'run.section.sessions': 'Orders in this run',
-  'run.sessions.meta': '{n, plural, one {# order} other {# orders}}',
   'run.sessions.stats':
-    '{items, plural, one {# product} other {# products}} · {qty, plural, one {{qty} unit} other {{qty} units}} · {extras, plural, one {# other item} other {# other items}}',
-  'run.sessions.statsNoExtras':
-    '{items, plural, one {# product} other {# products}} · {qty, plural, one {{qty} unit} other {{qty} units}}',
+    '{items, plural, one {# product} other {# products}} · {extras, plural, one {# other item} other {# other items}}',
+  'run.sessions.statsNoExtras': '{items, plural, one {# product} other {# products}}',
   'run.sessions.unknownSubmitter': 'Unknown submitter',
   'run.eject.reasonPlaceholder': 'Reason (optional)',
   'run.confirm.ejectSession.title': 'Remove the order from {store} / {who}?',
@@ -1643,7 +1640,7 @@ export const en = {
   'run.toast.purchaseUndone': 'Purchase undone — back to pending',
   'run.toast.deliveryRecalled': 'Delivery recalled',
   'run.toast.delivered': 'Marked as delivered',
-  'run.toast.runCancelled': 'Run canceled',
+  'run.toast.runCancelled': 'Run cancelled',
   // Wave2 #15 (M3.40, 2026-05-20): shown when run.cancel completes but
   // one or more sessions failed to eject cleanly. The repair worker
   // sweep picks them up within ~5 min so the operator doesn't need
@@ -1664,7 +1661,7 @@ export const en = {
   // Optional input — we deliberately don't hard-require because
   // operators sometimes cancel because they fat-fingered, and forcing
   // a reason produces "asdf" noise that pollutes audit.
-  'run.cancel.reasonPlaceholder': 'Why are you canceling? (optional, helps the team learn)',
+  'run.cancel.reasonPlaceholder': 'Why are you cancelling? (optional, helps the team learn)',
   'run.history.totalLabel': 'Total spent',
   'run.history.itemSummary': '{bought} bought · {na} unavailable',
   'run.history.storeSummary': '{stores, plural, one {# store} other {# stores}}',
@@ -1718,9 +1715,9 @@ export const en = {
   'run.errors.itemAlreadyPurchased':
     'This item is already recorded as bought — edit the existing record instead',
   'run.errors.cannotCancelAfterConfirm':
-    'A store has already confirmed its delivery — this run can no longer be canceled',
+    'A store has already confirmed its delivery — this run can no longer be cancelled',
   'run.errors.cannotCancelAfterDelivery':
-    'Goods have been delivered to a store, so the run cannot be canceled. Recall the delivery first',
+    'Goods have been delivered to a store, so the run cannot be cancelled. Recall the delivery first',
   'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
   'run.errors.notReadyToDeliver':
     'Delivery cannot start yet: the run is not at the delivery step. Refresh to see where it is.',
@@ -1782,7 +1779,6 @@ export const en = {
   // ── 12. Confirm page (delivery acceptance) ──────────────────────
   'confirm.empty.noItems': 'No items for this store',
   'confirm.empty.nothingToConfirm': 'Nothing to receive',
-  'confirm.empty.nothingDesc': 'A run will show up here once items are delivered to your store.',
   'confirm.runOnDate': 'Run {date}',
   'confirm.confirmStore': 'Confirm receipt',
   // 2026-07-30 (flow review): receiving used to open with every line
@@ -2213,7 +2209,6 @@ export const en = {
   'settlement.noEligibleStores.body':
     'You do not have daily-close permission in any assigned store. Ask your store manager to check your store role.',
   'settlement.errors.invalidMoney': 'Enter a valid amount with up to two decimal places.',
-  'settlement.errors.fieldMoney': '{field}: enter a number with at most two decimals.',
   'settlement.errors.fieldsToFix':
     '{n, plural, one {# field needs correcting} other {# fields need correcting}}',
   'settlement.errors.goToFirst': 'Go to it',
@@ -2359,6 +2354,8 @@ export const en = {
     "Older audit rows have no store and don't appear under a store filter.",
   'ops.audit.emptyFilterTitle': 'No actions of this type',
   'ops.audit.unknown': '(unknown)',
+  'ops.audit.change': '{field}: {before} → {after}',
+  'ops.audit.field.status': 'Status',
   'ops.audit.s.roleGrant': '{actor} granted {role} to {member}',
   'ops.audit.s.roleRevoke': '{actor} revoked {role} from {member}',
   'ops.audit.s.roleCreate': '{actor} created role {role}',
@@ -2390,6 +2387,10 @@ export const en = {
   'ops.audit.s.catalogRestore': '{actor} restored "{name}"',
   'ops.audit.s.financeUpdate': '{actor} updated finance settings',
   'ops.audit.s.subscriptionUpdate': 'Subscription updated by {actor}',
+  'ops.audit.s.purgeSession': '{actor} deleted the order of {date} at {store} ({member})',
+  'ops.audit.s.purgeRun': '{actor} deleted run {date} #{n}',
+  'ops.audit.s.purgeDate': '{actor} deleted all orders and runs of {date}',
+  'ops.audit.s.purgeAll': "{actor} deleted all of the workspace's data",
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.
@@ -2574,9 +2575,11 @@ export const en = {
   'attendance.clock.locating': 'Finding your location…',
   'attendance.clock.doneIn': 'Clocked in at {time}',
   'attendance.clock.doneOut': 'Clocked out at {time}',
-  'attendance.clock.punches': "Today's clock-ins",
+  'attendance.clock.punches': 'Recent clock-ins',
   'attendance.clock.noShiftToday': 'No shift planned today',
   'attendance.clock.shiftToday': 'Shift today: {times}',
+  'attendance.clock.shiftFromYesterday': 'Shift from yesterday: {times}',
+  'attendance.clock.yesterday': 'Yesterday',
   'attendance.clock.upcoming': 'Next shifts',
   'attendance.clock.offlineTitle': 'No connection',
   'attendance.clock.offlineBody': 'Clocking in needs a connection; it is not saved to send later.',
@@ -2623,6 +2626,10 @@ export const en = {
     'Clock-ins for this day. Wrong ones are voided with a reason, never deleted.',
   'attendance.sheet.noPunches': 'No clock-ins this day.',
   'attendance.sheet.manualBy': 'Added by {name}: {reason}',
+  // A clock-in's kind (the app) or time (the month's file) with the day it
+  // was made on, when that is not the row's day: an overnight shift's
+  // clock-out.
+  'attendance.sheet.madeOn': '{label} ({date})',
   'attendance.sheet.selfAt': 'Own clock-in, {m} m from the store',
   'attendance.sheet.voidedBy': 'voided by {name}: {reason}',
   'attendance.void.action': 'Void',
@@ -2749,7 +2756,7 @@ export const en = {
   'attendance.export.button': 'Export to Excel',
   'attendance.export.failed': 'Could not export. Try again.',
   'attendance.export.fileName': 'Attendance-{store}-{month}.xlsx',
-  'attendance.export.manualMark': '(manual)',
+  'attendance.export.manualMark': '{time} (manual)',
   'attendance.export.sheetSummary': 'Summary',
   'attendance.export.sheetDays': 'By day',
   'attendance.export.status.payable': 'Paid day',
@@ -2810,20 +2817,18 @@ export const en = {
     'No face found in the photo. Face the camera in good light and take it again.',
   'attendance.errors.faceCheckUnavailable':
     'The face check is not available right now. Try again later.',
-  'attendance.errors.photoNotFound': 'This photo is no longer here.',
   'attendance.export.col.face': 'Face',
   'attendance.export.face.match': 'Matches',
   'attendance.export.face.mismatch': 'Does not match',
   'attendance.export.face.enrolled': 'Registered',
   'attendance.export.face.unchecked': 'Not checked',
-  'notify.attendance.faceMismatch.title': 'Face does not match',
-  'notify.attendance.faceMismatch.body':
-    '{name} clocked at {store} at {time}, and the face does not match the registered one. Check the punch photos.',
   'attendance.errors.livenessRequired':
     'This store needs the live face check to clock. Update the app and try again.',
   'attendance.errors.livenessExpired': 'The face check took too long. Start again.',
   'attendance.errors.livenessFailed':
-    'The live check did not pass. Face the camera in good light and turn your head as asked.',
+    'The live check did not pass: do each move the screen asks for.',
+  'attendance.errors.livenessOtherFace':
+    'The moves could not be matched to your face: keep only your own face in the frame.',
   'attendance.errors.borrowNoFace': 'This colleague has not enrolled their face yet.',
   'attendance.errors.borrowFaceMismatch': 'The face does not match this colleague.',
   'attendance.errors.notColleague': 'On your phone you can clock in only colleagues of this store.',
@@ -2853,9 +2858,6 @@ export const en = {
   'attendance.export.check.livenessFailed': 'Liveness failed',
   'attendance.export.check.borrowed': "On {name}'s phone",
   'attendance.export.check.newDevice': 'New phone',
-  'notify.attendance.livenessFailed.title': 'Liveness check failed',
-  'notify.attendance.livenessFailed.body':
-    '{name} clocked at {store} at {time}, but the live face check did not pass. Check the punch photos.',
   'notify.attendance.borrowedPhone.title': "Clocked on a colleague's phone",
   'notify.attendance.borrowedPhone.body':
     "{name} clocked at {store} at {time} on {owner}'s phone. The face matched.",
@@ -2905,9 +2907,6 @@ export const en = {
   'attendance.review.overtimeTitle': 'Overtime waiting for you',
   'attendance.review.overtimeBody': 'Waiting: {count}. Approve or reject it on the sheet.',
   'attendance.export.check.faceLike': 'Looks like {name}',
-  'notify.attendance.faceLike.title': 'Face looks like someone else',
-  'notify.attendance.faceLike.body':
-    '{name} clocked at {store} at {time}, but the face looks like {like}. Check the punch photos.',
   'attendance.errors.faceNotEnrolled':
     'Enroll your face first; you can clock once a manager approves it.',
   'attendance.errors.faceMismatch':
@@ -3049,6 +3048,8 @@ export const en = {
   'attendance.punch.checking': 'Checking, one moment…',
   'attendance.punch.checkingSlow':
     'The connection is slow and it is still sending. Please keep this open.',
+  'attendance.punch.checkingLong':
+    'Still no answer. You can close this: Attendance will show whether it was recorded. If not, clock again.',
   'attendance.punch.okIn': 'Clocked in',
   'attendance.punch.okOut': 'Clocked out',
   'attendance.punch.told': '{name} and the managers have been told.',
@@ -3059,9 +3060,9 @@ export const en = {
   'attendance.punch.done': 'OK',
   'attendance.punch.oneMore': 'One more step: turn your head as shown.',
   'attendance.punch.restart': 'That took too long. Please do it once more.',
-  'attendance.punch.netFailed': 'No connection: this punch was not recorded.',
+  'attendance.punch.netFailed': 'No answer came back: this punch may already be recorded.',
   'attendance.punch.netFailedBody':
-    'The photos are kept for now: tap Try again to send them again.',
+    'Tap Try again to check with the same photos. It will not be recorded twice.',
   'attendance.punch.alreadyIn': 'You clocked in at {time} already. No need to clock again.',
   'attendance.punch.alreadyOut': 'You clocked out at {time} already. No need to clock again.',
   'attendance.punch.alreadyInFor': '{name} clocked in at {time} already. No need to clock again.',
@@ -3074,4 +3075,6 @@ export const en = {
   'attendance.location.outside.title': 'Too far from the store',
   'attendance.location.inaccurate.title': 'Location not precise enough',
   'attendance.punch.preparing': 'Getting ready…',
+  'run.errors.listFrozenWhileDelivering':
+    "Delivery has started, so the list can't change now. If no store has its goods yet, go back to purchase first.",
 } as const;

@@ -79,6 +79,45 @@ export const STOCKTAKE_COUNT_MESSAGE = {
   tooLarge: 'inventory.errors.countTooLarge',
 } as const satisfies Record<StocktakeCountProblem, string>;
 
+/**
+ * CONF-08 (2026-11-09): an amount in the daily close, stored as
+ * numeric(14,2): digits, at most 12 before the point and 2 after; a minus
+ * only where the field allows one (the previous procurement's carry);
+ * above zero for an expense or wage line. The server's schemas and the
+ * close page ask this one function, so their rules cannot drift apart, and
+ * the page says which rule a field breaks (DX-CLS-3). `value` is the text
+ * as sent; the page trims its fields first.
+ */
+export type SettlementMoneyProblem =
+  | 'empty'
+  | 'negative'
+  | 'notNumber'
+  | 'decimals'
+  | 'tooLarge'
+  | 'zero';
+
+export function settlementMoneyProblem(
+  value: string,
+  opts: { signed?: boolean; positive?: boolean } = {},
+): SettlementMoneyProblem | null {
+  if (value === '') return 'empty';
+  const negative = value.startsWith('-');
+  const unsigned = negative ? value.slice(1) : value;
+  if (!/^\d+(?:\.\d+)?$/.test(unsigned)) return 'notNumber';
+  if (negative && !opts.signed) return 'negative';
+  const [whole = '', fraction = ''] = unsigned.split('.');
+  if (fraction.length > 2) return 'decimals';
+  if (whole.length > 12) return 'tooLarge';
+  if (opts.positive && !/[1-9]/.test(unsigned)) return 'zero';
+  return null;
+}
+
+/** CONF-08: the largest amount a daily close total may reach, in cents. */
+export const SETTLEMENT_MAX_CENTS = 99_999_999_999_999n;
+
+/** CONF-08: at most this many expense lines, and wage lines, in one close. */
+export const SETTLEMENT_DETAIL_ITEMS_MAX = 100;
+
 /** The face-registration consent text the person agreed to. */
 export const ATTENDANCE_FACE_CONSENT_VERSION = 1;
 
@@ -100,3 +139,19 @@ export const ATTENDANCE_ACCURACY_SLACK_M = 50;
  * clock-in and, a minute later, their clock-out).
  */
 export const ATTENDANCE_UNDO_WINDOW_MS = 2 * 60_000;
+
+/**
+ * COREAPI-04 (2026-11-09): one `system.log` call carries at most this many
+ * client log events. The server refuses a bigger batch and the web sends
+ * none: it used to send its whole queue (up to 500) in one call, which was
+ * refused and queued again on every flush, so after an outage or an error
+ * storm no client log arrived at all. The server, the contracts schema and
+ * the web each had a number of their own; they share this one.
+ */
+export const CLIENT_LOG_BATCH_MAX = 200;
+
+/**
+ * And at most this many bytes of JSON: browsers refuse a `keepalive`
+ * request body above 64 KiB, and the web sends its logs with keepalive.
+ */
+export const CLIENT_LOG_BATCH_MAX_BYTES = 60_000;

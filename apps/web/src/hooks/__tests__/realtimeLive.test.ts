@@ -3,11 +3,12 @@
  * pushes are not arriving. The liveness rule and the flag pages read are
  * pinned here; the socket wiring itself needs a browser.
  */
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import {
   REALTIME_STALE_MS,
   getRealtimeLive,
   isRealtimeLive,
+  isRealtimeStale,
   pollWhenOffline,
   setRealtimeLive,
 } from '../useRealtime';
@@ -29,6 +30,19 @@ describe('isRealtimeLive', () => {
   });
 });
 
+describe('isRealtimeStale (COREWEB2-07)', () => {
+  const now = 1_000_000;
+
+  it('keeps a socket that hears the 25 s pings', () => {
+    expect(isRealtimeStale(now - 25_000, now)).toBe(false);
+    expect(isRealtimeStale(now - REALTIME_STALE_MS, now)).toBe(false);
+  });
+
+  it('gives up on one that has heard nothing for longer, or never got an answer', () => {
+    expect(isRealtimeStale(now - REALTIME_STALE_MS - 1, now)).toBe(true);
+  });
+});
+
 describe('pollWhenOffline', () => {
   it('polls only while realtime is down', () => {
     expect(pollWhenOffline(6_000, false)).toBe(6_000);
@@ -37,6 +51,11 @@ describe('pollWhenOffline', () => {
 });
 
 describe('realtime live flag', () => {
+  // TEST3-07: the flag is module state shared with every other test file;
+  // put it back down even when an assertion below fails, so "starts down"
+  // keeps holding whatever order the files run in.
+  afterEach(() => setRealtimeLive(false));
+
   it('starts down and follows transitions', () => {
     expect(getRealtimeLive()).toBe(false);
     setRealtimeLive(true);

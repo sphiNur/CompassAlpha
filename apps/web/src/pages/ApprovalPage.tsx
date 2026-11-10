@@ -56,7 +56,7 @@ import { QtyDrafts } from './approval/qtyDrafts';
 import { adjustingSessionIds } from './approval/adjustInFlight';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 import { moneyLine } from '../lib/money';
-import { addMoney } from '@compass/contracts/money';
+import { estimateOrder } from '@compass/contracts/money';
 
 /** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
 const NEXT_CARD = '[data-approval-list] > li h2';
@@ -1012,7 +1012,18 @@ function SessionItems({
       }, rerender),
     [sessionId, storeId],
   );
-  useEffect(() => () => drafts.dispose(), [drafts]);
+  // Review ORD-02 (2026-11-09): leaving the card sends the taps still
+  // waiting instead of dropping them, and 「通过」 stays held until they
+  // are answered (it used to unlock at once, on the old number). The
+  // page being closed or hidden sends them too.
+  useEffect(() => {
+    const onPageHide = () => void drafts.flushAll();
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      void drafts.dispose().finally(() => onHold(sessionId, false));
+    };
+  }, [drafts, onHold, sessionId]);
   const qtyKey = (skuId: string, memberId: string) => `${skuId}|${memberId}`;
 
   // DX-APR-3: the order as first seen (or last acknowledged).
@@ -1031,7 +1042,6 @@ function SessionItems({
   useEffect(() => {
     onHold(sessionId, hold);
   }, [hold, onHold, sessionId]);
-  useEffect(() => () => onHold(sessionId, false), [onHold, sessionId]);
 
   // Member directory lookup so we can show who contributed each row.
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {
@@ -1090,22 +1100,11 @@ function SessionItems({
   const priceBySku = new Map(
     (priceStats.data ?? []).map((r) => [r.skuId, r.lastPrice]),
   );
+  // ORD-01: the server's rule for the card's "~", so the card and this
+  // detail agree to the cent.
   const estimateTotal = (() => {
-    let sum = 0;
-    let known = 0;
-    let unknown = 0;
-    const priceMap = priceBySku;
-    for (const t of totals) {
-      const price = priceMap.get(t.skuId);
-      if (price) {
-        // DX-PFE-12: half-up cents per line, added in cents (D1).
-        sum = addMoney(sum, moneyLine(t.qty, price));
-        known++;
-      } else {
-        unknown++;
-      }
-    }
-    return { sum, known, unknown };
+    const est = estimateOrder(totals, (skuId) => priceBySku.get(skuId));
+    return { sum: Number(est.total), known: est.known, unknown: est.unknown };
   })();
   const sessionNotes = detail.data?.notes ?? null;
   const sessionExtras = detail.data?.extras ?? [];

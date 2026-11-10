@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { surfaceClass } from './Card';
 import { IconChevronRight } from './NavIcon';
@@ -223,6 +223,29 @@ export function Field({ label, hint, children, className }: FieldProps) {
 }
 
 /**
+ * A titled set of controls (checkboxes, a segmented choice, a switch
+ * with its own label), drawn like Field.
+ *
+ * UI-01 (2026-11-09): Field wraps its content in a `<label>`, which hands
+ * a click on the title, or on the gaps of a list, to the first control
+ * inside. Tapping "Assigned stores" ticked the first store and assigned
+ * the member there. A label may not hold another label either. A group is
+ * titled, not labelled: use Field for one input, FieldGroup for several.
+ */
+export function FieldGroup({ label, hint, children, className }: FieldProps) {
+  const titleId = useId();
+  return (
+    <div role="group" aria-labelledby={titleId} className={cn('block', className)}>
+      <FieldLabel id={titleId}>{label}</FieldLabel>
+      <div className="mt-1">{children}</div>
+      {hint ? (
+        <span className="mt-1 block text-old-label text-[var(--c-fg-muted)]">{hint}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Field label — the one definition of a form-field label (sentence
  * case, `text-old-label font-semibold text-fg-muted`). Field uses it; call
  * sites that re-inlined the same span (e.g. ConfirmSheet's reason
@@ -230,9 +253,20 @@ export function Field({ label, hint, children, className }: FieldProps) {
  * place. Deliberately sentence-case: uppercase eyebrows are
  * `SectionLabel`, a different role.
  */
-export function FieldLabel({ className, children }: { className?: string; children: ReactNode }) {
+export function FieldLabel({
+  className,
+  children,
+  id,
+}: {
+  className?: string;
+  children: ReactNode;
+  id?: string;
+}) {
   return (
-    <span className={cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className)}>
+    <span
+      id={id}
+      className={cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className)}
+    >
       {children}
     </span>
   );
@@ -378,6 +412,11 @@ export interface NameCellProps {
   primaryLang?: string;
   secondaryLang?: string;
   size?: 'default' | 'prominent';
+  /**
+   * 'span' inside a button, where only phrasing content may go (review
+   * RUNWEB2-06, the run's product picker). It looks the same.
+   */
+  as?: 'div' | 'span';
   className?: string;
 }
 
@@ -387,10 +426,11 @@ export function NameCell({
   primaryLang,
   secondaryLang,
   size = 'default',
+  as: Tag = 'div',
   className,
 }: NameCellProps) {
   return (
-    <div className={cn('min-w-0', className)}>
+    <Tag className={cn('block min-w-0', className)}>
       {/* No explicit leading on the primary — each tier inherits its
           size token's line-height (text-old-h2 → 1.25, text-old-body → 1.4) so
           this matches the hand-rolled markup it replaced byte-for-byte.
@@ -398,7 +438,7 @@ export function NameCell({
           A11Y-1 (2026-10-31): the primary name wraps to two lines instead
           of truncating. At 200% zoom a row is ~195 px wide and `truncate`
           cut the name down to nothing, leaving only the qty control. */}
-      <div
+      <Tag
         lang={primaryLang}
         className={cn(
           'line-clamp-2 break-words font-semibold text-[var(--c-fg)]',
@@ -406,15 +446,15 @@ export function NameCell({
         )}
       >
         {primary}
-      </div>
+      </Tag>
       {secondary ? (
-        <div
+        <Tag
           lang={secondaryLang}
-          className="truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]"
+          className="block truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]"
         >
           {secondary}
-        </div>
+        </Tag>
       ) : null}
-    </div>
+    </Tag>
   );
 }
