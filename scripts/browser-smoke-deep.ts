@@ -6,10 +6,11 @@
  * doesn't close, qty doesn't decrement) shows up here before the user
  * sees it.
  *
- * Strategy: same Telegram WebApp + auth.telegramLogin stubs as the
- * shallow smoke. Each page's data queries are stubbed with realistic
- * fixtures. Mutations are stubbed to return fake success responses so
- * we exercise UI flow without needing a real server-state machine.
+ * Strategy: the same Telegram WebApp, sign-in and first-render stubs as
+ * the shallow smoke (scripts/lib/smokeHarness.ts). The data this walk
+ * needs is stubbed again with realistic fixtures, and mutations return
+ * fake success responses, so we exercise UI flow without needing a real
+ * server-state machine. A tRPC call nothing stubs fails the smoke.
  *
  * What it asserts:
  *   - Order tab: shows 18 SKUs, qty +/− is visible, tapping + shows
@@ -28,23 +29,23 @@
  * On Windows, run this with Node. Bun's Playwright launcher can hang before
  * Chromium produces any output; the app is not failing in that case.
  */
-import { chromium, type ConsoleMessage } from 'playwright';
+import type { ConsoleMessage } from 'playwright';
+import {
+  PRIMARY_NAV_SELECTOR,
+  blockRealtime,
+  catchUnstubbedTrpc,
+  createReport,
+  fakeSession,
+  launchSmoke,
+  smokeBase,
+  stubAppReads,
+  stubSignIn,
+  stubTelegramSdk,
+  stubTrpc,
+  type TrpcOutput,
+} from './lib/smokeHarness.ts';
 
-// COMPASS_BASE is required. The previous hardcoded default pointed at a
-// stale .trycloudflare.com URL that masked real failures whenever the
-// quick-tunnel rotated (P0-4, 2026-05-17).
-const rawBase = process.env.COMPASS_BASE;
-if (!rawBase) {
-  console.error(
-    '✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)',
-  );
-  process.exit(2);
-}
-const BASE = rawBase.replace(/\/$/, '');
-const HEADLESS = process.env.HEADLESS !== '0';
-// `data-testid` is the stable contract. Keep the English aria-label fallback
-// while validating the previous production bundle, which predates it.
-const PRIMARY_NAV_SELECTOR = ':is([data-testid="primary-nav"], nav[aria-label="Main sections"])';
+const BASE = smokeBase();
 // QtyControl's English accessible label was renamed from "Increment" to
 // "Increase" when its labels became localized. The test id is the durable
 // contract; the two labels keep this smoke compatible with both bundles
@@ -52,67 +53,7 @@ const PRIMARY_NAV_SELECTOR = ':is([data-testid="primary-nav"], nav[aria-label="M
 const QTY_INCREMENT_SELECTOR =
   ':is(button[data-testid="qty-increment"], button[aria-label="Increment"], button[aria-label="Increase"])';
 
-interface Check {
-  name: string;
-  pass: boolean;
-  detail?: string;
-}
-const results: Check[] = [];
-function record(name: string, pass: boolean, detail?: string) {
-  results.push({ name, pass, ...(detail !== undefined ? { detail } : {}) });
-}
-
-const fakeUser = { id: 6402913074, first_name: 'Smoke', username: 'smoke', language_code: 'en' };
-const fakeSession = {
-  user: {
-    id: 'u-smoke',
-    displayName: 'Smoke',
-    displayNameLocked: true,
-    avatarUrl: null,
-    locale: 'en',
-    secondaryLocale: null,
-    tgUsername: 'smoke',
-  },
-  member: {
-    memberId: 'mem-smoke',
-    orgId: 'org-default',
-    orgSlug: 'default',
-    orgName: 'Default Org',
-    status: 'active',
-    currency: 'UZS',
-    taxRatePct: '0.00',
-    pricesIncludeTax: true,
-  },
-  stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE', isActive: true }],
-  permissions: [
-    'order.draft',
-    'order.submit',
-    'order.approve',
-    'order.claim',
-    'run.create',
-    'run.purchase',
-    'prices.view',
-    'settlement.record',
-    'delivery.dispatch',
-    'delivery.confirm',
-    'users.manage',
-    // A real super admin holds org.admin; without it the Admin home lists
-    // only Stores and Operations (#197), as it does for a store manager.
-    'org.admin',
-    'system.logs.view',
-  ],
-  roleSlugs: ['super_admin'],
-  myMaxRank: 100,
-  storeRanks: {},
-  adminStoreIds: ['store-1'],
-  needsOnboarding: false,
-};
-const fakeTokens = {
-  accessToken: 'smoke-access-token',
-  refreshToken: 'smoke-refresh-token',
-  accessExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-  refreshExpiresAt: new Date(Date.now() + 600_000).toISOString(),
-};
+const FIXTURE_TIME = '2026-05-01T06:00:00.000Z';
 
 const fakeSkus = [
   {
@@ -155,589 +96,230 @@ const fakeSkus = [
 const fakeCategories = [
   {
     id: 'cat-fruit',
+    orgId: 'org-default',
     slug: 'fruit',
     names: { en: 'Fruit' },
     sortIndex: 0,
     icon: null,
     isArchived: false,
+    createdAt: FIXTURE_TIME,
+    updatedAt: FIXTURE_TIME,
   },
   {
     id: 'cat-meat',
+    orgId: 'org-default',
     slug: 'meat',
     names: { en: 'Meat' },
     sortIndex: 10,
     icon: null,
     isArchived: false,
+    createdAt: FIXTURE_TIME,
+    updatedAt: FIXTURE_TIME,
   },
   {
     id: 'cat-tools',
+    orgId: 'org-default',
     slug: 'tools',
     names: { en: 'Tools' },
     sortIndex: 20,
     icon: null,
     isArchived: false,
+    createdAt: FIXTURE_TIME,
+    updatedAt: FIXTURE_TIME,
   },
 ];
 
-// In-flight session state we mutate as the smoke clicks around.
-let mockSession: {
-  id: string;
-  storeId: string;
-  memberId: string;
-  orderDate: string;
-  status: 'draft' | 'submitted';
-  claimedByMemberId: string | null;
-  claimedAt: string | null;
-  submittedAt: string | null;
-  decidedAt: string | null;
-  decidedByMemberId: string | null;
-  rejectReason: string | null;
-  runId: string | null;
-  lastSeq: number;
-  items: Array<{
-    skuId: string;
-    qty: string;
-    note: string | null;
-    lastEditedByUserId: string | null;
-    lastEditedAt: string | null;
-  }>;
-} | null = null;
+// In-flight session state we mutate as the smoke clicks around, in the
+// shape order.todaySession returns.
+type OrderSession = Exclude<TrpcOutput<'order.todaySession'>, null>;
+let mockSession: OrderSession | null = null;
 
-/** tRPC calls the smoke deliberately lets through to the real server. */
-const TRPC_PASS_THROUGH: ReadonlySet<string> = new Set(['system.log']);
+/** fakeSession's one store, as catalog.stores lists it. */
+const fakeStores: TrpcOutput<'catalog.stores'> = fakeSession.stores.map((st) => ({
+  ...st,
+  orgId: fakeSession.member.orgId,
+  timezone: null,
+  sortIndex: 0,
+  address: null,
+  createdAt: FIXTURE_TIME,
+  updatedAt: FIXTURE_TIME,
+  deletedAt: null,
+  geoLat: null,
+  geoLng: null,
+  defaultRoleId: null,
+}));
 
-function trpcOk(data: unknown) {
-  return JSON.stringify({ result: { data } });
-}
+const { record, finish } = createReport();
 
 async function run() {
-  // PLAYWRIGHT_CHANNEL=chrome uses the installed Google Chrome instead of
-  // Playwright's bundled build (e.g. on an OS Playwright has no build for).
-  const browser = await chromium.launch({
-    headless: HEADLESS,
-    ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
-  });
-  const context = await browser.newContext({
+  const { browser, context } = await launchSmoke({
     viewport: { width: 414, height: 896 },
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7) Mobile/15E148',
   });
+  // First, so every stub registered after it takes precedence. system.log
+  // (the page's own error reports) may reach the server.
+  const unstubbed = await catchUnstubbedTrpc(context, new Set(['system.log']));
+  await stubTelegramSdk(context);
+  await stubSignIn(context);
+  await stubAppReads(context);
+  await blockRealtime(context);
 
-  // Every tRPC call the page makes must be stubbed below. Playwright runs
-  // the most recently registered matching route first, so this one only
-  // sees calls nothing else answered. 2026-11-05: order.submittedVersion
-  // (added in #190) went to the real server with the fake token, got 401,
-  // and the failed refresh sent the app back to its login loop and the
-  // Order tab. The smoke then timed out much later on "+ Add wage", which
-  // looked like a network problem. An unstubbed call is now answered with
-  // null (so the run goes on) and fails the smoke by name.
-  const unstubbed = new Set<string>();
-  await context.route('**/trpc/**', async (route) => {
-    const path = new URL(route.request().url()).pathname.replace(/^.*\/trpc\//, '');
-    const names = path.split(',').filter((n) => !TRPC_PASS_THROUGH.has(n));
-    if (names.length === 0) {
-      await route.continue();
-      return;
-    }
-    for (const n of names) unstubbed.add(n);
-    const body = path.includes(',') ? JSON.stringify(path.split(',').map(() => ({ result: { data: null } }))) : trpcOk(null);
-    await route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body });
-  });
-
-  // Stub Telegram SDK.
-  await context.route('**/telegram.org/js/telegram-web-app.js', async (route) => {
-    const initDataString = 'user=' + encodeURIComponent(JSON.stringify(fakeUser)) + '&hash=stub';
-    const script = `
-      (function() {
-        var noop = function() {};
-        var stub = function() { throw new Error('WebAppBottomButtonParamInvalid'); };
-        // Track registered onClick handlers so the smoke can synthesize a
-        // tap by calling window.__compassMainButtonClick(). This lets us
-        // exercise the same code path the real Telegram MainButton runs
-        // (the in-page fallback button is hidden inside Telegram).
-        var clickHandlers = [];
-        var mainBtn = {
-          text: '', isVisible: false, isActive: true,
-          show: function(){ this.isVisible = true; },
-          hide: function(){ this.isVisible = false; },
-          enable: function(){ this.isActive = true; },
-          disable: function(){ this.isActive = false; },
-          setText: function(t){ if (!t || !String(t).trim()) { stub(); } this.text = t; },
-          onClick: function(cb){ clickHandlers.push(cb); },
-          offClick: function(cb){ clickHandlers = clickHandlers.filter(function(h){ return h !== cb; }); },
-          setParams: noop,
-        };
-        window.__compassMainButtonClick = function() {
-          if (!mainBtn.isVisible || !mainBtn.isActive) return false;
-          clickHandlers.forEach(function(h){ try { h(); } catch (e) {} });
-          return true;
-        };
-        // BackButton with the same harness pattern as MainButton.
-        var backHandlers = [];
-        var backBtn = {
-          isVisible: false,
-          show: function(){ this.isVisible = true; },
-          hide: function(){ this.isVisible = false; },
-          onClick: function(cb){ backHandlers.push(cb); },
-          offClick: function(cb){
-            backHandlers = backHandlers.filter(function(h){ return h !== cb; });
-          },
-        };
-        window.__compassBackButtonClick = function() {
-          if (!backBtn.isVisible) return false;
-          backHandlers.forEach(function(h){ try { h(); } catch (e) {} });
-          return true;
-        };
-        window.__compassConfirmCount = 0;
-        var showConfirm = function(_message, callback) {
-          window.__compassConfirmCount += 1;
-          if (typeof callback === 'function') callback(true);
-        };
-        window.Telegram = {
-          WebApp: {
-            initData: ${JSON.stringify(initDataString)},
-            initDataUnsafe: { user: ${JSON.stringify(fakeUser)} },
-            themeParams: {}, colorScheme: 'light',
-            viewportHeight: window.innerHeight, isExpanded: true,
-            expand: noop, ready: noop, close: noop,
-            onEvent: noop, offEvent: noop,
-            MainButton: mainBtn,
-            BackButton: backBtn,
-            HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
-            showAlert: noop, showConfirm: showConfirm,
-            openTelegramLink: noop, openLink: noop,
-            setHeaderColor: noop, setBackgroundColor: noop,
-          },
-        };
-      })();
-    `;
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/javascript' },
-      body: script,
-    });
-  });
-
-  // Auth.
-  await context.route('**/trpc/auth.loginModes*', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
-      body: JSON.stringify({
-        result: {
-          data: {
-            environment: { nodeEnv: 'test', releaseChannel: 'development', localRequest: true },
-            telegram: { available: true, hasBotToken: true, requiresInitData: true },
-            devPersona: {
-              available: false,
-              enabled: false,
-              reason: 'auth.errors.devBypassDisabled',
-            },
-            nonTelegram: {
-              available: false,
-              enabled: false,
-              reason: 'auth.errors.nonTelegramLoginDisabled',
-            },
-          },
-        },
-      }),
-    });
-  });
-  await context.route('**/trpc/auth.telegramLogin', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({ tokens: fakeTokens, session: fakeSession }),
-    });
-  });
-  // nav.counts (#177): the bottom-nav badges. Unstubbed, it reaches the
-  // live API with the fake token, gets 401 and the refresh then signs the
-  // smoke out.
-  await context.route('**/trpc/nav.counts*', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        result: { data: { approve: null, run: null, confirm: null, settlementDue: null } },
-      }),
-    });
-  });
-  await context.route('**/trpc/auth.me*', async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(fakeSession),
-    });
-  });
-
-  // Catalog. ORDER MATTERS: Playwright's first-matching route handler
-  // wins, and `catalog.skus*` glob would match `catalog.skuPriceStats`
-  // too. Register the more-specific route first.
-  await context.route('**/trpc/catalog.skuPriceStats*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/catalog.categories*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(fakeCategories),
-    }),
-  );
-  await context.route('**/trpc/catalog.skus*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(fakeSkus),
-    }),
-  );
-  await context.route('**/trpc/catalog.stores*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(fakeSession.stores),
-    }),
-  );
-  await context.route('**/trpc/catalog.suppliers*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-
-  // #190: what the store sent for review. null = nothing submitted to show.
-  await context.route('**/trpc/order.submittedVersion*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(null) }),
-  );
+  // The data this walk needs, over the empty first-render answers.
+  await stubTrpc(context, 'catalog.categories', fakeCategories);
+  await stubTrpc(context, 'catalog.skus', fakeSkus);
+  await stubTrpc(context, 'catalog.stores', fakeStores);
 
   // Order: dynamic state machine.
-  await context.route('**/trpc/order.todaySession*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(mockSession),
-    }),
-  );
-  await context.route('**/trpc/order.todayBatches*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/order.adjustItem', async (r) => {
-    const body = await r.request().postDataJSON();
-    if (!mockSession) {
-      mockSession = {
-        id: 'sess-smoke',
-        storeId: body.storeId,
-        memberId: fakeSession.member.memberId,
-        orderDate: '2026-05-01',
-        status: 'draft',
-        claimedByMemberId: null,
-        claimedAt: null,
-        submittedAt: null,
-        decidedAt: null,
-        decidedByMemberId: null,
-        rejectReason: null,
-        runId: null,
-        lastSeq: 0,
-        items: [],
-      };
-    }
+  await stubTrpc(context, 'order.todaySession', () => mockSession);
+  await stubTrpc(context, 'order.adjustItem', (request) => {
+    const body = request.postDataJSON() as { storeId: string; skuId: string; qty: string };
+    const me = fakeSession.member.memberId;
+    mockSession ??= {
+      id: 'sess-smoke',
+      storeId: body.storeId,
+      initiatedByMemberId: me,
+      submittedByMemberId: null,
+      orderDate: '2026-05-01',
+      status: 'draft',
+      claimedByMemberId: null,
+      claimedByDisplayName: null,
+      claimedAt: null,
+      submittedAt: null,
+      decidedAt: null,
+      decidedByMemberId: null,
+      decidedByDisplayName: null,
+      rejectReason: null,
+      runId: null,
+      lastSeq: 0,
+      notes: null,
+      extras: [],
+      totals: [],
+      items: [],
+    };
+    const now = new Date().toISOString();
     const existing = mockSession.items.find((i) => i.skuId === body.skuId);
-    if (existing) existing.qty = body.qty;
+    if (existing) Object.assign(existing, { qty: body.qty, updatedAt: now });
     else
       mockSession.items.push({
         skuId: body.skuId,
+        contributorMemberId: me,
         qty: body.qty,
         note: null,
-        lastEditedByUserId: 'u-smoke',
-        lastEditedAt: new Date().toISOString(),
+        updatedByMemberId: me,
+        updatedAt: now,
       });
+    mockSession.totals = mockSession.items
+      .filter((i) => Number(i.qty) > 0)
+      .map((i) => ({ skuId: i.skuId, qty: i.qty }));
     mockSession.lastSeq += 1;
-    await r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        sessionId: mockSession.id,
-        lastSeq: mockSession.lastSeq,
-        applied: ['ItemAdjusted'],
-      }),
-    });
+    return { sessionId: mockSession.id, lastSeq: mockSession.lastSeq, applied: ['ItemAdjusted'] };
   });
-  await context.route('**/trpc/order.submit', async (r) => {
+  await stubTrpc(context, 'order.submit', () => {
     if (mockSession) {
       mockSession.status = 'submitted';
       mockSession.submittedAt = new Date().toISOString();
+      mockSession.submittedByMemberId = fakeSession.member.memberId;
       mockSession.lastSeq += 1;
     }
-    await r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({ lastSeq: mockSession?.lastSeq ?? 0 }),
-    });
+    return { lastSeq: mockSession?.lastSeq ?? 0 };
   });
-  await context.route('**/trpc/order.pendingList*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(
-        mockSession?.status === 'submitted'
-          ? [
-              {
-                ...mockSession,
-                storeName: 'Smoke Store',
-                storeCode: 'SMOKE',
-                memberDisplayName: 'Smoke',
-                memberAvatarUrl: null,
-                itemCount: mockSession.items.filter((i) => Number(i.qty) > 0).length,
-                totalQty: mockSession.items.reduce((s, i) => s + Number(i.qty), 0).toFixed(1),
-                updatedAt: new Date().toISOString(),
-              },
-            ]
-          : [],
-      ),
-    }),
-  );
-  await context.route('**/trpc/order.sessionDetail*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk(mockSession),
-    }),
-  );
+  await stubTrpc(context, 'order.pendingList', () => {
+    if (mockSession?.status !== 'submitted') return [];
+    const s = mockSession;
+    return [
+      {
+        id: s.id,
+        orgId: fakeSession.member.orgId,
+        storeId: s.storeId,
+        orderDate: s.orderDate,
+        status: s.status,
+        runId: s.runId,
+        claimedByMemberId: s.claimedByMemberId,
+        claimedAt: s.claimedAt,
+        submittedAt: s.submittedAt,
+        decidedAt: s.decidedAt,
+        decidedByMemberId: s.decidedByMemberId,
+        rejectReason: s.rejectReason,
+        lastSeq: s.lastSeq,
+        updatedAt: new Date().toISOString(),
+        notes: s.notes,
+        initiatedByMemberId: s.initiatedByMemberId,
+        submittedByMemberId: s.submittedByMemberId,
+        previousClaimerMemberId: null,
+        storeName: 'Smoke Store',
+        storeCode: 'SMOKE',
+        itemCount: s.totals.length,
+        totalQty: s.totals.reduce((sum, t) => sum + Number(t.qty), 0).toFixed(1),
+        // No prices in this walk: no estimate.
+        estimatedTotal: null,
+        estimatedCash: null,
+        estimatedTransfer: null,
+        estimatedKnown: 0,
+        estimatedUnknown: 0,
+        claimedByDisplayName: s.claimedByDisplayName,
+        claimedByAvatarUrl: null,
+        previousClaimerDisplayName: null,
+        attribDisplayName: fakeSession.user.displayName,
+        attribAvatarUrl: null,
+        contributorCount: 1,
+      },
+    ];
+  });
+  await stubTrpc(context, 'order.sessionDetail', () => {
+    if (!mockSession) throw new Error('order.sessionDetail asked before any order was started');
+    return {
+      ...mockSession,
+      claimedByAvatarUrl: null,
+      previousClaimerDisplayName: null,
+      totals: mockSession.totals.map((t) => ({ ...t, usualPayment: null })),
+    };
+  });
 
-  // Run.
-  await context.route('**/trpc/run.list*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/run.history*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        rows: [],
-        pageInfo: {
-          page: 1,
-          pageSize: 20,
-          totalCount: 0,
-          totalPages: 0,
-          hasPrevious: false,
-          hasNext: false,
-        },
-        summary: { total: '0', cash: '0', transfer: '0' },
-      }),
-    }),
-  );
-  await context.route('**/trpc/settlement.get*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(null) }),
-  );
-  await context.route('**/trpc/settlement.businessDate*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        storeId: fakeSession.stores[0]!.id,
-        date: '2026-05-01',
-        timezone: 'Asia/Tashkent',
-        canRecordOperatingExpenses: true,
-      }),
-    }),
-  );
-  // This intentionally exposes only the minimal store-scoped roster that
-  // settlement.wageRoster returns. The interaction below verifies the wage
-  // picker can filter by responsibility and write the selected employee back
-  // into the wage row without touching an admin-only member directory.
-  await context.route('**/trpc/settlement.wageRoster*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk([
-        {
-          memberId: 'mem-wage-cashier',
-          displayName: 'Wage Cashier',
-          roles: [{ id: 'role-cashier', slug: 'cashier', name: 'Cashier' }],
-        },
-        {
-          memberId: 'mem-wage-manager',
-          displayName: 'Wage Manager',
-          roles: [{ id: 'role-manager', slug: 'manager', name: 'Manager' }],
-        },
-      ]),
-    }),
-  );
-  await context.route('**/trpc/settlement.recent*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/run.expenseTemplates*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/run.previewCreatable*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      // M1.5: shape extended with `perStoreDemand` + `supplierBySku`.
-      // Smoke uses an empty preview (no plannable sessions), so all
-      // four collections are empty arrays / objects — same as a fresh
-      // org. Real shape on production carries data.
-      body: trpcOk({
-        date: '2026-05-01',
-        sessions: [],
-        plannedItems: [],
-        perStoreDemand: [],
-        supplierBySku: {},
-        total: 0,
-      }),
-    }),
-  );
-  await context.route('**/trpc/system.health*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({ status: 'ok', db: true, projectorLag: 0, version: 'smoke' }),
-    }),
-  );
-  await context.route('**/trpc/system.recentLogs*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/upload.config*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        enabled: false,
-        maxBytes: 8388608,
-        allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-      }),
-    }),
-  );
-  await context.route('**/trpc/admin.overview*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        memberCount: 1,
-        storeCount: 1,
-        skuCount: 5,
-        runCount: 0,
-        pendingApprovals: 1,
-        ordersThisWeek: 1,
-      }),
-    }),
-  );
+  await stubTrpc(context, 'admin.overview', {
+    memberCount: 1,
+    storeCount: 1,
+    skuCount: 5,
+    runCount: 0,
+    pendingApprovals: 1,
+    ordersThisWeek: 1,
+  });
   // M1.4 (2026-05-06): the store-first nav needs at least one store
   // and one member from these endpoints to drive its drill-down. The
   // synthetic data mirrors the auth.me fake session's `stores` array
   // so member-counts line up. Old smoke routes returned [] here,
   // which silently produced the empty state and hid the drill-into-
   // store flow from regression coverage.
-  await context.route('**/trpc/admin.memberList*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk([
-        {
-          memberId: 'mem-smoke',
-          userId: 'u-smoke',
-          tgUserId: '6402913074',
-          tgUsername: 'smoke',
-          displayName: 'Smoke',
-          avatarUrl: null,
-          status: 'active',
-          joinedAt: new Date().toISOString(),
-          lastSeenAt: new Date().toISOString(),
-          roles: [],
-          stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE' }],
-        },
-      ]),
-    }),
-  );
-  await context.route('**/trpc/admin.storeList*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk([
-        {
-          id: 'store-1',
-          name: 'Smoke Store',
-          code: 'SMOKE',
-          address: null,
-          timezone: null,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          defaultRoleId: null,
-          defaultRoleSlug: null,
-          defaultRoleName: null,
-        },
-      ]),
-    }),
-  );
-  await context.route('**/trpc/admin.roleList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.categoryList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.skuList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.supplierList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.recentEvents*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/system.appConfig*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({ botUsername: 'CompassSmokeBot' }),
-    }),
-  );
-  await context.route('**/trpc/admin.purgeByDate*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({ dryRun: true, total: 0, byTable: {}, date: '2026-05-01' }),
-    }),
-  );
-  await context.route('**/trpc/admin.purgeAllTestData*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({ dryRun: true, total: 0, byTable: {}, orgSlug: 'default' }),
-    }),
-  );
-  await context.route('**/trpc/admin.sessionList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.runList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.purgeSession*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        dryRun: true,
-        total: 0,
-        byTable: {},
-        sessionId: '00000000-0000-0000-0000-000000000000',
-      }),
-    }),
-  );
-  await context.route('**/trpc/admin.purgeRun*', async (r) =>
-    r.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: trpcOk({
-        dryRun: true,
-        total: 0,
-        byTable: {},
-        runId: '00000000-0000-0000-0000-000000000000',
-        sessionIds: [],
-      }),
-    }),
-  );
-  await context.route('**/trpc/admin.submissionHistory*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/trpc/admin.memberStoreAssignments*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
-  );
-  await context.route('**/ws*', async (r) => r.abort('connectionrefused'));
+  await stubTrpc(context, 'admin.memberList', [
+    {
+      memberId: 'mem-smoke',
+      userId: 'u-smoke',
+      tgUserId: '6402913074',
+      tgUsername: 'smoke',
+      displayName: 'Smoke',
+      avatarUrl: null,
+      status: 'active',
+      joinedAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      roles: [],
+      stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE' }],
+      statusOutOfReach: false,
+    },
+  ]);
+  await stubTrpc(context, 'admin.storeList', [
+    {
+      id: 'store-1',
+      name: 'Smoke Store',
+      code: 'SMOKE',
+      address: null,
+      timezone: null,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      defaultRoleId: null,
+      defaultRoleSlug: null,
+      defaultRoleName: null,
+      archived: false,
+    },
+  ]);
 
   const page = await context.newPage();
   const consoleErrors: string[] = [];
@@ -1245,17 +827,7 @@ async function run() {
     await browser.close();
   }
 
-  const passed = results.filter((r) => r.pass).length;
-  const failed = results.filter((r) => !r.pass);
-  for (const r of results) {
-    const tag = r.pass ? '\x1b[32m PASS \x1b[0m' : '\x1b[31m FAIL \x1b[0m';
-    const detail = r.detail ? `\x1b[2m — ${r.detail}\x1b[0m` : '';
-    console.log(`${tag} ${r.name}${detail}`);
-  }
-  console.log(
-    `\n${passed} / ${results.length} passed — ${failed.length} failure${failed.length === 1 ? '' : 's'}.`,
-  );
-  if (failed.length > 0) process.exit(1);
+  finish();
 }
 
 run().catch((err) => {
