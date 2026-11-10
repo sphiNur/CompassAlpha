@@ -80,7 +80,7 @@ export const ru = {
   'catalog.supplier.confirmArchive':
     'Архивировать поставщика «{name}»? Его больше нельзя будет выбрать в закупках; история сохранится.',
   'catalog.category.confirmArchive': 'Архивировать категорию «{name}»?',
-  'catalog.category.meta': 'Код {slug} · порядок {sort}',
+  'catalog.category.meta': 'Символьный код {slug} · порядок {sort}',
   'catalog.category.slugPlaceholder': 'например, dairy',
   'catalog.sku.stepMeta': 'шаг заказа {step}',
   'catalog.supplier.tgPlaceholder': 'имя пользователя (без @)',
