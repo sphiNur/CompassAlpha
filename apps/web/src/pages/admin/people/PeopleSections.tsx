@@ -910,21 +910,22 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                   <li key={r.id}>
                     <ListRow
                       label={
-                        <span className="flex items-center gap-2">
+                        // Review WALK-04 (2026-11-09): the badges follow the
+                        // name and wrap under it. Beside it they left the
+                        // name 85px at 320px in Russian ("Суперадмин" cut).
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           {roleText.name(r)}
                           {r.isBuiltIn ? (
                             <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
                           ) : null}
+                          {/* UIUX-B1: 'grantable' is the common case → silent;
+                              only the blocking state earns a badge. */}
+                          {grantable ? null : (
+                            <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
+                          )}
                         </span>
                       }
                       hint={subtitle}
-                      badge={
-                        // UIUX-B1: 'grantable' is the common case → silent;
-                        // only the blocking state earns a badge.
-                        grantable ? null : (
-                          <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
-                        )
-                      }
                       onClick={() => setDrilldownSlug(r.slug)}
                     />
                   </li>
