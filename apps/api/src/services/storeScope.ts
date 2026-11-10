@@ -10,7 +10,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
-import { hasGlobalOrgAdmin } from './orgAdmin';
+import { hasGlobalOrgAdmin, hasGlobalPermission } from './orgAdmin';
 
 /**
  * Throw FORBIDDEN unless the actor is allowed to act on `storeId`.
@@ -183,6 +183,37 @@ export async function getActorStoreIdsForPermission(
     })),
   );
   return resolved.filter((row) => row.permissions.has(permissionKey)).map((row) => row.storeId);
+}
+
+/**
+ * Resolve the stores where this actor may plan/extend a run.
+ *
+ * `SessionContext.permissions` is a compatibility union across every role
+ * binding, so the presence of `run.create.org` there cannot prove an
+ * organization-wide grant. Only an active persisted GLOBAL grant selects the
+ * org-wide path. Both paths still go through the effective-permission resolver
+ * so a store-scoped deny wins:
+ *
+ *   - GLOBAL `run.create.org` -> stores where `run.create.org` is effective
+ *   - otherwise              -> stores where `run.create` is effective
+ *
+ * This also prevents an unrelated Store-B staff assignment from widening a
+ * Store-A purchaser's planning scope.
+ *
+ * Review COREAPI-10 (2026-11): here rather than in the run router, which the
+ * nav router imported it from.
+ */
+export async function resolveRunCreateStoreScope(
+  db: DB,
+  session: { memberId: string; permissions: ReadonlySet<string> },
+): Promise<string[] | null> {
+  const hasPersistedOrgGrant = await hasGlobalPermission(db, session.memberId, 'run.create.org');
+  return getActorStoreIdsForPermission(
+    db,
+    session.memberId,
+    hasPersistedOrgGrant ? 'run.create.org' : 'run.create',
+    session.permissions,
+  );
 }
 
 async function loadAssignedStoreIds(db: DB, memberId: string): Promise<string[]> {

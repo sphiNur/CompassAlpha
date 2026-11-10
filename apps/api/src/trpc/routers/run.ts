@@ -51,6 +51,7 @@ import {
   effectivePermissionsForStore,
   getActorStoreIds,
   getActorStoreIdsForPermission,
+  resolveRunCreateStoreScope,
 } from '../../services/storeScope';
 import { hasGlobalPermission } from '../../services/orgAdmin';
 import {
@@ -264,7 +265,7 @@ export const runRouter = router({
       // query to the actor's bound stores. `getActorStoreIds`
       // returns `null` for org-tier actors (skip filter), an
       // explicit array for store-tier actors.
-      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx.session!);
       const sessions = await tx.query.orderSessionsV.findMany({
         where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) => {
           const base = [eq2(sess.orgId, ctx.session!.orgId), eq2(sess.status, 'approved')];
@@ -835,7 +836,7 @@ export const runRouter = router({
       // `run.create.org` grant. Otherwise resolve `run.create` at each
       // concrete store, so Store-A purchaser + Store-B staff membership
       // cannot combine into Store-B planning authority.
-      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx.session!);
       assertStoreIdsWithinRunCreateScope(
         sessions.map((session) => session.storeId),
         allowedStoreIds,
@@ -1072,7 +1073,7 @@ export const runRouter = router({
             });
           }
         }
-        const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+        const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx.session!);
         assertStoreIdsWithinRunCreateScope(
           sessions.map((session) => session.storeId),
           allowedStoreIds,
@@ -4167,38 +4168,6 @@ async function resolveRunReadStoreScope(
   return getActorStoreIds(db, ctx.session!.memberId, ctx.session!.permissions);
 }
 
-/**
- * Resolve the stores where this actor may plan/extend a run.
- *
- * `SessionContext.permissions` is a compatibility union across every role
- * binding, so the presence of `run.create.org` there cannot prove an
- * organization-wide grant. Only an active persisted GLOBAL grant selects the
- * org-wide path. Both paths still go through the effective-permission resolver
- * so a store-scoped deny wins:
- *
- *   - GLOBAL `run.create.org` -> stores where `run.create.org` is effective
- *   - otherwise              -> stores where `run.create` is effective
- *
- * This also prevents an unrelated Store-B staff assignment from widening a
- * Store-A purchaser's planning scope.
- */
-export async function resolveRunCreateStoreScope(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
-): Promise<string[] | null> {
-  const hasPersistedOrgGrant = await hasGlobalPermission(
-    db,
-    ctx.session!.memberId,
-    'run.create.org',
-  );
-  return getActorStoreIdsForPermission(
-    db,
-    ctx.session!.memberId,
-    hasPersistedOrgGrant ? 'run.create.org' : 'run.create',
-    ctx.session!.permissions,
-  );
-}
-
 function assertStoreIdsWithinRunCreateScope(
   storeIds: readonly string[],
   allowedStoreIds: readonly string[] | null,
@@ -4217,7 +4186,7 @@ async function assertRunCreateScopeForRun(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   run: { sessionIdsJson: unknown },
 ): Promise<void> {
-  const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx);
+  const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx.session!);
   if (allowedStoreIds === null) return;
   const involvedStoreIds = await runInvolvedStoreIds(db, run);
   const allowed = new Set(allowedStoreIds);

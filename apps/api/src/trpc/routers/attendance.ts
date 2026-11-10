@@ -94,7 +94,7 @@ import { linkForStore } from '../../services/notifyForEvent';
 import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
 import type { RequestContext } from '../context';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
-import { loadWageRoster } from './settlement';
+import { loadWageRoster } from '../../services/wageRoster';
 
 type Session = {
   memberId: string;
