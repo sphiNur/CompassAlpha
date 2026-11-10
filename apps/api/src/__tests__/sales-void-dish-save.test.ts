@@ -1,6 +1,7 @@
 /**
  * 2026-10-21 follow-ups: `sales.void` (migration 0049) and the atomic
- * `dishes.save` (CA-55).
+ * `dishes.save` (CA-55). Also `sales.summary` (review CONF-17), which
+ * leaves voided sales out.
  *
  * The first blocks are pure (run everywhere). The rest is PG-gated like
  * sales-inventory-permissions.test.ts (skipped when DATABASE_URL is unset
@@ -214,6 +215,65 @@ describe('sales.void', () => {
       caller.sales.void({ saleId: '00000000-0000-4000-8000-000000000000', reason: 'x' }),
     );
     expect(err?.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('sales.summary (review CONF-17)', () => {
+  test.skipIf(!SHOULD_RUN)('counts every standing sale of the day, past the list cap', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const storeId = await makeStore(`summary-${Math.random()}`);
+    await db
+      .insert(s.permissions)
+      .values({ key: 'prices.view', description: 'prices.view' })
+      .onConflictDoNothing();
+    const [pricedRole] = await db
+      .insert(s.roles)
+      .values({ orgId: fix!.orgId, slug: `priced-${fix!.suffix}`, name: 'Priced', rank: 30 })
+      .returning();
+    await db.insert(s.rolePermissions).values([
+      { roleId: pricedRole!.id, permissionKey: 'sales.record' },
+      { roleId: pricedRole!.id, permissionKey: 'prices.view' },
+    ]);
+    const priced = await memberCaller(pricedRole!.id, storeId);
+    const unpriced = await memberCaller(fix!.salesRoleId, storeId);
+    // 201 servings at 10.00 and half a serving at 3.33: more rows than
+    // sales.list returns.
+    const sale = { orgId: fix!.orgId, storeId, dishId: fix!.dishId };
+    const rows = await db
+      .insert(s.sales)
+      .values([
+        ...Array.from({ length: 201 }, () => ({ ...sale, qty: '1', unitPrice: '10.00' })),
+        { ...sale, qty: '0.5', unitPrice: '3.33' },
+      ])
+      .returning({ id: s.sales.id });
+    await priced.sales.void({ saleId: rows[0]!.id, reason: 'wrong dish' });
+
+    expect(await priced.sales.list({ storeId })).toHaveLength(200);
+    // 200 servings that stand, plus the half: 200 × 10.00 + 1.67 (1.665
+    // rounds half-up, D1).
+    expect(await priced.sales.summary({ storeId })).toEqual({
+      servings: '200.5',
+      revenue: '2001.67',
+    });
+    // D6: without prices.view in this store there is no revenue.
+    expect(await unpriced.sales.summary({ storeId })).toEqual({
+      servings: '200.5',
+      revenue: null,
+    });
+  });
+
+  test.skipIf(!SHOULD_RUN)('a day without sales is zero', async () => {
+    const storeId = await makeStore(`summary-empty-${Math.random()}`);
+    const caller = await memberCaller(fix!.salesRoleId, storeId);
+    expect(await caller.sales.summary({ storeId })).toEqual({ servings: '0', revenue: null });
+  });
+
+  test.skipIf(!SHOULD_RUN)('a member of another store cannot read it', async () => {
+    const storeA = await makeStore(`summary-a-${Math.random()}`);
+    const storeB = await makeStore(`summary-b-${Math.random()}`);
+    const callerB = await memberCaller(fix!.salesRoleId, storeB);
+    const err = await errorOf(() => callerB.sales.summary({ storeId: storeA }));
+    expect(err?.code).toBe('FORBIDDEN');
   });
 });
 

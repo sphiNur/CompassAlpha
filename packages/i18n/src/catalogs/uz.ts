@@ -1824,7 +1824,6 @@ export const uz = {
     'Hisobdan chiqarilgandan keyin qoldiq {after} (manfiy) boʻladi — demak hisob avval ham notoʻgʻri edi. Baribir saqlansinmi? Keyin inventarizatsiya qilish tavsiya etiladi.',
   'inventory.errors.cannotAdjust':
     'Inventarizatsiya yoki yoʻqotish uchun qoldiqni tuzatish ruxsati kerak. Kerak boʻlsa, doʻkon boshqaruvchisidan soʻrang.',
-  'inventory.errors.invalidQty': 'Miqdor manfiy boʻlmasligi kerak.',
   'inventory.sheet.wastage.needQty': 'Qancha yoʻqotilganini kiriting.',
   'inventory.errors.wastageNeedsNote': 'Yoʻqotish sababi kerak.',
 
@@ -1914,7 +1913,7 @@ export const uz = {
     'Hech qanday taom yoʻq. Avval Boshqaruv › Katalog › Taomlar da qoʻshing.',
   'sales.list.title': 'Bugungi sotuvlar',
   'sales.list.capReached':
-    'Faqat oxirgi {n} ta sotuv koʻrsatilmoqda — jami toʻliq boʻlmasligi mumkin.',
+    'Roʻyxatda faqat oxirgi {n} ta sotuv koʻrsatilmoqda; jami barcha sotuvlarni hisobga oladi.',
   'sales.empty.title': 'Bugun sotuvlar yoʻq',
   'sales.empty.description': 'Birinchi sotuvni yozish uchun yuqoridagi tugmani bosing.',
   'sales.toast.recorded': 'Yozildi — qoldiq yangilandi.',

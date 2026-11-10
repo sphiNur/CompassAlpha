@@ -1,25 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeVoidReason, salesListView, summarizeSales } from '../salesSummary';
-
-describe('summarizeSales', () => {
-  test('sums servings and priced revenue', () => {
-    expect(
-      summarizeSales([
-        { qty: '2', unitPrice: '10.00' },
-        { qty: '1.5', unitPrice: null },
-      ]),
-    ).toEqual({ count: 3.5, revenue: 20 });
-  });
-
-  test('voided sales are excluded from both totals', () => {
-    expect(
-      summarizeSales([
-        { qty: '2', unitPrice: '10.00' },
-        { qty: '5', unitPrice: '10.00', voidedAt: '2026-10-21T10:00:00Z' },
-      ]),
-    ).toEqual({ count: 2, revenue: 20 });
-  });
-});
+import { normalizeVoidReason, salesListView } from '../salesSummary';
 
 describe('normalizeVoidReason', () => {
   test('trims and accepts 1..300 chars', () => {

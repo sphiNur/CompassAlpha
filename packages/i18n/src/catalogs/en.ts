@@ -1945,7 +1945,6 @@ export const en = {
     'After this wastage the stock would be {after} (negative), so the record was already off. Save anyway? A stocktake afterwards is recommended.',
   'inventory.errors.cannotAdjust':
     'You need permission to adjust stock to do a stocktake or record wastage. Ask your store manager for access.',
-  'inventory.errors.invalidQty': 'Quantity must be a non-negative number.',
   'inventory.sheet.wastage.needQty': 'Enter how much was lost.',
   'inventory.errors.wastageNeedsNote': 'Wastage requires a reason.',
 
@@ -2041,7 +2040,7 @@ export const en = {
   'sales.form.noDishesYet': 'No dishes set up. Add one in Admin › Catalog › Dishes first.',
   'sales.list.title': "Today's sales",
   'sales.list.capReached':
-    'Showing only the latest {n, plural, one {# sale} other {# sales}} — totals may be incomplete.',
+    'The list shows only the latest {n, plural, one {# sale} other {# sales}}; the totals count every sale.',
   'sales.empty.title': 'No sales recorded today',
   'sales.empty.description': 'Tap "Record" above to log the first sale.',
   'sales.toast.recorded': 'Sale recorded — inventory updated.',
