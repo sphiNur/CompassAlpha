@@ -223,28 +223,36 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
     const caller = appRouter.createCaller(fix.ctx);
     const perms = new Set(['order.draft', 'order.submit', 'order.approve', 'order.claim']);
     const actor = { userId: fix.userId, memberId: fix.memberId, permissions: perms, isClaimer: false };
-
-    // A second batch, submitted and claimed AFTER the first: the most
+    // Both batches on a day of the test's own: the fixture's session stays
+    // the only one on ORDER_DATE, which the first test counts on (review
+    // NEW-RAND-01: run after this test, it found two).
+    const date = '2026-05-13';
+    const batch = async (qty: string): Promise<string> => {
+      const sessionId = randomUUID();
+      const order = orderStream(fix!.orgId, sessionId);
+      await order.exec({
+        type: 'StartDraft',
+        orgId: fix!.orgId,
+        storeId: fix!.storeId,
+        orderDate: date,
+        actor,
+      });
+      await order.exec({
+        type: 'AdjustItem',
+        skuId: fix!.skuId,
+        qty,
+        sku: { id: fix!.skuId, step: '0.5', unit: 'kg', isArchived: false },
+        actor,
+      });
+      await order.exec({ type: 'Submit', actor });
+      await order.exec({ type: 'Claim', actor });
+      return sessionId;
+    };
+    // The second is submitted and claimed AFTER the first: the most
     // recently updated one, which the old (store, date, submitter,
     // claimer) guess would pick.
-    const secondId = randomUUID();
-    const secondOrder = orderStream(fix!.orgId, secondId);
-    await secondOrder.exec({
-      type: 'StartDraft',
-      orgId: fix.orgId,
-      storeId: fix.storeId,
-      orderDate: ORDER_DATE,
-      actor,
-    });
-    await secondOrder.exec({
-      type: 'AdjustItem',
-      skuId: fix.skuId,
-      qty: '4',
-      sku: { id: fix.skuId, step: '0.5', unit: 'kg', isArchived: false },
-      actor,
-    });
-    await secondOrder.exec({ type: 'Submit', actor });
-    await secondOrder.exec({ type: 'Claim', actor });
+    const firstId = await batch('0.5');
+    const secondId = await batch('4');
 
     const qtyOf = async (sessionId: string) => {
       const [row] = await db
@@ -253,19 +261,18 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
         .where(eq(s.orderItemsV.sessionId, sessionId));
       return Number(row?.qty);
     };
-    const firstBefore = await qtyOf(fix.sessionId);
 
     const res = await caller.order.adjustItem({
-      sessionId: fix.sessionId,
+      sessionId: firstId,
       storeId: fix.storeId,
-      date: ORDER_DATE,
+      date,
       skuId: fix.skuId,
-      qty: String(firstBefore + 0.5),
+      qty: '1',
       targetMemberId: fix.memberId,
     });
 
-    expect(res.sessionId).toBe(fix.sessionId);
-    expect(await qtyOf(fix.sessionId)).toBe(firstBefore + 0.5);
+    expect(res.sessionId).toBe(firstId);
+    expect(await qtyOf(firstId)).toBe(1);
     expect(await qtyOf(secondId)).toBe(4);
   });
 
