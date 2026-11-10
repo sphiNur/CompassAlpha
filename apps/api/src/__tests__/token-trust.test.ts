@@ -18,7 +18,7 @@ import { SignJWT } from 'jose';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
-import { createContext } from '../trpc/context';
+import { createContext, type RequestContext } from '../trpc/context';
 import { verifyRefresh } from '../infra/jwt';
 import { trustedClientIp, CLIENT_IP_HEADER, PROXY_KEY_HEADER } from '../services/clientIp';
 import {
@@ -35,8 +35,7 @@ const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 async function callerWith(headers: Record<string, string> = {}) {
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   const hono = { req: { header: (name: string) => lower[name.toLowerCase()] } };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctx = await createContext(null, hono as any);
+  const ctx = await createContext(null, hono as RequestContext['hono']);
   return appRouter.createCaller(ctx);
 }
 

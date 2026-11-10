@@ -468,9 +468,7 @@ async function countUnderEachContext(
     );
     // postgres-js result wrapper: rows on a `.rows` array OR a bare
     // array. Defensive read.
-    const rows =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
+    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
     return Number((rows[0] as { n: number }).n);
   });
   const bSeen = await withOrgContext(db, fix.orgB.id, async (tx) => {

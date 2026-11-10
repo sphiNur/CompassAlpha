@@ -31,7 +31,7 @@ import {
 } from '@compass/db';
 import { CompleteOnboardingInputSchema, hasControlChars } from '@compass/contracts';
 import { appRouter } from '../trpc/router';
-import { createContext, loadSession } from '../trpc/context';
+import { createContext, loadSession, type RequestContext } from '../trpc/context';
 import { isLocalDevPeer, isLocalPeerAddress } from '../services/devLocality';
 import { hub, WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED } from '../realtime/hub';
 import { SHOULD_RUN } from './helpers/pg';
@@ -103,8 +103,7 @@ describe('dev login locality (F5 / D21)', () => {
   /** auth.loginModes through the real createContext, as the server builds it. */
   async function localRequest(peerIp: string | null, h: Record<string, string>) {
     const hono = { req: { header: (name: string) => h[name.toLowerCase()] }, env: { peerIp } };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ctx = await createContext(null, hono as any);
+    const ctx = await createContext(null, hono as RequestContext['hono']);
     const modes = await appRouter.createCaller(ctx).auth.loginModes();
     return modes.environment.localRequest;
   }

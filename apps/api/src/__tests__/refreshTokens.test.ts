@@ -96,10 +96,8 @@ const pgDescribe = SHOULD_RUN_PG ? describe : describe.skip;
 pgDescribe('refreshTokens service (PG-gated)', () => {
   // Lazy-import so the file stays load-able without a DB during the
   // pure half above.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let svc: typeof import('../services/refreshTokens');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let db: any;
+  let db: ReturnType<typeof import('@compass/db').getDb>;
   let s: typeof import('@compass/db').schema;
   let closeTestDb: typeof import('@compass/db').closeDb;
   let testUserId: string;
@@ -121,6 +119,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
         locale: 'en',
       })
       .returning();
+    if (!u) throw new Error('user insert failed');
     testUserId = u.id;
   });
 
@@ -136,15 +135,21 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     }
   });
 
+  const rotate = (t: { id: string; family: string }, family = t.family) =>
+    svc.rotateRefresh(db, { jti: t.id, family, userId: testUserId });
+  /** The stored row of token `id`; a missing one fails the test. */
+  const rowOf = async (id: string) => {
+    const row = await db.query.refreshTokens.findFirst({ where: eq(s.refreshTokens.id, id) });
+    if (!row) throw new Error(`refresh token ${id} is not stored`);
+    return row;
+  };
+
   test('issueRefresh inserts a tracked row and returns matching jti', async () => {
     const out = await svc.issueRefresh(db, { userId: testUserId });
     expect(out.token).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
     expect(out.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(out.family).toMatch(/^[0-9a-f-]{36}$/);
-    const row = await db.query.refreshTokens.findFirst({
-      where: eq(s.refreshTokens.id, out.id),
-    });
-    expect(row).toBeTruthy();
+    const row = await rowOf(out.id);
     expect(row.userId).toBe(testUserId);
     expect(row.family).toBe(out.family);
     expect(row.parentId).toBeNull();
@@ -153,11 +158,6 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     const claims = await verifyRefresh(out.token);
     expect(claims.jti).toBe(out.id);
   });
-
-  const rotate = (t: { id: string; family: string }, family = t.family) =>
-    svc.rotateRefresh(db, { jti: t.id, family, userId: testUserId });
-  const rowOf = (id: string) =>
-    db.query.refreshTokens.findFirst({ where: eq(s.refreshTokens.id, id) });
 
   test('rotateRefresh consumes the token and issues its successor in the same family', async () => {
     const issued = await svc.issueRefresh(db, { userId: testUserId });
@@ -290,24 +290,14 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     const t2 = await svc.issueRefresh(db, { userId: testUserId });
     const t3 = await svc.issueRefresh(db, { userId: testUserId });
     await rotate(t2);
-    const t2RevokedFirst = (
-      await db.query.refreshTokens.findFirst({
-        where: eq(s.refreshTokens.id, t2.id),
-      })
-    ).revokedAt as Date;
+    const t2RevokedFirst = (await rowOf(t2.id)).revokedAt;
     expect(t2RevokedFirst).not.toBeNull();
     await svc.revokeAllForUser(db, testUserId);
     for (const id of [t1.id, t2.id, t3.id]) {
-      const row = await db.query.refreshTokens.findFirst({
-        where: eq(s.refreshTokens.id, id),
-      });
-      expect(row.revokedAt).not.toBeNull();
+      expect((await rowOf(id)).revokedAt).not.toBeNull();
     }
     // t2's revokedAt should NOT have been overwritten — the WHERE
     // clause includes `revoked_at IS NULL` so the second pass skips it.
-    const t2RowAfter = await db.query.refreshTokens.findFirst({
-      where: eq(s.refreshTokens.id, t2.id),
-    });
-    expect((t2RowAfter.revokedAt as Date).getTime()).toBe(t2RevokedFirst.getTime());
+    expect((await rowOf(t2.id)).revokedAt).toEqual(t2RevokedFirst);
   });
 });
