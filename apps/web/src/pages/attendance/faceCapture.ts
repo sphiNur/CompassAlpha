@@ -19,20 +19,9 @@ import {
   type FaceTracker,
   type TrackerKind,
 } from '../../lib/faceTracker';
+import { steadyCounter, type Guide } from './faceGuide';
 
 export type CameraProblem = 'unsupported' | 'denied' | 'unavailable';
-
-/** What the person should do before the frame is taken; null = hold still. */
-export type Guide =
-  | 'noFace'
-  | 'manyFaces'
-  | 'closer'
-  | 'lookStraight'
-  | 'turnMore'
-  | 'chinUp'
-  | 'chinDown'
-  | 'openEyes'
-  | 'closeMouth';
 
 /** The camera facing `facing` while it is set; one camera at a time. */
 export function useCamera(facing: Facing | null) {
@@ -110,12 +99,9 @@ export function useTracker(open: boolean, kind: TrackerKind = 'landmarker') {
   return { tracker, state, percent, slow };
 }
 
-/** Readings in a row (~120 ms apart) before the frame is taken. */
-const HOLD = 3;
-
 /**
  * Reads the tracker every ~120 ms while `active`; once `check` has passed
- * HOLD readings in a row, calls `onHeld` (once).
+ * HOLD readings in a row (faceGuide.ts), calls `onHeld` (once).
  */
 export function useAutoCapture({
   active,
@@ -144,26 +130,17 @@ export function useAutoCapture({
   useEffect(() => {
     if (!active || !video || !tracker) return;
     const started = performance.now();
-    let held = 0;
+    const steady = steadyCounter();
     const timer = setInterval(() => {
       const next = checkRef.current(tracker.read(video), performance.now() - started);
       guideRef.current(next);
-      held = next === null ? held + 1 : 0;
-      if (held >= HOLD) {
+      if (steady(next)) {
         clearInterval(timer);
         heldRef.current();
       }
     }, 120);
     return () => clearInterval(timer);
   }, [active, video, tracker, key]);
-}
-
-/** The usual first checks: one face, close enough. */
-export function basicGuide(r: FaceReading, minSize = 0.28): Guide | null {
-  if (r.count === 0 || r.yaw === null) return 'noFace';
-  if (r.count > 1) return 'manyFaces';
-  if (r.size !== null && r.size < minSize) return 'closer';
-  return null;
 }
 
 /**
