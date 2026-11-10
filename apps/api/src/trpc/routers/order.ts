@@ -1052,7 +1052,7 @@ export const orderRouter = router({
       if (isManagerEdit && input.sessionId && !namedSession) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
       }
-      let session = namedSession
+      const session = namedSession
         ? namedSession
         : isManagerEdit
         ? // Prefer the session this actor has actually claimed. Without

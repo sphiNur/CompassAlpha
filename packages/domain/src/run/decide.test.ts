@@ -547,7 +547,7 @@ describe('run.decide', () => {
   });
 
   test('RefinalizeRun rejected unless status is amending', () => {
-    let s = planAndPurchase();
+    const s = planAndPurchase();
     const superAdmin = runActor('sa', ['run.amend']);
     expect(() => decideRun(s, { type: 'RefinalizeRun', actor: superAdmin }, clock)).toThrow(
       'run.errors.notRefinalizable',

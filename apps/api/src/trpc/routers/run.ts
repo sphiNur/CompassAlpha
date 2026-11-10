@@ -2205,7 +2205,7 @@ export const runRouter = router({
         //   - centralizing the math means cancel-cascade and
         //     re-planning paths can't drift from the client's defaults.
         const sessionIds = (run.sessionIdsJson ?? []) as string[];
-        let perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
+        const perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
         // M1.8 (2026-05-07): per-store concatenated session notes so the
         // purchaser sees the staff's "其他物品" requests next to that
         // store's demand block. M3.16-C extends this with per-store

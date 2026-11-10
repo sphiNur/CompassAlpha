@@ -294,8 +294,8 @@ async function main() {
       console.log(`  ${step.name.padEnd(40)} ${c.dim('(table missing — skip)')}`);
       continue;
     }
-    const r = await db.execute(sql.raw(step.countSql));
-    const n = ((r as any)[0]?.n ?? 0) as number;
+    const r = await db.execute<{ n: number }>(sql.raw(step.countSql));
+    const n = r[0]?.n ?? 0;
     counts.set(step.name, n);
     totalRows += n;
     const tag = n > 0 ? c.red(String(n).padStart(6)) : c.dim('     0');
@@ -345,8 +345,8 @@ async function main() {
   ];
   for (const t of preserved) {
     try {
-      const r = await db.execute(sql.raw(`SELECT COUNT(*)::int AS n FROM ${t}`));
-      const n = ((r as any)[0]?.n ?? 0) as number;
+      const r = await db.execute<{ n: number }>(sql.raw(`SELECT COUNT(*)::int AS n FROM ${t}`));
+      const n = r[0]?.n ?? 0;
       console.log(`  ${t.padEnd(40)} ${c.green(String(n).padStart(6))}`);
     } catch {
       console.log(`  ${t.padEnd(40)} ${c.dim('(table missing)')}`);
@@ -388,5 +388,5 @@ async function main() {
 
 main().catch((err) => {
   console.error(c.red('FAILED'), err);
-  closeDb().finally(() => process.exit(1));
+  void closeDb().finally(() => process.exit(1));
 });

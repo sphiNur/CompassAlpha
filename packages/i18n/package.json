@@ -8,9 +8,15 @@
     "./catalogs": "./src/catalogs/index.ts"
   },
   "scripts": {
+    "lint": "eslint . --max-warnings 0",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@formatjs/intl": "^2.10.15"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "typescript-eslint": "^8.59.3"
   }
 }

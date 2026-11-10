@@ -55,13 +55,14 @@ class Logger {
       makeSessionId();
     if (typeof window !== 'undefined') {
       window.sessionStorage?.setItem(this.config.storageKey, this.session);
-      window.addEventListener('pagehide', () => this.flush(true));
-      window.addEventListener('online', () => this.flush());
+      // flush() catches its own failures (it requeues or drops the batch).
+      window.addEventListener('pagehide', () => void this.flush(true));
+      window.addEventListener('online', () => void this.flush());
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') this.flush(true);
+        if (document.visibilityState === 'hidden') void this.flush(true);
       });
     }
-    this.timer = setInterval(() => this.flush(), this.config.flushIntervalMs);
+    this.timer = setInterval(() => void this.flush(), this.config.flushIntervalMs);
   }
 
   setTransport(t: Transport): void {
@@ -131,7 +132,6 @@ class Logger {
         await transport(batches[i]!);
       } catch (err) {
         if (err instanceof BatchRefused) {
-          // eslint-disable-next-line no-console
           console.warn('[telemetry] batch refused, dropped', err.status);
           continue;
         }
@@ -139,7 +139,6 @@ class Logger {
         if (this.pending.length > MAX_PENDING) {
           this.pending.splice(0, this.pending.length - MAX_PENDING);
         }
-        // eslint-disable-next-line no-console
         console.warn('[telemetry] flush failed', err);
         return;
       }
@@ -174,7 +173,7 @@ class Logger {
   destroy(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.flush(true);
+    void this.flush(true);
   }
 }
 

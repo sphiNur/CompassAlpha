@@ -16,7 +16,7 @@ const { step } = runStepper(clock);
 
 describe('run.priceAfterDelivery (2026-10-30)', () => {
   const deliveredRun = () => {
-    let s = planAndPurchase();
+    const s = planAndPurchase();
     return deliver(s);
   };
   const revise = (unitPrice: string, actualQty: string): RunCommand =>

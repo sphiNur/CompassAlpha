@@ -221,5 +221,5 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
-  closeDb().finally(() => process.exit(1));
+  void closeDb().finally(() => process.exit(1));
 });

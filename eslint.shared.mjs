@@ -1,12 +1,12 @@
 /**
- * What the ESLint configs of apps/web and packages/ui share (review OPS-19,
- * 2026-11-10). packages/ui, whose hooks every page uses (useDecimalField,
- * the sheets' focus handling), had no lint at all, so a hook called
- * conditionally or an effect missing a dependency reached every page
- * unseen.
+ * What the ESLint configs of the workspace packages share (review OPS-19,
+ * 2026-11-10). Only apps/web was linted. packages/ui, whose hooks every
+ * page uses (useDecimalField, the sheets' focus handling), had no lint, so
+ * a hook called conditionally or an effect missing a dependency reached
+ * every page unseen; the server side had none either (packageConfig).
  *
- * Plain data, no imports: each package brings its own ESLint and plugins,
- * which pnpm does not hoist to the root.
+ * No imports: each package brings its own ESLint and plugins, which pnpm
+ * does not hoist to the root, and passes them to packageConfig.
  */
 
 /** Browser globals the app and the component library use. */
@@ -90,9 +90,11 @@ export const SOURCE_RULES = {
     },
   ],
 
-  // No raw console.log/debug/info — matches the CI grep guard.
-  // console.warn / console.error are still allowed (legitimate
-  // warning paths in long-running code).
+  // No raw console.log/debug/info. M3.18 (launch hardening): a
+  // leftover console.log(tsv) leaked exported rows to the browser
+  // console. A CI grep did this until ESLint linted apps/api too
+  // (OPS-19). console.warn / console.error are still allowed
+  // (legitimate warning paths in long-running code).
   'no-console': ['error', { allow: ['warn', 'error'] }],
 
   // Allow underscore-prefixed unused parameters and variables —
@@ -136,3 +138,56 @@ export const TEST_RULES = {
   'no-console': 'off',
   '@typescript-eslint/no-explicit-any': 'off',
 };
+
+/**
+ * Rules that read the types, so they need typescript-eslint's parser with
+ * a tsconfig. A promise nobody awaits or catches fails without a trace, or
+ * ends the process as an unhandled rejection far from the line that
+ * dropped it.
+ */
+export const PROMISE_RULES = {
+  '@typescript-eslint/no-floating-promises': 'error',
+  // An async function where the caller expects a plain one (an event
+  // listener, a forEach callback): its rejection goes nowhere.
+  '@typescript-eslint/no-misused-promises': 'error',
+};
+
+/**
+ * The whole ESLint config of a TypeScript package without React: apps/api,
+ * apps/worker, apps/bot and the shared packages. They had no lint, and the
+ * eslint-disable comments in apps/api answered a linter that never ran.
+ * SOURCE_RULES without its React and apps/web rules, and PROMISE_RULES.
+ *
+ *   js, tseslint   the package's own @eslint/js and typescript-eslint
+ *   dir            the package's directory (import.meta.dirname)
+ *   parserOptions  where the types come from, when each file's nearest
+ *                  tsconfig.json does not cover it
+ *   consoleFiles   files whose output is the console: a worker or a bot
+ *                  logging to the journal, a command-line tool
+ */
+export function packageConfig({
+  js,
+  tseslint,
+  dir,
+  parserOptions = { projectService: true },
+  consoleFiles = [],
+}) {
+  const {
+    'react-hooks/rules-of-hooks': _hooks,
+    'react-hooks/exhaustive-deps': _deps,
+    'no-restricted-syntax': _webOnly,
+    ...rules
+  } = SOURCE_RULES;
+  return [
+    { ignores: ['dist/**', '.turbo/**', 'node_modules/**'] },
+    js.configs.recommended,
+    ...tseslint.configs.recommended,
+    {
+      files: ['**/*.ts'],
+      languageOptions: { parserOptions: { ...parserOptions, tsconfigRootDir: dir } },
+      rules: { ...rules, ...PROMISE_RULES },
+    },
+    ...(consoleFiles.length > 0 ? [{ files: consoleFiles, rules: { 'no-console': 'off' } }] : []),
+    { files: ['**/__tests__/**', '**/*.test.ts'], rules: TEST_RULES },
+  ];
+}
