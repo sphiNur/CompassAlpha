@@ -29,7 +29,12 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             sessionIdsJson: e.payload.sessionIds as unknown as Record<string, unknown>,
             lastSeq: e.seq,
           })
-          .onConflictDoNothing();
+          // RUNAPI-04 (2026-11-09): only a replay of this same run is
+          // skipped. Without a target, a conflict on the one-live-run or
+          // (org, date, index) index was skipped too, and the item insert
+          // below then failed its foreign key: a 500 where run.create
+          // means to find the run that won.
+          .onConflictDoNothing({ target: s.marketRunsV.id });
         // Bulk insert items.
         if (e.payload.plannedItems.length > 0) {
           await db

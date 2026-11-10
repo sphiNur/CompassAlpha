@@ -20,12 +20,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import {
   apply as applyOrder,
   decide as decideOrder,
   emptyState as emptyOrderState,
+  type OrderEvent,
   type OrderState,
 } from '@compass/domain/order';
 import {
@@ -36,7 +37,7 @@ import {
   type RunEvent,
   type RunState,
 } from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
+import { appendEvents, readStream } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
 import { logger } from '../infra/log';
@@ -633,6 +634,74 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
     // Same answer as the mutation itself.
     const err = await errorOf(() => deniedB.caller.run.finish({ runId }));
     expect(err?.message).toBe('run.errors.runHasOtherStores');
+  });
+
+  test('RUNAPI-09: an order written to while the run finishes is decided again, not a 500', async () => {
+    const { admin, storeA, storeB, skuIds, orgId } = fix!;
+    const { runId, sessionA } = await seedRun('delivered');
+    await admin.caller.run.markStoreItemsOk({ runId, storeId: storeA, skuIds: [skuIds[0]] });
+    await admin.caller.run.confirmStore({ runId, storeId: storeA });
+    await admin.caller.run.markStoreItemsOk({ runId, storeId: storeB, skuIds: [skuIds[1]] });
+    await admin.caller.run.confirmStore({ runId, storeId: storeB });
+
+    // Someone marks one of store A's extras at that moment: the event is
+    // written, not yet committed, while finish archives the order.
+    const app = getDb();
+    let state = emptyOrderState(sessionA);
+    for (const e of (await withOrgContext(app, orgId, (tx) =>
+      readStream(tx, 'order', sessionA),
+    )) as unknown as OrderEvent[]) {
+      state = applyOrder(state, e);
+    }
+    const marked = decideOrder(state, {
+      type: 'MarkExtraStatus',
+      extraIndex: 0,
+      status: 'bought',
+      actor: orderActorOf(admin),
+    });
+    let release!: () => void;
+    const released = new Promise<void>((r) => {
+      release = r;
+    });
+    let written!: () => void;
+    const wrote = new Promise<void>((r) => {
+      written = r;
+    });
+    const holder = withOrgContext(app, orgId, async (tx) => {
+      await appendEvents(tx, {
+        streamType: 'order',
+        streamId: sessionA,
+        orgId,
+        events: marked.map((e) => ({ ...e })),
+      });
+      await projectOrder(tx, orgId, marked);
+      written();
+      await released;
+    });
+    await wrote;
+
+    const finishing = admin.caller.run.finish({ runId });
+    // Until finish waits on the uncommitted event's sequence number.
+    for (let i = 0; i < 100; i += 1) {
+      const rows = (await fix!.db.execute(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+      `)) as unknown as Array<{ n: number }>;
+      if ((rows[0]?.n ?? 0) > 0) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    release();
+    await holder;
+
+    // The old loop collected the sequence race and answered
+    // run.errors.archiveCascadeFailed (500).
+    await finishing;
+    const after = await fix!.db
+      .select({ status: s.orderSessionsV.status, extras: s.orderSessionsV.extrasJson })
+      .from(s.orderSessionsV)
+      .where(eq(s.orderSessionsV.id, sessionA));
+    expect(after[0]?.status).toBe('archived');
+    expect((after[0]?.extras as Array<{ status?: string }>)[0]?.status).toBe('bought');
   });
 
   test('R2-DLV-1 + D3: re-buying in a correction keeps the verdict; added quantity is labelled', async () => {

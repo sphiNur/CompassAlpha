@@ -118,6 +118,21 @@ describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
     expect(await other.order.todaySession({ storeId, sessionId: first.sessionId })).toBeNull();
   });
 
+  test('ORD-04: an idempotency key that is not a uuid is kept, not a 500', async () => {
+    const { other, storeId, skuId } = fix!;
+    // The contract allows 8-128 of [A-Za-z0-9_-:.]; correlation_id is a uuid
+    // column, and this key used to fail the insert.
+    const key = 'fine-app:retry.0001';
+    const draft = await other.order.adjustItem({ storeId, skuId, qty: '3', idempotencyKey: key });
+    const db = getDb(undefined, { system: 'maintenance' });
+    const events = await db.query.events.findMany({
+      where: (e, { eq }) => eq(e.streamId, draft.sessionId),
+    });
+    const adjusted = events.find((e) => e.type === 'ItemAdjusted');
+    expect(adjusted?.idempotencyKey).toBe(key);
+    expect(adjusted?.correlationId).toBeNull();
+  });
+
   test('APR-13: taking over a claim leaves it claimed by the one who took it', async () => {
     const { staff, manager, manager2, storeId, skuId } = fix!;
     const draft = await staff.order.adjustItem({ storeId, skuId, qty: '4' });
