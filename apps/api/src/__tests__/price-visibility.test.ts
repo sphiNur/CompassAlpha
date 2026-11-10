@@ -19,85 +19,23 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
-import { logger } from '../infra/log';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-import { appendEvents } from '../services/eventStore';
-import { projectRun } from '../services/runProjection';
+import { loadSession } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
+import { ALL_PERMISSION_KEYS } from '@compass/db/seed-data';
+import { seedRoles } from './helpers/fixtures';
+import { runStream, type RunStream } from './helpers/streams';
+import { errorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-  ALL_PERMISSION_KEYS: readonly string[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES, ALL_PERMISSION_KEYS } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 type Fixture = {
@@ -140,22 +78,7 @@ beforeAll(async () => {
     .values({ slug: `prices-${suffix}`, name: 'Price visibility', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'manager', 'staff', 'purchaser']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'manager', 'staff', 'purchaser']);
   const [accountantRole] = await db
     .insert(s.roles)
     .values({ orgId, slug: 'accountant', name: 'Accountant', rank: 15, isBuiltIn: false })
@@ -183,13 +106,13 @@ beforeAll(async () => {
   const reload = async (userId: string, memberId: string) => {
     const session = await loadSession(db, userId, orgId, memberId);
     if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(db, session));
+    return callerFor(session);
   };
   const person: Fixture['person'] = async (bindings) => {
     n += 1;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Prices ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Prices ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     for (const [roleId, storeId] of bindings) {
@@ -230,15 +153,11 @@ beforeAll(async () => {
     memberId: ownerP.memberId,
     permissions: new Set(ALL_PERMISSION_KEYS),
   };
-  const states = new Map<string, RunState>();
-  const exec: Fixture['exec'] = async (runId, cmd) => {
-    let state = states.get(runId) ?? emptyRunState(runId);
-    const evs = decideRun(state, cmd);
-    for (const e of evs) state = applyRun(state, e);
-    states.set(runId, state);
-    await appendEvents(db, { streamType: 'run', streamId: runId, orgId, events: evs.map((e) => ({ ...e })) });
-    await projectRun(db, orgId, evs);
-    return evs;
+  const runs = new Map<string, RunStream>();
+  const exec: Fixture['exec'] = (runId, cmd) => {
+    const run = runs.get(runId) ?? runStream(orgId, runId);
+    runs.set(runId, run);
+    return run.exec(cmd);
   };
   const runId = randomUUID();
   const sessionIds = [randomUUID(), randomUUID()];
@@ -319,14 +238,16 @@ beforeAll(async () => {
 describe.skipIf(!SHOULD_RUN)('D6: money only with prices.view, per store', () => {
   test('sales.list and dishes.list: no selling price where the reader is staff', async () => {
     const { owner, mixed, storeA, storeB, dishId } = fix!;
-    await mixed.sales.record({ storeId: storeA, dishId, qty: '1' });
-    await mixed.sales.record({ storeId: storeB, dishId, qty: '2' });
+    // Other tests sell at A too, so this one reads only its own sales.
+    const { saleId: soldAtA } = await mixed.sales.record({ storeId: storeA, dishId, qty: '1' });
+    const { saleId: soldAtB } = await mixed.sales.record({ storeId: storeB, dishId, qty: '2' });
     const atA = await mixed.sales.list({ storeId: storeA });
-    expect(atA).toHaveLength(1);
-    expect(atA[0]!.unitPrice).toBeNull();
-    expect(atA[0]!.qty).toBe('1.000');
+    expect(atA.map((row) => row.id)).not.toContain(soldAtB);
+    const mineAtA = atA.find((row) => row.id === soldAtA)!;
+    expect(mineAtA.unitPrice).toBeNull();
+    expect(mineAtA.qty).toBe('1.000');
     const atB = await mixed.sales.list({ storeId: storeB });
-    expect(Number(atB[0]!.unitPrice)).toBe(35000);
+    expect(Number(atB.find((row) => row.id === soldAtB)!.unitPrice)).toBe(35000);
 
     const dishAt = async (caller: Caller, storeId?: string) =>
       (await caller.dishes.list(storeId ? { storeId } : undefined)).dishes.find((d) => d.id === dishId)!;
@@ -515,7 +436,8 @@ describe.skipIf(!SHOULD_RUN)('D6: money only with prices.view, per store', () =>
     expect(plan.lastPurchasePriceBySku).toEqual({});
     expect(plan.perStoreBudgets).toEqual([]);
     const ownerPlan = await owner.run.previewCreatable({});
-    expect(ownerPlan.lastPurchasePriceBySku[skuId]).toBeDefined();
+    // The fixture's run bought it at 12,000.
+    expect(ownerPlan.lastPurchasePriceBySku[skuId]).toBe('12000.00');
     expect(ownerPlan.perStoreBudgets.length).toBeGreaterThan(0);
     await db.delete(s.orderItemsV).where(eq(s.orderItemsV.sessionId, sessionId));
     await db.delete(s.orderSessionsV).where(eq(s.orderSessionsV.id, sessionId));
@@ -540,14 +462,18 @@ describe.skipIf(!SHOULD_RUN)('inputs', () => {
       expect(err?.code).toBe('BAD_REQUEST');
       expect(err?.message).toContain('sales.errors.qtyPrecision');
     }
-    await expect(owner.sales.record({ storeId: storeA, dishId, qty: '0.01' })).resolves.toBeDefined();
-    await expect(owner.sales.record({ storeId: storeA, dishId, qty: '1.50' })).resolves.toBeDefined();
+    // Hundredths go through, and the sale keeps the quantity given.
+    for (const qty of ['0.01', '1.50']) {
+      const { saleId } = await owner.sales.record({ storeId: storeA, dishId, qty });
+      const sale = (await owner.sales.list({ storeId: storeA })).find((row) => row.id === saleId);
+      expect(Number(sale?.qty)).toBe(Number(qty));
+    }
   });
 });
 
 describe.skipIf(!SHOULD_RUN)('D5: History and finance count finished and amending runs', () => {
   test('an amending run stays listed and counted; a run being bought counts nowhere', async () => {
-    const { owner, exec, actor, runId, orgId, skuId, storeA } = fix!;
+    const { db, owner, exec, actor, runId, orgId, storeA } = fix!;
     const range = { startDate: RUN_DATE, endDate: RUN_DATE };
     await exec(runId, { type: 'ReopenRun', reason: 'fix a price', actor });
     const history = await owner.run.history({ dateFrom: RUN_DATE, dateTo: RUN_DATE });
@@ -560,7 +486,20 @@ describe.skipIf(!SHOULD_RUN)('D5: History and finance count finished and amendin
     expect(Number((await owner.report.totals(range)).total)).toBe(48000);
     await exec(runId, { type: 'RefinalizeRun', actor });
 
-    // A second run on another day, still purchasing.
+    // A second run on another day, still purchasing. It buys a product of
+    // its own: on the fixture's product, its 10,000 would become the last
+    // purchase price, which other tests expect to be 12,000.
+    const [pear] = await db
+      .insert(s.skus)
+      .values({
+        orgId,
+        code: `PER-${randomUUID().slice(0, 8)}`,
+        names: { en: 'Pear' },
+        unit: 'kg',
+        step: '0.5',
+      })
+      .returning();
+    const skuId = pear!.id;
     const buying = randomUUID();
     const day = '2026-10-21';
     await exec(buying, {

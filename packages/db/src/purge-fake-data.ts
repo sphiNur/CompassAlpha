@@ -63,35 +63,12 @@
  * D5 (2026-10-30): `--apply` is refused on production (see purgeGuard.ts)
  * unless COMPASS_ALLOW_BULK_PURGE=true is set for that one command.
  */
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { allowEventPurge, getDb, closeDb } from './index';
 import { currentWipeRefusal } from './purgeGuard';
+import { loadRepoEnv } from './repoEnv';
 
-(function loadRootEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+loadRepoEnv(import.meta.url);
 
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply');

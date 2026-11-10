@@ -16,23 +16,16 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { getDb, schema as s } from '@compass/db';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { BUILTIN_ROLES } from '@compass/db/seed-data';
+import { seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-// seed-data.ts isn't exported from @compass/db and sits outside this
-// package's rootDir, so load it at runtime (a non-literal specifier
-// keeps tsc from pulling it into the program).
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
 
 // ---------- migration 0048 is a narrow backfill ---------------------------
 
@@ -73,52 +66,6 @@ describe('CA-10 migration 0048 backfills the missing built-in grants only', () =
 });
 
 // ---------- PG-gated runtime gates ----------------------------------------
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(
-  db: ReturnType<typeof getDb>,
-  session: SessionContext,
-  idempotencyKey: string | null = null,
-): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -215,41 +162,17 @@ async function memberCaller(
   idempotencyKey: string | null = null,
 ) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = BigInt(`${fix!.suffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
-  const [user] = await db.insert(s.users).values({ displayName: 'CA10', tgUserId }).returning();
-  const [member] = await db
-    .insert(s.members)
-    .values({ orgId: fix!.orgId, userId: user!.id, status: 'active' })
-    .returning();
-  await db.insert(s.memberRoleBindings).values({
-    memberId: member!.id,
-    roleId,
-    scopeType: 'store',
-    scopeId: storeId,
-  });
+  const who = await seedMember(db, fix!.orgId, { name: 'CA10', roles: [{ roleId, storeId }] });
   for (const key of denies) {
     await db.insert(s.memberPermissionOverrides).values({
-      memberId: member!.id,
+      memberId: who.memberId,
       permissionKey: key,
       effect: 'deny',
       scopeType: 'store',
       scopeId: storeId,
     });
   }
-  const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
-  if (!session) throw new Error('session failed to load');
-  return appRouter.createCaller(buildCtx(db, session, idempotencyKey));
-}
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
+  return callerFor(await sessionOf(fix!.orgId, who), { idempotencyKey });
 }
 
 describe('CA-10 sales.record has no users.manage fallback', () => {

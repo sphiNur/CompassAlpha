@@ -8,90 +8,29 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/input-checks.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { randomUUID } from 'node:crypto';
 import { pickExtension } from '../trpc/routers/upload';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
+import { seedRoles } from './helpers/fixtures';
+import { codeOf, errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
 let runId = '';
 
-async function codeOf(fn: () => Promise<unknown>): Promise<string | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return (err as { code?: string }).code ?? 'unknown';
-  }
-}
-
 /** The catalog key a refused input came back with (first zod issue). */
 async function keyOf(fn: () => Promise<unknown>): Promise<string | null> {
+  const err = await errorOf(fn);
+  if (!err) return null;
   try {
-    await fn();
-    return null;
-  } catch (err) {
-    const message = (err as { message?: string }).message ?? '';
-    try {
-      return (JSON.parse(message) as Array<{ message: string }>)[0]?.message ?? message;
-    } catch {
-      return message;
-    }
+    return (JSON.parse(err.message) as Array<{ message: string }>)[0]?.message ?? err.message;
+  } catch {
+    return err.message;
   }
 }
 
@@ -103,26 +42,20 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `checks-${suffix}`, name: 'Input checks', localeDefault: 'en', timezone: 'UTC' })
     .returning();
-  const def = BUILTIN_ROLES.find((r) => r.slug === 'super_admin')!;
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId: org!.id, slug: 'super_admin', name: 'super_admin', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key }).onConflictDoNothing();
-  }
+  const roleId = (await seedRoles(db, org!.id, ['super_admin'])).super_admin!;
   const [u] = await db
     .insert(s.users)
-    .values({ displayName: 'Checks', tgUserId: BigInt(`${suffix}1`.slice(-12)) })
+    .values({ displayName: 'Checks', tgUserId: freshTgId() })
     .returning();
   const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: u!.id, status: 'active' }).returning();
-  await db.insert(s.memberRoleBindings).values({ memberId: m!.id, roleId: role!.id, scopeType: 'global', scopeId: null });
+  await db
+    .insert(s.memberRoleBindings)
+    .values({ memberId: m!.id, roleId: roleId, scopeType: 'global', scopeId: null });
   runId = randomUUID();
   await db.insert(s.marketRunsV).values({ id: runId, orgId: org!.id, runDate: '2026-06-01', status: 'finished' });
   const session = await loadSession(db, u!.id, org!.id, m!.id);
   if (!session) throw new Error('session failed to load');
-  owner = appRouter.createCaller(buildCtx(db, session));
+  owner = callerFor(session);
 });
 
 describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {

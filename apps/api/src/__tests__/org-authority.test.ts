@@ -13,55 +13,16 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/org-authority.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const { BUILTIN_ROLES } = (await import(
-  resolve(HERE, '../../../../packages/db/src/seed-data.ts')
-)) as SeedData;
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Db = ReturnType<typeof getDb>;
 type Caller = ReturnType<typeof appRouter.createCaller>;
-
-function callerFor(db: Db, session: SessionContext): Caller {
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 interface Person {
   userId: string;
@@ -96,22 +57,7 @@ beforeAll(async () => {
     })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'admin', 'manager', 'staff']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'admin', 'manager', 'staff']);
   const [store] = await db
     .insert(s.stores)
     .values({ orgId, name: 'Store', code: `OA-${suffix.slice(-6)}` })
@@ -121,28 +67,16 @@ beforeAll(async () => {
   // `slug` with a storeId is a store binding; without one, a global one.
   const person = async (bindings: Array<{ slug: string; storeId?: string }>): Promise<Person> => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Org authority ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    await db
-      .insert(s.memberStoreAssignments)
-      .values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    for (const b of bindings) {
-      await db.insert(s.memberRoleBindings).values({
-        memberId: m!.id,
-        roleId: roleIds[b.slug]!,
-        scopeType: b.storeId ? 'store' : 'global',
-        scopeId: b.storeId ?? null,
-      });
-    }
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return { userId: u!.id, memberId: m!.id, as: callerFor(db, session) };
+    const who = await seedMember(db, orgId, {
+      name: `Org authority ${n}`,
+      stores: [storeId],
+      roles: bindings.map((b) => ({ roleId: roleIds[b.slug]!, storeId: b.storeId ?? null })),
+    });
+    return {
+      userId: who.userId,
+      memberId: who.memberId,
+      as: callerFor(await sessionOf(orgId, who)),
+    };
   };
   fix = {
     db,
@@ -217,8 +151,9 @@ describe.skipIf(!SHOULD_RUN)(
     });
 
     test('below their global rank everything still works', async () => {
-      const { legacyAdmin, manager, person, storeId } = fix!;
+      const { legacyAdmin, person, storeId } = fix!;
       const leaving = await person([{ slug: 'staff', storeId }]);
+      const manager = await person([{ slug: 'manager', storeId }]);
       expect(
         await errorOf(() =>
           legacyAdmin.as.admin.memberSetStatus({ memberId: leaving.memberId, status: 'suspended' }),
@@ -270,11 +205,15 @@ describe.skipIf(!SHOULD_RUN)('a held role keeps its tier (ADM1-02)', () => {
     return role!.id;
   };
 
+  // The roles go to people of each test's own (review NEW-RAND-01): a
+  // global rank-85 role on the shared manager put them out of the org
+  // admin's reach in the ADM1-01 tests.
   test('a store role somebody holds cannot move up to the organisation tier', async () => {
-    const { owner, staff, storeId } = fix!;
+    const { owner, person, storeId } = fix!;
     const roleId = await createRole('shift-lead', 70);
+    const holder = await person([{ slug: 'staff', storeId }]);
     await owner.as.admin.grantRole({
-      userId: staff.userId,
+      userId: holder.userId,
       roleSlug: 'shift-lead',
       scopeType: 'store',
       scopeId: storeId,
@@ -287,10 +226,11 @@ describe.skipIf(!SHOULD_RUN)('a held role keeps its tier (ADM1-02)', () => {
   });
 
   test('an organisation role somebody holds cannot move down to the store tier', async () => {
-    const { owner, manager } = fix!;
+    const { owner, person, storeId } = fix!;
     const roleId = await createRole('area-head', 85);
+    const holder = await person([{ slug: 'manager', storeId }]);
     await owner.as.admin.grantRole({
-      userId: manager.userId,
+      userId: holder.userId,
       roleSlug: 'area-head',
       scopeType: 'global',
     });

@@ -4,34 +4,17 @@
  * permission the call is refused, with it the call reaches `withOrg`.
  */
 import { describe, expect, test } from 'bun:test';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext } from '../trpc/context';
+import { gateCaller } from './helpers/ctx';
 
 function callerWith(permissions: string[]) {
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    db: {} as any,
-    log: logger,
-    traceId: 'test',
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session: {
-      userId: '00000000-0000-4000-8000-000000000001',
-      memberId: '00000000-0000-4000-8000-000000000002',
-      orgId: '00000000-0000-4000-8000-000000000003',
-      orgTimezone: 'UTC',
-      permissions: new Set(permissions),
-      roleSlugs: new Set(),
-    },
-    async withOrg() {
-      throw new Error('reached the handler');
-    },
-  };
-  return appRouter.createCaller(ctx);
+  return gateCaller({
+    userId: '00000000-0000-4000-8000-000000000001',
+    memberId: '00000000-0000-4000-8000-000000000002',
+    orgId: '00000000-0000-4000-8000-000000000003',
+    orgTimezone: 'UTC',
+    permissions: new Set(permissions),
+    roleSlugs: new Set(),
+  });
 }
 
 describe('system.recentLogs', () => {

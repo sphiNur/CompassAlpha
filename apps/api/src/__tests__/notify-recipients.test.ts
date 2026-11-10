@@ -7,28 +7,18 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/notify-recipients.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getDb, schema as s } from '@compass/db';
 import { findRecipientsByPermission, findRecipientsByPermissionInStore } from '../services/notify';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { seedRoles } from './helpers/fixtures';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const { BUILTIN_ROLES } = (await import(
-  resolve(HERE, '../../../../packages/db/src/seed-data.ts')
-)) as SeedData;
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 const KEY = 'order.approve';
 
 /**
  * A Telegram id no other test file hands out: theirs stay below 10^12
  * (a time-based id cut to 12 digits collided with one of them in CI).
  */
-const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
-
 type Db = ReturnType<typeof getDb>;
 type Grant =
   | { role: 'manager' | 'staff'; store: 'A' | 'B' | null }
@@ -51,22 +41,7 @@ beforeAll(async () => {
     .values({ slug: `notify-${suffix}`, name: 'Notify', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['manager', 'staff']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['manager', 'staff']);
   await db.insert(s.permissions).values({ key: KEY, description: KEY }).onConflictDoNothing();
   const [a] = await db
     .insert(s.stores)

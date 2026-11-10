@@ -11,8 +11,8 @@ import { describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -20,8 +20,6 @@ type Db = ReturnType<typeof getDb>;
  * A Telegram id no other test file hands out: theirs stay below 10^12
  * (a time-based id cut to 12 digits collided with one of them in CI).
  */
-const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
-
 /** An organisation with one member whose shift began 40 minutes ago. */
 async function lateShift(db: Db, timezone: string, now: Date) {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 100000)}`;

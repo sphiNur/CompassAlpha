@@ -160,6 +160,9 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     idleOrder: randomUUID(),
     othersActivityOrder: randomUUID(),
     approvedOrder: randomUUID(),
+    /** Idle like idleOrder. D13 releases this one, so the candidate
+     * tests keep theirs whatever the order (review NEW-RAND-01). */
+    releasedOrder: randomUUID(),
     activeRun: randomUUID(),
     deliveringRun: randomUUID(),
     finishedRun: randomUUID(),
@@ -199,6 +202,7 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       session(ids.activeOrder),
       session(ids.idleOrder),
       session(ids.othersActivityOrder),
+      session(ids.releasedOrder),
       // Idle too, but no longer in review: never a candidate.
       session(ids.approvedOrder, 'approved'),
     ]);
@@ -242,6 +246,8 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       // Claimer's last edit was 45 minutes ago → idle.
       event('order', ids.idleOrder, 1, ids.claimerUserId, 60),
       event('order', ids.idleOrder, 2, ids.claimerUserId, 45),
+      event('order', ids.releasedOrder, 1, ids.claimerUserId, 60),
+      event('order', ids.releasedOrder, 2, ids.claimerUserId, 45),
       // Only someone else touched it recently → the claimer is idle.
       event('order', ids.othersActivityOrder, 1, ids.claimerUserId, 60),
       event('order', ids.othersActivityOrder, 2, ids.otherUserId, 2),
@@ -305,7 +311,7 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
 
   test('D13: releasing an idle order claim leaves the claimer one in-app notification', async () => {
     const released = await withSystemContext(db, 'worker', (tx) =>
-      releaseClaimIfExpired(tx, 'order', { id: ids.idleOrder, orgId: ids.orgId }, 30),
+      releaseClaimIfExpired(tx, 'order', { id: ids.releasedOrder, orgId: ids.orgId }, 30),
     );
     expect(released).toBe(true);
     const notes = await withSystemContext(db, 'worker', (tx) =>

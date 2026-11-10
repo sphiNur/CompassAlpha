@@ -11,14 +11,14 @@
  *
  * The PG half is skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHmac, randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
-import { createContext } from '../trpc/context';
+import { createContext, type RequestContext } from '../trpc/context';
 import { verifyRefresh } from '../infra/jwt';
 import { trustedClientIp, CLIENT_IP_HEADER, PROXY_KEY_HEADER } from '../services/clientIp';
 import {
@@ -26,37 +26,21 @@ import {
   checkClientRate,
   UNIDENTIFIED_BUDGET_FACTOR,
 } from '../services/rateLimit';
+import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
+import { signInitData, freshTgId } from './helpers/telegram';
+import { errorOf } from './helpers/errors';
 
-const SHOULD_RUN =
-  !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1' && !!env.TELEGRAM_BOT_TOKEN;
-
-function signInitData(tgUserId: bigint): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({ id: Number(tgUserId), first_name: 'Trust', username: `t${tgUserId}` }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_BOT_TOKEN!).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
-}
+const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
 /** A caller built by the server's own createContext from these headers. */
 async function callerWith(headers: Record<string, string> = {}) {
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   const hono = { req: { header: (name: string) => lower[name.toLowerCase()] } };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctx = await createContext(null, hono as any);
+  const ctx = await createContext(null, hono as RequestContext['hono']);
   return appRouter.createCaller(ctx);
 }
 
 const bearer = (accessToken: string) => ({ authorization: `Bearer ${accessToken}` });
-
-const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000));
 
 describe('trustedClientIp (AUTH-6)', () => {
   const read = (h: Record<string, string>) => (name: string) => h[name];
@@ -129,6 +113,12 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     }));
     orgA = provisioned.a.orgId;
     orgB = provisioned.b.orgId;
+  });
+
+  // Each test signs in to A, as the user last left it. Some switch to B;
+  // a test that fails half-way must not leave the next one in B (review
+  // TEST2-09: each test used to move the user back at its end).
+  beforeEach(async () => {
     await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
@@ -162,7 +152,9 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     // takes the whole family down with it.
     const next = await refresh(first.tokens.refreshToken);
     await expect(refresh(tokens.refreshToken)).rejects.toThrow('auth.errors.refreshReplayDetected');
-    await expect(refresh(next.tokens.refreshToken)).rejects.toThrow();
+    await expect(refresh(next.tokens.refreshToken)).rejects.toThrow(
+      'auth.errors.refreshReplayDetected',
+    );
   });
 
   test('AUTH-12: concurrent refreshes with one token all succeed with the same successor', async () => {
@@ -216,7 +208,6 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
 
     const after = await refresh(switched.tokens.refreshToken);
     expect(after.session.member.orgId).toBe(orgB);
-    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
   test('R2-ADM-1: a token rotated before the switch is also told the session moved', async () => {
@@ -239,7 +230,6 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     await expect(refresh(rotated.tokens.refreshToken)).rejects.toThrow(
       'auth.errors.refreshChainSwitched',
     );
-    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
   test('AUTH-11: an access token from before the change still switches', async () => {
@@ -256,7 +246,6 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
       orgId: orgB,
     });
     expect(switched.session.member.orgId).toBe(orgB);
-    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 
   test('AUTH-6: a new x-forwarded-for per request no longer escapes the login limit', async () => {
@@ -265,11 +254,8 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     // Bad initData fails after the rate check, so nothing is written.
     for (let i = 0; i < 5 * UNIDENTIFIED_BUDGET_FACTOR + 2; i += 1) {
       const caller = await callerWith({ 'x-forwarded-for': `10.0.${i >> 8}.${i & 255}` });
-      try {
-        await caller.auth.telegramLogin({ initData: 'hash=bad' });
-      } catch (err) {
-        if ((err as Error).message === 'auth.errors.rateLimited') limited += 1;
-      }
+      const err = await errorOf(() => caller.auth.telegramLogin({ initData: 'hash=bad' }));
+      if (err?.message === 'auth.errors.rateLimited') limited += 1;
     }
     expect(limited).toBeGreaterThan(0);
 
@@ -278,11 +264,8 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     const statuses: string[] = [];
     for (let i = 0; i < 7; i += 1) {
       const caller = await callerWith({ 'cf-connecting-ip': '203.0.113.7' });
-      try {
-        await caller.auth.telegramLogin({ initData: 'hash=bad' });
-      } catch (err) {
-        statuses.push((err as Error).message);
-      }
+      const err = await errorOf(() => caller.auth.telegramLogin({ initData: 'hash=bad' }));
+      if (err) statuses.push(err.message);
     }
     expect(statuses.slice(0, 5).every((m) => m === 'auth.errors.invalidInitData')).toBe(true);
     expect(statuses.slice(5)).toEqual(['auth.errors.rateLimited', 'auth.errors.rateLimited']);

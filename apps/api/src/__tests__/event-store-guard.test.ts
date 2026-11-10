@@ -13,7 +13,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -25,33 +25,10 @@ import {
   withOrgContext,
   withSystemContext,
 } from '@compass/db';
+import { SHOULD_RUN } from './helpers/pg';
+import { pgErrorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
 describe('D3: the database and the code agree on the system reasons', () => {
   test('app_is_system() lists exactly SYSTEM_REASONS', () => {
@@ -66,20 +43,20 @@ describe('D3: the database and the code agree on the system reasons', () => {
   });
 });
 
-async function errorOf(fn: () => Promise<unknown>): Promise<string | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    const e = err as { message: string; cause?: { message?: string } };
-    return `${e.message} ${e.cause?.message ?? ''}`;
-  }
-}
-
 describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
   const fixtures = () => getDb(undefined, { system: 'maintenance' });
   const app = () => getDb();
   const ids = { orgId: randomUUID(), userId: randomUUID(), streamId: randomUUID() };
+  const adjustments = (streamId: string, seqs: number[]) =>
+    seqs.map((seq) => ({
+      orgId: ids.orgId,
+      streamType: 'order',
+      streamId,
+      seq,
+      type: 'ItemAdjusted',
+      payload: {},
+      actorId: ids.userId,
+    }));
 
   beforeAll(async () => {
     const db = fixtures();
@@ -91,17 +68,8 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
       timezone: 'UTC',
     });
     await db.insert(s.users).values({ id: ids.userId, displayName: 'Event guard actor' });
-    await db.insert(s.events).values(
-      [1, 2, 3].map((seq) => ({
-        orgId: ids.orgId,
-        streamType: 'order',
-        streamId: ids.streamId,
-        seq,
-        type: 'ItemAdjusted',
-        payload: {},
-        actorId: ids.userId,
-      })),
-    );
+    // Every test may try to change these three; none may succeed.
+    await db.insert(s.events).values(adjustments(ids.streamId, [1, 2, 3]));
   });
 
   afterAll(async () => {
@@ -110,16 +78,16 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
     await db.delete(s.users).where(eq(s.users.id, ids.userId));
   });
 
-  const countEvents = async () =>
+  const countEvents = async (streamId = ids.streamId) =>
     (
       await fixtures()
         .select({ id: s.events.id })
         .from(s.events)
-        .where(eq(s.events.streamId, ids.streamId))
+        .where(eq(s.events.streamId, streamId))
     ).length;
 
   test('D1: the app cannot update, delete or truncate events', async () => {
-    const update = await errorOf(() =>
+    const update = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, (tx) =>
         tx
           .update(s.events)
@@ -127,37 +95,41 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
           .where(eq(s.events.streamId, ids.streamId)),
       ),
     );
-    expect(update).toContain('append-only');
-    const del = await errorOf(() =>
+    expect(update?.message).toContain('append-only');
+    const del = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, (tx) =>
         tx.delete(s.events).where(eq(s.events.streamId, ids.streamId)),
       ),
     );
-    expect(del).toContain('append-only');
-    const truncate = await errorOf(() =>
+    expect(del?.message).toContain('append-only');
+    const truncate = await pgErrorOf(() =>
       withSystemContext(app(), 'maintenance', (tx) =>
         tx.execute(sql`TRUNCATE domain.events CASCADE`),
       ),
     );
-    expect(truncate).toContain('append-only');
+    expect(truncate?.message).toContain('append-only');
     expect(await countEvents()).toBe(3);
   });
 
   test('D1: a purge may delete, still not update', async () => {
-    const update = await errorOf(() =>
+    // A stream of the test's own: deleting from the shared one changed the
+    // count the other tests read (review NEW-RAND-01).
+    const streamId = randomUUID();
+    await fixtures()
+      .insert(s.events)
+      .values(adjustments(streamId, [1, 2, 3]));
+    const update = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, async (tx) => {
         await allowEventPurge(tx);
-        await tx.update(s.events).set({ payload: {} }).where(eq(s.events.streamId, ids.streamId));
+        await tx.update(s.events).set({ payload: {} }).where(eq(s.events.streamId, streamId));
       }),
     );
-    expect(update).toContain('append-only');
+    expect(update?.message).toContain('append-only');
     await withOrgContext(app(), ids.orgId, async (tx) => {
       await allowEventPurge(tx);
-      await tx
-        .delete(s.events)
-        .where(and(eq(s.events.streamId, ids.streamId), eq(s.events.seq, 3)));
+      await tx.delete(s.events).where(and(eq(s.events.streamId, streamId), eq(s.events.seq, 3)));
     });
-    expect(await countEvents()).toBe(2);
+    expect(await countEvents(streamId)).toBe(2);
   });
 
   test('D1: the purge permission ends with its transaction', async () => {
@@ -170,15 +142,15 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
       await conn`COMMIT`;
       await conn`BEGIN`;
       await conn`SELECT set_config('app.current_org_id', ${ids.orgId}, true)`;
-      const err = await errorOf(async () => {
+      const err = await pgErrorOf(async () => {
         await conn`DELETE FROM domain.events WHERE stream_id = ${ids.streamId}`;
       });
       await conn`ROLLBACK`;
-      expect(err).toContain('append-only');
+      expect(err?.message).toContain('append-only');
     } finally {
       conn.release();
     }
-    expect(await countEvents()).toBe(2);
+    expect(await countEvents()).toBe(3);
   });
 
   test('D1: deleting a user still clears actor_id on their events', async () => {
@@ -195,12 +167,12 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
       actorId: other!.id,
     });
     // Setting it by hand is refused while the user exists.
-    const byHand = await errorOf(() =>
+    const byHand = await pgErrorOf(() =>
       withSystemContext(app(), 'maintenance', (tx) =>
         tx.update(s.events).set({ actorId: null }).where(eq(s.events.streamId, streamId)),
       ),
     );
-    expect(byHand).toContain('append-only');
+    expect(byHand?.message).toContain('append-only');
     await db.delete(s.users).where(eq(s.users.id, other!.id));
     const [row] = await db.select().from(s.events).where(eq(s.events.streamId, streamId));
     expect(row?.actorId).toBeNull();
@@ -216,6 +188,6 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
         return rows[0]!;
       });
     expect(await seen('anything-i-like')).toEqual({ system: false, n: 0 });
-    expect(await seen('worker')).toEqual({ system: true, n: 2 });
+    expect(await seen('worker')).toEqual({ system: true, n: 3 });
   });
 });

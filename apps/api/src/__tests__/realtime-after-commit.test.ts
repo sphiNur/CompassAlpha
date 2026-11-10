@@ -13,7 +13,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import {
@@ -26,19 +25,16 @@ import {
   withSystemContext,
   type DB,
 } from '@compass/db';
-import { logger } from '../infra/log';
 import { hub } from '../realtime/hub';
 import { relayDatabaseNotices, relayRealtimeNotice } from '../realtime/dbRelay';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession, type SessionContext } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
+import { seedRoles } from './helpers/fixtures';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const { BUILTIN_ROLES } = (await import(
-  resolve(HERE, '../../../../packages/db/src/seed-data.ts')
-)) as SeedData;
 type ClaimTimeout = {
   releaseClaimIfExpired: (
     tx: DB,
@@ -50,31 +46,6 @@ type ClaimTimeout = {
 const { releaseClaimIfExpired } = (await import(
   resolve(HERE, '../../../worker/src/claimTimeout.ts')
 )) as ClaimTimeout;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
 /** A fake socket on the hub for `orgId`; collects what it is sent. */
 function listen(orgId: string, onMessage?: (m: Record<string, unknown>) => void) {
@@ -140,18 +111,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
         localeDefault: 'en',
         timezone: 'UTC',
       });
-    const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
-    const [role] = await db()
-      .insert(s.roles)
-      .values({ orgId, slug: 'staff', name: 'staff', rank: def.rank, isBuiltIn: true })
-      .returning();
-    for (const key of def.permissions) {
-      await db().insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db()
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
+    const roleId = (await seedRoles(db(), orgId, ['staff'])).staff!;
     const [store] = await db()
       .insert(s.stores)
       .values({ orgId, name: 'Store', code: `RT-${suffix.slice(-6)}` })
@@ -170,7 +130,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
     skuId = sku!.id;
     const [user] = await db()
       .insert(s.users)
-      .values({ displayName: 'Realtime staff', tgUserId: BigInt(`7${suffix}`.slice(-12)) })
+      .values({ displayName: 'Realtime staff', tgUserId: freshTgId() })
       .returning();
     const [member] = await db()
       .insert(s.members)
@@ -182,23 +142,9 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
       .values({ memberId: member!.id, storeId, assignedBy: user!.id });
     await db()
       .insert(s.memberRoleBindings)
-      .values({ memberId: member!.id, roleId: role!.id, scopeType: 'store', scopeId: storeId });
+      .values({ memberId: member!.id, roleId: roleId, scopeType: 'store', scopeId: storeId });
     const session = (await loadSession(app(), user!.id, orgId, member!.id)) as SessionContext;
-    const ctx: RequestContext = {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hono: {} as any,
-      db: app(),
-      log: logger,
-      traceId: `test-${Date.now()}`,
-      ip: null,
-      userAgent: null,
-      idempotencyKey: null,
-      session,
-      async withOrg(fn, options) {
-        return withOrgContext(app(), orgId, fn, options);
-      },
-    };
-    staff = appRouter.createCaller(ctx);
+    staff = callerFor(session);
     stopRelay = await relayDatabaseNotices(unprobed(app()).$client);
   });
 

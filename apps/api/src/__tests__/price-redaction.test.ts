@@ -20,19 +20,23 @@ describe('withoutPrices (staff see no money)', () => {
       lastPriceObservedAtBySku: { k1: '2026-10-29' },
       startedAt: new Date('2026-10-30T00:00:00Z'),
     };
-    // The redacted copy breaks the input's types on purpose (strings → null).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const out = withoutPrices(run) as any;
-    expect(out.actualTotal).toBeNull();
-    expect(out.money).toEqual({ itemsTotal: null, expensesTotal: null, total: null });
-    expect(out.storeTotals[0]).toEqual({ storeId: 's1', total: null, cash: null, transfer: null, itemCount: 5 });
-    expect(out.items[0]).toEqual({ skuId: 'k1', unitPrice: null, plannedQty: '3', purchasedQty: '3' });
-    expect(out.expenses[0].unitPrice).toBeNull();
-    expect(out.expenses[0].qty).toBe('1');
-    expect(out.sessions[0]).toEqual({ id: 'x', totalQty: '7', itemCount: 2 });
-    expect(out.lastPriceBySku).toEqual({});
-    expect(out.lastPriceObservedAtBySku).toEqual({});
-    expect(out.startedAt).toEqual(run.startedAt);
+    // The redacted copy breaks the input's types on purpose (strings → null),
+    // so it is compared as unknown.
+    const out: unknown = withoutPrices(run);
+    expect(out).toEqual({
+      id: 'r1',
+      actualTotal: null,
+      money: { itemsTotal: null, expensesTotal: null, total: null },
+      storeTotals: [{ storeId: 's1', total: null, cash: null, transfer: null, itemCount: 5 }],
+      items: [{ skuId: 'k1', unitPrice: null, plannedQty: '3', purchasedQty: '3' }],
+      expenses: [
+        { id: 'e1', unitPrice: null, qty: '1', storeSplits: [{ storeId: 's1', qty: '1' }] },
+      ],
+      sessions: [{ id: 'x', totalQty: '7', itemCount: 2 }],
+      lastPriceBySku: {},
+      lastPriceObservedAtBySku: {},
+      startedAt: run.startedAt,
+    });
   });
 
   test('prices.view decides', () => {
@@ -57,8 +61,7 @@ describe('withoutPrices (staff see no money)', () => {
   });
 
   test('D6: estimates and price hints are redacted too', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const out = withoutPrices({
+    const out: unknown = withoutPrices({
       estimatedTotal: '10',
       estimatedCash: '4',
       estimatedTransfer: '6',
@@ -66,7 +69,7 @@ describe('withoutPrices (staff see no money)', () => {
       lineTotal: '5.00',
       qty: '2',
       lastPurchasePriceBySku: { k: '1' },
-    }) as any;
+    });
     expect(out).toEqual({
       estimatedTotal: null,
       estimatedCash: null,

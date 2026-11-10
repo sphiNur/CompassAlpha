@@ -8,63 +8,12 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/run-list-scope.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: {
@@ -85,18 +34,7 @@ beforeAll(async () => {
     .values({ slug: `runlist-${suffix}`, name: 'Run list', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId, slug: 'staff', name: 'staff', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db
-      .insert(s.rolePermissions)
-      .values({ roleId: role!.id, permissionKey: key })
-      .onConflictDoNothing();
-  }
+  const roleId = (await seedRoles(db, orgId, ['staff'])).staff!;
   const store = async (name: string) =>
     (
       await db
@@ -113,23 +51,12 @@ beforeAll(async () => {
   let n = 0;
   const staff = async (storeId: string): Promise<Caller> => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Run list ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    await db
-      .insert(s.memberStoreAssignments)
-      .values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: role!.id, scopeType: 'store', scopeId: storeId });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(db, session));
+    const who = await seedMember(db, orgId, {
+      name: `Run list ${n}`,
+      stores: [storeId],
+      roles: [{ roleId, storeId }],
+    });
+    return callerFor(await sessionOf(orgId, who));
   };
   fix = {
     orgId,

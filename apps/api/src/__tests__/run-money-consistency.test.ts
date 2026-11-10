@@ -15,50 +15,15 @@
  * receivedDelta cases always run.
  */
 import { describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
-import { appendEvents } from '../services/eventStore';
-import { pgConstraintName, pgErrorCode } from '../services/pgErrors';
-import { projectRun, receivedDelta } from '../services/runProjection';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import { getDb, schema as s } from '@compass/db';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
+import { receivedDelta } from '../services/runProjection';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { runStream } from './helpers/streams';
+import { seedOwnedOrg } from './helpers/fixtures';
+import { pgErrorOf } from './helpers/errors';
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {
@@ -94,101 +59,35 @@ describe('receivedDelta (CA-06)', () => {
   });
 });
 
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
-
-const PERMS = [
-  'users.manage',
-  'prices.view',
-  'org.admin',
-  'run.create',
-  'run.create.org',
-  'run.purchase',
-  'run.finish',
-  'delivery.dispatch',
-  'delivery.confirm',
-];
-
-/** An organisation with one member who holds PERMS across it. */
+/** A new organisation whose owner does the buying. */
 async function buyerOrg(name: string) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const slug = `${name.toLowerCase().replace(/\W+/g, '-')}-${Date.now()}`;
-  const [org] = await db
-    .insert(s.organizations)
-    .values({ slug, name, localeDefault: 'en', timezone: 'UTC' })
-    .returning();
-  if (!org) throw new Error('org insert failed');
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
-    .returning();
-  for (const key of PERMS) {
-    await db
-      .insert(s.permissions)
-      .values({ key, description: `Test perm ${key}` })
-      .onConflictDoNothing();
-    await db
-      .insert(s.rolePermissions)
-      .values({ roleId: role!.id, permissionKey: key })
-      .onConflictDoNothing();
-  }
-  const [user] = await db
-    .insert(s.users)
-    .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}71`.slice(-12)) })
-    .returning();
-  const [member] = await db
-    .insert(s.members)
-    .values({ orgId: org.id, userId: user!.id, status: 'active' })
-    .returning();
-  await db.insert(s.memberRoleBindings).values({
-    memberId: member!.id,
-    roleId: role!.id,
-    scopeType: 'global',
-  });
-  const caller = appRouter.createCaller(
-    buildCtx(db, {
-      userId: user!.id,
-      memberId: member!.id,
-      orgId: org.id,
-      orgTimezone: 'UTC',
-      permissions: new Set(PERMS),
-      roleSlugs: new Set(['super_admin']),
-    }),
-  );
-  return { db, slug, org, user: user!, member: member!, caller };
+  const { orgId, slug, session } = await seedOwnedOrg(db, name);
+  const actor: ActorCtx = {
+    userId: session.userId,
+    memberId: session.memberId,
+    permissions: session.permissions,
+  };
+  return { db, orgId, slug, actor, caller: callerFor(session) };
 }
 
 describe('run money consistency (PG)', () => {
   test.skipIf(!SHOULD_RUN)(
     'report.totals == run.history totals == frozen items + expenses; short line books received qty',
     async () => {
-      const { db, slug, org, user, member, caller } = await buyerOrg('Money Consistency');
+      const { db, orgId, slug, actor, caller } = await buyerOrg('Money Consistency');
       const [storeA] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'A', code: `A-${slug.slice(-6)}` })
+        .values({ orgId, name: 'A', code: `A-${slug.slice(-6)}` })
         .returning();
       const [storeB] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'B', code: `B-${slug.slice(-6)}` })
+        .values({ orgId, name: 'B', code: `B-${slug.slice(-6)}` })
         .returning();
       const [sku] = await db
         .insert(s.skus)
         .values({
-          orgId: org.id,
+          orgId,
           code: `APL-${slug.slice(-6)}`,
           names: { en: 'Apple' },
           unit: 'kg',
@@ -197,29 +96,13 @@ describe('run money consistency (PG)', () => {
         .returning();
       if (!storeA || !storeB || !sku) throw new Error('fixture insert failed');
 
-      const actor: ActorCtx = {
-        userId: user!.id,
-        memberId: member!.id,
-        permissions: new Set(PERMS),
-      };
       const runId = randomUUID();
-      let state: RunState = emptyRunState(runId);
-      const exec = async (cmd: RunCommand) => {
-        const evs = decideRun(state, cmd);
-        for (const e of evs) state = applyRun(state, e);
-        await appendEvents(db, {
-          streamType: 'run',
-          streamId: runId,
-          orgId: org.id,
-          events: evs.map((e) => ({ ...e })),
-        });
-        await projectRun(db, org.id, evs);
-        return evs;
-      };
+      const runLog = runStream(orgId, runId);
+      const exec = (cmd: RunCommand) => runLog.exec(cmd);
 
       await exec({
         type: 'PlanRun',
-        orgId: org.id,
+        orgId,
         runDate: '2026-10-20',
         runIndex: 0,
         sessionIds: [randomUUID()],
@@ -327,8 +210,8 @@ describe('run money consistency (PG)', () => {
   test.skipIf(!SHOULD_RUN)(
     'CA-04: a delivering run does not block a new one; a planned or purchasing one does',
     async () => {
-      const { db, org, caller } = await buyerOrg('Parallel Runs');
-      const base = { orgId: org.id, runDate: '2026-10-20' };
+      const { db, orgId, caller } = await buyerOrg('Parallel Runs');
+      const base = { orgId, runDate: '2026-10-20' };
       await db
         .insert(s.marketRunsV)
         .values({ ...base, id: randomUUID(), runIndex: 0, status: 'delivering' });
@@ -354,16 +237,12 @@ describe('run money consistency (PG)', () => {
 
       // Underneath, the database refuses a second planned or purchasing run:
       // the partial unique index, not some other failure.
-      let error: unknown = null;
-      try {
-        await db
+      const refusal = await pgErrorOf(() =>
+        db
           .insert(s.marketRunsV)
-          .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' });
-      } catch (err) {
-        error = err;
-      }
-      expect(pgErrorCode(error)).toBe('23505');
-      expect(pgConstraintName(error)).toBe('mrv_one_active_per_org_unique');
+          .values({ ...base, id: randomUUID(), runIndex: 3, status: 'planned' }),
+      );
+      expect(refusal).toMatchObject({ code: '23505', constraint: 'mrv_one_active_per_org_unique' });
     },
   );
 });

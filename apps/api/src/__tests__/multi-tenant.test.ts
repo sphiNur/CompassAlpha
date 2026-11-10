@@ -5,63 +5,16 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHmac } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import {
-  getDb,
-  provisionOrganization,
-  schema as s,
-  withOrgContext,
-  withSystemContext,
-} from '@compass/db';
+import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
+import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
+import { signInitData, freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
-const SHOULD_RUN =
-  !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1' && !!env.TELEGRAM_BOT_TOKEN;
-
-function signInitData(tgUserId: bigint, firstName = 'Tenant User'): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({
-      id: Number(tgUserId),
-      first_name: firstName,
-      username: `tenant${tgUserId}`,
-    }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_BOT_TOKEN!).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
-}
-
-function caller(session: SessionContext | null) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn) {
-      return withOrgContext(db, session?.orgId ?? null, fn);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
-
-const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000));
+const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
 describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   const cleanupOrgIds: string[] = [];
@@ -108,7 +61,6 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     memberA = provisioned.a.ownerMemberId!;
     memberB = provisioned.b.ownerMemberId!;
     cleanupOrgIds.push(orgA, orgB);
-    await db.update(s.users).set({ lastOrgId: orgB }).where(eq(s.users.id, userId));
 
     const [normalUser] = await db
       .insert(s.users)
@@ -123,6 +75,13 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     await db.insert(s.members).values({ orgId: orgA, userId: normalUserId, status: 'active' });
   });
 
+  // Each test starts with the user last in B. One switches to A (review
+  // NEW-RAND-01: run in another order, the login test found them in A).
+  beforeEach(async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db.update(s.users).set({ lastOrgId: orgB }).where(eq(s.users.id, userId));
+  });
+
   afterAll(async () => {
     const db = getDb(undefined, { system: 'maintenance' });
     for (const id of cleanupOrgIds) {
@@ -134,7 +93,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('login reopens the last workspace and lists every membership', async () => {
-    const login = await caller(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
+    const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
     expect(login.session.member.orgId).toBe(orgB);
     expect(login.session.member.memberId).toBe(memberB);
     expect(login.session.memberships.map((m) => m.orgId).sort()).toEqual([orgA, orgB].sort());
@@ -143,7 +102,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('switching organisation survives a refresh-token rotation', async () => {
-    const login = await caller(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
+    const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
     const sessionB: SessionContext = {
       userId,
       memberId: login.session.member.memberId,
@@ -152,10 +111,10 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       permissions: new Set(['users.manage', 'org.admin']),
       roleSlugs: new Set(['admin']),
     };
-    const switched = await caller(sessionB).auth.switchOrganization({ orgId: orgA });
+    const switched = await callerFor(sessionB).auth.switchOrganization({ orgId: orgA });
     expect(switched.session.member.orgId).toBe(orgA);
 
-    const refreshed = await caller(null).auth.refresh({
+    const refreshed = await callerFor(null).auth.refresh({
       refreshToken: switched.tokens.refreshToken,
     });
     expect(refreshed.session.member.orgId).toBe(orgA);
@@ -163,31 +122,46 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('creating a workspace provisions roles, defaults and a Super Admin owner', async () => {
-    const sessionB: SessionContext = {
-      userId,
-      memberId: memberB,
-      orgId: orgB,
+    // A platform admin of the test's own, in one workspace, so the shared
+    // user keeps exactly A and B for the login test (review NEW-RAND-01).
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [founder] = await db
+      .insert(s.users)
+      .values({ tgUserId: freshTgId(), displayName: 'Founder', displayNameLocked: true })
+      .returning();
+    cleanupUserIds.push(founder!.id);
+    await db.insert(s.platformAdmins).values({ userId: founder!.id, note: 'multi-tenant test' });
+    const home = await withSystemContext(db, 'maintenance', (tx) =>
+      provisionOrganization(tx, {
+        name: 'Founder home',
+        slug: `founder-${Math.random().toString(36).slice(2, 8)}`,
+        ownerUserId: founder!.id,
+      }),
+    );
+    cleanupOrgIds.push(home.orgId);
+    const founderSession: SessionContext = {
+      userId: founder!.id,
+      memberId: home.ownerMemberId!,
+      orgId: home.orgId,
       orgTimezone: 'UTC',
       permissions: new Set(['users.manage', 'org.admin']),
       roleSlugs: new Set(['admin']),
     };
-    const created = await caller(sessionB).auth.createOrganization({
+    const created = await callerFor(founderSession).auth.createOrganization({
       name: 'Brand New Restaurant',
       locale: 'en',
       timezone: 'Asia/Tashkent',
     });
     cleanupOrgIds.push(created.session.member.orgId);
 
-    expect(created.session.member.orgId).not.toBe(orgA);
-    expect(created.session.member.orgId).not.toBe(orgB);
+    expect(created.session.member.orgId).not.toBe(home.orgId);
     // 2026-10-24: the owner is Super Admin, so they can appoint admins.
     expect(created.session.roleSlugs).toContain('super_admin');
     expect(created.session.myMaxRank).toBe(100);
     expect(created.session.permissions).toContain('org.admin');
     expect(created.session.isPlatformAdmin).toBe(true);
-    expect(created.session.memberships).toHaveLength(3);
+    expect(created.session.memberships).toHaveLength(2);
 
-    const db = getDb(undefined, { system: 'maintenance' });
     const roles = await db
       .select()
       .from(s.roles)
@@ -218,7 +192,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       roleSlugs: new Set(['admin']),
     };
     await expect(
-      caller(session).auth.createOrganization({ name: 'Unauthorized Tenant' }),
+      callerFor(session).auth.createOrganization({ name: 'Unauthorized Tenant' }),
     ).rejects.toThrow('auth.errors.platformAdminRequired');
   });
 });

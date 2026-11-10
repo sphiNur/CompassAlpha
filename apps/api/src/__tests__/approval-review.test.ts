@@ -14,57 +14,14 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/approval-review.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
 import { claimTakenFrom, TAKEOVER_COOLDOWN_MS } from '../trpc/routers/order';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -84,15 +41,6 @@ interface Fixture {
   bob: Person;
 }
 let fix: Fixture | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<string | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return (err as Error).message;
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -133,27 +81,13 @@ beforeAll(async () => {
   const plainRole = await role('approver-np', 50, approverKeys);
 
   const person = async (n: number, roleId: string): Promise<Person> => {
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Reviewer ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    await db
-      .insert(s.memberStoreAssignments)
-      .values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId, scopeType: 'store', scopeId: store!.id });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return {
-      userId: u!.id,
-      memberId: m!.id,
-      caller: appRouter.createCaller(buildCtx(db, session)),
-    };
+    const who = await seedMember(db, orgId, {
+      name: `Reviewer ${n}`,
+      stores: [store!.id],
+      roles: [{ roleId, storeId: store!.id }],
+    });
+    const caller = callerFor(await sessionOf(orgId, who));
+    return { userId: who.userId, memberId: who.memberId, caller };
   };
   fix = {
     db,
@@ -201,7 +135,7 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
       await errorOf(() =>
         ann.caller.order.unapprove({ sessionId: b.sessionId, expectedSeq: first.lastSeq }),
       ),
-    ).toBe('order.errors.staleSeq');
+    ).toMatchObject({ message: 'order.errors.staleSeq' });
     expect((await row(b.sessionId))!.status).toBe('approved');
   });
 
@@ -241,7 +175,9 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
     });
     expect(items.map((i) => Number(i.qty))).toEqual([5]);
     // The claim is real: the next approver is told someone is reviewing.
-    expect(await errorOf(() => edit(bob, '6', after!.lastSeq))).toBe('order.errors.notEditor');
+    expect(await errorOf(() => edit(bob, '6', after!.lastSeq))).toMatchObject({
+      message: 'order.errors.notEditor',
+    });
   });
 
   test('U2: the edit is refused when the order changed after the version shown', async () => {
@@ -263,7 +199,7 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
           expectedSeq: lastSeq,
         }),
       ),
-    ).toBe('order.errors.staleSeq');
+    ).toMatchObject({ message: 'order.errors.staleSeq' });
     expect((await row(sessionId))!.claimedByMemberId).toBeNull();
   });
 
@@ -295,7 +231,7 @@ describe.skipIf(!SHOULD_RUN)('approval review (PG-gated)', () => {
       await errorOf(() =>
         ann.caller.order.takeOverClaim({ sessionId, fromMemberId: bob.memberId }),
       ),
-    ).toBe('order.errors.takeOverCooldown');
+    ).toMatchObject({ message: 'order.errors.takeOverCooldown' });
     expect((await row(sessionId))!.claimedByMemberId).toBe(bob.memberId);
   });
 

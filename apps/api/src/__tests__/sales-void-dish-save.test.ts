@@ -9,14 +9,15 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { getDb, schema as s } from '@compass/db';
 import { buildSaleReversal, SALE_VOID_REASON, SALE_VOID_SOURCE_TYPE } from '../trpc/routers/sales';
 import { duplicateIngredientSkuIds } from '../trpc/routers/dishes';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -81,48 +82,6 @@ describe('migration 0049 is additive', () => {
 });
 
 // ---------- PG-gated ------------------------------------------------------
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -198,23 +157,8 @@ async function makeStore(name: string): Promise<string> {
 /** A member holding `roleId` in one store, or organisation-wide when `storeId` is null. */
 async function memberCaller(roleId: string, storeId: string | null) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = BigInt(`${fix!.suffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
-  const [user] = await db.insert(s.users).values({ displayName: 'Void', tgUserId }).returning();
-  const [member] = await db
-    .insert(s.members)
-    .values({ orgId: fix!.orgId, userId: user!.id, status: 'active' })
-    .returning();
-  await db
-    .insert(s.memberRoleBindings)
-    .values({
-      memberId: member!.id,
-      roleId,
-      scopeType: storeId ? 'store' : 'global',
-      scopeId: storeId,
-    });
-  const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
-  if (!session) throw new Error('session failed to load');
-  return appRouter.createCaller(buildCtx(db, session));
+  const who = await seedMember(db, fix!.orgId, { name: 'Void', roles: [{ roleId, storeId }] });
+  return callerFor(await sessionOf(fix!.orgId, who));
 }
 
 async function onHand(storeId: string, skuId: string): Promise<number> {
@@ -224,17 +168,6 @@ async function onHand(storeId: string, skuId: string): Promise<number> {
     .from(s.inventoryMovements)
     .where(and(eq(s.inventoryMovements.storeId, storeId), eq(s.inventoryMovements.skuId, skuId)));
   return rows.reduce((sum, r) => sum + Number(r.delta), 0);
-}
-
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
 }
 
 describe('sales.void', () => {

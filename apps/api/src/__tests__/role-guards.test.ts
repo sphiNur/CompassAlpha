@@ -8,75 +8,17 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/role-guards.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { eq } from 'drizzle-orm';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { BUILTIN_ROLES } from '@compass/db/seed-data';
+import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { db: ReturnType<typeof getDb>; storeId: string; orgId: string; admin: Caller; manager: Caller; owner: Caller; roleIds: Record<string, string> } | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -87,35 +29,17 @@ beforeAll(async () => {
     .values({ slug: `roles-${suffix}`, name: 'Role guards', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'admin', 'manager', 'staff']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key }).onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'admin', 'manager', 'staff']);
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `R-${suffix.slice(-6)}` }).returning();
   let n = 0;
   const member = async (slug: string, scope: 'global' | 'store') => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Roles ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: roleIds[slug]!, scopeType: scope, scopeId: scope === 'store' ? store!.id : null });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(db, session));
+    const who = await seedMember(db, orgId, {
+      name: `Roles ${n}`,
+      stores: [store!.id],
+      roles: [{ roleId: roleIds[slug]!, storeId: scope === 'store' ? store!.id : null }],
+    });
+    return callerFor(await sessionOf(orgId, who));
   };
   const owner = await member('super_admin', 'global');
   const admin = await member('admin', 'global');
@@ -161,20 +85,15 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .values({ orgId, slug: `night-${tag}`, name: 'Night shift', rank: 30 })
       .returning();
     await db.insert(s.rolePermissions).values({ roleId: night!.id, permissionKey: 'run.amend' });
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'DX-ADM-2 admin', tgUserId: BigInt(`4${tag}2`) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db.insert(s.memberRoleBindings).values([
-      { memberId: m!.id, roleId: roleIds.admin!, scopeType: 'global', scopeId: null },
-      { memberId: m!.id, roleId: night!.id, scopeType: 'store', scopeId: storeId },
-    ]);
-    const session = await loadSession(db, u!.id, orgId, m!.id);
+    const who = await seedMember(db, orgId, {
+      name: 'DX-ADM-2 admin',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.admin! }, { roleId: night!.id, storeId }],
+    });
+    const session = await sessionOf(orgId, who);
     // The flat session set has the key, which is what used to let it through.
-    expect(session!.permissions.has('run.amend')).toBe(true);
-    const kamola = appRouter.createCaller(buildCtx(db, session!));
+    expect(session.permissions.has('run.amend')).toBe(true);
+    const kamola = callerFor(session);
 
     const createErr = await errorOf(() =>
       kamola.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
@@ -246,17 +165,24 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
   });
 
   test('ADM-15: a link whose inviter lost the authority is no longer listed', async () => {
-    const { owner, manager, storeId, db, roleIds } = fix!;
+    const { owner, storeId, db, orgId, roleIds } = fix!;
+    // An inviter of its own, so the shared manager keeps their role (review
+    // TEST2-09: this used to delete every manager binding in the org).
+    const inviter = await seedMember(db, orgId, {
+      name: 'ADM15 manager',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.manager!, storeId }],
+    });
+    const manager = callerFor(await sessionOf(orgId, inviter));
     await manager.admin.memberInviteCreate({ roleSlug: 'staff', storeIds: [storeId] });
-    const before = await owner.admin.memberInviteList();
-    const mine = before.filter((i) => i.roles.some((r) => r.slug === 'staff'));
-    expect(mine.length).toBeGreaterThan(0);
+    const theirs = (list: Awaited<ReturnType<Caller['admin']['memberInviteList']>>) =>
+      list.filter((i) => i.invitedBy?.userId === inviter.userId);
+    expect(theirs(await owner.admin.memberInviteList())).toHaveLength(1);
     // The manager stops being a manager of the store.
     await db
       .delete(s.memberRoleBindings)
-      .where(eq(s.memberRoleBindings.roleId, roleIds.manager!));
-    const after = await owner.admin.memberInviteList();
-    for (const inv of mine) expect(after.some((i) => i.id === inv.id)).toBe(false);
+      .where(eq(s.memberRoleBindings.id, inviter.bindingIds[0]!));
+    expect(theirs(await owner.admin.memberInviteList())).toEqual([]);
   });
 
   test('ADM-16: inviting into an archived store says it is archived', async () => {
@@ -278,51 +204,37 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Other', code: `O-${tag.slice(-6)}` })
       .returning();
-    const person = async (name: string, n: number) => {
-      const [u] = await db
-        .insert(s.users)
-        .values({ displayName: name, tgUserId: BigInt(`7${tag}${n}`) })
-        .returning();
-      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-      return { u: u!, m: m! };
-    };
-    const boss = await person('ADM16 manager', 1);
-    await db.insert(s.memberStoreAssignments).values({ memberId: boss.m.id, storeId, assignedBy: boss.u.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const both = await person('ADM16 both stores', 2);
-    const here = await person('ADM16 here only', 3);
-    for (const [who, sid] of [[both, storeId], [both, other!.id], [here, storeId]] as const) {
-      await db.insert(s.memberStoreAssignments).values({ memberId: who.m.id, storeId: sid, assignedBy: boss.u.id });
-      await db
-        .insert(s.memberRoleBindings)
-        .values({ memberId: who.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: sid });
-    }
-    const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
-    const manager = appRouter.createCaller(buildCtx(db, session!));
+    // Staff in each of `stores`.
+    const staffIn = (name: string, stores: string[]) =>
+      seedMember(db, orgId, {
+        name,
+        stores,
+        roles: stores.map((sid) => ({ roleId: roleIds.staff!, storeId: sid })),
+      });
+    const boss = await seedMember(db, orgId, {
+      name: 'ADM16 manager',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.manager!, storeId }],
+    });
+    const both = await staffIn('ADM16 both stores', [storeId, other!.id]);
+    const here = await staffIn('ADM16 here only', [storeId]);
+    const manager = callerFor(await sessionOf(orgId, boss));
     const seen = await manager.admin.memberList();
-    expect(seen.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(true);
-    expect(seen.find((m) => m.memberId === here.m.id)?.statusOutOfReach).toBe(false);
+    expect(seen.find((m) => m.memberId === both.memberId)?.statusOutOfReach).toBe(true);
+    expect(seen.find((m) => m.memberId === here.memberId)?.statusOutOfReach).toBe(false);
     const full = await owner.admin.memberList();
-    expect(full.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(false);
+    expect(full.find((m) => m.memberId === both.memberId)?.statusOutOfReach).toBe(false);
   });
   test('CMP-ADM-1: the member list gives each role its rank; the manager cannot revoke their own', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
-    const tag = `${Date.now()}`.slice(-9);
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'ADM1 manager', tgUserId: BigInt(`5${tag}1`) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    const manager = appRouter.createCaller(buildCtx(db, session!));
+    const who = await seedMember(db, orgId, {
+      name: 'ADM1 manager',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.manager!, storeId }],
+    });
+    const manager = callerFor(await sessionOf(orgId, who));
     const seen = await manager.admin.memberList();
-    const own = seen.find((x) => x.userId === u!.id)!.roles.find((r) => r.slug === 'manager')!;
+    const own = seen.find((x) => x.userId === who.userId)!.roles.find((r) => r.slug === 'manager')!;
     expect(own.rank).toBe(BUILTIN_ROLES.find((r) => r.slug === 'manager')!.rank);
     // What the web hides (lib/authority canRevokeRole) is what the server refuses.
     const err = await errorOf(() => manager.admin.revokeRole({ bindingId: own.bindingId }));
@@ -336,30 +248,15 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
   });
   test('ADM-13: a store manager finds their own suspend in the audit log', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
-    const tag = `${Date.now()}`.slice(-9);
-    const person = async (name: string, n: number) => {
-      const [u] = await db
-        .insert(s.users)
-        .values({ displayName: name, tgUserId: BigInt(`6${tag}${n}`) })
-        .returning();
-      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-      return { u: u!, m: m! };
-    };
-    const boss = await person('ADM13 manager', 1);
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const worker = await person('ADM13 staff', 2);
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: worker.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
-    const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
-    const manager = appRouter.createCaller(buildCtx(db, session!));
-    await manager.admin.memberSetStatus({ memberId: worker.m.id, status: 'suspended' });
+    const person = (name: string, roleId: string) =>
+      seedMember(db, orgId, { name, stores: [storeId], roles: [{ roleId, storeId }] });
+    const boss = await person('ADM13 manager', roleIds.manager!);
+    const worker = await person('ADM13 staff', roleIds.staff!);
+    const manager = callerFor(await sessionOf(orgId, boss));
+    await manager.admin.memberSetStatus({ memberId: worker.memberId, status: 'suspended' });
     const rows = await manager.admin.adminAuditList({ limit: 50 });
     expect(
-      rows.some((r) => r.action === 'admin.member.setStatus' && r.resourceId === worker.m.id),
+      rows.some((r) => r.action === 'admin.member.setStatus' && r.resourceId === worker.memberId),
     ).toBe(true);
   });
 
@@ -394,18 +291,14 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Elsewhere', code: `E-${tag.slice(-6)}` })
       .returning();
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'ADM23 staff', tgUserId: BigInt(`5${tag}1`) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
+    const who = await seedMember(db, orgId, {
+      name: 'ADM23 staff',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.staff!, storeId }],
+    });
     const wrong = await errorOf(() =>
       owner.admin.memberTransferStore({
-        memberId: m!.id,
+        memberId: who.memberId,
         fromStoreId: other!.id,
         toStoreId: storeId,
         mirrorRoles: true,
@@ -413,7 +306,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     );
     expect(wrong?.message).toBe('admin.errors.memberNotInSourceStore');
     await owner.admin.memberTransferStore({
-      memberId: m!.id,
+      memberId: who.memberId,
       fromStoreId: storeId,
       toStoreId: other!.id,
       mirrorRoles: true,
@@ -457,21 +350,27 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     await db.insert(s.permissions).values({ key: 'reports.view', description: 'reports.view' }).onConflictDoNothing();
     await db.insert(s.rolePermissions).values({ roleId: accountant!.id, permissionKey: 'reports.view' });
     const person = async (roleId: string, n: number) => {
-      const [u] = await db
-        .insert(s.users)
-        .values({ displayName: `HIS19 ${n}`, tgUserId: BigInt(`4${tag}${n}`) })
-        .returning();
-      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-      await db
-        .insert(s.memberRoleBindings)
-        .values({ memberId: m!.id, roleId, scopeType: 'store', scopeId: storeId });
-      const session = await loadSession(db, u!.id, orgId, m!.id);
-      return appRouter.createCaller(buildCtx(db, session!));
+      const who = await seedMember(db, orgId, {
+        name: `HIS19 ${n}`,
+        stores: [storeId],
+        roles: [{ roleId, storeId }],
+      });
+      return callerFor(await sessionOf(orgId, who));
     };
     const reader = await person(accountant!.id, 1);
     const range = { startDate: '2026-10-01', endDate: '2026-10-30' };
-    await expect(reader.report.totals(range)).resolves.toBeDefined();
+    await seedFinishedPurchase(db, orgId, {
+      runDate: '2026-10-15',
+      unitPrice: '1000',
+      splits: [{ storeId, qty: '1' }],
+    });
+    // The store's purchase is counted. Without prices.view the money
+    // stays hidden (D6).
+    expect(await reader.report.totals(range)).toMatchObject({
+      runCount: 1,
+      cashLines: 1,
+      total: null,
+    });
     const stores = await reader.catalog.stores({ permission: 'finance' });
     expect(stores.map((st) => st.id)).toEqual([storeId]);
     const staff = await person(roleIds.staff!, 2);
@@ -486,19 +385,15 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Second', code: `S-${tag.slice(-6)}` })
       .returning();
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'SHL2 split', tgUserId: BigInt(`3${tag}1`) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    for (const [sid, role] of [[storeId, 'staff'], [other!.id, 'manager']] as const) {
-      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: sid, assignedBy: u!.id });
-      await db
-        .insert(s.memberRoleBindings)
-        .values({ memberId: m!.id, roleId: roleIds[role]!, scopeType: 'store', scopeId: sid });
-    }
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    const me = await appRouter.createCaller(buildCtx(db, session!)).auth.me();
+    const who = await seedMember(db, orgId, {
+      name: 'SHL2 split',
+      stores: [storeId, other!.id],
+      roles: [
+        { roleId: roleIds.staff!, storeId },
+        { roleId: roleIds.manager!, storeId: other!.id },
+      ],
+    });
+    const me = await callerFor(await sessionOf(orgId, who)).auth.me();
     expect(me.storePermissions[storeId]).not.toContain('order.approve');
     expect(me.storePermissions[other!.id]).toContain('order.approve');
     expect(me.permissions).toContain('order.approve');

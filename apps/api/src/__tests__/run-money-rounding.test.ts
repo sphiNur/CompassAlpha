@@ -12,132 +12,35 @@
  * PG-gated (DATABASE_URL set and SKIP_PG_TESTS !== '1').
  */
 import { describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
-import { appendEvents } from '../services/eventStore';
-import { projectRun } from '../services/runProjection';
+import { getDb, schema as s } from '@compass/db';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { sumMoney } from '@compass/contracts';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
-
-const PERMS = [
-  'users.manage',
-  'prices.view',
-  'org.admin',
-  'run.create',
-  'run.create.org',
-  'run.purchase',
-  'run.finish',
-  'delivery.dispatch',
-  'delivery.confirm',
-];
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { runStream } from './helpers/streams';
+import { seedOwnedOrg } from './helpers/fixtures';
 
 describe('run money rounding (PG, D1)', () => {
   test.skipIf(!SHOULD_RUN)(
     'half-cent lines: every view shows the same cents',
     async () => {
       const db = getDb(undefined, { system: 'maintenance' });
-      const slug = `cents-${Date.now()}`;
-      const [org] = await db
-        .insert(s.organizations)
-        .values({ slug, name: 'Money Rounding', localeDefault: 'en', timezone: 'UTC' })
-        .returning();
-      if (!org) throw new Error('org insert failed');
-      const [role] = await db
-        .insert(s.roles)
-        .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
-        .returning();
-      for (const key of PERMS) {
-        await db
-          .insert(s.permissions)
-          .values({ key, description: `Test perm ${key}` })
-          .onConflictDoNothing();
-        await db
-          .insert(s.rolePermissions)
-          .values({ roleId: role!.id, permissionKey: key })
-          .onConflictDoNothing();
-      }
-      const [user] = await db
-        .insert(s.users)
-        .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}72`.slice(-12)) })
-        .returning();
-      const [member] = await db
-        .insert(s.members)
-        .values({ orgId: org.id, userId: user!.id, status: 'active' })
-        .returning();
-      await db.insert(s.memberRoleBindings).values({
-        memberId: member!.id,
-        roleId: role!.id,
-        scopeType: 'global',
-      });
+      const { orgId, slug, session } = await seedOwnedOrg(db, 'Money Rounding');
       const [storeA] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'A', code: `A-${slug.slice(-6)}` })
+        .values({ orgId, name: 'A', code: `A-${slug.slice(-6)}` })
         .returning();
       const [storeB] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'B', code: `B-${slug.slice(-6)}` })
+        .values({ orgId, name: 'B', code: `B-${slug.slice(-6)}` })
         .returning();
       const skus = [];
       for (const code of ['CHK', 'BTR', 'SLT']) {
         const [sku] = await db
           .insert(s.skus)
           .values({
-            orgId: org.id,
+            orgId,
             code: `${code}-${slug.slice(-6)}`,
             names: { en: code },
             unit: 'kg',
@@ -149,27 +52,16 @@ describe('run money rounding (PG, D1)', () => {
       if (!storeA || !storeB) throw new Error('fixture insert failed');
 
       const actor: ActorCtx = {
-        userId: user!.id,
-        memberId: member!.id,
-        permissions: new Set(PERMS),
+        userId: session.userId,
+        memberId: session.memberId,
+        permissions: session.permissions,
       };
       const runId = randomUUID();
-      let state: RunState = emptyRunState(runId);
-      const exec = async (cmd: RunCommand) => {
-        const evs = decideRun(state, cmd);
-        for (const e of evs) state = applyRun(state, e);
-        await appendEvents(db, {
-          streamType: 'run',
-          streamId: runId,
-          orgId: org.id,
-          events: evs.map((e) => ({ ...e })),
-        });
-        await projectRun(db, org.id, evs);
-        return evs;
-      };
+      const runLog = runStream(orgId, runId);
+      const exec = (cmd: RunCommand) => runLog.exec(cmd);
       await exec({
         type: 'PlanRun',
-        orgId: org.id,
+        orgId,
         runDate: '2026-10-21',
         runIndex: 0,
         sessionIds: [randomUUID()],
@@ -214,16 +106,7 @@ describe('run money rounding (PG, D1)', () => {
         actor,
       });
 
-      const caller = appRouter.createCaller(
-        buildCtx(db, {
-          userId: user!.id,
-          memberId: member!.id,
-          orgId: org.id,
-          orgTimezone: 'UTC',
-          permissions: new Set(PERMS),
-          roleSlugs: new Set(['super_admin']),
-        }),
-      );
+      const caller = callerFor(session);
       // run.get while buying: the finish sheet's three numbers.
       const live = await caller.run.get({ runId });
       // Per store: 1.01 + 2.02 + 0.01 = 3.04 items, 1.01 expense.

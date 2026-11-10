@@ -6,41 +6,16 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/idempotency-claim.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { idempotencyRequestHash, idempotentMutation, router } from '../trpc/trpc';
-import type { RequestContext, SessionContext } from '../trpc/context';
-
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+import type { SessionContext } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
+import { errorOf } from './helpers/errors';
 
 let session: SessionContext | null = null;
 let runs = 0;
@@ -66,22 +41,7 @@ const testRouter = router({
 });
 
 function caller(key: string) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: key,
-    session: session!,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session!.orgId, fn, options);
-    },
-  };
-  return testRouter.createCaller(ctx);
+  return testRouter.createCaller(testContext(session!, { idempotencyKey: key }));
 }
 
 beforeAll(async () => {
@@ -94,7 +54,7 @@ beforeAll(async () => {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Idem', tgUserId: BigInt(`7${Date.now()}4`.slice(-12)) })
+    .values({ displayName: 'Idem', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)
@@ -124,7 +84,6 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
   });
 
   test('a mutation without input works over HTTP with a key (empty body)', async () => {
-    const db = getDb();
     const post = () =>
       fetchRequestHandler({
         endpoint: '/trpc',
@@ -133,20 +92,7 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
         }),
-        createContext: () =>
-          ({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            hono: {} as any,
-            db,
-            log: logger,
-            traceId: 'test-http',
-            ip: null,
-            userAgent: null,
-            idempotencyKey: randomUUID(),
-            session: session!,
-            withOrg: (fn: Parameters<RequestContext['withOrg']>[0]) =>
-              withOrgContext(db, session!.orgId, fn),
-          }) as unknown as RequestContext,
+        createContext: () => testContext(session!, { idempotencyKey: randomUUID() }),
       });
     const res = await post();
     expect(res.status).toBe(200);
@@ -155,7 +101,7 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
   test('a failed attempt frees its key so the retry runs', async () => {
     const key = randomUUID();
     failNext = true;
-    await expect(caller(key).slowWrite()).rejects.toThrow();
+    await expect(caller(key).slowWrite()).rejects.toThrow('handler failed');
     const before = runs;
     const ok = await caller(key).slowWrite();
     expect(runs - before).toBe(1);
@@ -168,13 +114,10 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
     // The same request again (keys in another order) is the cached answer.
     expect(await caller(key).buy({ qty: 1, item: 'apple' })).toEqual(first);
     const before = runs;
-    let err: { code?: string; message: string } | null = null;
-    try {
-      await caller(key).buy({ item: 'chicken', qty: 1 });
-    } catch (e) {
-      err = { code: (e as { code?: string }).code, message: (e as Error).message };
-    }
-    expect(err).toEqual({ code: 'CONFLICT', message: 'common.errors.idempotencyKeyReused' });
+    expect(await errorOf(() => caller(key).buy({ item: 'chicken', qty: 1 }))).toMatchObject({
+      code: 'CONFLICT',
+      message: 'common.errors.idempotencyKeyReused',
+    });
     expect(runs).toBe(before);
   });
 

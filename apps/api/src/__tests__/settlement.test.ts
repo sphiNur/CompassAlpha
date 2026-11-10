@@ -1,22 +1,21 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import type { SettlementSaveInput } from '@compass/contracts';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { loadCatalog } from '@compass/i18n/catalogs';
 import { normalizeSettlementMoney, SETTLEMENT_REASON_KEYS } from '../trpc/routers/settlement';
-
+import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
+import { errorOf } from './helpers/errors';
 
 /**
  * Business dates for these tests, counted back from ten days ago: new
  * closes may be at most 90 days old (CLS-14), so fixed calendar dates
- * would expire. dayBack(0) is the latest date used.
+ * would expire.
  */
 const DATE_BASE = new Date(Date.now() - 10 * 86_400_000);
 function dayBack(days: number): string {
@@ -25,30 +24,15 @@ function dayBack(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-(function loadEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const value = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = value;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+/**
+ * A business date no other test here has used, a day further back on each
+ * call (review TEST2-09). Two closes of one store on one day collide, and
+ * the dates used to be handed out by hand.
+ */
+let datesHandedOut = 0;
+function freshDate(): string {
+  return dayBack(datesHandedOut++);
+}
 
 describe('daily settlement rejection messages', () => {
   test('every reason the API names has a sentence in every language', async () => {
@@ -84,11 +68,15 @@ interface Fixture {
   assignedOnlyEmployeeMemberId: string;
   foreignEmployeeMemberId: string;
   suspendedEmployeeMemberId: string;
+  /** The custom manager role, which carries settlement.record. */
+  managerRoleId: string;
   ownStoreId: string;
   foreignStoreId: string;
   managerElsewhereStoreId: string;
   assignedNoPermissionStoreId: string;
   inactiveStoreId: string;
+  /** The day of the close seeded in the archived store. */
+  archivedCloseDate: string;
   caller: ReturnType<typeof appRouter.createCaller>;
   cashierCaller: ReturnType<typeof appRouter.createCaller>;
   secondManagerMemberId: string;
@@ -97,24 +85,6 @@ interface Fixture {
 }
 
 let fixture: Fixture | null = null;
-
-function buildCtx(session: SessionContext): RequestContext {
-  const db = getDb(undefined, { system: 'maintenance' });
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `settlement-test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 function saveInput(
   storeId: string,
@@ -180,7 +150,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Settlement Manager',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '7'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [member] = await db
@@ -191,7 +161,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Settlement Cashier',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '8'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [cashierMember] = await db
@@ -202,7 +172,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Second Settlement Manager',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '4'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [secondManagerMember] = await db
@@ -213,7 +183,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Global Admin Override',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '2'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [orgAdminOverrideMember] = await db
@@ -224,7 +194,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Ali Kitchen',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '9'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [wageEmployee] = await db
@@ -235,7 +205,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Assigned Only Employee',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '5'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [assignedOnlyEmployee] = await db
@@ -246,7 +216,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Foreign Employee',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '6'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [foreignEmployee] = await db
@@ -385,10 +355,11 @@ beforeAll(async () => {
 
   // Seed one historical archived-store record directly: archived stores are
   // read-only through the API, but their financial history must remain visible.
+  const archivedCloseDate = freshDate();
   await db.insert(s.storeDailySettlements).values({
     orgId: org!.id,
     storeId: inactiveStore!.id,
-    settlementDate: dayBack(4),
+    settlementDate: archivedCloseDate,
     onlineRevenue: '1',
     operatingExpenses: '3',
     wagesPaid: '4',
@@ -442,18 +413,42 @@ beforeAll(async () => {
     assignedOnlyEmployeeMemberId: assignedOnlyEmployee!.id,
     foreignEmployeeMemberId: foreignEmployee!.id,
     suspendedEmployeeMemberId: suspendedEmployee!.id,
+    managerRoleId: managerRole!.id,
     ownStoreId: ownStore!.id,
     foreignStoreId: foreignStore!.id,
     managerElsewhereStoreId: managerElsewhereStore!.id,
     assignedNoPermissionStoreId: assignedNoPermissionStore!.id,
     inactiveStoreId: inactiveStore!.id,
-    caller: appRouter.createCaller(buildCtx(session)),
-    cashierCaller: appRouter.createCaller(buildCtx(cashierSession)),
+    archivedCloseDate,
+    caller: callerFor(session),
+    cashierCaller: callerFor(cashierSession),
     secondManagerMemberId: secondManagerMember!.id,
-    secondManagerCaller: appRouter.createCaller(buildCtx(secondManagerSession)),
-    orgAdminOverrideCaller: appRouter.createCaller(buildCtx(orgAdminOverrideSession)),
+    secondManagerCaller: callerFor(secondManagerSession),
+    orgAdminOverrideCaller: callerFor(orgAdminOverrideSession),
   };
 });
+
+/**
+ * A store of the test's own, run by the fixture's manager, for a test that
+ * reads every close in a store or places closes by their distance from
+ * today (review TEST2-09): the shared stores hold the other tests' closes.
+ * The wage employee works there too, so saveInput's wages are valid.
+ */
+async function storeOfItsOwn(name: string): Promise<string> {
+  const fx = fixture!;
+  const db = getDb(undefined, { system: 'maintenance' });
+  const [store] = await db.insert(s.stores).values({ orgId: fx.orgId, name }).returning();
+  await db.insert(s.memberRoleBindings).values({
+    memberId: fx.memberId,
+    roleId: fx.managerRoleId,
+    scopeType: 'store',
+    scopeId: store!.id,
+  });
+  await db
+    .insert(s.memberStoreAssignments)
+    .values({ memberId: fx.wageEmployeeMemberId, storeId: store!.id });
+  return store!.id;
+}
 
 describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
   test('returns the selected store authoritative business date and timezone', async () => {
@@ -490,7 +485,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(businessDate.canRecordOperatingExpenses).toBe(true);
 
     const saved = await fx.orgAdminOverrideCaller.settlement.save(
-      saveInput(fx.foreignStoreId, dayBack(18), 0, {
+      saveInput(fx.foreignStoreId, freshDate(), 0, {
         wagesPaid: '0',
         wagesAccrued: '0',
         wageItems: [],
@@ -532,19 +527,17 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     );
     expect(Object.keys(employee ?? {})).toEqual(['memberId', 'displayName', 'roles']);
 
-    let error: unknown;
-    try {
-      await fx.cashierCaller.settlement.wageRoster({ storeId: fx.foreignStoreId });
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('FORBIDDEN');
+    const error = await errorOf(() =>
+      fx.cashierCaller.settlement.wageRoster({ storeId: fx.foreignStoreId }),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
   });
 
   test('cashiers with settlement.record can create and change operating expenses', async () => {
     const fx = fixture!;
+    const managerDay = freshDate();
     const zeroExpense = await fx.cashierCaller.settlement.save(
-      saveInput(fx.ownStoreId, dayBack(8), 0, {
+      saveInput(fx.ownStoreId, freshDate(), 0, {
         operatingExpenses: '0',
         operatingExpenseItems: [],
       }),
@@ -552,7 +545,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(zeroExpense.operatingExpenses).toBe('0.00');
 
     const cashierClose = await fx.cashierCaller.settlement.save(
-      saveInput(fx.ownStoreId, dayBack(9), 0),
+      saveInput(fx.ownStoreId, freshDate(), 0),
     );
     expect(cashierClose.operatingExpenses).toBe('10.00');
     expect(cashierClose.operatingExpenseItems).toEqual([
@@ -560,8 +553,8 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       expect.objectContaining({ amount: '3.75', reason: 'Collected market supplies' }),
     ]);
 
-    const managerClose = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(10), 0));
-    const cashierCorrectionInput = saveInput(fx.ownStoreId, dayBack(10), managerClose.version, {
+    const managerClose = await fx.caller.settlement.save(saveInput(fx.ownStoreId, managerDay, 0));
+    const cashierCorrectionInput = saveInput(fx.ownStoreId, managerDay, managerClose.version, {
       onlineRevenue: '101',
       correctionReason: 'Corrected transfer receipt',
     }) as Record<string, unknown>;
@@ -575,7 +568,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
     // The cashier may also change expenses a manager recorded earlier.
     const changedExpense = await fx.cashierCaller.settlement.save(
-      saveInput(fx.ownStoreId, dayBack(10), cashierCorrection.version, {
+      saveInput(fx.ownStoreId, managerDay, cashierCorrection.version, {
         operatingExpenses: '10',
         operatingExpenseItems: [{ amount: '10', reason: 'Cashier expense correction' }],
         correctionReason: 'Corrected expense receipt',
@@ -589,38 +582,32 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('a manager-rank member without effective settlement.record cannot save operating expenses', async () => {
     const fx = fixture!;
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.assignedNoPermissionStoreId, dayBack(9), 0, {
+    const date = freshDate();
+    const error = await errorOf(() =>
+      fx.caller.settlement.save(
+        saveInput(fx.assignedNoPermissionStoreId, date, 0, {
           wagesPaid: '0',
           wagesAccrued: '0',
           wageItems: [],
         }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('FORBIDDEN');
-    expect((error as Error).message).toBe('auth.errors.missingPermission');
+      ),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
+    expect(error?.message).toBe('auth.errors.missingPermission');
     const raw = await getDb(undefined, {
       system: 'maintenance',
     }).query.storeDailySettlements.findFirst({
       where: (row, { and: and2, eq: eq2 }) =>
-        and2(
-          eq2(row.storeId, fx.assignedNoPermissionStoreId),
-          eq2(row.settlementDate, dayBack(9)),
-        ),
+        and2(eq2(row.storeId, fx.assignedNoPermissionStoreId), eq2(row.settlementDate, date)),
     });
     expect(raw).toBeUndefined();
   });
 
   test('rejects a forged wage recipient and resolves the selected employee name server-side', async () => {
     const fx = fixture!;
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.ownStoreId, dayBack(11), 0, {
+    const error = await errorOf(() =>
+      fx.caller.settlement.save(
+        saveInput(fx.ownStoreId, freshDate(), 0, {
           operatingExpenses: '0',
           operatingExpenseItems: [],
           wagesPaid: '20',
@@ -635,15 +622,13 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
             },
           ],
         }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((error as { message?: string }).message).toBe('settlement.errors.employeeNotInStore');
+      ),
+    );
+    expect(error?.code).toBe('BAD_REQUEST');
+    expect(error?.message).toBe('settlement.errors.employeeNotInStore');
 
     const saved = await fx.caller.settlement.save(
-      saveInput(fx.ownStoreId, dayBack(12), 0, {
+      saveInput(fx.ownStoreId, freshDate(), 0, {
         operatingExpenses: '0',
         operatingExpenseItems: [],
         wagesPaid: '20',
@@ -671,7 +656,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       .insert(s.users)
       .values({
         displayName: 'Historical Wage Employee',
-        tgUserId: BigInt(`${Date.now()}`.slice(-11) + '3'),
+        tgUserId: freshTgId(),
       })
       .returning();
     const [employee] = await db
@@ -683,7 +668,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       storeId: fx.ownStoreId,
     });
 
-    const date = dayBack(17);
+    const date = freshDate();
     const created = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, date, 0, {
         wagesPaid: '20',
@@ -733,11 +718,10 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('creates, reads, and audits one store-scoped daily settlement', async () => {
     const fx = fixture!;
-    expect(
-      await fx.caller.settlement.get({ storeId: fx.ownStoreId, date: dayBack(3) }),
-    ).toBeNull();
+    const date = freshDate();
+    expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
-    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(3), 0));
+    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
     expect(created.version).toBe(1);
     expect(created.onlineRevenue).toBe('100.00');
     expect(created.operatingExpenses).toBe('10.00');
@@ -781,7 +765,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
     const read = await fx.caller.settlement.get({
       storeId: fx.ownStoreId,
-      date: dayBack(3),
+      date,
     });
     expect(read?.id).toBe(created.id);
     expect(read?.updatedByName).toBe('Settlement Manager');
@@ -811,18 +795,13 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('derives outflow totals from itemized rows and versions detail corrections', async () => {
     const fx = fixture!;
-    const date = dayBack(5);
+    const date = freshDate();
 
-    let mismatch: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.ownStoreId, date, 0, { operatingExpenses: '11' }),
-      );
-    } catch (error) {
-      mismatch = error;
-    }
-    expect((mismatch as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((mismatch as { message?: string }).message).toBe('settlement.errors.totalMismatch');
+    const mismatch = await errorOf(() =>
+      fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0, { operatingExpenses: '11' })),
+    );
+    expect(mismatch?.code).toBe('BAD_REQUEST');
+    expect(mismatch?.message).toBe('settlement.errors.totalMismatch');
     expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
@@ -839,18 +818,15 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       },
     ];
 
-    let missingReason: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const missingReason = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.ownStoreId, date, created.version, {
           operatingExpenseItems: correctedExpenseItems,
         }),
-      );
-    } catch (error) {
-      missingReason = error;
-    }
-    expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((missingReason as { message?: string }).message).toBe('settlement.errors.correctionReasonRequired');
+      ),
+    );
+    expect(missingReason?.code).toBe('BAD_REQUEST');
+    expect(missingReason?.message).toBe('settlement.errors.correctionReasonRequired');
 
     const corrected = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, date, created.version, {
@@ -902,7 +878,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('keeps each operating-expense recorder when another manager adds a row', async () => {
     const fx = fixture!;
-    const date = dayBack(15);
+    const date = freshDate();
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
     const updated = await fx.secondManagerCaller.settlement.save(
       saveInput(fx.ownStoreId, date, created.version, {
@@ -952,25 +928,23 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('requires detail for new non-zero outflows but tolerates an unchanged older-client re-save', async () => {
     const fx = fixture!;
-    const date = dayBack(6);
+    const date = freshDate();
     const input = saveInput(fx.ownStoreId, date, 0) as Record<string, unknown>;
     delete input.operatingExpenseItems;
     delete input.wageItems;
 
-    let missingDetails: unknown;
-    try {
-      await fx.caller.settlement.save(input as SettlementSaveInput);
-    } catch (error) {
-      missingDetails = error;
-    }
-    expect((missingDetails as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((missingDetails as { message?: string }).message).toBe('settlement.errors.invalidDetails');
+    const missingDetails = await errorOf(() =>
+      fx.caller.settlement.save(input as SettlementSaveInput),
+    );
+    expect(missingDetails?.code).toBe('BAD_REQUEST');
+    expect(missingDetails?.message).toBe('settlement.errors.invalidDetails');
     expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
-    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(7), 0));
+    const olderClientDate = freshDate();
+    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, olderClientDate, 0));
     const unchangedOlderClientInput = saveInput(
       fx.ownStoreId,
-      dayBack(7),
+      olderClientDate,
       created.version,
     ) as Record<string, unknown>;
     delete unchangedOlderClientInput.operatingExpenseItems;
@@ -984,7 +958,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('preserves raw legacy totals when an unrelated field is corrected', async () => {
     const fx = fixture!;
-    const date = dayBack(13);
+    const date = freshDate();
     const [legacy] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.storeDailySettlements)
       .values({
@@ -1029,7 +1003,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('does not let anyone, including a cashier, clear a legacy scalar-only operating expense', async () => {
     const fx = fixture!;
-    const date = dayBack(16);
+    const date = freshDate();
     const [legacy] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.storeDailySettlements)
       .values({
@@ -1043,9 +1017,8 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       })
       .returning();
 
-    let error: unknown;
-    try {
-      await fx.cashierCaller.settlement.save(
+    const error = await errorOf(() =>
+      fx.cashierCaller.settlement.save(
         saveInput(fx.ownStoreId, date, legacy!.version, {
           operatingExpenses: '0',
           operatingExpenseItems: [],
@@ -1054,15 +1027,13 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
           wageItems: [],
           correctionReason: 'Attempted to clear historical expense',
         }),
-      );
-    } catch (caught) {
-      error = caught;
-    }
+      ),
+    );
     // The rank gate is gone; the historical-total immutability rule still
     // applies to every recorder.
-    expect((error as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((error as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
-    expect((error as { cause?: { reason?: string } }).cause?.reason).toBe(
+    expect(error?.code).toBe('BAD_REQUEST');
+    expect(error?.message).toBe('settlement.errors.historicalTotalImmutable');
+    expect((error?.cause as { reason?: string } | undefined)?.reason).toBe(
       'historical-total-immutable',
     );
 
@@ -1075,7 +1046,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('does not backfill or newly attribute total-only historical outflows', async () => {
     const fx = fixture!;
-    const date = dayBack(18);
+    const date = freshDate();
     const [legacy] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.storeDailySettlements)
       .values({
@@ -1090,9 +1061,8 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       })
       .returning();
 
-    let expenseError: unknown;
-    try {
-      await fx.caller.settlement.save(
+    const expenseError = await errorOf(() =>
+      fx.caller.settlement.save(
         saveInput(fx.ownStoreId, date, legacy!.version, {
           operatingExpenses: '4',
           operatingExpenseItems: [
@@ -1104,12 +1074,10 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
           wageItems: [],
           correctionReason: 'Attempted to itemize a historical total',
         }),
-      );
-    } catch (caught) {
-      expenseError = caught;
-    }
-    expect((expenseError as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((expenseError as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
+      ),
+    );
+    expect(expenseError?.code).toBe('BAD_REQUEST');
+    expect(expenseError?.message).toBe('settlement.errors.historicalTotalImmutable');
 
     const wageInput = saveInput(fx.ownStoreId, date, legacy!.version, {
       operatingExpenses: '3',
@@ -1127,14 +1095,11 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     }) as Record<string, unknown>;
     delete wageInput.operatingExpenseItems;
 
-    let wageError: unknown;
-    try {
-      await fx.caller.settlement.save(wageInput as SettlementSaveInput);
-    } catch (caught) {
-      wageError = caught;
-    }
-    expect((wageError as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((wageError as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
+    const wageError = await errorOf(() =>
+      fx.caller.settlement.save(wageInput as SettlementSaveInput),
+    );
+    expect(wageError?.code).toBe('BAD_REQUEST');
+    expect(wageError?.message).toBe('settlement.errors.historicalTotalImmutable');
 
     const raw = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlements.findFirst({
       where: (row, { eq: eq2 }) => eq2(row.id, legacy!.id),
@@ -1147,27 +1112,21 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('requires a correction reason, preserves no-ops, and rejects stale versions', async () => {
     const fx = fixture!;
-    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(2), 0));
+    const date = freshDate();
+    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
 
     // Same values are idempotent even without a reason and do not bump version.
-    const noOp = await fx.caller.settlement.save(
-      saveInput(fx.ownStoreId, dayBack(2), created.version),
-    );
+    const noOp = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, created.version));
     expect(noOp.version).toBe(1);
 
-    let missingReason: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.ownStoreId, dayBack(2), 1, { onlineRevenue: '101' }),
-      );
-    } catch (error) {
-      missingReason = error;
-    }
-    expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
-    expect((missingReason as { message?: string }).message).toBe('settlement.errors.correctionReasonRequired');
+    const missingReason = await errorOf(() =>
+      fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 1, { onlineRevenue: '101' })),
+    );
+    expect(missingReason?.code).toBe('BAD_REQUEST');
+    expect(missingReason?.message).toBe('settlement.errors.correctionReasonRequired');
 
     const updated = await fx.caller.settlement.save(
-      saveInput(fx.ownStoreId, dayBack(2), 1, {
+      saveInput(fx.ownStoreId, date, 1, {
         onlineRevenue: '101',
         correctionReason: 'Corrected closing total',
       }),
@@ -1175,58 +1134,48 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(updated.version).toBe(2);
     expect(updated.onlineRevenue).toBe('101.00');
 
-    let stale: unknown;
-    try {
-      await fx.caller.settlement.save(
-        saveInput(fx.ownStoreId, dayBack(2), 1, {
+    const stale = await errorOf(() =>
+      fx.caller.settlement.save(
+        saveInput(fx.ownStoreId, date, 1, {
           onlineRevenue: '102',
           correctionReason: 'Stale edit',
         }),
-      );
-    } catch (error) {
-      stale = error;
-    }
-    expect((stale as { code?: string }).code).toBe('CONFLICT');
+      ),
+    );
+    expect(stale?.code).toBe('CONFLICT');
   });
 
   test('rejects get, recent, and save for a store outside the actor scope', async () => {
     const fx = fixture!;
+    const date = freshDate();
     for (const call of [
       () => fx.caller.settlement.businessDate({ storeId: fx.foreignStoreId }),
-      () => fx.caller.settlement.get({ storeId: fx.foreignStoreId, date: dayBack(3) }),
+      () => fx.caller.settlement.get({ storeId: fx.foreignStoreId, date }),
       () => fx.caller.settlement.recent({ storeId: fx.foreignStoreId }),
-      () => fx.caller.settlement.save(saveInput(fx.foreignStoreId, dayBack(3), 0)),
+      () => fx.caller.settlement.save(saveInput(fx.foreignStoreId, date, 0)),
     ]) {
-      let error: unknown;
-      try {
-        await call();
-      } catch (caught) {
-        error = caught;
-      }
-      expect((error as { code?: string }).code).toBe('FORBIDDEN');
-      expect((error as Error).message).toContain('notAssignedToStore');
+      const error = await errorOf(() => call());
+      expect(error?.code).toBe('FORBIDDEN');
+      expect(error?.message).toContain('notAssignedToStore');
     }
   });
 
   test('rejects an assigned store where settlement.record is not effective', async () => {
     const fx = fixture!;
-    let error: unknown;
-    try {
-      await fx.caller.settlement.businessDate({
+    const error = await errorOf(() =>
+      fx.caller.settlement.businessDate({
         storeId: fx.assignedNoPermissionStoreId,
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('FORBIDDEN');
-    expect((error as Error).message).toContain('missingPermission');
+      }),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
+    expect(error?.message).toContain('missingPermission');
   });
 
   test('keeps archived-store history readable but blocks saves', async () => {
     const fx = fixture!;
     const historical = await fx.caller.settlement.get({
       storeId: fx.inactiveStoreId,
-      date: dayBack(4),
+      date: fx.archivedCloseDate,
     });
     expect(historical?.onlineRevenue).toBe('1.00');
     expect(historical?.operatingExpenseItems).toEqual([
@@ -1252,45 +1201,40 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       }),
     ]);
 
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(saveInput(fx.inactiveStoreId, dayBack(3), 0));
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { code?: string }).code).toBe('PRECONDITION_FAILED');
+    const error = await errorOf(() =>
+      fx.caller.settlement.save(saveInput(fx.inactiveStoreId, freshDate(), 0)),
+    );
+    expect(error?.code).toBe('PRECONDITION_FAILED');
   });
 
   test('CLS-14: a new close more than 90 days back is refused', async () => {
     const fx = fixture!;
+    const storeId = await storeOfItsOwn('CLS-14 store');
     const old = dayBack(95);
-    let error: unknown;
-    try {
-      await fx.caller.settlement.save(saveInput(fx.ownStoreId, old, 0));
-    } catch (caught) {
-      error = caught;
-    }
-    expect((error as { message?: string }).message).toBe('settlement.errors.dateTooOld');
-    const recent = await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(60), 0));
+    const error = await errorOf(() => fx.caller.settlement.save(saveInput(storeId, old, 0)));
+    expect(error?.message).toBe('settlement.errors.dateTooOld');
+    const recent = await fx.caller.settlement.save(saveInput(storeId, dayBack(60), 0));
     expect(recent.version).toBe(1);
   });
 
   test('recent is date-descending and beforeDate is an exclusive cursor', async () => {
     const fx = fixture!;
-    await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(1), 0));
-    await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(0), 0));
+    const storeId = await storeOfItsOwn('Recent store');
+    // Four days, newest first. Closed out of order, so the answer's order
+    // is the query's.
+    const first = freshDate();
+    const second = freshDate();
+    const third = freshDate();
+    const fourth = freshDate();
+    for (const day of [second, first, fourth, third]) {
+      await fx.caller.settlement.save(saveInput(storeId, day, 0));
+    }
 
-    const recent = await fx.caller.settlement.recent({
-      storeId: fx.ownStoreId,
-      limit: 2,
-    });
-    expect(recent.map((row) => row.date)).toEqual([dayBack(0), dayBack(1)]);
+    const recent = await fx.caller.settlement.recent({ storeId, limit: 2 });
+    expect(recent.map((row) => row.date)).toEqual([first, second]);
 
-    const prior = await fx.caller.settlement.recent({
-      storeId: fx.ownStoreId,
-      beforeDate: dayBack(1),
-      limit: 7,
-    });
-    expect(prior.every((row) => row.date < dayBack(1))).toBe(true);
+    // Not the cursor's own day; the latest close before it.
+    const prior = await fx.caller.settlement.recent({ storeId, beforeDate: third, limit: 1 });
+    expect(prior.map((row) => row.date)).toEqual([fourth]);
   });
 });

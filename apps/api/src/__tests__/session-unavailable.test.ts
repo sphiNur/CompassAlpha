@@ -7,9 +7,8 @@
  * JWT. No database is needed here: the session lookup is a stub.
  */
 import { describe, expect, test } from 'bun:test';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import { sessionFromToken, type RequestContext, type SessionContext } from '../trpc/context';
+import { sessionFromToken, type SessionContext } from '../trpc/context';
+import { gateCaller } from './helpers/ctx';
 
 const CLAIMS = {
   sub: '00000000-0000-4000-8000-000000000001',
@@ -84,25 +83,7 @@ describe('sessionFromToken', () => {
 });
 
 describe('a signed-in procedure without a session', () => {
-  const callerWith = (sessionUnavailable: boolean) => {
-    const ctx: RequestContext = {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hono: {} as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      db: {} as any,
-      log: logger,
-      traceId: 'test',
-      ip: null,
-      userAgent: null,
-      idempotencyKey: null,
-      session: null,
-      sessionUnavailable,
-      async withOrg() {
-        throw new Error('reached the handler');
-      },
-    };
-    return appRouter.createCaller(ctx);
-  };
+  const callerWith = (sessionUnavailable: boolean) => gateCaller(null, { sessionUnavailable });
 
   test('answers SERVICE_UNAVAILABLE when the session could not be read', async () => {
     await expect(callerWith(true).system.recentLogs({})).rejects.toMatchObject({

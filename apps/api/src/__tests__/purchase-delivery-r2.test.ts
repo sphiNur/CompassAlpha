@@ -15,10 +15,7 @@
  *
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/purchase-delivery-r2.test.ts
  */
-import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
@@ -27,72 +24,19 @@ import {
   decide as decideOrder,
   emptyState as emptyOrderState,
   type OrderEvent,
-  type OrderState,
 } from '@compass/domain/order';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type RunCommand,
-  type RunEvent,
-  type RunState,
-} from '@compass/domain/run';
+import { type RunCommand, type RunEvent } from '@compass/domain/run';
 import { appendEvents, readStream } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
 import { loadSkuPriceStats } from '../services/priceStats';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { loadSession } from '../trpc/context';
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { seedRoles, seedMember } from './helpers/fixtures';
+import { planRun, runStream, seedOrder } from './helpers/streams';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -129,17 +73,6 @@ const ALL_PERMS = new Set([
   'delivery.confirm',
 ]);
 
-async function errorOf(
-  fn: () => Promise<unknown>,
-): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
-
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
   const db = getDb(undefined, { system: 'maintenance' });
@@ -149,22 +82,7 @@ beforeAll(async () => {
     .values({ slug: `pdr2-${suffix}`, name: 'Purchase r2', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'purchaser']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'purchaser']);
   const storeIds: string[] = [];
   for (const name of ['A', 'B']) {
     const [store] = await db
@@ -194,31 +112,17 @@ beforeAll(async () => {
     scopeStoreId: string | null,
   ): Promise<Person> => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `R2 ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    for (const storeId of stores) {
-      await db
-        .insert(s.memberStoreAssignments)
-        .values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    }
-    await db.insert(s.memberRoleBindings).values({
-      memberId: m!.id,
-      roleId: roleIds[slug]!,
-      scopeType: scopeStoreId ? 'store' : 'global',
-      scopeId: scopeStoreId,
+    const who = await seedMember(db, orgId, {
+      name: `R2 ${n}`,
+      stores,
+      roles: [{ roleId: roleIds[slug]!, storeId: scopeStoreId }],
     });
-    return { caller: null as unknown as Caller, userId: u!.id, memberId: m!.id };
+    return { caller: null as unknown as Caller, userId: who.userId, memberId: who.memberId };
   };
   const withCaller = async (p: Person): Promise<Person> => {
     const session = await loadSession(db, p.userId, orgId, p.memberId);
     if (!session) throw new Error('session failed to load');
-    return { ...p, caller: appRouter.createCaller(buildCtx(db, session)) };
+    return { ...p, caller: callerFor(session) };
   };
   const admin = await withCaller(await person('super_admin', storeIds, null));
   const buyerA = await withCaller(await person('purchaser', [storeIds[0]!], storeIds[0]!));
@@ -248,58 +152,20 @@ beforeAll(async () => {
 const actorOf = (p: Person) => ({ userId: p.userId, memberId: p.memberId, permissions: ALL_PERMS });
 const orderActorOf = (p: Person) => ({ ...actorOf(p), isClaimer: false });
 
-let orderDay = 0;
 /** An order of `storeId` for 2 kg of `skuId` (+ extras), carried into `runId`. */
-async function seedOrder(storeId: string, skuId: string, runId: string, extras = 0) {
+function storeOrder(storeId: string, skuId: string, runId: string, extras = 0): Promise<string> {
   const { orgId, admin } = fix!;
-  const db = getDb();
-  const sessionId = randomUUID();
-  let state: OrderState = emptyOrderState(sessionId);
-  const push = async (events: ReturnType<typeof decideOrder>) => {
-    for (const e of events) state = applyOrder(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectOrder(tx, orgId, events);
-    });
-  };
-  orderDay += 1;
-  const orderDate = new Date(Date.UTC(2026, 1, orderDay)).toISOString().slice(0, 10);
-  const author = orderActorOf(admin);
-  await push(decideOrder(state, { type: 'StartDraft', orgId, storeId, orderDate, actor: author }));
-  await push(
-    decideOrder(state, {
-      type: 'AdjustItem',
-      skuId,
-      qty: '2',
-      sku: { id: skuId, step: '1', unit: 'kg', isArchived: false },
-      actor: author,
-    }),
-  );
-  if (extras > 0) {
-    await push(
-      decideOrder(state, {
-        type: 'SetSessionExtras',
-        extras: Array.from({ length: extras }, (_, i) => ({
-          name: `extra ${i}`,
-          qty: '1',
-          unit: 'kg',
-        })),
-        actor: author,
-      }),
-    );
-  }
-  await push(decideOrder(state, { type: 'Submit', actor: author }));
-  await push(decideOrder(state, { type: 'Approve', actor: author }));
-  await push(decideOrder(state, { type: 'AttachToRun', runId, actor: author }));
-  return sessionId;
+  return seedOrder(orgId, orderActorOf(admin), {
+    storeId,
+    items: [{ skuId, qty: '2' }],
+    extras,
+    until: { runId },
+  });
 }
 
-let runCount = 0;
+/** The runs seedRun made for the current test (see the afterEach). */
+const seededRuns: string[] = [];
+
 /**
  * A run with store A's order (2 kg rice, two extras) and store B's order
  * (2 kg onion), bought as ordered at 1000. `stage` says how far it goes.
@@ -309,45 +175,18 @@ async function seedRun(stage: 'purchasing' | 'delivered'): Promise<{
   sessionA: string;
 }> {
   const { orgId, storeA, storeB, skuIds, admin } = fix!;
-  const db = getDb();
-  const runId = randomUUID();
-  const sessionA = await seedOrder(storeA, skuIds[0], runId, 2);
-  const sessionB = await seedOrder(storeB, skuIds[1], runId);
-  let state: RunState = emptyRunState(runId);
-  const write = async (events: RunEvent[]) => {
-    if (events.length === 0) return;
-    for (const e of events) state = applyRun(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'run',
-        streamId: runId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectRun(tx, orgId, events);
-    });
-  };
-  await write([
-    {
-      streamId: runId,
-      seq: 1,
-      occurredAt: new Date(),
-      actorUserId: admin.userId,
-      actorMemberId: admin.memberId,
-      type: 'RunPlanned',
-      payload: {
-        orgId,
-        runDate: new Date().toISOString().slice(0, 10),
-        runIndex: runCount++,
-        sessionIds: [sessionA, sessionB],
-        plannedItems: [
-          { skuId: skuIds[0], qty: '2' },
-          { skuId: skuIds[1], qty: '2' },
-        ],
-        purchaserMemberId: admin.memberId,
-      },
-    } as RunEvent,
-  ]);
+  const run = runStream(orgId);
+  seededRuns.push(run.id);
+  const sessionA = await storeOrder(storeA, skuIds[0], run.id, 2);
+  const sessionB = await storeOrder(storeB, skuIds[1], run.id);
+  await planRun(run, orgId, {
+    by: admin,
+    sessionIds: [sessionA, sessionB],
+    plannedItems: [
+      { skuId: skuIds[0], qty: '2' },
+      { skuId: skuIds[1], qty: '2' },
+    ],
+  });
   const cmds: RunCommand[] = [{ type: 'StartPurchase', actor: actorOf(admin) }];
   if (stage === 'delivered') {
     cmds.push(
@@ -372,14 +211,27 @@ async function seedRun(stage: 'purchasing' | 'delivered'): Promise<{
       { type: 'DeliverToStore', storeId: storeB, actor: actorOf(admin) },
     );
   }
-  for (const cmd of cmds) await write(decideRun(state, cmd));
-  return { runId, sessionA };
+  for (const cmd of cmds) await run.exec(cmd);
+  return { runId: run.id, sessionA };
 }
 
 /** One run may be planned or purchasing per org: cancel it when done. */
 async function retire(runId: string): Promise<void> {
   await fix!.admin.caller.run.cancel({ runId, reason: 'test done' });
 }
+
+// A test's runs still planned or purchasing are cancelled after it. The
+// tests used to do it on their last line, so one that failed earlier left
+// its run active, and every later seedRun failed too (review TEST1-10).
+afterEach(async () => {
+  for (const runId of seededRuns.splice(0)) {
+    const [row] = await fix!.db
+      .select({ status: s.marketRunsV.status })
+      .from(s.marketRunsV)
+      .where(eq(s.marketRunsV.id, runId));
+    if (row?.status === 'planned' || row?.status === 'purchasing') await retire(runId);
+  }
+});
 
 async function stockOf(storeId: string, skuId: string, runId: string): Promise<number> {
   const rows = await fix!.db
@@ -413,12 +265,11 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     const seq = await sessionSeq(sessionA);
     expect(seq).toBeGreaterThan(0);
     for (const extra of extras) expect(extra.sessionSeq).toBe(seq);
-    await retire(runId);
   });
 
   test('R2-APR-3: an expectedSeq ahead of the order or negative is refused', async () => {
     const { admin } = fix!;
-    const { runId, sessionA } = await seedRun('purchasing');
+    const { sessionA } = await seedRun('purchasing');
     const seen = await sessionSeq(sessionA);
     for (const expectedSeq of [seen + 50, -1]) {
       const err = await errorOf(() =>
@@ -439,54 +290,49 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
       status: 'bought',
       expectedSeq: seen,
     });
-    await retire(runId);
   });
 
   test('DX-BUY-2: a top-up saved as its own batch keeps the earlier price', async () => {
     const { admin, storeA, storeB, skuIds } = fix!;
     const { runId } = await seedRun('purchasing');
-    try {
-      await admin.caller.run.purchaseItem({
-        runId,
-        skuId: skuIds[0],
-        supplierId: null,
-        unitPrice: '80000',
-        actualQty: '2',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: storeA, qty: '2' }],
-        paymentMethod: 'cash',
-      });
-      // What the web's topUpRevision sends: the row keeps 80,000; the
-      // store that only gets the extra is priced at this batch's 82,000.
-      await admin.caller.run.revisePurchase({
-        runId,
-        skuId: skuIds[0],
-        supplierId: null,
-        unitPrice: '80000',
-        actualQty: '4',
-        receiptPhotoUrl: null,
-        storeSplits: [
-          { storeId: storeA, qty: '2' },
-          { storeId: storeB, qty: '2', unitPrice: '82000', paymentMethod: 'transfer' },
-        ],
-        paymentMethod: 'cash',
-        reason: 'top-up',
-      });
-      const run = await admin.caller.run.get({ runId });
-      const item = run.items.find((it) => it.skuId === skuIds[0])!;
-      expect(Number(item.unitPrice)).toBe(80000);
-      expect(Number(item.purchasedQty)).toBe(4);
-      // 2 × 80,000 + 2 × 82,000 = 324,000 paid, not 4 × 82,000.
-      const riceSplits = run.splits.filter((sp) => sp.skuId === skuIds[0]);
-      expect(
-        riceSplits.reduce(
-          (sum, sp) => sum + Number(sp.qty) * Number(sp.unitPrice ?? item.unitPrice),
-          0,
-        ),
-      ).toBe(324000);
-    } finally {
-      await retire(runId);
-    }
+    await admin.caller.run.purchaseItem({
+      runId,
+      skuId: skuIds[0],
+      supplierId: null,
+      unitPrice: '80000',
+      actualQty: '2',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: storeA, qty: '2' }],
+      paymentMethod: 'cash',
+    });
+    // What the web's topUpRevision sends: the row keeps 80,000; the
+    // store that only gets the extra is priced at this batch's 82,000.
+    await admin.caller.run.revisePurchase({
+      runId,
+      skuId: skuIds[0],
+      supplierId: null,
+      unitPrice: '80000',
+      actualQty: '4',
+      receiptPhotoUrl: null,
+      storeSplits: [
+        { storeId: storeA, qty: '2' },
+        { storeId: storeB, qty: '2', unitPrice: '82000', paymentMethod: 'transfer' },
+      ],
+      paymentMethod: 'cash',
+      reason: 'top-up',
+    });
+    const run = await admin.caller.run.get({ runId });
+    const item = run.items.find((it) => it.skuId === skuIds[0])!;
+    expect(Number(item.unitPrice)).toBe(80000);
+    expect(Number(item.purchasedQty)).toBe(4);
+    // 2 × 80,000 + 2 × 82,000 = 324,000 paid, not 4 × 82,000.
+    const riceSplits = run.splits.filter((sp) => sp.skuId === skuIds[0]);
+    expect(
+      riceSplits.reduce(
+        (sum, sp) => sum + Number(sp.qty) * Number(sp.unitPrice ?? item.unitPrice),
+        0,
+      ),
+    ).toBe(324000);
   });
 
   test('D9: a purchaser of store A records and removes expenses split to store A only', async () => {
@@ -530,7 +376,6 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     // Run-wide steps still need every store.
     const start = await errorOf(() => buyerA.caller.run.startDelivery({ runId }));
     expect(start?.message).toBe('run.errors.runHasOtherStores');
-    await retire(runId);
   });
 
   test("F2 (security scan): another run's expense id is refused and never removed", async () => {
@@ -590,7 +435,12 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     const removeErr = await errorOf(() =>
       buyerA.caller.run.removeExpense({ runId: r2, expenseId: e1, reason: 'gone' }),
     );
-    expect(removeErr).not.toBeNull();
+    // R2's own state has no E1, so E1 serves none of buyer A's stores
+    // there: the store gate refuses before anything is decided.
+    expect(removeErr).toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'run.errors.expenseServesOtherStores',
+    });
     expect(await e1Row()).toEqual({ runId: r1, removedAt: null });
 
     // And the removal projection itself only touches its own run's row
@@ -617,7 +467,6 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     }).catch((e) => {
       if (e !== rolledBack) throw e;
     });
-    await retire(r2);
   });
 });
 

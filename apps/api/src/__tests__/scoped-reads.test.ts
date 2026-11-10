@@ -9,62 +9,12 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/scoped-reads.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-(function loadEnv() {
-  let dir = HERE;
-  for (let i = 0; i < 8; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
-
-const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { SHOULD_RUN } from './helpers/pg';
+import { callerFor } from './helpers/ctx';
+import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -75,17 +25,10 @@ interface Fixture {
   staffA: Caller;
   otherStaffA: Caller;
   submittedSessionId: string;
+  /** Waiting for approval in B. */
+  submittedSessionB: string;
 }
 let fix: Fixture | null = null;
-
-async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
-  try {
-    await fn();
-    return null;
-  } catch (err) {
-    return { code: (err as { code?: string }).code, message: (err as Error).message };
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -97,19 +40,7 @@ beforeAll(async () => {
     .returning();
   const orgId = org!.id;
 
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['manager', 'cashier', 'staff']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key }).onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['manager', 'cashier', 'staff']);
   const [a] = await db.insert(s.stores).values({ orgId, name: 'Store A', code: `A-${suffix.slice(-6)}` }).returning();
   const [b] = await db.insert(s.stores).values({ orgId, name: 'Store B', code: `B-${suffix.slice(-6)}` }).returning();
   const [sku] = await db
@@ -120,29 +51,44 @@ beforeAll(async () => {
   let n = 0;
   const member = async (bindings: Array<[string, string]>) => {
     n += 1;
-    const [user] = await db
-      .insert(s.users)
-      .values({ displayName: `Scoped ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' }).returning();
-    for (const [slug, storeId] of bindings) {
-      await db.insert(s.memberRoleBindings).values({ memberId: m!.id, roleId: roleIds[slug]!, scopeType: 'store', scopeId: storeId });
-      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: user!.id }).onConflictDoNothing();
-    }
-    const session = await loadSession(db, user!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(db, session));
+    const who = await seedMember(db, orgId, {
+      name: `Scoped ${n}`,
+      stores: bindings.map(([, storeId]) => storeId),
+      roles: bindings.map(([slug, storeId]) => ({ roleId: roleIds[slug]!, storeId })),
+    });
+    return callerFor(await sessionOf(orgId, who));
   };
 
   const mixed = await member([['manager', a!.id], ['cashier', b!.id]]);
   const staffA = await member([['staff', a!.id]]);
   const otherStaffA = await member([['staff', a!.id]]);
+  const staffB = await member([['staff', b!.id]]);
 
-  // A submitted order in A, waiting for approval.
+  // A submitted order in each store, waiting for approval.
   const draft = await staffA.order.adjustItem({ storeId: a!.id, skuId: sku!.id, qty: '2' });
   await staffA.order.submit({ sessionId: draft.sessionId });
+  const draftB = await staffB.order.adjustItem({ storeId: b!.id, skuId: sku!.id, qty: '1' });
+  await staffB.order.submit({ sessionId: draftB.sessionId });
 
-  fix = { storeA: a!.id, storeB: b!.id, mixed, staffA, otherStaffA, submittedSessionId: draft.sessionId };
+  // One purchase for both stores: 2 × 1000 for A, 3 × 1000 for B.
+  await seedFinishedPurchase(db, orgId, {
+    runDate: '2026-07-15',
+    unitPrice: '1000',
+    splits: [
+      { storeId: a!.id, qty: '2' },
+      { storeId: b!.id, qty: '3' },
+    ],
+  });
+
+  fix = {
+    storeA: a!.id,
+    storeB: b!.id,
+    mixed,
+    staffA,
+    otherStaffA,
+    submittedSessionId: draft.sessionId,
+    submittedSessionB: draftB.sessionId,
+  };
 });
 
 describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () => {
@@ -151,7 +97,13 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
   test('HIS-1: finance for a store where the reader is only a cashier is refused', async () => {
     const err = await errorOf(() => fix!.mixed.report.totals({ ...range, storeId: fix!.storeB }));
     expect(err?.code).toBe('FORBIDDEN');
-    expect(await errorOf(() => fix!.mixed.report.totals({ ...range, storeId: fix!.storeA }))).toBeNull();
+    // A's own figures: A's share of the purchase, none of B's.
+    expect(await fix!.mixed.report.totals({ ...range, storeId: fix!.storeA })).toMatchObject({
+      total: '2000.00',
+      itemsTotal: '2000.00',
+      cashLines: 1,
+      runCount: 1,
+    });
     const lines = await errorOf(() => fix!.mixed.report.purchaseLines({ ...range, storeId: fix!.storeB }));
     expect(lines?.code).toBe('FORBIDDEN');
   });
@@ -159,15 +111,18 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
   test('HIS-2: order history for that store is refused, and unfiltered history stays in A', async () => {
     const err = await errorOf(() => fix!.mixed.admin.submissionHistory({ storeId: fix!.storeB }));
     expect(err?.code).toBe('FORBIDDEN');
-    const rows = (await fix!.mixed.admin.submissionHistory({})) as unknown as Array<{ storeId?: string; store_id?: string }>;
-    const list = Array.isArray(rows) ? rows : ((rows as { items?: typeof rows }).items ?? []);
-    for (const r of list) expect(r.storeId ?? r.store_id).not.toBe(fix!.storeB);
+    // B has a submission too; only A's are listed.
+    const rows = await fix!.mixed.admin.submissionHistory({});
+    expect(rows.map((r) => r.sessionId)).toContain(fix!.submittedSessionId);
+    expect([...new Set(rows.map((r) => r.storeId))]).toEqual([fix!.storeA]);
   });
 
   test('APR-4: staff do not read the approval queue; the store manager does', async () => {
     expect(await fix!.staffA.order.pendingList({})).toHaveLength(0);
     const queue = await fix!.mixed.order.pendingList({});
+    // B's order waits too, but they are only a cashier there.
     expect(queue.map((q: { id: string }) => q.id)).toContain(fix!.submittedSessionId);
+    expect(queue.map((q: { id: string }) => q.id)).not.toContain(fix!.submittedSessionB);
   });
 
   test("APR-4: someone else's order detail is for approvers; one's own stays readable", async () => {

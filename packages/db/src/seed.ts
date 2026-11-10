@@ -11,37 +11,15 @@
  *   - 18 SKUs (i18n)
  */
 import { sql } from 'drizzle-orm';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { getDb, closeDb, schema as s } from './index';
 import { PERMISSIONS, BUILTIN_ROLES } from './seed-data';
 import { DEFAULT_FEATURE_FLAGS, DEFAULT_ORG_WORKFLOW } from './provision-organization';
 import { provisionSubscription } from './subscription';
 import { PRODUCTION_UNIT_MARKER, productionReason } from './purgeGuard';
+import { loadRepoEnv } from './repoEnv';
 
-(function loadRootEnv() {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = resolve(dir, '.env');
-    if (existsSync(candidate) && existsSync(resolve(dir, 'pnpm-workspace.yaml'))) {
-      for (const raw of readFileSync(candidate, 'utf8').split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const idx = line.indexOf('=');
-        if (idx < 0) continue;
-        const key = line.slice(0, idx).trim();
-        const val = line
-          .slice(idx + 1)
-          .trim()
-          .replace(/^"(.*)"$/, '$1');
-        if (!(key in process.env)) process.env[key] = val;
-      }
-      return;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+loadRepoEnv(import.meta.url);
 
 /**
  * Review DB-02 (2026-11-09): this seed is for local development only. On a
