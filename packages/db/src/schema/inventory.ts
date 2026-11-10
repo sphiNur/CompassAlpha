@@ -660,6 +660,11 @@ export const priceHistory = inventorySchema.table(
     runId: uuid('run_id'),
     unitPrice: decimal('unit_price', { precision: 14, scale: 2 }).notNull(),
     qty: decimal('qty', { precision: 12, scale: 3 }).notNull(),
+    /**
+     * When the trip bought it. A price written after the run left buying
+     * (filled in during delivery, corrected once it finished) keeps its
+     * trip's date, so it never reads as newer than a later trip's.
+     */
     observedAt: timestamp('observed_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

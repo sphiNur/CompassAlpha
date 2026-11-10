@@ -4,7 +4,7 @@
  *
  * Same pattern as orderProjection.ts.
  */
-import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { milliQty, qtyMilli } from '@compass/contracts';
@@ -109,11 +109,10 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               },
             });
         }
-        await restoreAmendedVerdicts(db, e);
+        const run = await runPhaseOf(db, e.streamId);
+        await restoreAmendedVerdicts(db, e, run, purchasedStoreIds);
         // Append a price_history row for analytics — runs in same tx so RLS context applies.
-        await insertPriceObservations(db, orgId, e);
-        // Suppress unused-var warning if sql tag isn't used elsewhere in this file.
-        void sql;
+        await insertPriceObservations(db, orgId, e, run);
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
@@ -161,8 +160,14 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               },
             });
         }
-        await restoreAmendedVerdicts(db, e);
-        await insertPriceObservations(db, orgId, e);
+        const run = await runPhaseOf(db, e.streamId);
+        await restoreAmendedVerdicts(
+          db,
+          e,
+          run,
+          e.payload.storeSplits.map((sp) => sp.storeId),
+        );
+        await insertPriceObservations(db, orgId, e, run);
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
@@ -483,14 +488,26 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
 
-        // …but the splits potentially CHANGE which stores receive this
-        // SKU. Upsert the new split rows AND drop any old rows whose
-        // storeId is no longer in the new split set. We can't blanket
-        // DELETE all rows for the SKU first because that would reset
-        // delivered_at / confirmed_at / confirm_status fields we want
-        // to keep — but it's safe here because revising is blocked once
-        // a destination store has been delivered to (domain guard).
+        // …but the splits can change which stores receive this SKU: drop
+        // the rows of stores the revision no longer names and upsert the
+        // rest. Not a blanket DELETE: a kept row keeps its delivery and
+        // receipt (the upsert sets quantity, price and payment only).
+        // Once a store has the goods its quantity stands, except in a
+        // correction of a finished run. There a store can be taken off
+        // the line and given it back; its new row gets its receipt back
+        // below (RUNAPI-07).
+        const run = await runPhaseOf(db, e.streamId);
         const keepStoreIds = e.payload.storeSplits.map((sp) => sp.storeId);
+        const rowsBefore = await db
+          .select({ storeId: s.runItemStoresV.storeId })
+          .from(s.runItemStoresV)
+          .where(
+            and(
+              eq(s.runItemStoresV.runId, e.streamId),
+              eq(s.runItemStoresV.skuId, e.payload.skuId),
+            ),
+          );
+        const hadRow = new Set(rowsBefore.map((r) => r.storeId));
         if (keepStoreIds.length > 0) {
           await db
             .delete(s.runItemStoresV)
@@ -533,12 +550,18 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               },
             });
         }
+        await restoreAmendedVerdicts(
+          db,
+          e,
+          run,
+          keepStoreIds.filter((storeId) => !hadRow.has(storeId)),
+        );
         // New price_history row — analytics treats each observation as a
         // discrete data point. Keeping the original row preserves the
         // "what was first recorded" audit; the new row is the latest
         // truth. (Per-row reason isn't stored on price_history; it's in
         // the event log as PurchaseRevised.payload.reason.)
-        await insertPriceObservations(db, orgId, e);
+        await insertPriceObservations(db, orgId, e, run);
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
@@ -787,15 +810,53 @@ async function supersedePriceObservations(
     );
 }
 
+/** The run's phase, read once for each purchase event. */
+type RunPhase = { status: string; startedAt: Date | null } | undefined;
+
+async function runPhaseOf(db: DB, runId: string): Promise<RunPhase> {
+  const [run] = await db
+    .select({ status: s.marketRunsV.status, startedAt: s.marketRunsV.startedAt })
+    .from(s.marketRunsV)
+    .where(eq(s.marketRunsV.id, runId))
+    .limit(1);
+  return run;
+}
+
+/**
+ * RUNAPI-08 (2026-11-09): when the trip bought what a purchase event
+ * records. While the run is being bought, that is now. A price written
+ * after that (filled in during delivery, or corrected once the run
+ * finished) is dated with the trip's last recorded purchase. Dated when
+ * it was written, a price corrected weeks later became the product's
+ * last price, ahead of the ones bought since: the reference the purchase
+ * page offers (its one-tap ✓ saves it), the five-times check and the
+ * order estimates. Only one run is bought at a time, so every later
+ * trip's purchases come after this date. The run's finish time would
+ * not do: a run can wait in delivery while the next one is bought.
+ */
+async function boughtAt(db: DB, orgId: string, e: RunEvent, run: RunPhase): Promise<Date> {
+  if (!run || run.status === 'planned' || run.status === 'purchasing') return e.occurredAt;
+  const [last] = await db
+    .select({ observedAt: s.priceHistory.observedAt })
+    .from(s.priceHistory)
+    .where(and(eq(s.priceHistory.orgId, orgId), eq(s.priceHistory.runId, e.streamId)))
+    .orderBy(desc(s.priceHistory.observedAt))
+    .limit(1);
+  const at = last?.observedAt ?? run.startedAt;
+  return at && at < e.occurredAt ? at : e.occurredAt;
+}
+
 async function insertPriceObservations(
   db: DB,
   orgId: string,
   e: Extract<RunEvent, { type: 'ItemPurchased' | 'PurchaserItemAdded' | 'PurchaseRevised' }>,
+  run: RunPhase,
 ): Promise<void> {
   // Each of these events states the whole purchase of one product in
   // one run, so whatever was observed for it before is no longer what
   // was paid.
   await supersedePriceObservations(db, orgId, e.streamId, e.payload.skuId, e.occurredAt);
+  const observedAt = await boughtAt(db, orgId, e, run);
   const hasSplitOverrides = e.payload.storeSplits.some(
     (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
   );
@@ -807,7 +868,7 @@ async function insertPriceObservations(
       runId: e.streamId,
       unitPrice: e.payload.unitPrice,
       qty: e.payload.actualQty,
-      observedAt: e.occurredAt,
+      observedAt,
     });
     return;
   }
@@ -820,7 +881,7 @@ async function insertPriceObservations(
       runId: e.streamId,
       unitPrice: split.unitPrice ?? e.payload.unitPrice,
       qty: split.qty,
-      observedAt: e.occurredAt,
+      observedAt,
     })),
   );
 }
@@ -838,20 +899,22 @@ async function insertPriceObservations(
  * store-level fields only — it counts as received (owner decision D3)
  * and history labels it as added in a correction.
  *
+ * RUNAPI-07 (2026-11-09): a revision that takes a store off the line and
+ * a later one that gives it back did the same, so PurchaseRevised hands
+ * over the stores whose rows it added too. `storeIds` are the stores
+ * whose rows this event wrote fresh.
+ *
  * Only while amending: in the normal flow nothing can be bought for a
- * store after it was delivered to, and reading the stream on every
- * purchase would be wasted work.
+ * store after it was delivered to, nor its quantity revised, and reading
+ * the stream on every purchase would be wasted work.
  */
 async function restoreAmendedVerdicts(
   db: DB,
-  e: Extract<RunEvent, { type: 'ItemPurchased' | 'PurchaserItemAdded' }>,
+  e: Extract<RunEvent, { type: 'ItemPurchased' | 'PurchaserItemAdded' | 'PurchaseRevised' }>,
+  run: RunPhase,
+  storeIds: readonly string[],
 ): Promise<void> {
-  const [run] = await db
-    .select({ status: s.marketRunsV.status })
-    .from(s.marketRunsV)
-    .where(eq(s.marketRunsV.id, e.streamId))
-    .limit(1);
-  if (run?.status !== 'amending') return;
+  if (run?.status !== 'amending' || storeIds.length === 0) return;
   const rows = await db
     .select({ type: s.events.type, payload: s.events.payload, occurredAt: s.events.occurredAt })
     .from(s.events)
@@ -926,8 +989,8 @@ async function restoreAmendedVerdicts(
         break;
     }
   }
-  for (const split of e.payload.storeSplits) {
-    const st = stores.get(split.storeId);
+  for (const storeId of storeIds) {
+    const st = stores.get(storeId);
     if (!st?.deliveredAt) continue;
     await db
       .update(s.runItemStoresV)
@@ -945,17 +1008,12 @@ async function restoreAmendedVerdicts(
         and(
           eq(s.runItemStoresV.runId, e.streamId),
           eq(s.runItemStoresV.skuId, e.payload.skuId),
-          eq(s.runItemStoresV.storeId, split.storeId),
+          eq(s.runItemStoresV.storeId, storeId),
         ),
       );
   }
 }
 
-/**
- * 2026-10-21 CA-06: inventory delta for one confirmed split. Exported
- * for unit tests. Non-ok lines with a recorded received qty book that
- * qty; everything else (ok, undecided, legacy NULL) books the split.
- */
 /**
  * DLV-3 (2026-10-30, owner decision: write offsetting movements). The
  * stock a store received is booked once, at StoreConfirmed (source 'run').
@@ -1051,6 +1109,11 @@ async function syncAmendMovements(
   if (rows.length > 0) await db.insert(s.inventoryMovements).values(rows);
 }
 
+/**
+ * 2026-10-21 CA-06: inventory delta for one confirmed split. Exported
+ * for unit tests. Non-ok lines with a recorded received qty book that
+ * qty; everything else (ok, undecided, legacy NULL) books the split.
+ */
 export function receivedDelta(
   split: {
     qty: string;

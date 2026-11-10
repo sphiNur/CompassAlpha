@@ -40,6 +40,7 @@ import {
 import { appendEvents, readStream } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
+import { loadSkuPriceStats } from '../services/priceStats';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
@@ -919,5 +920,117 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
         reason: 'receipt came later',
       },
     ]);
+  });
+
+  test('RUNAPI-07: a store taken off a line in a correction and given it back keeps its receipt', async () => {
+    const { admin, storeA, storeB, skuIds, db } = fix!;
+    const { runId } = await seedRun('delivered');
+    // Store A received only 1 of its 2 kg of rice.
+    await admin.caller.run.confirmStoreItem({
+      runId,
+      storeId: storeA,
+      skuId: skuIds[0],
+      status: 'short',
+      note: 'one bag short',
+      photoUrl: null,
+      receivedQty: '1',
+    });
+    await admin.caller.run.confirmStore({ runId, storeId: storeA });
+    await admin.caller.run.markStoreItemsOk({ runId, storeId: storeB, skuIds: [skuIds[1]] });
+    await admin.caller.run.confirmStore({ runId, storeId: storeB });
+    await admin.caller.run.finish({ runId });
+    expect(await stockOf(storeA, skuIds[0], runId)).toBe(1);
+
+    // The correction gives the rice to store B, then back to store A.
+    await admin.caller.run.reopen({ runId, reason: 'which store had the rice' });
+    const riceTo = (storeId: string, reason: string) =>
+      admin.caller.run.revisePurchase({
+        runId,
+        skuId: skuIds[0],
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '2',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId, qty: '2' }],
+        paymentMethod: 'cash',
+        reason,
+      });
+    await riceTo(storeB, 'went to B');
+    await riceTo(storeA, 'no, it was A');
+    await admin.caller.run.refinalize({ runId });
+
+    const [rice] = await db
+      .select()
+      .from(s.runItemStoresV)
+      .where(
+        and(
+          eq(s.runItemStoresV.runId, runId),
+          eq(s.runItemStoresV.skuId, skuIds[0]),
+          eq(s.runItemStoresV.storeId, storeA),
+        ),
+      );
+    expect(rice).toMatchObject({ confirmStatus: 'short', confirmNote: 'one bag short' });
+    expect(Number(rice!.confirmReceivedQty)).toBe(1);
+    expect(rice!.deliveredAt).toBeTruthy();
+    expect(rice!.confirmedAt).toBeTruthy();
+    // Stock still holds what store A counted (it became 2).
+    expect(await stockOf(storeA, skuIds[0], runId)).toBe(1);
+    expect(await stockOf(storeB, skuIds[0], runId)).toBe(0);
+    expect((await admin.caller.run.historyDetail({ runId })).corrections).toEqual([]);
+  });
+
+  test("RUNAPI-08: a price corrected after the trip keeps the trip's date", async () => {
+    const { admin, orgId, storeA, storeB, skuIds, db } = fix!;
+    const close = async (runId: string) => {
+      await admin.caller.run.markStoreItemsOk({ runId, storeId: storeA, skuIds: [skuIds[0]] });
+      await admin.caller.run.confirmStore({ runId, storeId: storeA });
+      await admin.caller.run.markStoreItemsOk({ runId, storeId: storeB, skuIds: [skuIds[1]] });
+      await admin.caller.run.confirmStore({ runId, storeId: storeB });
+      await admin.caller.run.finish({ runId });
+    };
+    const lastBought = async (runId: string) => {
+      const rows = await db
+        .select({ observedAt: s.priceHistory.observedAt })
+        .from(s.priceHistory)
+        .where(eq(s.priceHistory.runId, runId));
+      return new Date(Math.max(...rows.map((row) => row.observedAt.getTime())));
+    };
+    // Rice at 1000 on one trip. While it waits in delivery, the next trip
+    // buys rice at 1000 too; the first trip finishes after that.
+    const { runId: earlier } = await seedRun('delivered');
+    const { runId: later } = await seedRun('delivered');
+    await close(earlier);
+    await close(later);
+    const earlierBought = await lastBought(earlier);
+    expect(earlierBought.getTime()).toBeLessThan((await lastBought(later)).getTime());
+
+    // The first trip's receipt turns up: the rice was 900.
+    await admin.caller.run.reopen({ runId: earlier, reason: 'receipt found' });
+    await admin.caller.run.revisePurchase({
+      runId: earlier,
+      skuId: skuIds[0],
+      supplierId: null,
+      unitPrice: '900',
+      actualQty: '2',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: storeA, qty: '2' }],
+      paymentMethod: 'cash',
+      reason: 'receipt found',
+    });
+    await admin.caller.run.refinalize({ runId: earlier });
+
+    // The last price is still the later trip's (it became 900).
+    const stats = await loadSkuPriceStats(db, orgId, [skuIds[0]]);
+    expect(stats.get(skuIds[0])?.lastPrice).toBe(1000);
+    // The corrected price is dated with the trip's last purchase.
+    const observed = await db
+      .select()
+      .from(s.priceHistory)
+      .where(and(eq(s.priceHistory.runId, earlier), eq(s.priceHistory.skuId, skuIds[0])));
+    expect(
+      observed
+        .filter((row) => row.supersededAt === null)
+        .map((row) => ({ unitPrice: row.unitPrice, observedAt: row.observedAt })),
+    ).toEqual([{ unitPrice: '900.00', observedAt: earlierBought }]);
   });
 });
