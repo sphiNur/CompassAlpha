@@ -165,34 +165,175 @@ describe('pg_url_parts', () => {
   });
 });
 
-describe('restore.sh (F11)', () => {
-  test('the password reaches pg_restore through PGPASSWORD, never argv', () => {
-    const home = mkdtempSync(join(tmpdir(), 'restore-'));
-    dirs.push(home);
-    const bin = join(home, 'bin');
-    mkdirSync(bin);
-    const dump = join(home, 'compass-x.dump');
-    writeFileSync(dump, 'x');
-    stub(
-      bin,
-      'pg_restore',
-      `if [ "$1" = "--list" ]; then exit 0; fi; printf '%s\\n' "$@" > "${home}/argv"; printf '%s' "\${PGPASSWORD-}" > "${home}/pass"`,
-    );
-    const r = spawnSync('bash', [RESTORE, dump], {
-      encoding: 'utf8',
-      input: 'yes\n',
-      env: {
-        PATH: `${bin}:/usr/bin:/bin`,
-        ENV_FILE: join(home, 'missing.env'),
-        DATABASE_URL: 'postgresql://compass:zq%3Axy@db.local/compass',
-      },
+/**
+ * restore.sh with pg_restore and psql stubbed: what it refuses, what it
+ * passes on, and that the password stays off the command line. The real
+ * thing runs in infra/backup/drill.sh (review OPS-11, 2026-11-10).
+ */
+function restore(opts: {
+  /** The arguments, given the dump's path; the dump alone by default. */
+  args?: (dump: string) => string[];
+  url?: string;
+  /** RESTORE_OWNER: the role a superuser restores as. */
+  owner?: string;
+  /** What the check query answers: the role, whether superuser, the objects. */
+  check?: string;
+  envFile?: string[];
+  input?: string;
+}) {
+  const home = mkdtempSync(join(tmpdir(), 'restore-'));
+  dirs.push(home);
+  const bin = join(home, 'bin');
+  mkdirSync(bin);
+  const dump = join(home, 'compass-x.dump');
+  writeFileSync(dump, 'x');
+  stub(
+    bin,
+    'pg_restore',
+    `if [ "$1" = "--list" ]; then exit 0; fi; printf '%s\\n' "$@" > "${home}/restore.argv"; ` +
+      `printf '%s' "\${PGPASSWORD-}" > "${home}/restore.pass"`,
+  );
+  // The check query (-c) answers `check`; a script run (-f) is recorded.
+  stub(
+    bin,
+    'psql',
+    `case " $* " in *" -c "*) printf '%s\\n' "$@" > "${home}/check.argv"; echo '${opts.check ?? 'compass|f|0'}';; ` +
+      `*) printf '%s\\n' "$@" > "${home}/grant.argv"; printf '%s' "\${PGPASSWORD-}" > "${home}/grant.pass";; esac`,
+  );
+  if (opts.envFile) writeFileSync(join(home, '.env'), opts.envFile.join('\n') + '\n');
+  const r = spawnSync('bash', [RESTORE, ...(opts.args ?? ((d) => [d]))(dump)], {
+    encoding: 'utf8',
+    input: opts.input ?? 'yes\n',
+    env: {
+      PATH: `${bin}:/usr/bin:/bin`,
+      ENV_FILE: join(home, '.env'),
+      ...(opts.url === undefined ? {} : { RESTORE_DATABASE_URL: opts.url }),
+      ...(opts.owner === undefined ? {} : { RESTORE_OWNER: opts.owner }),
+    },
+  });
+  const read = (name: string) => {
+    try {
+      return readFileSync(join(home, name), 'utf8');
+    } catch {
+      return null;
+    }
+  };
+  return { r, read };
+}
+
+const NEW_DB = 'postgresql://compass:zq%3Axy@db.local/compass_restored';
+
+describe('restore.sh', () => {
+  test('F11: the password reaches pg_restore and psql through PGPASSWORD, never argv', () => {
+    const { r, read } = restore({
+      url: NEW_DB,
+      envFile: ['BACKUP_DATABASE_URL=postgres://compass_backup:b@db.local/compass'],
     });
     expect(r.status).toBe(0);
-    const argv = readFileSync(join(home, 'argv'), 'utf8');
+    const argv = read('restore.argv')!;
     expect(argv).not.toContain('zq');
-    expect(argv).toContain('--dbname=postgresql://compass@db.local/compass');
-    expect(readFileSync(join(home, 'pass'), 'utf8')).toBe('zq:xy');
-    // The confirmation prompt still hides the credentials.
+    expect(argv).toContain('--dbname=postgresql://compass@db.local/compass_restored');
+    expect(argv).toContain('--single-transaction');
+    expect(read('restore.pass')).toBe('zq:xy');
+    expect(read('check.argv')).not.toContain('zq');
+    expect(read('grant.argv')).not.toContain('zq');
+    expect(read('grant.pass')).toBe('zq:xy');
+    // The confirmation prompt shows the target without the password.
+    expect(r.stdout).toContain('postgresql://compass@db.local/compass_restored');
     expect(r.stdout).not.toContain('zq%3Axy');
+  }, 15_000);
+
+  test('without RESTORE_DATABASE_URL it does nothing, whatever DATABASE_URL says', () => {
+    const { r, read } = restore({ envFile: ['DATABASE_URL=postgres://compass@db.local/compass'] });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('set RESTORE_DATABASE_URL');
+    expect(read('check.argv')).toBeNull();
+    expect(read('restore.argv')).toBeNull();
+  }, 15_000);
+
+  test('a database that is not empty is refused before pg_restore runs', () => {
+    const { r, read } = restore({ url: NEW_DB, check: 'compass|f|62' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('not empty (62 tables');
+    expect(read('restore.argv')).toBeNull();
+  }, 15_000);
+
+  test('a superuser is refused: the restored tables would be its own', () => {
+    const { r, read } = restore({ url: NEW_DB, check: 'postgres|t|0' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('is a superuser');
+    expect(r.stderr).toContain('RESTORE_OWNER');
+    expect(read('restore.argv')).toBeNull();
+  }, 15_000);
+
+  test('a superuser restores as RESTORE_OWNER, which then owns the tables', () => {
+    const { r, read } = restore({
+      url: NEW_DB,
+      owner: 'compass',
+      check: 'postgres|t|0',
+      envFile: ['BACKUP_DATABASE_URL=postgres://compass_backup:b@db.local/compass'],
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('owner:    compass');
+    expect(read('restore.argv')).toContain('--role=compass\n');
+    expect(read('grant.argv')).toContain('owner=compass\n');
+  }, 15_000);
+
+  test('anything but "yes" at the prompt aborts', () => {
+    const { r, read } = restore({ url: NEW_DB, input: 'no\n' });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('[restore] aborted');
+    expect(read('restore.argv')).toBeNull();
+  }, 15_000);
+
+  test('--yes restores without asking', () => {
+    const { r, read } = restore({ url: NEW_DB, input: '', args: (dump) => ['--yes', dump] });
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain("Type 'yes'");
+    expect(read('restore.argv')).toContain('--no-owner');
+  }, 15_000);
+
+  test('the backup role gets its SELECT again, granted by the restoring role', () => {
+    const { r, read } = restore({
+      url: NEW_DB,
+      check: 'compass_owner|f|0',
+      envFile: ['BACKUP_DATABASE_URL=postgres://compass_backup:b@db.local/compass'],
+    });
+    expect(r.status).toBe(0);
+    expect(read('restore.argv')).toContain('--role=compass_owner\n');
+    const grant = read('grant.argv')!;
+    expect(grant).toContain('backup=compass_backup');
+    expect(grant).toContain('owner=compass_owner');
+    expect(grant).toMatch(/grant-backup-role\.sql/);
+    expect(r.stdout).toContain('backup role compass_backup can read the restored database');
+  }, 15_000);
+
+  test('without a backup role in the env file it says what is left to do', () => {
+    const { r, read } = restore({ url: NEW_DB });
+    expect(r.status).toBe(0);
+    expect(read('grant.argv')).toBeNull();
+    expect(r.stderr).toContain('run install.sh after the swap');
+  }, 15_000);
+
+  test('an api that connects as another role hears that it was given nothing', () => {
+    const other = restore({
+      url: NEW_DB,
+      envFile: ['DATABASE_URL=postgres://compass_app:a@db.local/compass'],
+    });
+    expect(other.r.status).toBe(0);
+    expect(other.r.stderr).toContain('the api connects as compass_app, which owns nothing here');
+    const same = restore({
+      url: NEW_DB,
+      envFile: ['DATABASE_URL=postgres://compass:a@db.local/compass'],
+    });
+    expect(same.r.status).toBe(0);
+    expect(same.r.stderr).not.toContain('the api connects as');
+  }, 15_000);
+
+  test('an unknown option is refused', () => {
+    const { r, read } = restore({ url: NEW_DB, args: (dump) => ['--force', dump] });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('unknown option --force');
+    expect(read('check.argv')).toBeNull();
   }, 15_000);
 });

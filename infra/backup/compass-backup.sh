@@ -16,9 +16,8 @@
 # Designed to be run by systemd timer (see compass-backup.timer).
 # Exit non-zero on any failure so systemctl status surfaces it.
 #
-# Restore (one-shot):
-#   pg_restore -d "$DATABASE_URL" --clean --if-exists \
-#     /home/ubuntu/compass-backups/compass-2026-05-06-033000.dump
+# Restore: restore.sh, into a new database (docs/RUNBOOK.md, "Restore
+# from a dump"); infra/backup/drill.sh rehearses it.
 
 set -euo pipefail
 

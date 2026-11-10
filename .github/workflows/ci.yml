@@ -433,3 +433,64 @@ jobs:
             tests/e2e/playwright-report
             tests/e2e/test-results
           retention-days: 7
+
+  # ============ Job 4: a nightly dump restores ============
+  restore-drill:
+    name: backup and restore drill (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: compass
+          POSTGRES_PASSWORD: compass
+          POSTGRES_DB: compass_drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compass"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install bun (matches .bun-version)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Postgres 18 client tools
+        # pg_dump refuses a server newer than itself, and the runner's is
+        # older; the server runs 18 (CLAUDE.md).
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -q postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
+      - name: Back up, restore, compare
+        # Review OPS-11 (2026-11-10): no restore had ever been tried. The
+        # nightly script dumps a database set up the way production has
+        # it, restore.sh puts the dump into a new database, and the two
+        # must match; then the restored one is dumped again and swapped
+        # in (infra/backup/drill.sh).
+        env:
+          DRILL_ADMIN_URL: postgres://compass:compass@localhost:5432/postgres
+        run: |
+          pg_dump --version
+          bash infra/backup/drill.sh
