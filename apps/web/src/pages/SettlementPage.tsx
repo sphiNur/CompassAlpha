@@ -6,7 +6,7 @@
  * keeps a versioned correction trail.  This screen therefore never infers
  * cash from other modules or silently overwrites an existing close.
  */
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   Banner,
@@ -18,6 +18,7 @@ import {
   CardTitle,
   EmptyState,
   Field,
+  FieldError,
   Input,
   NumberInput,
   SearchInput,
@@ -341,23 +342,6 @@ function SummaryRow({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-/**
- * DX-CLS-3 (2026-11-01): the reason under an expense / wage field, tied to
- * it with aria-describedby (same look as AmountField's line).
- */
-function FieldError({ id, children }: { id: string; children: ReactNode }) {
-  return (
-    <span
-      id={id}
-      role="alert"
-      className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
-    >
-      <span aria-hidden>⚠</span>
-      <span>{children}</span>
-    </span>
-  );
-}
-
 function formatSignedMoney(value: number, currency: string): string {
   const formatted = formatMoney(Math.abs(value), currency);
   if (value > 0) return `+${formatted}`;
@@ -369,19 +353,28 @@ function AmountField({
   label,
   value,
   signed = false,
+  revealError,
+  onLeave,
   onChange,
 }: {
   label: string;
   value: string;
   signed?: boolean;
+  /**
+   * Review CONF-21: whether a problem may show yet. Like the expense and
+   * wage lines (DX-VIS-15), once the field was left or a save was tried;
+   * it used to show from the first keystroke.
+   */
+  revealError: boolean;
+  onLeave: () => void;
   onChange: (value: string) => void;
 }) {
   const i18n = useI18n();
   const errorId = useId();
-  const valid = isMoney(value, signed);
   // DX-CLS-4 (2026-11-01): one sentence per reason; negative, empty and
   // too long all read "enter a number, at most two decimals".
-  const problem = valid ? null : (moneyProblem(value, { signed }) ?? 'notNumber');
+  const problem = isMoney(value, signed) ? null : (moneyProblem(value, { signed }) ?? 'notNumber');
+  const shown = problem !== null && revealError;
   // A11Y-2 (2026-10-31): the reason sits under the field it is about and
   // is tied to it with aria-describedby. It used to be one unnamed banner
   // ~1,100 px further down, and the field only turned its edge red (hidden
@@ -395,23 +388,19 @@ function AmountField({
         step="0.01"
         placeholder="0"
         aria-label={label}
-        aria-invalid={!valid || undefined}
-        aria-describedby={valid ? undefined : errorId}
+        aria-invalid={shown || undefined}
+        aria-describedby={shown ? errorId : undefined}
         // The line below covers "not a number" too; one message, not two.
         formatError="none"
-        className={!valid ? 'border-[var(--c-danger)]' : undefined}
+        className={shown ? 'border-[var(--c-danger)]' : undefined}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onLeave}
       />
-      {valid ? null : (
-        <span
-          id={errorId}
-          role="alert"
-          className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
-        >
-          <span aria-hidden>⚠</span>
-          <span>{i18n.t(MONEY_PROBLEM_MESSAGE[problem ?? 'notNumber'], { field: label })}</span>
-        </span>
-      )}
+      {problem !== null && shown ? (
+        <FieldError id={errorId}>
+          {i18n.t(MONEY_PROBLEM_MESSAGE[problem], { field: label })}
+        </FieldError>
+      ) : null}
     </Field>
   );
 }
@@ -755,6 +744,11 @@ export function SettlementPage() {
   const touch = (key: string) => setTouchedFields((cur) => withTouched(cur, key));
   const showError = (invalid: boolean, key: string) =>
     showFieldError(invalid, touchedFields, key, saveTried);
+  // CONF-21: the top amounts reveal a problem the same way.
+  const revealFor = (field: MoneyField) => ({
+    revealError: saveTried || touchedFields.has(field),
+    onLeave: () => touch(field),
+  });
   const showFirstFieldToFix = () => {
     // The marks must be on screen before focus can find the first one.
     flushSync(() => setSaveTried(true));
@@ -1469,11 +1463,13 @@ export function SettlementPage() {
                       <AmountField
                         label={i18n.t('settlement.field.onlineRevenue')}
                         value={draft.onlineRevenue}
+                        {...revealFor('onlineRevenue')}
                         onChange={(value) => setMoney('onlineRevenue', value)}
                       />
                       <AmountField
                         label={i18n.t('settlement.field.invoicedCashRevenue')}
                         value={draft.invoicedCashRevenue}
+                        {...revealFor('invoicedCashRevenue')}
                         onChange={(value) => setMoney('invoicedCashRevenue', value)}
                       />
                     </div>
@@ -1895,12 +1891,14 @@ export function SettlementPage() {
                     <AmountField
                       label={i18n.t('settlement.field.nextPurchaseReserve')}
                       value={draft.nextPurchaseReserve}
+                      {...revealFor('nextPurchaseReserve')}
                       onChange={(value) => setMoney('nextPurchaseReserve', value)}
                     />
                     <AmountField
                       label={i18n.t('settlement.field.priorPurchaseAdjustment')}
                       value={draft.priorPurchaseAdjustment}
                       signed
+                      {...revealFor('priorPurchaseAdjustment')}
                       onChange={(value) => setMoney('priorPurchaseAdjustment', value)}
                     />
                     <Banner tone="info" title={i18n.t('settlement.purchaseAdjustment.positive')}>
@@ -1920,6 +1918,7 @@ export function SettlementPage() {
                     <AmountField
                       label={i18n.t('settlement.field.cashOnHand')}
                       value={draft.cashOnHand}
+                      {...revealFor('cashOnHand')}
                       onChange={(value) => setMoney('cashOnHand', value)}
                     />
                   </CardBody>

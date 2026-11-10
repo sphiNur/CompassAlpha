@@ -252,21 +252,28 @@ export function FieldGroup({ label, hint, children, className }: FieldProps) {
  * label) should adopt it so "how a field label looks" lives in one
  * place. Deliberately sentence-case: uppercase eyebrows are
  * `SectionLabel`, a different role.
+ *
+ * With `htmlFor` it is the `<label>` of a control it does not wrap
+ * (review CONF-21: the receiving sheet drew its own).
  */
 export function FieldLabel({
   className,
   children,
   id,
+  htmlFor,
 }: {
   className?: string;
   children: ReactNode;
   id?: string;
+  htmlFor?: string;
 }) {
-  return (
-    <span
-      id={id}
-      className={cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className)}
-    >
+  const look = cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className);
+  return htmlFor ? (
+    <label id={id} htmlFor={htmlFor} className={look}>
+      {children}
+    </label>
+  ) : (
+    <span id={id} className={look}>
       {children}
     </span>
   );
