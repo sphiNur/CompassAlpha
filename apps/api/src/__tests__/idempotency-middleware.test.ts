@@ -8,13 +8,16 @@
  * throws INTERNAL_SERVER_ERROR — so every idempotent replay 500'd instead
  * of returning the prior response, silently defeating the whole mechanism.
  *
- * The fix returns a properly-shaped `{ ok: true, data, ctx }` result. This
- * test validates that contract without a DB, and will fail loudly if a
- * future tRPC upgrade changes how short-circuited middleware results are
- * consumed (e.g. starts requiring the internal marker).
+ * The fix returns a properly-shaped `{ ok: true, data, ctx }` result,
+ * built by `cacheHitResult`. This test puts the app's own builder into a
+ * tRPC router without a DB, so it fails if the builder regresses to the
+ * raw payload or a tRPC upgrade changes how a short-circuited result is
+ * consumed (e.g. starts requiring the internal marker). The middleware's
+ * claim and replay against the database are in idempotency-claim.test.ts.
  */
 import { describe, it, expect } from 'bun:test';
 import { initTRPC } from '@trpc/server';
+import { cacheHitResult } from '../trpc/trpc';
 
 const t = initTRPC.context<Record<string, unknown>>().create();
 
@@ -22,14 +25,10 @@ describe('tRPC middleware short-circuit contract (idempotency cache hit)', () =>
   it('returns the synthetic ok-result data WITHOUT running the handler', async () => {
     let handlerRuns = 0;
     const cached = { runId: 'cached-run', lastSeq: 7 };
-    const shortCircuit = t.middleware(async (opts) => {
-      // Same shape the idempotency middleware returns on a cache hit.
-      return {
-        ok: true,
-        data: cached,
-        ctx: opts.ctx,
-      } as unknown as Awaited<ReturnType<typeof opts.next>>;
-    });
+    const shortCircuit = t.middleware(
+      async (opts) =>
+        cacheHitResult(cached, opts.ctx) as unknown as Awaited<ReturnType<typeof opts.next>>,
+    );
     const router = t.router({
       purchaseItem: t.procedure.use(shortCircuit).mutation(() => {
         handlerRuns++;

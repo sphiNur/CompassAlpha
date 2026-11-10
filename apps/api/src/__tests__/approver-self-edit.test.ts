@@ -349,16 +349,53 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
 
   test('APR-1: a sessionId from another store or submitter is refused', async () => {
     if (!fix) throw new Error('fixture missing');
+    const db = getDb(undefined, { system: 'maintenance' });
     const caller = appRouter.createCaller(fix.ctx);
-    await expect(
+    // Review TEST1-12 (2026-11): a second store the approver also works
+    // at, and a second member, so the real session is named under the
+    // wrong store and the wrong submitter (it only ever tried a made-up id).
+    const [otherStore] = await db
+      .insert(s.stores)
+      .values({ orgId: fix.orgId, name: 'Self-edit Store 2' })
+      .returning();
+    await db
+      .insert(s.memberStoreAssignments)
+      .values({ memberId: fix.memberId, storeId: otherStore!.id, assignedBy: fix.userId });
+    const [otherUser] = await db.insert(s.users).values({ displayName: 'Staff' }).returning();
+    const [otherMember] = await db
+      .insert(s.members)
+      .values({ orgId: fix.orgId, userId: otherUser!.id })
+      .returning();
+    const qtyBefore = await db
+      .select({ qty: s.orderItemsV.qty })
+      .from(s.orderItemsV)
+      .where(eq(s.orderItemsV.sessionId, fix.sessionId));
+
+    const adjust = (over: { sessionId?: string; storeId?: string; targetMemberId?: string }) =>
       caller.order.adjustItem({
-        sessionId: randomUUID(),
-        storeId: fix.storeId,
+        sessionId: fix!.sessionId,
+        storeId: fix!.storeId,
         date: ORDER_DATE,
-        skuId: fix.skuId,
+        skuId: fix!.skuId,
         qty: '1',
-        targetMemberId: fix.memberId,
-      }),
-    ).rejects.toThrow(/sessionMissing/);
+        targetMemberId: fix!.memberId,
+        ...over,
+      });
+    await expect(adjust({ storeId: otherStore!.id })).rejects.toThrow(/sessionMissing/);
+    await expect(adjust({ targetMemberId: otherMember!.id })).rejects.toThrow(/sessionMissing/);
+    await expect(adjust({ sessionId: randomUUID() })).rejects.toThrow(/sessionMissing/);
+
+    // Nothing was written: the session kept its quantity, and no draft
+    // was started in the other store.
+    const qtyAfter = await db
+      .select({ qty: s.orderItemsV.qty })
+      .from(s.orderItemsV)
+      .where(eq(s.orderItemsV.sessionId, fix.sessionId));
+    expect(qtyAfter).toEqual(qtyBefore);
+    const otherStoreSessions = await db
+      .select({ id: s.orderSessionsV.id })
+      .from(s.orderSessionsV)
+      .where(eq(s.orderSessionsV.storeId, otherStore!.id));
+    expect(otherStoreSessions).toEqual([]);
   });
 });
