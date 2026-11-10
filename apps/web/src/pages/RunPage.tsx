@@ -88,6 +88,7 @@ import {
 import { isUnusualFirstPrice, isUnusualPrice } from './runs/lib/priceMath';
 import { mergeSplitsIntoExistingItem, mergeIntoPurchasedItem, runStoreIdsOf } from './runs/lib/runStores';
 import { buildStorePickList } from './runs/lib/storePickList';
+import { closedFor } from './runs/lib/draftClose';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
@@ -434,9 +435,12 @@ export function RunPage() {
       purchaseIdemCtx.idempotencyKey = idempotencyKey;
       return { idempotencyKey };
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       invalidateRunQuietly(true);
-      setPurchaseDraft(null);
+      // RUNWEB1-01 / -02: close only the form this purchase came from
+      // (runs/lib/draftClose.ts), not another row's sheet being typed in.
+      setPurchaseDraft((d) => closedFor(d, vars));
+      setAddItemDraft((d) => closedFor(d, vars));
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRecorded'));
     },
@@ -446,7 +450,8 @@ export function RunPage() {
         const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
         void offline.enqueue('run.purchaseItem', vars, key).then(
           () => {
-            setPurchaseDraft(null);
+            setPurchaseDraft((d) => closedFor(d, vars));
+            setAddItemDraft((d) => closedFor(d, vars));
             toast.info(i18n.t('run.toast.purchaseSavedOffline'));
           },
           () => errToast('run.toast.couldNotSavePurchase')(err),
@@ -456,43 +461,38 @@ export function RunPage() {
       }
     },
   });
-  /**
-   * True while the in-flight revisePurchase is a ROW-LEVEL payment flip
-   * rather than a sheet submit. A ref, not state, because onSuccess
-   * closes over the render in which mutate() was called.
-   */
-  const paymentFlipInFlight = useRef(false);
-
+  // The purchase sheet's and "+ Add item"'s revisions. A failed one
+  // leaves the form open with what was typed (RUNWEB1-02).
   const revisePurchase = trpc.run.revisePurchase.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       invalidateRunQuietly();
-      // A row-level flip opened no sheet, so it must not close one.
-      //
-      // This handler used to clear the draft unconditionally, which was
-      // correct while the sheet was its only caller. The payment toggle
-      // is a second caller that opens no modal, so on a slow link a
-      // purchaser who taps 💵, sees nothing happen, and then opens a row
-      // to edit it would have that sheet torn away mid-keystroke when
-      // the flip landed — under a green "purchase updated" toast that
-      // reads as confirmation of what they had just typed and never
-      // sent.
-      if (!paymentFlipInFlight.current) setPurchaseDraft(null);
+      setPurchaseDraft((d) => closedFor(d, vars));
+      setAddItemDraft((d) => closedFor(d, vars));
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRevised'));
     },
     onError: errToast('run.toast.couldNotSavePurchase'),
   });
   /**
-   * Is the in-flight revisePurchase the SHEET's, rather than a row's
-   * payment-method flip?
+   * A row's 💵 / transfer switch, which opens no form and closes none.
    *
-   * Both callers share one mutation, so `revisePurchase.isPending` alone
-   * was putting an unrelated open sheet's primary button — and the page
-   * MainButton — into a loading state whenever someone tapped 💵 on a
-   * row. `paymentBusySkuId` is non-null exactly while the row-level flip
-   * is the request in flight.
+   * RUNWEB1-01 (2026-11-09): it shared `revisePurchase` with the sheet,
+   * marked by a ref. A sheet sent while a switch was out made the ref
+   * wrong both ways, and react-query fires `mutate`'s own callbacks only
+   * for the latest call, so the switch's clean-up never ran: the row
+   * stayed busy and the sheet never closed. Its own mutation keeps
+   * `isPending` and the answers apart.
    */
-  const revisePurchaseBusyForSheet = revisePurchase.isPending && paymentBusySkuId === null;
+  const flipPayment = trpc.run.revisePurchase.useMutation({
+    onSuccess: () => {
+      invalidateRunQuietly();
+      haptic('success');
+      toast.success(i18n.t('run.toast.purchaseRevised'));
+    },
+    onError: errToast('run.toast.couldNotSavePurchase'),
+    onSettled: (_data, _err, vars) =>
+      setPaymentBusySkuId((cur) => (cur === vars.skuId ? null : cur)),
+  });
 
   // BUY-9 (2026-10-30): the replay carries the first attempt's key (as
   // purchaseItem does), so a request that landed with its response lost
@@ -1432,7 +1432,7 @@ export function RunPage() {
       return null; // filled in below right after confirmConfig is defined
     }
     if (purchaseDraft && purchaseFormState) {
-      const submitting = purchaseItem.isPending || revisePurchaseBusyForSheet;
+      const submitting = purchaseItem.isPending || revisePurchase.isPending;
       const text = !purchaseFormState.splitMatches
         ? i18n.t('run.label.splitsMismatch', {
             sum: formatQty(purchaseFormState.splitTotal),
@@ -1475,7 +1475,7 @@ export function RunPage() {
     purchaseDraft,
     purchaseFormState,
     purchaseItem.isPending,
-    revisePurchaseBusyForSheet,
+    revisePurchase.isPending,
     submitPurchaseDraft,
     unavailableFor,
     unavailableNote,
@@ -2571,26 +2571,17 @@ export function RunPage() {
                 return;
               }
               setPaymentBusySkuId(item.skuId);
-              paymentFlipInFlight.current = true;
-              revisePurchase.mutate(
-                {
-                  runId: activeRun.id,
-                  skuId: item.skuId,
-                  supplierId: item.supplierId ?? null,
-                  unitPrice: item.unitPrice,
-                  actualQty: item.purchasedQty,
-                  receiptPhotoUrl: item.receiptPhotoUrl ?? null,
-                  storeSplits,
-                  paymentMethod: next,
-                  reason: i18n.t('run.reason.paymentMethodChanged'),
-                },
-                {
-                  onSettled: () => {
-                    setPaymentBusySkuId(null);
-                    paymentFlipInFlight.current = false;
-                  },
-                },
-              );
+              flipPayment.mutate({
+                runId: activeRun.id,
+                skuId: item.skuId,
+                supplierId: item.supplierId ?? null,
+                unitPrice: item.unitPrice,
+                actualQty: item.purchasedQty,
+                receiptPhotoUrl: item.receiptPhotoUrl ?? null,
+                storeSplits,
+                paymentMethod: next,
+                reason: i18n.t('run.reason.paymentMethodChanged'),
+              });
             }}
             onUnmark={
               activeRun.status === 'delivering'
@@ -2824,7 +2815,7 @@ export function RunPage() {
         }
         onChange={setPurchaseDraft}
         onSubmit={submitPurchaseDraft}
-        submitting={purchaseItem.isPending || revisePurchaseBusyForSheet}
+        submitting={purchaseItem.isPending || revisePurchase.isPending}
       />
 
       {/* M3.41 (2026-05-21): mid-run "+ add item" sheet. SKU search +
@@ -2948,7 +2939,8 @@ export function RunPage() {
                   paymentMethod: d.paymentMethod,
                   ...(priceConfirmed ? { priceConfirmed: true } : {}),
                 });
-                setAddItemDraft(null);
+                // Closed by the answer (RUNWEB1-02): a refused merge keeps
+                // the product, quantity, price, stores and reason typed.
                 return;
               }
               if (existingItem.status === 'purchased') {
@@ -2973,7 +2965,6 @@ export function RunPage() {
                   ...(priceConfirmed ? { priceConfirmed: true } : {}),
                   reason: d.reason.trim() || i18n.t('run.action.addItem.defaultCrossStoreReason'),
                 });
-                setAddItemDraft(null);
                 return;
               }
               // unavailable — should be unreachable (filtered out
