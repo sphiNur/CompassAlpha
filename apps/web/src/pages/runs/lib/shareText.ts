@@ -73,14 +73,14 @@ export function buildStoreText(group: PreviewStoreGroup, deps: ShareTextDeps): s
  * 2026-07-27 and asked for the split back, so the split is the
  * behaviour:
  *
- *     savza abat
+ *     Stall 1
  *
- *     Eden Magic City
- *     Pomidor: 7 kg
- *     Piyoz: 9 kg
+ *     Store A
+ *     Tomatoes: 7 kg
+ *     Onions: 9 kg
  *
- *     Eden Seoul
- *     Piyoz: 5 kg
+ *     Store B
+ *     Onions: 5 kg
  *
  * Why the merge was the wrong call, now that the actual workflow is
  * clear: this text is not only a price quote, it is the instruction for

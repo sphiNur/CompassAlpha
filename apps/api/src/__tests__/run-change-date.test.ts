@@ -3,7 +3,7 @@
  *
  * Runs are numbered per day (read_model.market_runs_v is unique on
  * org + run_date + run_index). Changing the 23rd's run #0 to the 22nd,
- * where Lagman's run #0 already was, violated that index and came back
+ * where Store B's run #0 already was, violated that index and came back
  * as "edited by someone else — retry". The moved run now becomes the
  * day's next run.
  *
@@ -53,7 +53,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
   });
 
   test('the moved run becomes the next run of that day', async () => {
-    const lagman = await plannedRun('2026-10-22', 0);
+    const southRun = await plannedRun('2026-10-22', 0);
     const threeStores = await plannedRun('2026-10-23', 0);
 
     await callerFor(session).run.changeDate({ runId: threeStores, runDate: '2026-10-22' });
@@ -64,7 +64,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
       .from(s.marketRunsV)
       .where(and(eq(s.marketRunsV.orgId, orgId), eq(s.marketRunsV.runDate, '2026-10-22')));
     const index = new Map(rows.map((r) => [r.id, r.runIndex]));
-    expect(index.get(lagman)).toBe(0);
+    expect(index.get(southRun)).toBe(0);
     expect(index.get(threeStores)).toBe(1);
 
     // The number is in the event, so a replay lands on the same row.

@@ -316,7 +316,7 @@ export async function monthWorkbook(
   return { bytes: buildXlsx([summary, detail]) };
 }
 
-/** The file's name, e.g. 「考勤-Chilonzor-2026-11.xlsx」, safe for every OS. */
+/** The file's name, e.g. 「考勤-Store A-2026-11.xlsx」, safe for every OS. */
 export async function exportFileName(
   locale: Locale,
   store: string,

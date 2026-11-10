@@ -44,7 +44,7 @@ const store = (storeId: string, storeName: string, items: PreviewLine[], legacyN
   previewStore(storeId, items, { storeName, legacyNote });
 
 const supplier = (stores: PreviewStoreGroup[]) =>
-  previewSupplier('sup-1', stores, { supplierName: 'savza abat' });
+  previewSupplier('sup-1', stores, { supplierName: 'Alpha stall' });
 
 describe('formatLineForText', () => {
   it('uses the catalog name + localized unit when the SKU resolves', () => {
@@ -65,24 +65,22 @@ describe('formatLineForText', () => {
 
 describe('buildStoreText', () => {
   it('KEEPS the store name — this string goes to that store own manager', () => {
-    const g = store('s1', 'Eden-Magic-City', [line({ qty: '5' })]);
+    const g = store('s1', 'Store-A', [line({ qty: '5' })]);
     const text = buildStoreText(g, deps);
-    expect(text).toContain('Eden-Magic-City');
+    expect(text).toContain('Store-A');
     expect(text).toContain('西红柿: 5 公斤');
   });
 
   it('keeps the extras marker — off-catalog is meaningful to a manager', () => {
     const text = buildStoreText(
-      store('s1', 'Hotel-Uzbek', [
-        line({ kind: 'extra', skuId: null, name: '面包', unit: '个' }),
-      ]),
+      store('s1', 'Store-B', [line({ kind: 'extra', skuId: null, name: '面包', unit: '个' })]),
       deps,
     );
     expect(text).toContain('其他物品 · 面包');
   });
 
   it('appends the legacy note under the notes label', () => {
-    const text = buildStoreText(store('s1', 'Hotel-Uzbek', [], '再买两箱水'), deps);
+    const text = buildStoreText(store('s1', 'Store-B', [], '再买两箱水'), deps);
     expect(text).toContain('备注:');
     expect(text).toContain('再买两箱水');
   });
@@ -90,23 +88,23 @@ describe('buildStoreText', () => {
 
 describe('buildSupplierText', () => {
   const threeStores = supplier([
-    store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '5' })]),
-    store('s2', 'Hotel-Uzbek', [line({ id: 'b', qty: '3' })]),
-    store('s3', 'Eden-Seoul', [line({ id: 'c', qty: '3' })]),
+    store('s1', 'Store-A', [line({ id: 'a', qty: '5' })]),
+    store('s2', 'Store-B', [line({ id: 'b', qty: '3' })]),
+    store('s3', 'Store-C', [line({ id: 'c', qty: '3' })]),
   ]);
 
   it('keeps each store as its own labelled section', () => {
     expect(buildSupplierText(threeStores, deps)).toBe(
       [
-        'savza abat',
+        'Alpha stall',
         '',
-        'Eden-Magic-City',
+        'Store-A',
         '西红柿: 5 公斤',
         '',
-        'Hotel-Uzbek',
+        'Store-B',
         '西红柿: 3 公斤',
         '',
-        'Eden-Seoul',
+        'Store-C',
         '西红柿: 3 公斤',
       ].join('\n'),
     );
@@ -129,25 +127,17 @@ describe('buildSupplierText', () => {
 
   it('keeps distinct SKUs under the store that asked for them', () => {
     const g = supplier([
-      store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '2' })]),
-      store('s2', 'Hotel-Uzbek', [line({ id: 'b', skuId: 'sku-onion', qty: '4' })]),
+      store('s1', 'Store-A', [line({ id: 'a', qty: '2' })]),
+      store('s2', 'Store-B', [line({ id: 'b', skuId: 'sku-onion', qty: '4' })]),
     ]);
     expect(buildSupplierText(g, deps)).toBe(
-      [
-        'savza abat',
-        '',
-        'Eden-Magic-City',
-        '西红柿: 2 公斤',
-        '',
-        'Hotel-Uzbek',
-        '洋葱: 4 公斤',
-      ].join('\n'),
+      ['Alpha stall', '', 'Store-A', '西红柿: 2 公斤', '', 'Store-B', '洋葱: 4 公斤'].join('\n'),
     );
   });
 
   it('carries off-catalog extras with their own name and unit', () => {
     const g = supplier([
-      store('s1', 'Eden-Magic-City', [
+      store('s1', 'Store-A', [
         line({ kind: 'extra', skuId: null, name: '面包', unit: '个', qty: '2' }),
       ]),
     ]);
@@ -159,7 +149,7 @@ describe('buildSupplierText', () => {
     // wanting the same item differently. Split by store, each
     // instruction sits under its own shop and nothing can collide.
     const g = supplier([
-      store('s1', 'Eden-Magic-City', [
+      store('s1', 'Store-A', [
         line({
           id: 'a',
           kind: 'extra',
@@ -170,7 +160,7 @@ describe('buildSupplierText', () => {
           note: '要冰的',
         }),
       ]),
-      store('s2', 'Hotel-Uzbek', [
+      store('s2', 'Store-B', [
         line({
           id: 'b',
           kind: 'extra',
@@ -184,13 +174,13 @@ describe('buildSupplierText', () => {
     ]);
     expect(buildSupplierText(g, deps)).toBe(
       [
-        'savza abat',
+        'Alpha stall',
         '',
-        'Eden-Magic-City',
+        'Store-A',
         '其他物品 · 水: 2 瓶',
         '  要冰的',
         '',
-        'Hotel-Uzbek',
+        'Store-B',
         '其他物品 · 水: 1 瓶',
         '  常温',
       ].join('\n'),
@@ -198,9 +188,9 @@ describe('buildSupplierText', () => {
   });
 
   it('carries a store-level note under that store', () => {
-    const g = supplier([store('s1', 'Eden-Seoul', [line({ qty: '1' })], '要新鲜的')]);
+    const g = supplier([store('s1', 'Store-C', [line({ qty: '1' })], '要新鲜的')]);
     const text = buildSupplierText(g, deps);
-    expect(text).toContain('Eden-Seoul');
+    expect(text).toContain('Store-C');
     expect(text).toContain('备注:');
     expect(text).toContain('要新鲜的');
   });
@@ -212,7 +202,7 @@ describe('buildSupplierText', () => {
   });
 
   it('passes a quantity through verbatim rather than summing it', () => {
-    const g = supplier([store('s1', 'Eden-Magic-City', [line({ qty: '0.1' })])]);
+    const g = supplier([store('s1', 'Store-A', [line({ qty: '0.1' })])]);
     expect(buildSupplierText(g, deps)).toContain('西红柿: 0.1 公斤');
   });
 });

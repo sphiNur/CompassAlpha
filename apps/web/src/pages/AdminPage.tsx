@@ -131,7 +131,7 @@ export function AdminPage() {
   const session = useAuthStore((s) => s.session);
   // M3.16-B (2026-05-16): drill-down state migrated from useState to
   // navStore (persisted). Reload now restores the exact admin view —
-  // e.g. /admin → Stores → Eden Magic City → Team comes back intact
+  // e.g. /admin → Stores → Store A → Team comes back intact
   // instead of resetting to the admin home menu.
   const section = useNavStore((s) => s.adminSection);
   const setSection = useNavStore((s) => s.setAdminSection);

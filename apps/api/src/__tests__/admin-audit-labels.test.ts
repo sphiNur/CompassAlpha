@@ -128,13 +128,13 @@ describe('buildAuditLabels', () => {
       lookups({
         memberNameById: new Map([[M, 'Ali']]),
         roleNameBySlug: new Map([['manager', 'Manager']]),
-        storeNameById: new Map([[S1, 'Chilonzor']]),
+        storeNameById: new Map([[S1, 'Store A']]),
       }),
     );
     expect(labels).toMatchObject({
       memberName: 'Ali',
       roleName: 'Manager',
-      storeName: 'Chilonzor',
+      storeName: 'Store A',
     });
   });
 

@@ -199,7 +199,7 @@ export function RunHistoryPage({
     <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
       {/* The title row exists to host the Back button. As a tab there is
           no Back, and a lone <h1> reading "历史记录" directly above a card
-          whose own header reads "历史记录  39 · 118,112,379.9 UZS" is the
+          whose own header reads "历史记录  12 · 1,234,567.8 UZS" is the
           same word twice with the second one carrying all the
           information. Drop the row and let the card header BE the page
           heading (`as="h1"`), which is also how Order / Run already

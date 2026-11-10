@@ -20,23 +20,23 @@ const st = (slug: string, rank: number, storeId: string): Binding => ({
   scopeId: storeId,
 });
 
-/** Aziz: manager (50) of store A only. */
+/** Alice: manager (50) of store A only. */
 const manager: Actor = {
-  userId: 'aziz',
+  userId: 'alice',
   isOrgAdmin: false,
   adminStoreIds: ['A'],
   bindings: [st('manager', 50, 'A')],
 };
-/** Nurzat: org admin (80). */
+/** Olga: org admin (80). */
 const admin: Actor = {
-  userId: 'nurzat',
+  userId: 'olga',
   isOrgAdmin: true,
   adminStoreIds: ['A', 'B'],
   bindings: [g('admin', 80)],
 };
-const staffA = { userId: 'dilnoza', bindings: [st('staff', 10, 'A')], storeIds: ['A'] };
+const staffA = { userId: 'dana', bindings: [st('staff', 10, 'A')], storeIds: ['A'] };
 const staffAB = {
-  userId: 'kamola',
+  userId: 'kate',
   bindings: [st('staff', 10, 'A'), st('staff', 10, 'B')],
   storeIds: ['A', 'B'],
 };
@@ -54,7 +54,7 @@ describe('rankIn', () => {
 });
 
 /**
- * ADM1-01 (2026-11-09): Nurzat is an org admin (80) who also kept a
+ * ADM1-01 (2026-11-09): Olga is an org admin (80) who also kept a
  * legacy super_admin (100) binding in store A. Organisation-wide she
  * weighs 80, as the server now ranks her (getActorMaxGlobalRank).
  */
@@ -83,25 +83,25 @@ describe('orgRankOf (ADM1-01)', () => {
 
 describe('canRevokeRole (CMP-ADM-1)', () => {
   test('a manager cannot take away their own manager role (was: confirm, then 403)', () => {
-    expect(canRevokeRole(manager, 'aziz', st('manager', 50, 'A'))).toBe(false);
+    expect(canRevokeRole(manager, 'alice', st('manager', 50, 'A'))).toBe(false);
   });
   test('a manager can take away staff in their store, not in another', () => {
-    expect(canRevokeRole(manager, 'dilnoza', st('staff', 10, 'A'))).toBe(true);
-    expect(canRevokeRole(manager, 'kamola', st('staff', 10, 'B'))).toBe(false);
+    expect(canRevokeRole(manager, 'dana', st('staff', 10, 'A'))).toBe(true);
+    expect(canRevokeRole(manager, 'kate', st('staff', 10, 'B'))).toBe(false);
   });
   test('an admin never removes their own admin role', () => {
-    expect(canRevokeRole(admin, 'nurzat', g('admin', 80))).toBe(false);
+    expect(canRevokeRole(admin, 'olga', g('admin', 80))).toBe(false);
   });
   test('a global binding needs an org admin, whatever the rank (ADM1-17)', () => {
     const legacyStaff = g('staff', 10);
-    expect(canRevokeRole(manager, 'dilnoza', legacyStaff)).toBe(false);
-    expect(canRevokeRole(admin, 'dilnoza', legacyStaff)).toBe(true);
+    expect(canRevokeRole(manager, 'dana', legacyStaff)).toBe(false);
+    expect(canRevokeRole(admin, 'dana', legacyStaff)).toBe(true);
     expect(
-      canRevokeRole(manager, 'dilnoza', { slug: 'staff', scopeType: 'global', scopeId: null }),
+      canRevokeRole(manager, 'dana', { slug: 'staff', scopeType: 'global', scopeId: null }),
     ).toBe(false);
   });
   test('without a rank the × stays and the server decides', () => {
-    expect(canRevokeRole(manager, 'dilnoza', { slug: 'staff', scopeType: 'store', scopeId: 'A' })).toBe(
+    expect(canRevokeRole(manager, 'dana', { slug: 'staff', scopeType: 'store', scopeId: 'A' })).toBe(
       true,
     );
   });
@@ -109,7 +109,7 @@ describe('canRevokeRole (CMP-ADM-1)', () => {
 
 describe('canSetStatus', () => {
   test('nobody suspends themself', () => {
-    expect(canSetStatus(admin, { userId: 'nurzat', bindings: [g('admin', 80)], storeIds: [] }, 'suspended')).toBe(
+    expect(canSetStatus(admin, { userId: 'olga', bindings: [g('admin', 80)], storeIds: [] }, 'suspended')).toBe(
       false,
     );
   });
