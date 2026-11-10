@@ -183,6 +183,12 @@ Aim for **at minimum** a domain unit test per command branch. PG-gated
 integration is mandatory for any path that crosses a transaction boundary
 (grant, transfer, cancel-cascade).
 
+The directories CI and the deploy test are listed once, in
+`scripts/lib/testTargets.ts`. A test file outside them, or a PG-gated one
+outside the integration directories, fails
+`scripts/__tests__/testTargets.test.ts`: add the directory there and to
+the matching step in `.github/workflows/ci.yml`.
+
 ### 10. Smoke + deploy
 
 ```bash
