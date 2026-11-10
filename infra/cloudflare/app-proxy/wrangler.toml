@@ -5,9 +5,12 @@ workers_dev = true
 
 # Secrets (not in this file; `wrangler secret put <NAME>` or the dashboard):
 #   ORIGIN_TOPIC        ntfy topic the origin watchdog publishes to
-#   ORIGIN_UPDATE_KEY   shared key for POST /__origin
-#   ORIGIN_SIGNING_KEY  HMAC key for signed ntfy messages (CA-12, 2026-10-21);
-#                       must equal /home/ubuntu/.config/compass-origin.key
+#   ORIGIN_SIGNING_KEY  HMAC key for signed origin messages, from ntfy or
+#                       POST /__origin (CA-12, 2026-10-21; OPS-15,
+#                       2026-11-10); must equal
+#                       /home/ubuntu/.config/compass-origin.key
+#   (ORIGIN_UPDATE_KEY, the old /__origin key, is no longer read; delete it
+#    with `wrangler secret delete ORIGIN_UPDATE_KEY`.)
 #   CLIENT_IP_PROXY_KEY real client address for the API rate limiter (AUTH-6,
 #                       2026-10-30); must equal CLIENT_IP_PROXY_KEY in the
 #                       server .env

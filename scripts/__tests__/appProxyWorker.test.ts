@@ -8,6 +8,8 @@
  *        not the last one posted; the highest accepted timestamp is kept
  *        in KV and anything older (or older than the age window) is
  *        rejected.
+ *   OPS-15 — the manual /__origin takes the same signed message, checked
+ *        the same way; no shared key.
  *
  * fetch is stubbed; nothing touches ntfy, Cloudflare or a tunnel.
  */
@@ -298,6 +300,63 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
     }) as typeof fetch;
     await worker.fetch(new Request(`${PUBLIC}/y`), signedEnv(kv));
     expect(calls[1]!.url).toBe(`${NEW}y`);
+  });
+});
+
+describe('OPS-15: /__origin takes a server-signed message, never a key', () => {
+  const signedEnv = (kv = memoryKv()) =>
+    env({ ORIGIN_TOPIC: 'topic', ORIGIN_SIGNING_KEY: KEY, COMPASS_ORIGIN: kv });
+  const post = (body: string, e: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    worker.fetch(new Request(`${PUBLIC}/__origin`, { method: 'POST', body, headers }), e);
+
+  test('a fresh signed message becomes the origin while the topic is empty', async () => {
+    const t = now();
+    const kv = memoryKv({ signedTs: String(t - 3600), url: OLD });
+    const res = await post(signed(NEW, t - 5), signedEnv(kv));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, url: NEW });
+    expect(kv.data.get('url')).toBe(NEW);
+    expect(kv.data.get('signedTs')).toBe(String(t - 5));
+    await worker.fetch(new Request(`${PUBLIC}/x`), signedEnv(kv));
+    expect(calls[0]!.url).toBe(`${NEW}x`);
+  });
+
+  test('the old shared-key form is refused and changes nothing', async () => {
+    const kv = memoryKv({ url: OLD });
+    const res = await post(JSON.stringify({ url: NEW }), signedEnv(kv), {
+      'x-origin-key': KEY,
+      'content-type': 'application/json',
+    });
+    expect(res.status).toBe(400);
+    expect(kv.data.get('url')).toBe(OLD);
+  });
+
+  test('a message older than the origin in use is refused', async () => {
+    const t = now();
+    const kv = memoryKv({ signedTs: String(t - 60), url: NEW });
+    const res = await post(signed(OLD, t - 600), signedEnv(kv));
+    expect(res.status).toBe(409);
+    expect(kv.data.get('url')).toBe(NEW);
+  });
+
+  test('a wrong signature, an expired message, a foreign host or junk is refused', async () => {
+    const t = now();
+    for (const body of [
+      signed(NEW, t, 'wrong-key'),
+      signed(NEW, t - 7 * 3600),
+      signed('https://evil.example/', t),
+      `${NEW}|${t}`,
+      'x'.repeat(600),
+    ]) {
+      const kv = memoryKv({ url: OLD });
+      expect((await post(body, signedEnv(kv))).status).toBe(400);
+      expect(kv.data.get('url')).toBe(OLD);
+    }
+  });
+
+  test('without the signing key it is off; only POST is accepted', async () => {
+    expect((await post(signed(NEW, now()), env())).status).toBe(503);
+    expect((await worker.fetch(new Request(`${PUBLIC}/__origin`), signedEnv())).status).toBe(405);
   });
 });
 
