@@ -23,6 +23,8 @@ export const ru = {
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Доступна новая версия',
   'common.cancel': 'Отмена',
+  'common.reason': 'Причина',
+  'common.clearSearch': 'Сбросить поиск',
   'common.archive': 'Архивировать',
   'common.archived': 'в архиве',
   'common.unarchive': 'Восстановить',

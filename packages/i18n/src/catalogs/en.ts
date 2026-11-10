@@ -50,6 +50,9 @@ export const en = {
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'A new version is ready',
   'common.cancel': 'Cancel',
+  // UI-08: what @compass/ui's ConfirmSheet and SearchInput show by default.
+  'common.reason': 'Reason',
+  'common.clearSearch': 'Clear search',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',

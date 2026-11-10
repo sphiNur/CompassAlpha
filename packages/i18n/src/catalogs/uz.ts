@@ -30,6 +30,8 @@ export const uz = {
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Yangi versiya tayyor',
   'common.cancel': 'Bekor qilish',
+  'common.reason': 'Sabab',
+  'common.clearSearch': 'Qidiruvni tozalash',
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',
   'common.unarchive': 'Arxivdan chiqarish',

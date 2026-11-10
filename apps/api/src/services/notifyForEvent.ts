@@ -8,6 +8,7 @@
  * rows are visible the instant the read model is. The `outbox` row
  * is read by `apps/worker` once committed.
  */
+import { centsToMoney, lineCents, moneyText, toCents } from '@compass/contracts';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { eq } from 'drizzle-orm';
@@ -323,12 +324,20 @@ export async function dispatchRunEventNotifications(
         // items + expenses — shown as its parts. totalActual stays the
         // items-only figure; events from before itemsTotal/expensesTotal
         // existed fall back to totalActual and the state's expenses.
-        const itemsTotal = Number(e.payload.itemsTotal ?? e.payload.totalActual);
-        const expensesTotal =
+        // Review COREAPI-18: added in cents by the money rule (each
+        // expense line rounded on its own), and written as the app shows
+        // amounts ("1,234,567.50"), not "1234567.50".
+        const itemsCents = toCents(e.payload.itemsTotal ?? e.payload.totalActual);
+        const expensesCents =
           e.payload.expensesTotal !== undefined
-            ? Number(e.payload.expensesTotal)
-            : state.expenses.reduce((sum, x) => sum + Number(x.qty) * Number(x.unitPrice), 0);
-        const grandTotal = (itemsTotal + expensesTotal).toFixed(2);
+            ? toCents(e.payload.expensesTotal)
+            : state.expenses.reduce((sum, x) => sum + lineCents(x.qty, x.unitPrice), 0n);
+        const totalCents = itemsCents + expensesCents;
+        const shown = {
+          items: moneyText(centsToMoney(itemsCents)),
+          expenses: moneyText(centsToMoney(expensesCents)),
+          total: moneyText(centsToMoney(totalCents)),
+        };
         if (state.purchaserMemberId) {
           // 2026-10-21 audit CA-31/F-07: suspended members get nothing.
           const member = await db.query.members.findFirst({
@@ -340,20 +349,16 @@ export async function dispatchRunEventNotifications(
               template: 'run.finished',
               title: 'Run finished',
               body:
-                `Run complete · items ${itemsTotal.toFixed(2)} · expenses ` +
-                `${expensesTotal.toFixed(2)} · total ${grandTotal}.`,
-              vars: {
-                items: itemsTotal.toFixed(2),
-                expenses: expensesTotal.toFixed(2),
-                total: grandTotal,
-              },
+                `Run complete · items ${shown.items} · expenses ${shown.expenses} · ` +
+                `total ${shown.total}.`,
+              vars: shown,
               dedupKey: `run:${state.streamId}:finished`,
               payload: {
                 runId: state.streamId,
                 totalActual: e.payload.totalActual,
-                itemsTotal: itemsTotal.toFixed(2),
-                expensesTotal: expensesTotal.toFixed(2),
-                total: grandTotal,
+                itemsTotal: centsToMoney(itemsCents),
+                expensesTotal: centsToMoney(expensesCents),
+                total: centsToMoney(totalCents),
               },
               deepLink: '/run',
             });

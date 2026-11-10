@@ -1,5 +1,6 @@
 import { forwardRef, type InputHTMLAttributes } from 'react';
 import { cn } from '../cn';
+import { useUiLabels } from '../labels';
 
 /**
  * SearchInput — text field with leading magnifier icon + trailing
@@ -22,14 +23,15 @@ export interface SearchInputProps
   /** Fires when the trailing X button is tapped. Optional — if not
    *  provided, the helper synthesizes a synthetic onChange with ''. */
   onClear?: () => void;
-  /** Localized label for the clear button (a11y). */
+  /** Name of the clear button (a11y). Defaults to the host's `clearSearch` label. */
   clearAriaLabel?: string;
 }
 
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
-  { className, value, onChange, onClear, clearAriaLabel = 'Clear search', ...rest },
+  { className, value, onChange, onClear, clearAriaLabel, ...rest },
   ref,
 ) {
+  const labels = useUiLabels();
   const hasValue = typeof value === 'string' && value.length > 0;
   return (
     <div role="search" className={cn('relative min-w-0', className)}>
@@ -73,7 +75,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
       {hasValue ? (
         <button
           type="button"
-          aria-label={clearAriaLabel}
+          aria-label={clearAriaLabel ?? labels.clearSearch}
           onClick={() => {
             if (onClear) {
               onClear();
