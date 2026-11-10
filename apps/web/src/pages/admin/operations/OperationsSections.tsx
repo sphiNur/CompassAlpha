@@ -1935,12 +1935,7 @@ export function MaintenanceSection() {
   });
   const allCommit = trpc.admin.purgeAllTestData.useMutation({
     onSuccess: (data) => {
-      toast.success(
-        i18n.t('admin.toast.dataPurged', {
-          n: data.total,
-          tables: Object.keys(data.byTable).length,
-        }),
-      );
+      toast.success(i18n.t('admin.toast.dataPurged', { n: data.total }));
       setAllOpen(false);
       setConfirmText('');
       void utils.invalidate();

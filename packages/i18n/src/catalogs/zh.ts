@@ -135,7 +135,7 @@ export const zh = {
   'ops.purge.cascadeTitle': '会连带删除挂在下面的订单',
   'ops.purge.cascadeBody': '删除这张采购单会同时删掉挂在它下面的 {n} 张订单。删除后无法恢复。',
   'ops.audit.allScopes': '全部范围',
-  'ops.audit.inputs': '入参',
+  'ops.audit.inputs': '输入内容',
   'ops.price.howTitle': '这张表怎么看',
   'ops.price.howBody':
     '全工作区近 30 天的价格观测。最后一列是相对 30 日均价的变化——绿色更便宜，红色是涨价。订单预算按上次买入价计算；7 日和 30 日均价用来看价格的走势。',
@@ -145,7 +145,7 @@ export const zh = {
   'ops.maint.superOnlyBody': '维护操作会永久删除数据，只有超级管理员能用这一节。',
   'ops.maint.targetedTitle': '删除某一张测试订单或采购单',
   'ops.maint.targetedBody':
-    '当测试数据和真实数据在同一天时用这个。浏览列表、挑出测试的那张订单或采购单、看清会连带删掉什么，再提交。真实用户的订单不会被动。',
+    '当测试数据和真实数据在同一天时用这个。浏览列表、挑出测试的那张订单或采购单、看清会连带删掉什么，再确认。真实用户的订单不受影响。',
   'ops.maint.resetToday': '重置今天',
   'ops.maint.resetDateTitle': '重置指定日期',
   'ops.maint.resetDateBody': '范围和上面一样，只是换一天。在下面选日期。',
@@ -154,7 +154,8 @@ export const zh = {
   'ops.maint.wipeBody':
     '下面这个按钮会删掉这个工作区产生过的每一条事件、采购单、订单和通知（包括还没发出的通知）——不分日期。只在需要彻底重来时使用。',
   'ops.maint.purgeAllTitle': '清除全部测试数据',
-  'ops.maint.purgeAllBody': '第一步预览行数。第二步在你输入工作区标识确认之后才真正删除。',
+  'ops.maint.purgeAllBody':
+    '第一步先看会删掉多少条记录。第二步在你输入工作区标识确认之后才真正删除。',
   'ops.maint.previewEverything': '预览全部',
   'ops.maint.resetSheetTitle': '重置 {date}',
   'ops.maint.resetSheetBody': '先看清会删掉什么，再确认。',
@@ -221,19 +222,19 @@ export const zh = {
   'people.mirrorRolesHint':
     '打开（默认）时，这位成员在 {store} 的每个门店级角色都会在目标门店照样建一份，角色保持不变。关掉则该成员在新门店没有任何角色——适合调动同时伴随升降职的情况。',
   'people.transferWhatTitle': '这个操作会做什么',
-  'people.transferWhatIntro': '在一个事务里原子完成：',
+  'people.transferWhatIntro': '一次完成：',
   'people.transferWhatAdded': '把 {name} 加入目标门店',
   'people.transferWhatMirrored': '在目标门店重建该成员在来源门店的门店级角色分配',
   'people.transferWhatNoRoles':
     '目标门店不建任何角色：调过去后该成员在那里没有任何权限，需要再为其授予角色',
   'people.transferWhatRemoved': '移除该成员在 {store} 的分配、角色和按店权限设置',
-  'people.transferWhatOutro': '该成员所属的其他门店不受影响。任何一步失败，整个调动都会回滚。',
+  'people.transferWhatOutro': '该成员所属的其他门店不受影响。中途出错的话，什么都不会改。',
   'people.scopeGlobal': '全局',
   'people.overridesHowTitle': '这里怎么用',
   'people.overridesHowGlobal':
     '每一行显示角色本身会授予什么（灰色），并允许你针对这位成员单独覆盖：「允许」强制打开，「禁止」强制关闭。冲突时「禁止」优先。',
   'people.overridesHowStore':
-    '这个标签页里的覆盖只在 {store} 生效。角色推导出的基线在各门店是一样的；按店的「允许」/「禁止」让你在这一个地点单独微调这位成员能做什么。',
+    '这个标签页里的覆盖只在 {store} 生效。按角色得到的权限在各门店是一样的；按店的「允许」/「禁止」让你在这一个地点单独微调这位成员能做什么。',
   'people.toastRoleGranted': '角色已授予',
   'people.toastRoleAlready': '该角色已分配过',
   'people.grantRoleTitle': '授予角色',
@@ -254,7 +255,7 @@ export const zh = {
   'people.pickScopeFirst': '先在上面选一个范围，才能看到可用角色。',
   'ops.maint.resetTodayTitle': '重置今天的整条流程',
   'ops.maint.bulkDisabledBody':
-    '正式环境不允许重置今天、重置指定日期和清空整个工作区。上面仍可以删除你自己的单张测试订单或采购单。',
+    '重置今天、重置指定日期和清空整个工作区已关闭。上面仍可以删除你自己的单张测试订单或采购单。',
   'ops.maint.bulkDisabledTitle': '整体清理已关闭',
   'ops.maint.resetTodayBody':
     '删掉日期为 {date} 的每一条订单、采购单、配送、通知和价格历史——不管是谁创建的；这些订单所在的采购单、这些采购单里的订单即使在别的日期也一起删掉。目录和成员不动。只在你确定今天没有真实用户数据时使用。',
@@ -333,16 +334,16 @@ export const zh = {
   'ops.purge.kind.other': '其他',
   'ops.maint.confirmResetBody': '输入日期 {date} 确认。删除后无法恢复。',
   'ops.maint.confirmResetLabel': '要重置的日期',
-  'ops.purge.deleteRows': '删除 {n} 行',
+  'ops.purge.deleteRows': '删除 {n} 条记录',
   'ops.purge.counting': '正在计算…',
-  'ops.purge.rowsWouldBeDeleted': '将删除 {n} 行',
+  'ops.purge.rowsWouldBeDeleted': '将删除 {n} 条记录',
   'ops.price.avg7d': '7 天均价',
   'ops.price.avg30d': '30 天均价',
   'ops.price.observations': '{n} 次记录',
   'ops.maint.resetting': '正在重置…',
   'ops.maint.nothingToDelete': '没有可删除的数据',
   'ops.maint.alreadyClean': '{date} 没有数据，无需清理。',
-  'ops.maint.rowsFromDate': '{date} 的 {n} 行数据',
+  'ops.maint.rowsFromDate': '{date} 的 {n} 条记录',
   'people.memberStatus.suspended': '已停用',
   'people.memberStatus.invited': '已邀请',
   'people.revokeRoleConfirm': '从 {name} 撤销「{role}」？',
@@ -390,7 +391,7 @@ export const zh = {
   'catalog.category.newButton': '新建分类',
   'catalog.supplier.newButton': '新建供应商',
   'people.builtInLocked': '等级 {rank}（内置，锁定）',
-  'people.builtInRankBody': '内置角色的等级不能改——它是权限阶梯的锚点。自定义角色可以任选等级。',
+  'people.builtInRankBody': '内置角色的等级不能改。自定义角色可以任选等级。',
   'people.rankOutranksYou': '你的等级 ≤ 它',
   'people.roleFallback': '角色',
   'people.rankLine': '等级 {rank}',
@@ -450,7 +451,7 @@ export const zh = {
   'order.errors.qtyTooLarge': '一项的数量不能超过 999,999.999。',
   'order.errors.extraNoteTooLong': '备注太长了（最多 200 个字）。',
   'run.errors.cannotPlan': '你没有安排采购的权限。需要的话找管理员开通。',
-  'common.errors.controlCharacters': '名称不能包含控制字符（如制表符或换行）',
+  'common.errors.controlCharacters': '名称里不能有换行、制表符等不可见字符',
   'common.errors.validation': '输入无效——请检查高亮的字段',
   'common.networkError': '网络错误——请检查连接',
   'common.offlineNotSaved': '没有网络，这次修改没有保存。联网后请再试一次。',
@@ -614,8 +615,8 @@ export const zh = {
 
   // ── 5. Auth errors ─────────────────────────────────────────────
   'auth.errors.botTokenMissing': 'Telegram 登录还没有设置好，请告诉平台管理员。',
-  'auth.errors.invalidInitData': 'Telegram 会话无效——请重新打开 app',
-  'auth.errors.invalidRefresh': '会话已过期——请重新登录',
+  'auth.errors.invalidInitData': 'Telegram 登录校验失败——请重新打开应用',
+  'auth.errors.invalidRefresh': '登录已过期——请重新登录',
   'auth.errors.refreshReplayDetected': '检测到可疑登录活动——此账户所有设备已退出，请重新登录。',
   'auth.errors.refreshChainSwitched':
     '这个账号已在别处切换到另一个工作区，这里的登录随之结束。请重新打开。',
@@ -805,7 +806,7 @@ export const zh = {
   'admin.workspace.name': '名称',
   'admin.workspace.yourRole': '我的角色',
   'admin.workspace.telegram': 'Telegram',
-  'auth.errors.sessionStale': '会话已过期——请刷新',
+  'auth.errors.sessionStale': '账号信息已变更——请刷新',
   'auth.errors.storeArchived': '这家门店已归档，请换一家门店。',
   'auth.errors.storeForbidden': '你没有被分配到这家门店。换一家门店，或者找管理员把你加进来。',
   'auth.errors.notAssignedToStore': '你没有被分配到这家门店。换一家门店，或者找管理员把你加进来。',
@@ -848,9 +849,8 @@ export const zh = {
   'admin.errors.sessionActedOnByOthers':
     '其他人已经处理过这张订单（审核、接手审核或拒绝），不能当测试数据删除。',
   'admin.errors.bulkPurgeDisabledInProduction':
-    '正式环境不允许整体清理（重置今天、重置指定日期、清空整个工作区）。删除单张订单或单张采购单不受影响。',
-  'admin.errors.purgeGuardWaiverDisabledInProduction':
-    '正式环境不允许跳过「别人处理过的单不能删」这条检查。',
+    '整体清理（重置今天、重置指定日期、清空整个工作区）已关闭。删除单张订单或单张采购单不受影响。',
+  'admin.errors.purgeGuardWaiverDisabledInProduction': '「别人处理过的单不能删」这条检查不能跳过。',
   'admin.errors.purgeHasSettlements':
     '这些日期里有日结记录。日结的修改记录按规定不能删除，所以无法清理',
   'admin.errors.runNotFound': '找不到这张采购单，可能刚被删除。刷新看看。',
@@ -906,7 +906,7 @@ export const zh = {
   'admin.toast.sessionDeleted': '已删除订单——共 {n} 条记录',
   'admin.toast.runDeleted': '已删除采购单——共 {n} 条记录',
   'admin.toast.dateReset': '已重置 {date}：删除 {n} 条记录',
-  'admin.toast.dataPurged': '已清除 {n} 条记录，涉及 {tables} 张表',
+  'admin.toast.dataPurged': '已删除 {n} 条记录',
 
   // ── 7. Upload errors ───────────────────────────────────────────
   'upload.errors.notConfigured': '现在不能上传照片。先不带照片保存，或者告诉管理员。',

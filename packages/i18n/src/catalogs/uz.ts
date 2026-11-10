@@ -161,7 +161,7 @@ export const uz = {
     'Texnik xizmat amallari maʼlumotni butunlay oʻchirib tashlashi mumkin. Bu boʻlimdan faqat superadminlar foydalanadi.',
   'ops.maint.targetedTitle': 'Muayyan test buyurtmasi yoki xaridini oʻchirish',
   'ops.maint.targetedBody':
-    'Test va haqiqiy maʼlumot bir kunga tushganda ishlatiladi. Roʻyxatni koʻrib, test buyurtmasi yoki xaridini tanlang, nima kaskad oʻchishini koʻring, keyin tasdiqlang. Haqiqiy foydalanuvchilarning buyurtmalariga tegilmaydi.',
+    'Test va haqiqiy maʼlumot bir kunga tushganda ishlatiladi. Roʻyxatni koʻrib, test buyurtmasi yoki xaridini tanlang, u bilan birga nima oʻchishini koʻring, keyin tasdiqlang. Haqiqiy foydalanuvchilarning buyurtmalariga tegilmaydi.',
   'ops.maint.resetToday': 'Bugungi maʼlumotlarni tozalash',
   'ops.maint.resetDateTitle': 'Muayyan kunni tozalash',
   'ops.maint.resetDateBody': 'Qamrov yuqoridagidek, faqat kun boshqa. Pastda kunni tanlang.',
@@ -171,7 +171,7 @@ export const uz = {
     'Pastdagi tugma bu ish maydoni yaratgan barcha hodisa, xarid, buyurtma va bildirishnomalarni (hali yuborilmaganlarini ham) oʻchiradi — kundan qatʼi nazar. Faqat noldan boshlash kerak boʻlganda ishlating.',
   'ops.maint.purgeAllTitle': 'BARCHA test maʼlumotlarini tozalash',
   'ops.maint.purgeAllBody':
-    '1-qadam qatorlar sonini koʻrsatadi. 2-qadam siz ish maydoni identifikatorini kiritganingizdan keyin oʻchiradi.',
+    '1-qadam nechta yozuv oʻchishini koʻrsatadi. 2-qadam siz ish maydoni identifikatorini kiritganingizdan keyin oʻchiradi.',
   'ops.maint.previewEverything': 'Hammasini oldindan koʻrish',
   'ops.maint.resetSheetTitle': '{date} maʼlumotlarini tozalash',
   'ops.maint.resetSheetBody': 'Nima oʻchirilishini koʻrib chiqing, keyin tasdiqlang.',
@@ -244,7 +244,7 @@ export const uz = {
   'people.mirrorRolesHint':
     'Yoqilganda (standart), bu aʼzoning {store} dagi har bir doʻkon darajasidagi roli maqsadli doʻkonda ham yaratiladi — roli saqlanadi. Oʻchirsangiz, yangi joyda roli boʻlmaydi; bu oʻtkazish lavozim oʻzgarishi bilan birga kelganda qulay.',
   'people.transferWhatTitle': 'Bu nima qiladi',
-  'people.transferWhatIntro': 'Bitta tranzaksiyada atomar bajariladi:',
+  'people.transferWhatIntro': 'Hammasi bitta qadamda:',
   'people.transferWhatAdded': '{name} maqsadli doʻkonga qoʻshiladi',
   'people.transferWhatMirrored':
     'manba doʻkondagi doʻkon darajasidagi rol biriktirmalari maqsadli doʻkonda qayta yaratiladi',
@@ -253,7 +253,7 @@ export const uz = {
   'people.transferWhatRemoved':
     '{store} dagi tayinlovi, rollari va doʻkon boʻyicha alohida sozlamalari olib tashlanadi',
   'people.transferWhatOutro':
-    'U aʼzo boʻlgan boshqa doʻkonlarga tegilmaydi. Biror qadam bajarilmasa, butun oʻtkazish qaytariladi.',
+    'U aʼzo boʻlgan boshqa doʻkonlarga tegilmaydi. Biror qadam bajarilmasa, hech narsa oʻzgarmaydi.',
   'people.scopeGlobal': 'Umumiy',
   'people.overridesHowTitle': 'Bu qanday ishlaydi',
   'people.overridesHowGlobal':
@@ -366,16 +366,16 @@ export const uz = {
   'ops.maint.confirmResetBody':
     'Tasdiqlash uchun {date} sanasini kiriting. Buni ortga qaytarib boʻlmaydi.',
   'ops.maint.confirmResetLabel': 'Tozalanadigan sana',
-  'ops.purge.deleteRows': '{n} qatorni oʻchirish',
+  'ops.purge.deleteRows': '{n} ta yozuvni oʻchirish',
   'ops.purge.counting': 'Hisoblanmoqda…',
-  'ops.purge.rowsWouldBeDeleted': '{n} qator oʻchiriladi',
+  'ops.purge.rowsWouldBeDeleted': '{n} ta yozuv oʻchiriladi',
   'ops.price.avg7d': '7 kunlik oʻrtacha',
   'ops.price.avg30d': '30 kunlik oʻrtacha',
   'ops.price.observations': '{n} ta yozuv',
   'ops.maint.resetting': 'Tozalanmoqda…',
   'ops.maint.nothingToDelete': 'Oʻchiradigan narsa yoʻq',
   'ops.maint.alreadyClean': '{date} uchun maʼlumot yoʻq — allaqachon toza.',
-  'ops.maint.rowsFromDate': '{date} dan {n} qator',
+  'ops.maint.rowsFromDate': '{date} dan {n} ta yozuv',
   'people.memberStatus.suspended': 'Toʻxtatilgan',
   'people.memberStatus.invited': 'Taklif qilingan',
   'people.revokeRoleConfirm': '{name} dan «{role}» rolini olib tashlaysizmi?',
@@ -424,7 +424,7 @@ export const uz = {
   'catalog.supplier.newButton': 'Yangi yetkazib beruvchi',
   'people.builtInLocked': 'Daraja {rank} (ichki, qulflangan)',
   'people.builtInRankBody':
-    'Ichki rolning darajasi oʻzgartirilmaydi — u ruxsatlar zinapoyasining tayanchi. Maxsus rollarda darajani oʻzingiz tanlaysiz.',
+    'Ichki rolning darajasi oʻzgartirilmaydi. Maxsus rollarda darajani oʻzingiz tanlaysiz.',
   'people.rankOutranksYou': 'sizning darajangiz ≤ bundan',
   'people.roleFallback': 'Rol',
   'people.rankLine': 'daraja {rank}',
@@ -490,7 +490,7 @@ export const uz = {
   'run.errors.cannotPlan':
     'Sizda xarid rejalashtirish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
   'common.errors.controlCharacters':
-    'Nomda boshqaruv belgilari (tabulyatsiya, yangi qator) boʻlishi mumkin emas',
+    'Nomda yangi qator, tabulyatsiya va boshqa koʻrinmas belgilar boʻlishi mumkin emas',
   'common.errors.validation': 'Notoʻgʻri kiritish — belgilangan maydonlarni tekshiring',
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
   'common.offlineNotSaved':
@@ -672,8 +672,9 @@ export const uz = {
   // ── 5. Auth errors ─────────────────────────────────────────────
   'auth.errors.botTokenMissing':
     'Telegram orqali kirish hali sozlanmagan. Platforma administratoriga xabar bering.',
-  'auth.errors.invalidInitData': 'Telegram sessiyasi notoʻgʻri — ilovani qayta oching',
-  'auth.errors.invalidRefresh': 'Sessiya muddati tugagan — qaytadan kiring',
+  'auth.errors.invalidInitData':
+    'Telegram orqali kirish tekshiruvdan oʻtmadi — ilovani qayta oching',
+  'auth.errors.invalidRefresh': 'Kirish muddati tugagan — qaytadan kiring',
   'auth.errors.refreshReplayDetected':
     'Shubhali kirish faolligi aniqlandi — bu hisobning barcha qurilmalaridan chiqarildi. Qaytadan kiring.',
   'auth.errors.refreshChainSwitched':
@@ -895,7 +896,7 @@ export const uz = {
   'admin.workspace.name': 'Nomi',
   'admin.workspace.yourRole': 'Sizning rolingiz',
   'admin.workspace.telegram': 'Telegram',
-  'auth.errors.sessionStale': 'Sessiya eskirgan — sahifani yangilang',
+  'auth.errors.sessionStale': 'Hisob maʼlumotlari oʻzgardi — sahifani yangilang',
   'auth.errors.storeArchived': 'Bu doʻkon arxivlangan. Boshqa doʻkonni tanlang.',
   'auth.errors.storeForbidden':
     'Siz bu doʻkonga biriktirilmagansiz. Boshqa doʻkonni tanlang yoki administratordan sizni qoʻshishni soʻrang.',
@@ -1019,7 +1020,7 @@ export const uz = {
   'admin.toast.sessionDeleted': 'Buyurtma oʻchirildi — {n} ta yozuv',
   'admin.toast.runDeleted': 'Xarid oʻchirildi — {n} ta yozuv',
   'admin.toast.dateReset': '{date} tozalandi: {n} ta yozuv oʻchirildi',
-  'admin.toast.dataPurged': '{n} ta yozuv {tables} ta jadvaldan tozalandi',
+  'admin.toast.dataPurged': '{n} ta yozuv oʻchirildi',
 
   // ── 7. Upload errors ───────────────────────────────────────────
   'upload.errors.notConfigured':

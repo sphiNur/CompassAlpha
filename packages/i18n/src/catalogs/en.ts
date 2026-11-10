@@ -187,7 +187,7 @@ export const en = {
     'Maintenance actions can permanently delete data. Only super admins can use this section.',
   'ops.maint.targetedTitle': 'Delete a specific test order or run',
   'ops.maint.targetedBody':
-    "Use this when test data and real data exist on the same day. Browse a list, pick the test order or run, see exactly what gets cascade-deleted, then commit. Real users' orders are NOT touched.",
+    "Use this when test data and real data exist on the same day. Browse a list, pick the test order or run, see exactly what will be deleted with it, then confirm. Real users' orders are NOT touched.",
   'ops.maint.resetToday': 'Reset today',
   'ops.maint.resetDateTitle': 'Reset a specific date',
   'ops.maint.resetDateBody': 'Same scope as above, different day. Pick the date below.',
@@ -197,7 +197,7 @@ export const en = {
     'The button below deletes every event, run, order and notification (including ones not sent yet) this workspace has ever produced — regardless of date. Use only if you need a clean-slate restart.',
   'ops.maint.purgeAllTitle': 'Purge ALL test data',
   'ops.maint.purgeAllBody':
-    'Step 1 previews the row counts. Step 2 deletes after you type the workspace code to confirm.',
+    'Step 1 shows how many records would be deleted. Step 2 deletes after you type the workspace code to confirm.',
   'ops.maint.previewEverything': 'Preview everything',
   'ops.maint.resetSheetTitle': 'Reset {date}',
   'ops.maint.resetSheetBody': 'Review what will be deleted, then confirm.',
@@ -277,7 +277,7 @@ export const en = {
   'people.mirrorRolesHint':
     'When on (default), every per-store role this member has in {store} is duplicated in the destination so they keep the same role. Turn off to give them no role at the new store — useful when the move also implies a promotion or demotion.',
   'people.transferWhatTitle': 'What this does',
-  'people.transferWhatIntro': 'Atomic in one transaction:',
+  'people.transferWhatIntro': 'All in one step:',
   'people.transferWhatAdded': '{name} is added to the destination store',
   'people.transferWhatMirrored':
     'their per-store role assignments in the source are recreated in the destination',
@@ -286,13 +286,13 @@ export const en = {
   'people.transferWhatRemoved':
     'their assignment, roles and per-store permission settings in {store} are removed',
   'people.transferWhatOutro':
-    'Other stores they belong to are untouched. If anything fails, the whole transfer rolls back.',
+    'Other stores they belong to are untouched. If anything fails, nothing is changed.',
   'people.scopeGlobal': 'Global',
   'people.overridesHowTitle': 'How this works',
   'people.overridesHowGlobal':
     'Each row shows what the role would grant (gray) and lets you override it for this member: "Allow" forces it on, "Deny" forces it off. "Deny" always wins on conflict.',
   'people.overridesHowStore':
-    'Overrides on this tab apply only in {store}. The role-derived baseline is the same across stores; per-store "Allow" / "Deny" lets you fine-tune what this member can do in this location specifically.',
+    'Overrides on this tab apply only in {store}. Permissions from roles are the same in every store; per-store "Allow" / "Deny" lets you fine-tune what this member can do in this location specifically.',
   'people.toastRoleGranted': 'Role granted',
   'people.toastRoleAlready': 'Role already assigned',
   'people.grantRoleTitle': 'Grant role',
@@ -398,16 +398,17 @@ export const en = {
   'ops.purge.kind.other': 'Other',
   'ops.maint.confirmResetBody': 'Type the date {date} to confirm. This cannot be undone.',
   'ops.maint.confirmResetLabel': 'Date to reset',
-  'ops.purge.deleteRows': 'Delete {n, plural, one {# row} other {# rows}}',
+  'ops.purge.deleteRows': 'Delete {n, plural, one {# record} other {# records}}',
   'ops.purge.counting': 'Counting…',
-  'ops.purge.rowsWouldBeDeleted': '{n, plural, one {# row would} other {# rows would}} be deleted',
+  'ops.purge.rowsWouldBeDeleted':
+    '{n, plural, one {# record would} other {# records would}} be deleted',
   'ops.price.avg7d': '7-day avg',
   'ops.price.avg30d': '30-day avg',
   'ops.price.observations': '{n, plural, one {# record} other {# records}}',
   'ops.maint.resetting': 'Resetting…',
   'ops.maint.nothingToDelete': 'Nothing to delete',
   'ops.maint.alreadyClean': 'Nothing on {date} — already clean.',
-  'ops.maint.rowsFromDate': '{n, plural, one {# row} other {# rows}} from {date}',
+  'ops.maint.rowsFromDate': '{n, plural, one {# record} other {# records}} from {date}',
   'people.memberStatus.suspended': 'Suspended',
   'people.memberStatus.invited': 'Invited',
   'people.revokeRoleConfirm': 'Revoke "{role}" from {name}?',
@@ -465,7 +466,7 @@ export const en = {
   'catalog.supplier.newButton': 'New supplier',
   'people.builtInLocked': 'Level {rank} (built-in, locked)',
   'people.builtInRankBody':
-    "A built-in role's level can't be changed — it anchors the permission ladder. Custom roles let you pick any level.",
+    "A built-in role's level can't be changed. Custom roles let you pick any level.",
   'people.rankOutranksYou': 'your level ≤ this',
   'people.roleFallback': 'Role',
   'people.rankLine': 'level {rank}',
@@ -552,7 +553,7 @@ export const en = {
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchases. Ask an admin for access.",
   'common.errors.controlCharacters':
-    'Names cannot contain control characters (such as tabs or line breaks)',
+    'Names cannot contain line breaks, tabs or other hidden characters',
   'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────
@@ -726,8 +727,8 @@ export const en = {
   // ── 5. Auth errors (server-thrown TRPCError messages) ──────────
   'auth.errors.botTokenMissing':
     'Sign-in through Telegram is not set up yet. Tell the platform admin.',
-  'auth.errors.invalidInitData': 'Telegram session is invalid — please re-open the app',
-  'auth.errors.invalidRefresh': 'Session expired — please sign in again',
+  'auth.errors.invalidInitData': 'Telegram sign-in could not be verified — please reopen the app',
+  'auth.errors.invalidRefresh': 'Your sign-in has expired — please sign in again',
   'auth.errors.refreshReplayDetected':
     'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
   'auth.errors.refreshChainSwitched':
@@ -963,7 +964,7 @@ export const en = {
   'admin.workspace.name': 'Name',
   'admin.workspace.yourRole': 'Your role',
   'admin.workspace.telegram': 'Telegram',
-  'auth.errors.sessionStale': 'Your session is out of date — please reload',
+  'auth.errors.sessionStale': 'Your account has changed — please reload',
   'auth.errors.storeArchived': 'This store has been archived. Pick another store.',
   'auth.errors.storeForbidden':
     'You are not assigned to this store. Pick another store, or ask an admin to add you.',
@@ -1086,8 +1087,7 @@ export const en = {
   'admin.toast.sessionDeleted': 'Deleted order — {n, plural, one {# row} other {# rows}} removed',
   'admin.toast.runDeleted': 'Deleted run — {n, plural, one {# row} other {# rows}} removed',
   'admin.toast.dateReset': 'Reset {date}: {n, plural, one {# row} other {# rows}} deleted',
-  'admin.toast.dataPurged':
-    'Purged {n, plural, one {# row} other {# rows}} across {tables, plural, one {# table} other {# tables}}',
+  'admin.toast.dataPurged': 'Deleted {n, plural, one {# record} other {# records}}',
 
   // ── 7. Upload errors ───────────────────────────────────────────
   'upload.errors.notConfigured':
