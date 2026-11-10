@@ -33,9 +33,8 @@ import { callerFor } from './helpers/ctx';
 const DAY = 24 * 60 * 60 * 1000;
 
 describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
-  let orgId = '';
-  let memberId = '';
   let userId = '';
+  const orgIds: string[] = [];
 
   beforeAll(async () => {
     const db = getDb(undefined, { system: 'maintenance' });
@@ -49,6 +48,22 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
       .returning();
     userId = user!.id;
     await db.insert(s.platformAdmins).values({ userId, note: 'subscription test' });
+  });
+
+  afterAll(async () => {
+    if (!userId) return;
+    const db = getDb(undefined, { system: 'maintenance' });
+    for (const id of orgIds) await db.delete(s.organizations).where(eq(s.organizations.id, id));
+    await db.delete(s.users).where(eq(s.users.id, userId));
+  });
+
+  /**
+   * A tenant of the test's own, as sign-up makes one, owned by the platform
+   * admin (review TEST2-09). The tests change its plan and status, and
+   * used to share one, so each depended on what the one before had left.
+   */
+  async function newTenant(): Promise<{ orgId: string; session: SessionContext }> {
+    const db = getDb(undefined, { system: 'maintenance' });
     const created = await withSystemContext(db, 'auth', (tx) =>
       provisionOrganization(tx, {
         name: 'Subscription Test Org',
@@ -56,28 +71,23 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
         ownerUserId: userId,
       }),
     );
-    orgId = created.orgId;
-    memberId = created.ownerMemberId!;
-  });
-
-  afterAll(async () => {
-    if (!orgId) return;
-    const db = getDb(undefined, { system: 'maintenance' });
-    await db.delete(s.organizations).where(eq(s.organizations.id, orgId));
-    await db.delete(s.users).where(eq(s.users.id, userId));
-  });
-
-  const session = (): SessionContext => ({
-    userId,
-    memberId,
-    orgId,
-    writeAccess: true,
-    orgTimezone: 'UTC',
-    permissions: new Set(['users.manage', 'org.admin']),
-    roleSlugs: new Set(['admin']),
-  });
+    orgIds.push(created.orgId);
+    return {
+      orgId: created.orgId,
+      session: {
+        userId,
+        memberId: created.ownerMemberId!,
+        orgId: created.orgId,
+        writeAccess: true,
+        orgTimezone: 'UTC',
+        permissions: new Set(['users.manage', 'org.admin']),
+        roleSlugs: new Set(['admin']),
+      },
+    };
+  }
 
   test('a new tenant receives a starter trial', async () => {
+    const { orgId } = await newTenant();
     const db = getDb();
     const state = await withOrgContext(db, orgId, (tx) => readSubscriptionState(tx, orgId));
     expect(state.planCode).toBe('starter');
@@ -92,6 +102,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
   });
 
   test('the plan store limit is enforced', async () => {
+    const { orgId } = await newTenant();
     const db = getDb();
     await withOrgContext(db, orgId, async (tx) => {
       await assertCanAddStore(tx, orgId);
@@ -106,7 +117,8 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
   });
 
   test('platform admin can change plan, suspend and restore access', async () => {
-    const suspended = await callerFor(session()).platform.updateSubscription({
+    const { orgId, session } = await newTenant();
+    const suspended = await callerFor(session).platform.updateSubscription({
       orgId,
       planCode: 'growth',
       status: 'suspended',
@@ -124,7 +136,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
     );
     expect(stored?.planCode).toBe('growth');
 
-    const active = await callerFor(session()).platform.updateSubscription({
+    const active = await callerFor(session).platform.updateSubscription({
       orgId,
       planCode: 'pro',
       status: 'active',
@@ -135,6 +147,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
   });
 
   test('a read-only tenant cannot add a store', async () => {
+    const { orgId, session } = await newTenant();
     const db = getDb();
     await withSystemContext(db, 'maintenance', (tx) =>
       tx
@@ -146,13 +159,14 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
       'subscription.errors.readOnly',
     );
 
-    const readOnlySession: SessionContext = { ...session(), writeAccess: false };
+    const readOnlySession: SessionContext = { ...session, writeAccess: false };
     await expect(
       callerFor(readOnlySession).admin.storeCreate({ name: 'Blocked store' }),
     ).rejects.toThrow('subscription.errors.readOnly');
   });
 
   test('a trial that has ended turns read-only once its grace runs out', async () => {
+    const { orgId } = await newTenant();
     const db = getDb();
     const now = Date.now();
     const setTrial = (trialEndsAt: Date, graceEndsAt: Date | null) =>
