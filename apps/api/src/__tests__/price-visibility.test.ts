@@ -38,6 +38,7 @@ import { loadSession, type RequestContext, type SessionContext } from '../trpc/c
 import { appendEvents } from '../services/eventStore';
 import { projectRun } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -165,7 +166,7 @@ beforeAll(async () => {
     n += 1;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Prices ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Prices ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     for (const [roleId, storeId] of bindings) {

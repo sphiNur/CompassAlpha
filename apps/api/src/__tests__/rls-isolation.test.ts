@@ -43,6 +43,7 @@ import { eq, sql } from 'drizzle-orm';
 import { closeDb, getDb, schema as s, withOrgContext } from '@compass/db';
 import { pgErrorCode } from '../services/pgErrors';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 interface Fixture {
   orgA: { id: string };
@@ -130,11 +131,11 @@ beforeAll(async () => {
   // --- Users + members ---
   const [userA] = await db
     .insert(s.users)
-    .values({ displayName: 'A', tgUserId: BigInt(`8${Date.now()}1`.slice(-12)) })
+    .values({ displayName: 'A', tgUserId: freshTgId() })
     .returning();
   const [userB] = await db
     .insert(s.users)
-    .values({ displayName: 'B', tgUserId: BigInt(`8${Date.now()}2`.slice(-12)) })
+    .values({ displayName: 'B', tgUserId: freshTgId() })
     .returning();
   const [memA] = await db
     .insert(s.members)

@@ -19,6 +19,7 @@ import { setFaceEngineForTests } from '../services/face';
 import { signLivenessToken } from '../services/face/liveness';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 describe('attendance copy', () => {
   test('every attendance error has a sentence in every language', async () => {
@@ -262,7 +263,6 @@ beforeAll(async () => {
   stubFaces();
   const db = getDb(undefined, { system: 'maintenance' });
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 100_000)}`;
-  const tg = (n: number) => BigInt(`${Date.now()}`.slice(-10) + String(n).padStart(2, '0'));
   const [org] = await db
     .insert(s.organizations)
     .values({
@@ -272,10 +272,10 @@ beforeAll(async () => {
       timezone: TZ,
     })
     .returning();
-  const person = async (name: string, n: number) => {
+  const person = async (name: string) => {
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: name, tgUserId: tg(n) })
+      .values({ displayName: name, tgUserId: freshTgId() })
       .returning();
     const [m] = await db
       .insert(s.members)
@@ -283,10 +283,10 @@ beforeAll(async () => {
       .returning();
     return { userId: u!.id, memberId: m!.id };
   };
-  const mgr = await person('Att Manager', 1);
-  const staff = await person('Att Staff', 2);
-  const outsider = await person('Att Outsider', 3);
-  const colleague = await person('Att Colleague', 4);
+  const mgr = await person('Att Manager');
+  const staff = await person('Att Staff');
+  const outsider = await person('Att Outsider');
+  const colleague = await person('Att Colleague');
   const [store] = await db
     .insert(s.stores)
     .values({ orgId: org!.id, name: 'Att Store' })
@@ -1545,7 +1545,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       .returning();
     const [adminUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Att Admin', tgUserId: BigInt(`${Date.now()}`.slice(-10) + '99') })
+      .values({ displayName: 'Att Admin', tgUserId: freshTgId() })
       .returning();
     const [adminMember] = await db
       .insert(s.members)

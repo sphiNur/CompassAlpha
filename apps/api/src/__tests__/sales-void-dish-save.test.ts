@@ -18,6 +18,7 @@ import { loadSession, type RequestContext, type SessionContext } from '../trpc/c
 import { buildSaleReversal, SALE_VOID_REASON, SALE_VOID_SOURCE_TYPE } from '../trpc/routers/sales';
 import { duplicateIngredientSkuIds } from '../trpc/routers/dishes';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -174,7 +175,7 @@ async function makeStore(name: string): Promise<string> {
 /** A member holding `roleId` in one store, or organisation-wide when `storeId` is null. */
 async function memberCaller(roleId: string, storeId: string | null) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = BigInt(`${fix!.suffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
+  const tgUserId = freshTgId();
   const [user] = await db.insert(s.users).values({ displayName: 'Void', tgUserId }).returning();
   const [member] = await db
     .insert(s.members)

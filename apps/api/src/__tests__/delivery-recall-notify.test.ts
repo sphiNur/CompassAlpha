@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { emptyRunState, type RunEvent } from '@compass/domain/run';
 import { dispatchRunEventNotifications } from '../services/notifyForEvent';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
   test('deliver → recall → deliver again tells the store three times', async () => {
@@ -31,7 +32,7 @@ describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
     const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `D-${suffix.slice(-6)}` }).returning();
     const [user] = await db
       .insert(s.users)
-      .values({ displayName: 'Store staff', tgUserId: BigInt(`${suffix}1`.slice(-12)) })
+      .values({ displayName: 'Store staff', tgUserId: freshTgId() })
       .returning();
     const [member] = await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' }).returning();
     await db

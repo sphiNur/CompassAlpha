@@ -6,7 +6,6 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import {
   getDb,
@@ -20,27 +19,9 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
+import { signInitData, freshTgId } from './helpers/telegram';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
-
-function signInitData(tgUserId: bigint, firstName = 'Tenant User'): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({
-      id: Number(tgUserId),
-      first_name: firstName,
-      username: `tenant${tgUserId}`,
-    }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_BOT_TOKEN!).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
-}
 
 function caller(session: SessionContext | null) {
   const db = getDb();
@@ -60,8 +41,6 @@ function caller(session: SessionContext | null) {
   };
   return appRouter.createCaller(ctx);
 }
-
-const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000));
 
 describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   const cleanupOrgIds: string[] = [];

@@ -21,6 +21,7 @@ import { appRouter } from '../trpc/router';
 import { auditAdmin } from '../trpc/routers/admin';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -37,8 +38,6 @@ type Caller = ReturnType<typeof appRouter.createCaller>;
  * A Telegram id no other test file hands out: theirs stay below 10^12
  * (a time-based id cut to 12 digits collided with one of them in CI).
  */
-const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
-
 function callerFor(db: Db, session: SessionContext): Caller {
   const ctx: RequestContext = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

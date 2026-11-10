@@ -19,6 +19,7 @@ import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { and, eq } from 'drizzle-orm';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -100,7 +101,7 @@ beforeAll(async () => {
     n += 1;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Medium ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Medium ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });

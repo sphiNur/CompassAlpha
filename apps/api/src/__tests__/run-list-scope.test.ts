@@ -16,6 +16,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -90,7 +91,7 @@ beforeAll(async () => {
     n += 1;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Run list ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Run list ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db
       .insert(s.members)

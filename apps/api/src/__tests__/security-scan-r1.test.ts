@@ -36,6 +36,7 @@ import { createContext, loadSession, type RequestContext, type SessionContext } 
 import { isLocalDevPeer, isLocalPeerAddress } from '../services/devLocality';
 import { hub, WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED } from '../realtime/hub';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 async function errorOf(
   fn: () => Promise<unknown>,
@@ -280,7 +281,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
 
   async function makeUser(displayName: string) {
     n += 1;
-    const tgUserId = BigInt(`${suffix}${n}`.slice(-13));
+    const tgUserId = freshTgId();
     const [u] = await db.insert(s.users).values({ displayName, tgUserId }).returning();
     userIds.push(u!.id);
     return { id: u!.id, tgUserId };

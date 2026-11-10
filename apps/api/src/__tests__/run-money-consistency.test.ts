@@ -32,6 +32,7 @@ import { appendEvents } from '../services/eventStore';
 import { pgConstraintName, pgErrorCode } from '../services/pgErrors';
 import { projectRun, receivedDelta } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {
@@ -121,7 +122,7 @@ async function buyerOrg(name: string) {
   }
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}71`.slice(-12)) })
+    .values({ displayName: 'Buyer', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)

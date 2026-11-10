@@ -17,6 +17,7 @@ import { loadSession, type RequestContext, type SessionContext } from '../trpc/c
 import { randomUUID } from 'node:crypto';
 import { pickExtension } from '../trpc/routers/upload';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -89,7 +90,7 @@ beforeAll(async () => {
   }
   const [u] = await db
     .insert(s.users)
-    .values({ displayName: 'Checks', tgUserId: BigInt(`${suffix}1`.slice(-12)) })
+    .values({ displayName: 'Checks', tgUserId: freshTgId() })
     .returning();
   const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: u!.id, status: 'active' }).returning();
   await db.insert(s.memberRoleBindings).values({ memberId: m!.id, roleId: role!.id, scopeType: 'global', scopeId: null });

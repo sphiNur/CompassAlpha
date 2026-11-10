@@ -14,6 +14,7 @@ import { logger } from '../infra/log';
 import { idempotencyRequestHash, idempotentMutation, router } from '../trpc/trpc';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 let session: SessionContext | null = null;
 let runs = 0;
@@ -67,7 +68,7 @@ beforeAll(async () => {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Idem', tgUserId: BigInt(`7${Date.now()}4`.slice(-12)) })
+    .values({ displayName: 'Idem', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)

@@ -16,6 +16,7 @@ import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { eq } from 'drizzle-orm';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -81,7 +82,7 @@ beforeAll(async () => {
     n += 1;
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Roles ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Roles ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
@@ -138,7 +139,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     await db.insert(s.rolePermissions).values({ roleId: night!.id, permissionKey: 'run.amend' });
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: 'DX-ADM-2 admin', tgUserId: BigInt(`4${tag}2`) })
+      .values({ displayName: 'DX-ADM-2 admin', tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
@@ -253,21 +254,21 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Other', code: `O-${tag.slice(-6)}` })
       .returning();
-    const person = async (name: string, n: number) => {
+    const person = async (name: string) => {
       const [u] = await db
         .insert(s.users)
-        .values({ displayName: name, tgUserId: BigInt(`7${tag}${n}`) })
+        .values({ displayName: name, tgUserId: freshTgId() })
         .returning();
       const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
       return { u: u!, m: m! };
     };
-    const boss = await person('ADM16 manager', 1);
+    const boss = await person('ADM16 manager');
     await db.insert(s.memberStoreAssignments).values({ memberId: boss.m.id, storeId, assignedBy: boss.u.id });
     await db
       .insert(s.memberRoleBindings)
       .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const both = await person('ADM16 both stores', 2);
-    const here = await person('ADM16 here only', 3);
+    const both = await person('ADM16 both stores');
+    const here = await person('ADM16 here only');
     for (const [who, sid] of [[both, storeId], [both, other!.id], [here, storeId]] as const) {
       await db.insert(s.memberStoreAssignments).values({ memberId: who.m.id, storeId: sid, assignedBy: boss.u.id });
       await db
@@ -284,10 +285,9 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
   });
   test('CMP-ADM-1: the member list gives each role its rank; the manager cannot revoke their own', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
-    const tag = `${Date.now()}`.slice(-9);
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: 'ADM1 manager', tgUserId: BigInt(`5${tag}1`) })
+      .values({ displayName: 'ADM1 manager', tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
@@ -311,21 +311,20 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
   });
   test('ADM-13: a store manager finds their own suspend in the audit log', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
-    const tag = `${Date.now()}`.slice(-9);
-    const person = async (name: string, n: number) => {
+    const person = async (name: string) => {
       const [u] = await db
         .insert(s.users)
-        .values({ displayName: name, tgUserId: BigInt(`6${tag}${n}`) })
+        .values({ displayName: name, tgUserId: freshTgId() })
         .returning();
       const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
       await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
       return { u: u!, m: m! };
     };
-    const boss = await person('ADM13 manager', 1);
+    const boss = await person('ADM13 manager');
     await db
       .insert(s.memberRoleBindings)
       .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const worker = await person('ADM13 staff', 2);
+    const worker = await person('ADM13 staff');
     await db
       .insert(s.memberRoleBindings)
       .values({ memberId: worker.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
@@ -371,7 +370,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .returning();
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: 'ADM23 staff', tgUserId: BigInt(`5${tag}1`) })
+      .values({ displayName: 'ADM23 staff', tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
@@ -434,7 +433,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const person = async (roleId: string, n: number) => {
       const [u] = await db
         .insert(s.users)
-        .values({ displayName: `HIS19 ${n}`, tgUserId: BigInt(`4${tag}${n}`) })
+        .values({ displayName: `HIS19 ${n}`, tgUserId: freshTgId() })
         .returning();
       const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
       await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
@@ -463,7 +462,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .returning();
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: 'SHL2 split', tgUserId: BigInt(`3${tag}1`) })
+      .values({ displayName: 'SHL2 split', tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     for (const [sid, role] of [[storeId, 'staff'], [other!.id, 'manager']] as const) {

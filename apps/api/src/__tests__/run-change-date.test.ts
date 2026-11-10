@@ -26,6 +26,7 @@ import { projectRun } from '../services/runProjection';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 function caller(session: SessionContext) {
   const db = getDb();
@@ -90,7 +91,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
     const [user] = await db
       .insert(s.users)
       .values({
-        tgUserId: BigInt(9_100_000_000 + Math.floor(Math.random() * 800_000_000)),
+        tgUserId: freshTgId(),
         displayName: 'Date Fixer',
         displayNameLocked: true,
       })

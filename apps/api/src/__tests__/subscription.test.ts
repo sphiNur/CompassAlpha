@@ -29,6 +29,7 @@ import {
   readSubscriptionState,
 } from '../services/subscription';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -61,7 +62,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
     const [user] = await db
       .insert(s.users)
       .values({
-        tgUserId: BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000)),
+        tgUserId: freshTgId(),
         displayName: 'Subscription Owner',
         displayNameLocked: true,
       })

@@ -12,7 +12,7 @@
  * The PG half is skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
@@ -27,23 +27,9 @@ import {
   UNIDENTIFIED_BUDGET_FACTOR,
 } from '../services/rateLimit';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
+import { signInitData, freshTgId } from './helpers/telegram';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
-
-function signInitData(tgUserId: bigint): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({ id: Number(tgUserId), first_name: 'Trust', username: `t${tgUserId}` }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_BOT_TOKEN!).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
-}
 
 /** A caller built by the server's own createContext from these headers. */
 async function callerWith(headers: Record<string, string> = {}) {
@@ -55,8 +41,6 @@ async function callerWith(headers: Record<string, string> = {}) {
 }
 
 const bearer = (accessToken: string) => ({ authorization: `Bearer ${accessToken}` });
-
-const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000));
 
 describe('trustedClientIp (AUTH-6)', () => {
   const read = (h: Record<string, string>) => (name: string) => h[name];

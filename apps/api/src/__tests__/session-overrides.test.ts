@@ -11,6 +11,7 @@ import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { flatEffectivePermissions } from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -112,7 +113,7 @@ beforeAll(async () => {
   const make = async (n: number, deny: boolean) => {
     const [user] = await db
       .insert(s.users)
-      .values({ displayName: `Mgr ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Mgr ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: user!.id, status: 'active' }).returning();
     await db.insert(s.memberRoleBindings).values({ memberId: m!.id, roleId: role!.id, scopeType: 'store', scopeId: store!.id });

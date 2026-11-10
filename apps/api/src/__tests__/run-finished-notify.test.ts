@@ -14,6 +14,7 @@ import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { emptyRunState, type RunEvent, type RunExpense } from '@compass/domain/run';
 import { dispatchRunEventNotifications } from '../services/notifyForEvent';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 /** An expense line; only qty and price count here. */
 function expense(qty: string, unitPrice: string): RunExpense {
@@ -47,7 +48,7 @@ async function finishRun(
   const orgId = org!.id;
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Purchaser', tgUserId: BigInt(`${suffix}2`.slice(-12)), locale })
+    .values({ displayName: 'Purchaser', tgUserId: freshTgId(), locale })
     .returning();
   const [member] = await db
     .insert(s.members)

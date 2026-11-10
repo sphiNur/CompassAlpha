@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { getDb, schema as s } from '@compass/db';
 import { findRecipientsByPermission, findRecipientsByPermissionInStore } from '../services/notify';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -27,8 +28,6 @@ const KEY = 'order.approve';
  * A Telegram id no other test file hands out: theirs stay below 10^12
  * (a time-based id cut to 12 digits collided with one of them in CI).
  */
-const freshTgId = () => BigInt(1e12 + Math.floor(Math.random() * 1e12));
-
 type Db = ReturnType<typeof getDb>;
 type Grant =
   | { role: 'manager' | 'staff'; store: 'A' | 'B' | null }

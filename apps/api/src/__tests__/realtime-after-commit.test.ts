@@ -31,6 +31,7 @@ import { relayDatabaseNotices, relayRealtimeNotice } from '../realtime/dbRelay';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -145,7 +146,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
     skuId = sku!.id;
     const [user] = await db()
       .insert(s.users)
-      .values({ displayName: 'Realtime staff', tgUserId: BigInt(`7${suffix}`.slice(-12)) })
+      .values({ displayName: 'Realtime staff', tgUserId: freshTgId() })
       .returning();
     const [member] = await db()
       .insert(s.members)

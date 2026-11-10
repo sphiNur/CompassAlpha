@@ -40,6 +40,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
@@ -93,11 +94,11 @@ let fix: Fixture | null = null;
     .returning();
   const [staffUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Staff', tgUserId: BigInt(`9${Date.now()}1`.slice(-12)) })
+    .values({ displayName: 'Staff', tgUserId: freshTgId() })
     .returning();
   const [cancellerUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Canceller', tgUserId: BigInt(`9${Date.now()}2`.slice(-12)) })
+    .values({ displayName: 'Canceller', tgUserId: freshTgId() })
     .returning();
   const [staffMember] = await db
     .insert(s.members)

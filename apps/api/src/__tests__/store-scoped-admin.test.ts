@@ -33,6 +33,7 @@ import {
   getActorStoreIdsForPermission,
 } from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 // ---------- minimal context factory --------------------------------------
 
@@ -188,10 +189,9 @@ beforeAll(async () => {
   }
 
   // 3. Super-admin user + member
-  const tgBase = Number(slugSuffix.slice(-9));
   const [superUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Super Admin', tgUserId: BigInt(tgBase) })
+    .values({ displayName: 'Super Admin', tgUserId: freshTgId() })
     .returning();
   const [superMember] = await db
     .insert(s.members)
@@ -243,7 +243,7 @@ async function makeStore(name: string): Promise<{ id: string; name: string }> {
 async function makeUser(displayName: string): Promise<{ id: string; tgUserId: bigint }> {
   if (!fix) throw new Error('fixture missing');
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = BigInt(`${fix.slugSuffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
+  const tgUserId = freshTgId();
   const [u] = await db.insert(s.users).values({ displayName, tgUserId }).returning();
   return { id: u!.id, tgUserId };
 }
@@ -493,7 +493,7 @@ describe('C2 store-scoped admin gates', () => {
     const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     // Try to invite into Store B → must be FORBIDDEN.
-    const targetTg = `${Date.now()}1`.slice(-12);
+    const targetTg = String(freshTgId());
     let threw = false;
     try {
       await caller.admin.memberInviteByTgId({
@@ -548,7 +548,7 @@ describe('C2 store-scoped admin gates', () => {
     let threw = false;
     try {
       await caller.admin.memberInviteByTgId({
-        tgUserId: `${Date.now()}9`.slice(-12),
+        tgUserId: String(freshTgId()),
         roleSlug: 'admin',
         storeIds: [storeA.id],
       });
@@ -814,7 +814,7 @@ describe('D3 per-store default role', () => {
       defaultRoleSlug: 'staff',
     });
     // Invite a new user with no roleSlug into storeA.
-    const tgUserId = `${Date.now()}3`.slice(-12);
+    const tgUserId = String(freshTgId());
     const result = await caller.admin.memberInviteByTgId({
       tgUserId,
       storeIds: [storeA.id],
@@ -1029,7 +1029,7 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     let err: Error | null = null;
     try {
       await admin.admin.memberInviteByTgId({
-        tgUserId: `5${Date.now()}`.slice(-12),
+        tgUserId: String(freshTgId()),
         roleSlug: danger.slug,
         storeIds: [store.id],
       });
@@ -3094,7 +3094,7 @@ describe('expired role bindings carry no admin authority', () => {
       const storeB = await makeStore(`B-${Math.random()}`);
       await expect(
         caller.admin.memberInviteByTgId({
-          tgUserId: `${Date.now()}7`.slice(-12),
+          tgUserId: String(freshTgId()),
           storeIds: [storeB.id],
         }),
       ).rejects.toThrow('notAdminOfStore');

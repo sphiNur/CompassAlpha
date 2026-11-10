@@ -31,6 +31,7 @@ import {
 } from '../trpc/routers/admin';
 import { inviterCoversInvite } from '../services/adminAuthority';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
 const RUN = '00000000-0000-4000-8000-0000000000aa';
@@ -223,7 +224,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     const [user] = await db
       .insert(s.users)
       .values({
-        tgUserId: BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000)),
+        tgUserId: freshTgId(),
         displayName: 'Audit Fix Owner',
         displayNameLocked: true,
       })
@@ -282,7 +283,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       const [u] = await db
         .insert(s.users)
         .values({
-          tgUserId: BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000)),
+          tgUserId: freshTgId(),
           displayName: `Seat ${status}`,
         })
         .returning();

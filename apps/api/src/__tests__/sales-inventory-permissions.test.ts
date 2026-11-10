@@ -23,6 +23,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -191,7 +192,7 @@ async function memberCaller(
   idempotencyKey: string | null = null,
 ) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = BigInt(`${fix!.suffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
+  const tgUserId = freshTgId();
   const [user] = await db.insert(s.users).values({ displayName: 'CA10', tgUserId }).returning();
   const [member] = await db
     .insert(s.members)

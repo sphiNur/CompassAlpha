@@ -49,6 +49,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 /** The date under test. Fixed, so "today" drift can't affect the lookup. */
 const ORDER_DATE = '2026-05-11';
@@ -94,7 +95,7 @@ beforeAll(async () => {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Owner', tgUserId: BigInt(`9${Date.now()}3`.slice(-12)) })
+    .values({ displayName: 'Owner', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)

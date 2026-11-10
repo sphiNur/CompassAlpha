@@ -28,6 +28,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 /** The date under test: today in the org's zone (UTC). A past date may not
  *  lazy-create a draft (CA-25) and since ORD-11 (2026-10-30) neither may a
@@ -76,11 +77,11 @@ beforeAll(async () => {
     .returning();
   const [staffUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Staff', tgUserId: BigInt(`8${Date.now()}1`.slice(-12)) })
+    .values({ displayName: 'Staff', tgUserId: freshTgId() })
     .returning();
   const [mgrUser] = await db
     .insert(s.users)
-    .values({ displayName: 'Manager Mia', tgUserId: BigInt(`8${Date.now()}2`.slice(-12)) })
+    .values({ displayName: 'Manager Mia', tgUserId: freshTgId() })
     .returning();
   const [staffMember] = await db
     .insert(s.members)

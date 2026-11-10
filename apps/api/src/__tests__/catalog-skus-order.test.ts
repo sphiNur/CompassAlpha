@@ -10,6 +10,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
@@ -41,7 +42,7 @@ beforeAll(async () => {
     .returning();
   const [user] = await db
     .insert(s.users)
-    .values({ displayName: 'Reader', tgUserId: BigInt(`7${Date.now()}3`.slice(-12)) })
+    .values({ displayName: 'Reader', tgUserId: freshTgId() })
     .returning();
   const [member] = await db
     .insert(s.members)

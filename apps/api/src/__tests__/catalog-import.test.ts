@@ -21,6 +21,7 @@ import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 function caller(session: SessionContext) {
   const db = getDb();
@@ -55,7 +56,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
     const [user] = await db
       .insert(s.users)
       .values({
-        tgUserId: BigInt(9_000_000_000 + Math.floor(Math.random() * 900_000_000)),
+        tgUserId: freshTgId(),
         displayName: 'Catalog Owner',
         displayNameLocked: true,
       })

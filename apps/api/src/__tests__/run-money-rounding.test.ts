@@ -29,6 +29,7 @@ import { appendEvents } from '../services/eventStore';
 import { projectRun } from '../services/runProjection';
 import { sumMoney } from '@compass/contracts';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
@@ -86,7 +87,7 @@ describe('run money rounding (PG, D1)', () => {
       }
       const [user] = await db
         .insert(s.users)
-        .values({ displayName: 'Buyer', tgUserId: BigInt(`${Date.now()}72`.slice(-12)) })
+        .values({ displayName: 'Buyer', tgUserId: freshTgId() })
         .returning();
       const [member] = await db
         .insert(s.members)

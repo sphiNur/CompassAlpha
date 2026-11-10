@@ -22,6 +22,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { signRefresh, verifyRefresh } from '../infra/jwt';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 // JWT secrets must exist for the pure tests to run too. Provide
 // defaults so a `bun test` without .env still works for the unit
@@ -111,7 +112,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     closeTestDb = dbMod.closeDb;
     db = dbMod.getDb(undefined, { system: 'maintenance' });
     // Insert a test user to satisfy refresh_tokens.user_id FK.
-    const tgUserId = BigInt(Date.now());
+    const tgUserId = freshTgId();
     const [u] = await db
       .insert(s.users)
       .values({

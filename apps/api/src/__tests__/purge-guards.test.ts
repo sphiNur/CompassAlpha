@@ -21,6 +21,7 @@ import { env } from '../env';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -94,7 +95,7 @@ beforeAll(async () => {
   const user = async (n: number) => {
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Purge ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Purge ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
@@ -151,7 +152,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const { admin, db, orgId } = fix!;
     const [purchaser] = await db
       .insert(s.users)
-      .values({ displayName: 'Real buyer', tgUserId: BigInt(`8${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Real buyer', tgUserId: freshTgId() })
       .returning();
     const runId = randomUUID();
     await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-06-03', status: 'finished' });
@@ -178,7 +179,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const { admin, db, orgId, storeId, memberId } = fix!;
     const [approver] = await db
       .insert(s.users)
-      .values({ displayName: 'Real approver', tgUserId: BigInt(`7${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Real approver', tgUserId: freshTgId() })
       .returning();
     const sessionId = randomUUID();
     await db.insert(s.orderSessionsV).values({
@@ -207,7 +208,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const { admin, db, orgId } = fix!;
     const [buyer] = await db
       .insert(s.users)
-      .values({ displayName: 'Waiver buyer', tgUserId: BigInt(`6${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Waiver buyer', tgUserId: freshTgId() })
       .returning();
     const runId = randomUUID();
     await db
@@ -493,7 +494,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
     });
     const [approver] = await db
       .insert(s.users)
-      .values({ displayName: 'List approver', tgUserId: BigInt(`5${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'List approver', tgUserId: freshTgId() })
       .returning();
     await db.insert(s.events).values({
       orgId,

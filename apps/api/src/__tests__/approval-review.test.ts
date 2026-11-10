@@ -21,6 +21,7 @@ import { appRouter } from '../trpc/router';
 import { claimTakenFrom, TAKEOVER_COOLDOWN_MS } from '../trpc/routers/order';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
@@ -108,7 +109,7 @@ beforeAll(async () => {
   const person = async (n: number, roleId: string): Promise<Person> => {
     const [u] = await db
       .insert(s.users)
-      .values({ displayName: `Reviewer ${n}`, tgUserId: BigInt(`${suffix}${n}`.slice(-12)) })
+      .values({ displayName: `Reviewer ${n}`, tgUserId: freshTgId() })
       .returning();
     const [m] = await db
       .insert(s.members)

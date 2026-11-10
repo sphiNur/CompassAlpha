@@ -9,6 +9,7 @@ import type { RequestContext, SessionContext } from '../trpc/context';
 import { loadCatalog } from '@compass/i18n/catalogs';
 import { normalizeSettlementMoney, SETTLEMENT_REASON_KEYS } from '../trpc/routers/settlement';
 import { SHOULD_RUN } from './helpers/pg';
+import { freshTgId } from './helpers/telegram';
 
 /**
  * Business dates for these tests, counted back from ten days ago: new
@@ -152,7 +153,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Settlement Manager',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '7'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [member] = await db
@@ -163,7 +164,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Settlement Cashier',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '8'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [cashierMember] = await db
@@ -174,7 +175,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Second Settlement Manager',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '4'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [secondManagerMember] = await db
@@ -185,7 +186,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Global Admin Override',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '2'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [orgAdminOverrideMember] = await db
@@ -196,7 +197,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Ali Kitchen',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '9'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [wageEmployee] = await db
@@ -207,7 +208,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Assigned Only Employee',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '5'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [assignedOnlyEmployee] = await db
@@ -218,7 +219,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({
       displayName: 'Foreign Employee',
-      tgUserId: BigInt(`${Date.now()}`.slice(-11) + '6'),
+      tgUserId: freshTgId(),
     })
     .returning();
   const [foreignEmployee] = await db
@@ -643,7 +644,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       .insert(s.users)
       .values({
         displayName: 'Historical Wage Employee',
-        tgUserId: BigInt(`${Date.now()}`.slice(-11) + '3'),
+        tgUserId: freshTgId(),
       })
       .returning();
     const [employee] = await db

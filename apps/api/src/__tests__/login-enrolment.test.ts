@@ -9,7 +9,6 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { env } from '../env';
@@ -19,28 +18,9 @@ import { loadSession } from '../trpc/context';
 import { revokeAllForUser } from '../services/refreshTokens';
 import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
+import { signInitData, freshTgId } from './helpers/telegram';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
-
-function signInitData(tgUserId: bigint, languageCode?: string): string {
-  const fields: Record<string, string> = {
-    auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({
-      id: Number(tgUserId),
-      first_name: 'Enrol',
-      username: `u${tgUserId}`,
-      ...(languageCode ? { language_code: languageCode } : {}),
-    }),
-  };
-  const dataCheckString = Object.entries(fields)
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(env.TELEGRAM_BOT_TOKEN!).digest();
-  const params = new URLSearchParams(fields);
-  params.set('hash', createHmac('sha256', secret).update(dataCheckString).digest('hex'));
-  return params.toString();
-}
 
 function anonymousCaller() {
   // The code under test gets the handle the server uses: no tenant, no
@@ -66,8 +46,6 @@ function anonymousCaller() {
 }
 
 // Random, not clock-derived: two tests in the same second must not share an id.
-const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000));
-
 describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   let orgId = '';
 
@@ -225,7 +203,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .returning();
     await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
     const login = await anonymousCaller().auth.telegramLogin({
-      initData: signInitData(tgUserId, 'zh-hans'),
+      initData: signInitData(tgUserId, { languageCode: 'zh-hans' }),
     });
     expect(login.session.user.locale).toBe('zh');
     const stored = await db.query.users.findFirst({
