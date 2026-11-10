@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Banner } from './Banner';
 import { Button } from './Button';
@@ -28,19 +29,26 @@ export interface ConfirmSheetProps {
    */
   irreversible?: boolean;
   /** When true, a free-text reason input is shown and submit is gated
-   *  on it being non-empty. Reason is passed back via `onConfirm`. */
+   *  on it being non-empty (the value is `reason`). */
   requireReason?: boolean;
+  /**
+   * M1.7-A / M1.13: a reason the person may give but need not (cancelling
+   * a run). It sits behind a "+ Add note" link instead of opening the
+   * keyboard, which invited "asdf"; the confirm does not wait for it.
+   * `requireReason` wins.
+   */
+  reasonOptional?: boolean;
   reasonPlaceholder?: string;
   reasonLabel?: ReactNode;
-  /** Pending state — disables both buttons + spins the primary. */
+  /**
+   * Pending state: disables both buttons and spins the primary. The sheet
+   * cannot be dismissed meanwhile (M3.10): a swipe mid-request cleared
+   * the reason, and a failure then had nothing left to retry with.
+   */
   pending?: boolean;
-  /** When `requireReason`, the controlled reason value. */
+  /** With a reason field, the controlled reason value. */
   reason?: string;
   onReasonChange?: (s: string) => void;
-  /** Inside Telegram, the page MainButton drives the primary action;
-   *  this hides the in-sheet primary button. Defaults true so the
-   *  sheet renders cleanly outside Telegram. */
-  showPrimaryInSheet?: boolean;
   /** Show an explicit Cancel button. Defaults to false because three
    *  dismiss paths (backdrop tap, swipe-down, Telegram BackButton) make
    *  a fourth redundant on mobile. We force-show it when there is a
@@ -62,7 +70,7 @@ export interface ConfirmSheetProps {
  * Cancel and starts on it (the safe action, as for a native <dialog>), so
  * Enter on the opener followed by a repeated Enter cannot run it. Not when
  * a required reason keeps the confirm button disabled until typed: the
- * reason field takes focus there. Shared with RunPage's confirm sheet.
+ * reason field takes focus there.
  */
 export function confirmCancelPolicy(o: {
   danger?: boolean;
@@ -82,6 +90,24 @@ export function confirmCancelPolicy(o: {
 }
 
 /**
+ * The reason field (RUNWEB2-05). A required one is shown and takes the
+ * focus; an optional one waits behind its link until `expanded`.
+ */
+export function confirmReasonPolicy(o: {
+  requireReason?: boolean;
+  reasonOptional?: boolean;
+  expanded: boolean;
+}): { showField: boolean; showToggle: boolean; autoFocus: boolean } {
+  const required = !!o.requireReason;
+  const optional = !required && !!o.reasonOptional;
+  return {
+    showField: required || (optional && o.expanded),
+    showToggle: optional && !o.expanded,
+    autoFocus: required,
+  };
+}
+
+/**
  * Generic two-button confirmation sheet — promoted from `RunPage` so
  * any page can use the same look-and-feel. Used for:
  *
@@ -90,10 +116,10 @@ export function confirmCancelPolicy(o: {
  *   - "Are you sure?" prompts that need an audit reason
  *
  * Pattern: title + body + optional reason input + primary/cancel
- * buttons. Inside Telegram, the parent page typically binds the
- * primary action to MainButton and sets `showPrimaryInSheet={false}`
- * so only the Cancel button shows in the sheet (avoiding the
- * "two-buttons-stacked" UX the user reported).
+ * buttons. The sheet always carries its primary button: the page's main
+ * button is under the sheet (M3.49). RunPage's own copy of this sheet,
+ * which added the optional reason and the pending lock, is merged in
+ * (review RUNWEB2-05).
  */
 export function ConfirmSheet({
   open,
@@ -105,12 +131,12 @@ export function ConfirmSheet({
   danger,
   irreversible,
   requireReason,
+  reasonOptional,
   reasonPlaceholder,
   reasonLabel,
   pending,
   reason = '',
   onReasonChange,
-  showPrimaryInSheet = true,
   showCancelInSheet,
   focusCancel,
   onConfirm,
@@ -120,6 +146,12 @@ export function ConfirmSheet({
   const reasonOk = !requireReason || reason.trim().length > 0;
   // DLV-4: a double tap sent two requests before `pending` disabled this.
   const guardTap = useTapGuard();
+  // An optional reason opened once stays open until the sheet closes.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!open) setExpanded(false);
+  }, [open]);
+  const field = confirmReasonPolicy({ requireReason, reasonOptional, expanded });
   // Cancel is force-shown when there's a reason input (keyboard covers
   // the backdrop) OR when the consumer explicitly opts in. Otherwise we
   // rely on tap-outside / swipe-down / Telegram BackButton.
@@ -127,42 +159,39 @@ export function ConfirmSheet({
     danger,
     irreversible,
     requireReason,
-    showCancelInSheet,
+    showCancelInSheet: showCancelInSheet ?? (field.showField || undefined),
     focusCancel,
   });
-  const hasFooter = showPrimaryInSheet || showCancel;
   return (
     <Sheet
       open={open}
-      onOpenChange={(o) => !o && onCancel()}
+      onOpenChange={(o) => {
+        if (!o && !pending) onCancel();
+      }}
       title={title}
       footer={
-        hasFooter ? (
-          <div className="flex flex-col gap-2">
-            {showPrimaryInSheet ? (
-              <Button
-                block
-                variant={danger ? 'danger' : undefined}
-                loading={pending}
-                disabled={!reasonOk || pending}
-                onClick={guardTap(onConfirm, String(confirmLabel ?? ''))}
-              >
-                {confirmLabel}
-              </Button>
-            ) : null}
-            {showCancel ? (
-              <Button
-                block
-                variant="pearl"
-                onClick={onCancel}
-                disabled={pending}
-                data-autofocus={startOnCancel || undefined}
-              >
-                {cancelLabel ?? labels.cancel}
-              </Button>
-            ) : null}
-          </div>
-        ) : undefined
+        <div className="flex flex-col gap-2">
+          <Button
+            block
+            variant={danger ? 'danger' : undefined}
+            loading={pending}
+            disabled={!reasonOk || pending}
+            onClick={guardTap(onConfirm, String(confirmLabel ?? ''))}
+          >
+            {confirmLabel}
+          </Button>
+          {showCancel ? (
+            <Button
+              block
+              variant="pearl"
+              onClick={onCancel}
+              disabled={pending}
+              data-autofocus={startOnCancel || undefined}
+            >
+              {cancelLabel ?? labels.cancel}
+            </Button>
+          ) : null}
+        </div>
       }
     >
       <div className="flex flex-col gap-3 py-3">
@@ -172,7 +201,7 @@ export function ConfirmSheet({
             {body}
           </p>
         ) : null}
-        {requireReason ? (
+        {field.showField ? (
           <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
             {reasonLabel ?? labels.reason}
             <Input
@@ -180,9 +209,19 @@ export function ConfirmSheet({
               value={reason}
               onChange={(e) => onReasonChange?.(e.target.value)}
               placeholder={reasonPlaceholder}
-              autoFocus
+              autoFocus={field.autoFocus}
             />
           </label>
+        ) : null}
+        {field.showToggle ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            // DX-VIS-6 (2026-11-01): was a 16px-tall tap target.
+            className="hit-44 self-start py-1 text-old-label text-[var(--c-action)] active:opacity-70"
+          >
+            {labels.addNote}
+          </button>
         ) : null}
       </div>
     </Sheet>

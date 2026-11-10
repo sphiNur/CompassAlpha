@@ -113,6 +113,8 @@ export interface UiLabels {
   cancel: string;
   /** UI-08: the reason field's label, when the caller passes no `reasonLabel`. */
   reason: string;
+  /** RUNWEB2-05: the link that opens an optional reason field. */
+  addNote: string;
 
   // --- SearchInput ---
   /** UI-08: name of the clear button, when the caller passes no `clearAriaLabel`. */
@@ -151,6 +153,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
     Promise.resolve(typeof window === 'undefined' ? true : window.confirm(message)),
   cancel: 'Cancel',
   reason: 'Reason',
+  addNote: '+ Add note (optional)',
   clearSearch: 'Clear search',
 };
 

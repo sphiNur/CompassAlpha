@@ -112,6 +112,9 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
     get reason() {
       return i18n.t('common.reason');
     },
+    get addNote() {
+      return i18n.t('common.addNoteOptional');
+    },
     get clearSearch() {
       return i18n.t('common.clearSearch');
     },

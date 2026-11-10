@@ -24,6 +24,7 @@ export const ru = {
   'app.update.title': 'Доступна новая версия',
   'common.cancel': 'Отмена',
   'common.reason': 'Причина',
+  'common.addNoteOptional': '+ Добавить заметку (опционально)',
   'common.clearSearch': 'Сбросить поиск',
   'common.archive': 'Архивировать',
   'common.archived': 'в архиве',
@@ -1537,7 +1538,6 @@ export const ru = {
   'run.confirm.undoStartDelivery.body':
     'Возвращает закупку к этапу закупки. Возможно, только пока ни в один магазин не доставлено.',
   'run.label.reasonForChange': 'Причина изменения',
-  'run.label.addReasonOptional': '+ Добавить заметку (опционально)',
   'run.label.itemsTotal': 'Итого по товарам',
   'run.label.reasonPlaceholder': 'например: ошибка при чтении чека',
   'run.toast.runPlanned': 'Закупка запланирована',

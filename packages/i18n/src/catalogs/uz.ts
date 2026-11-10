@@ -31,6 +31,7 @@ export const uz = {
   'app.update.title': 'Yangi versiya tayyor',
   'common.cancel': 'Bekor qilish',
   'common.reason': 'Sabab',
+  'common.addNoteOptional': '+ Izoh qoʻshish (ixtiyoriy)',
   'common.clearSearch': 'Qidiruvni tozalash',
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',
@@ -1530,7 +1531,6 @@ export const uz = {
   'run.confirm.undoStartDelivery.body':
     'Xaridni xarid bosqichiga qaytaradi. Faqat hech bir doʻkonga yetkazilmagan boʻlsa.',
   'run.label.reasonForChange': 'Oʻzgarish sababi',
-  'run.label.addReasonOptional': '+ Izoh qoʻshish (ixtiyoriy)',
   'run.label.itemsTotal': 'Mahsulotlar jami',
   'run.label.reasonPlaceholder': 'masalan: chekdagi narxni notoʻgʻri oʻqibman',
   'run.toast.runPlanned': 'Xarid rejalashtirildi',
