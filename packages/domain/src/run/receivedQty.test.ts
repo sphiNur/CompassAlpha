@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { applyRun, decideRun } from './index';
 import type { RunCommand } from './commands';
-import { RUN_CLOCK as clock, RUN_NOW as NOW, confirmStoreItem, deliver, planAndPurchase, runStepper } from '../testing';
+import {
+  RUN_CLOCK as clock,
+  RUN_NOW as NOW,
+  confirmStoreItem,
+  deliver,
+  planAndPurchase,
+  runStepper,
+} from '../testing';
 
 const { step } = runStepper(clock);
 

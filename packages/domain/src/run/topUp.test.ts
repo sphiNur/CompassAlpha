@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { applyRun, decideRun, emptyRunState } from './index';
 import type { RunCommand } from './commands';
-import { RUN_CLOCK as clock, planAndPurchase, planRun, purchaser, revisePurchase, runStepper } from '../testing';
+import {
+  RUN_CLOCK as clock,
+  planAndPurchase,
+  planRun,
+  purchaser,
+  revisePurchase,
+  runStepper,
+} from '../testing';
 
 const { step } = runStepper(clock);
 
@@ -46,11 +53,17 @@ describe('run.topUp (BUY-5)', () => {
     expect(bought.items.get('sku-1')?.topUpQty).toBeNull();
     expect(decideRun(bought, { type: 'StartDelivery', actor: purchaser() }, clock)).toHaveLength(1);
 
-    const dismissed = decideRun(s, { type: 'DismissTopUp', skuId: 'sku-1', note: 'enough', actor: purchaser() }, clock);
+    const dismissed = decideRun(
+      s,
+      { type: 'DismissTopUp', skuId: 'sku-1', note: 'enough', actor: purchaser() },
+      clock,
+    );
     expect(dismissed.map((e) => e.type)).toEqual(['TopUpDismissed']);
     const after = dismissed.reduce(applyRun, s);
     expect(after.items.get('sku-1')?.topUpQty).toBeNull();
-    expect(decideRun(after, { type: 'DismissTopUp', skuId: 'sku-1', actor: purchaser() }, clock)).toEqual([]);
+    expect(
+      decideRun(after, { type: 'DismissTopUp', skuId: 'sku-1', actor: purchaser() }, clock),
+    ).toEqual([]);
   });
 
   test('RE-BUY-2: a price-only or partial revision leaves the rest of the top-up', () => {

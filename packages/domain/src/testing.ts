@@ -99,10 +99,8 @@ export const RUN_NOW = new Date('2026-05-01T08:00:00Z');
 /** A clock stopped at `RUN_NOW`. */
 export const RUN_CLOCK = fixedClock(RUN_NOW);
 
-/** Run commands decided at `clock` (default `RUN_NOW`). */
-export function runStepper(
-  clock: Clock = RUN_CLOCK,
-): Stepper<RunState, RunCommand, RunEvent> {
+/** Run commands decided at `clock` (default `RUN_CLOCK`). */
+export function runStepper(clock: Clock = RUN_CLOCK): Stepper<RunState, RunCommand, RunEvent> {
   return stepper((state, command) => decideRun(state, command, clock), applyRun);
 }
 

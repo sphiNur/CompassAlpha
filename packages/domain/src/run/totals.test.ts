@@ -2,7 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { applyRun, decideRun } from './index';
 import { computeRunTotals } from './commands';
 import { fixedClock } from '../shared/clock';
-import { RUN_CLOCK as clock, RUN_NOW as NOW, confirmStoreAllOk, planAndPurchase, purchaser, runActor, runStepper } from '../testing';
+import {
+  RUN_CLOCK as clock,
+  RUN_NOW as NOW,
+  confirmStoreAllOk,
+  planAndPurchase,
+  purchaser,
+  runActor,
+  runStepper,
+} from '../testing';
 
 const { step } = runStepper(clock);
 

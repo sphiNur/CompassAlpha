@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { applyRun, decideRun, emptyRunState } from './index';
-import { RUN_CLOCK as clock, RUN_NOW as NOW, confirmStoreAllOk, confirmStoreItem, confirmer, deliver, planAndPurchase, planRun, purchaseItem, purchaser, revisePurchase, runActor, runStepper } from '../testing';
+import {
+  RUN_CLOCK as clock,
+  RUN_NOW as NOW,
+  confirmStoreAllOk,
+  confirmStoreItem,
+  confirmer,
+  deliver,
+  planAndPurchase,
+  planRun,
+  purchaseItem,
+  purchaser,
+  revisePurchase,
+  runActor,
+  runStepper,
+} from '../testing';
 
 const { step, steps } = runStepper(clock);
 
