@@ -16,6 +16,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 let session: SessionContext | null = null;
 let runs = 0;
@@ -52,10 +55,12 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug, name: 'Idempotency claim test', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const [user] = await db
     .insert(s.users)
     .values({ displayName: 'Idem', tgUserId: freshTgId() })
     .returning();
+  noteUser(user!.id);
   const [member] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: user!.id })

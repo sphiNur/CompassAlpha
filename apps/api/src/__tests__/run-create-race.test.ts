@@ -20,6 +20,9 @@ import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { orgId: string; storeId: string; skuId: string; a: Caller; b: Caller } | null = null;
@@ -32,6 +35,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `race-${suffix}`, name: 'Run race', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleId = (await seedRoles(db, orgId, ['super_admin'])).super_admin!;
   const [store] = await db

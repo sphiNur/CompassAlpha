@@ -28,6 +28,9 @@ import { loadSkuPriceStats } from '../services/priceStats';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { orderStream, runStream } from './helpers/streams';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 // Run only when DATABASE_URL is set AND points at a reachable host. We
 // can't easily ping the DB synchronously here, so we treat localhost
@@ -62,6 +65,7 @@ describe('full lifecycle (PG)', () => {
       })
       .returning();
     if (!org) throw new Error('failed to insert org');
+    noteOrg(org.id);
 
     const [staffUser] = await db
       .insert(s.users)
@@ -76,6 +80,9 @@ describe('full lifecycle (PG)', () => {
       .values({ displayName: 'Purchaser', tgUserId: freshTgId() })
       .returning();
     if (!staffUser || !managerUser || !purchaserUser) throw new Error('user inserts failed');
+    noteUser(staffUser.id);
+    noteUser(managerUser.id);
+    noteUser(purchaserUser.id);
 
     const [staffMember] = await db
       .insert(s.members)

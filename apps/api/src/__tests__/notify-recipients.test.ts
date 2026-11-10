@@ -12,6 +12,9 @@ import { findRecipientsByPermission, findRecipientsByPermissionInStore } from '.
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { seedRoles } from './helpers/fixtures';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 const KEY = 'order.approve';
 
@@ -40,6 +43,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `notify-${suffix}`, name: 'Notify', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['manager', 'staff']);
   await db.insert(s.permissions).values({ key: KEY, description: KEY }).onConflictDoNothing();
@@ -59,6 +63,7 @@ beforeAll(async () => {
       .insert(s.users)
       .values({ displayName: `Notify ${n}`, tgUserId: freshTgId() })
       .returning();
+    noteUser(u!.id);
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status }).returning();
     for (const g of grants) {
       const scopeId = storeOf(g.store);

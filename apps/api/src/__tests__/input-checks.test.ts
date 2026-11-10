@@ -18,6 +18,9 @@ import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedRoles } from './helpers/fixtures';
 import { codeOf, errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
@@ -42,11 +45,13 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `checks-${suffix}`, name: 'Input checks', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const roleId = (await seedRoles(db, org!.id, ['super_admin'])).super_admin!;
   const [u] = await db
     .insert(s.users)
     .values({ displayName: 'Checks', tgUserId: freshTgId() })
     .returning();
+  noteUser(u!.id);
   const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: u!.id, status: 'active' }).returning();
   await db
     .insert(s.memberRoleBindings)

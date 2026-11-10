@@ -15,6 +15,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -38,6 +41,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `scoped-${suffix}`, name: 'Scoped reads', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
 
   const roleIds = await seedRoles(db, orgId, ['manager', 'cashier', 'staff']);

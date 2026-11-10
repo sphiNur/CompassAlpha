@@ -33,6 +33,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedRoles } from './helpers/fixtures';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type ClaimTimeout = {
@@ -111,6 +114,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
         localeDefault: 'en',
         timezone: 'UTC',
       });
+    noteOrg(orgId);
     const roleId = (await seedRoles(db(), orgId, ['staff'])).staff!;
     const [store] = await db()
       .insert(s.stores)
@@ -132,6 +136,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Realtime staff', tgUserId: freshTgId() })
       .returning();
+    noteUser(user!.id);
     const [member] = await db()
       .insert(s.members)
       .values({ orgId, userId: user!.id, status: 'active' })
@@ -150,7 +155,6 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
 
   afterAll(async () => {
     await stopRelay?.();
-    await db().delete(s.organizations).where(eq(s.organizations.id, orgId));
   });
 
   const message = (lastSeq: number) => ({

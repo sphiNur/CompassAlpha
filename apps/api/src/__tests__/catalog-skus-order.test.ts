@@ -11,6 +11,9 @@ import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 let ctx: RequestContext | null = null;
 let codes: string[] = [];
@@ -23,10 +26,12 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug, name: 'SKU order test', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const [user] = await db
     .insert(s.users)
     .values({ displayName: 'Reader', tgUserId: freshTgId() })
     .returning();
+  noteUser(user!.id);
   const [member] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: user!.id })

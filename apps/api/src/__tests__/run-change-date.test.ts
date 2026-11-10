@@ -9,7 +9,7 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import type { SessionContext } from '../trpc/context';
@@ -17,6 +17,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
 import { seedOwnedOrg, type SeededMember } from './helpers/fixtures';
+import { cleanUpAfterAll } from './helpers/cleanup';
 import { planRun, runStream } from './helpers/streams';
 
 describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated)', () => {
@@ -46,11 +47,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
     session = org.session;
   });
 
-  afterAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    if (orgId) await db.delete(s.organizations).where(eq(s.organizations.id, orgId));
-    if (owner) await db.delete(s.users).where(eq(s.users.id, owner.userId));
-  });
+  cleanUpAfterAll();
 
   test('the moved run becomes the next run of that day', async () => {
     const lagman = await plannedRun('2026-10-22', 0);

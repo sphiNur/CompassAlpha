@@ -29,6 +29,9 @@ import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 /** The date under test: today in the org's zone (UTC). A past date may not
  *  lazy-create a draft (CA-25) and since ORD-11 (2026-10-30) neither may a
@@ -58,14 +61,17 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug, name: 'Order visibility test', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const [staffUser] = await db
     .insert(s.users)
     .values({ displayName: 'Staff', tgUserId: freshTgId() })
     .returning();
+  noteUser(staffUser!.id);
   const [mgrUser] = await db
     .insert(s.users)
     .values({ displayName: 'Manager Mia', tgUserId: freshTgId() })
     .returning();
+  noteUser(mgrUser!.id);
   const [staffMember] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: staffUser!.id })

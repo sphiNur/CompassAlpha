@@ -10,6 +10,9 @@ import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { storeId: string; skuId: string; staff: Caller; other: Caller; manager: Caller; manager2: Caller } | null = null;
@@ -22,6 +25,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `batches-${suffix}`, name: 'Batches', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['manager', 'staff']);
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `B-${suffix.slice(-6)}` }).returning();

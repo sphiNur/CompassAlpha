@@ -44,6 +44,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
 import { orderStream } from './helpers/streams';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 /** The date under test. Fixed, so "today" drift can't affect the lookup. */
 const ORDER_DATE = '2026-05-11';
@@ -70,10 +73,12 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug, name: 'Approver self-edit test', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const [user] = await db
     .insert(s.users)
     .values({ displayName: 'Owner', tgUserId: freshTgId() })
     .returning();
+  noteUser(user!.id);
   const [member] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: user!.id })
@@ -291,6 +296,7 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
       .insert(s.memberStoreAssignments)
       .values({ memberId: fix.memberId, storeId: otherStore!.id, assignedBy: fix.userId });
     const [otherUser] = await db.insert(s.users).values({ displayName: 'Staff' }).returning();
+    noteUser(otherUser!.id);
     const [otherMember] = await db
       .insert(s.members)
       .values({ orgId: fix.orgId, userId: otherUser!.id })

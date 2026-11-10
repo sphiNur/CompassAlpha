@@ -18,6 +18,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -103,6 +106,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `void-${suffix}`, name: 'Sales void', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   for (const key of ['sales.record', 'dishes.manage']) {
     await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
   }

@@ -11,6 +11,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 /**
  * Business dates for these tests, counted back from ten days ago: new
@@ -146,6 +149,7 @@ beforeAll(async () => {
       timezone: 'UTC',
     })
     .returning();
+  noteOrg(org!.id);
   const [user] = await db
     .insert(s.users)
     .values({
@@ -153,6 +157,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(user!.id);
   const [member] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: user!.id, status: 'active' })
@@ -164,6 +169,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(cashierUser!.id);
   const [cashierMember] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: cashierUser!.id, status: 'active' })
@@ -175,6 +181,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(secondManagerUser!.id);
   const [secondManagerMember] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: secondManagerUser!.id, status: 'active' })
@@ -186,6 +193,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(orgAdminOverrideUser!.id);
   const [orgAdminOverrideMember] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: orgAdminOverrideUser!.id, status: 'active' })
@@ -197,6 +205,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(wageEmployeeUser!.id);
   const [wageEmployee] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: wageEmployeeUser!.id, status: 'active' })
@@ -208,6 +217,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(assignedOnlyEmployeeUser!.id);
   const [assignedOnlyEmployee] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: assignedOnlyEmployeeUser!.id, status: 'active' })
@@ -219,6 +229,7 @@ beforeAll(async () => {
       tgUserId: freshTgId(),
     })
     .returning();
+  noteUser(foreignEmployeeUser!.id);
   const [foreignEmployee] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: foreignEmployeeUser!.id, status: 'active' })
@@ -227,6 +238,7 @@ beforeAll(async () => {
     .insert(s.users)
     .values({ displayName: 'Suspended Employee' })
     .returning();
+  noteUser(suspendedUser!.id);
   const [suspendedEmployee] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: suspendedUser!.id, status: 'suspended' })
@@ -659,6 +671,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
         tgUserId: freshTgId(),
       })
       .returning();
+    noteUser(employeeUser!.id);
     const [employee] = await db
       .insert(s.members)
       .values({ orgId: fx.orgId, userId: employeeUser!.id, status: 'active' })
