@@ -36,6 +36,7 @@
  */
 import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';
+import type { CatalogKey } from '@compass/i18n';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
 import { errorVars, isServerSideFailure, networkFailureKey, serverErrorKey } from './errorText';
@@ -46,10 +47,13 @@ interface ErrLike {
 }
 
 /**
- * Returns a curried error-handler builder. Pass the fallback i18n
- * key (used when the server message isn't recognizable as an i18n
- * key); receive a function suitable for `useMutation({ onError })`.
+ * The sentence a failed write falls back to: its own failure sentence, or
+ * `common.errors.actionFailed`. Never the bare `common.error`, which says
+ * neither why nor what to do (DX-COPY-8); the type refuses it (review
+ * TEST3-06: a test used to look for it in the source).
  */
+export type WriteFallbackKey = Exclude<CatalogKey, 'common.error'>;
+
 export interface ErrToastOptions {
   /**
    * The write sends the same idempotency key when repeated with the same
@@ -58,8 +62,13 @@ export interface ErrToastOptions {
   retrySafe?: boolean;
 }
 
+/**
+ * Returns a curried error-handler builder. Pass the fallback i18n
+ * key (used when the server message isn't recognizable as an i18n
+ * key); receive a function suitable for `useMutation({ onError })`.
+ */
 export function useErrToast(): (
-  defaultKey: Parameters<ReturnType<typeof useI18n>['t']>[0],
+  defaultKey: WriteFallbackKey,
   options?: ErrToastOptions,
 ) => (err: unknown) => void {
   const i18n = useI18n();
@@ -98,10 +107,7 @@ export function useErrToast(): (
  * larger composition (e.g. a banner subtitle). Skips haptic since
  * the caller controls UI side-effects.
  */
-export function useTranslateError(): (
-  err: unknown,
-  defaultKey: Parameters<ReturnType<typeof useI18n>['t']>[0],
-) => string {
+export function useTranslateError(): (err: unknown, defaultKey: WriteFallbackKey) => string {
   const i18n = useI18n();
   return (err, defaultKey) => {
     const key = serverErrorKey(err);

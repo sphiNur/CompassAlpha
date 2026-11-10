@@ -88,6 +88,18 @@ export const SOURCE_RULES = {
       message:
         'Money: use moneyLine / sumMoneyLines (apps/web/src/lib/money.ts) or the @compass/contracts/money helpers, not float multiplication (D1). Not money? Disable this line with a reason.',
     },
+    {
+      // DX-COPY-8 (2026-11-01): a failed write says what to do next. The
+      // bare "Something went wrong" is the title of a load banner with a
+      // Retry button, not a toast. In apps/web the fallback of
+      // useErrToast and useTranslateError cannot be it (WriteFallbackKey);
+      // this catches a toast written by hand (review TEST3-06: a test
+      // looked for both with a regular expression).
+      selector:
+        "CallExpression[callee.property.name='error'][arguments.0.type='CallExpression'][arguments.0.arguments.0.value='common.error']",
+      message:
+        "A failed write says what to do next: use the action's own failure sentence or common.errors.actionFailed, not common.error (DX-COPY-8).",
+    },
   ],
 
   // No raw console.log/debug/info — matches the CI grep guard.
