@@ -170,7 +170,7 @@ export const uz = {
     'Pastdagi tugma bu ish maydoni yaratgan barcha hodisa, xarid, buyurtma va bildirishnomalarni (hali yuborilmaganlarini ham) oʻchiradi — kundan qatʼi nazar. Faqat noldan boshlash kerak boʻlganda ishlating.',
   'ops.maint.purgeAllTitle': 'BARCHA test maʼlumotlarini tozalash',
   'ops.maint.purgeAllBody':
-    '1-qadam nechta yozuv oʻchishini koʻrsatadi. 2-qadam siz ish maydoni identifikatorini kiritganingizdan keyin oʻchiradi.',
+    '1-qadam nechta yozuv oʻchishini koʻrsatadi. 2-qadam siz ish maydoni nomini kiritganingizdan keyin oʻchiradi.',
   'ops.maint.previewEverything': 'Hammasini oldindan koʻrish',
   'ops.maint.resetSheetTitle': '{date} maʼlumotlarini tozalash',
   'ops.maint.resetSheetBody': 'Nima oʻchirilishini koʻrib chiqing, keyin tasdiqlang.',
@@ -1714,8 +1714,6 @@ export const uz = {
   'confirm.status.short': 'Miqdori kam',
   'confirm.status.wrong': 'Notoʻgʻri mahsulot',
   'confirm.status.quality': 'Sifat muammosi',
-
-  // ── 13. App theme ──────────────────────────────────────────────
 
   // ── 14. Finance reports (M1.15) ─────────────────────
   'finance.preset.today': 'Bugun',

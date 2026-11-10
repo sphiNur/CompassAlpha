@@ -154,7 +154,7 @@ export const zh = {
     '下面这个按钮会删掉这个工作区产生过的每一条事件、采购单、订单和通知（包括还没发出的通知）——不分日期。只在需要彻底重来时使用。',
   'ops.maint.purgeAllTitle': '清除全部测试数据',
   'ops.maint.purgeAllBody':
-    '第一步先看会删掉多少条记录。第二步在你输入工作区标识确认之后才真正删除。',
+    '第一步先看会删掉多少条记录。第二步在你输入工作区名称确认之后才真正删除。',
   'ops.maint.previewEverything': '预览全部',
   'ops.maint.resetSheetTitle': '重置 {date}',
   'ops.maint.resetSheetBody': '先看清会删掉什么，再确认。',
@@ -964,7 +964,7 @@ export const zh = {
   'order.review.estimateHint': '~ 按上次买入价 · {known} 项有价 · {unknown} 项无价',
   'approval.estimateUnpriced': '另有 {n} 项无价',
 
-  // ── 其他物品（会话级备注，M1.8） ──────────────────────────────────
+  // ── 订单备注（M1.8） ──────────────────────────────────────────────
   'order.notes.label': '备注',
   'order.notes.saving': '保存中…',
   'order.notes.saved': '已保存 ✓',
@@ -1515,8 +1515,6 @@ export const zh = {
   'confirm.status.short': '数量不足',
   'confirm.status.wrong': '商品不对',
   'confirm.status.quality': '质量问题',
-
-  // ── 13. App theme ──────────────────────────────────────────────
 
   // ── 14. Finance reports (M1.15) ─────────────────────
   'finance.preset.today': '今天',
