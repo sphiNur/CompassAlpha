@@ -58,6 +58,15 @@ describe('groupRunsByDay', () => {
     expect(day!.total).toBe(200);
   });
 
+  test('a trip is the run’s own number, also after a gap (RUNWEB2-29)', () => {
+    // #2 was cancelled or moved to another day: #1 and #3 remain.
+    const [day] = groupRunsByDay([run('c', '2026-10-22', 2), run('a', '2026-10-22', 0)]);
+    expect(day!.storeLines.map((l) => [l.trip, l.run.id])).toEqual([
+      [1, 'a'],
+      [3, 'c'],
+    ]);
+  });
+
   test('a single-run day is one entry with trip 1', () => {
     const [day] = groupRunsByDay([run('a', '2026-10-20', 0)]);
     expect(day!.runs).toHaveLength(1);

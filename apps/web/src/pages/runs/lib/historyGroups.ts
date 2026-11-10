@@ -64,11 +64,13 @@ export function groupRunsByDay(runs: readonly RunListRow[]): HistoryDay[] {
       hasSplit && day.transfer !== null ? addMoney(day.transfer, run.actualTransferTotal) : null;
   }
   for (const day of days) {
-    // Trip numbers in run order (#1 first), whatever the list order.
+    // In run order, whatever the list order. RUNWEB2-29: a trip is the
+    // run's own number (runIndex + 1), as on its detail and on the
+    // server; a position skipped a cancelled or moved run, so "trip 2"
+    // opened "#3".
     const ordered = [...day.runs].sort((a, b) => a.runIndex - b.runIndex);
-    const tripOf = new Map(ordered.map((r, i) => [r.id, i + 1]));
     day.storeLines = ordered.flatMap((run) =>
-      (run.storeTotals ?? []).map((st) => ({ ...st, run, trip: tripOf.get(run.id)! })),
+      (run.storeTotals ?? []).map((st) => ({ ...st, run, trip: run.runIndex + 1 })),
     );
   }
   return days;

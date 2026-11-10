@@ -1565,7 +1565,6 @@ export const ru = {
   'run.toast.startDeliveryUndone': 'Назад к закупке',
   'run.toast.runFinished': 'Закупка завершена',
   'run.history.title': 'История',
-  'run.history.subtitle': 'Прошлые закупки — нажмите для деталей',
   'run.history.matchedRunsTotal': '(по найденным)',
   'run.history.allStores': 'Все магазины',
   // M3.9: отменённые run больше не показываются в истории — 4 ключа удалены.
@@ -1963,6 +1962,7 @@ export const ru = {
   'run.history.tripsHeading': 'Закупки',
   'run.history.storeItemsHeading': 'Покупки {store} за день',
   'run.history.searchPlaceholder': 'Поиск закупок',
+  'run.history.filtersButton': 'Фильтры',
   'run.history.filters': 'Фильтры ({n})',
   'run.history.activeFilters': 'Активные фильтры: {n}',
   'run.history.clearAll': 'Очистить всё',
@@ -1985,6 +1985,7 @@ export const ru = {
   'run.history.sortLabel': 'Сортировка',
   'run.history.sort.newest': 'Сначала новые',
   'run.history.sort.oldest': 'Сначала старые',
+  'run.history.empty': 'Закупок пока нет',
   'run.history.noMatches': 'Нет закупок, соответствующих этим фильтрам.',
   'run.history.previousPage': 'Предыдущая страница',
   'run.history.nextPage': 'Следующая страница',

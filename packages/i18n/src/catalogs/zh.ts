@@ -1387,7 +1387,6 @@ export const zh = {
   'run.toast.startDeliveryUndone': '已回到采购阶段',
   'run.toast.runFinished': '采购已结束',
   'run.history.title': '历史记录',
-  'run.history.subtitle': '过往的采购单——点击查看详情',
   'run.history.matchedRunsTotal': '（符合条件的合计）',
   'run.history.allStores': '全部门店',
   // M3.9: 已取消 run 不再显示在采购页历史里，移除 4 个 key.
@@ -1733,6 +1732,7 @@ export const zh = {
   'run.history.tripsHeading': '各张采购单',
   'run.history.storeItemsHeading': '{store} 当天采购清单',
   'run.history.searchPlaceholder': '搜索采购记录',
+  'run.history.filtersButton': '筛选',
   'run.history.filters': '筛选（{n}）',
   'run.history.activeFilters': '{n} 个生效中的筛选条件',
   'run.history.clearAll': '全部清除',
@@ -1754,6 +1754,7 @@ export const zh = {
   'run.history.sortLabel': '排序',
   'run.history.sort.newest': '最新优先',
   'run.history.sort.oldest': '最早优先',
+  'run.history.empty': '还没有采购单',
   'run.history.noMatches': '没有符合这些筛选条件的采购记录。',
   'run.history.previousPage': '上一页',
   'run.history.nextPage': '下一页',
