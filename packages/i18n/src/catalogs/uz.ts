@@ -2243,7 +2243,7 @@ export const uz = {
   'ops.audit.s.roleDelete': '{actor} «{role}» rolini oʻchirdi',
   'ops.audit.s.permissionAllow': '{actor} {member} uchun ruxsat berdi: {permission}',
   'ops.audit.s.permissionDeny': '{actor} {member} uchun taqiqladi: {permission}',
-  'ops.audit.s.permissionRevoke': '{actor} {member} uchun {permission} sozlamasini olib tashladi',
+  'ops.audit.s.permissionRevoke': '{actor} {member} uchun alohida sozlamani olib tashladi: {permission}',
   'ops.audit.s.inviteCreate': '{actor} taklif havolasini yaratdi',
   'ops.audit.s.inviteRevoke': '{actor} taklif havolasini qaytarib oldi',
   'ops.audit.s.inviteByTgId': '{actor} {member}ni Telegram ID orqali qoʻshdi',
