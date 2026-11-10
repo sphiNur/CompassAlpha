@@ -28,7 +28,6 @@ export const ru = {
   'common.archive': 'Архивировать',
   'common.archived': 'в архиве',
   'common.unarchive': 'Восстановить',
-  'common.name': 'Название',
   'common.remove': 'Убрать',
   'common.save': 'Сохранить',
   'common.back': 'Назад',
@@ -169,9 +168,6 @@ export const ru = {
   'ops.maint.resetSheetTitle': 'Сбросить {date}',
   'ops.maint.resetSheetBody': 'Проверьте, что будет удалено, затем подтвердите.',
   'ops.maint.confirmPurgeTitle': 'Подтвердите удаление',
-  'ops.maint.confirmPurgeBody':
-    'Введите идентификатор рабочего пространства «{slug}» для подтверждения.',
-  'ops.maint.confirmPurgeLabel': 'Идентификатор пространства',
   'people.readOnlyStore': 'Только просмотр',
   'people.orgLevelGroup': 'Всё рабочее пространство ({n})',
   'people.orgLevelEmptyTitle': 'Нет участников уровня рабочего пространства',
@@ -338,7 +334,6 @@ export const ru = {
   'ops.history.decidedBy': '· {name}',
   'ops.history.skuCount':
     '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
-  'ops.purge.inRun': 'в закупке',
   'ops.purge.runLabel': 'Закупка {date} #{n}',
   'ops.purge.unknownStore': 'Неизвестный магазин',
   'ops.purge.deleteSessionTitle': 'Удалить заказ',
@@ -1025,8 +1020,6 @@ export const ru = {
   'upload.errors.unsupportedContentType': 'Этот тип файла не разрешён',
 
   // ── 8. Order page ──────────────────────────────────────────────
-  'order.empty.title': 'Пока ничего не выбрано',
-  'order.empty.description': 'Нажмите + рядом с товаром, чтобы начать заказ.',
   'order.categoriesAriaLabel': 'Категории товаров',
   'order.categories.all': 'Все',
   'order.search.placeholder': 'Поиск товаров (любой язык)…',
@@ -1083,7 +1076,6 @@ export const ru = {
   'order.submitted.extrasOriginal': 'Прочее при отправке',
   'order.submitted.changedShort': 'Изменён при проверке',
   'order.submitted.unchanged': 'Как при отправке',
-  'order.review.remove': 'Убрать',
   'order.review.estimatedTotal': 'Оценка стоимости',
   'order.review.estimateHint': '~ по последней цене покупки · {known} с ценой · {unknown} без цены',
   'approval.estimateUnpriced': '+ {n} без цены',
@@ -1322,9 +1314,6 @@ export const ru = {
   'run.step.done': 'Готово',
   'run.action.startPurchase': 'Начать закупку',
   'run.action.ejectSession': 'Убрать из закупки',
-  'run.section.sessions': 'Заказы в этой закупке',
-  'run.sessions.meta':
-    '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
   'run.sessions.stats':
     '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · прочее {extras}',
   'run.sessions.statsNoExtras':
@@ -1700,8 +1689,6 @@ export const ru = {
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Для этого магазина нет позиций',
   'confirm.empty.nothingToConfirm': 'Нечего принимать',
-  'confirm.empty.nothingDesc':
-    'Когда товар привезут в ваш магазин — здесь появится список на приёмку.',
   'confirm.runOnDate': 'Закупка {date}',
   'confirm.confirmStore': 'Подтвердить приёмку',
   'confirm.progress': 'Проверено {done}/{total}',
@@ -2109,7 +2096,6 @@ export const ru = {
   'settlement.noEligibleStores.body':
     'У вас нет права закрывать день ни в одном назначенном магазине. Попросите управляющего магазином проверить вашу роль.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
-  'settlement.errors.fieldMoney': '{field}: введите число, не более двух знаков после запятой.',
   'settlement.errors.fieldsToFix':
     '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
   'settlement.errors.goToFirst': 'Перейти',
@@ -2723,15 +2709,11 @@ export const ru = {
   'attendance.errors.faceNotFound':
     'На фото не найдено лицо. Смотрите в камеру при хорошем свете и сделайте фото снова.',
   'attendance.errors.faceCheckUnavailable': 'Проверка лица сейчас недоступна. Попробуйте позже.',
-  'attendance.errors.photoNotFound': 'Этого фото больше нет.',
   'attendance.export.col.face': 'Лицо',
   'attendance.export.face.match': 'Совпадает',
   'attendance.export.face.mismatch': 'Не совпадает',
   'attendance.export.face.enrolled': 'Записано',
   'attendance.export.face.unchecked': 'Не проверено',
-  'notify.attendance.faceMismatch.title': 'Лицо не совпадает',
-  'notify.attendance.faceMismatch.body':
-    '{name}: отметка в {store} в {time}, лицо не совпадает с записанным. Проверьте фото отметки.',
   'attendance.errors.livenessRequired':
     'В этом магазине для отметки нужна проверка живого лица. Обновите приложение и попробуйте снова.',
   'attendance.errors.livenessExpired':
@@ -2770,9 +2752,6 @@ export const ru = {
   'attendance.export.check.livenessFailed': 'Живое лицо не подтверждено',
   'attendance.export.check.borrowed': 'С телефона: {name}',
   'attendance.export.check.newDevice': 'Новый телефон',
-  'notify.attendance.livenessFailed.title': 'Проверка живого лица не пройдена',
-  'notify.attendance.livenessFailed.body':
-    '{name}: отметка в {store} в {time}, проверка живого лица не пройдена. Проверьте фото отметки.',
   'notify.attendance.borrowedPhone.title': 'Отметка с телефона коллеги',
   'notify.attendance.borrowedPhone.body':
     '{name}: отметка в {store} в {time} с телефона, владелец: {owner}. Лицо совпало.',
@@ -2821,9 +2800,6 @@ export const ru = {
   'attendance.review.overtimeTitle': 'Переработка ждёт решения',
   'attendance.review.overtimeBody': 'Ожидают: {count}. Одобрите или отклоните в табеле.',
   'attendance.export.check.faceLike': 'Похоже на: {name}',
-  'notify.attendance.faceLike.title': 'Лицо похоже на другого сотрудника',
-  'notify.attendance.faceLike.body':
-    '{name}: отметка в {store} в {time}, но лицо похоже на: {like}. Проверьте фото отметки.',
   'attendance.errors.faceNotEnrolled':
     'Сначала зарегистрируйте лицо; отмечаться можно после одобрения управляющим.',
   'attendance.errors.faceMismatch': 'Лицо не совпадает с вашим, отметка не сохранена.',

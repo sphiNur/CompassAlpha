@@ -107,9 +107,11 @@ async function remindShift(db: DB, r: Row, now: Date): Promise<number> {
     let sent = 0;
     for (const action of due) {
       if (action === 'remindIn' || action === 'remindOut') {
+        const clockIn = action === 'remindIn';
         await dispatch(tx, r.org_id, [r.user_id], {
-          template: `attendance.${action}`,
-          title: action === 'remindIn' ? 'Time to clock in' : 'Did you clock out?',
+          // Spelled out, so the unused-key scan can match them to their notify.* texts.
+          template: clockIn ? 'attendance.remindIn' : 'attendance.remindOut',
+          title: clockIn ? 'Time to clock in' : 'Did you clock out?',
           vars,
           deepLink: linkForStore('/attendance', r.store_id),
           dedupKey: `attendance:${r.shift_id}:${action}`,

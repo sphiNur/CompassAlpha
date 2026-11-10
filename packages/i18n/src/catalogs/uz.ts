@@ -35,7 +35,6 @@ export const uz = {
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',
   'common.unarchive': 'Arxivdan chiqarish',
-  'common.name': 'Nomi',
   'common.remove': 'Olib tashlash',
   'common.save': 'Saqlash',
   'common.back': 'Orqaga',
@@ -176,8 +175,6 @@ export const uz = {
   'ops.maint.resetSheetTitle': '{date} maʼlumotlarini tozalash',
   'ops.maint.resetSheetBody': 'Nima oʻchirilishini koʻrib chiqing, keyin tasdiqlang.',
   'ops.maint.confirmPurgeTitle': 'Tozalashni tasdiqlang',
-  'ops.maint.confirmPurgeBody': 'Tasdiqlash uchun ish maydoni identifikatorini «{slug}» kiriting.',
-  'ops.maint.confirmPurgeLabel': 'Ish maydoni identifikatori',
   'people.readOnlyStore': 'Faqat koʻrish',
   'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Ish maydoni darajasidagi aʼzolar yoʻq',
@@ -344,7 +341,6 @@ export const uz = {
   'ops.history.decidedIn': '· {n} daqiqada hal qilindi',
   'ops.history.decidedBy': '· {name}',
   'ops.history.skuCount': '{n} ta mahsulot',
-  'ops.purge.inRun': 'xaridda',
   'ops.purge.runLabel': 'Xarid {date} #{n}',
   'ops.purge.unknownStore': 'Nomaʼlum doʻkon',
   'ops.purge.deleteSessionTitle': 'Buyurtmani oʻchirish',
@@ -1028,8 +1024,6 @@ export const uz = {
   'upload.errors.unsupportedContentType': 'Bu fayl turiga ruxsat yoʻq',
 
   // ── 8. Order page ──────────────────────────────────────────────
-  'order.empty.title': 'Hech narsa tanlanmagan',
-  'order.empty.description': 'Buyurtmani boshlash uchun mahsulot yonidagi + ni bosing.',
   'order.categoriesAriaLabel': 'Mahsulot toifalari',
   'order.categories.all': 'Hammasi',
   'order.search.placeholder': 'Mahsulot qidirish (har qanday tilda)…',
@@ -1084,7 +1078,6 @@ export const uz = {
   'order.submitted.extrasOriginal': 'Yuborilgandagi boshqa narsalar',
   'order.submitted.changedShort': 'Tekshiruvda oʻzgartirilgan',
   'order.submitted.unchanged': 'Yuborilgandek',
-  'order.review.remove': 'Olib tashlash',
   'order.review.estimatedTotal': 'Taxminiy summa',
   'order.review.estimateHint': '~ oxirgi xarid narxi boʻyicha · {known} narxli · {unknown} narxsiz',
   'approval.estimateUnpriced': '+ {n} ta narxsiz',
@@ -1320,8 +1313,6 @@ export const uz = {
   'run.step.done': 'Tugadi',
   'run.action.startPurchase': 'Xaridni boshlash',
   'run.action.ejectSession': 'Xariddan chiqarish',
-  'run.section.sessions': 'Ushbu xariddagi buyurtmalar',
-  'run.sessions.meta': '{n} ta buyurtma',
   'run.sessions.stats': '{items} ta mahsulot · boshqa {extras}',
   'run.sessions.statsNoExtras': '{items} ta mahsulot',
   'run.sessions.unknownSubmitter': 'Nomaʼlum yuboruvchi',
@@ -1692,8 +1683,6 @@ export const uz = {
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Bu doʻkon uchun mahsulot yoʻq',
   'confirm.empty.nothingToConfirm': 'Qabul qilinadigan narsa yoʻq',
-  'confirm.empty.nothingDesc':
-    'Sizning doʻkoningizga mahsulot yetkazilganda shu yerda paydo boʻladi.',
   'confirm.runOnDate': 'Xarid {date}',
   'confirm.confirmStore': 'Qabulni tasdiqlash',
   'confirm.progress': 'Tekshirildi {done}/{total}',
@@ -2096,7 +2085,6 @@ export const uz = {
   'settlement.noEligibleStores.body':
     'Sizga biriktirilgan doʻkonlarning hech birida kun yakuni huquqi yoʻq. Doʻkon boshqaruvchisidan rolingizni tekshirishni soʻrang.',
   'settlement.errors.invalidMoney': 'Ikki kasrgacha boʻlgan toʻgʻri summani kiriting.',
-  'settlement.errors.fieldMoney': '{field}: ikki kasrgacha boʻlgan son kiriting.',
   'settlement.errors.fieldsToFix':
     '{n, plural, =1 {1 ta maydonni tuzating} other {{n} ta maydonni tuzating}}',
   'settlement.errors.goToFirst': 'Oʻtish',
@@ -2711,15 +2699,11 @@ export const uz = {
   'attendance.errors.faceNotFound': 'Suratda yuz topilmadi. Kameraga qarab, yorugʻda qayta oling.',
   'attendance.errors.faceCheckUnavailable':
     'Yuzni tekshirish hozir ishlamayapti. Keyinroq urinib koʻring.',
-  'attendance.errors.photoNotFound': 'Bu surat endi yoʻq.',
   'attendance.export.col.face': 'Yuz',
   'attendance.export.face.match': 'Mos',
   'attendance.export.face.mismatch': 'Mos emas',
   'attendance.export.face.enrolled': 'Roʻyxatga olindi',
   'attendance.export.face.unchecked': 'Tekshirilmadi',
-  'notify.attendance.faceMismatch.title': 'Yuz mos emas',
-  'notify.attendance.faceMismatch.body':
-    '{name}: {store} da {time} da belgiladi, yuz roʻyxatdagisiga mos emas. Belgilash suratlarini tekshiring.',
   'attendance.errors.livenessRequired':
     'Bu doʻkonda belgilash uchun jonli yuz tekshiruvi kerak. Ilovani yangilab, qayta urinib koʻring.',
   'attendance.errors.livenessExpired': 'Yuz tekshiruvi juda uzoq davom etdi. Qaytadan boshlang.',
@@ -2757,9 +2741,6 @@ export const uz = {
   'attendance.export.check.livenessFailed': 'Jonli yuz tasdiqlanmadi',
   'attendance.export.check.borrowed': 'Telefon egasi: {name}',
   'attendance.export.check.newDevice': 'Yangi telefon',
-  'notify.attendance.livenessFailed.title': 'Jonli yuz tekshiruvidan oʻtilmadi',
-  'notify.attendance.livenessFailed.body':
-    '{name}: {store} da {time} da belgiladi, jonli yuz tekshiruvidan oʻtilmadi. Belgilash suratlarini tekshiring.',
   'notify.attendance.borrowedPhone.title': 'Hamkasb telefonidan belgilash',
   'notify.attendance.borrowedPhone.body':
     '{name}: {store} da {time} da belgiladi, telefon egasi: {owner}. Yuz mos keldi.',
@@ -2808,9 +2789,6 @@ export const uz = {
   'attendance.review.overtimeTitle': 'Ortiqcha ish qarorni kutmoqda',
   'attendance.review.overtimeBody': 'Kutmoqda: {count}. Jadvalda tasdiqlang yoki rad eting.',
   'attendance.export.check.faceLike': 'Oʻxshash: {name}',
-  'notify.attendance.faceLike.title': 'Yuz boshqa xodimga oʻxshaydi',
-  'notify.attendance.faceLike.body':
-    '{name}: {store} da {time} da belgiladi, lekin yuz {like} ga oʻxshaydi. Belgilash suratlarini tekshiring.',
   'attendance.errors.faceNotEnrolled':
     'Avval yuzingizni roʻyxatdan oʻtkazing; boshqaruvchi tasdiqlagach belgilanishingiz mumkin.',
   'attendance.errors.faceMismatch': 'Yuz sizniki bilan mos kelmadi, belgi saqlanmadi.',
