@@ -936,6 +936,7 @@ export function AdminAuditSection() {
                   unknown: i18n.t('ops.audit.unknown'),
                   system: i18n.t('ops.activity.system'),
                   roleName: (role) => roleLabels.name(role),
+                  permission: (key) => roleLabels.permission(key, null),
                   localName: (names) => productName({ names }),
                   day: (d) => dateFmt.calendarDay(d),
                 });

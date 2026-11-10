@@ -112,7 +112,8 @@ describe('ADM-17 / RE-AUTH-2: built-in roles and permissions', () => {
     for (const l of ['zh', 'en', 'ru', 'uz'] as const) {
       const r = roleLabeller(createI18n(l).t);
       for (const p of PERMISSIONS) {
-        expect(r.permission(p.key, p.description)).not.toBe(p.key);
+        // Without the stored text: the admin audit has only the key.
+        expect(r.permission(p.key, null)).not.toBe(p.key);
         const prefix = p.key.split('.')[0]!;
         expect(r.permissionGroup(prefix)).not.toBe(prefix);
       }

@@ -150,6 +150,8 @@ export function describeAuditRow(
     system: string;
     /** A role's name in the UI language (lib/roleLabels.ts). */
     roleName: (role: { slug: string; name?: string | null }) => string;
+    /** A permission's name in the UI language (lib/roleLabels.ts). */
+    permission: (key: string) => string;
     /** Localizes an i18n names map (SKU / category). */
     localName: (names: Record<string, string>) => string;
     /** Formats an ISO calendar date (a purged order's or run's day). */
@@ -196,7 +198,10 @@ export function describeAuditRow(
     case 'memberPermission.allow':
     case 'memberPermission.deny':
     case 'memberPermission.revoke': {
-      const permission = or(typeof inputs.permissionKey === 'string' ? inputs.permissionKey : null);
+      // The stored key (order.approve) is not a word anyone reads.
+      const permission = or(
+        typeof inputs.permissionKey === 'string' ? loc.permission(inputs.permissionKey) : null,
+      );
       const key =
         verb === 'allow'
           ? 'ops.audit.s.permissionAllow'
