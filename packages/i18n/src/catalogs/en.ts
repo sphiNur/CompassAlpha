@@ -1404,9 +1404,8 @@ export const en = {
   'run.section.sessions': 'Orders in this run',
   'run.sessions.meta': '{n, plural, one {# order} other {# orders}}',
   'run.sessions.stats':
-    '{items, plural, one {# product} other {# products}} · {qty, plural, one {{qty} unit} other {{qty} units}} · {extras, plural, one {# other item} other {# other items}}',
-  'run.sessions.statsNoExtras':
-    '{items, plural, one {# product} other {# products}} · {qty, plural, one {{qty} unit} other {{qty} units}}',
+    '{items, plural, one {# product} other {# products}} · {extras, plural, one {# other item} other {# other items}}',
+  'run.sessions.statsNoExtras': '{items, plural, one {# product} other {# products}}',
   'run.sessions.unknownSubmitter': 'Unknown submitter',
   'run.eject.reasonPlaceholder': 'Reason (optional)',
   'run.confirm.ejectSession.title': 'Remove the order from {store} / {who}?',
@@ -2835,7 +2834,9 @@ export const en = {
     'This store needs the live face check to clock. Update the app and try again.',
   'attendance.errors.livenessExpired': 'The face check took too long. Start again.',
   'attendance.errors.livenessFailed':
-    'The live check did not pass. Face the camera in good light and turn your head as asked.',
+    'The live check did not pass: do each move the screen asks for.',
+  'attendance.errors.livenessOtherFace':
+    'The moves could not be matched to your face: keep only your own face in the frame.',
   'attendance.errors.borrowNoFace': 'This colleague has not enrolled their face yet.',
   'attendance.errors.borrowFaceMismatch': 'The face does not match this colleague.',
   'attendance.errors.notColleague': 'On your phone you can clock in only colleagues of this store.',

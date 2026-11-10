@@ -1,4 +1,5 @@
 import { initTRPC, TRPCError } from '@trpc/server';
+import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import { and, eq, gt, isNull, lte } from 'drizzle-orm';
@@ -65,44 +66,75 @@ export const router = t.router;
 export const middleware = t.middleware;
 
 /**
- * Cross-cutting error logger (M1.9-extra P7, 2026-05-07). Audit found
- * that `admin.ts` and `auth.ts` had ZERO error logging — every failed
- * admin mutation was invisible in journalctl. Hoisting the catch into
- * the procedure factory means every router gets structured logging
- * for free, with consistent context shape.
- *
- * INTERNAL_SERVER_ERROR is logged at error level with the full stack;
- * client-fault errors (4xx-shape) are logged at warn level so they
- * don't drown the signal but are still searchable.
+ * Failed calls in the journal (COREAPI-02, 2026-11-09). A procedure's
+ * failure comes back from `opts.next()` as `{ ok: false, error }`: tRPC v11
+ * does not throw it, so the try/catch that stood here (M1.9-extra P7)
+ * never ran and no refusal was ever logged. The tRPC onError (app.ts)
+ * still logs INTERNAL_SERVER_ERROR with its cause; this logs the rest.
  */
 const errorLogMiddleware = t.middleware(async (opts) => {
-  try {
-    return await opts.next();
-  } catch (err) {
-    const tErr = err instanceof TRPCError ? err : null;
-    const code = tErr?.code ?? 'UNKNOWN';
-    const message = tErr?.message ?? (err instanceof Error ? err.message : String(err));
-    const isServerFault = !tErr || code === 'INTERNAL_SERVER_ERROR' || code === 'TIMEOUT';
-    const log = isServerFault ? logger.error.bind(logger) : logger.warn.bind(logger);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ctx = opts.ctx as any;
-    log(
-      {
-        path: opts.path,
-        type: opts.type,
-        code,
-        message,
-        traceId: ctx?.traceId,
-        userId: ctx?.session?.userId,
-        orgId: ctx?.session?.orgId,
-        cause: tErr?.cause,
-        ...(isServerFault && err instanceof Error ? { stack: err.stack } : {}),
-      },
-      `trpc.${opts.path} ${tErr?.code ?? 'threw'}`,
-    );
-    throw err;
-  }
+  const result = await opts.next();
+  if (!result.ok) logFailedCall(opts.ctx, opts.path, opts.type, result.error);
+  return result;
 });
+
+/**
+ * One line per failed call: what was called, by whom, the key the client
+ * was shown and the refusal's own details. Never the input, which can
+ * hold photos, coordinates or names, and no name from the details either
+ * (attendance's "just punched" names the colleague).
+ *   - Another server fault (5xx: the database was down): warn.
+ *   - A refused mutation (permission, rule, validation, conflict, rate
+ *     limit): info. This answers "I tapped and nothing happened".
+ *   - A refused query, or a call without a session (the app then refreshes
+ *     its token): debug. Pages poll, and these are routine.
+ */
+export function logFailedCall(
+  ctx: Pick<RequestContext, 'traceId' | 'session'>,
+  path: string,
+  type: string,
+  error: TRPCError,
+): void {
+  if (error.code === 'INTERNAL_SERVER_ERROR') return;
+  const level =
+    getHTTPStatusCodeFromError(error) >= 500
+      ? 'warn'
+      : type === 'mutation' && error.message !== 'auth.errors.required'
+        ? 'info'
+        : 'debug';
+  const cause = error.cause;
+  const missing = cause as
+    | { missingPermission?: unknown; missingPermissionAny?: unknown }
+    | undefined;
+  const details =
+    cause instanceof ZodError
+      ? { key: 'common.errors.validation', fields: Object.keys(cause.flatten().fieldErrors) }
+      : {
+          key: error.message,
+          context: withoutNames(cause instanceof DomainError ? cause.context : causeContext(cause)),
+          missingPermission: missing?.missingPermission ?? missing?.missingPermissionAny,
+        };
+  logger[level](
+    {
+      path,
+      type,
+      code: error.code,
+      ...details,
+      traceId: ctx.traceId,
+      userId: ctx.session?.userId,
+      orgId: ctx.session?.orgId,
+    },
+    `trpc ${error.code} ${path}`,
+  );
+}
+
+/** `context` less the people's names it may carry (`name`, `…Name`). */
+function withoutNames(
+  context: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!context) return undefined;
+  return Object.fromEntries(Object.entries(context).filter(([k]) => !/(^n|N)ame$/.test(k)));
+}
 
 export const publicProcedure = t.procedure.use(errorLogMiddleware);
 
@@ -387,13 +419,8 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
   }
 
   // We hold the claim: run the handler, then cache its answer or let go.
-  let result: Awaited<ReturnType<typeof opts.next>>;
-  try {
-    result = await opts.next();
-  } catch (err) {
-    await releaseClaim(db, orgId, key, opts.path, userId);
-    throw err;
-  }
+  // A failure comes back as `{ ok: false }` (tRPC v11 does not throw it).
+  const result = await opts.next();
   // tRPC v11 middleware return shape: { ok: true, data, ctx, marker } | { ok: false, error }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = result as any;

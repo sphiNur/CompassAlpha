@@ -22,10 +22,15 @@ import type { RequestContext } from '../trpc/context';
 const SHOULD_RUN =
   !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1' && !!env.TELEGRAM_BOT_TOKEN;
 
-function signInitData(tgUserId: bigint): string {
+function signInitData(tgUserId: bigint, languageCode?: string): string {
   const fields: Record<string, string> = {
     auth_date: Math.floor(Date.now() / 1000).toString(),
-    user: JSON.stringify({ id: Number(tgUserId), first_name: 'Enrol', username: `u${tgUserId}` }),
+    user: JSON.stringify({
+      id: Number(tgUserId),
+      first_name: 'Enrol',
+      username: `u${tgUserId}`,
+      ...(languageCode ? { language_code: languageCode } : {}),
+    }),
   };
   const dataCheckString = Object.entries(fields)
     .map(([k, v]) => `${k}=${v}`)
@@ -208,5 +213,36 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       refreshToken: again.tokens.refreshToken,
     });
     expect(refreshed.session.user.id).toBe(user!.id);
+  });
+
+  test("Telegram's raw language code is kept as one of the four (COREWEB2-10)", async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    // Granted from the CLI or an invite: no language yet.
+    const tgUserId = freshTgId();
+    const [user] = await db
+      .insert(s.users)
+      .values({ tgUserId, displayName: `tg:${tgUserId}` })
+      .returning();
+    await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
+    const login = await anonymousCaller().auth.telegramLogin({
+      initData: signInitData(tgUserId, 'zh-hans'),
+    });
+    expect(login.session.user.locale).toBe('zh');
+    const stored = await db.query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, user!.id),
+    });
+    expect(stored?.locale).toBe('zh');
+
+    // One stored raw by an earlier sign-in is read, and kept, as one too.
+    const earlier = freshTgId();
+    const [old] = await db
+      .insert(s.users)
+      .values({ tgUserId: earlier, displayName: `tg:${earlier}`, locale: 'ru-RU' })
+      .returning();
+    await db.insert(s.members).values({ orgId, userId: old!.id, status: 'active' });
+    const again = await anonymousCaller().auth.telegramLogin({ initData: signInitData(earlier) });
+    expect(again.session.user.locale).toBe('ru');
+    const kept = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, old!.id) });
+    expect(kept?.locale).toBe('ru');
   });
 });

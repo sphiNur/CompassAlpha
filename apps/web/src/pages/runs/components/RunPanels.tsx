@@ -2401,7 +2401,6 @@ export function RunSessionsCard({
                       : 'run.sessions.statsNoExtras',
                     {
                       items: sessionRow.itemCount,
-                      qty: formatQty(sessionRow.totalQty),
                       extras: sessionRow.extrasCount,
                     },
                   )}

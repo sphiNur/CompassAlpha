@@ -22,6 +22,7 @@ import {
   CompleteOnboardingInputSchema,
   type SessionSchema as SessionShape,
 } from '@compass/contracts';
+import { detectLocale } from '@compass/i18n';
 import { authedProcedure, publicProcedure, router } from '../trpc';
 import { verifyInitData, type TelegramUser } from '../../services/telegramAuth';
 import { checkClientRate } from '../../services/rateLimit';
@@ -651,7 +652,7 @@ export const authRouter = router({
         tx
           .update(s.users)
           .set({
-            locale: input.locale ?? user.locale ?? 'en',
+            locale: detectLocale(input.locale ?? user.locale),
             lastOrgId: member.orgId,
             lastSeenAt: new Date(),
           })
@@ -710,7 +711,7 @@ export const authRouter = router({
                 tg.username ||
                 `user-${tg.id}`,
               avatarUrl: tg.photo_url ?? null,
-              locale: input.locale ?? tg.language_code ?? 'en',
+              locale: detectLocale(input.locale ?? tg.language_code),
               // A local mock is not a person who needs onboarding. Marking it
               // locked avoids creating an otherwise invisible first-run form
               // in browser automation.
@@ -729,7 +730,7 @@ export const authRouter = router({
             .set({
               tgUsername: tg.username ?? known.tgUsername,
               avatarUrl: tg.photo_url ?? known.avatarUrl,
-              locale: input.locale ?? known.locale ?? tg.language_code ?? 'en',
+              locale: detectLocale(input.locale ?? known.locale ?? tg.language_code),
               lastSeenAt: new Date(),
             })
             .where(eq(s.users.id, known.id)),
@@ -878,7 +879,7 @@ export const authRouter = router({
               tg.username ||
               `user-${tg.id}`,
             avatarUrl: tg.photo_url ?? null,
-            locale: input.locale ?? tg.language_code ?? 'en',
+            locale: detectLocale(input.locale ?? tg.language_code),
             displayNameLocked: false,
           })
           .returning();
@@ -890,7 +891,7 @@ export const authRouter = router({
           .set({
             tgUsername: tg.username ?? known.tgUsername,
             avatarUrl: tg.photo_url ?? known.avatarUrl,
-            locale: input.locale ?? known.locale ?? tg.language_code ?? 'en',
+            locale: detectLocale(input.locale ?? known.locale ?? tg.language_code),
             lastSeenAt: new Date(),
             ...(known.displayName.startsWith('tg:')
               ? {
@@ -1161,7 +1162,7 @@ export const authRouter = router({
           return provisionOrganization(tx, {
             name: input.name,
             slug,
-            locale: input.locale ?? user.locale ?? 'en',
+            locale: detectLocale(input.locale ?? user.locale),
             timezone: input.timezone,
             ownerUserId: user.id,
           });
@@ -1848,7 +1849,7 @@ async function readSessionPayload(
       displayName: user.displayName,
       displayNameLocked: user.displayNameLocked,
       avatarUrl: user.avatarUrl,
-      locale: (user.locale ?? 'en') as Session['user']['locale'],
+      locale: detectLocale(user.locale),
       // M3.45 (2026-05-22): bilingual display preference. Null when
       // unset (default — single-language UI). Otherwise one of the
       // 4-locale enum, drives product-name rendering and per-vendor
