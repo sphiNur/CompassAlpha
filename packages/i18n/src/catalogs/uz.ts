@@ -2841,6 +2841,7 @@ export const uz = {
   'attendance.enroll.problem.notTurned': 'bosh yetarlicha burilmagan',
   'attendance.enroll.problem.otherPerson': 'oʻsha odamga oʻxshamaydi',
   'attendance.enroll.problem.spoof': 'haqiqiy yuzga oʻxshamaydi',
+  'attendance.enroll.problem.unknown': 'yaroqsiz',
   'attendance.enroll.cannotBody':
     'Bu telefonda kamera yoki yuzni kuzatish ishlamaydi. Oʻz Telegram hisobingiz bilan boshqa telefonda roʻyxatdan oʻting.',
   'attendance.enroll.status.approved': 'Yuz roʻyxatdan oʻtgan',

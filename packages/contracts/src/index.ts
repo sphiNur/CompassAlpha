@@ -1,5 +1,6 @@
 export * from './schemas/common';
 export * from './schemas/roles';
+export * from './schemas/faceEnroll';
 export * from './schemas/auth';
 export * from './schemas/catalog';
 export * from './schemas/order';

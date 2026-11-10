@@ -11,6 +11,8 @@
  * "a full turn" before they are combined.
  */
 
+import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
+
 /** Ticks around the ring. */
 export const TICKS = 60;
 /** A full turn sideways (the server wants 0.2; the punch camera waits for 0.35). */
@@ -21,15 +23,8 @@ export const PITCH_FULL = 0.1;
 /** How far (1 = a full turn) the head must point for a tick to light or a frame to be kept. */
 export const REACH = 0.8;
 
-export type RingPose =
-  | 'right'
-  | 'upright'
-  | 'up'
-  | 'upleft'
-  | 'left'
-  | 'downleft'
-  | 'down'
-  | 'downright';
+/** The eight poses around the ring: every enrollment pose but the two straight ones. */
+export type RingPose = Exclude<EnrollPose, 'front' | 'front2'>;
 
 /** The eight directions, counter-clockwise from the screen's right. */
 export const RING: readonly { pose: RingPose; angle: number }[] = [
@@ -94,7 +89,7 @@ export function ticksOf(pose: RingPose): number[] {
 // The session: one reading per video frame in; what to show and which
 // frame to keep out. Kept apart from the camera so it can be tested.
 
-export type EnrollShot = 'front' | RingPose | 'front2';
+export type EnrollShot = EnrollPose;
 export type RingGuide = 'noFace' | 'manyFaces' | 'closer' | 'center' | 'lookStraight';
 export type RingStage = 'position' | 'circle' | 'final' | 'over';
 

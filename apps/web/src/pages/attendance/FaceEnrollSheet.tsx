@@ -17,46 +17,15 @@
  * The ring's logic: faceRing.ts (createRingSession).
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
 import { Banner, Button, Sheet } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { errorTextOf, serverErrorKey, type ErrorVars } from '../../lib/errorText';
 import { trpc } from '../../lib/trpc';
+import { readRefusals, type Refusal } from './enrollRefusals';
 import { useCamera, useTracker } from './faceCapture';
-import {
-  createRingSession,
-  RING,
-  TICKS,
-  type EnrollShot,
-  type RingGuide,
-  type RingStage,
-} from './faceRing';
-
-type Pose = EnrollShot;
-const POSES: readonly Pose[] = ['front', ...RING.map((r) => r.pose), 'front2'];
-type Problem =
-  | 'noFace'
-  | 'manyFaces'
-  | 'small'
-  | 'dark'
-  | 'bright'
-  | 'blurry'
-  | 'notFacing'
-  | 'notTurned'
-  | 'otherPerson'
-  | 'spoof';
-const PROBLEMS: readonly Problem[] = [
-  'noFace',
-  'manyFaces',
-  'small',
-  'dark',
-  'bright',
-  'blurry',
-  'notFacing',
-  'notTurned',
-  'otherPerson',
-  'spoof',
-];
+import { createRingSession, TICKS, type RingGuide, type RingStage } from './faceRing';
 
 type Phase = Exclude<RingStage, 'over'> | 'sending' | 'done' | 'problems';
 
@@ -86,13 +55,13 @@ export function FaceEnrollSheet({
   const [lit, setLit] = useState<ReadonlySet<number>>(new Set());
   const [guide, setGuide] = useState<RingGuide | null>(null);
   const [slow, setSlow] = useState(false);
-  const [problems, setProblems] = useState<{ pose: Pose; problem: Problem }[]>([]);
+  const [problems, setProblems] = useState<Refusal[]>([]);
   const [failure, setFailure] = useState<{ key: string; vars: ErrorVars; code: string } | null>(
     null,
   );
   const [round, setRound] = useState(0);
   // Kept out of state: the frame loop writes them.
-  const shots = useRef<Partial<Record<Pose, string>>>({});
+  const shots = useRef<Partial<Record<EnrollPose, string>>>({});
 
   const restart = () => {
     shots.current = {};
@@ -121,14 +90,7 @@ export function FaceEnrollSheet({
     onError: (err) => {
       haptic('error');
       if (serverErrorKey(err) === 'attendance.errors.enrollRejected') {
-        const ctx = (err as { data?: { context?: { problems?: unknown } } }).data?.context;
-        const list = typeof ctx?.problems === 'string' ? ctx.problems.split(',') : [];
-        setProblems(
-          list.flatMap((x) => {
-            const [pose, problem] = x.split(':') as [Pose, Problem];
-            return POSES.includes(pose) && PROBLEMS.includes(problem) ? [{ pose, problem }] : [];
-          }),
-        );
+        setProblems(readRefusals((err as { data?: { context?: unknown } }).data?.context));
         setPhase('problems');
         return;
       }
@@ -261,20 +223,7 @@ export function FaceEnrollSheet({
             )}
           </Banner>
         ) : phase === 'problems' ? (
-          problems.length > 0 ? (
-            <Banner tone="danger" title={i18n.t('attendance.enroll.rejectedTitle')}>
-              <ul className="flex flex-col gap-0.5">
-                {problems.map((p, i) => (
-                  <li key={i}>
-                    {i18n.t('attendance.enroll.problemLine', {
-                      pose: i18n.t(`attendance.enroll.pose.${p.pose}`),
-                      problem: i18n.t(`attendance.enroll.problem.${p.problem}`),
-                    })}
-                  </li>
-                ))}
-              </ul>
-            </Banner>
-          ) : failure ? (
+          failure ? (
             <Banner tone="danger" title={i18n.t('attendance.errors.enrollFailed')}>
               {failure.key !== 'attendance.errors.enrollFailed' ? (
                 <p>{i18n.t(failure.key as Parameters<typeof i18n.t>[0], failure.vars)}</p>
@@ -285,7 +234,24 @@ export function FaceEnrollSheet({
                 </p>
               ) : null}
             </Banner>
-          ) : null
+          ) : (
+            // Refused photos. Review ATT-27: the title shows even when no
+            // line could be read; the sheet used to show nothing at all.
+            <Banner tone="danger" title={i18n.t('attendance.enroll.rejectedTitle')}>
+              {problems.length > 0 ? (
+                <ul className="flex flex-col gap-0.5">
+                  {problems.map((p, i) => (
+                    <li key={i}>
+                      {i18n.t('attendance.enroll.problemLine', {
+                        pose: i18n.t(`attendance.enroll.pose.${p.pose}`),
+                        problem: i18n.t(`attendance.enroll.problem.${p.problem}`),
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </Banner>
+          )
         ) : (
           <FaceRing
             lit={phase === 'final' || phase === 'sending' || phase === 'done' ? null : lit}
