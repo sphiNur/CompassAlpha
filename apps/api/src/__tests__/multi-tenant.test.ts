@@ -5,7 +5,7 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
@@ -61,7 +61,6 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     memberA = provisioned.a.ownerMemberId!;
     memberB = provisioned.b.ownerMemberId!;
     cleanupOrgIds.push(orgA, orgB);
-    await db.update(s.users).set({ lastOrgId: orgB }).where(eq(s.users.id, userId));
 
     const [normalUser] = await db
       .insert(s.users)
@@ -74,6 +73,13 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     normalUserId = normalUser!.id;
     cleanupUserIds.push(normalUserId);
     await db.insert(s.members).values({ orgId: orgA, userId: normalUserId, status: 'active' });
+  });
+
+  // Each test starts with the user last in B. One switches to A (review
+  // NEW-RAND-01: run in another order, the login test found them in A).
+  beforeEach(async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db.update(s.users).set({ lastOrgId: orgB }).where(eq(s.users.id, userId));
   });
 
   afterAll(async () => {
@@ -116,31 +122,46 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('creating a workspace provisions roles, defaults and a Super Admin owner', async () => {
-    const sessionB: SessionContext = {
-      userId,
-      memberId: memberB,
-      orgId: orgB,
+    // A platform admin of the test's own, in one workspace, so the shared
+    // user keeps exactly A and B for the login test (review NEW-RAND-01).
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [founder] = await db
+      .insert(s.users)
+      .values({ tgUserId: freshTgId(), displayName: 'Founder', displayNameLocked: true })
+      .returning();
+    cleanupUserIds.push(founder!.id);
+    await db.insert(s.platformAdmins).values({ userId: founder!.id, note: 'multi-tenant test' });
+    const home = await withSystemContext(db, 'maintenance', (tx) =>
+      provisionOrganization(tx, {
+        name: 'Founder home',
+        slug: `founder-${Math.random().toString(36).slice(2, 8)}`,
+        ownerUserId: founder!.id,
+      }),
+    );
+    cleanupOrgIds.push(home.orgId);
+    const founderSession: SessionContext = {
+      userId: founder!.id,
+      memberId: home.ownerMemberId!,
+      orgId: home.orgId,
       orgTimezone: 'UTC',
       permissions: new Set(['users.manage', 'org.admin']),
       roleSlugs: new Set(['admin']),
     };
-    const created = await callerFor(sessionB).auth.createOrganization({
+    const created = await callerFor(founderSession).auth.createOrganization({
       name: 'Brand New Restaurant',
       locale: 'en',
       timezone: 'Asia/Tashkent',
     });
     cleanupOrgIds.push(created.session.member.orgId);
 
-    expect(created.session.member.orgId).not.toBe(orgA);
-    expect(created.session.member.orgId).not.toBe(orgB);
+    expect(created.session.member.orgId).not.toBe(home.orgId);
     // 2026-10-24: the owner is Super Admin, so they can appoint admins.
     expect(created.session.roleSlugs).toContain('super_admin');
     expect(created.session.myMaxRank).toBe(100);
     expect(created.session.permissions).toContain('org.admin');
     expect(created.session.isPlatformAdmin).toBe(true);
-    expect(created.session.memberships).toHaveLength(3);
+    expect(created.session.memberships).toHaveLength(2);
 
-    const db = getDb(undefined, { system: 'maintenance' });
     const roles = await db
       .select()
       .from(s.roles)
