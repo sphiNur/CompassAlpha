@@ -844,7 +844,7 @@ export function AdminAuditSection() {
     other: i18n.t('settlement.expenseCategory.other'),
   };
   // Catalog rows get a per-kind badge (SKUs / Suppliers …) instead of
-  // the generic "Catalog".
+  // the generic "Catalog"; one without a kind (an import) keeps it.
   const kindLabel: Record<string, string> = {
     sku: i18n.t('admin.subsection.skus'),
     category: i18n.t('admin.subsection.categories'),
@@ -933,7 +933,7 @@ export function AdminAuditSection() {
                 const changes = auditChangeLines(r.inputs, changeFormat);
                 const badge =
                   s.category === 'catalog'
-                    ? (kindLabel[s.object] ?? s.object)
+                    ? (kindLabel[s.object] ?? categoryLabel.catalog)
                     : categoryLabel[s.category];
                 // Store chip: the resolved name, else the session's store
                 // list, else the id prefix (B2 / M3.17).

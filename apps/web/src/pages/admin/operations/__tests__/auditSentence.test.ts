@@ -203,10 +203,42 @@ describe('describeAuditRow', () => {
     });
   });
 
-  test('a purge row from before keeps the generic line', () => {
+  test('a purge row from before says what went, without the day (ADM2-14)', () => {
     expect(
       describeAuditRow({ action: 'admin.purge.session', inputs: { sessionId: 's1' }, actor }, loc),
-    ).toMatchObject({ key: 'ops.audit.s.generic', tone: 'danger' });
+    ).toMatchObject({
+      key: 'ops.audit.s.purgeSessionNoDate',
+      tone: 'danger',
+      params: { actor: 'Aziz' },
+    });
+    expect(
+      describeAuditRow(
+        { action: 'admin.purge.run', inputs: { runId: 'r1', sessionIds: ['s1'] }, actor },
+        loc,
+      ),
+    ).toMatchObject({ key: 'ops.audit.s.purgeRunNoDate', tone: 'danger' });
+  });
+
+  test('a catalog import counts the products it added (ADM2-14)', () => {
+    expect(
+      describeAuditRow(
+        {
+          action: 'admin.catalog.import',
+          inputs: {
+            sourceOrgId: 'o2',
+            includeSuppliers: true,
+            summary: { skus: { created: 12, existing: 3 } },
+          },
+          actor,
+        },
+        loc,
+      ),
+    ).toMatchObject({
+      key: 'ops.audit.s.catalogImport',
+      category: 'catalog',
+      object: 'catalog',
+      params: { actor: 'Aziz', n: '12' },
+    });
   });
 
   test('unknown action → generic sentence with parsed words', () => {
