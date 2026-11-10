@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./order": "./src/order/index.ts",
-    "./run": "./src/run/index.ts"
+    "./run": "./src/run/index.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "test": "bun test",

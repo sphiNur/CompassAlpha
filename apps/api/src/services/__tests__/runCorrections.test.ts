@@ -3,97 +3,64 @@
  * what a store confirmed, and price changes after receipt. Pure.
  */
 import { describe, expect, test } from 'bun:test';
-import { applyRun, decideRun, emptyRunState, type RunCommand, type RunEvent } from '@compass/domain/run';
+import { emptyRunState, type RunCommand, type RunEvent } from '@compass/domain/run';
+import {
+  confirmStoreItem,
+  planRun,
+  purchaseItem,
+  purchaser,
+  revisePurchase,
+  runStepper,
+} from '@compass/domain/testing';
 import { runCorrections } from '../runCorrections';
 
-const PERMS = new Set(['run.purchase', 'run.finish', 'delivery.dispatch', 'delivery.confirm', 'run.amend']);
-const actor = { userId: 'u1', memberId: 'm1', permissions: PERMS };
+const actor = purchaser([
+  'run.create',
+  'run.purchase',
+  'run.finish',
+  'delivery.dispatch',
+  'delivery.confirm',
+  'run.amend',
+]);
 
-function stream(build: (run: (cmd: RunCommand) => void) => void): RunEvent[] {
-  const events: RunEvent[] = [
-    {
-      streamId: 'run-1',
-      seq: 1,
-      occurredAt: new Date('2026-10-31T06:00:00Z'),
-      actorUserId: 'u1',
-      actorMemberId: 'm1',
-      type: 'RunPlanned',
-      payload: {
-        orgId: 'org',
-        runDate: '2026-10-31',
-        runIndex: 0,
-        sessionIds: [],
-        plannedItems: [{ skuId: 'rice', qty: '2' }],
-        purchaserMemberId: 'm1',
-      },
-    } as RunEvent,
-  ];
-  let state = applyRun(emptyRunState('run-1'), events[0]!);
-  build((cmd) => {
-    for (const e of decideRun(state, cmd)) {
-      state = applyRun(state, e);
-      events.push(e);
-    }
-  });
-  return events;
+/** The events of run-1, planned for 2 kg of rice, then of `commands`. */
+function stream(commands: RunCommand[]): RunEvent[] {
+  return runStepper().steps(emptyRunState('run-1'), [
+    planRun({ plannedItems: [{ skuId: 'rice', qty: '2' }], actor }),
+    ...commands,
+  ]).events;
 }
 
-const buy = (skuId: string, qty: string, price: string): RunCommand => ({
-  type: 'PurchaseItem',
-  skuId,
-  supplierId: null,
-  unitPrice: price,
-  actualQty: qty,
-  receiptPhotoUrl: null,
-  storeSplits: [{ storeId: 'A', qty }],
-  paymentMethod: 'cash',
-  actor,
-});
-const revise = (price: string): RunCommand => ({
-  type: 'RevisePurchase',
-  skuId: 'rice',
-  supplierId: null,
-  unitPrice: price,
-  actualQty: '2',
-  receiptPhotoUrl: null,
-  storeSplits: [{ storeId: 'A', qty: '2' }],
-  paymentMethod: 'cash',
-  reason: 'receipt',
-  actor,
-});
+const buy = (skuId: string, qty: string, price: string) =>
+  purchaseItem({ skuId, unitPrice: price, actualQty: qty, actor });
+const revise = (price: string) =>
+  revisePurchase({ skuId: 'rice', unitPrice: price, actualQty: '2', reason: 'receipt', actor });
 
-function delivered(run: (cmd: RunCommand) => void) {
-  run({ type: 'StartPurchase', actor });
-  run(buy('rice', '2', '1000'));
-  run({ type: 'StartDelivery', actor });
-  run({ type: 'DeliverToStore', storeId: 'A', actor });
-}
+/** Rice bought (2 kg at 1000) and delivered to store A. */
+const delivered: RunCommand[] = [
+  { type: 'StartPurchase', actor },
+  buy('rice', '2', '1000'),
+  { type: 'StartDelivery', actor },
+  { type: 'DeliverToStore', storeId: 'A', actor },
+];
 
 describe('runCorrections', () => {
   test('a price revised before receipt is not a correction', () => {
-    const events = stream((run) => {
-      run({ type: 'StartPurchase', actor });
-      run(buy('rice', '2', '1000'));
-      run(revise('1200'));
-    });
+    const events = stream([
+      { type: 'StartPurchase', actor },
+      buy('rice', '2', '1000'),
+      revise('1200'),
+    ]);
     expect(runCorrections(events, null)).toEqual([]);
   });
 
   test('a price revised after the store confirmed is kept, for the visible store', () => {
-    const events = stream((run) => {
-      delivered(run);
-      run({
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'rice',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor,
-      } as RunCommand);
-      run({ type: 'ConfirmStore', storeId: 'A', actor } as RunCommand);
-      run(revise('1500'));
-    });
+    const events = stream([
+      ...delivered,
+      confirmStoreItem({ skuId: 'rice', actor }),
+      { type: 'ConfirmStore', storeId: 'A', actor },
+      revise('1500'),
+    ]);
     expect(runCorrections(events, null)).toMatchObject([
       { kind: 'priceAfterReceipt', skuId: 'rice', storeId: null, from: '1000', to: '1500' },
     ]);
