@@ -151,8 +151,9 @@ describe.skipIf(!SHOULD_RUN)(
     });
 
     test('below their global rank everything still works', async () => {
-      const { legacyAdmin, manager, person, storeId } = fix!;
+      const { legacyAdmin, person, storeId } = fix!;
       const leaving = await person([{ slug: 'staff', storeId }]);
+      const manager = await person([{ slug: 'manager', storeId }]);
       expect(
         await errorOf(() =>
           legacyAdmin.as.admin.memberSetStatus({ memberId: leaving.memberId, status: 'suspended' }),
@@ -204,11 +205,15 @@ describe.skipIf(!SHOULD_RUN)('a held role keeps its tier (ADM1-02)', () => {
     return role!.id;
   };
 
+  // The roles go to people of each test's own (review NEW-RAND-01): a
+  // global rank-85 role on the shared manager put them out of the org
+  // admin's reach in the ADM1-01 tests.
   test('a store role somebody holds cannot move up to the organisation tier', async () => {
-    const { owner, staff, storeId } = fix!;
+    const { owner, person, storeId } = fix!;
     const roleId = await createRole('shift-lead', 70);
+    const holder = await person([{ slug: 'staff', storeId }]);
     await owner.as.admin.grantRole({
-      userId: staff.userId,
+      userId: holder.userId,
       roleSlug: 'shift-lead',
       scopeType: 'store',
       scopeId: storeId,
@@ -221,10 +226,11 @@ describe.skipIf(!SHOULD_RUN)('a held role keeps its tier (ADM1-02)', () => {
   });
 
   test('an organisation role somebody holds cannot move down to the store tier', async () => {
-    const { owner, manager } = fix!;
+    const { owner, person, storeId } = fix!;
     const roleId = await createRole('area-head', 85);
+    const holder = await person([{ slug: 'manager', storeId }]);
     await owner.as.admin.grantRole({
-      userId: manager.userId,
+      userId: holder.userId,
       roleSlug: 'area-head',
       scopeType: 'global',
     });
