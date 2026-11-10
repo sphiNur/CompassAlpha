@@ -120,3 +120,80 @@ export function pendingMigrations(
   const newest = Math.max(...recorded);
   return entries.filter((entry) => entry.when > newest);
 }
+
+/**
+ * Review DB-10 (2026-11-11): an index name belongs to one table.
+ *
+ * Index names are unique within a schema, and `CREATE INDEX IF NOT EXISTS`
+ * with a name another table already uses is skipped without an error.
+ * 0065 named the org index of inventory.attendance_punch_reviews
+ * `apr_org_idx`, the name 0061 had given to attendance_pay_rates, so the
+ * reviews table went without one until 0069.
+ */
+export const LEGACY_INDEX_NAME_REUSE: ReadonlySet<string> = new Set([
+  '0065_attendance_checks inventory.apr_org_idx',
+]);
+
+const CREATE_INDEX =
+  /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?\s+ON\s+(?:ONLY\s+)?"?(\w+)"?\s*\.\s*"?(\w+)"?/gi;
+const DROP_INDEX =
+  /\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?"?(\w+)"?\s*\.\s*"?(\w+)"?/gi;
+
+export type IndexStatement =
+  | { op: 'create'; index: string; table: string }
+  | { op: 'drop'; index: string };
+
+/**
+ * The schema-qualified index statements in one migration, in order and
+ * lower-cased (`index` is `schema.name`). Comments are skipped.
+ */
+export function indexStatements(sql: string): IndexStatement[] {
+  const code = sql.replace(/--[^\n]*/g, '');
+  const found: Array<{ at: number; statement: IndexStatement }> = [];
+  for (const m of code.matchAll(CREATE_INDEX)) {
+    const [, name, schema, table] = m as unknown as [string, string, string, string];
+    found.push({
+      at: m.index ?? 0,
+      statement: {
+        op: 'create',
+        index: `${schema}.${name}`.toLowerCase(),
+        table: `${schema}.${table}`.toLowerCase(),
+      },
+    });
+  }
+  for (const m of code.matchAll(DROP_INDEX)) {
+    const [, schema, name] = m as unknown as [string, string, string];
+    found.push({
+      at: m.index ?? 0,
+      statement: { op: 'drop', index: `${schema}.${name}`.toLowerCase() },
+    });
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.statement);
+}
+
+/**
+ * Index names a migration gives to a second table while the first still
+ * has it. `files` are in migration order. A name freed by DROP INDEX may
+ * name another table afterwards.
+ */
+export function indexNameReuse(
+  files: ReadonlyArray<{ tag: string; sql: string }>,
+  allowed: ReadonlySet<string> = LEGACY_INDEX_NAME_REUSE,
+): Array<{ tag: string; index: string; tables: [string, string] }> {
+  const owner = new Map<string, string>();
+  const problems: Array<{ tag: string; index: string; tables: [string, string] }> = [];
+  for (const { tag, sql } of files) {
+    for (const statement of indexStatements(sql)) {
+      if (statement.op === 'drop') {
+        owner.delete(statement.index);
+        continue;
+      }
+      const table = owner.get(statement.index);
+      if (table === undefined) owner.set(statement.index, statement.table);
+      else if (table !== statement.table && !allowed.has(`${tag} ${statement.index}`)) {
+        problems.push({ tag, index: statement.index, tables: [table, statement.table] });
+      }
+    }
+  }
+  return problems;
+}

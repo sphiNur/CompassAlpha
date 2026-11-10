@@ -3,13 +3,17 @@
  * Review DB-07 (2026-11-10): the journal stays in order, and no database
  * passes over an entry.
  * Review OPS-10 (2026-11): the deploy knows which entries are pending.
+ * Review DB-10 (2026-11-11): an index name belongs to one table.
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  LEGACY_INDEX_NAME_REUSE,
   LEGACY_TRANSACTION_CONTROL,
+  indexNameReuse,
+  indexStatements,
   journalOrderProblems,
   pendingMigrations,
   transactionControl,
@@ -150,5 +154,86 @@ describe('the journal', () => {
   test('is in order', () => {
     expect(journal.entries.length).toBeGreaterThan(0);
     expect(journalOrderProblems(journal.entries)).toEqual([]);
+  });
+});
+
+describe('indexStatements', () => {
+  test('reads quoted and plain names, in order, lower-cased', () => {
+    const sql = [
+      'CREATE INDEX IF NOT EXISTS "Apr_Org_Idx" ON "inventory"."attendance_pay_rates" USING btree ("org_id");',
+      '-- CREATE INDEX commented_out ON inventory.x (a);',
+      'CREATE UNIQUE INDEX CONCURRENTLY one_key ON ONLY read_model.v (a, b);',
+      'DROP INDEX IF EXISTS read_model.old_idx;',
+      'DROP INDEX CONCURRENTLY "read_model"."older_idx";',
+    ].join('\n');
+    expect(indexStatements(sql)).toEqual([
+      { op: 'create', index: 'inventory.apr_org_idx', table: 'inventory.attendance_pay_rates' },
+      { op: 'create', index: 'read_model.one_key', table: 'read_model.v' },
+      { op: 'drop', index: 'read_model.old_idx' },
+      { op: 'drop', index: 'read_model.older_idx' },
+    ]);
+  });
+});
+
+describe('indexNameReuse', () => {
+  const file = (tag: string, ...sql: string[]) => ({ tag, sql: sql.join('\n') });
+
+  test('a name another table of the schema has is reported', () => {
+    expect(
+      indexNameReuse(
+        [
+          file('0001_a', 'CREATE INDEX IF NOT EXISTS org_idx ON inventory.a (org_id);'),
+          file('0002_b', 'CREATE INDEX IF NOT EXISTS org_idx ON inventory.b (org_id);'),
+        ],
+        new Set(),
+      ),
+    ).toEqual([
+      { tag: '0002_b', index: 'inventory.org_idx', tables: ['inventory.a', 'inventory.b'] },
+    ]);
+  });
+
+  test('the same index again, the same name in another schema, or a dropped name is fine', () => {
+    expect(
+      indexNameReuse(
+        [
+          file('0001_a', 'CREATE INDEX org_idx ON inventory.a (org_id);'),
+          file('0002_a', 'CREATE INDEX IF NOT EXISTS org_idx ON inventory.a (org_id);'),
+          file('0003_c', 'CREATE INDEX org_idx ON read_model.c (org_id);'),
+          file(
+            '0004_b',
+            'DROP INDEX IF EXISTS inventory.org_idx;',
+            'CREATE INDEX org_idx ON inventory.b (org_id);',
+          ),
+        ],
+        new Set(),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('index names in the migrations folder', () => {
+  const files = readdirSync(MIGRATIONS)
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+    .sort()
+    .map((f) => ({ tag: f.replace(/\.sql$/, ''), sql: readFileSync(join(MIGRATIONS, f), 'utf8') }));
+
+  test('no migration gives an index name to a second table', () => {
+    expect(indexNameReuse(files)).toEqual([]);
+  });
+
+  test('the legacy list is exact: each entry is still a reuse, and nothing else is', () => {
+    const all = indexNameReuse(files, new Set()).map((p) => `${p.tag} ${p.index}`);
+    expect(all).toEqual([...LEGACY_INDEX_NAME_REUSE]);
+  });
+
+  test('0069 gives attendance_punch_reviews its own org index', () => {
+    const byTag = new Map(files.map((f) => [f.tag, f.sql]));
+    expect(indexStatements(byTag.get('0069_attendance_review_org_index') ?? '')).toEqual([
+      {
+        op: 'create',
+        index: 'inventory.apr_reviews_org_idx',
+        table: 'inventory.attendance_punch_reviews',
+      },
+    ]);
   });
 });
