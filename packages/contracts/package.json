@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./idempotency": "./src/idempotency.ts",
     "./limits": "./src/limits.ts",
     "./money": "./src/money.ts",
     "./quantity": "./src/quantity.ts",

@@ -1,5 +1,6 @@
 import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
+import { IDEMPOTENT_ROUTES } from '@compass/contracts/idempotency';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { BatchRefused, getLogger, type LogEvent } from '@compass/telemetry';
 import { isRefreshRejected } from './networkError';
@@ -323,66 +324,12 @@ export async function authFetch(
  * the server already committed but whose response was lost (the iOS
  * "Load failed" case) then dedupes on replay instead of double-charging.
  * Mutations without a context key fall back to a fresh per-request key.
+ *
+ * Review TEST3-06 (2026-11-10): the routes are listed once, in
+ * @compass/contracts/idempotency, which the API checks its routers
+ * against; a web test used to read the API's router files as text.
  */
-export const IDEMPOTENT_MUTATIONS = new Set<string>([
-  'run.create',
-  'run.purchaseItem',
-  'run.revisePurchase',
-  'run.finish',
-  'sales.record',
-  'settlement.save',
-  'order.submit',
-  // 2026-07-26: all three are already declared `idempotentMutation`
-  // server-side, but the middleware short-circuits on "no key = no
-  // dedupe" — with the client never sending the header, the cache was
-  // dead code for them.
-  //
-  // Membership here alone only buys the authFetch 401-refresh retry
-  // (that path re-issues the SAME init, so the key survives). Surviving
-  // a LOST RESPONSE additionally needs a stable key threaded through
-  // op.context, which addPurchaserItem / addExpense now do (RunPage's
-  // addItemIdemCtx / addExpenseIdemCtx + the outbox replay). Without
-  // that, `genKey()` below mints a fresh key per attempt and the replay
-  // never matches.
-  //
-  // attachSessions has no offline-replay path, so the 401 retry is the
-  // whole of its benefit — which is still worth having, since a double
-  // attach would pull other stores' orders into a run twice.
-  'run.addPurchaserItem',
-  // 2026-10-21 audit CA-54: declared idempotentMutation server-side;
-  // StoreInventoryTab threads a stable key per wastage entry.
-  'inventory.recordWastage',
-  // DX-INV-2 (2026-11-01): stocktake too; one stable key per count.
-  'inventory.stocktake',
-  'run.addExpense',
-  'run.attachSessions',
-  // BUY-9 (2026-10-30): declared idempotentMutation and given a stable
-  // key by RunPage since #91, but never listed here, so the header was
-  // never sent and a replay after a lost response raised a false
-  // "please review" warning.
-  'run.markUnavailable',
-  'run.deliverToStore',
-  // 2026-11-05 attendance: all declared idempotentMutation server-side.
-  'attendance.punch',
-  'attendance.shiftSave',
-  'attendance.shiftDelete',
-  'attendance.copyWeek',
-  'attendance.manualPunch',
-  'attendance.voidPunch',
-  // 2026-11-07: "not them" on the phone that clocked a colleague.
-  'attendance.punchUndo',
-  'attendance.memberSet',
-  'attendance.resetDevice',
-  'attendance.policySave',
-  'attendance.overtimeDecide',
-  'attendance.payRateSet',
-  'attendance.faceEnroll',
-  'attendance.faceEnrollDecide',
-  'attendance.faceEnrollReset',
-  'attendance.faceConsentGive',
-  'attendance.faceConsentWithdraw',
-  'attendance.reviewPunch',
-]);
+export const IDEMPOTENT_MUTATIONS: ReadonlySet<string> = new Set<string>(IDEMPOTENT_ROUTES);
 
 function genKey(): string {
   // Lightweight ULID-like: 26 chars, lex-sortable. crypto.randomUUID
