@@ -2284,6 +2284,8 @@ export const ru = {
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.
+  // COREAPI-19 (2026-11-10): the button under every bot notification.
+  'notify.openApp': 'Открыть Compass',
   'notify.order.submitted.title': 'Новый заказ на проверку',
   'notify.order.submitted.body': '{store}: заказ ждёт вашей проверки.',
   'notify.order.approved.title': 'Заказ одобрен',

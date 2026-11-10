@@ -290,8 +290,11 @@ export async function dispatch(
 
   const locales = await recipientLocales(db, orgId, recipientUserIds);
   const notificationRows = [];
+  const buttonTexts = new Map<string, string>();
   for (const userId of recipientUserIds) {
-    const text = await localizeEnvelope(envelope, locales.get(userId) ?? 'en');
+    const locale = locales.get(userId) ?? 'en';
+    const text = await localizeEnvelope(envelope, locale);
+    buttonTexts.set(userId, await openAppLabel(locale));
     for (const channel of channels) {
       notificationRows.push({
         orgId,
@@ -336,6 +339,7 @@ export async function dispatch(
           title: r.title,
           body: r.body ?? '',
           deepLink: r.deepLink ?? '',
+          buttonText: buttonTexts.get(r.recipientUserId),
           dedupKey: r.dedupKey,
           extra: r.payload,
         },
@@ -413,4 +417,15 @@ export async function localizeEnvelope(
       ? format(bodyKey, locale, vars)
       : envelope.body;
   return { title, body };
+}
+
+/**
+ * The label of the button under a bot notification, in `locale`
+ * (COREAPI-19, 2026-11-10). The worker wrote "Open Compass" under every
+ * message, so a title and body in Chinese, Russian or Uzbek came with an
+ * English button.
+ */
+export async function openAppLabel(locale: Locale): Promise<string> {
+  await Promise.all([loadCatalog(locale), loadCatalog('en')]);
+  return format('notify.openApp', locale);
 }

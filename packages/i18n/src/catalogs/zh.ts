@@ -2022,6 +2022,8 @@ export const zh = {
   'ops.audit.s.generic': '{actor}：{object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.
+  // COREAPI-19 (2026-11-10): the button under every bot notification.
+  'notify.openApp': '打开 Compass',
   'notify.order.submitted.title': '新订单待审核',
   'notify.order.submitted.body': '{store} 提交了一份订单，等待你审核。',
   'notify.order.approved.title': '订单已通过',

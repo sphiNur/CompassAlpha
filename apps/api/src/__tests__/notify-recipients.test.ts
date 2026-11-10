@@ -7,8 +7,13 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/notify-recipients.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
-import { findRecipientsByPermission, findRecipientsByPermissionInStore } from '../services/notify';
+import {
+  dispatch,
+  findRecipientsByPermission,
+  findRecipientsByPermissionInStore,
+} from '../services/notify';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { seedRoles } from './helpers/fixtures';
@@ -131,5 +136,51 @@ describe.skipIf(!SHOULD_RUN)('notification recipients follow the effective permi
     expect(await heard(suspended)).toEqual({ A: false, B: false, anywhere: false });
     const expired = await fix!.person([{ effect: 'allow', store: null, expired: true }]);
     expect(await heard(expired)).toEqual({ A: false, B: false, anywhere: false });
+  });
+});
+
+/**
+ * What they are told (COREAPI-19, 2026-11-10): the button under a bot
+ * message was "Open Compass" for everyone while the title and body above
+ * it were in the recipient's language.
+ */
+describe.skipIf(!SHOULD_RUN)('a bot message is in the recipient language, button included', () => {
+  test('each queued message carries its title and button label in that language', async () => {
+    const { db, orgId, person } = fix!;
+    const zh = await person([]);
+    const uz = await person([]);
+    const orgDefault = await person([]);
+    await db.update(s.users).set({ locale: 'zh' }).where(eq(s.users.id, zh));
+    await db.update(s.users).set({ locale: 'uz' }).where(eq(s.users.id, uz));
+    const dedupKey = `coreapi19:${orgId}`;
+    await dispatch(
+      db,
+      orgId,
+      [zh, uz, orgDefault],
+      {
+        template: 'order.submitted',
+        title: 'New order to review',
+        vars: { store: 'A' },
+        deepLink: '/approve',
+        dedupKey,
+      },
+      ['bot'],
+    );
+    const rows = (await db.execute(
+      sql`SELECT payload FROM sync.outbox WHERE payload->>'dedupKey' LIKE ${dedupKey + ':%'}`,
+    )) as unknown as Array<{
+      payload: { recipientUserId: string; title: string; buttonText: string };
+    }>;
+    const sent = new Map(rows.map((r) => [r.payload.recipientUserId, r.payload]));
+    expect(sent.size).toBe(3);
+    expect(sent.get(zh)).toMatchObject({ title: '新订单待审核', buttonText: '打开 Compass' });
+    expect(sent.get(uz)).toMatchObject({
+      title: 'Tekshiruv uchun yangi buyurtma',
+      buttonText: 'Compassʼni ochish',
+    });
+    expect(sent.get(orgDefault)).toMatchObject({
+      title: 'New order to review',
+      buttonText: 'Open Compass',
+    });
   });
 });
