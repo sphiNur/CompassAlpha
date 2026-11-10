@@ -1677,7 +1677,7 @@ describe('ADM1-06 / ADM1-20 the People screen asks only what the server allows',
   });
 
   test.skipIf(!SHOULD_RUN)(
-    'a role lists its suspended holders and counts every binding that blocks deleting it',
+    'a role lists its suspended holders and counts the bindings that block deleting it',
     async () => {
       const admin = appRouter.createCaller(fixture().superAdminCtx);
       const store = await makeStore(`Holders-${Math.random()}`);
@@ -1700,8 +1700,10 @@ describe('ADM1-06 / ADM1-20 the People screen asks only what the server allows',
         });
 
       const detail = await admin.admin.roleDetail({ roleSlug: slug });
-      expect(detail.bindingCount).toBe(2);
+      // ADM1-04: the lapsed grant holds nothing, so it neither shows nor counts.
+      expect(detail.bindingCount).toBe(1);
       expect(detail.assignees.find((a) => a.memberId === suspendedId)?.status).toBe('suspended');
+      expect(detail.assignees.some((a) => a.memberId === lapsedId)).toBe(false);
       expect(await errorOf(() => admin.admin.roleDelete({ roleId }))).toMatchObject({
         message: 'admin.errors.roleHasBindings',
       });
@@ -1714,4 +1716,111 @@ describe('ADM1-06 / ADM1-20 the People screen asks only what the server allows',
       expect((await asManager.admin.roleDetail({ roleSlug: slug })).bindingCount).toBeNull();
     },
   );
+});
+
+// ---------- ADM1-04: lapsed role bindings ----------
+
+describe('ADM1-04 a lapsed role binding holds nothing, anywhere', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+  const anHourAgo = () => new Date(Date.now() - 3_600_000);
+
+  async function lapsedStaff(name: string, storeId: string) {
+    const user = await makeUser(name);
+    const memberId = await makeMember(user.id);
+    await maintenance()
+      .insert(s.memberStoreAssignments)
+      .values({ memberId, storeId })
+      .onConflictDoNothing();
+    await maintenance().insert(s.memberRoleBindings).values({
+      memberId,
+      roleId: fixture().staffRoleId,
+      scopeType: 'store',
+      scopeId: storeId,
+      expiresAt: anHourAgo(),
+    });
+    return { memberId, userId: user.id };
+  }
+
+  test.skipIf(!SHOULD_RUN)(
+    'granting the role again renews it (was: "already has it")',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const store = await makeStore(`Renew-${Math.random()}`);
+      const who = await lapsedStaff('Lapsed-Then-Renewed', store.id);
+      // The member list no longer shows the lapsed role as held.
+      const before = (await admin.admin.memberList()).find((m) => m.memberId === who.memberId);
+      expect(before?.roles).toEqual([]);
+
+      const granted = await admin.admin.grantRole({
+        userId: who.userId,
+        roleSlug: 'staff',
+        scopeType: 'store',
+        scopeId: store.id,
+      });
+      expect(granted.granted).toBe(true);
+      const rows = await maintenance()
+        .select({ id: s.memberRoleBindings.id, expiresAt: s.memberRoleBindings.expiresAt })
+        .from(s.memberRoleBindings)
+        .where(eq(s.memberRoleBindings.memberId, who.memberId));
+      expect(rows).toEqual([{ id: granted.bindingId, expiresAt: null }]);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a transfer carries a role until its date, and leaves lapsed ones behind',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const from = await makeStore(`TransferFrom-${Math.random()}`);
+      const to = await makeStore(`TransferTo-${Math.random()}`);
+      const who = await lapsedStaff('Transfer-With-Dates', from.id);
+      const until = new Date(Date.now() + 7 * 86_400_000);
+      await maintenance().insert(s.memberRoleBindings).values({
+        memberId: who.memberId,
+        roleId: fixture().purchaserRoleId,
+        scopeType: 'store',
+        scopeId: from.id,
+        expiresAt: until,
+      });
+
+      await admin.admin.memberTransferStore({
+        memberId: who.memberId,
+        fromStoreId: from.id,
+        toStoreId: to.id,
+      });
+      const there = await maintenance()
+        .select({ roleId: s.memberRoleBindings.roleId, expiresAt: s.memberRoleBindings.expiresAt })
+        .from(s.memberRoleBindings)
+        .where(
+          and(
+            eq(s.memberRoleBindings.memberId, who.memberId),
+            eq(s.memberRoleBindings.scopeId, to.id),
+          ),
+        );
+      // Was: the purchaser role for good, and the lapsed staff role revived.
+      expect(there).toEqual([{ roleId: fixture().purchaserRoleId, expiresAt: until }]);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)('a role held only by lapsed grants can be deleted', async () => {
+    const admin = appRouter.createCaller(fixture().superAdminCtx);
+    const store = await makeStore(`LapsedOnly-${Math.random()}`);
+    const slug = `lapsed-${Math.random().toString(36).slice(2, 8)}`;
+    const { id: roleId } = await admin.admin.roleCreate({ slug, name: 'Lapsed only', rank: 10 });
+    const user = await makeUser('Lapsed-Only-Holder');
+    const memberId = await makeMember(user.id);
+    await maintenance().insert(s.memberRoleBindings).values({
+      memberId,
+      roleId,
+      scopeType: 'store',
+      scopeId: store.id,
+      expiresAt: anHourAgo(),
+    });
+    expect((await admin.admin.roleDetail({ roleSlug: slug })).bindingCount).toBe(0);
+    await admin.admin.roleDelete({ roleId });
+    const left = await maintenance()
+      .select({ id: s.memberRoleBindings.id })
+      .from(s.memberRoleBindings)
+      .where(eq(s.memberRoleBindings.roleId, roleId));
+    expect(left).toEqual([]);
+  });
 });
