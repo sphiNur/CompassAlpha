@@ -212,6 +212,23 @@ const STORE_BOUND_TABS: ReadonlySet<Tab> = new Set<Tab>([
   'confirm',
   'attendance',
 ]);
+
+/**
+ * The tabs a member sees. Tabs that work on one store follow what the
+ * member may do in that store (`storePerms`, SHL-2); the others, and all
+ * of them in the all-stores context, follow the union (`permissions`).
+ */
+function visibleTabsFor(
+  permissions: readonly string[],
+  storePerms: readonly string[] | undefined,
+  isPlatformAdmin: boolean,
+): TabDef[] {
+  return TABS.filter(
+    (t) =>
+      isTabVisible(t, storePerms && STORE_BOUND_TABS.has(t.key) ? storePerms : permissions) ||
+      (t.key === 'admin' && isPlatformAdmin),
+  );
+}
 // Loading fallback for lazily-imported pages. Centered spinner so the
 // blip between bundle download and render doesn't look like a stall.
 // 80vh keeps it visually placed where the page content would be, not
@@ -314,11 +331,7 @@ function ShellInner() {
   // a gear (AdminPage.tsx makes the same call).
   const financeOnly =
     !permissions.includes('users.manage') && !isPlatformAdmin && permissions.includes('reports.view');
-  const visible = TABS.filter(
-    (t) =>
-      isTabVisible(t, storePerms && STORE_BOUND_TABS.has(t.key) ? storePerms : permissions) ||
-      (t.key === 'admin' && isPlatformAdmin),
-  ).map((t) =>
+  const visible = visibleTabsFor(permissions, storePerms, isPlatformAdmin).map((t) =>
     t.key === 'admin' && financeOnly
       ? { ...t, labelKey: 'admin.subsection.finance', Icon: IconActivity }
       : t,
@@ -466,7 +479,6 @@ function ShellInner() {
       });
       return;
     }
-    const target = resolveDeepLinkTab(pathname, visible);
     // DX-APR-7 (2026-11-01): the link may name the store it is about.
     const linkedStore = storeFromDeepLinkSearch(search);
     try {
@@ -488,6 +500,19 @@ function ShellInner() {
       ) {
         auth.setCurrentStore(linkedStore);
       }
+      // COREWEB1-05: once in the linked store, the tab is judged by what
+      // the member may do there. A staff member at A who manages B, sent
+      // `/approve?store=B` while at A, was moved to B but left on A's tab.
+      const now = useAuthStore.getState();
+      const keys =
+        linkedStore && now.currentStoreId === linkedStore && now.session
+          ? visibleTabsFor(
+              now.session.permissions,
+              now.session.storePermissions?.[linkedStore],
+              !!now.session.isPlatformAdmin,
+            ).map((t) => t.key)
+          : visible;
+      const target = resolveDeepLinkTab(pathname, keys);
       if (!target || target === useNavStore.getState().tab) return;
       if (await requestTabChange(target)) setPersistedTab(target);
     })();

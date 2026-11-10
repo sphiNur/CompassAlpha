@@ -16,8 +16,8 @@
  *      window and surface them in the splash error UI.
  *   3. 12-second failsafe: if React hasn't mounted (no .ready class
  *      on <html>) by then, force the error UI so the user can recover.
- *   4. Wire the Reload / Reset & reload buttons to onClick handlers
- *      (CSP forbids inline onclick=).
+ *   4. Make the Reload / Reset & reload buttons work (CSP forbids
+ *      inline onclick=).
  *
  * NOT inside the SPA bundle: this script must run BEFORE the bundle
  * loads, including in the failure case where the bundle never loads
@@ -80,8 +80,8 @@
 
   // Set static labels. This script runs in <head>, before the splash in
   // <body> is parsed, so this is called again once the document is parsed
-  // (onTelegramLoaded / DOMContentLoaded); until P-7 the labels stayed
-  // English because this only ever ran here.
+  // (onTelegramLoaded / DOMContentLoaded) and when the error box is shown;
+  // until P-7 the labels stayed English because this only ever ran here.
   function applyLabels() {
     var subEl = document.querySelector('[data-boot-starting]');
     if (subEl) subEl.textContent = t.startingUp;
@@ -97,6 +97,9 @@
   var bootShown = false;
   function showBootError(msg, stack) {
     if (bootShown) return;
+    // COREWEB1-01: the failsafe can fire before DOMContentLoaded (that
+    // waits for the stuck SDK or app script), so label the buttons now.
+    applyLabels();
     bootShown = true;
     var el = document.getElementById('boot-error');
     if (!el) return;
@@ -152,7 +155,7 @@
     applyLabels();
   }
 
-  // ---- 4. Bind buttons (CSP forbids inline onclick=) ------------------------
+  // ---- 4. Buttons (CSP forbids inline onclick=) -----------------------------
   // Same record apps/web/src/lib/reload.ts writes, so the next page load
   // can report why this one ended.
   function noteReload() {
@@ -166,29 +169,23 @@
     }
   }
 
-  function bindButtons() {
-    var rl = document.getElementById('boot-reload-btn');
-    if (rl)
-      rl.addEventListener('click', function () {
-        noteReload();
-        location.reload();
-      });
-    var rs = document.getElementById('boot-reset-btn');
-    if (rs)
-      rs.addEventListener('click', function () {
-        try {
-          localStorage.removeItem('compass.auth');
-          sessionStorage.clear();
-        } catch (_) {
-          /* storage unavailable; just reload */
-        }
-        noteReload();
-        location.reload();
-      });
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bindButtons);
-  } else {
-    bindButtons();
-  }
+  // COREWEB1-01: one click listener on the document, registered now. The
+  // buttons used to be bound on DOMContentLoaded, which waits for the
+  // deferred SDK and the app's module script: exactly what is stuck when
+  // the failsafe shows them, so they did nothing.
+  document.addEventListener('click', function (e) {
+    var target = e.target;
+    var btn = target && target.closest ? target.closest('#boot-reload-btn, #boot-reset-btn') : null;
+    if (!btn) return;
+    if (btn.id === 'boot-reset-btn') {
+      try {
+        localStorage.removeItem('compass.auth');
+        sessionStorage.clear();
+      } catch (_) {
+        /* storage unavailable; just reload */
+      }
+    }
+    noteReload();
+    location.reload();
+  });
 })();

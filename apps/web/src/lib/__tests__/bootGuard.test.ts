@@ -26,23 +26,31 @@ describe('index.html script order', () => {
   });
 });
 
-type Listener = () => void;
+type Listener = (event?: unknown) => void;
 
 /** Just enough DOM to run boot-guard.js. */
-function runGuard() {
-  const el = () => ({
-    textContent: '',
-    style: {} as Record<string, string>,
-    classList: { add() {}, contains: () => false },
-    querySelector: () => null,
-    addEventListener() {},
-  });
+function runGuard(language = 'en-US') {
+  const el = (id = '') => {
+    const classes: string[] = [];
+    return {
+      id,
+      textContent: '',
+      style: {} as Record<string, string>,
+      classes,
+      classList: { add: (c: string) => void classes.push(c), contains: () => false },
+      querySelector: (sel: string): unknown =>
+        sel === '[data-msg]' ? nodes['#boot-error [data-msg]'] : null,
+      addEventListener() {},
+    };
+  };
   const nodes: Record<string, ReturnType<typeof el>> = {
     '[data-boot-starting]': el(),
     '#boot-error [data-msg]': el(),
-    'boot-reload-btn': el(),
-    'boot-reset-btn': el(),
+    'boot-error': el('boot-error'),
+    'boot-reload-btn': el('boot-reload-btn'),
+    'boot-reset-btn': el('boot-reset-btn'),
   };
+  const docListeners: Record<string, Listener> = {};
   const tgListeners: Record<string, Listener> = {};
   const tgScript = { addEventListener: (type: string, fn: Listener) => void (tgListeners[type] = fn) };
   let parsed = false;
@@ -54,24 +62,64 @@ function runGuard() {
     querySelector: (sel: string) =>
       sel.includes('telegram-web-app') ? tgScript : parsed ? (nodes[sel] ?? null) : null,
     getElementById: (id: string) => (parsed ? (nodes[id] ?? null) : null),
-    addEventListener() {},
+    addEventListener: (type: string, fn: Listener) => void (docListeners[type] = fn),
   };
   const window: Record<string, unknown> = { addEventListener() {} };
   const setTimeout = (fn: Listener, ms: number) => timers.push({ fn, ms, cleared: false }) - 1;
   const clearTimeout = (id: number) => {
     if (timers[id]) timers[id].cleared = true;
   };
-  new Function('window', 'document', 'navigator', 'setTimeout', 'clearTimeout', guard)(
+  const storage = () => {
+    const items = new Map<string, string>();
+    return {
+      items,
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => void items.set(k, v),
+      removeItem: (k: string) => void items.delete(k),
+      clear: () => items.clear(),
+    };
+  };
+  const localStorage = storage();
+  const sessionStorage = storage();
+  const location = { reloads: 0, reload: () => void location.reloads++ };
+  new Function(
+    'window',
+    'document',
+    'navigator',
+    'setTimeout',
+    'clearTimeout',
+    'location',
+    'localStorage',
+    'sessionStorage',
+    guard,
+  )(
     window,
     document,
-    { language: 'en-US' },
+    { language },
     setTimeout,
     clearTimeout,
+    location,
+    localStorage,
+    sessionStorage,
   );
   return {
     documentElement,
     nodes,
     timers,
+    location,
+    localStorage,
+    sessionStorage,
+    /** The document is parsed, but DOMContentLoaded has not fired. */
+    parsed() {
+      parsed = true;
+    },
+    /** A click on the node with this id, as the browser delivers it to the document. */
+    click(id: string) {
+      const node = nodes[id]!;
+      docListeners.click?.({
+        target: { closest: (sel: string) => (sel.split(', ').includes(`#${id}`) ? node : null) },
+      });
+    },
     sdkLoaded(languageCode: string) {
       parsed = true;
       window.Telegram = { WebApp: { initDataUnsafe: { user: { language_code: languageCode } } } };
@@ -110,6 +158,48 @@ describe('boot-guard with a deferred Telegram SDK', () => {
     expect(g.documentElement.lang).toBe('en');
     expect(g.nodes['[data-boot-starting]']!.textContent).toBe('Starting up…');
     expect(g.timers.filter((t) => t.ms === 12000 && !t.cleared).length).toBe(1);
+  });
+});
+
+describe('boot-guard buttons (COREWEB1-01)', () => {
+  // DOMContentLoaded waits for the deferred SDK and the app's module
+  // script, which is what is stuck when the 12 s failsafe fires.
+  const timedOut = (language?: string) => {
+    const g = runGuard(language);
+    g.parsed();
+    g.timers.find((t) => t.ms === 12000 && !t.cleared)!.fn();
+    return g;
+  };
+
+  it('work when the failsafe fires before DOMContentLoaded', () => {
+    const g = timedOut();
+    expect(g.nodes['boot-error']!.classes).toContain('show');
+    g.click('boot-reload-btn');
+    expect(g.location.reloads).toBe(1);
+    expect(JSON.parse(g.sessionStorage.getItem('compass.lastReload')!).reason).toBe('boot-guard');
+  });
+
+  it('reset clears the saved sign-in before reloading', () => {
+    const g = timedOut();
+    g.localStorage.setItem('compass.auth', '{}');
+    g.click('boot-reset-btn');
+    expect(g.localStorage.getItem('compass.auth')).toBeNull();
+    expect(g.location.reloads).toBe(1);
+  });
+
+  it('are labelled in the person’s language when the error shows', () => {
+    const g = timedOut('ru-RU');
+    expect(g.nodes['boot-reload-btn']!.textContent).toBe('Перезагрузить');
+    expect(g.nodes['boot-reset-btn']!.textContent).toBe('Сбросить и перезагрузить');
+    expect(g.nodes['#boot-error [data-msg]']!.textContent).toBe(
+      'Приложение не запустилось. Проверьте связь и перезагрузите.',
+    );
+  });
+
+  it('a click elsewhere does nothing', () => {
+    const g = timedOut();
+    g.click('[data-boot-starting]');
+    expect(g.location.reloads).toBe(0);
   });
 });
 

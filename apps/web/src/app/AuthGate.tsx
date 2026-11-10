@@ -9,6 +9,7 @@ import { useTranslateError } from '../lib/errToast';
 import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useRefreshSession } from '../lib/refreshSession';
+import { inviteSettled, markInviteSettled } from '../lib/launchInvite';
 import { accessBlock, authErrorText, type AuthError } from '../lib/authAccess';
 
 interface AuthGateProps {
@@ -86,9 +87,15 @@ function initialDevBrowserTgUserId(): string {
  *   - ?startapp=<token> on the bot link → initDataUnsafe.start_param
  *   - the bot's web_app fallback button → ?invite=<token> on our URL
  * Both are only useful inside Telegram, where a signed initData blob
- * is also present.
+ * is also present. An invite this launch settled already is not taken
+ * again on a reload (COREWEB1-03, lib/launchInvite).
  */
 function inviteTokenFromLaunch(): string | null {
+  const token = launchInviteToken();
+  return token && !inviteSettled(token) ? token : null;
+}
+
+function launchInviteToken(): string | null {
   const startParam = getTg()?.initDataUnsafe?.start_param?.trim();
   if (startParam?.startsWith('inv_')) return startParam;
   if (typeof window === 'undefined') return null;
@@ -130,7 +137,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
   const [browserAccessCode, setBrowserAccessCode] = useState('');
   const [loginSession, setLoginSession] = useState<AuthSession | null>(null);
   const [authWaitTimedOut, setAuthWaitTimedOut] = useState(false);
-  const [inviteToken] = useState(inviteTokenFromLaunch);
+  const [inviteToken, setInviteToken] = useState(inviteTokenFromLaunch);
   const activeSession = session ?? loginSession;
   const hasTelegramInitData = Boolean(getTg()?.initData);
   const forceDevPersonaPicker = wantsDevPersonaPicker();
@@ -251,7 +258,10 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
     },
   });
   const acceptInvite = trpc.auth.acceptInvite.useMutation({
-    onSuccess(data) {
+    onSuccess(data, vars) {
+      markInviteSettled(vars.token);
+      // Done: `auth.me` checks the new session again from here on.
+      setInviteToken(null);
       // AUTH-28 (2026-10-30): say what the invite did.
       toast.success(
         i18n.t(data.alreadyMember ? 'auth.invite.addedToExisting' : 'auth.invite.joined', {
@@ -279,7 +289,10 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
         /* the session is valid even if the URL cannot be rewritten */
       }
     },
-    onError(err) {
+    onError(err, vars) {
+      // Refused by the server: a reload must not ask again. A failure to
+      // get through is left for a reload or the retry button.
+      if (!isLikelyNetworkError(err)) markInviteSettled(vars.token);
       // AUTH-3 (2026-10-30): a malformed invite token (a truncated link,
       // stray characters) failed input validation and the raw Zod JSON
       // was shown. Never show a raw message: a server key is translated,
