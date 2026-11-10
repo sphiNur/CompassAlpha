@@ -19,6 +19,17 @@ export type QtyDraft =
 /** The DB keeps order quantities at 3 decimals (numeric(12,3)). */
 export const QTY_DECIMALS = 3;
 
+/**
+ * Is `n` a whole number of `step`s? The server refuses an order line that
+ * is not. Both have at most 3 decimals, so they are compared in
+ * thousandths. No step (or 0) accepts anything.
+ */
+export function isMultipleOfStep(n: number, step: number | undefined): boolean {
+  if (step === undefined || !(step > 0)) return true;
+  const scaledStep = Math.round(step * 10 ** QTY_DECIMALS);
+  return scaledStep <= 0 || Math.round(n * 10 ** QTY_DECIMALS) % scaledStep === 0;
+}
+
 export function readQtyDraft(
   draft: string,
   { min, max, step }: { min: number; max: number; step?: number },
@@ -39,13 +50,7 @@ export function readQtyDraft(
   // CMP-ORD-1 (2026-10-31): the server refuses an order line that is not a
   // multiple of the product's step, and the toast then lost the step
   // ("must be a multiple of  "). Refuse it here with the reason instead.
-  // Both values have at most 3 decimals, so compare them in thousandths.
-  if (step !== undefined && step > 0) {
-    const scaledStep = Math.round(step * 10 ** QTY_DECIMALS);
-    if (scaledStep > 0 && Math.round(n * 10 ** QTY_DECIMALS) % scaledStep !== 0) {
-      return { ok: false, reason: 'notMultiple' };
-    }
-  }
+  if (!isMultipleOfStep(n, step)) return { ok: false, reason: 'notMultiple' };
   // The typed value — never snapped to the step: with step 1, a typed 0.3
   // snapped to 0 and wiped the line the same way.
   return { ok: true, value: n };

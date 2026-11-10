@@ -32,6 +32,7 @@ import {
   DetailRow,
   EmptyState,
   Field,
+  FieldGroup,
   IconActivity,
   IconAttendance,
   IconCatalog,
@@ -776,7 +777,7 @@ function WorkspaceSection() {
               placeholder="0"
             />
           </Field>
-          <Field label={i18n.t('admin.workspace.pricesIncludeTax')}>
+          <FieldGroup label={i18n.t('admin.workspace.pricesIncludeTax')}>
             <Switch
               checked={draftInclTax}
               onChange={(e) => setDraftInclTax(e.target.checked)}
@@ -786,7 +787,7 @@ function WorkspaceSection() {
                   : i18n.t('admin.workspace.pricesIncludeTaxOff')
               }
             />
-          </Field>
+          </FieldGroup>
           <Banner tone="info" title={i18n.t('admin.workspace.financeSheet.warning')} />
         </div>
       </Sheet>

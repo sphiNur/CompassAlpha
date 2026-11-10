@@ -25,6 +25,7 @@ import {
   DataState,
   EmptyState,
   Field,
+  FieldGroup,
   IconChevronRight,
   IconShare,
   Input,
@@ -1936,7 +1937,7 @@ function ManualInviteSheet({
             ) : null}
           </Field>
           {requiresStore ? (
-            <Field
+            <FieldGroup
               label={
                 hasStore
                   ? i18n.t('admin.field.storesSelected', { n: draft.storeIds.length })
@@ -1984,7 +1985,7 @@ function ManualInviteSheet({
                 {i18n.t('admin.invite.staffNeedStoreHint')}
                 {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
               </p>
-            </Field>
+            </FieldGroup>
           ) : (
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.invite.adminBypassHint')}
@@ -2131,7 +2132,7 @@ function ManageMemberSheet({
             </p>
           </Field>
 
-          <Field label={i18n.t('admin.field.assignedStores')}>
+          <FieldGroup label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
               <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                 <Spinner size={14} /> {i18n.t('common.loading')}
@@ -2221,7 +2222,7 @@ function ManageMemberSheet({
             <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.storeScopeHint')}
             </p>
-          </Field>
+          </FieldGroup>
         </div>
       ) : null}
       {target && transferFrom ? (
@@ -2967,7 +2968,7 @@ function GrantRoleSheet({
         {/* M3.17 (2026-05-16): SegBtn → Segmented. The "Globally" option
             is greyed-out via the disabled prop when the actor isn't an
             org-admin; the click handler short-circuits. */}
-        <Field label={i18n.t('admin.field.scope')}>
+        <FieldGroup label={i18n.t('admin.field.scope')}>
           <Segmented<'store' | 'global'>
             value={scopeMode}
             options={[
@@ -2990,11 +2991,11 @@ function GrantRoleSheet({
               {i18n.t('people.globalGrantLockedHint')}
             </p>
           ) : null}
-        </Field>
+        </FieldGroup>
 
         {/* Store multi-select (visible in store mode) */}
         {scopeMode === 'store' ? (
-          <Field label={i18n.t('admin.field.stores')}>
+          <FieldGroup label={i18n.t('admin.field.stores')}>
             {eligibleStores.length === 0 ? (
               <Banner tone="warn" title={i18n.t('people.noGrantStoresTitle')}>
                 {i18n.t('people.noGrantStoresBody')}
@@ -3018,7 +3019,7 @@ function GrantRoleSheet({
                 })}
               </div>
             )}
-          </Field>
+          </FieldGroup>
         ) : null}
 
         {/* Step 2 — role list (filtered by chosen scope + effectiveRank) */}
