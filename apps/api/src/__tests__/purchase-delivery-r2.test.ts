@@ -15,7 +15,7 @@
  *
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/purchase-delivery-r2.test.ts
  */
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
@@ -163,6 +163,9 @@ function storeOrder(storeId: string, skuId: string, runId: string, extras = 0): 
   });
 }
 
+/** The runs seedRun made for the current test (see the afterEach). */
+const seededRuns: string[] = [];
+
 /**
  * A run with store A's order (2 kg rice, two extras) and store B's order
  * (2 kg onion), bought as ordered at 1000. `stage` says how far it goes.
@@ -173,6 +176,7 @@ async function seedRun(stage: 'purchasing' | 'delivered'): Promise<{
 }> {
   const { orgId, storeA, storeB, skuIds, admin } = fix!;
   const run = runStream(orgId);
+  seededRuns.push(run.id);
   const sessionA = await storeOrder(storeA, skuIds[0], run.id, 2);
   const sessionB = await storeOrder(storeB, skuIds[1], run.id);
   await planRun(run, orgId, {
@@ -216,6 +220,19 @@ async function retire(runId: string): Promise<void> {
   await fix!.admin.caller.run.cancel({ runId, reason: 'test done' });
 }
 
+// A test's runs still planned or purchasing are cancelled after it. The
+// tests used to do it on their last line, so one that failed earlier left
+// its run active, and every later seedRun failed too (review TEST1-10).
+afterEach(async () => {
+  for (const runId of seededRuns.splice(0)) {
+    const [row] = await fix!.db
+      .select({ status: s.marketRunsV.status })
+      .from(s.marketRunsV)
+      .where(eq(s.marketRunsV.id, runId));
+    if (row?.status === 'planned' || row?.status === 'purchasing') await retire(runId);
+  }
+});
+
 async function stockOf(storeId: string, skuId: string, runId: string): Promise<number> {
   const rows = await fix!.db
     .select({ delta: s.inventoryMovements.delta })
@@ -248,12 +265,11 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     const seq = await sessionSeq(sessionA);
     expect(seq).toBeGreaterThan(0);
     for (const extra of extras) expect(extra.sessionSeq).toBe(seq);
-    await retire(runId);
   });
 
   test('R2-APR-3: an expectedSeq ahead of the order or negative is refused', async () => {
     const { admin } = fix!;
-    const { runId, sessionA } = await seedRun('purchasing');
+    const { sessionA } = await seedRun('purchasing');
     const seen = await sessionSeq(sessionA);
     for (const expectedSeq of [seen + 50, -1]) {
       const err = await errorOf(() =>
@@ -274,54 +290,49 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
       status: 'bought',
       expectedSeq: seen,
     });
-    await retire(runId);
   });
 
   test('DX-BUY-2: a top-up saved as its own batch keeps the earlier price', async () => {
     const { admin, storeA, storeB, skuIds } = fix!;
     const { runId } = await seedRun('purchasing');
-    try {
-      await admin.caller.run.purchaseItem({
-        runId,
-        skuId: skuIds[0],
-        supplierId: null,
-        unitPrice: '80000',
-        actualQty: '2',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: storeA, qty: '2' }],
-        paymentMethod: 'cash',
-      });
-      // What the web's topUpRevision sends: the row keeps 80,000; the
-      // store that only gets the extra is priced at this batch's 82,000.
-      await admin.caller.run.revisePurchase({
-        runId,
-        skuId: skuIds[0],
-        supplierId: null,
-        unitPrice: '80000',
-        actualQty: '4',
-        receiptPhotoUrl: null,
-        storeSplits: [
-          { storeId: storeA, qty: '2' },
-          { storeId: storeB, qty: '2', unitPrice: '82000', paymentMethod: 'transfer' },
-        ],
-        paymentMethod: 'cash',
-        reason: 'top-up',
-      });
-      const run = await admin.caller.run.get({ runId });
-      const item = run.items.find((it) => it.skuId === skuIds[0])!;
-      expect(Number(item.unitPrice)).toBe(80000);
-      expect(Number(item.purchasedQty)).toBe(4);
-      // 2 × 80,000 + 2 × 82,000 = 324,000 paid, not 4 × 82,000.
-      const riceSplits = run.splits.filter((sp) => sp.skuId === skuIds[0]);
-      expect(
-        riceSplits.reduce(
-          (sum, sp) => sum + Number(sp.qty) * Number(sp.unitPrice ?? item.unitPrice),
-          0,
-        ),
-      ).toBe(324000);
-    } finally {
-      await retire(runId);
-    }
+    await admin.caller.run.purchaseItem({
+      runId,
+      skuId: skuIds[0],
+      supplierId: null,
+      unitPrice: '80000',
+      actualQty: '2',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: storeA, qty: '2' }],
+      paymentMethod: 'cash',
+    });
+    // What the web's topUpRevision sends: the row keeps 80,000; the
+    // store that only gets the extra is priced at this batch's 82,000.
+    await admin.caller.run.revisePurchase({
+      runId,
+      skuId: skuIds[0],
+      supplierId: null,
+      unitPrice: '80000',
+      actualQty: '4',
+      receiptPhotoUrl: null,
+      storeSplits: [
+        { storeId: storeA, qty: '2' },
+        { storeId: storeB, qty: '2', unitPrice: '82000', paymentMethod: 'transfer' },
+      ],
+      paymentMethod: 'cash',
+      reason: 'top-up',
+    });
+    const run = await admin.caller.run.get({ runId });
+    const item = run.items.find((it) => it.skuId === skuIds[0])!;
+    expect(Number(item.unitPrice)).toBe(80000);
+    expect(Number(item.purchasedQty)).toBe(4);
+    // 2 × 80,000 + 2 × 82,000 = 324,000 paid, not 4 × 82,000.
+    const riceSplits = run.splits.filter((sp) => sp.skuId === skuIds[0]);
+    expect(
+      riceSplits.reduce(
+        (sum, sp) => sum + Number(sp.qty) * Number(sp.unitPrice ?? item.unitPrice),
+        0,
+      ),
+    ).toBe(324000);
   });
 
   test('D9: a purchaser of store A records and removes expenses split to store A only', async () => {
@@ -365,7 +376,6 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     // Run-wide steps still need every store.
     const start = await errorOf(() => buyerA.caller.run.startDelivery({ runId }));
     expect(start?.message).toBe('run.errors.runHasOtherStores');
-    await retire(runId);
   });
 
   test("F2 (security scan): another run's expense id is refused and never removed", async () => {
@@ -457,7 +467,6 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     }).catch((e) => {
       if (e !== rolledBack) throw e;
     });
-    await retire(r2);
   });
 });
 
