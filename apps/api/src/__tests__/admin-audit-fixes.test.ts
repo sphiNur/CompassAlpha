@@ -3,16 +3,15 @@
  * routers (CA-18, CA-28, CA-39, CA-40, A-23).
  *
  * The first block is pure (no database). The second is PG-gated and
- * skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1; it provisions
- * its own starter-plan tenant (1 store, 10 members).
+ * skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1; each of its
+ * tests provisions a starter-plan tenant of its own (1 store, 10 members).
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { TRPCError } from '@trpc/server';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { eq, sql } from 'drizzle-orm';
-import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { GrantRoleInputSchema } from '@compass/contracts';
-import type { SessionContext } from '../trpc/context';
 import {
   inviteWithinScope,
   outboxOfOrg,
@@ -23,9 +22,9 @@ import {
 } from '../trpc/routers/admin';
 import { inviterCoversInvite } from '../services/adminAuthority';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor, gateCaller } from './helpers/ctx';
 import { seedMember } from './helpers/fixtures';
+import { tenantSuite } from './helpers/tenants';
 import { codeOf, errorOf } from './helpers/errors';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
@@ -167,54 +166,10 @@ async function errorMessage(run: () => Promise<unknown>): Promise<string | undef
 }
 
 describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)', () => {
-  let orgId = '';
-  let memberId = '';
-  let userId = '';
-  const extraUserIds: string[] = [];
-
-  beforeAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    const [user] = await db
-      .insert(s.users)
-      .values({
-        tgUserId: freshTgId(),
-        displayName: 'Audit Fix Owner',
-        displayNameLocked: true,
-      })
-      .returning();
-    userId = user!.id;
-    await db.insert(s.platformAdmins).values({ userId, note: 'audit fix test' });
-    const created = await withSystemContext(db, 'auth', (tx) =>
-      provisionOrganization(tx, {
-        name: 'Audit Fix Test Org',
-        slug: `auditfix-${Math.random().toString(36).slice(2, 8)}`,
-        ownerUserId: userId,
-      }),
-    );
-    orgId = created.orgId;
-    memberId = created.ownerMemberId!;
-  });
-
-  afterAll(async () => {
-    if (!orgId) return;
-    const db = getDb(undefined, { system: 'maintenance' });
-    await db.delete(s.organizations).where(eq(s.organizations.id, orgId));
-    for (const id of [userId, ...extraUserIds]) {
-      await db.delete(s.users).where(eq(s.users.id, id));
-    }
-  });
-
-  const session = (): SessionContext => ({
-    userId,
-    memberId,
-    orgId,
-    writeAccess: true,
-    orgTimezone: 'UTC',
-    permissions: new Set(['users.manage', 'org.admin']),
-    roleSlugs: new Set(['admin']),
-  });
+  const { newTenant, track } = tenantSuite('Audit Fix Test Org');
 
   test('reactivating a paused store respects the store limit', async () => {
+    const { orgId, session } = await newTenant();
     const db = getDb(undefined, { system: 'maintenance' });
     await db.insert(s.stores).values({ orgId, name: 'Active', code: `A-${Date.now()}` });
     const [paused] = await db
@@ -223,18 +178,19 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       .returning();
     expect(
       await errorMessage(() =>
-        callerFor(session()).admin.storeUpdate({ storeId: paused!.id, isActive: true }),
+        callerFor(session).admin.storeUpdate({ storeId: paused!.id, isActive: true }),
       ),
     ).toBe('subscription.errors.storeLimit');
     // A non-isActive edit of the paused store is now reachable for an org admin.
-    await callerFor(session()).admin.storeUpdate({ storeId: paused!.id, name: 'Paused (renamed)' });
+    await callerFor(session).admin.storeUpdate({ storeId: paused!.id, name: 'Paused (renamed)' });
   });
 
   test('reactivating a suspended member respects the member limit', async () => {
+    const { orgId, session } = await newTenant();
     const db = getDb(undefined, { system: 'maintenance' });
     const addMember = async (status: 'active' | 'suspended'): Promise<string> => {
       const who = await seedMember(db, orgId, { name: `Seat ${status}`, status });
-      extraUserIds.push(who.userId);
+      track(who.userId);
       return who.memberId;
     };
     // Owner + 9 = 10 active members: the starter plan is full.
@@ -242,12 +198,13 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     const suspended = await addMember('suspended');
     expect(
       await errorMessage(() =>
-        callerFor(session()).admin.memberSetStatus({ memberId: suspended, status: 'active' }),
+        callerFor(session).admin.memberSetStatus({ memberId: suspended, status: 'active' }),
       ),
     ).toBe('subscription.errors.memberLimit');
   });
 
   test('updateSubscription keeps fields it was not given', async () => {
+    const { orgId, session } = await newTenant();
     const db = getDb(undefined, { system: 'maintenance' });
     const periodStart = new Date('2026-01-01T00:00:00.000Z');
     await db
@@ -255,7 +212,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       .set({ note: 'keep me', currentPeriodStart: periodStart, cancelAtPeriodEnd: true })
       .where(eq(s.organizationSubscriptions.orgId, orgId));
 
-    await callerFor(session()).platform.updateSubscription({
+    await callerFor(session).platform.updateSubscription({
       orgId,
       planCode: 'growth',
       status: 'active',
@@ -269,7 +226,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     expect(row?.cancelAtPeriodEnd).toBe(true);
 
     // Explicit null still clears.
-    await callerFor(session()).platform.updateSubscription({
+    await callerFor(session).platform.updateSubscription({
       orgId,
       planCode: 'growth',
       status: 'active',
@@ -288,15 +245,16 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
   });
 
   test('RE-AUTH-3: a subscription date in year 0000 or a loose "2026-1-5" is refused', async () => {
+    const { orgId, session } = await newTenant();
     const base = { orgId, planCode: 'growth', status: 'active' as const };
     for (const bad of ['0000-01-01', '2026-1-5', '2026-02-30', 'tomorrow', '2026-10-31T10:00']) {
       expect(
         await errorMessage(() =>
-          callerFor(session()).platform.updateSubscription({ ...base, currentPeriodEnd: bad }),
+          callerFor(session).platform.updateSubscription({ ...base, currentPeriodEnd: bad }),
         ),
       ).toBe('platform.errors.invalidDate');
     }
-    await callerFor(session()).platform.updateSubscription({
+    await callerFor(session).platform.updateSubscription({
       ...base,
       currentPeriodEnd: '2026-12-31T10:00:00.000Z',
     });

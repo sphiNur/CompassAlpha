@@ -9,13 +9,12 @@
  *
  * The PG half is skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import {
   DEFAULT_GRACE_DAYS,
   DEFAULT_TRIAL_DAYS,
   getDb,
-  provisionOrganization,
   schema as s,
   withOrgContext,
   withSystemContext,
@@ -27,64 +26,13 @@ import {
   readSubscriptionState,
 } from '../services/subscription';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { tenantSuite } from './helpers/tenants';
 
 const DAY = 24 * 60 * 60 * 1000;
 
 describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
-  let userId = '';
-  const orgIds: string[] = [];
-
-  beforeAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    const [user] = await db
-      .insert(s.users)
-      .values({
-        tgUserId: freshTgId(),
-        displayName: 'Subscription Owner',
-        displayNameLocked: true,
-      })
-      .returning();
-    userId = user!.id;
-    await db.insert(s.platformAdmins).values({ userId, note: 'subscription test' });
-  });
-
-  afterAll(async () => {
-    if (!userId) return;
-    const db = getDb(undefined, { system: 'maintenance' });
-    for (const id of orgIds) await db.delete(s.organizations).where(eq(s.organizations.id, id));
-    await db.delete(s.users).where(eq(s.users.id, userId));
-  });
-
-  /**
-   * A tenant of the test's own, as sign-up makes one, owned by the platform
-   * admin (review TEST2-09). The tests change its plan and status, and
-   * used to share one, so each depended on what the one before had left.
-   */
-  async function newTenant(): Promise<{ orgId: string; session: SessionContext }> {
-    const db = getDb(undefined, { system: 'maintenance' });
-    const created = await withSystemContext(db, 'auth', (tx) =>
-      provisionOrganization(tx, {
-        name: 'Subscription Test Org',
-        slug: `subscription-${Math.random().toString(36).slice(2, 8)}`,
-        ownerUserId: userId,
-      }),
-    );
-    orgIds.push(created.orgId);
-    return {
-      orgId: created.orgId,
-      session: {
-        userId,
-        memberId: created.ownerMemberId!,
-        orgId: created.orgId,
-        writeAccess: true,
-        orgTimezone: 'UTC',
-        permissions: new Set(['users.manage', 'org.admin']),
-        roleSlugs: new Set(['admin']),
-      },
-    };
-  }
+  const { newTenant } = tenantSuite('Subscription Test Org');
 
   test('a new tenant receives a starter trial', async () => {
     const { orgId } = await newTenant();
