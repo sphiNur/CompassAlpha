@@ -1485,10 +1485,31 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('a member with attendance is suspended, not removed; the records stay', async () => {
     const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    // An org admin by a global binding: removing someone from the whole
+    // organisation is ranked by global bindings alone (ADM1-01).
+    const [adminRole] = await db
+      .insert(s.roles)
+      .values({ orgId: f.orgId, slug: `att-admin-${Date.now()}`, name: 'Admin', rank: 80 })
+      .returning();
+    const [adminUser] = await db
+      .insert(s.users)
+      .values({ displayName: 'Att Admin', tgUserId: BigInt(`${Date.now()}`.slice(-10) + '99') })
+      .returning();
+    const [adminMember] = await db
+      .insert(s.members)
+      .values({ orgId: f.orgId, userId: adminUser!.id, status: 'active' })
+      .returning();
+    await db.insert(s.memberRoleBindings).values({
+      memberId: adminMember!.id,
+      roleId: adminRole!.id,
+      scopeType: 'global',
+      scopeId: null,
+    });
     const admin = appRouter.createCaller(
       buildCtx({
-        userId: f.managerUserId,
-        memberId: f.managerId,
+        userId: adminUser!.id,
+        memberId: adminMember!.id,
         orgId: f.orgId,
         orgTimezone: TZ,
         writeAccess: true,
@@ -1500,7 +1521,6 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       admin.admin.memberRemove({ memberId: f.staffId }),
       'admin.errors.memberHasAttendance',
     );
-    const db = getDb(undefined, { system: 'maintenance' });
     const left = await db.execute(
       sql`SELECT count(*)::int AS n FROM inventory.attendance_punches WHERE member_id = ${f.staffId}`,
     );

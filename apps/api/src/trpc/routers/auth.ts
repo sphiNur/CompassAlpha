@@ -41,6 +41,7 @@ import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
+import { inviterStillAuthorized, liveInviteGrants } from '../../services/adminAuthority';
 import { effectivePermissionsForStore, flatEffectivePermissions } from '../../services/storeScope';
 import {
   assertCanAddMember,
@@ -458,123 +459,6 @@ async function issueDevBypassLoginResult(db: DB, userId: string, memberId: strin
     },
     session,
   };
-}
-
-/**
- * 2026-10-21 CA-19 (A-06): what an inviter can still vouch for when
- * their link is opened. Mirrors the gates of admin.memberInviteCreate:
- * `users.manage` somewhere (requireAdmin) and admin-tier authority over
- * every store on the invite (getActorAdminStoreIds). An invite with no
- * store is an org-tier invite and needs a global admin-tier grant.
- */
-export interface InviterAuthority {
-  active: boolean;
-  hasUsersManage: boolean;
-  isGlobalAdmin: boolean;
-  adminStoreIds: ReadonlySet<string>;
-}
-
-export function inviterCoversInvite(
-  authority: InviterAuthority | null,
-  inviteStoreIds: readonly string[],
-): boolean {
-  if (!authority || !authority.active || !authority.hasUsersManage) return false;
-  if (authority.isGlobalAdmin) return true;
-  if (inviteStoreIds.length === 0) return false;
-  return inviteStoreIds.every((id) => authority.adminStoreIds.has(id));
-}
-
-const INVITER_ADMIN_PERM_KEYS = new Set(['users.manage', 'users.invite', 'users.grant_role']);
-
-async function loadInviterAuthority(
-  tx: DB,
-  orgId: string,
-  inviterUserId: string | null,
-): Promise<InviterAuthority | null> {
-  if (!inviterUserId) return null;
-  const member = await tx.query.members.findFirst({
-    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, inviterUserId)),
-  });
-  if (!member) return null;
-  const now = new Date();
-  const bindings = await tx
-    .select({
-      roleId: s.memberRoleBindings.roleId,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .where(
-      and(
-        eq(s.memberRoleBindings.memberId, member.id),
-        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
-      ),
-    );
-  const roleIds = [...new Set(bindings.map((b) => b.roleId))];
-  const rolePerms =
-    roleIds.length > 0
-      ? await tx
-          .select({ roleId: s.rolePermissions.roleId, key: s.rolePermissions.permissionKey })
-          .from(s.rolePermissions)
-          .where(inArray(s.rolePermissions.roleId, roleIds))
-      : [];
-  const overrides = (
-    await tx
-      .select({
-        effect: s.memberPermissionOverrides.effect,
-        scopeType: s.memberPermissionOverrides.scopeType,
-        scopeId: s.memberPermissionOverrides.scopeId,
-        permissionKey: s.memberPermissionOverrides.permissionKey,
-        expiresAt: s.memberPermissionOverrides.expiresAt,
-      })
-      .from(s.memberPermissionOverrides)
-      .where(eq(s.memberPermissionOverrides.memberId, member.id))
-  )
-    .filter((o) => !o.expiresAt || o.expiresAt > now)
-    // Allows first, then denies: deny wins, as everywhere else.
-    .sort((a, b) => Number(a.effect === 'deny') - Number(b.effect === 'deny'));
-
-  const keysByRole = new Map<string, Set<string>>();
-  for (const rp of rolePerms) {
-    const set = keysByRole.get(rp.roleId) ?? new Set<string>();
-    set.add(rp.key);
-    keysByRole.set(rp.roleId, set);
-  }
-  let hasUsersManage = false;
-  let isGlobalAdmin = false;
-  const adminStoreIds = new Set<string>();
-  for (const b of bindings) {
-    const keys = keysByRole.get(b.roleId);
-    if (!keys) continue;
-    if (keys.has('users.manage')) hasUsersManage = true;
-    if (![...keys].some((k) => INVITER_ADMIN_PERM_KEYS.has(k))) continue;
-    if (b.scopeType === 'global') isGlobalAdmin = true;
-    else if (b.scopeType === 'store' && b.scopeId) adminStoreIds.add(b.scopeId);
-  }
-  for (const o of overrides) {
-    if (o.permissionKey === 'users.manage') {
-      if (o.effect === 'allow') hasUsersManage = true;
-      else if (o.scopeType === 'global') hasUsersManage = false;
-    }
-    if (!INVITER_ADMIN_PERM_KEYS.has(o.permissionKey)) continue;
-    if (o.effect === 'allow') {
-      if (o.scopeType === 'global') isGlobalAdmin = true;
-      else if (o.scopeType === 'store' && o.scopeId) adminStoreIds.add(o.scopeId);
-    } else if (o.scopeType === 'global') {
-      isGlobalAdmin = false;
-    } else if (o.scopeType === 'store' && o.scopeId) {
-      adminStoreIds.delete(o.scopeId);
-    }
-  }
-  return { active: member.status === 'active', hasUsersManage, isGlobalAdmin, adminStoreIds };
-}
-
-export async function inviterStillAuthorized(
-  tx: DB,
-  invite: { orgId: string; invitedBy: string | null; storeIds: string[] },
-): Promise<boolean> {
-  const authority = await loadInviterAuthority(tx, invite.orgId, invite.invitedBy);
-  return inviterCoversInvite(authority, invite.storeIds);
 }
 
 export const authRouter = router({
@@ -1059,8 +943,9 @@ export const authRouter = router({
       // 2026-10-21 CA-19 (A-06): the link carries the inviter's authority,
       // so it lapses with it. A removed / suspended inviter, or one who no
       // longer holds users.manage over the invite's stores, voids every
-      // link they handed out.
-      if (!(await inviterStillAuthorized(tx, invite))) {
+      // link they handed out; so does one who could no longer make one of
+      // its grants today (COREAPI-07: rank, org admin, keys).
+      if (!(await inviterStillAuthorized(ctx.db, tx, { ...invite, grants: invite.grants ?? [] }))) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'auth.errors.inviteInviterNoLongerAuthorized',
@@ -1131,21 +1016,16 @@ export const authRouter = router({
           .onConflictDoNothing();
       }
 
-      // The grants were validated when the invite was created and
-      // are re-checked against this org here. Missing roles are
-      // skipped so a deleted role cannot keep someone out entirely.
-      for (const grant of invite.grants ?? []) {
-        const role = await tx.query.roles.findFirst({
-          where: (r, { eq: eq2, and: and2 }) =>
-            and2(eq2(r.id, grant.roleId), eq2(r.orgId, invite.orgId)),
-        });
-        if (!role) continue;
-        // The role may have been edited after the invitation was
-        // created. Never let an old link grant a more powerful rank
-        // than the inviter was allowed to snapshot.
-        if (role.rank > grant.rank) continue;
-        if (grant.scopeType === 'store') {
-          if (!grant.scopeId || !validStoreIds.has(grant.scopeId)) continue;
+      // The grants were validated when the invite was created, and the
+      // inviter's authority over them again above. Grants whose role is
+      // gone, was raised or changed tier are skipped (liveInviteGrants),
+      // as are stores no longer open.
+      for (const { grant, role } of await liveInviteGrants(tx, {
+        orgId: invite.orgId,
+        grants: invite.grants ?? [],
+      })) {
+        if (grant.scopeType === 'store' && (!grant.scopeId || !validStoreIds.has(grant.scopeId))) {
+          continue;
         }
         const existing = await tx.query.memberRoleBindings.findFirst({
           where: (b, { eq: eq2, and: and2 }) =>

@@ -388,6 +388,115 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     }
   });
 
+  // ---------- 2026-11-09 COREAPI-07 / ADM1-02 ----------------------------
+
+  /** An owner (rank 100, global org admin) who can hand out the admin role. */
+  const makeOwner = async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const suffix = Math.random().toString(36).slice(2, 9);
+    const [ownerRole] = await db
+      .insert(s.roles)
+      .values({ orgId, slug: `owner-${suffix}`, name: 'Owner', rank: 100 })
+      .returning();
+    await db.insert(s.rolePermissions).values([
+      { roleId: ownerRole!.id, permissionKey: 'users.manage' },
+      { roleId: ownerRole!.id, permissionKey: 'org.admin' },
+    ]);
+    const [user] = await db
+      .insert(s.users)
+      .values({ tgUserId: freshTgId(), displayName: 'Owner', displayNameLocked: true })
+      .returning();
+    const [member] = await db
+      .insert(s.members)
+      .values({ orgId, userId: user!.id, status: 'active' })
+      .returning();
+    await db.insert(s.memberRoleBindings).values({
+      memberId: member!.id,
+      roleId: ownerRole!.id,
+      scopeType: 'global',
+      scopeId: null,
+      grantedBy: adminUserId,
+    });
+    const session: SessionContext = {
+      userId: user!.id,
+      memberId: member!.id,
+      orgId,
+      orgTimezone: 'UTC',
+      permissions: new Set(['users.manage', 'org.admin']),
+      roleSlugs: new Set([ownerRole!.slug]),
+    };
+    /** Takes the owner role away, leaving `binding` instead. */
+    const demoteTo = async (binding: {
+      roleId: string;
+      scopeType: 'global' | 'store';
+      scopeId: string | null;
+    }) => {
+      await db.delete(s.memberRoleBindings).where(eq(s.memberRoleBindings.memberId, member!.id));
+      await db
+        .insert(s.memberRoleBindings)
+        .values({ memberId: member!.id, grantedBy: adminUserId, ...binding });
+    };
+    return { session, demoteTo };
+  };
+  const adminSlug = async () =>
+    (await getDb(undefined, { system: 'maintenance' }).query.roles.findFirst({
+      where: (r, { eq: eq2 }) => eq2(r.id, adminRoleId),
+    }))!.slug;
+
+  test('COREAPI-07 an admin link dies once its inviter no longer outranks the role', async () => {
+    const owner = await makeOwner();
+    const created = await caller(owner.session).admin.memberInviteCreate({
+      roleSlug: await adminSlug(),
+      storeIds: [storeId],
+    });
+    const inviteId = await inviteIdOf(created.token);
+    // Still a global org admin, but now at the role's own rank.
+    await owner.demoteTo({ roleId: adminRoleId, scopeType: 'global', scopeId: null });
+    const listed = await caller(adminSession()).admin.memberInviteList();
+    expect(listed.some((i) => i.id === inviteId)).toBe(false);
+    await expect(
+      caller(null).auth.acceptInvite({ token: created.token, initData: signInitData(freshTgId()) }),
+    ).rejects.toThrow('auth.errors.inviteInviterNoLongerAuthorized');
+  });
+
+  test('COREAPI-07 … and once its inviter only manages the invite’s store', async () => {
+    const owner = await makeOwner();
+    const created = await caller(owner.session).admin.memberInviteCreate({
+      roleSlug: await adminSlug(),
+      storeIds: [storeId],
+    });
+    // users.manage over every store on the invite used to be enough.
+    await owner.demoteTo({ roleId: managerRoleId, scopeType: 'store', scopeId: storeId });
+    await expect(
+      caller(null).auth.acceptInvite({ token: created.token, initData: signInitData(freshTgId()) }),
+    ).rejects.toThrow('auth.errors.inviteInviterNoLongerAuthorized');
+  });
+
+  test('ADM1-02 a role lowered below the admin tier does not arrive as a global binding', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const owner = await makeOwner();
+    const slug = `regional-${Math.random().toString(36).slice(2, 9)}`;
+    await caller(owner.session).admin.roleCreate({ slug, name: 'Regional', rank: 85 });
+    const role = await db.query.roles.findFirst({
+      where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, slug)),
+    });
+    const created = await caller(owner.session).admin.memberInviteCreate({
+      roleSlug: slug,
+      storeIds: [storeId],
+    });
+    // Nobody holds the role yet, so its level may still move.
+    await caller(owner.session).admin.roleUpdate({ roleId: role!.id, rank: 70 });
+    const accepted = await caller(null).auth.acceptInvite({
+      token: created.token,
+      initData: signInitData(freshTgId()),
+    });
+    expect(accepted.session.stores.map((st) => st.id)).toContain(storeId);
+    const bindings = await db.query.memberRoleBindings.findMany({
+      where: (b, { eq: eq2 }) => eq2(b.roleId, role!.id),
+    });
+    expect(bindings).toEqual([]);
+  });
+
   test('CA-17 a store manager reads only their own stores and members', async () => {
     const mgr = caller(managerSession());
     const members = await mgr.admin.memberList();

@@ -29,7 +29,7 @@ import {
   runTouchesStores,
   withUniqueKey,
 } from '../trpc/routers/admin';
-import { inviterCoversInvite } from '../trpc/routers/auth';
+import { inviterCoversInvite } from '../services/adminAuthority';
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 

@@ -35,7 +35,19 @@ import {
   effectiveGlobalPermissions,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
-import { isPlatformAdmin } from '../../services/platformAdmin';
+import {
+  bindingIsLive,
+  getActorMaxGlobalRank,
+  getActorMaxRank,
+  getActorMaxRankInStore,
+  grantRefusal,
+  inviterStillAuthorized,
+  missingRoleKey as missingRoleKeyOf,
+  passesOnAnyKey,
+  roleTier,
+  type Granter,
+  type GrantRefusal,
+} from '../../services/adminAuthority';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
@@ -47,7 +59,6 @@ import {
   readCatalogSnapshot,
   type CatalogSnapshot,
 } from '../../services/catalogCopy';
-import { inviterStillAuthorized } from './auth';
 import { logger } from '../../infra/log';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
@@ -437,11 +448,6 @@ function broadcastPeople(orgId: string): void {
  */
 const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
 
-/** A binding with an expiry in the past grants nothing. */
-function bindingIsLive() {
-  return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
-}
-
 /**
  * Active admin-rank members of the org. ADM-6 (2026-10-30): the guards
  * ask how many would be LEFT, so they pass the member or binding being
@@ -474,104 +480,6 @@ async function countAdminsInOrg(
       .map((r) => r.memberId),
   );
   return distinct.size;
-}
-
-async function getActorMaxRank(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  actorUserId: string,
-): Promise<number> {
-  const rows = await tx
-    .select({ rank: s.roles.rank })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
-  let max = 0;
-  for (const r of rows) {
-    if (r.rank > max) max = r.rank;
-  }
-  return max;
-}
-
-/**
- * Highest rank among the actor's GLOBAL bindings only (security scan F8,
- * 2026-10-31). `getActorMaxRank` also counts store-scoped bindings, so a
- * legacy store-scoped super_admin binding outranked `admin` for an
- * org-wide grant.
- */
-async function getActorMaxGlobalRank(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  actorUserId: string,
-): Promise<number> {
-  const rows = await tx
-    .select({ rank: s.roles.rank })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(
-      and(
-        eq(s.members.orgId, orgId),
-        eq(s.members.userId, actorUserId),
-        eq(s.memberRoleBindings.scopeType, 'global'),
-        bindingIsLive(),
-      ),
-    );
-  let max = 0;
-  for (const r of rows) {
-    if (r.rank > max) max = r.rank;
-  }
-  return max;
-}
-
-/**
- * C1 (2026-05-06): per-store rank gate.
- *
- * `getActorMaxRank` returns the actor's max rank ANYWHERE in the org —
- * which silently lets a "manager of Store A" (rank 30 in A, nothing in
- * B) grant a manager-rank role bound to Store B, because the global
- * gate would see rank 30 ≥ 30 and refuse, but rank 30 < 30 succeeds…
- * wait, actually the global gate refuses correctly for SAME store.
- * The bug bites when granting INTO a different store: actor has rank
- * 30 globally (from their A binding), tries to bind manager (rank 30)
- * to Store B — gate says "30 ≥ 30, no" — correct refusal but for the
- * wrong reason. The dangerous case is the inverse: actor has rank 50
- * (some bespoke role) in Store A, tries to grant rank 40 in Store B
- * where they have ZERO authority. Global gate says "50 > 40, ok" —
- * WRONG. They had no business managing Store B.
- *
- * Rules for evaluating "actor's rank IN scope":
- *   - global bindings always count (admin/super_admin reach everywhere)
- *   - store-scoped bindings count only if scope_id == storeId
- *
- * For granting/revoking a 'global' binding, use `getActorMaxRank`
- * (unchanged). Granting a global binding is by definition org-wide and
- * the only people who should do it are themselves global admins, whose
- * global rank already gates them correctly.
- */
-async function getActorMaxRankInStore(
-  tx: import('@compass/db').DB,
-  orgId: string,
-  actorUserId: string,
-  storeId: string,
-): Promise<number> {
-  const rows = await tx
-    .select({
-      rank: s.roles.rank,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
-  let max = 0;
-  for (const r of rows) {
-    const counts = r.scopeType === 'global' || (r.scopeType === 'store' && r.scopeId === storeId);
-    if (counts && r.rank > max) max = r.rank;
-  }
-  return max;
 }
 
 /**
@@ -799,7 +707,8 @@ const SUPER_ADMIN_RANK = 100;
  * Gate for suspending / reactivating a member.
  *
  *   - An org admin (global `org.admin`) may act on anyone strictly
- *     below their own org-wide rank.
+ *     below their own org-wide rank: their global bindings alone
+ *     (ADM1-01); the target counts every binding they hold.
  *   - Anyone else must administer EVERY store the target belongs to and
  *     outrank the target in each. A target with no store at all, or
  *     with a foot in a store the actor does not manage, is out of reach.
@@ -813,7 +722,7 @@ async function assertCanSetMemberStatus(
   if (await hasGlobalOrgAdmin(tx, session.memberId)) {
     const [targetRank, actorRank] = await Promise.all([
       getActorMaxRank(tx, orgId, target.userId),
-      getActorMaxRank(tx, orgId, session.userId),
+      getActorMaxGlobalRank(tx, orgId, session.userId),
     ]);
     if (targetRank >= actorRank) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
@@ -1897,20 +1806,8 @@ export const adminRouter = router({
             });
           } else {
             for (const storeId of storeIds) {
-              const actorRankInStore = await getActorMaxRankInStore(
-                tx,
-                orgId,
-                ctx.session!.userId,
-                storeId,
-              );
-              if (role.rank >= actorRankInStore) {
-                throw new TRPCError({
-                  code: 'FORBIDDEN',
-                  message: 'auth.errors.cannotGrantEqualOrHigher',
-                });
-              }
-              // D8: an invite with a role is a grant of it.
-              await assertCanPassOnRole(tx, ctx, role.id, storeId);
+              // An invite with a role is a grant of it (C1, D8).
+              await assertCanInviteIntoStore(tx, ctx, role, storeId);
               grants.push({
                 roleId: role.id,
                 rank: role.rank,
@@ -1929,14 +1826,8 @@ export const adminRouter = router({
               where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
             });
             if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
-            const actorRankInStore = await getActorMaxRankInStore(
-              tx,
-              orgId,
-              ctx.session!.userId,
-              store.id,
-            );
-            if (role.rank >= actorRankInStore) continue;
-            if (await missingRoleKey(tx, ctx, role.id, store.id)) continue;
+            const scope = { type: 'store', storeId: store.id } as const;
+            if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
             grants.push({
               roleId: role.id,
               rank: role.rank,
@@ -2022,7 +1913,13 @@ export const adminRouter = router({
       // authority are refused on accept; stop listing them as pending.
       const visible: typeof inScope = [];
       for (const r of inScope) {
-        if (await inviterStillAuthorized(tx, { orgId, invitedBy: r.invitedBy, storeIds: r.storeIds })) {
+        const invite = {
+          orgId,
+          invitedBy: r.invitedBy,
+          storeIds: r.storeIds,
+          grants: r.grants ?? [],
+        };
+        if (await inviterStillAuthorized(ctx.db, tx, invite)) {
           visible.push(r);
         }
       }
@@ -2272,20 +2169,7 @@ export const adminRouter = router({
           const globalGrant = await assertCanInviteWithRole(tx, ctx, role);
           if (!globalGrant) {
             for (const storeId of input.storeIds) {
-              const actorRankInStore = await getActorMaxRankInStore(
-                tx,
-                orgId,
-                ctx.session!.userId,
-                storeId,
-              );
-              if (role.rank >= actorRankInStore) {
-                throw new TRPCError({
-                  code: 'FORBIDDEN',
-                  message: 'auth.errors.cannotGrantEqualOrHigher',
-                });
-              }
-              // D8: the actor must hold the role's keys there too.
-              await assertCanPassOnRole(tx, ctx, role.id, storeId);
+              await assertCanInviteIntoStore(tx, ctx, role, storeId);
             }
           }
           if (role.rank >= ADMIN_RANK) {
@@ -2380,14 +2264,8 @@ export const adminRouter = router({
                 where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
               });
               if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
-              const actorRankInStore = await getActorMaxRankInStore(
-                tx,
-                orgId,
-                ctx.session!.userId,
-                store.id,
-              );
-              if (role.rank >= actorRankInStore) continue;
-              if (await missingRoleKey(tx, ctx, role.id, store.id)) continue;
+              const scope = { type: 'store', storeId: store.id } as const;
+              if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
               const existing = await tx.query.memberRoleBindings.findFirst({
                 where: (b, { eq: eq2, and: and2 }) =>
                   and2(
@@ -2467,7 +2345,7 @@ export const adminRouter = router({
           // may rename themself.
           const [targetRank, actorRank] = await Promise.all([
             getActorMaxRank(tx, orgId, member.userId),
-            getActorMaxRank(tx, orgId, ctx.session!.userId),
+            getActorMaxGlobalRank(tx, orgId, ctx.session!.userId),
           ]);
           if (actorRank < SUPER_ADMIN_RANK && targetRank >= actorRank) {
             throw new TRPCError({
@@ -3071,7 +2949,7 @@ export const adminRouter = router({
       // another admin (rank 80) by deleting the member row, which
       // cascade-drops their bindings and ends up the same as a revoke.
       const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
-      const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+      const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
       if (targetMaxRank >= actorRank && targetMaxRank > 0) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -3298,14 +3176,14 @@ export const adminRouter = router({
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+        const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (input.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
-        if (!(await exemptFromKeyCheck(ctx))) {
+        if (!(await exemptFromKeyCheck(tx, ctx))) {
           // DX-ADM-2: a role applies in every store, so only keys the
           // actor holds org-wide may go into it.
           assertHoldsKeys(
@@ -3385,7 +3263,7 @@ export const adminRouter = router({
         if (!role) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
         }
-        const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+        const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         // Rank gate — both the existing rank AND the proposed new rank
         // must be strictly below the actor's rank. Without the existing-
         // rank check, an admin (80) could "edit" super_admin (100) by
@@ -3407,6 +3285,28 @@ export const adminRouter = router({
         if (input.rank !== undefined && role.isBuiltIn && input.rank !== role.rank) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.builtinRankLocked' });
         }
+        // ADM1-02 (2026-11-09): the tier decides where a role is bound —
+        // from ADMIN_RANK up only globally, below it only in stores
+        // (grantRole). Moving a held role across it left its bindings in
+        // the wrong scope: store bindings that outranked the org admins in
+        // their store and counted as admins, or global bindings of a store
+        // role (what migration 0007 cleaned up). Every binding counts, as
+        // for roleDelete: a suspended member's comes back with them.
+        const orgTier = (rank: number) => rank >= ADMIN_RANK;
+        if (input.rank !== undefined && orgTier(input.rank) !== orgTier(role.rank)) {
+          const [held] = await tx
+            .select({ id: s.memberRoleBindings.id })
+            .from(s.memberRoleBindings)
+            .where(eq(s.memberRoleBindings.roleId, role.id))
+            .limit(1);
+          if (held) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'admin.errors.rankTierChangeHasBindings',
+              cause: { context: { rank: ADMIN_RANK } },
+            });
+          }
+        }
         const patch: Record<string, unknown> = {};
         if (input.name !== undefined) patch.name = input.name;
         if (input.description !== undefined) patch.description = input.description;
@@ -3419,7 +3319,7 @@ export const adminRouter = router({
             .from(s.rolePermissions)
             .where(eq(s.rolePermissions.roleId, role.id));
           const had = new Set(current.map((r) => r.key));
-          if (!(await exemptFromKeyCheck(ctx))) {
+          if (!(await exemptFromKeyCheck(tx, ctx))) {
             assertHoldsKeys(
               await effectiveGlobalPermissions(tx, ctx.session!.memberId),
               input.permissionKeys.filter((key) => !had.has(key)),
@@ -3474,7 +3374,7 @@ export const adminRouter = router({
             message: 'admin.errors.cannotDeleteBuiltinRole',
           });
         }
-        const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+        const actorRank = await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (role.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -3705,7 +3605,7 @@ export const adminRouter = router({
         const actorRank =
           input.scopeType === 'store' && input.scopeId
             ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-            : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+            : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -3721,7 +3621,7 @@ export const adminRouter = router({
           // D8: the super admin and platform admins are not limited to
           // their own keys.
           const actorHoldsKey =
-            (await exemptFromKeyCheck(ctx)) ||
+            (await exemptFromKeyCheck(tx, ctx)) ||
             (input.scopeType === 'store' && input.scopeId
               ? (
                   await effectivePermissionsForStore(
@@ -3857,7 +3757,7 @@ export const adminRouter = router({
         const actorRank =
           input.scopeType === 'store' && input.scopeId
             ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-            : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+            : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -3999,8 +3899,9 @@ export const adminRouter = router({
       // C1 (2026-05-06): rank gate — "no equal/higher grants", but
       // evaluated IN THE SCOPE the binding is being created in.
       //
-      //   - 'global' grant → use global getActorMaxRank (admin/super_admin
-      //     are themselves global, so global rank is the right yardstick).
+      //   - 'global' grant → getActorMaxGlobalRank: the actor's global
+      //     bindings alone (F8, ADM1-01). Counting their store bindings
+      //     let a legacy store-scoped super_admin grant `admin` org-wide.
       //   - 'store' grant → use getActorMaxRankInStore: a manager rank-50
       //     in Store A cannot grant rank-50 INTO Store A, AND cannot
       //     grant ANYTHING into Store B (where their effective rank is 0
@@ -4011,7 +3912,7 @@ export const adminRouter = router({
       const actorRank =
         input.scopeType === 'store' && input.scopeId
           ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-          : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+          : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
       if (role.rank >= actorRank) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -4140,6 +4041,11 @@ export const adminRouter = router({
           message: 'admin.errors.cannotRevokeSelfAdmin',
         });
       }
+      // ADM1-17 (2026-11-09): a global binding is organisation-wide
+      // authority; taking one away needs the global org admin that
+      // granting it does. A store manager outranking a legacy low-rank
+      // global binding could revoke it in every store at once.
+      if (bindingScopeType === 'global') requireOrgAdmin(ctx.session!.permissions);
       // C2 (2026-05-06): if the binding being revoked is store-scoped,
       // the actor must be admin-of-that-store. Without this gate a
       // manager-of-A could revoke a manager-of-B binding and silently
@@ -4164,7 +4070,7 @@ export const adminRouter = router({
       const actorRank =
         bindingScopeType === 'store' && bindingScopeId
           ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, bindingScopeId)
-          : await getActorMaxRank(tx, orgId, ctx.session!.userId);
+          : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
       if (targetRank >= actorRank) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -6842,55 +6748,43 @@ function assertHoldsKeys(perms: ReadonlySet<string>, keys: Iterable<string>): vo
   }
 }
 
-/**
- * D8 / RE-ADM-10 (2026-10-31): the workspace's super admin and platform
- * administrators may pass on keys they do not hold themselves; everyone
- * else only what they have.
- */
-async function exemptFromKeyCheck(ctx: AdminCtx): Promise<boolean> {
-  if (ctx.session!.roleSlugs.has('super_admin')) return true;
-  return isPlatformAdmin(ctx.db, ctx.session!.userId);
+/** The signed-in actor, as the grant rules in services/adminAuthority take them. */
+function granterOf(ctx: AdminCtx): Granter {
+  return {
+    orgId: ctx.session!.orgId,
+    memberId: ctx.session!.memberId,
+    userId: ctx.session!.userId,
+  };
 }
 
 /**
- * D8 / RE-ADM-10 (2026-10-31): granting a role hands over every key in
- * it, so the actor must hold each of them where the binding applies (a
- * store's effective set for a store binding, the org-wide set for a
- * global one). The rank gate alone let an admin grant a custom rank-70 role
- * carrying super-admin keys. Returns the first missing key, or null.
- *
- * Built-in roles keep the rank rule alone: their keys are fixed by the
- * seed, and a store manager inviting a purchaser (whose run.* keys the
- * manager does not hold) is a live workflow.
+ * D8 / RE-ADM-10 (2026-10-31): the workspace's super admin and platform
+ * administrators may pass on keys they do not hold themselves; everyone
+ * else only what they have (passesOnAnyKey).
  */
-async function missingRoleKey(
+function exemptFromKeyCheck(tx: OrgTx, ctx: AdminCtx): Promise<boolean> {
+  return passesOnAnyKey(ctx.db, tx, granterOf(ctx));
+}
+
+/** D8 for the signed-in actor: the first key of the role they lack there, or null. */
+function missingRoleKey(
   tx: OrgTx,
   ctx: AdminCtx,
   roleId: string,
   storeId: string | null,
 ): Promise<string | null> {
-  if (await exemptFromKeyCheck(ctx)) return null;
-  const [role] = await tx
-    .select({ isBuiltIn: s.roles.isBuiltIn })
-    .from(s.roles)
-    .where(eq(s.roles.id, roleId));
-  if (!role || role.isBuiltIn) return null;
-  const rows = await tx
-    .select({ key: s.rolePermissions.permissionKey })
-    .from(s.rolePermissions)
-    .where(eq(s.rolePermissions.roleId, roleId));
-  if (rows.length === 0) return null;
-  // DX-ADM-2: a global binding applies in every store, so it is checked
-  // against the keys the actor holds org-wide, not the flat session set.
-  const held = storeId
-    ? await effectivePermissionsForStore(
-        tx,
-        ctx.session!.memberId,
-        storeId,
-        ctx.session!.permissions,
-      )
-    : await effectiveGlobalPermissions(tx, ctx.session!.memberId);
-  return rows.find((r) => !held.has(r.key))?.key ?? null;
+  return missingRoleKeyOf(ctx.db, tx, granterOf(ctx), roleId, storeId);
+}
+
+function throwRefusal(refusal: GrantRefusal | null): void {
+  if (!refusal) return;
+  throw new TRPCError({
+    code: refusal.code,
+    message: refusal.message,
+    ...(refusal.missingPermission
+      ? { cause: { missingPermission: refusal.missingPermission } }
+      : {}),
+  });
 }
 
 /**
@@ -6906,24 +6800,28 @@ async function assertCanInviteWithRole(
   ctx: AdminCtx,
   role: { id: string; rank: number },
 ): Promise<boolean> {
-  const carriesOrgAdmin = !!(await tx.query.rolePermissions.findFirst({
-    where: (rp, { eq: eq2, and: and2 }) =>
-      and2(eq2(rp.roleId, role.id), eq2(rp.permissionKey, 'org.admin')),
-  }));
-  if (role.rank < ADMIN_RANK) {
-    if (carriesOrgAdmin) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.orgAdminMustBeGlobal' });
-    }
-    return false;
+  const tier = await roleTier(tx, role);
+  if (tier === 'invalid') {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.orgAdminMustBeGlobal' });
   }
+  if (tier === 'store') return false;
   requireOrgAdmin(ctx.session!.permissions);
-  if (!(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) requireOrgAdmin(new Set());
-  const actorRank = await getActorMaxGlobalRank(tx, ctx.session!.orgId, ctx.session!.userId);
-  if (role.rank >= actorRank) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotGrantEqualOrHigher' });
-  }
-  await assertCanPassOnRole(tx, ctx, role.id, null);
+  throwRefusal(await grantRefusal(ctx.db, tx, granterOf(ctx), role, { type: 'global' }));
   return true;
+}
+
+/**
+ * The store half of an invite's grant (C1, D8): the actor outranks the
+ * role in that store and holds its keys there. The same rule decides
+ * again when the link is opened (inviterStillAuthorized).
+ */
+async function assertCanInviteIntoStore(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  role: { id: string; rank: number },
+  storeId: string,
+): Promise<void> {
+  throwRefusal(await grantRefusal(ctx.db, tx, granterOf(ctx), role, { type: 'store', storeId }));
 }
 
 /**
@@ -6947,7 +6845,7 @@ async function rolePassOnScopes(
   const out = new Map<string, { global: boolean; storeIds: string[] }>();
   const everywhere = () => ({ global: true, storeIds: [...storeIds] });
   const custom = roles.filter((r) => !r.isBuiltIn);
-  const exempt = custom.length === 0 || (await exemptFromKeyCheck(ctx));
+  const exempt = custom.length === 0 || (await exemptFromKeyCheck(tx, ctx));
   const keysByRole = new Map<string, string[]>();
   if (!exempt) {
     const rows = await tx

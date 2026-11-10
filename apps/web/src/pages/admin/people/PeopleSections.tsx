@@ -56,6 +56,7 @@ import {
   defaultNewRoleRank,
   normaliseSlugInput,
   readRank,
+  roleRankRange,
   slugIsValid,
   tgIdProblem,
 } from '../../../lib/adminFields';
@@ -64,6 +65,7 @@ import {
   canRevokeRole,
   canSetOverride,
   canSetStatus,
+  orgRankOf,
   rankIn,
   rolePassesOn,
   transferTargets,
@@ -1173,18 +1175,22 @@ function RoleCreateSheet({
 function RankField({
   text,
   onText,
+  min = 1,
   max,
+  hint,
 }: {
   text: string;
   onText: (text: string) => void;
+  min?: number;
   max: number;
+  hint?: string;
 }) {
   const i18n = useI18n();
   const errorId = useId();
   const [touched, setTouched] = useState(false);
-  const bad = touched && !readRank(text, max).ok;
+  const bad = touched && !readRank(text, max, min).ok;
   return (
-    <Field label={`${i18n.t('people.rankField', { max })} *`}>
+    <Field label={`${i18n.t('people.rankField', { min, max })} *`} hint={hint}>
       <Input
         value={text}
         onChange={(e) => onText(e.target.value)}
@@ -1196,7 +1202,7 @@ function RankField({
       />
       {bad ? (
         <p id={errorId} className="mt-1 text-old-label text-[var(--c-danger)]">
-          {i18n.t('people.rankInvalid', { max })}
+          {i18n.t('people.rankInvalid', { min, max })}
         </p>
       ) : null}
     </Field>
@@ -1251,7 +1257,14 @@ function RolePermissionsSheet({
   // Below-rank gate — only roles strictly below actor's rank are editable.
   const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
   const isBuiltIn = detail.data?.isBuiltIn ?? false;
-  const rankRead = readRank(rankText, myMaxRank - 1);
+  // ADM1-02: a held role keeps its side of ADMIN_RANK.
+  const rankRange = roleRankRange(
+    detail.data?.rank ?? 0,
+    (detail.data?.assignees.length ?? 0) > 0,
+    myMaxRank,
+    ADMIN_RANK,
+  );
+  const rankRead = readRank(rankText, rankRange.max, rankRange.min);
   const rank = rankRead.ok ? rankRead.rank : (detail.data?.rank ?? 0);
   // DX-ADM-28: the edit form asks before its changes are thrown away.
   const editChanged =
@@ -1397,7 +1410,17 @@ function RolePermissionsSheet({
                   {i18n.t('people.builtInRankBody')}
                 </Banner>
               ) : (
-                <RankField text={rankText} onText={setRankText} max={myMaxRank - 1} />
+                <RankField
+                  text={rankText}
+                  onText={setRankText}
+                  min={rankRange.min}
+                  max={rankRange.max}
+                  hint={
+                    rankRange.locked
+                      ? i18n.t('people.rankTierLocked', { rank: ADMIN_RANK })
+                      : undefined
+                  }
+                />
               )}
               {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
               <SectionLabel className="px-0">
@@ -2823,7 +2846,7 @@ function GrantRoleSheet({
   // as the server does; the old max(myMaxRank, storeRanks[id]) let a
   // manager of A look like a manager of B.
   const effectiveRank = useMemo(() => {
-    if (scopeMode === 'global') return rankIn(actor.bindings, null);
+    if (scopeMode === 'global') return orgRankOf(actor.bindings);
     if (selectedStoreIds.size === 0) return 0;
     return Math.min(...[...selectedStoreIds].map((id) => rankIn(actor.bindings, id)));
   }, [scopeMode, selectedStoreIds, actor]);

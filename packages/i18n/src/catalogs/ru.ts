@@ -185,11 +185,13 @@ export const ru = {
   'people.newRoleHint': 'Пользовательские роли могут иметь уровень от 1 до {max}.',
   'people.rolePlaceholderName': 'Старший смены',
   'people.rolePlaceholderDesc': 'Необязательно',
-  'people.rankField': 'Уровень (1–{max})',
+  'people.rankField': 'Уровень ({min}–{max})',
   'people.slugRule': 'Строчные латинские буквы, цифры и дефис, например night-shift.',
   'people.slugInvalid': 'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
   'people.slugRequired': 'Обязательное поле.',
-  'people.rankInvalid': 'Введите целое число от 1 до {max}.',
+  'people.rankInvalid': 'Введите целое число от {min} до {max}.',
+  'people.rankTierLocked':
+    'Эта роль уже назначена участникам, поэтому её уровень не может пересечь отметку {rank}: если уровень не ниже {rank}, роль действует во всём рабочем пространстве, если ниже — в отдельных магазинах.',
   'people.roleHasKeysYouLack':
     'В этой роли есть права, которых нет у вас, — здесь её выдать нельзя.',
   'people.roleNameKeysYouLack': '{name} (есть права, которых у вас нет)',
@@ -967,6 +969,8 @@ export const ru = {
   'admin.errors.cannotDeleteBuiltinRole':
     'Встроенные роли удалить нельзя, но можно изменить их название, описание и права.',
   'admin.errors.roleHasBindings': 'Эта роль ещё назначена участникам — сначала отзовите назначения',
+  'admin.errors.rankTierChangeHasBindings':
+    'Эта роль ещё назначена участникам — её уровень не может пересечь отметку {rank}. Сначала отзовите назначения или создайте новую роль.',
   'admin.errors.permissionNotFound': 'Такого права нет.',
   'admin.errors.notAdminOfStore': 'Вы не администрируете этот магазин — операция запрещена',
   'admin.errors.memberNotInSourceStore':

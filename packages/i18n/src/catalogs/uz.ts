@@ -191,12 +191,14 @@ export const uz = {
   'people.newRoleHint': 'Maxsus rollar 1 dan {max} gacha darajaga ega boʻlishi mumkin.',
   'people.rolePlaceholderName': 'Smena boshligʻi',
   'people.rolePlaceholderDesc': 'Majburiy emas',
-  'people.rankField': 'Daraja (1–{max})',
+  'people.rankField': 'Daraja ({min}–{max})',
   'people.slugRule': 'Kichik lotin harflari, raqamlar va chiziqcha, masalan night-shift.',
   'people.slugInvalid':
     'Faqat kichik lotin harflari, raqamlar va chiziqcha (-), masalan night-shift.',
   'people.slugRequired': 'Majburiy.',
-  'people.rankInvalid': '1 dan {max} gacha butun son kiriting.',
+  'people.rankInvalid': '{min} dan {max} gacha butun son kiriting.',
+  'people.rankTierLocked':
+    'Bu rol aʼzolarga biriktirilgan, shuning uchun darajasi {rank} chegarasidan oʻta olmaydi: {rank} va undan yuqori rol butun ish maydoniga, undan pasti alohida doʻkonlarga tegishli.',
   'people.roleHasKeysYouLack': 'Bu rolda sizda yoʻq ruxsatlar bor, uni bu yerda bera olmaysiz.',
   'people.roleNameKeysYouLack': '{name} (sizda yoʻq ruxsatlar bor)',
   'people.rolesOfMember': 'Rollar',
@@ -971,6 +973,8 @@ export const uz = {
     'Oʻrnatilgan rollarni oʻchirib boʻlmaydi, lekin nomi, tavsifi va ruxsatlarini oʻzgartirish mumkin.',
   'admin.errors.roleHasBindings':
     'Bu rol hali aʼzolarga biriktirilgan — avval ularni qaytarib oling',
+  'admin.errors.rankTierChangeHasBindings':
+    'Bu rol hali aʼzolarga biriktirilgan — darajasi {rank} chegarasidan oʻta olmaydi. Avval ularni qaytarib oling yoki yangi rol yarating.',
   'admin.errors.permissionNotFound': 'Bunday ruxsat yoʻq.',
   'admin.errors.notAdminOfStore': 'Bu doʻkon administratori siz emas — bu amalni bajara olmaysiz',
   'admin.errors.memberNotInSourceStore':

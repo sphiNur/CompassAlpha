@@ -225,11 +225,13 @@ export const en = {
   'people.newRoleHint': 'Custom roles can have any level from 1 to {max}.',
   'people.rolePlaceholderName': 'Shift Lead',
   'people.rolePlaceholderDesc': 'Optional',
-  'people.rankField': 'Level (1–{max})',
+  'people.rankField': 'Level ({min}–{max})',
   'people.slugRule': 'Lowercase Latin letters, digits and hyphens, e.g. night-shift.',
   'people.slugInvalid': 'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
   'people.slugRequired': 'Required.',
-  'people.rankInvalid': 'Enter a whole number from 1 to {max}.',
+  'people.rankInvalid': 'Enter a whole number from {min} to {max}.',
+  'people.rankTierLocked':
+    "Members hold this role, so its level can't cross {rank}: at {rank} and above a role covers the whole workspace, below it single stores.",
   'people.roleHasKeysYouLack':
     "This role has permissions you don't have yourself, so you can't give it here.",
   'people.roleNameKeysYouLack': '{name} (has permissions you lack)',
@@ -1034,6 +1036,8 @@ export const en = {
     "Built-in roles can't be deleted, but you can change their name, description and permissions.",
   'admin.errors.roleHasBindings':
     'This role is still assigned to members — revoke those grants first',
+  'admin.errors.rankTierChangeHasBindings':
+    "Members hold this role, so its level can't cross {rank}. Revoke it from them first, or create a new role.",
   'admin.errors.permissionNotFound': 'There is no such permission.',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action",
