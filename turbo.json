@@ -13,6 +13,7 @@
       "persistent": true
     },
     "lint": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/eslint.shared.mjs"],
       "outputs": []
     },
     "type-check": {

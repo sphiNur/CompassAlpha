@@ -190,9 +190,11 @@ jobs:
         run: pnpm type-check
 
       - name: Lint
-        # apps/web only for now (the one workspace with a lint script).
-        # react-hooks/rules-of-hooks is enforced; exhaustive-deps is on
-        # except for a baseline of older files — see apps/web/eslint.config.js.
+        # apps/web and packages/ui (the workspaces with a lint script; their
+        # shared rules are in eslint.shared.mjs, OPS-19). The server code is
+        # not linted yet. react-hooks/rules-of-hooks is enforced;
+        # exhaustive-deps is on except for a baseline of older web files —
+        # see apps/web/eslint.config.js.
         run: pnpm lint
 
       - name: Startup JavaScript budget

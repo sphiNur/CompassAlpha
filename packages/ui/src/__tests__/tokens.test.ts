@@ -47,6 +47,7 @@ function oklch(value: string): Rgba {
   if (!m) throw new Error(`not an oklch() colour: ${value}`);
   const L = Number(m[1]) / 100;
   const C = Number(m[2]);
+  // eslint-disable-next-line no-restricted-syntax -- degrees to radians, not money
   const h = (Number(m[3]) * Math.PI) / 180;
   const a = C * Math.cos(h);
   const b = C * Math.sin(h);
