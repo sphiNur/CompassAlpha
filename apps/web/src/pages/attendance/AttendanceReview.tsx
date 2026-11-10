@@ -10,7 +10,7 @@
  */
 import { useState } from 'react';
 import { Badge, Banner, Button, DataState, EmptyState, Field, Input } from '@compass/ui';
-import { useI18n } from '../../hooks/useI18n';
+import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
 import { trpc } from '../../lib/trpc';
@@ -19,6 +19,7 @@ import { EnrollPhotos } from './AttendanceSettings';
 
 export function AttendanceReview({ storeId }: { storeId: string }) {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const queue = trpc.attendance.reviewQueue.useQuery({ storeId });
@@ -84,7 +85,7 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
                         {p.name}
                       </span>
                       <span className="tabular-nums text-old-label text-[var(--c-fg-muted)]">
-                        {p.date} {p.time} ·{' '}
+                        {dates.calendarDay(p.date)} {p.time} ·{' '}
                         {i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')}
                       </span>
                     </div>
@@ -190,6 +191,7 @@ function EnrollItem({
   };
 }) {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [rejecting, setRejecting] = useState(false);
@@ -214,7 +216,7 @@ function EnrollItem({
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-old-body font-semibold text-[var(--c-fg)]">{enrollment.name}</span>
         <span className="tabular-nums text-old-label text-[var(--c-fg-muted)]">
-          {enrollment.date} {enrollment.time}
+          {dates.calendarDay(enrollment.date)} {enrollment.time}
         </span>
       </div>
       {waiting ? <EnrollPhotos photos={waiting.photos} name={enrollment.name} /> : null}
