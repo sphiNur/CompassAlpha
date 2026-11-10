@@ -4,6 +4,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
 import { Spinner } from './Spinner';
 import { createTapGuard } from '../useTapGuard';
+import { disabledClass } from './disabled';
 
 const button = cva(
   [
@@ -15,7 +16,8 @@ const button = cva(
     'whitespace-nowrap outline-none transition-[background,color,box-shadow]',
     'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
     'focus-visible:ring-offset-[var(--c-ring-offset)]',
-    'disabled:opacity-50 disabled:pointer-events-none',
+    disabledClass,
+    'disabled:pointer-events-none',
   ],
   {
     variants: {

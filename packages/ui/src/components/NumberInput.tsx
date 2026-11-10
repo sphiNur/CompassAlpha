@@ -3,6 +3,7 @@ import type { InputHTMLAttributes } from 'react';
 import { cn } from '../cn';
 import { useUiLabels } from '../labels';
 import { useDecimalField } from '../useDecimalField';
+import { disabledClass } from './disabled';
 
 export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
@@ -78,7 +79,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
           'placeholder:text-[var(--c-fg-subtle)]',
           'focus:border-[var(--c-action)]',
           invalid ? 'border-[var(--c-danger)]' : '',
-          rest.disabled ? 'opacity-50' : '',
+          disabledClass,
           className,
         )}
         {...rest}

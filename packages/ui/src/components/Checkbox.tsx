@@ -1,5 +1,6 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { disabledLook } from './disabled';
 
 /**
  * Checkbox — a clickable square with a checkmark.
@@ -46,11 +47,15 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
       className={cn(
         'peer-checked:[&_svg]:opacity-100',
         'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--r-utility)]',
-        'bg-[var(--c-surface-2)] ring-hairline transition-colors',
-        'peer-checked:bg-[var(--c-action)] peer-checked:ring-[var(--c-action)]',
+        // UI-10 (review 2026-11): unchecked, the edge is the 3:1 field
+        // border (the hairline measured 1.2–1.4:1); checked, the filled
+        // box needs no edge.
+        'bg-[var(--c-surface-2)] ring-field transition-colors',
+        'peer-checked:bg-[var(--c-action)] peer-checked:[box-shadow:none]',
         'peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--c-ring)] peer-focus-visible:ring-offset-2',
         'peer-focus-visible:ring-offset-[var(--c-bg)]',
-        'peer-disabled:opacity-50',
+        // UI-11: dimmed once — here when bare, by the label otherwise.
+        label === undefined && 'peer-disabled:opacity-50',
         invalid && 'ring-2 ring-[var(--c-danger)]',
       )}
     >
@@ -101,7 +106,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
       htmlFor={inputId}
       className={cn(
         'press flex cursor-pointer items-start gap-2.5 rounded-[var(--r-utility)] py-1.5',
-        disabled && 'cursor-not-allowed opacity-60',
+        disabled && disabledLook,
         className,
       )}
     >

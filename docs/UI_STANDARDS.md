@@ -161,6 +161,10 @@ Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page; the page's
 main action is the Telegram main button). Switching between views is
 `Segmented`; filtering a list by category is `ChipBar`. No hand-rolled pill
 buttons or toggle tracks.
+A control that cannot be used looks the same everywhere: half opacity and a
+not-allowed cursor, from the kit's `disabledClass` (on the element) or
+`disabledLook` (on a label around it). A field someone may not edit must not
+look editable (2026-11-10, review UI-11).
 
 ---
 
