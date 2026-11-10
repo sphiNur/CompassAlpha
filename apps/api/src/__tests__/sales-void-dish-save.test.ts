@@ -154,9 +154,11 @@ beforeAll(async () => {
   await db
     .insert(s.rolePermissions)
     .values({ roleId: salesRole!.id, permissionKey: 'sales.record' });
+  // dishes.manage counts only when granted organisation-wide (review
+  // CONF-04), so the menu role is an org-tier one, bound globally below.
   const [dishesRole] = await db
     .insert(s.roles)
-    .values({ orgId: org!.id, slug: `menu-${suffix}`, name: 'Menu', rank: 50 })
+    .values({ orgId: org!.id, slug: `menu-${suffix}`, name: 'Menu', rank: 80 })
     .returning();
   await db
     .insert(s.rolePermissions)
@@ -193,7 +195,8 @@ async function makeStore(name: string): Promise<string> {
   return store!.id;
 }
 
-async function memberCaller(roleId: string, storeId: string) {
+/** A member holding `roleId` in one store, or organisation-wide when `storeId` is null. */
+async function memberCaller(roleId: string, storeId: string | null) {
   const db = getDb(undefined, { system: 'maintenance' });
   const tgUserId = BigInt(`${fix!.suffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
   const [user] = await db.insert(s.users).values({ displayName: 'Void', tgUserId }).returning();
@@ -203,7 +206,12 @@ async function memberCaller(roleId: string, storeId: string) {
     .returning();
   await db
     .insert(s.memberRoleBindings)
-    .values({ memberId: member!.id, roleId, scopeType: 'store', scopeId: storeId });
+    .values({
+      memberId: member!.id,
+      roleId,
+      scopeType: storeId ? 'store' : 'global',
+      scopeId: storeId,
+    });
   const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
   if (!session) throw new Error('session failed to load');
   return appRouter.createCaller(buildCtx(db, session));
@@ -278,8 +286,7 @@ describe('sales.void', () => {
 
 describe('dishes.save', () => {
   test.skipIf(!SHOULD_RUN)('creates then updates fields and recipe together', async () => {
-    const storeId = await makeStore(`dish-${Math.random()}`);
-    const caller = await memberCaller(fix!.dishesRoleId, storeId);
+    const caller = await memberCaller(fix!.dishesRoleId, null);
     const created = await caller.dishes.save({
       names: { en: 'Soup' },
       unitPrice: '5.00',
@@ -301,8 +308,7 @@ describe('dishes.save', () => {
   });
 
   test.skipIf(!SHOULD_RUN)('duplicate skuIds are rejected and nothing is written', async () => {
-    const storeId = await makeStore(`dish-dup-${Math.random()}`);
-    const caller = await memberCaller(fix!.dishesRoleId, storeId);
+    const caller = await memberCaller(fix!.dishesRoleId, null);
     const err = await errorOf(() =>
       caller.dishes.save({
         dishId: fix!.dishId,
@@ -324,8 +330,7 @@ describe('dishes.save', () => {
 
 describe('DX-DSH-1 an archived product in a recipe', () => {
   test.skipIf(!SHOULD_RUN)('is refused on save instead of being kept silently', async () => {
-    const storeId = await makeStore(`dish-archived-${Math.random()}`);
-    const caller = await memberCaller(fix!.dishesRoleId, storeId);
+    const caller = await memberCaller(fix!.dishesRoleId, null);
     const db = getDb(undefined, { system: 'maintenance' });
     const [gone] = await db
       .insert(s.skus)
