@@ -187,6 +187,20 @@ function uzbekApostrophes(cats: Catalogs): string[] {
 
 // ── 3. Developer vocabulary ─────────────────────────────────────────────
 
+/**
+ * The namespaces of permission keys (`delivery.confirm`): the catalog's
+ * own permission groups, `permission.group.<prefix>`, which a web test
+ * keeps in step with the seeded permissions. A new namespace is covered
+ * without a list here; the old list missed attendance, delivery, dishes,
+ * prices, org and system (review TEST4-09). `catalog` is kept from it.
+ */
+const PERMISSION_NAMESPACES: readonly string[] = [
+  ...Object.keys(en)
+    .filter((key) => key.startsWith('permission.group.'))
+    .map((key) => key.slice('permission.group.'.length)),
+  'catalog',
+];
+
 const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   // The role's display name (Super admin / Суперадмин / Superadmin) is fine;
   // the id and its hyphenated spellings are not.
@@ -195,7 +209,7 @@ const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   { pattern: /db:seed|pnpm |bun run/, what: 'developer command' },
   { pattern: /\bM\d+(?:\.\d+)*[a-z]?\b/, what: 'milestone name' },
   {
-    pattern: /\b(?:users|inventory|sales|reports|catalog|orders?|runs?|settlement)\.[a-z_]+\b/,
+    pattern: new RegExp(`\\b(?:${PERMISSION_NAMESPACES.join('|')})s?\\.[a-z_]+\\b`),
     what: 'permission key',
   },
   // The buttons say Allow / Deny (Разрешить / Запретить …); lower-case
@@ -436,6 +450,14 @@ function chinesePunctuation(cats: Catalogs): string[] {
       if (CJK.test(m[1]!)) found.push(`zh ${key}: half-width parentheses in "${value}"`);
     }
     if (/["“”]/.test(text)) found.push(`zh ${key}: use 「」 instead of "" / “” in "${value}"`);
+    // TEST4-10 (2026-11-10): a full stop, an ellipsis and a single quote
+    // written the English way. A dot before a letter or digit is a file
+    // name or a number ({month}.xlsx, 1.5), and three are the ellipsis.
+    if (/[\u3400-\u9fff]\.(?![A-Za-z0-9.])/u.test(text)) {
+      found.push(`zh ${key}: half-width "." in "${value}"`);
+    }
+    if (/\.{3}/.test(text)) found.push(`zh ${key}: use … instead of ... in "${value}"`);
+    if (/'/.test(text)) found.push(`zh ${key}: use 「」 instead of ' in "${value}"`);
     if (/—/.test(text.replace(/——/g, ''))) {
       found.push(`zh ${key}: use —— instead of a single dash in "${value}"`);
     }
@@ -857,10 +879,22 @@ describe('catalog lint rules catch the original findings', () => {
       'Enter a date (YYYY-MM-DD)',
       'after onboarding',
       'Mirror role bindings',
+      // TEST4-09: namespaces the hand-written list did not have.
+      'Needs delivery.confirm',
+      'Only with attendance.manage',
+      'Ask for prices.view',
+      'Give dishes.manage',
+      'org.admin only',
     ]) {
       expect(devTerms(one({ en: bad }))).not.toEqual([]);
     }
     expect(devTerms(one({ en: 'Super admin only · level {rank}' }))).toEqual([]);
+  });
+
+  test('TEST4-09: the permission namespaces come from the catalog', () => {
+    for (const ns of ['order', 'run', 'attendance', 'delivery', 'dishes', 'prices', 'org']) {
+      expect(PERMISSION_NAMESPACES).toContain(ns);
+    }
   });
 
   test('«2 ЗАЯВОК» and "1 lines": a count glued to a noun', () => {
@@ -949,6 +983,15 @@ describe('catalog lint rules catch the original findings', () => {
     expect(chinesePunctuation(one({ zh: '点击上方"记录"' }))).toHaveLength(1);
     expect(chinesePunctuation(one({ zh: '保存失败 — 请重试' }))).toHaveLength(1);
     expect(chinesePunctuation(one({ zh: '保存失败——请重试（{n} 项）：好？' }))).toEqual([]);
+  });
+
+  test('TEST4-10: a full stop, an ellipsis and a single quote in Chinese', () => {
+    expect(chinesePunctuation(one({ zh: '保存成功.' }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: '已发给 {name}.' }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: '加载中...' }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: "点击'保存'" }))).toHaveLength(1);
+    expect(chinesePunctuation(one({ zh: '保存成功。加载中…点击「保存」' }))).toEqual([]);
+    expect(chinesePunctuation(one({ zh: '考勤-{store}-{month}.xlsx，约 1.5 公斤' }))).toEqual([]);
   });
 
   test('еще, curly English apostrophes and untranslated values', () => {
