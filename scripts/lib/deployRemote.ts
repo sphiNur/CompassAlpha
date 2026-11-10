@@ -237,6 +237,65 @@ export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): str
   ].join('\n');
 }
 
+/**
+ * Review OPS-03 (2026-11): shell script for step 0.7, which refuses a
+ * server .env that sets the dev login bypass. The grep used to end in
+ * `|| echo __CLEAN__`. The glob for the packages' .env files matches
+ * nothing on the server, so grep exited 2 (a file it could not open) even
+ * when it had found the bypass. The output then carried the file name and
+ * __CLEAN__, and the check passed. Now only files that exist are searched,
+ * and grep's exit code decides: the files and `bypass`, or `clean`, or
+ * exit 2 when grep could not read them.
+ */
+export function devBypassScript(appDir = APP_DIR): string {
+  return [
+    'shopt -s nullglob',
+    'files=()',
+    `for f in "${appDir}/.env" "${appDir}"/apps/*/.env "${appDir}"/packages/*/.env; do`,
+    '  if [ -f "$f" ]; then files+=("$f"); fi',
+    'done',
+    'if [ ${#files[@]} -eq 0 ]; then echo clean; exit 0; fi',
+    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' "\${files[@]}"`,
+    'rc=$?',
+    'if [ $rc -eq 0 ]; then echo bypass; exit 0; fi',
+    'if [ $rc -eq 1 ]; then echo clean; exit 0; fi',
+    'echo "grep exited $rc" >&2',
+    'exit 2',
+  ].join('\n');
+}
+
+/**
+ * The .env files that set the bypass, from `devBypassScript`'s output
+ * (none when it says `clean`). Anything else throws: a check that did not
+ * run must not read as a pass.
+ */
+export function devBypassFiles(output: string): string[] {
+  const lines = output
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const verdict = lines.pop();
+  if (verdict === 'clean' && lines.length === 0) return [];
+  if (verdict === 'bypass' && lines.length > 0) return lines;
+  throw new Error(`unexpected output from the .env check: ${output.trim() || '(none)'}`);
+}
+
+/**
+ * Review OPS-04 (2026-11): what is wrong with the database role, from
+ * step 0.8's `rolbypassrls,rolsuper` line, or null when it is neither.
+ * RLS does not apply to a role that bypasses it or to a superuser, so
+ * both stop the deploy, and so does an answer that is neither.
+ */
+export function rlsRoleProblem(output: string): string | null {
+  const answer = output.trim();
+  const [bypassRls, superuser] = answer.split(',');
+  if (bypassRls === 'false' && superuser === 'false') return null;
+  if (bypassRls === 'true') return 'the database role bypasses row-level security (BYPASSRLS)';
+  if (superuser === 'true')
+    return 'the database role is a superuser, so row-level security does not apply';
+  return `unexpected answer about the database role: ${answer || '(none)'}`;
+}
+
 /** Where compass-backup.sh writes the nightly dumps (BACKUP_DIR there). */
 export const BACKUP_DIR = '/home/ubuntu/compass-backups';
 

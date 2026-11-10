@@ -102,6 +102,16 @@ Since 2026-11-09 (review OPS-01/OPS-02):
   next deploy keeps the older snapshot instead of that tree, and
   `--rollback` removes the file.
 
+Since 2026-11 (review OPS-03/OPS-04), a server check that cannot run
+stops the deploy, the same as one that fails. Before, it printed a
+warning and the deploy went on (the `.env` check even passed outright).
+
+- The run-in-progress check: `--allow-active-run` skips it.
+- The backup check: `--allow-stale-backup`.
+- The `.env` check: no override; fix the server.
+- The database role check, which now refuses a superuser as well as
+  BYPASSRLS: `--skip-rls-check`.
+
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
 No restart is needed — the api serves `dist` from disk on every request

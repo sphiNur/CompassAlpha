@@ -8,7 +8,15 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,10 +27,13 @@ import {
   backupProblem,
   clearIncompleteScript,
   describeSnapshotScript,
+  devBypassFiles,
+  devBypassScript,
   hostName,
   knownHostsFile,
   markIncompleteScript,
   restoreScript,
+  rlsRoleProblem,
   rsyncExcludes,
   snapshotScript,
   sshOptions,
@@ -230,6 +241,73 @@ describe('backup health before a deploy', () => {
     const out = bash(backupHealthScript(dir)).stdout;
     expect(out).toContain('latest=\n');
     expect(out).toContain('age=-1');
+  });
+});
+
+describe('the dev login bypass in a server .env (OPS-03)', () => {
+  /** A live tree with these files and no package .env (as on the server). */
+  function envTree(files: Record<string, string>) {
+    const app = mkdtempSync(join(tmpdir(), 'deploy-env-'));
+    dirs.push(app);
+    for (const [rel, body] of Object.entries(files)) put(app, rel, body);
+    return app;
+  }
+  const check = (app: string) => bash(devBypassScript(app));
+
+  test('a bypass in the root .env is found, though no package has an .env', () => {
+    const app = envTree({
+      '.env': 'DATABASE_URL=x\nVITE_DEV_MOCK_INIT_DATA=user=1\n',
+      'apps/web/.env': 'VITE_X=1\n',
+    });
+    const r = check(app);
+    expect(r.status).toBe(0);
+    expect(devBypassFiles(r.stdout)).toEqual([join(app, '.env')]);
+  });
+
+  test("an app's .env is searched too", () => {
+    const app = envTree({
+      '.env': 'DATABASE_URL=x\n',
+      'apps/web/.env': 'VITE_DEV_MOCK_INIT_DATA=user=1\n',
+    });
+    expect(devBypassFiles(check(app).stdout)).toEqual([join(app, 'apps/web/.env')]);
+  });
+
+  test('empty or commented out is clean, and so is a tree with no .env at all', () => {
+    const app = envTree({ '.env': 'VITE_DEV_MOCK_INIT_DATA=\n# VITE_DEV_MOCK_INIT_DATA=user=1\n' });
+    expect(devBypassFiles(check(app).stdout)).toEqual([]);
+    expect(devBypassFiles(check(envTree({})).stdout)).toEqual([]);
+  });
+
+  // root reads any file, so the unreadable one would not be.
+  test.skipIf(process.getuid?.() === 0)('an .env grep cannot read fails the check', () => {
+    const app = envTree({
+      '.env': 'VITE_DEV_MOCK_INIT_DATA=user=1\n',
+      'apps/web/.env': 'VITE_X=1\n',
+    });
+    chmodSync(join(app, 'apps/web/.env'), 0o000);
+    const r = check(app);
+    expect(r.status).toBe(2);
+    expect(() => devBypassFiles(r.stdout)).toThrow('unexpected output');
+  });
+
+  test('output that is not a verdict is not a pass', () => {
+    expect(() => devBypassFiles('')).toThrow();
+    expect(() => devBypassFiles('bypass\n')).toThrow();
+    expect(() => devBypassFiles('/app/.env\nclean\n')).toThrow();
+  });
+});
+
+describe('the database role (OPS-04)', () => {
+  test('a role subject to row-level security passes', () => {
+    expect(rlsRoleProblem('false,false\n')).toBeNull();
+  });
+
+  test('BYPASSRLS, a superuser, or any other answer stops the deploy', () => {
+    expect(rlsRoleProblem('true,false')).toContain('BYPASSRLS');
+    expect(rlsRoleProblem('true,true')).toContain('BYPASSRLS');
+    expect(rlsRoleProblem('false,true')).toContain('superuser');
+    expect(rlsRoleProblem('')).toContain('unexpected');
+    expect(rlsRoleProblem('f,f')).toContain('unexpected');
   });
 });
 

@@ -1,12 +1,14 @@
 /**
  * One-button deploy + verify.
  *
- *   bun run scripts/deploy.ts                     # ship + verify
- *   bun run scripts/deploy.ts --dry               # only verify; don't ship
- *   bun run scripts/deploy.ts --force             # ship an unreproducible tree
- *   bun run scripts/deploy.ts --allow-active-run  # ship during a live run
- *   bun run scripts/deploy.ts --rollback --dry    # show the release a rollback would restore
- *   bun run scripts/deploy.ts --rollback          # put the previous release back + verify
+ *   bun run scripts/deploy.ts                       # ship + verify
+ *   bun run scripts/deploy.ts --dry                 # only verify; don't ship
+ *   bun run scripts/deploy.ts --force               # ship an unreproducible tree
+ *   bun run scripts/deploy.ts --allow-active-run    # ship during a live run
+ *   bun run scripts/deploy.ts --allow-stale-backup  # ship without a recent backup
+ *   bun run scripts/deploy.ts --skip-rls-check      # ship without the DB role check
+ *   bun run scripts/deploy.ts --rollback --dry      # show the release a rollback would restore
+ *   bun run scripts/deploy.ts --rollback            # put the previous release back + verify
  *
  * The two override flags exist because this script ships a WORKING
  * DIRECTORY rather than a git ref, and both gates protect against that:
@@ -19,6 +21,17 @@
  *                      The api restart forces a reload on every live
  *                      client, which discards prices a purchaser has
  *                      typed but not yet committed.
+ *
+ * Two more skip a server check (review OPS-02, OPS-04, 2026-11):
+ *
+ *   --allow-stale-backup ships although the nightly backup looks broken
+ *                      or could not be checked.
+ *   --skip-rls-check   ships although step 0.8 could not confirm that the
+ *                      database role is subject to row-level security.
+ *
+ * A check that cannot run stops the deploy, the same as a check that
+ * fails (review OPS-03, OPS-04). It used to print a warning and go on, or
+ * pass outright.
  *
  * Pipeline:
  *   0. Provenance gates (local) + no-active-run pre-flight (server)
@@ -80,10 +93,13 @@ import {
   backupProblem,
   clearIncompleteScript,
   describeSnapshotScript,
+  devBypassFiles,
+  devBypassScript,
   hostName,
   knownHostsFile,
   markIncompleteScript,
   restoreScript,
+  rlsRoleProblem,
   rsyncExcludes,
   snapshotScript,
   sshOptions,
@@ -371,12 +387,13 @@ if (!DRY && !args.has('--allow-active-run')) {
     }
     console.log('  ✓ no run in purchasing/delivering/amending');
   } catch (err) {
-    // Same posture as the BYPASSRLS probe below: a failed check is a
-    // warning, not a hard stop — otherwise an unrelated psql problem
-    // makes the system undeployable.
-    console.log(
-      `  \x1b[33m⚠ couldn't check for active runs (psql failed): ${(err as Error).message}\x1b[0m`,
-    );
+    // Review OPS-04 (2026-11): this was a warning, and the deploy went on to
+    // restart the api under a purchaser who might be typing prices.
+    console.error('\x1b[31m✖ Refusing to deploy — could not check for a run in progress:\x1b[0m');
+    console.error('  ' + String((err as Error).message ?? err));
+    console.error('  Fix psql on the server, or re-run with --allow-active-run if you know');
+    console.error('  no run is being purchased, delivered or amended.');
+    process.exit(1);
   }
 }
 
@@ -450,7 +467,16 @@ if (!DRY && !ROLLBACK) {
         : '  ✓ backup timer running, last run ok, newest dump under 26 hours old',
     );
   } catch (err) {
-    console.log(`  \x1b[33m⚠ couldn't check the backups: ${(err as Error).message}\x1b[0m`);
+    // Review OPS-04 (2026-11): a check that cannot run is not a pass.
+    if (!args.has('--allow-stale-backup')) {
+      console.error("\x1b[31m✖ Refusing to deploy — could not check last night's backup:\x1b[0m");
+      console.error('  ' + String((err as Error).message ?? err));
+      console.error('  Deploy anyway: --allow-stale-backup.');
+      process.exit(1);
+    }
+    console.log(
+      `  \x1b[33m⚠ --allow-stale-backup: couldn't check the backups: ${(err as Error).message}\x1b[0m`,
+    );
   }
 }
 
@@ -467,58 +493,65 @@ if (!DRY) {
   // refuse to deploy if any server-side .env file (root, apps/web, etc.)
   // carries the dev override. M3.25 (2026-05-18 incident #2) extended
   // this from a single-file grep to cover apps/*/env.
-  const envBypass = ssh(
-    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' \
-      /home/ubuntu/compass-alpha/.env \
-      /home/ubuntu/compass-alpha/apps/*/.env \
-      /home/ubuntu/compass-alpha/packages/*/.env \
-      2>/dev/null || echo __CLEAN__`,
-  );
-  if (!envBypass.includes('__CLEAN__')) {
+  let bypassFiles: string[];
+  try {
+    bypassFiles = devBypassFiles(ssh(devBypassScript()));
+  } catch (err) {
+    // Review OPS-03 (2026-11): the old check passed whenever grep failed.
+    console.error("\x1b[31m✖ couldn't check the server .env files — aborting deploy.\x1b[0m");
+    console.error('  ' + String((err as Error).message ?? err));
+    process.exit(1);
+  }
+  if (bypassFiles.length > 0) {
     console.error(
       '\x1b[31m✖ Server .env file(s) carry VITE_DEV_MOCK_INIT_DATA — aborting deploy.\x1b[0m',
     );
-    console.error('  Offending file(s): ' + envBypass.trim().replace(/\n/g, ', '));
+    console.error('  Offending file(s): ' + bypassFiles.join(', '));
     console.error('  Unset on the server before deploying.');
     process.exit(1);
   }
+  console.log('  ✓ no server .env file sets VITE_DEV_MOCK_INIT_DATA');
 
   step('0.8. verify PG role "compass" does not BYPASSRLS (defense in depth)');
-  // RLS policies are useless if the connecting role bypasses them.
-  // psql is available on the server; reads DATABASE_URL from .env.
+  // RLS policies are useless if the connecting role bypasses them, and a
+  // superuser ignores them as completely, FORCE or not. psql is available
+  // on the server; reads DATABASE_URL from .env. Review OPS-04 (2026-11): a
+  // superuser and a failed psql were warnings, so a deploy went out with
+  // RLS not applying. Both now stop it, unless --skip-rls-check.
+  let problem: string | null;
+  let ran = true;
   try {
-    const out = ssh(
-      [
-        'set -e',
-        'cd /home/ubuntu/compass-alpha',
-        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
-      ].join(' && '),
+    problem = rlsRoleProblem(
+      ssh(
+        [
+          'set -e',
+          'cd /home/ubuntu/compass-alpha',
+          'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
+          `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
+        ].join(' && '),
+      ),
     );
-    const [bypassRls, superuser] = out.trim().split(',');
-    if (superuser === 'true') {
-      // A superuser ignores RLS as completely as BYPASSRLS does, FORCE or
-      // not. Not a hard stop yet: a box provisioned from
-      // docker-compose.prod.yml connects as POSTGRES_USER, which is one,
-      // and aborting would also block the deploy that fixes it.
-      console.log(
-        '  \x1b[31m⚠ DB role is a SUPERUSER — row-level security is not enforced for it.\x1b[0m\n' +
-          '    Connect the app as a plain role (NOSUPERUSER NOBYPASSRLS) that does not own the tables.',
-      );
-    }
-    if (bypassRls !== 'false') {
-      console.error(
-        `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
-      );
-      console.error('  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;');
-      process.exit(1);
-    }
-    if (superuser !== 'true') console.log('  ✓ DB role is not a superuser and does not bypass RLS');
   } catch (err) {
-    console.log(
-      `  \x1b[33m⚠ couldn't verify BYPASSRLS (psql failed): ${(err as Error).message}\x1b[0m`,
-    );
+    ran = false;
+    problem = `the check did not run (psql failed): ${(err as Error).message}`;
   }
+  if (problem && !args.has('--skip-rls-check')) {
+    console.error(`\x1b[31m✖ Refusing to deploy — ${problem}.\x1b[0m`);
+    if (ran) {
+      console.error('  The app must connect as a plain role (NOSUPERUSER NOBYPASSRLS) that does');
+      console.error('  not own the tables. On the DB host, as a superuser:');
+      console.error('    ALTER ROLE compass NOSUPERUSER NOBYPASSRLS;');
+    } else {
+      console.error('  Fix psql on the server first.');
+    }
+    console.error('  Deploy anyway: --skip-rls-check.');
+    process.exit(1);
+  }
+  console.log(
+    problem
+      ? `  \x1b[33m⚠ --skip-rls-check: ${problem}\x1b[0m`
+      : '  ✓ DB role is not a superuser and does not bypass RLS',
+  );
 }
 
 /** Shell script: install exactly the dependencies the tree on disk locks. */
