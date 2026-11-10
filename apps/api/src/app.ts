@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { serveStatic } from 'hono/bun';
 import { trpcServer } from '@hono/trpc-server';
 import { sql } from 'drizzle-orm';
 import { getDb, inSystem } from '@compass/db';
@@ -12,6 +11,7 @@ import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
 import { attendanceMonthExport } from './http/attendanceExport';
+import { serveWebApp } from './http/webApp';
 
 /**
  * Read the web build's id (emitted by vite.config.ts → buildShaPlugin)
@@ -320,12 +320,7 @@ export function createApp() {
   const webDist = webDistCandidates.find((p) => existsSync(join(p, 'index.html')));
   if (webDist) {
     logger.info({ webDist }, 'SPA static serving enabled');
-    // 1) Real files (assets/*.js, build-id.txt, favicon, /boot-guard.js, /boot.css)
-    app.use('/*', serveStatic({ root: webDist }));
-    // 2) SPA fallback — any unmatched GET returns index.html so the
-    //    React router takes over. tRPC + /health/* are already mounted
-    //    above so they short-circuit before reaching here.
-    app.get('*', serveStatic({ path: join(webDist, 'index.html') }));
+    serveWebApp(app, webDist);
   } else {
     logger.warn(
       { tried: webDistCandidates },

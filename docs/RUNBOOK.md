@@ -74,16 +74,16 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 3. User reloads the Mini App.
 
 ### Roll back a bad deploy
-Production is not image-based: `scripts/deploy.ts` tars the local working
-tree, extracts it over `/home/ubuntu/compass-alpha` (in place, no
-`--delete`), runs `pnpm install --frozen-lockfile` and
-`pnpm --filter @compass/db migrate`, refreshes the systemd units, builds
-the web bundle into `apps/web/dist.next` and renames it into place
-(`dist` → `dist.prev`, `dist.next` → `dist`), and only then restarts
-`compass-api` and `compass-worker` (2026-10-21, CA-37: the build used to
-run after the restart, leaving the new api serving a missing/half-written
-`dist`). A failed web build aborts the deploy before the restart and
-leaves the live `dist` untouched.
+Production is not image-based: `scripts/deploy.ts` ships what git sees
+in the local checkout, extracts it over `/home/ubuntu/compass-alpha` (in
+place, no `--delete`), runs `pnpm install --frozen-lockfile`, builds the
+web bundle into `apps/web/dist.next`, runs
+`pnpm --filter @compass/db migrate`, refreshes the systemd units, renames
+the bundle into place (`dist` → `dist.prev`, `dist.next` → `dist`), and
+only then restarts `compass-api` and `compass-worker` (2026-10-21, CA-37:
+the build used to run after the restart, leaving the new api serving a
+missing/half-written `dist`). A failed web build aborts the deploy before
+the restart and leaves the live `dist` untouched.
 
 Since 2026-11-09 (review OPS-01/OPS-02):
 - The read-only checks of the server's `.env` files and database role run
@@ -92,15 +92,86 @@ Since 2026-11-09 (review OPS-01/OPS-02):
   timer is stopped, the last run failed, or the newest dump is more than
   26 hours old. `--allow-stale-backup` overrides; `--rollback` skips it.
 - If any step between the extract and the restart fails (extract,
-  install, migrate, units, web build), the deploy puts the release kept in
-  step 2.5 back, with its own dependencies and units, and restarts
-  nothing. The disk then matches what runs again. Migrations that already
-  ran stay applied.
+  install, web build, migrate, units, bundle swap), the deploy puts the
+  release kept in step 2.5 back, with its own dependencies and units, and
+  restarts nothing. The disk then matches what runs again. Migrations
+  that already ran stay applied.
 - From the extract until a successful restart,
   `/home/ubuntu/compass-alpha/.deploy-incomplete` names the release. If it
   is still there (the undo failed too, or the api did not come up), the
   next deploy keeps the older snapshot instead of that tree, and
   `--rollback` removes the file.
+
+Since 2026-11 (review OPS-03/OPS-04), a server check that cannot run
+stops the deploy, the same as one that fails. Before, it printed a
+warning and the deploy went on (the `.env` check even passed outright).
+
+- The run-in-progress check: `--allow-active-run` skips it.
+- The backup check: `--allow-stale-backup`.
+- The `.env` check: no override; fix the server.
+- The database role check, which now refuses a superuser as well as
+  BYPASSRLS: `--skip-rls-check`.
+
+Since 2026-11 (review OPS-05/OPS-06), `COMPASS_BASE` must be set before a
+deploy starts, and the provenance gates also refuse unless:
+
+- HEAD is the tip of origin/main as fetched now. A checkout that had not
+  pulled used to ship an older main over the live one.
+- CI passed for that commit: the three jobs in `.github/workflows/ci.yml`.
+  The deploy reads them with `gh`, so install it and run `gh auth login`
+  on the deploy machine.
+- The live release (`/health/version`) is HEAD or in its history. A
+  release deployed with `--force` is not compared.
+
+`--force` overrides these too, and marks the release `-unverified`.
+
+Since 2026-11 (review OPS-07/OPS-08/OPS-09):
+
+- Every step has a time limit: 20 minutes (the unit tests, a step on the
+  server), 30 for one rsync attempt, 60 for the scp of the whole
+  tarball, 10 for each smoke. ssh gives up on a connection that has not
+  answered for two minutes. A step that runs over fails like any other
+  failure. Before, a connection that died quietly hung the deploy.
+- On the server, a step ends after 18.5 minutes, with everything it
+  started, and steps run one at a time
+  (`/home/ubuntu/.compass-deploy.lock`). After a lost connection, the
+  undo waits for a step that is still running instead of working beside
+  it.
+- Step 0.4 starts the browser the smokes use, before anything is
+  shipped, and refuses when it cannot. `--rollback` only warns.
+- After the restart, the deploy waits up to 90 seconds for
+  `$COMPASS_BASE/health/ready` to answer 200 before the smokes start. If
+  it never does, the deploy stops there and `.deploy-incomplete` stays.
+- The server smoke checks that `/health/version` names the release just
+  deployed (after `--rollback`, the restored one), from an api started
+  after the restart. Any commit used to pass, so a Worker or tunnel
+  pointing at another backend went unnoticed.
+- The realtime probe gets three tries. A pass that needed more says so.
+
+Since 2026-11 (review OPS-10/OPS-12):
+
+- When the release has a migration to apply, the deploy runs
+  `compass-backup.service` first and stops, putting the previous release
+  back, if the backup fails. `--allow-stale-backup` migrates without it.
+  `pnpm --filter @compass/db migrate --pending` lists what a run would
+  apply and changes nothing.
+- The web bundle is built into `dist.next` before the migrations and
+  swapped in just before the restart. The old api used to run against
+  the new schema for the whole build.
+- `compass-backup.timer` no longer has `Requires=compass-backup.service`.
+  Starting the timer (install, boot) no longer starts a backup, so
+  `INSTALL_SKIP_FIRST_RUN=1` works, and stopping a stuck backup no longer
+  stops the timer. The deploy's `daemon-reload` applies it.
+
+Since 2026-11 (review OPS-13), a release is what git sees in the local
+checkout: tracked files with their local changes, and new files that
+`.gitignore` does not hide (`scripts/lib/release.ts`). An ignored file
+never ships, and neither does any `.env`, `*.pem`, `*.key`, `*.crt`,
+`.claude/` or `.worktrees/`, even if tracked. It used to be the working
+tree minus a hand-kept list, which let ignored files through (nested
+`node_modules`, `.turbo` caches, test reports) and required the checkout
+to be named `CompassAlpha`. Text files ship with LF line endings, whatever
+the machine's `core.autocrlf`.
 
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
@@ -143,9 +214,9 @@ rebuild the bundle (the snapshot carries the built one).
   does not delete); they are harmless unless something imports them.
 - Migrations only move forward: rolling back does NOT undo a migration
   the bad deploy applied. If old code cannot run against the newer
-  schema, restore the pre-deploy dump (see "Restore from a dump" below —
-  take one with `sudo systemctl start compass-backup.service` before
-  risky deploys) and accept losing writes made since that dump.
+  schema, restore the dump the deploy took before migrating (see
+  "Restore from a dump" below) and accept losing writes made since that
+  dump.
 - By hand, without the deploy machine (then restart and check yourself):
   ```bash
   cd /home/ubuntu/compass-alpha

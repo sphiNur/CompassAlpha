@@ -32,6 +32,11 @@ export function hostName(target: string): string {
  * `StrictHostKeyChecking=no`, so whoever answered on that address got the
  * deploy key's session, the production .env and sudo. Now the server must
  * present a key pinned in `knownHosts`, and nothing is ever added to it.
+ *
+ * Review OPS-07 (2026-11): the link to the server is slow and drops
+ * packets, and a connection that died quietly hung the deploy for good.
+ * ssh now gives up on a connect after 20 s, and on a session that has not
+ * answered for two minutes (8 keepalives 15 s apart).
  */
 export function sshOptions(key: string, knownHosts: string): string {
   return [
@@ -41,64 +46,69 @@ export function sshOptions(key: string, knownHosts: string): string {
     // Don't fall back to ~/.ssh/known_hosts entries for other names.
     '-o GlobalKnownHostsFile=/dev/null',
     '-o BatchMode=yes',
+    '-o ConnectTimeout=20',
+    '-o ServerAliveInterval=15',
+    '-o ServerAliveCountMax=8',
   ].join(' ');
+}
+
+/** Review OPS-07 (2026-11): held by every remote step, so they run one at a time. */
+export const REMOTE_LOCK = '/home/ubuntu/.compass-deploy.lock';
+
+/**
+ * How long the server lets a step run when the deploy waits `limitMs` for
+ * it: 90 s less, so the server has ended it (or, 30 s later, killed it)
+ * before the deploy gives up.
+ */
+export function serverLimitSecs(limitMs: number): number {
+  return Math.max(1, Math.floor(limitMs / 1000) - 90);
 }
 
 /**
- * What a release never carries, relative to the repo root (one list for
- * the tarball and for rsync, so the two cannot drift). Patterns with a
- * slash or a leading name are anchored at the root; `*.pem` is anywhere.
+ * What ssh runs on the server for one step: `script`, base64'd (see ssh()
+ * in deploy.ts), in bash.
  *
- * - dependencies and build output: reinstalled / rebuilt on the server;
- * - every .env (M3.25, 2026-05-18 incident #2): the server keeps its own,
- *   and a dev box's once shipped a dev auth bypass into production;
- * - .git (history, branch names), .claude and .worktrees (2026-07-26,
- *   2026-10-29: full checkouts, one with its own node_modules and a test
- *   bot token).
+ * Review OPS-07 (2026-11): when the deploy gives up on a step (its time
+ * limit, a lost connection), the step can still be running on the server,
+ * and the undo that follows would work beside it. So the server ends a
+ * step after `secs` with everything it started (`timeout` signals its
+ * whole process group, and kills 30 s later), and every step holds
+ * REMOTE_LOCK: the undo waits for a step that still runs.
  */
-export const SHIP_EXCLUDES = [
-  'node_modules',
-  'apps/*/node_modules',
-  'packages/*/node_modules',
-  'apps/*/dist',
-  'apps/*/.turbo',
-  '.turbo',
-  '.env',
-  '.env.*',
-  'apps/*/.env',
-  'apps/*/.env.*',
-  'packages/*/.env',
-  'packages/*/.env.*',
-  '*.log',
-  'test-results',
-  '.git',
-  '.claude',
-  '.worktrees',
-] as const;
-/** Matched at any depth. */
-const SHIP_EXCLUDES_ANYWHERE = ['*.pem'] as const;
-
-/** `tar` excludes for a tarball of `<parent>/<top>`. */
-export function tarExcludes(top = 'CompassAlpha'): string {
-  return [
-    ...SHIP_EXCLUDES.map((p) => `--exclude=${top}/${p}`),
-    ...SHIP_EXCLUDES_ANYWHERE.map((p) => `--exclude=${p}`),
-  ].join(' ');
+export function remoteCommand(script: string, secs: number, lock = REMOTE_LOCK): string {
+  const payload = Buffer.from(script, 'utf8').toString('base64');
+  return `echo ${payload} | base64 -d | timeout -k 30 ${secs} flock ${lock} bash`;
 }
 
-/** `rsync` excludes for the repo root as the transfer root. */
-export function rsyncExcludes(): string {
-  return [
-    ...SHIP_EXCLUDES.map((p) => `--exclude='/${p}'`),
-    ...SHIP_EXCLUDES_ANYWHERE.map((p) => `--exclude='${p}'`),
-  ].join(' ');
+/**
+ * A failed step, said in words. execSync's own message is the command
+ * line, a base64 payload nobody can read, followed by all of stderr, which
+ * it has already shown. Now: how the step ended, and its last line on
+ * stderr. An error with no exit status (killed here at its limit) is
+ * returned as it is.
+ */
+export function remoteStepError(err: unknown, secs: number): unknown {
+  const { status, stderr } = err as { status?: number | null; stderr?: string };
+  if (typeof status !== 'number') return err;
+  if (status === 124) {
+    return new Error(`the server stopped this step after ${Math.round(secs / 6) / 10} min`);
+  }
+  const how = status === 255 ? 'ssh failed (exit 255)' : `exit ${status} on the server`;
+  const last = (stderr ?? '').trim().split('\n').pop()?.trim();
+  return new Error(last ? `${how}: ${last}` : how);
 }
+
+/**
+ * The top directory of a release tarball (scripts/lib/release.ts). The
+ * extract strips it; the rsync stage keeps the release under it.
+ */
+export const RELEASE_TOP = 'CompassAlpha';
 
 /**
  * Incremental upload (2026-11-06): the link to the server crosses a
  * border with ~300 ms and lossy packets, and the 13 MB tarball took
  * 20+ minutes. The server keeps a copy of the last shipped source in
- * STAGE_DIR/CompassAlpha; rsync sends only what changed, and the server
+ * STAGE_DIR/RELEASE_TOP; rsync sends only what changed, and the server
  * makes the same tarball from it that a full upload would have carried.
  * The rest of the deploy is unchanged.
  */
@@ -115,12 +125,12 @@ export function stageSeedScript(stageDir = STAGE_DIR, tarball = DEPLOY_TARBALL):
   return [
     'set -e',
     'command -v rsync >/dev/null',
-    `if [ -d "${stageDir}/CompassAlpha" ]; then echo ready; exit 0; fi`,
+    `if [ -d "${stageDir}/${RELEASE_TOP}" ]; then echo ready; exit 0; fi`,
     `mkdir -p "${stageDir}.tmp"`,
     `if [ -f "${tarball}" ] && tar xzf "${tarball}" -C "${stageDir}.tmp"; then`,
     `  rm -rf "${stageDir}"; mv "${stageDir}.tmp" "${stageDir}"; echo seeded`,
     'else',
-    `  rm -rf "${stageDir}.tmp"; mkdir -p "${stageDir}/CompassAlpha"; echo empty`,
+    `  rm -rf "${stageDir}.tmp"; mkdir -p "${stageDir}/${RELEASE_TOP}"; echo empty`,
     'fi',
   ].join('\n');
 }
@@ -129,7 +139,7 @@ export function stageSeedScript(stageDir = STAGE_DIR, tarball = DEPLOY_TARBALL):
 export function stageTarScript(stageDir = STAGE_DIR, tarball = DEPLOY_TARBALL): string {
   return [
     'set -e',
-    `tar -czf "${tarball}.tmp" -C "${stageDir}" CompassAlpha`,
+    `tar -czf "${tarball}.tmp" -C "${stageDir}" ${RELEASE_TOP}`,
     `mv -f "${tarball}.tmp" "${tarball}"`,
     `echo "built ${tarball} ($(du -h "${tarball}" | cut -f1))"`,
   ].join('\n');
@@ -237,6 +247,65 @@ export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): str
   ].join('\n');
 }
 
+/**
+ * Review OPS-03 (2026-11): shell script for step 0.7, which refuses a
+ * server .env that sets the dev login bypass. The grep used to end in
+ * `|| echo __CLEAN__`. The glob for the packages' .env files matches
+ * nothing on the server, so grep exited 2 (a file it could not open) even
+ * when it had found the bypass. The output then carried the file name and
+ * __CLEAN__, and the check passed. Now only files that exist are searched,
+ * and grep's exit code decides: the files and `bypass`, or `clean`, or
+ * exit 2 when grep could not read them.
+ */
+export function devBypassScript(appDir = APP_DIR): string {
+  return [
+    'shopt -s nullglob',
+    'files=()',
+    `for f in "${appDir}/.env" "${appDir}"/apps/*/.env "${appDir}"/packages/*/.env; do`,
+    '  if [ -f "$f" ]; then files+=("$f"); fi',
+    'done',
+    'if [ ${#files[@]} -eq 0 ]; then echo clean; exit 0; fi',
+    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' "\${files[@]}"`,
+    'rc=$?',
+    'if [ $rc -eq 0 ]; then echo bypass; exit 0; fi',
+    'if [ $rc -eq 1 ]; then echo clean; exit 0; fi',
+    'echo "grep exited $rc" >&2',
+    'exit 2',
+  ].join('\n');
+}
+
+/**
+ * The .env files that set the bypass, from `devBypassScript`'s output
+ * (none when it says `clean`). Anything else throws: a check that did not
+ * run must not read as a pass.
+ */
+export function devBypassFiles(output: string): string[] {
+  const lines = output
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const verdict = lines.pop();
+  if (verdict === 'clean' && lines.length === 0) return [];
+  if (verdict === 'bypass' && lines.length > 0) return lines;
+  throw new Error(`unexpected output from the .env check: ${output.trim() || '(none)'}`);
+}
+
+/**
+ * Review OPS-04 (2026-11): what is wrong with the database role, from
+ * step 0.8's `rolbypassrls,rolsuper` line, or null when it is neither.
+ * RLS does not apply to a role that bypasses it or to a superuser, so
+ * both stop the deploy, and so does an answer that is neither.
+ */
+export function rlsRoleProblem(output: string): string | null {
+  const answer = output.trim();
+  const [bypassRls, superuser] = answer.split(',');
+  if (bypassRls === 'false' && superuser === 'false') return null;
+  if (bypassRls === 'true') return 'the database role bypasses row-level security (BYPASSRLS)';
+  if (superuser === 'true')
+    return 'the database role is a superuser, so row-level security does not apply';
+  return `unexpected answer about the database role: ${answer || '(none)'}`;
+}
+
 /** Where compass-backup.sh writes the nightly dumps (BACKUP_DIR there). */
 export const BACKUP_DIR = '/home/ubuntu/compass-backups';
 
@@ -289,4 +358,15 @@ export function backupProblem(
     return `the newest backup is ${Math.floor(age / 3600)} hours old (${latest})`;
   }
   return null;
+}
+
+/**
+ * Review OPS-10 (2026-11): the migrations `migrate.ts --pending` listed, one
+ * `pending: <tag>` line each. Other lines (pnpm's own) are not tags.
+ */
+export function pendingMigrationTags(output: string): string[] {
+  return output.split('\n').flatMap((line) => {
+    const tag = /^pending: (\S+)$/.exec(line.trim())?.[1];
+    return tag ? [tag] : [];
+  });
 }

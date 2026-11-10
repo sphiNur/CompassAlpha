@@ -1,7 +1,10 @@
 [Unit]
 Description=Run CompassAlpha Postgres backup nightly
-# Refuses to run while the backup is in progress (oneshot semantic).
-Requires=compass-backup.service
+# Review OPS-12 (2026-11): no Requires=compass-backup.service. It started
+# a backup whenever the timer started (install, every boot), and stopping
+# the service stopped the timer: no nightly backup until the next boot.
+# `Unit=` below is all a timer needs, and a oneshot never runs twice at
+# once anyway.
 
 [Timer]
 # 03:30 UTC every day. The org timezone is Asia/Tashkent (UTC+5), so

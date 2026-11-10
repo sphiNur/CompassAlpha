@@ -302,10 +302,17 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
 });
 
 describe('big assets in KV (workers.dev has no Cache API)', () => {
-  test('the tracker wasm is fetched from the origin once, then served from KV', async () => {
-    const data = new Map<string, { value: ArrayBuffer; metadata: unknown }>();
-    const kv = {
+  const IMMUTABLE = 'public, max-age=2592000, immutable';
+  /** WebAssembly's magic, then a version. */
+  const WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+  /** The first bytes of MediaPipe's face_landmarker.task. */
+  const TASK = new Uint8Array([0x00, 0x00, 0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+  const INDEX_HTML = '<!doctype html><html><head><title>Compass</title></head></html>';
+  function assetKv(initial: Record<string, { value: BodyInit; metadata: unknown }> = {}) {
+    const data = new Map(Object.entries(initial));
+    return {
       ...memoryKv(),
+      data,
       async getWithMetadata(k: string) {
         const hit = data.get(k);
         return hit
@@ -316,25 +323,81 @@ describe('big assets in KV (workers.dev has no Cache API)', () => {
         if (typeof v !== 'string') data.set(k, { value: v, metadata: opts?.metadata });
       },
     };
+  }
+  const answer = (body: BodyInit, type: string) => () =>
+    new Response(body, { headers: { 'content-type': type, 'cache-control': IMMUTABLE } });
+  const bytesOf = async (res: Response) => new Uint8Array(await res.arrayBuffer());
+
+  test('the tracker wasm is fetched from the origin once, then served from KV', async () => {
+    const kv = assetKv();
     topic = ndjson(NEW);
-    upstream = () =>
-      new Response('wasm bytes', {
-        headers: {
-          'content-type': 'application/wasm',
-          'cache-control': 'public, max-age=2592000, immutable',
-        },
-      });
+    upstream = answer(WASM, 'application/wasm');
     const e = env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv });
     const first = await worker.fetch(new Request(`${PUBLIC}/assets/vision-1.wasm`), e);
-    expect(await first.text()).toBe('wasm bytes');
+    expect(await bytesOf(first)).toEqual(WASM);
     const second = await worker.fetch(new Request(`${PUBLIC}/assets/vision-1.wasm`), e);
-    expect(await second.text()).toBe('wasm bytes');
+    expect(await bytesOf(second)).toEqual(WASM);
     expect(second.headers.get('content-type')).toBe('application/wasm');
     expect(calls.length).toBe(1);
-    expect([...data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
+    expect([...kv.data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
     // Small assets and pages do not go to KV.
     await worker.fetch(new Request(`${PUBLIC}/assets/index-1.js`), e);
-    expect([...data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
+    expect([...kv.data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
+  });
+
+  test('the face model (.task) is kept too', async () => {
+    const kv = assetKv();
+    topic = ndjson(NEW);
+    upstream = answer(TASK, 'application/octet-stream');
+    const e = env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv });
+    await worker.fetch(new Request(`${PUBLIC}/assets/face_landmarker-1.task`), e);
+    const again = await worker.fetch(new Request(`${PUBLIC}/assets/face_landmarker-1.task`), e);
+    expect(await bytesOf(again)).toEqual(TASK);
+    expect(calls.length).toBe(1);
+  });
+
+  test('OPS-14: a page or an error in place of the file is passed on, never kept', async () => {
+    const kv = assetKv();
+    topic = ndjson(NEW);
+    const e = env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv });
+    const tries: Array<[string, () => Response]> = [
+      // index.html for a hash the site does not serve yet.
+      ['/assets/vision-2.wasm', answer(INDEX_HTML, 'text/html; charset=UTF-8')],
+      // The same, sent as a binary type.
+      ['/assets/vision-2.wasm', answer(INDEX_HTML, 'application/wasm')],
+      // Not a page, but not WebAssembly either.
+      ['/assets/vision-2.wasm', answer('Not Found', 'application/wasm')],
+      ['/assets/face_landmarker-2.task', answer(INDEX_HTML, 'application/octet-stream')],
+      ['/assets/face_landmarker-2.task', answer('{"code":"NOT_FOUND"}', 'application/json')],
+    ];
+    for (const [path, origin] of tries) {
+      upstream = origin;
+      const res = await worker.fetch(new Request(`${PUBLIC}${path}`), e);
+      expect(res.status).toBe(200);
+      await res.arrayBuffer();
+    }
+    expect(kv.data.size).toBe(0);
+    // Each one went to the origin: nothing answered from KV.
+    expect(calls.length).toBe(tries.length);
+  });
+
+  test('a page kept in KV before the check is not served; the file is fetched again', async () => {
+    const kv = assetKv({
+      'asset:/assets/vision-3.wasm': {
+        value: INDEX_HTML,
+        metadata: { type: 'text/html; charset=UTF-8' },
+      },
+    });
+    topic = ndjson(NEW);
+    upstream = answer(WASM, 'application/wasm');
+    const e = env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv });
+    const res = await worker.fetch(new Request(`${PUBLIC}/assets/vision-3.wasm`), e);
+    expect(await bytesOf(res)).toEqual(WASM);
+    expect(calls.length).toBe(1);
+    // The good copy replaced the page.
+    expect(kv.data.get('asset:/assets/vision-3.wasm')!.metadata).toEqual({
+      type: 'application/wasm',
+    });
   });
 });
 
@@ -370,6 +433,17 @@ describe('edge cache for hashed assets', () => {
       await worker.fetch(new Request(`${PUBLIC}/`), e);
       await worker.fetch(new Request(`${PUBLIC}/`), e);
       expect(calls.length).toBe(3);
+      // OPS-14: nor is index.html sent for an /assets/ file, immutable or not.
+      upstream = () =>
+        new Response('<!doctype html>', {
+          headers: {
+            'content-type': 'text/html; charset=UTF-8',
+            'cache-control': 'public, max-age=2592000, immutable',
+          },
+        });
+      await worker.fetch(new Request(`${PUBLIC}/assets/b-2.js`), e);
+      await worker.fetch(new Request(`${PUBLIC}/assets/b-2.js`), e);
+      expect(calls.length).toBe(5);
       expect([...store.keys()]).toEqual([`${PUBLIC}/assets/a-1.js`]);
     } finally {
       g.caches = before;

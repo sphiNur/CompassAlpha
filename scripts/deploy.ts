@@ -1,18 +1,21 @@
 /**
  * One-button deploy + verify.
  *
- *   bun run scripts/deploy.ts                     # ship + verify
- *   bun run scripts/deploy.ts --dry               # only verify; don't ship
- *   bun run scripts/deploy.ts --force             # ship an unreproducible tree
- *   bun run scripts/deploy.ts --allow-active-run  # ship during a live run
- *   bun run scripts/deploy.ts --rollback --dry    # show the release a rollback would restore
- *   bun run scripts/deploy.ts --rollback          # put the previous release back + verify
+ *   bun run scripts/deploy.ts                       # ship + verify
+ *   bun run scripts/deploy.ts --dry                 # only verify; don't ship
+ *   bun run scripts/deploy.ts --force               # ship an unreproducible tree
+ *   bun run scripts/deploy.ts --allow-active-run    # ship during a live run
+ *   bun run scripts/deploy.ts --allow-stale-backup  # ship without a recent backup
+ *   bun run scripts/deploy.ts --skip-rls-check      # ship without the DB role check
+ *   bun run scripts/deploy.ts --rollback --dry      # show the release a rollback would restore
+ *   bun run scripts/deploy.ts --rollback            # put the previous release back + verify
  *
  * The two override flags exist because this script ships a WORKING
  * DIRECTORY rather than a git ref, and both gates protect against that:
  *
  *   --force            skips the provenance gates (clean tree, on main,
- *                      pushed to origin/main). The release sha is then
+ *                      the tip of origin/main, green CI for it, not older
+ *                      than the live release). The release sha is then
  *                      suffixed `-unverified` so /health/version cannot
  *                      claim a provenance the artifact does not have.
  *   --allow-active-run skips the check for a run in purchasing/delivering.
@@ -20,22 +23,36 @@
  *                      client, which discards prices a purchaser has
  *                      typed but not yet committed.
  *
+ * Two more skip a server check (review OPS-02, OPS-04, 2026-11):
+ *
+ *   --allow-stale-backup ships although the nightly backup looks broken
+ *                      or could not be checked.
+ *   --skip-rls-check   ships although step 0.8 could not confirm that the
+ *                      database role is subject to row-level security.
+ *
+ * A check that cannot run stops the deploy, the same as a check that
+ * fails (review OPS-03, OPS-04). It used to print a warning and go on, or
+ * pass outright.
+ *
  * Pipeline:
  *   0. Provenance gates (local) + no-active-run pre-flight (server)
  *   0.5 Unit tests (local) — a red suite stops here, before shipping
- *   1-2. rsync the changed files to a staging copy on the server and build
+ *   1. the release, from git: the files git sees in this checkout, never
+ *      an ignored one or an .env (scripts/lib/release.ts)
+ *   2. rsync the changed files to a staging copy on the server and build
  *      the tarball there (2026-11-06: the link is slow and lossy); where
- *      rsync is missing (or on Windows), tar the local CompassAlpha
- *      sources (excl. node_modules / .env / .turbo / .git / .claude) and
- *      scp the whole tarball
+ *      rsync is missing (or on Windows), scp the whole tarball
  *   2.5 keep the live release as /home/ubuntu/compass-alpha.prev.tar.gz
  *      (the rollback target — see "Rollback" below)
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
  *      until the api restart in step 4c)
- *   4b. pnpm exec vite build --outDir dist.next, then swap it into place
- *      (dist → dist.prev, dist.next → dist). The api reads
- *      web/dist/build-id.txt for /health/version so running clients see
- *      a version mismatch and prompt reload.
+ *   3.6 pnpm exec vite build --outDir dist.next (it needs no database,
+ *      so it runs before the migrations)
+ *   3.7 when a migration is pending, a backup (compass-backup.service),
+ *      then the migrations
+ *   4b. swap the new bundle into place (dist → dist.prev, dist.next →
+ *      dist). The api reads web/dist/build-id.txt for /health/version so
+ *      running clients see a version mismatch and prompt reload.
  *   4c. systemctl restart compass-api compass-worker
  *   6. Run server-side tRPC smoke locally against the public URL
  *   7. Run browser smoke locally against the public URL
@@ -69,32 +86,41 @@
  *     "Backups" for verify + restore commands.
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitUntilReady } from './lib/liveSite';
+import { ciProblemFor, liveReleaseAt, runGh } from './lib/provenance';
+import { RSYNC_FLAGS, releaseTree, unpackRelease, writeRelease } from './lib/release';
 import {
   APP_DIR,
   PREV_TARBALL,
+  RELEASE_TOP,
   STAGE_DIR,
   backupHealthScript,
   backupProblem,
   clearIncompleteScript,
   describeSnapshotScript,
+  devBypassFiles,
+  devBypassScript,
   hostName,
   knownHostsFile,
   markIncompleteScript,
+  pendingMigrationTags,
+  remoteCommand,
+  remoteStepError,
   restoreScript,
-  rsyncExcludes,
+  rlsRoleProblem,
+  serverLimitSecs,
   snapshotScript,
   sshOptions,
   stageSeedScript,
   stageTarScript,
-  tarExcludes,
 } from './lib/deployRemote';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname); // .../CompassAlpha
-const PARENT = dirname(ROOT); // .../gemini
 
 /**
  * Deploy target (M3.18, launch hardening 2026-05-16).
@@ -121,10 +147,14 @@ if (!HOST) {
 const KEY =
   process.env.COMPASS_DEPLOY_KEY ??
   join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.ssh', 'compass_alpha.pem');
-const TARBALL = join(PARENT, 'compass-alpha-deploy.tar.gz');
-// MSYS2 tar on Windows sees `C:` and thinks it's a remote host. Use a
-// relative path from PARENT to keep tar happy.
-const TARBALL_RELATIVE = 'compass-alpha-deploy.tar.gz';
+
+/**
+ * The public URL the smokes test (they refuse to run without it). Review
+ * OPS-05/OPS-08 (2026-11): read up front, so a deploy without it stops
+ * before shipping instead of at the smoke, and the live release can be
+ * read before anything changes.
+ */
+const BASE = process.env.COMPASS_BASE?.replace(/\/+$/, '');
 
 const args = new Set(process.argv.slice(2));
 const DRY = args.has('--dry');
@@ -135,12 +165,54 @@ const SSH_OPTS = sshOptions(KEY, KNOWN_HOSTS);
 function step(label: string) {
   console.log(`\n\x1b[36m▶ ${label}\x1b[0m`);
 }
-function run(cmd: string, opts?: { cwd?: string; quiet?: boolean }): void {
-  if (!opts?.quiet) console.log(`  $ ${cmd}`);
-  execSync(cmd, { cwd: opts?.cwd ?? ROOT, stdio: opts?.quiet ? 'pipe' : 'inherit' });
+
+/**
+ * Review OPS-07 (2026-11): how long one command may take. Nothing had a
+ * limit, and on the lossy link to the server a connection that died
+ * quietly left the deploy hanging for good. A command that runs over is
+ * killed and fails the step like any other failure. The ssh keepalives in
+ * sshOptions() notice a dead connection within two minutes.
+ */
+const MINUTE = 60_000;
+const LIMIT = {
+  /** Local commands and a remote step: install, build, migrate, extract. */
+  step: 20 * MINUTE,
+  /** One rsync attempt over the slow link. */
+  rsync: 30 * MINUTE,
+  /** The whole tarball over the slow link (20+ minutes has happened). */
+  scp: 60 * MINUTE,
+  /** Each smoke. */
+  smoke: 10 * MINUTE,
+};
+
+/** `err`, or for a command killed at its limit, an error that says so. */
+function overLimit(err: unknown, cmd: string, limitMs: number): unknown {
+  if ((err as NodeJS.ErrnoException).code !== 'ETIMEDOUT') return err;
+  return new Error(`${cmd.split(' ')[0]} did not finish within ${limitMs / MINUTE} min`);
 }
-function runCapture(cmd: string, opts?: { cwd?: string }): string {
-  return execSync(cmd, { cwd: opts?.cwd ?? ROOT, encoding: 'utf8' });
+/** " (stopped after N min)" for a spawnSync child killed at its limit. */
+function stoppedNote(child: { error?: Error }, limitMs: number): string {
+  return (child.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+    ? ` (stopped after ${limitMs / MINUTE} min)`
+    : '';
+}
+
+function run(cmd: string, opts?: { cwd?: string; quiet?: boolean; timeoutMs?: number }): void {
+  if (!opts?.quiet) console.log(`  $ ${cmd}`);
+  const timeout = opts?.timeoutMs ?? LIMIT.step;
+  try {
+    execSync(cmd, { cwd: opts?.cwd ?? ROOT, stdio: opts?.quiet ? 'pipe' : 'inherit', timeout });
+  } catch (err) {
+    throw overLimit(err, cmd, timeout);
+  }
+}
+function runCapture(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): string {
+  const timeout = opts?.timeoutMs ?? LIMIT.step;
+  try {
+    return execSync(cmd, { cwd: opts?.cwd ?? ROOT, encoding: 'utf8', timeout });
+  } catch (err) {
+    throw overLimit(err, cmd, timeout);
+  }
 }
 /**
  * Run a command on the deploy host.
@@ -163,10 +235,17 @@ function runCapture(cmd: string, opts?: { cwd?: string }): string {
  *
  * Base64 puts nothing but [A-Za-z0-9+/=] on the command line, so no
  * shell on either side has anything to misparse.
+ *
+ * Review OPS-07 (2026-11): the server ends the step before this side
+ * gives up on it, and runs one step at a time (remoteCommand()).
  */
-function ssh(cmd: string): string {
-  const payload = Buffer.from(cmd, 'utf8').toString('base64');
-  return runCapture(`ssh ${SSH_OPTS} ${HOST} "echo ${payload} | base64 -d | bash"`);
+function ssh(cmd: string, timeoutMs = LIMIT.step): string {
+  const secs = serverLimitSecs(timeoutMs);
+  try {
+    return runCapture(`ssh ${SSH_OPTS} ${HOST} "${remoteCommand(cmd, secs)}"`, { timeoutMs });
+  } catch (err) {
+    throw remoteStepError(err, secs);
+  }
 }
 
 /** rsync here and on the server (not on Windows: cmd.exe quoting, no rsync). */
@@ -182,23 +261,21 @@ function canRsync(): boolean {
 }
 
 /**
- * Send the working tree to the staging copy. Files are compared by
- * checksum (-c): the seeded copy carries tar's whole-second times, and a
- * same-size edit within that second would otherwise look unchanged. The
- * link drops packets, so a broken transfer is resumed (--partial) up to
- * three times.
+ * Send the unpacked release (`source`) to the staging copy. Files are
+ * compared by checksum (-c): every unpacked release has new times, and
+ * the seeded copy has tar's whole-second ones. The link drops packets, so
+ * a broken transfer is resumed (--partial) up to three times.
  */
-function rsyncWithRetry(): void {
+function rsyncWithRetry(source: string): void {
   const cmd = [
-    'rsync -rlptzc --delete --delete-excluded --partial --stats',
-    rsyncExcludes(),
+    `rsync ${RSYNC_FLAGS}`,
     `-e 'ssh ${SSH_OPTS}'`,
-    './',
-    `${HOST}:${STAGE_DIR}/CompassAlpha/`,
+    `"${source}/"`,
+    `${HOST}:${STAGE_DIR}/${RELEASE_TOP}/`,
   ].join(' ');
   for (let attempt = 1; ; attempt++) {
     try {
-      const out = runCapture(cmd);
+      const out = runCapture(cmd, { timeoutMs: LIMIT.rsync });
       const sent = out.match(/Total bytes sent: ([\d,.]+)/)?.[1];
       const files = out.match(/Number of regular files transferred: ([\d,.]+)/)?.[1];
       console.log(`  sent ${sent ?? '?'} bytes, ${files ?? '?'} files changed`);
@@ -249,6 +326,17 @@ if (ROLLBACK && DRY) {
   process.exit(0);
 }
 
+if (!BASE) {
+  console.error('COMPASS_BASE is not set (the public URL the smokes test).');
+  console.error('  Set: export COMPASS_BASE=https://<the public app URL>');
+  process.exit(2);
+}
+
+/** Whether commit `a` is `b` or in its history (false when either is unknown). */
+function isAncestor(a: string, b: string): boolean {
+  return spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: ROOT }).status === 0;
+}
+
 /**
  * Provenance gates (2026-07-26).
  *
@@ -270,8 +358,14 @@ if (ROLLBACK && DRY) {
  * main. `--force` overrides for a genuine emergency, and when it does,
  * the release sha is suffixed so the version endpoint cannot claim a
  * provenance the artifact does not have.
+ *
+ * Review OPS-05/OPS-06 (2026-11): "pushed" meant "an ancestor of
+ * origin/main", so a checkout that had not pulled shipped an older main
+ * over the live one, and migrations do not go back. Now HEAD must be the
+ * tip of origin/main as fetched now, CI must have passed for it, and the
+ * live release must be in its history.
  */
-function provenanceGates(): string {
+async function provenanceGates(): Promise<string> {
   const gitBranch = runCapture('git rev-parse --abbrev-ref HEAD').trim();
   const gitDirty = runCapture('git status --porcelain').trim();
   const provenanceProblems: string[] = [];
@@ -285,16 +379,36 @@ function provenanceGates(): string {
     provenanceProblems.push(`HEAD is on "${gitBranch}", not main`);
   }
   try {
-    // Non-fatal on network failure: we still check against whatever
-    // origin/main we already have.
-    execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe' });
+    execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe', timeout: 2 * MINUTE });
   } catch {
-    console.log('  \x1b[33m⚠ could not fetch origin/main — checking against the local copy\x1b[0m');
+    provenanceProblems.push('could not fetch origin/main, so HEAD may not be the newest main');
   }
-  try {
-    execSync('git merge-base --is-ancestor HEAD origin/main', { cwd: ROOT, stdio: 'pipe' });
-  } catch {
-    provenanceProblems.push('HEAD is not an ancestor of origin/main — push and merge it first');
+  const head = runCapture('git rev-parse HEAD').trim();
+  const tip = runCapture('git rev-parse origin/main').trim();
+  if (head !== tip) {
+    provenanceProblems.push(
+      isAncestor(head, tip)
+        ? `HEAD is behind origin/main (${tip.slice(0, 12)}) — pull first`
+        : 'HEAD is not on origin/main — push and merge it first',
+    );
+  }
+  // The release the site runs must not be newer than this one. A forced
+  // release (-unverified) may be off main; the tip of main replaces it.
+  const live = await liveReleaseAt(BASE!);
+  if (!live) {
+    console.log(
+      `  \x1b[33m⚠ could not read the live release from ${BASE}/health/version — not compared\x1b[0m`,
+    );
+  } else if (live.verified && !isAncestor(live.sha, head)) {
+    provenanceProblems.push(
+      `the site runs ${live.sha}, which is not in HEAD's history — this would take it back`,
+    );
+  }
+  // CI has to have tested exactly this commit (asked only when nothing
+  // else is wrong: otherwise --force is needed anyway).
+  if (provenanceProblems.length === 0) {
+    const problem = ciProblemFor(head, runGh(ROOT));
+    if (problem) provenanceProblems.push(problem);
   }
 
   const FORCED = provenanceProblems.length > 0;
@@ -319,7 +433,11 @@ function provenanceGates(): string {
   return releaseSha;
 }
 // A rollback ships nothing from this machine, so provenance is moot.
-const releaseSha = ROLLBACK ? '' : provenanceGates();
+const releaseSha = ROLLBACK ? '' : await provenanceGates();
+/** The build the smoke must find live (a rollback learns it after the restore). */
+let expectedSha = DRY ? '' : releaseSha;
+/** The server's time just before step 4c restarted the api. */
+let restartedAt = '';
 
 /**
  * Pre-flight: never swap the frontend out from under a purchaser who is
@@ -371,12 +489,41 @@ if (!DRY && !args.has('--allow-active-run')) {
     }
     console.log('  ✓ no run in purchasing/delivering/amending');
   } catch (err) {
-    // Same posture as the BYPASSRLS probe below: a failed check is a
-    // warning, not a hard stop — otherwise an unrelated psql problem
-    // makes the system undeployable.
-    console.log(
-      `  \x1b[33m⚠ couldn't check for active runs (psql failed): ${(err as Error).message}\x1b[0m`,
-    );
+    // Review OPS-04 (2026-11): this was a warning, and the deploy went on to
+    // restart the api under a purchaser who might be typing prices.
+    console.error('\x1b[31m✖ Refusing to deploy — could not check for a run in progress:\x1b[0m');
+    console.error('  ' + String((err as Error).message ?? err));
+    console.error('  Fix psql on the server, or re-run with --allow-active-run if you know');
+    console.error('  no run is being purchased, delivered or amended.');
+    process.exit(1);
+  }
+}
+
+// Review OPS-08 (2026-11): the browser smokes run after the restart, and a
+// machine that cannot start their browser used to find out only then. A
+// rollback goes ahead without it: the old release back matters more than
+// the checks after it.
+step('0.4. the browser the smokes use starts here');
+{
+  const limit = 2 * MINUTE;
+  const browser = spawnSync(
+    'node',
+    ['--experimental-strip-types', join(__dirname, 'check-browser.ts')],
+    { stdio: 'inherit', timeout: limit },
+  );
+  if (browser.status !== 0) {
+    const why = `the browser smokes could not run here${stoppedNote(browser, limit)}`;
+    const fix = [
+      '  Install their browser (npx playwright install chromium), or set',
+      '  PLAYWRIGHT_CHANNEL=chrome to use an installed Google Chrome.',
+    ];
+    if (!ROLLBACK) {
+      console.error(`\x1b[31m✖ Refusing to deploy — ${why}.\x1b[0m`);
+      for (const line of fix) console.error(line);
+      process.exit(1);
+    }
+    console.log(`  \x1b[33m⚠ rolling back anyway, but ${why}.\x1b[0m`);
+    for (const line of fix) console.log(line);
   }
 }
 
@@ -410,6 +557,7 @@ if (!ROLLBACK) {
     {
       stdio: 'inherit',
       cwd: ROOT,
+      timeout: LIMIT.step,
       env: {
         ...process.env,
         SKIP_PG_TESTS: '1',
@@ -421,7 +569,9 @@ if (!ROLLBACK) {
     },
   );
   if (tt.status !== 0) {
-    console.error('\x1b[31m✖ unit tests FAILED — nothing was deployed\x1b[0m');
+    console.error(
+      `\x1b[31m✖ unit tests FAILED${stoppedNote(tt, LIMIT.step)} — nothing was deployed\x1b[0m`,
+    );
     process.exit(1);
   }
 }
@@ -450,7 +600,16 @@ if (!DRY && !ROLLBACK) {
         : '  ✓ backup timer running, last run ok, newest dump under 26 hours old',
     );
   } catch (err) {
-    console.log(`  \x1b[33m⚠ couldn't check the backups: ${(err as Error).message}\x1b[0m`);
+    // Review OPS-04 (2026-11): a check that cannot run is not a pass.
+    if (!args.has('--allow-stale-backup')) {
+      console.error("\x1b[31m✖ Refusing to deploy — could not check last night's backup:\x1b[0m");
+      console.error('  ' + String((err as Error).message ?? err));
+      console.error('  Deploy anyway: --allow-stale-backup.');
+      process.exit(1);
+    }
+    console.log(
+      `  \x1b[33m⚠ --allow-stale-backup: couldn't check the backups: ${(err as Error).message}\x1b[0m`,
+    );
   }
 }
 
@@ -467,61 +626,80 @@ if (!DRY) {
   // refuse to deploy if any server-side .env file (root, apps/web, etc.)
   // carries the dev override. M3.25 (2026-05-18 incident #2) extended
   // this from a single-file grep to cover apps/*/env.
-  const envBypass = ssh(
-    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' \
-      /home/ubuntu/compass-alpha/.env \
-      /home/ubuntu/compass-alpha/apps/*/.env \
-      /home/ubuntu/compass-alpha/packages/*/.env \
-      2>/dev/null || echo __CLEAN__`,
-  );
-  if (!envBypass.includes('__CLEAN__')) {
+  let bypassFiles: string[];
+  try {
+    bypassFiles = devBypassFiles(ssh(devBypassScript()));
+  } catch (err) {
+    // Review OPS-03 (2026-11): the old check passed whenever grep failed.
+    console.error("\x1b[31m✖ couldn't check the server .env files — aborting deploy.\x1b[0m");
+    console.error('  ' + String((err as Error).message ?? err));
+    process.exit(1);
+  }
+  if (bypassFiles.length > 0) {
     console.error(
       '\x1b[31m✖ Server .env file(s) carry VITE_DEV_MOCK_INIT_DATA — aborting deploy.\x1b[0m',
     );
-    console.error('  Offending file(s): ' + envBypass.trim().replace(/\n/g, ', '));
+    console.error('  Offending file(s): ' + bypassFiles.join(', '));
     console.error('  Unset on the server before deploying.');
     process.exit(1);
   }
+  console.log('  ✓ no server .env file sets VITE_DEV_MOCK_INIT_DATA');
 
   step('0.8. verify PG role "compass" does not BYPASSRLS (defense in depth)');
-  // RLS policies are useless if the connecting role bypasses them.
-  // psql is available on the server; reads DATABASE_URL from .env.
+  // RLS policies are useless if the connecting role bypasses them, and a
+  // superuser ignores them as completely, FORCE or not. psql is available
+  // on the server; reads DATABASE_URL from .env. Review OPS-04 (2026-11): a
+  // superuser and a failed psql were warnings, so a deploy went out with
+  // RLS not applying. Both now stop it, unless --skip-rls-check.
+  let problem: string | null;
+  let ran = true;
   try {
-    const out = ssh(
-      [
-        'set -e',
-        'cd /home/ubuntu/compass-alpha',
-        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
-      ].join(' && '),
+    problem = rlsRoleProblem(
+      ssh(
+        [
+          'set -e',
+          'cd /home/ubuntu/compass-alpha',
+          'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
+          `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
+        ].join(' && '),
+      ),
     );
-    const [bypassRls, superuser] = out.trim().split(',');
-    if (superuser === 'true') {
-      // A superuser ignores RLS as completely as BYPASSRLS does, FORCE or
-      // not. Not a hard stop yet: a box provisioned from
-      // docker-compose.prod.yml connects as POSTGRES_USER, which is one,
-      // and aborting would also block the deploy that fixes it.
-      console.log(
-        '  \x1b[31m⚠ DB role is a SUPERUSER — row-level security is not enforced for it.\x1b[0m\n' +
-          '    Connect the app as a plain role (NOSUPERUSER NOBYPASSRLS) that does not own the tables.',
-      );
-    }
-    if (bypassRls !== 'false') {
-      console.error(
-        `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
-      );
-      console.error('  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;');
-      process.exit(1);
-    }
-    if (superuser !== 'true') console.log('  ✓ DB role is not a superuser and does not bypass RLS');
   } catch (err) {
-    console.log(
-      `  \x1b[33m⚠ couldn't verify BYPASSRLS (psql failed): ${(err as Error).message}\x1b[0m`,
-    );
+    ran = false;
+    problem = `the check did not run (psql failed): ${(err as Error).message}`;
   }
+  if (problem && !args.has('--skip-rls-check')) {
+    console.error(`\x1b[31m✖ Refusing to deploy — ${problem}.\x1b[0m`);
+    if (ran) {
+      console.error('  The app must connect as a plain role (NOSUPERUSER NOBYPASSRLS) that does');
+      console.error('  not own the tables. On the DB host, as a superuser:');
+      console.error('    ALTER ROLE compass NOSUPERUSER NOBYPASSRLS;');
+    } else {
+      console.error('  Fix psql on the server first.');
+    }
+    console.error('  Deploy anyway: --skip-rls-check.');
+    process.exit(1);
+  }
+  console.log(
+    problem
+      ? `  \x1b[33m⚠ --skip-rls-check: ${problem}\x1b[0m`
+      : '  ✓ DB role is not a superuser and does not bypass RLS',
+  );
 }
 
 /** Shell script: install exactly the dependencies the tree on disk locks. */
+/**
+ * Shell script: the migration runner of the release on disk. `--pending`
+ * only lists what it would apply (review OPS-10).
+ */
+function migrateScript(...flags: string[]): string {
+  return [
+    'export PATH=$HOME/.bun/bin:$PATH',
+    `cd ${APP_DIR}`,
+    ['pnpm --filter @compass/db migrate', ...flags, '2>&1'].join(' '),
+  ].join(' && ');
+}
+
 function installScript(): string {
   // 2026-10-30: pipefail — `| tail -5` used to report tail's exit code, so
   // a failed install went on to restart the api on missing deps.
@@ -590,27 +768,41 @@ if (!DRY) {
     // Incremental upload (2026-11-06) where both ends have rsync: only
     // the changed files cross the slow link, and the server builds the
     // tarball. Otherwise the whole tarball is uploaded, as before.
-    let shipped = false;
-    if (canRsync()) {
-      step('1-2. rsync changed files to the server, build the tarball there');
+    // Review OPS-13 (2026-11): the release is what git sees in this
+    // checkout, never an ignored file (scripts/lib/release.ts).
+    step('1. the release, from git');
+    const work = mkdtempSync(join(tmpdir(), 'compass-deploy-'));
+    try {
+      const tarball = join(work, 'compass-alpha-deploy.tar.gz');
       try {
-        console.log('  staging copy: ' + ssh(stageSeedScript()).trim());
-        rsyncWithRetry();
-        console.log('  ' + ssh(stageTarScript()).trim());
-        shipped = true;
+        const tree = releaseTree(ROOT);
+        writeRelease(ROOT, tree, tarball);
+        console.log(`  tree ${tree.slice(0, 12)}, ${(statSync(tarball).size / 1e6).toFixed(1)} MB`);
       } catch (err) {
-        console.warn('\x1b[33m⚠ incremental upload failed — uploading the whole tarball\x1b[0m');
-        console.warn('  ' + String((err as Error).message ?? err).split('\n')[0]);
+        console.error('\x1b[31m✖ could not make the release with git — nothing was shipped\x1b[0m');
+        console.error('  ' + String((err as Error).message ?? err));
+        rmSync(work, { recursive: true, force: true });
+        process.exit(1);
       }
-    }
-    if (!shipped) {
-      step('1. Tar local source');
-      // Excludes: scripts/lib/deployRemote.ts SHIP_EXCLUDES (node_modules,
-      // build output, every .env, .git, .claude, .worktrees, keys).
-      run(`tar ${tarExcludes()} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
-
-      step('2. scp to server');
-      run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`);
+      let shipped = false;
+      if (canRsync()) {
+        step('2. rsync changed files to the server, build the tarball there');
+        try {
+          console.log('  staging copy: ' + ssh(stageSeedScript()).trim());
+          rsyncWithRetry(unpackRelease(tarball, work));
+          console.log('  ' + ssh(stageTarScript()).trim());
+          shipped = true;
+        } catch (err) {
+          console.warn('\x1b[33m⚠ incremental upload failed — uploading the whole tarball\x1b[0m');
+          console.warn('  ' + String((err as Error).message ?? err).split('\n')[0]);
+        }
+      }
+      if (!shipped) {
+        step('2. scp the whole tarball to the server');
+        run(`scp ${SSH_OPTS} "${tarball}" ${HOST}:/home/ubuntu/`, { timeoutMs: LIMIT.scp });
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
     }
 
     // N9 (2026-10-30): the API had no way back — only the web bundle kept
@@ -664,22 +856,81 @@ if (!DRY) {
   }
 
   if (!ROLLBACK) {
+    /**
+     * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
+     * restart, and `vite build` empties dist/ before writing it. For the
+     * length of the build the new api was serving a dist/ that was missing
+     * or half-written — every page load in that window 404'd its assets or
+     * fell through to JSON. Now the bundle is built beside the live one and
+     * renamed into place (two same-filesystem renames, microseconds apart,
+     * step 4b) BEFORE the restart, so there is no window of new api +
+     * missing assets. A failed build aborts here, before anything restarts,
+     * and leaves the live dist/ untouched.
+     *
+     * Review OPS-10 (2026-11): the build needs no database, so it runs
+     * before the migrations. It used to run after them, and the old api ran
+     * against the new schema for the whole build (minutes on this server).
+     *
+     * The previous bundle is kept as dist.prev for exactly one deploy:
+     * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
+     * (see docs/RUNBOOK.md "Roll back a bad deploy").
+     */
+    step('3.6. build web into dist.next (the live bundle is untouched)');
+    try {
+      console.log(
+        ssh(
+          [
+            'set -e',
+            'set -o pipefail',
+            'export PATH=$HOME/.bun/bin:$PATH',
+            'cd /home/ubuntu/compass-alpha/apps/web',
+            'rm -rf dist.next',
+            `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
+            'test -f dist.next/index.html',
+          ].join(' && '),
+        ),
+      );
+    } catch (err) {
+      abortAfterExtract('web build FAILED', err);
+    }
+
     step('3.7. db migrations (idempotent — drizzle skips already-applied)');
+    // Review OPS-10 (2026-11): migrations only go forward, and --rollback
+    // does not undo one: the way back is a dump. The runbook asked for one
+    // by hand before a risky deploy; now the deploy takes it whenever there
+    // is a migration to apply, instead of leaning on last night's.
+    let pending: string[] = [];
+    try {
+      pending = pendingMigrationTags(ssh(migrateScript('--pending')));
+    } catch (err) {
+      abortAfterExtract('listing the pending migrations FAILED', err);
+    }
+    if (pending.length === 0) {
+      console.log('  no migration to apply');
+    } else {
+      console.log(`  to apply: ${pending.join(', ')}`);
+      try {
+        // A oneshot: `start` returns when the backup has finished.
+        ssh('sudo systemctl start compass-backup.service');
+        const problem = backupProblem(ssh(backupHealthScript()), LIMIT.step / 1000);
+        if (problem) throw new Error(problem);
+        console.log('  ✓ backed up first');
+      } catch (err) {
+        if (!args.has('--allow-stale-backup')) {
+          abortAfterExtract('the backup before the migrations FAILED', err);
+        }
+        console.log(
+          `  \x1b[33m⚠ --allow-stale-backup: migrating without a new backup (${(err as Error).message})\x1b[0m`,
+        );
+      }
+    }
     // We previously piped to `tail -20`, which masked migrate failures
     // because the pipeline exit code is tail's (always 0). A real
     // PostgresError shipped silently for several deploys, leaving prod
     // without the display_name_locked column. Now: full output, no pipe,
     // and `ssh()` throws on non-zero so we abort before the api restart.
     try {
-      console.log(
-        ssh(
-          [
-            'export PATH=$HOME/.bun/bin:$PATH',
-            'cd /home/ubuntu/compass-alpha',
-            'pnpm --filter @compass/db migrate 2>&1',
-          ].join(' && '),
-        ),
-      );
+      console.log(ssh(migrateScript()));
     } catch (err) {
       abortAfterExtract('db migrate FAILED', err);
     }
@@ -696,49 +947,32 @@ if (!DRY) {
   }
 
   if (!ROLLBACK) {
-    /**
-     * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
-     * restart, and `vite build` empties dist/ before writing it. For the
-     * length of the build the new api was serving a dist/ that was missing
-     * or half-written — every page load in that window 404'd its assets or
-     * fell through to JSON. Now the bundle is built beside the live one and
-     * renamed into place (two same-filesystem renames, microseconds apart)
-     * BEFORE the restart, so there is no window of new api + missing
-     * assets. A failed build aborts here, before anything restarts, and
-     * leaves the live dist/ untouched.
-     *
-     * The previous bundle is kept as dist.prev for exactly one deploy:
-     * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
-     * (see docs/RUNBOOK.md "Roll back a bad deploy").
-     */
-    step('4b. build web into dist.next, then swap into place');
+    step('4b. swap the new web bundle into place (dist → dist.prev, dist.next → dist)');
     try {
-      console.log(
-        ssh(
-          [
-            'set -e',
-            'set -o pipefail',
-            'export PATH=$HOME/.bun/bin:$PATH',
-            'cd /home/ubuntu/compass-alpha/apps/web',
-            'rm -rf dist.next',
-            `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
-            'test -f dist.next/index.html',
-            'rm -rf dist.prev',
-            'if [ -d dist ]; then mv dist dist.prev; fi',
-            'mv dist.next dist',
-          ].join(' && '),
-        ),
+      ssh(
+        [
+          'set -e',
+          'cd /home/ubuntu/compass-alpha/apps/web',
+          'test -f dist.next/index.html',
+          'rm -rf dist.prev',
+          'if [ -d dist ]; then mv dist dist.prev; fi',
+          'mv dist.next dist',
+        ].join(' && '),
       );
     } catch (err) {
-      abortAfterExtract('web build FAILED', err);
+      abortAfterExtract('swapping in the web bundle FAILED', err);
     }
   }
 
   step('4c. restart api + worker');
   try {
-    ssh(
-      `sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
-    );
+    // OPS-09: the server's clock just before the restart; the api the
+    // smoke reaches must have started after it.
+    restartedAt = ssh(
+      `date -u +%Y-%m-%dT%H:%M:%SZ && sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
+    )
+      .split('\n')[0]!
+      .trim();
   } catch (err) {
     // The new code is what runs now (or fails to). `.deploy-incomplete`
     // stays, so the next deploy does not keep this tree as its rollback.
@@ -747,6 +981,18 @@ if (!DRY) {
     console.error('  Put the previous release back now: bun run scripts/deploy.ts --rollback');
     process.exit(1);
   }
+  // OPS-08: the smokes start once the api answers through the public URL.
+  const ready = await waitUntilReady(BASE!);
+  if (!ready.ok) {
+    console.error(
+      `\x1b[31m✖ ${BASE}/health/ready did not answer 200 within 90 s: ${ready.last}\x1b[0m`,
+    );
+    console.error('  The api and worker were restarted. If the release is at fault, put the');
+    console.error('  previous one back: bun run scripts/deploy.ts --rollback. If the api is');
+    console.error('  fine on the server, look at the path to it (tunnel, Worker).');
+    process.exit(1);
+  }
+  console.log(`  ✓ ${BASE}/health/ready answered after ${Math.round(ready.afterMs / 1000)} s`);
   // OPS-01: the processes run the release on disk again.
   try {
     ssh(clearIncompleteScript());
@@ -786,6 +1032,8 @@ if (!DRY) {
   try {
     const buildId = ssh(`cat /home/ubuntu/compass-alpha/apps/web/dist/build-id.txt`).trim();
     console.log(`  build-id: ${buildId}`);
+    // A rollback brings back whichever release the snapshot holds.
+    if (ROLLBACK) expectedSha = buildId;
   } catch {
     console.log(`  \x1b[33mbuild-id.txt missing — buildShaPlugin may not have run\x1b[0m`);
   }
@@ -795,7 +1043,14 @@ if (!DRY) {
 // A rollback to a release from before it cannot answer the probe; say
 // so instead of failing the rollback on it. Checked on main.ts because
 // extraction never deletes: the newer socket.ts stays on disk, unused.
-let smokeEnv: NodeJS.ProcessEnv = process.env;
+let smokeEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  // OPS-09: the smoke checks that the public URL serves this release, from
+  // an api started after the restart. It used to accept any commit, so a
+  // Worker pointing at another backend passed.
+  ...(expectedSha ? { COMPASS_EXPECT_SHA: expectedSha } : {}),
+  ...(restartedAt ? { COMPASS_EXPECT_STARTED_AFTER: restartedAt } : {}),
+};
 if (ROLLBACK && !DRY) {
   const probeAware = ssh(
     `grep -q "realtime/socket" ${APP_DIR}/apps/api/src/main.ts && echo yes || echo no`,
@@ -804,7 +1059,7 @@ if (ROLLBACK && !DRY) {
     console.log(
       '  \x1b[33m⚠ restored api predates the realtime probe — smoke cannot verify the WebSocket upgrade\x1b[0m',
     );
-    smokeEnv = { ...process.env, COMPASS_SMOKE_PRE_PROBE_API: '1' };
+    smokeEnv = { ...smokeEnv, COMPASS_SMOKE_PRE_PROBE_API: '1' };
   }
 }
 
@@ -812,18 +1067,20 @@ step('6. server-side smoke');
 const sm = spawnSync('bun', ['run', join(__dirname, 'smoke.ts')], {
   stdio: 'inherit',
   env: smokeEnv,
+  timeout: LIMIT.smoke,
 });
 if (sm.status !== 0) {
-  console.error('\x1b[31m✖ server-side smoke FAILED\x1b[0m');
+  console.error(`\x1b[31m✖ server-side smoke FAILED${stoppedNote(sm, LIMIT.smoke)}\x1b[0m`);
   process.exit(1);
 }
 
 step('7. browser smoke (shallow: render check)');
 const bsm = spawnSync('node', ['--experimental-strip-types', join(__dirname, 'browser-smoke.ts')], {
   stdio: 'inherit',
+  timeout: LIMIT.smoke,
 });
 if (bsm.status !== 0) {
-  console.error('\x1b[31m✖ browser smoke FAILED\x1b[0m');
+  console.error(`\x1b[31m✖ browser smoke FAILED${stoppedNote(bsm, LIMIT.smoke)}\x1b[0m`);
   process.exit(1);
 }
 
@@ -831,10 +1088,10 @@ step('8. browser smoke (deep: clicks, qty, submit, navigate)');
 const bsd = spawnSync(
   'node',
   ['--experimental-strip-types', join(__dirname, 'browser-smoke-deep.ts')],
-  { stdio: 'inherit' },
+  { stdio: 'inherit', timeout: LIMIT.smoke },
 );
 if (bsd.status !== 0) {
-  console.error('\x1b[31m✖ deep browser smoke FAILED\x1b[0m');
+  console.error(`\x1b[31m✖ deep browser smoke FAILED${stoppedNote(bsd, LIMIT.smoke)}\x1b[0m`);
   process.exit(1);
 }
 

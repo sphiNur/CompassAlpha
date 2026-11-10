@@ -86,6 +86,16 @@ The Worker is deployed with:
 wrangler deploy
 ```
 
+Hashed `/assets/` files are kept at the edge. The face tracker's
+WebAssembly and its `.task` model go to the `COMPASS_ORIGIN` KV
+namespace, because workers.dev has no Cache API. Review OPS-14
+(2026-11): KV keeps them for good, so the Worker stores only what looks
+like the file. WebAssembly must start with `\0asm`, and nothing may be a
+page or JSON. Before this, an `index.html` answered for a hash the site
+did not serve yet would have replaced the tracker for everyone. A page
+already in KV is ignored and fetched again. Until 2026-11 the `.task`
+model never reached KV (only `.wasm` and `.tflite` matched).
+
 The quick tunnel is supervised by `compass-app-tunnel.service` and logs
 its current hostname to `/home/ubuntu/compass-tunnel.log`.
 
@@ -93,7 +103,7 @@ Manual fallback (only if the watchdog or ntfy is unavailable) writes the
 current origin into the Worker's KV fallback:
 
 ```bash
-COMPASS_DEPLOY_HOST=ubuntu@129.204.59.183 \
+COMPASS_DEPLOY_HOST=ubuntu@<server> \
 COMPASS_DEPLOY_KEY=$HOME/.ssh/compass_alpha_ed25519 \
 bash scripts/refresh-app-proxy-origin.sh
 ```

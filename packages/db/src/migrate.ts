@@ -14,6 +14,9 @@
  * (`LEGACY_TRANSACTION_CONTROL`); after the first of them in a batch (a
  * fresh database) statements run one by one, and a failure there can
  * leave a migration half applied. New files may not (checked below).
+ *
+ * `--pending` only lists the entries a run would apply (review OPS-10:
+ * the deploy takes a backup first when there is one).
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -24,6 +27,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import {
   journalOrderProblems,
+  pendingMigrations,
   transactionControlViolations,
   unreachableMigrations,
   type JournalEntry,
@@ -161,6 +165,17 @@ function checkJournalOrder(entries: readonly JournalEntry[]): void {
   );
 }
 
+/** The `created_at` of each migration the database recorded; none for a new database. */
+async function recordedMigrations(client: ReturnType<typeof postgres>): Promise<number[]> {
+  const [table] = await client<{ name: string | null }[]>`
+    select to_regclass('drizzle.__drizzle_migrations')::text as name`;
+  // A new database: drizzle creates the table and applies everything.
+  if (!table?.name) return [];
+  const rows = await client<{ createdAt: string | null }[]>`
+    select created_at::text as "createdAt" from drizzle.__drizzle_migrations`;
+  return rows.flatMap((r) => (r.createdAt === null ? [] : [Number(r.createdAt)]));
+}
+
 /**
  * Review DB-07 (2026-11-10): no entry may be dated before the newest
  * migration this database recorded unless it is recorded too. Drizzle
@@ -170,13 +185,7 @@ async function checkNothingSkipped(
   client: ReturnType<typeof postgres>,
   entries: readonly JournalEntry[],
 ): Promise<void> {
-  const [table] = await client<{ name: string | null }[]>`
-    select to_regclass('drizzle.__drizzle_migrations')::text as name`;
-  // A new database: drizzle creates the table and applies everything.
-  if (!table?.name) return;
-  const rows = await client<{ createdAt: string | null }[]>`
-    select created_at::text as "createdAt" from drizzle.__drizzle_migrations`;
-  const recorded = rows.flatMap((r) => (r.createdAt === null ? [] : [Number(r.createdAt)]));
+  const recorded = await recordedMigrations(client);
   const skipped = unreachableMigrations(entries, recorded);
   if (skipped.length === 0) return;
   const newest = Math.max(...recorded);
@@ -206,6 +215,15 @@ async function main() {
     connection: { 'app.system_context': 'maintenance' } as Record<string, string>,
   });
   const db = drizzle(client);
+
+  // Review OPS-10 (2026-11): a `pending: <tag>` line for each entry the
+  // next run applies, before anything below changes the database.
+  if (process.argv.includes('--pending')) {
+    const pending = pendingMigrations(readJournal(), await recordedMigrations(client));
+    for (const entry of pending) console.log(`pending: ${entry.tag}`);
+    await client.end({ timeout: 5 });
+    return;
+  }
 
   console.log('[migrate] PRE SQL (extensions, schemas, functions)...');
   await runRawSql(client, (f) => /^0\d/.test(f));

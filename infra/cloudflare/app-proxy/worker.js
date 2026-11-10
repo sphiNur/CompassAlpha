@@ -357,8 +357,11 @@ export default {
     // Only the first download of a release waits for this.
     if (big && immutable && env.COMPASS_ORIGIN) {
       const bytes = await response.arrayBuffer();
-      if (bytes.byteLength <= KV_MAX_BYTES) {
-        const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
+      const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
+      const fits = bytes.byteLength <= KV_MAX_BYTES;
+      if (fits && !looksLikeAsset(incoming.pathname, type, bytes)) {
+        console.warn('not keeping what the origin sent for', big, type);
+      } else if (fits) {
         try {
           await env.COMPASS_ORIGIN.put(big, bytes, { metadata: { type } });
         } catch (error) {
@@ -377,7 +380,7 @@ export default {
       statusText: response.statusText,
       headers: responseHeaders,
     });
-    if (edgeCache && immutable) {
+    if (edgeCache && immutable && !isPageOrError(responseHeaders.get('content-type'))) {
       const put = edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {});
       if (ctx?.waitUntil) ctx.waitUntil(put);
       else await put;
@@ -389,12 +392,42 @@ export default {
 /** KV's value limit is 25 MiB. */
 const KV_MAX_BYTES = 25 * 1024 * 1024;
 
-/** The KV key for a big hashed asset (the tracker's .wasm and model), or null. */
+/**
+ * The KV key for a big hashed asset (the tracker's .wasm and its model),
+ * or null. The model is a .task file (apps/web/src/lib/faceTracker.ts);
+ * until 2026-11 only .wasm and .tflite matched, so it never reached KV
+ * and crossed the tunnel for everyone.
+ */
 function bigAssetKey(request, incoming) {
   if (request.method !== 'GET') return null;
-  return /^\/assets\/[\w.-]+\.(wasm|tflite)$/.test(incoming.pathname)
+  return /^\/assets\/[\w.-]+\.(wasm|task|tflite)$/.test(incoming.pathname)
     ? `asset:${incoming.pathname}`
     : null;
+}
+
+/** A page or a JSON error: what an origin sends for a file it does not have. */
+function isPageOrError(type) {
+  const t = (type ?? '').toLowerCase();
+  return t.startsWith('text/html') || t.includes('json');
+}
+
+/**
+ * Review OPS-14 (2026-11): whether `bytes` can be the asset `path` names.
+ * KV keeps an asset for good, and the origin answered a file it did not
+ * have with index.html, 200 and (through nginx) immutable. One request for
+ * a hash the site did not serve yet (a phone holding a newer index.html
+ * after a rollback, say) would have put that page in place of the
+ * tracker, and face clocking, the only way to clock, would have failed
+ * for everyone. WebAssembly starts with "\0asm"; anything else must at
+ * least not be a page or JSON.
+ */
+function looksLikeAsset(path, type, bytes) {
+  const head = new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength));
+  if (path.endsWith('.wasm')) {
+    return head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
+  }
+  // '<' (a page) or '{' (JSON) first.
+  return head.length > 0 && head[0] !== 0x3c && head[0] !== 0x7b && !isPageOrError(type);
 }
 
 async function kvAsset(env, key) {
@@ -405,6 +438,8 @@ async function kvAsset(env, key) {
       cacheTtl: 86400,
     });
     if (!value) return null;
+    // A page kept here before the check above: fetch the file again.
+    if (isPageOrError(metadata?.type)) return null;
     return new Response(value, {
       headers: {
         'content-type': metadata?.type ?? 'application/octet-stream',
