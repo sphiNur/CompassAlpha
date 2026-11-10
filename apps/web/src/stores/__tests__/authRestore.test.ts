@@ -1,17 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import { testSession } from '../../__tests__/fixtures/session';
 import { isUsableSession, mergePersistedAuth } from '../authStore';
+import type { PersistedAuth } from '../authStore';
 
 /** DX-SHL-16: a broken stored session is dropped instead of crashing the app. */
-const session = {
-  user: { id: 'u1', displayName: 'A', displayNameLocked: false, avatarUrl: null, locale: 'zh', secondaryLocale: null, tgUsername: null },
-  member: { memberId: 'm1', orgId: 'o1', orgSlug: 'o', orgName: 'Org', status: 'active' },
-  stores: [{ id: 's1', name: 'Store', code: null, isActive: true }],
-  permissions: ['order.draft'],
-  roleSlugs: ['staff'],
-  myMaxRank: 10,
-  needsOnboarding: false,
+const session = testSession();
+const current: PersistedAuth & { marker: number } = {
+  accessToken: null,
+  refreshToken: null,
+  session: null,
+  currentStoreId: null,
+  marker: 1,
 };
-const current = { accessToken: null, refreshToken: null, session: null, currentStoreId: null, marker: 1 };
 
 describe('restoring the stored session (DX-SHL-16)', () => {
   test('a well-formed session is restored with its tokens and store', () => {
@@ -19,7 +19,7 @@ describe('restoring the stored session (DX-SHL-16)', () => {
       { accessToken: 'a', refreshToken: 'r', session, currentStoreId: 's1' },
       current,
     );
-    expect(out.session).toEqual(session as never);
+    expect(out.session).toEqual(session);
     expect(out.accessToken).toBe('a');
     expect(out.currentStoreId).toBe('s1');
     expect(out.marker).toBe(1);

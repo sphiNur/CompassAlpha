@@ -20,7 +20,7 @@ describe('authErrorText (CMP-SHL-2)', () => {
 });
 
 describe('accessBlock (CMP-SHL-1)', () => {
-  const store = { id: 's1', name: 'A' } as never;
+  const store = { id: 's1', name: 'A', code: null, isActive: true };
   test('staff without a store wait for a store', () => {
     expect(accessBlock({ permissions: ['order.submit'], stores: [] })).toBe('noStore');
   });

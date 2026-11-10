@@ -13,7 +13,7 @@
     "dev:web": "pnpm --filter @compass/web dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "type-check": "turbo run type-check",
+    "type-check": "turbo run type-check && tsc -p scripts",
     "test": "turbo run test",
     "test:e2e": "pnpm --filter @compass/e2e e2e",
     "db:generate": "pnpm --filter @compass/db generate",

@@ -4,10 +4,11 @@ import {
   pendingStoreIds,
   startDeliveryBlock,
   withData,
+  type OverlayRun,
 } from '../pendingOverlay';
 import type { PendingWrite } from '../../../../hooks/useOfflineQueue';
 
-const run = {
+const run: OverlayRun = {
   id: 'run-1',
   items: [
     { skuId: 'rice', status: 'pending', purchasedQty: null, unitPrice: null, unavailableNote: null },
@@ -186,7 +187,7 @@ describe('offline expenses and added items show as pending rows (CMP-BUY-2)', ()
 
   test('once the server has the expense it is not listed twice', () => {
     const synced = { ...expenseInput, id: 'exp-1', unitHint: null, addedByMemberId: 'm', addedAt: 'x' };
-    const out = overlayPendingWrites({ ...run, expenses: [synced] }, [
+    const out = overlayPendingWrites<OverlayRun>({ ...run, expenses: [synced] }, [
       entry('run.addExpense', expenseInput),
     ])!;
     expect(out.expenses).toHaveLength(1);

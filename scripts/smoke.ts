@@ -48,13 +48,6 @@ function record(name: string, pass: boolean, detail?: string) {
   results.push({ name, pass, ...(detail !== undefined ? { detail } : {}) });
 }
 
-async function head(path: string) {
-  const res = await fetch(BASE + path, {
-    method: 'HEAD',
-    headers: { 'cache-control': 'no-cache' },
-  });
-  return res;
-}
 async function get(path: string, init?: RequestInit) {
   return fetch(BASE + path, {
     ...init,

@@ -7,7 +7,9 @@ import type { Query } from '@tanstack/react-query';
  * screen has data. Exported for tests.
  */
 export function oldestShownData(
-  queries: ReadonlyArray<Pick<Query, 'state' | 'getObserversCount'>>,
+  queries: ReadonlyArray<
+    Pick<Query, 'getObserversCount'> & { state: Pick<Query['state'], 'data' | 'dataUpdatedAt'> }
+  >,
 ): number | null {
   let oldest: number | null = null;
   for (const q of queries) {

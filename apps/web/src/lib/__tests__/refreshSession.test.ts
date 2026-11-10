@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { testSession } from '../../__tests__/fixtures/session';
 import type { AuthSession } from '../../stores/authStore';
 import { applyRefreshedSession } from '../refreshSession';
 
@@ -10,9 +11,7 @@ function sink(accessToken: string | null) {
   };
 }
 
-const session = {
-  stores: [{ id: 's1', name: 'New', code: null, isActive: true }],
-} as unknown as AuthSession;
+const session = testSession({ stores: [{ id: 's1', name: 'New', code: null, isActive: true }] });
 
 describe('applyRefreshedSession', () => {
   test('patches the session while signed in', () => {

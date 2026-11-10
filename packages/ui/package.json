@@ -10,7 +10,7 @@
     "./tailwind-preset": "./tailwind-preset.js"
   },
   "scripts": {
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",

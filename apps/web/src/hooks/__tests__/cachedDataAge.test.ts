@@ -5,7 +5,7 @@ import { lastUpdatedLabel, oldestShownData } from '../useCachedDataAge';
 // data on screen is, or says there is none.
 const q = (observers: number, data: unknown, at: number) => ({
   getObserversCount: () => observers,
-  state: { data, dataUpdatedAt: at } as never,
+  state: { data, dataUpdatedAt: at },
 });
 
 describe('oldestShownData', () => {
