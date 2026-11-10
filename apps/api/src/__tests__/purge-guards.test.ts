@@ -36,13 +36,17 @@ interface Fixture {
 }
 let fix: Fixture | null = null;
 
-beforeAll(async () => {
-  if (!SHOULD_RUN) return;
+/**
+ * A workspace with a store, a product, an admin and a staff member. The
+ * tests share one. A test that would change it for the others, or needs
+ * to know everything in it, makes its own.
+ */
+async function purgeWorkspace(name: string): Promise<Fixture> {
   const db = getDb(undefined, { system: 'maintenance' });
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `purge-${suffix}`, name: 'Purge guards', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `purge-${suffix}`, name, localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
   const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
@@ -73,7 +77,12 @@ beforeAll(async () => {
   const staffSession = await loadSession(db, b.userId, orgId, b.memberId);
   if (!staffSession) throw new Error('session failed to load');
   const staff = callerFor(staffSession);
-  fix = { db, orgId, storeId: store!.id, skuId: sku!.id, memberId: a.memberId, admin, staff };
+  return { db, orgId, storeId: store!.id, skuId: sku!.id, memberId: a.memberId, admin, staff };
+}
+
+beforeAll(async () => {
+  if (!SHOULD_RUN) return;
+  fix = await purgeWorkspace('Purge guards');
 });
 
 describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
@@ -270,7 +279,19 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
   });
 
   test('CAT-5: emptying the workspace keeps the admin audit', async () => {
-    const { admin, db, orgId } = fix!;
+    // Its own workspace, since it empties it. Deleting one order first
+    // gives the audit an entry to keep.
+    const { admin, db, orgId, storeId, memberId } = await purgeWorkspace('Purge everything');
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId,
+      storeId,
+      orderDate: '2026-06-20',
+      status: 'draft',
+      initiatedByMemberId: memberId,
+    });
+    await admin.admin.purgeSession({ sessionId, dryRun: false });
     const before = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
     expect(before.length).toBeGreaterThan(0);
     const preview = await admin.admin.purgeAllTestData({ dryRun: true });
@@ -285,7 +306,6 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       (await errorOf(() => admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'default' })))
         ?.message,
     ).toBe('admin.errors.purgeConfirmMismatch');
-    // Runs before the CAT-2 test adds a daily close (which blocks this).
     await admin.admin.purgeAllTestData({ dryRun: false, confirmText: ` ${org!.name} ` });
     const after = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
     expect(after.length).toBe(before.length + 1);
@@ -339,7 +359,9 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
   });
 
   test('CAT-2: a date with a daily close says why it cannot be reset', async () => {
-    const { admin, db, orgId, storeId, memberId } = fix!;
+    // Its own workspace: a daily close cannot be deleted, and while one
+    // exists the workspace purge refuses, its preview too.
+    const { admin, db, orgId, storeId, memberId } = await purgeWorkspace('Purge daily close');
     const [settlement] = await db
       .insert(s.storeDailySettlements)
       .values({ orgId, storeId, settlementDate: '2026-06-10' })
