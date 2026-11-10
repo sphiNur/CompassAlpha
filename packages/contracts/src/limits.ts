@@ -46,6 +46,40 @@ export function isPurchasePrice(v: string): boolean {
   return PURCHASE_PRICE_RE.test(v) && Number(v) > 0;
 }
 
+/**
+ * M1.17 / ADM1-14 (2026-11-10): an organisation's tax rate, in percent:
+ * numeric(5,2), so at most 3 digits before the point and 2 after, and no
+ * more than TAX_RATE_MAX_PCT. 50% is about the legal ceiling everywhere
+ * (Hungary's 27% is the highest standard VAT); anything higher is almost
+ * certainly a typo. orgFinanceUpdate and the finance sheet ask
+ * taxRateProblem, so the sheet can say what is wrong before Save.
+ */
+export const TAX_RATE_RE = /^\d{1,3}(\.\d{1,2})?$/;
+export const TAX_RATE_MAX_PCT = 50;
+
+export type TaxRateProblem = 'format' | 'range';
+
+export function taxRateProblem(value: string): TaxRateProblem | null {
+  if (!TAX_RATE_RE.test(value)) return 'format';
+  return Number(value) > TAX_RATE_MAX_PCT ? 'range' : null;
+}
+
+/** The catalog key the server and the finance sheet show for each problem. */
+export const TAX_RATE_MESSAGE = {
+  format: 'admin.errors.taxRateFormat',
+  range: 'admin.errors.taxRateOutOfRange',
+} as const satisfies Record<TaxRateProblem, string>;
+
+/**
+ * The tax rate as the finance sheet sends it. The field hands over its
+ * reading ("12,5" arrives as "12.5"); a number still being typed ("12.",
+ * ".5") goes in the form TAX_RATE_RE takes ("12", "0.5"). Anything else
+ * is left as it is, for taxRateProblem to name.
+ */
+export function taxRateToSend(text: string): string {
+  return /^(\d+\.?\d*|\.\d+)$/.test(text) ? String(Number(text)) : text;
+}
+
 /** CLS-19 (2026-10-30): a stocktake count has at most 8 integer digits. */
 export const STOCKTAKE_COUNT_MAX = 99_999_999.999;
 

@@ -25,6 +25,7 @@ import {
   CONTROL_CHARS_MESSAGE,
   noControlChars,
 } from '@compass/contracts';
+import { TAX_RATE_MESSAGE, TAX_RATE_RE, taxRateProblem } from '@compass/contracts/limits';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
@@ -1468,24 +1469,17 @@ export const adminRouter = router({
           .string()
           .length(3)
           .regex(/^[A-Z]{3}$/, 'currency must be ISO-4217 (3 uppercase letters)'),
-        taxRatePct: z
-          .string()
-          .regex(/^\d{1,3}(\.\d{1,2})?$/, 'admin.errors.taxRateFormat'),
+        taxRatePct: z.string().regex(TAX_RATE_RE, TAX_RATE_MESSAGE.format),
         pricesIncludeTax: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       requireOrgAdmin(ctx.session!.permissions);
-      // Reject runaway tax rates — 50% is the legal ceiling pretty
-      // much everywhere; anything higher is almost certainly a typo.
-      // (Hungary has the world's highest standard VAT at 27%, so 50
-      // leaves headroom for special items.)
-      const taxNum = Number(input.taxRatePct);
-      if (!Number.isFinite(taxNum) || taxNum < 0 || taxNum > 50) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.taxRateOutOfRange',
-        });
+      // Runaway rates are refused (TAX_RATE_MAX_PCT); the finance sheet
+      // asks the same function before Save.
+      const taxProblem = taxRateProblem(input.taxRatePct);
+      if (taxProblem) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: TAX_RATE_MESSAGE[taxProblem] });
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
