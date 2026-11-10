@@ -24,12 +24,12 @@
 | ------------- | ------------------------------------------------- | -------------------------------- | ---------------------- |
 | `apps/api`    | Hono on Bun + tRPC v11 + Drizzle                  | `src/main.ts` (Bun.serve 直接调) | 3000 (HTTP + WS `/ws`) |
 | `apps/web`    | React 18 + Vite + Tailwind v3 + TanStack Query v5 | `src/main.tsx`                   | 5173 (dev)             |
-| `apps/bot`    | grammY v1.34 (long-polling)                       | `src/main.ts`                    | —                      |
+| `apps/bot`    | grammY v1.34 (long-polling)；生产没有运行它       | `src/main.ts`                    | —                      |
 | `apps/worker` | Bun + 原始 SQL polling outbox (无 BullMQ)         | `src/main.ts`                    | —                      |
 
 **重要事实**：
 
-- `apps/api` 既跑 tRPC，**也通过 Hono `serveStatic` 直接服务 `apps/web/dist`**（M3.18 加），所以一个进程同时承担 API + SPA 托管。Caddy 只做 TLS + 反代。
+- `apps/api` 既跑 tRPC，**也通过 Hono `serveStatic` 直接服务 `apps/web/dist`**（M3.18 加），所以一个进程同时承担 API + SPA 托管。它前面是 nginx（:80）、cloudflared quick tunnel 和 Cloudflare Worker（见 1.3）。
 - WebSocket 由 `Bun.serve` 原生处理（不走 Hono 适配层），见 [apps/api/src/main.ts:45](apps/api/src/main.ts:45)。
 - `apps/worker` **不用 BullMQ**——用 PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` 直接拉 outbox，足够单进程低吞吐场景。
 
@@ -47,16 +47,16 @@
 
 ### 1.3 基础设施
 
-| 件             | 现状                                                                                         |
-| -------------- | -------------------------------------------------------------------------------------------- |
-| 边缘代理       | Caddy 2 (auto-TLS via Let's Encrypt)，反代 api:3000                                          |
-| 数据库         | PostgreSQL 16，启用 RLS                                                                      |
-| 队列 / Pub-Sub | PostgreSQL outbox 表（**未用 Redis Pub/Sub**）                                               |
-| 缓存 / 限流    | Redis 7（限流目前用进程内 Map，Redis 留作 M2 迁移目标）                                      |
-| 对象存储       | S3 兼容（兼容 MinIO / R2 / Tencent COS），自研 SigV4 presigned PUT                           |
-| 后端单元       | systemd: `compass-api.service` + `compass-worker.service` + `compass-backup.{service,timer}` |
-| 备份           | 每日 03:30 `pg_dump -Fc` + 校验 + 14d 轮转 + 可选 S3 上传                                    |
-| 容器           | Docker 多阶段构建；compose.prod.yml 编排 caddy/api/bot/worker/postgres/redis                 |
+| 件             | 现状                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 边缘           | Cloudflare Worker `app-proxy`（TLS、源站地址存 KV）→ cloudflared quick tunnel → nginx :80 → api:3000；nginx 配置还不在仓库（review OPS-23） |
+| 数据库         | PostgreSQL 18，启用 RLS                                                                                                                     |
+| 队列 / Pub-Sub | PostgreSQL outbox 表（**未用 Redis Pub/Sub**）                                                                                              |
+| 缓存 / 限流    | Redis 8（限流目前用进程内 Map，Redis 留作 M2 迁移目标）                                                                                     |
+| 对象存储       | S3 兼容（兼容 MinIO / R2 / Tencent COS），自研 SigV4 presigned PUT                                                                          |
+| 后端单元       | systemd: `compass-api`、`compass-worker`、`compass-backup.{service,timer}`、`compass-app-tunnel`、`compass-origin-watch.{service,timer}`    |
+| 备份           | 每日 03:30 `pg_dump -Fc` + 校验 + 14d 轮转 + 可选 S3 上传                                                                                   |
+| 容器           | 生产不用；`infra/compose/docker-compose.dev.yml` 只给本地开发                                                                               |
 
 ### 1.4 安全模型（现状）
 

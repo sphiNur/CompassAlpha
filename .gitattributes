@@ -32,10 +32,6 @@
 *.service text eol=lf
 *.timer text eol=lf
 
-# Read by Linux daemons / builders.
-Caddyfile text eol=lf
-Dockerfile text eol=lf
-
 # Binary-ish assets git should never touch.
 *.png binary
 *.jpg binary

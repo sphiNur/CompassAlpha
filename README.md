@@ -61,11 +61,12 @@ packages/
 └── cli/         compass 命令行
 
 infra/
-├── docker/      Dockerfile 多阶段
-├── caddy/       Caddyfile
-├── compose/     docker-compose.{dev,prod}.yml
-├── systemd/     compass-api / compass-worker .service
-└── backup/      pg_dump 夜间备份 + 还原脚本（见 docs/RUNBOOK.md）
+├── compose/     docker-compose.dev.yml（只给本地开发；生产不用容器）
+├── systemd/     compass-api / compass-worker / 隧道与源站发布的单元
+├── backup/      pg_dump 夜间备份 + 还原脚本（见 docs/RUNBOOK.md）
+├── cloudflare/  边缘 Worker（app-proxy）与 Telegram 中转（tg-relay）
+├── tunnel/      compass-origin-watch.sh：把隧道地址发布给 Worker
+└── deploy/      生产服务器的主机密钥（部署时校验）
 
 docs/
 ├── EVENT_CATALOG.md

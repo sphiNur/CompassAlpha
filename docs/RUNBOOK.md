@@ -6,21 +6,22 @@
 ## Topology
 
 ```
-            Caddy (TLS, edge)
-               │
-        ┌──────┴───────┐
-        │              │
-    api (3000)     bot (long-poll)   worker (BullMQ)
-        │
-   ┌────┴────┬───────────┐
-   │         │           │
-Postgres  Redis        S3/R2
+Telegram
+  → Cloudflare Worker app-proxy (infra/cloudflare/app-proxy): finds
+    the origin's current tunnel URL in KV, which compass-origin-watch
+    publishes (infra/tunnel)
+  → cloudflared quick tunnel (compass-app-tunnel.service)
+  → nginx on :80 (its config is not in the repo yet: review OPS-23)
+  → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
+worker (compass-worker.service): the outbox; bot messages go out
+  through the tg-relay Worker (infra/cloudflare/tg-relay.js)
+Postgres 18, Redis 8 and S3-compatible storage behind both
 ```
 
-Production does not run the docker images in `infra/compose/`: the code is
-shipped as a tarball by `scripts/deploy.ts` to `/home/ubuntu/compass-alpha`
-and run with bun under systemd (`infra/systemd/compass-api.service`,
-`compass-worker.service`). See "Roll back a bad deploy" below.
+Production runs no containers (`infra/compose/` is the local dev
+stack): `scripts/deploy.ts` ships the code to
+`/home/ubuntu/compass-alpha`, where bun runs it under systemd
+(`infra/systemd/`). See "Roll back a bad deploy" below.
 
 The upload is incremental where both ends have rsync: the server keeps the
 last shipped source in `/home/ubuntu/compass-alpha-src/CompassAlpha`, only
