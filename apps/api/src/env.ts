@@ -46,4 +46,20 @@ export const env = createEnv({
   emptyStringAsUndefined: true,
 });
 
+/**
+ * Review COREAPI-20: login and refresh tokens are signed with different
+ * keys. With one value in both, only their `typ` header would tell them
+ * apart, and tokens signed before 2026-11-10 have none.
+ */
+export function assertDistinctTokenKeys(
+  keys: Pick<Env, 'JWT_SECRET' | 'JWT_REFRESH_SECRET'>,
+): void {
+  if (keys.JWT_SECRET === keys.JWT_REFRESH_SECRET) {
+    throw new Error(
+      'Invalid environment variables: JWT_REFRESH_SECRET must differ from JWT_SECRET',
+    );
+  }
+}
+assertDistinctTokenKeys(env);
+
 export type Env = typeof env;

@@ -2347,6 +2347,8 @@ export const zh = {
   'attendance.export.hint': '整月每人每天的排班、上下班打卡时间、迟到早退分钟、工资和加班。',
   'attendance.export.button': '导出 Excel',
   'attendance.export.failed': '导出失败，请重试。',
+  'attendance.export.linkExpired': '下载链接已过期，请回到应用重新导出。',
+  'attendance.export.noAccess': '你没有权限下载这个文件。',
   'attendance.export.fileName': '考勤-{store}-{month}.xlsx',
   'attendance.export.manualMark': '{time}（补卡）',
   'attendance.export.sheetSummary': '汇总',
