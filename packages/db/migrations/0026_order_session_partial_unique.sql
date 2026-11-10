@@ -25,9 +25,13 @@
 --   in_run, archived) is unbounded.
 --
 -- SAFETY
---   Idempotent (IF EXISTS / IF NOT EXISTS). Index swap is online —
---   PG creates the new partial index, drops the old one, no table
---   lock past a brief metadata-only catalog update.
+--   Idempotent (IF EXISTS / IF NOT EXISTS). Not online, whatever this
+--   note said before (review DB-08, 2026-11-10): DROP INDEX takes an
+--   ACCESS EXCLUSIVE lock on the table, and CREATE INDEX without
+--   CONCURRENTLY blocks every write to it while the index builds. On
+--   this table at the time that was brief. The runner applies a batch
+--   in one transaction, where CONCURRENTLY is not allowed, so a later
+--   migration that swaps an index on a large table needs its own plan.
 
 BEGIN;
 

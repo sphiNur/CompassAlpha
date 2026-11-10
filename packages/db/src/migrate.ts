@@ -32,6 +32,7 @@ import {
   unreachableMigrations,
   type JournalEntry,
 } from './migrationLint';
+import { LOCK_TIMEOUT, retryOnLockTimeout } from './migrateLocks';
 import { loadRepoEnv } from './repoEnv';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -54,7 +55,8 @@ async function runRawSql(
   for (const file of files) {
     const sqlText = await readFile(join(rawSqlDir, file), 'utf8');
     console.log(`  · ${file}`);
-    await client.unsafe(sqlText);
+    // One implicit transaction per file, safe to run again (DB-08).
+    await retryOnLockTimeout(file, () => client.unsafe(sqlText));
   }
 }
 
@@ -209,10 +211,15 @@ async function main() {
   // `set_config(..., true)`, which an earlier file's COMMIT cut down to a
   // single statement: the INSERT … SELECT after it saw no rows, wrote
   // nothing, and the migration was recorded as applied.
+  // Review DB-08 (2026-11-10): no statement waits longer than LOCK_TIMEOUT
+  // for a lock, so the live app is never held up longer (migrateLocks.ts).
   const client = postgres(url, {
     max: 1,
     prepare: false,
-    connection: { 'app.system_context': 'maintenance' } as Record<string, string>,
+    connection: { 'app.system_context': 'maintenance', lock_timeout: LOCK_TIMEOUT } as Record<
+      string,
+      string
+    >,
   });
   const db = drizzle(client);
 
@@ -242,7 +249,10 @@ async function main() {
   await checkNothingSkipped(client, journal);
 
   console.log('[migrate] Drizzle migrations...');
-  await migrate(db, { migrationsFolder: migrationsRoot });
+  // The pending batch is one transaction: a failed try leaves nothing.
+  await retryOnLockTimeout('drizzle migrations', () =>
+    migrate(db, { migrationsFolder: migrationsRoot }),
+  );
 
   console.log('[migrate] POST SQL (RLS policies, triggers)...');
   await runRawSql(client, (f) => /^[1-9]/.test(f));
