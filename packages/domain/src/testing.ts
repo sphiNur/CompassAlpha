@@ -96,10 +96,12 @@ export function sku(id: string, step = '0.5'): SkuCtx {
 
 /** When the run tests decide: 08:00 UTC on the day `planRun` plans for. */
 export const RUN_NOW = new Date('2026-05-01T08:00:00Z');
+/** A clock stopped at `RUN_NOW`. */
+export const RUN_CLOCK = fixedClock(RUN_NOW);
 
 /** Run commands decided at `clock` (default `RUN_NOW`). */
 export function runStepper(
-  clock: Clock = fixedClock(RUN_NOW),
+  clock: Clock = RUN_CLOCK,
 ): Stepper<RunState, RunCommand, RunEvent> {
   return stepper((state, command) => decideRun(state, command, clock), applyRun);
 }
