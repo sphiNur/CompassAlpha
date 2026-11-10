@@ -47,6 +47,16 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
   const fixtures = () => getDb(undefined, { system: 'maintenance' });
   const app = () => getDb();
   const ids = { orgId: randomUUID(), userId: randomUUID(), streamId: randomUUID() };
+  const adjustments = (streamId: string, seqs: number[]) =>
+    seqs.map((seq) => ({
+      orgId: ids.orgId,
+      streamType: 'order',
+      streamId,
+      seq,
+      type: 'ItemAdjusted',
+      payload: {},
+      actorId: ids.userId,
+    }));
 
   beforeAll(async () => {
     const db = fixtures();
@@ -58,17 +68,8 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
       timezone: 'UTC',
     });
     await db.insert(s.users).values({ id: ids.userId, displayName: 'Event guard actor' });
-    await db.insert(s.events).values(
-      [1, 2, 3].map((seq) => ({
-        orgId: ids.orgId,
-        streamType: 'order',
-        streamId: ids.streamId,
-        seq,
-        type: 'ItemAdjusted',
-        payload: {},
-        actorId: ids.userId,
-      })),
-    );
+    // Every test may try to change these three; none may succeed.
+    await db.insert(s.events).values(adjustments(ids.streamId, [1, 2, 3]));
   });
 
   afterAll(async () => {
@@ -77,12 +78,12 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
     await db.delete(s.users).where(eq(s.users.id, ids.userId));
   });
 
-  const countEvents = async () =>
+  const countEvents = async (streamId = ids.streamId) =>
     (
       await fixtures()
         .select({ id: s.events.id })
         .from(s.events)
-        .where(eq(s.events.streamId, ids.streamId))
+        .where(eq(s.events.streamId, streamId))
     ).length;
 
   test('D1: the app cannot update, delete or truncate events', async () => {
@@ -111,20 +112,24 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
   });
 
   test('D1: a purge may delete, still not update', async () => {
+    // A stream of the test's own: deleting from the shared one changed the
+    // count the other tests read (review NEW-RAND-01).
+    const streamId = randomUUID();
+    await fixtures()
+      .insert(s.events)
+      .values(adjustments(streamId, [1, 2, 3]));
     const update = await pgErrorOf(() =>
       withOrgContext(app(), ids.orgId, async (tx) => {
         await allowEventPurge(tx);
-        await tx.update(s.events).set({ payload: {} }).where(eq(s.events.streamId, ids.streamId));
+        await tx.update(s.events).set({ payload: {} }).where(eq(s.events.streamId, streamId));
       }),
     );
     expect(update?.message).toContain('append-only');
     await withOrgContext(app(), ids.orgId, async (tx) => {
       await allowEventPurge(tx);
-      await tx
-        .delete(s.events)
-        .where(and(eq(s.events.streamId, ids.streamId), eq(s.events.seq, 3)));
+      await tx.delete(s.events).where(and(eq(s.events.streamId, streamId), eq(s.events.seq, 3)));
     });
-    expect(await countEvents()).toBe(2);
+    expect(await countEvents(streamId)).toBe(2);
   });
 
   test('D1: the purge permission ends with its transaction', async () => {
@@ -145,7 +150,7 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
     } finally {
       conn.release();
     }
-    expect(await countEvents()).toBe(2);
+    expect(await countEvents()).toBe(3);
   });
 
   test('D1: deleting a user still clears actor_id on their events', async () => {
@@ -183,6 +188,6 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
         return rows[0]!;
       });
     expect(await seen('anything-i-like')).toEqual({ system: false, n: 0 });
-    expect(await seen('worker')).toEqual({ system: true, n: 2 });
+    expect(await seen('worker')).toEqual({ system: true, n: 3 });
   });
 });
