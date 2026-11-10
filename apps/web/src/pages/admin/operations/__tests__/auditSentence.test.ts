@@ -13,6 +13,7 @@ import {
 
 const loc = {
   unknown: '?',
+  system: 'System',
   localName: (names: Record<string, string>) => names.en ?? Object.values(names)[0] ?? '',
   day: (iso: string) => `day(${iso})`,
 };
@@ -161,6 +162,21 @@ describe('describeAuditRow', () => {
         loc,
       ),
     ).toMatchObject({ key: 'ops.audit.s.catalogArchive', params: { name: 'Bazaar' } });
+  });
+
+  test('a grant from the command line was made by the system', () => {
+    const row = {
+      action: 'admin.role.grant',
+      inputs: { memberId: 'm1', roleId: 'r1', scopeType: 'global', scopeId: null },
+      actor: null,
+      labels: labels({ memberName: 'Dilnoza', roleName: 'Super admin' }),
+    };
+    expect(describeAuditRow({ ...row, bySystem: true }, loc)).toMatchObject({
+      key: 'ops.audit.s.roleGrant',
+      params: { actor: 'System', member: 'Dilnoza', role: 'Super admin' },
+    });
+    // A row whose author is gone is not the system's.
+    expect(describeAuditRow({ ...row, bySystem: false }, loc).params.actor).toBe('?');
   });
 
   test('rows from an older server (no labels) still render', () => {

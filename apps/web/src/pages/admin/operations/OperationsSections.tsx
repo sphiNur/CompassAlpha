@@ -927,6 +927,7 @@ export function AdminAuditSection() {
                 // instead of raw verb/object words and id prefixes.
                 const s = describeAuditRow(r, {
                   unknown: i18n.t('ops.audit.unknown'),
+                  system: i18n.t('ops.activity.system'),
                   localName: (names) => productName({ names }),
                   day: (d) => dateFmt.calendarDay(d),
                 });

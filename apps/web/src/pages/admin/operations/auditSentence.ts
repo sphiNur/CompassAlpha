@@ -19,6 +19,8 @@ export interface AuditRowLike {
   action: string;
   inputs?: unknown;
   actor: { displayName: string | null } | null;
+  /** No person acted (a grant from the command line); older servers omit it. */
+  bySystem?: boolean;
   labels?: {
     memberName: string | null;
     roleName: string | null;
@@ -142,6 +144,8 @@ export function describeAuditRow(
   loc: {
     /** Placeholder for a name that could not be resolved. */
     unknown: string;
+    /** The actor of a row no person wrote. */
+    system: string;
     /** Localizes an i18n names map (SKU / category). */
     localName: (names: Record<string, string>) => string;
     /** Formats an ISO calendar date (a purged order's or run's day). */
@@ -153,7 +157,7 @@ export function describeAuditRow(
     row.inputs && typeof row.inputs === 'object' ? (row.inputs as Record<string, unknown>) : {};
   const l = row.labels ?? null;
   const or = (v: string | null | undefined) => (v && v.trim() ? v : loc.unknown);
-  const actor = or(row.actor?.displayName);
+  const actor = row.bySystem ? loc.system : or(row.actor?.displayName);
   const member = or(
     l?.memberName ?? (typeof inputs.displayName === 'string' ? inputs.displayName : null),
   );

@@ -1211,7 +1211,9 @@ export function auditRowRefs(row: {
     memberId,
     userId: str(o, 'userId'),
     roleSlug: str(o, 'roleSlug'),
-    roleId: rt === 'role' && rid ? rid : null,
+    // A grant from the command line (`compass user grant`) names its
+    // role by id only.
+    roleId: rt === 'role' && rid ? rid : str(o, 'roleId'),
     storeId,
     toStoreId: str(o, 'toStoreId') ?? (rt === 'store' ? null : str(o, 'targetStoreId')),
     catalog:
@@ -5301,6 +5303,9 @@ export const adminRouter = router({
           resourceType: r.resourceType,
           resourceId: r.resourceId,
           actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
+          /** No person acted: `compass user grant` writes its rows
+           *  without an actor. A missing user is not this. */
+          bySystem: r.actorId === null,
           occurredAt: r.occurredAt.toISOString(),
           inputs: r.inputs as unknown,
           scopeStoreId: r.scopeStoreId,

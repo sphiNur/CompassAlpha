@@ -44,6 +44,19 @@ describe('auditRowRefs', () => {
     expect(refs.catalog).toBeNull();
   });
 
+  test('a grant from the command line names its role by id', () => {
+    const refs = auditRowRefs({
+      resourceType: 'member',
+      resourceId: M,
+      inputs: { memberId: M, roleId: R, scopeType: 'global', scopeId: null, roleRank: 100 },
+      scopeStoreId: null,
+    });
+    expect(refs).toMatchObject({ memberId: M, roleSlug: null, roleId: R });
+    expect(
+      buildAuditLabels(refs, lookups({ roleNameById: new Map([[R, 'Super admin']]) })).roleName,
+    ).toBe('Super admin');
+  });
+
   test('role.revoke: binding resource still yields the user and role', () => {
     const refs = auditRowRefs({
       resourceType: 'role_binding',
