@@ -73,12 +73,25 @@ body {
   max-width: 480px;
   padding: 16px 20px;
   background: rgba(255, 59, 48, 0.08);
-  color: #d70015;
+  /* COREWEB1-25 (2026-11-11): #d70015 was 4.4:1 on the light splash and
+     3:1 on the dark one; these are at least 5.2:1 on either, on the tint. */
+  color: #c4000f;
   border-radius: 14px;
   font-size: 14px;
   line-height: 1.5;
   text-align: left;
   word-break: break-word;
+}
+@media (prefers-color-scheme: dark) {
+  #boot-error {
+    color: #ff6961;
+  }
+}
+:where(html[data-color-scheme='light']) #boot-error {
+  color: #c4000f;
+}
+:where(html[data-color-scheme='dark']) #boot-error {
+  color: #ff6961;
 }
 #boot-error.show {
   display: block;
