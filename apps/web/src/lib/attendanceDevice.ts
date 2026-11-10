@@ -7,16 +7,10 @@
  */
 const KEY = 'compass.attendance.device';
 
-type Cb<T> = (err: unknown, value?: T) => void;
-interface TgDeviceStorage {
-  getItem(key: string, cb: Cb<string | null>): void;
-  setItem(key: string, value: string, cb?: Cb<boolean>): void;
-}
-
-type TgApp = { DeviceStorage?: TgDeviceStorage; isVersionAtLeast?: (v: string) => boolean };
+type TgDeviceStorage = TelegramDeviceStorageGlobal;
 
 function tgStorage(): TgDeviceStorage | null {
-  const tg = (window as unknown as { Telegram?: { WebApp?: TgApp } }).Telegram?.WebApp;
+  const tg = window.Telegram?.WebApp;
   // Older clients log "not supported" on every call; ask first.
   if (!tg?.DeviceStorage || !tg.isVersionAtLeast?.('9.0')) return null;
   return tg.DeviceStorage;
@@ -79,7 +73,5 @@ export function attendanceDeviceId(): Promise<string> {
 }
 
 export function devicePlatform(): string {
-  const tg = (window as unknown as { Telegram?: { WebApp?: { platform?: string } } }).Telegram
-    ?.WebApp;
-  return (tg?.platform ?? 'web').slice(0, 32);
+  return (window.Telegram?.WebApp?.platform ?? 'web').slice(0, 32);
 }

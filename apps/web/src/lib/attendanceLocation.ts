@@ -7,25 +7,10 @@
 export type Fix = { lat: number; lng: number; accuracy: number };
 export type LocationFailure = 'denied' | 'unavailable' | 'timeout';
 
-interface TgLocationData {
-  latitude: number;
-  longitude: number;
-  horizontal_accuracy?: number | null;
-}
-interface TgLocationManager {
-  isInited: boolean;
-  isLocationAvailable: boolean;
-  isAccessRequested: boolean;
-  isAccessGranted: boolean;
-  init(cb?: () => void): void;
-  getLocation(cb: (data: TgLocationData | null) => void): void;
-  openSettings(): void;
-}
-
-type TgApp = { LocationManager?: TgLocationManager; isVersionAtLeast?: (v: string) => boolean };
+type TgLocationManager = TelegramLocationManagerGlobal;
 
 function tgLocation(): TgLocationManager | null {
-  const tg = (window as unknown as { Telegram?: { WebApp?: TgApp } }).Telegram?.WebApp;
+  const tg = window.Telegram?.WebApp;
   // Older clients log "not supported" on every call; ask first.
   if (!tg?.LocationManager || !tg.isVersionAtLeast?.('8.0')) return null;
   return tg.LocationManager;
