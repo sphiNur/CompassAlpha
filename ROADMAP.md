@@ -311,6 +311,6 @@ pnpm db:generate               # produces a new SQL file in packages/db/migratio
 # review the generated SQL, edit RLS in packages/db/migrations/sql/ if needed
 pnpm db:migrate                # idempotent
 
-# D. Grant another user
-pnpm compass user grant <tgUserId> --role staff --org default
+# D. Grant another user (below admin, a role is held at a store)
+pnpm compass user grant <tgUserId> --role staff --org default --scope store --scope-id <storeId> --new-user
 ```

@@ -22,9 +22,20 @@
  *   inventory.categories                -- ALL categories
  *   inventory.suppliers                 -- ALL suppliers
  *   inventory.stores                    -- ALL stores
- *   auth.member_store_assignments       -- store bindings (orphaned by stores delete)
- *   sync.outbox                         -- if present
- *   sync.idempotency_keys               -- if present
+ *   auth.member_store_assignments       -- store bindings (the stores delete
+ *                                          cascades them too)
+ *   domain.projector_cursors            -- projector positions
+ *
+ * Deleting stores, SKUs, suppliers and runs also deletes, by ON DELETE
+ * CASCADE, everything that hangs off them: stock movements, sales, dish
+ * ingredients, run expenses, attendance (punches, shifts, photos, …) and
+ * more. The dry-run lists those tables with their row counts too.
+ *
+ * Refused (DB-05, 2026-11-09):
+ *   - while there are daily close revisions: they are kept for good (the
+ *     table refuses deletes, as the admin purges do);
+ *   - while rows that stay point at rows that go without a cascade (the
+ *     delete would fail part way).
  *
  * What is PRESERVED:
  *
@@ -45,8 +56,9 @@
  *   - members still bound to org with their roles
  *   - all event history GONE — no audit log of the fake testing period
  *
- * EXTREMELY DESTRUCTIVE. There is no rollback. The dry-run prints exactly
- * how many rows would be touched per table — eyeball that before --apply.
+ * EXTREMELY DESTRUCTIVE. There is no rollback. The dry-run prints how many
+ * rows each table would lose, cascades included — eyeball that before
+ * --apply.
  *
  * D5 (2026-10-30): `--apply` is refused on production (see purgeGuard.ts)
  * unless COMPASS_ALLOW_BULK_PURGE=true is set for that one command.
@@ -192,8 +204,8 @@ const WIPE_PLAN: Array<{ name: string; deleteSql: string; countSql: string }> = 
     deleteSql: 'DELETE FROM inventory.suppliers',
     countSql: 'SELECT COUNT(*)::int AS n FROM inventory.suppliers',
   },
-  // Member-store assignments — manually deleted because there's no FK
-  // cascade on the join table (per auth schema).
+  // Member-store assignments: the stores delete below would cascade them
+  // too; listed so the counts show them.
   {
     name: 'auth.member_store_assignments',
     deleteSql: 'DELETE FROM auth.member_store_assignments',
@@ -205,9 +217,8 @@ const WIPE_PLAN: Array<{ name: string; deleteSql: string; countSql: string }> = 
     countSql: 'SELECT COUNT(*)::int AS n FROM inventory.stores',
   },
   // Reset projector cursor positions so when new events are produced,
-  // projectors start from the new beginning. The cursors table doesn't
-  // exist if no projectors have run; we silently ignore "table not
-  // found" via try-catch.
+  // projectors start from the new beginning. A table that does not exist
+  // is left out of the plan before anything runs.
   {
     name: 'domain.projector_cursors',
     deleteSql: 'DELETE FROM domain.projector_cursors',
@@ -215,30 +226,132 @@ const WIPE_PLAN: Array<{ name: string; deleteSql: string; countSql: string }> = 
   },
 ];
 
+type Db = ReturnType<typeof getDb>;
+
+/** The plan's tables that exist in this database. */
+async function presentTables(db: Db, names: readonly string[]): Promise<Set<string>> {
+  const present = new Set<string>();
+  for (const name of names) {
+    const r = await db.execute(sql`SELECT to_regclass(${name}) IS NOT NULL AS ok`);
+    if ((r as unknown as Array<{ ok: boolean }>)[0]?.ok) present.add(name);
+  }
+  return present;
+}
+
+/** A foreign key: `child.col` points at `parent`; `onDelete` as in pg_constraint. */
+type Fk = { child: string; parent: string; col: string; onDelete: string };
+
+async function foreignKeys(db: Db): Promise<Fk[]> {
+  const rows = await db.execute(sql`
+    SELECT con.conrelid::regclass::text AS child,
+           con.confrelid::regclass::text AS parent,
+           att.attname AS col,
+           con.confdeltype AS "onDelete"
+      FROM pg_constraint con
+      JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = con.conkey[1]
+     WHERE con.contype = 'f'`);
+  return rows as unknown as Fk[];
+}
+
+/**
+ * DB-05: what deleting `wiped` takes with it (ON DELETE CASCADE, followed
+ * down), and the keys from rows that stay that would stop it (NO ACTION,
+ * RESTRICT).
+ */
+function reach(fks: readonly Fk[], wiped: ReadonlySet<string>) {
+  const cascaded = new Map<string, Fk>();
+  const queue = [...wiped];
+  while (queue.length > 0) {
+    const parent = queue.shift()!;
+    for (const fk of fks) {
+      if (fk.parent !== parent || fk.onDelete !== 'c') continue;
+      if (wiped.has(fk.child) || cascaded.has(fk.child)) continue;
+      cascaded.set(fk.child, fk);
+      queue.push(fk.child);
+    }
+  }
+  const gone = new Set([...wiped, ...cascaded.keys()]);
+  const blocking = fks.filter(
+    (fk) =>
+      gone.has(fk.parent) && !gone.has(fk.child) && (fk.onDelete === 'a' || fk.onDelete === 'r'),
+  );
+  return { cascaded: [...cascaded.values()], blocking };
+}
+
+/**
+ * Rows of `fk.child` that point somewhere through `fk.col`. Every table in
+ * the plan is emptied, so while the keys the cascade follows are NOT NULL
+ * (all of them are today) that is every row of the table and the count is
+ * exact; through a nullable key it would only be an estimate.
+ */
+async function pointingRows(db: Db, fk: Fk): Promise<number> {
+  const [schema, table] = fk.child.split('.') as [string, string];
+  const r = await db.execute(
+    sql`SELECT COUNT(*)::int AS n FROM ${sql.identifier(schema)}.${sql.identifier(table)}
+        WHERE ${sql.identifier(fk.col)} IS NOT NULL`,
+  );
+  return (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+}
+
 async function main() {
   console.log(c.bold(c.red('CompassAlpha — HARD DELETE fake data')));
   console.log(c.dim(`  mode: ${APPLY ? c.red('APPLY (writes!)') : 'DRY-RUN (no writes)'}`));
 
   const db = getDb(undefined, { system: 'maintenance' });
 
+  // Everything is looked at before anything is written: inside the
+  // transaction a failed statement aborts the rest, so a missing table
+  // cannot be skipped there.
+  const present = await presentTables(
+    db,
+    WIPE_PLAN.map((step) => step.name),
+  );
+  const plan = WIPE_PLAN.filter((step) => present.has(step.name));
+
   // Sanity check: count what's about to die.
   console.log(c.cyan('\n▶ Pre-wipe row counts:'));
   let totalRows = 0;
+  const counts = new Map<string, number>();
   for (const step of WIPE_PLAN) {
-    let n = 0;
-    try {
-      const r = await db.execute(sql.raw(step.countSql));
-      n = ((r as any)[0]?.n ?? 0) as number;
-    } catch (err) {
+    if (!present.has(step.name)) {
       console.log(`  ${step.name.padEnd(40)} ${c.dim('(table missing — skip)')}`);
       continue;
     }
+    const r = await db.execute(sql.raw(step.countSql));
+    const n = ((r as any)[0]?.n ?? 0) as number;
+    counts.set(step.name, n);
     totalRows += n;
     const tag = n > 0 ? c.red(String(n).padStart(6)) : c.dim('     0');
     console.log(`  ${step.name.padEnd(40)} ${tag}`);
   }
+
+  const { cascaded, blocking } = reach(await foreignKeys(db), present);
+  console.log(c.cyan('\n▶ Also deleted with them (ON DELETE CASCADE):'));
+  for (const fk of cascaded) {
+    const n = await pointingRows(db, fk);
+    totalRows += n;
+    const tag = n > 0 ? c.red(String(n).padStart(6)) : c.dim('     0');
+    console.log(`  ${fk.child.padEnd(40)} ${tag} ${c.dim(`via ${fk.col} → ${fk.parent}`)}`);
+  }
   console.log(c.dim(`  ${''.padEnd(40)} ------`));
   console.log(`  ${'TOTAL'.padEnd(40)} ${c.bold(String(totalRows).padStart(6))}`);
+
+  const refusals: string[] = [];
+  const revisions = counts.get('inventory.store_daily_settlement_revisions') ?? 0;
+  if (revisions > 0) {
+    refusals.push(
+      `${revisions} daily close revisions: they are kept for good and the table refuses ` +
+        'deletes (the admin purges refuse the same way).',
+    );
+  }
+  for (const fk of blocking) {
+    const n = await pointingRows(db, fk);
+    if (n > 0) {
+      refusals.push(
+        `${n} rows of ${fk.child} stay and point at ${fk.parent} (${fk.col}): the delete would fail.`,
+      );
+    }
+  }
 
   // Sanity check: confirm what's PRESERVED.
   console.log(c.cyan('\n▶ Preserved (these tables are untouched):'));
@@ -263,6 +376,15 @@ async function main() {
     }
   }
 
+  if (refusals.length > 0) {
+    console.log(c.red(`\n✖ ${APPLY ? 'Refusing to wipe' : 'An --apply would be refused'}:`));
+    for (const why of refusals) console.log(c.red(`  - ${why}`));
+    if (APPLY) {
+      await closeDb();
+      process.exit(2);
+    }
+  }
+
   if (!APPLY) {
     console.log(c.yellow('\nDRY-RUN — no rows deleted.'));
     console.log(c.yellow('Re-run with `--apply` to commit.'));
@@ -276,18 +398,9 @@ async function main() {
     // domain.events refuses deletes unless the transaction says it is a
     // purge (migration 0055).
     await allowEventPurge(tx);
-    for (const step of WIPE_PLAN) {
-      try {
-        await tx.execute(sql.raw(step.deleteSql));
-        console.log(`  ${c.green('✓')} ${step.name}`);
-      } catch (err) {
-        const msg = (err as Error).message;
-        if (msg.includes('does not exist')) {
-          console.log(`  ${c.dim('-')} ${step.name} ${c.dim('(skipped — table missing)')}`);
-          continue;
-        }
-        throw err;
-      }
+    for (const step of plan) {
+      await tx.execute(sql.raw(step.deleteSql));
+      console.log(`  ${c.green('✓')} ${step.name}`);
     }
   });
 

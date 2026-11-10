@@ -68,7 +68,9 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 
 ### Grant super_admin to a new user
 1. User opens the Mini App → lands on the NoAccess screen → copies their Telegram id.
-2. Operator: `pnpm compass user grant <tgUserId> --role super_admin --org default`.
+2. Operator: `pnpm compass user grant <tgUserId> --role super_admin --org default --new-user`.
+   Opening the app does not create an account; `--new-user` does. Without it an
+   id that has no account is refused, which catches a mistyped id.
 3. User reloads the Mini App.
 
 ### Roll back a bad deploy

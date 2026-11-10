@@ -28,8 +28,8 @@ pnpm dev
 # Web:  http://localhost:5173
 # Adminer (DB):  http://localhost:8080
 
-# 5. 给自己授超管
-pnpm compass user grant <你的 Telegram user id> --role super_admin --org default
+# 5. 给自己授超管（第一次授权时你还没有账号，所以加 --new-user）
+pnpm compass user grant <你的 Telegram user id> --role super_admin --org default --new-user
 ```
 
 > **Telegram 调试**：本地开发可用 `VITE_DEV_MOCK_INIT_DATA=1` 跳过 BotFather 真实签名，

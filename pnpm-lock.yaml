@@ -359,6 +359,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@compass/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@compass/db':
         specifier: workspace:*
         version: link:../db

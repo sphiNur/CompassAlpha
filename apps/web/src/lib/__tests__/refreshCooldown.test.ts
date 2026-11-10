@@ -8,6 +8,9 @@ import { useAuthStore } from '../../stores/authStore';
 // again by every query retry, each waiting out its own timeout — the order
 // page spun for ~95 s before showing anything.
 const realFetch = globalThis.fetch;
+// TEST3-07: bun runs every test file in one process, so the store and the
+// cooldown are put back after each test instead of leaking a fake session.
+const initialAuth = useAuthStore.getState();
 let calls: string[] = [];
 
 beforeEach(() => {
@@ -27,6 +30,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
+  useAuthStore.setState(initialAuth, true);
+  resetRefreshCooldownForTests();
 });
 
 describe('authFetch when the session refresh does not complete', () => {
