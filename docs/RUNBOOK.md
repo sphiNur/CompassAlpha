@@ -46,11 +46,12 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 ```
 
 ### Triaging client errors
-- Open `/debug` in the Mini App — Unreviewed tab shows new client_logs.
-- After scanning + fixing, hit "Mark all reviewed" so the cursor advances.
+- Open `/debug` in the Mini App (needs `system.logs.view`): the Server tab
+  lists the organisation's latest `ops.client_logs` rows.
 - From a terminal (there is no `compass logs` CLI command): query
-  `ops.client_logs` with psql. RLS is fail-closed, so open a transaction in
-  the system context first:
+  `ops.client_logs` with psql. It is under RLS by organisation, and rows
+  sent before sign-in have no organisation, so open a transaction in the
+  system context first:
   ```sql
   BEGIN; SELECT set_config('app.system_context', 'maintenance', true);
   SELECT created_at, org_id, kind, action, error_msg FROM ops.client_logs
