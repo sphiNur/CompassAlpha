@@ -47,6 +47,10 @@ export type AuditSentenceKey =
   | 'ops.audit.s.permissionAllow'
   | 'ops.audit.s.permissionDeny'
   | 'ops.audit.s.permissionRevoke'
+  | 'ops.audit.s.purgeAll'
+  | 'ops.audit.s.purgeDate'
+  | 'ops.audit.s.purgeRun'
+  | 'ops.audit.s.purgeSession'
   | 'ops.audit.s.roleCreate'
   | 'ops.audit.s.roleDelete'
   | 'ops.audit.s.roleGrant'
@@ -140,6 +144,8 @@ export function describeAuditRow(
     unknown: string;
     /** Localizes an i18n names map (SKU / category). */
     localName: (names: Record<string, string>) => string;
+    /** Formats an ISO calendar date (a purged order's or run's day). */
+    day: (isoDate: string) => string;
   },
 ): AuditSentence {
   const { object, verb } = parseAuditAction(row.action);
@@ -154,7 +160,8 @@ export function describeAuditRow(
   const role = or(l?.roleName ?? (typeof inputs.roleSlug === 'string' ? inputs.roleSlug : null));
   const store = or(l?.storeName);
   const category = auditCategory(row.action);
-  const tone = toneOf(verb, inputs);
+  const tone = object === 'purge' ? 'danger' : toneOf(verb, inputs);
+  const day = (v: unknown) => (typeof v === 'string' && v ? loc.day(v) : null);
   const out = (key: AuditSentenceKey, params: Record<string, string> = {}): AuditSentence => ({
     category,
     object,
@@ -229,6 +236,28 @@ export function describeAuditRow(
       return out('ops.audit.s.financeUpdate');
     case 'subscription.update':
       return out('ops.audit.s.subscriptionUpdate');
+    // ADM2-05 (2026-11-09): what a purge deleted, from the store, day and
+    // author the server now records. Older rows carry only ids and keep
+    // the generic line below.
+    case 'purge.session': {
+      const date = day(inputs.orderDate);
+      if (date) return out('ops.audit.s.purgeSession', { date, store, member });
+      break;
+    }
+    case 'purge.run': {
+      const date = day(inputs.runDate);
+      if (date && typeof inputs.runIndex === 'number') {
+        return out('ops.audit.s.purgeRun', { date, n: String(inputs.runIndex + 1) });
+      }
+      break;
+    }
+    case 'purge.date': {
+      const date = day(inputs.date);
+      if (date) return out('ops.audit.s.purgeDate', { date });
+      break;
+    }
+    case 'purge.all':
+      return out('ops.audit.s.purgeAll');
     case 'catalog.import': {
       const summary =
         inputs.summary && typeof inputs.summary === 'object'

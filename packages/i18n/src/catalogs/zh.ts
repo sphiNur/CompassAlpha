@@ -1992,6 +1992,8 @@ export const zh = {
   'ops.audit.emptyStoreBody': '较早的记录没有门店信息，按门店筛选时不显示。',
   'ops.audit.emptyFilterTitle': '没有这类操作',
   'ops.audit.unknown': '（未知）',
+  'ops.audit.change': '{field}：{before} → {after}',
+  'ops.audit.field.status': '状态',
   'ops.audit.s.roleGrant': '{actor} 授予 {member}「{role}」角色',
   'ops.audit.s.roleRevoke': '{actor} 撤销了 {member} 的「{role}」角色',
   'ops.audit.s.roleCreate': '{actor} 创建了角色「{role}」',
@@ -2022,6 +2024,10 @@ export const zh = {
   'ops.audit.s.catalogRestore': '{actor} 恢复了「{name}」',
   'ops.audit.s.financeUpdate': '{actor} 修改了财务设置',
   'ops.audit.s.subscriptionUpdate': '{actor} 更新了订阅',
+  'ops.audit.s.purgeSession': '{actor} 删除了 {store} {date} 的订单（{member}）',
+  'ops.audit.s.purgeRun': '{actor} 删除了采购单 {date} #{n}',
+  'ops.audit.s.purgeDate': '{actor} 删除了 {date} 的全部订单和采购单',
+  'ops.audit.s.purgeAll': '{actor} 清除了工作区的全部数据',
   'ops.audit.s.generic': '{actor}：{object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.

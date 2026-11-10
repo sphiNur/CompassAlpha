@@ -2363,6 +2363,8 @@ export const en = {
     "Older audit rows have no store and don't appear under a store filter.",
   'ops.audit.emptyFilterTitle': 'No actions of this type',
   'ops.audit.unknown': '(unknown)',
+  'ops.audit.change': '{field}: {before} → {after}',
+  'ops.audit.field.status': 'Status',
   'ops.audit.s.roleGrant': '{actor} granted {role} to {member}',
   'ops.audit.s.roleRevoke': '{actor} revoked {role} from {member}',
   'ops.audit.s.roleCreate': '{actor} created role {role}',
@@ -2394,6 +2396,10 @@ export const en = {
   'ops.audit.s.catalogRestore': '{actor} restored "{name}"',
   'ops.audit.s.financeUpdate': '{actor} updated finance settings',
   'ops.audit.s.subscriptionUpdate': 'Subscription updated by {actor}',
+  'ops.audit.s.purgeSession': '{actor} deleted the order of {date} at {store} ({member})',
+  'ops.audit.s.purgeRun': '{actor} deleted run {date} #{n}',
+  'ops.audit.s.purgeDate': '{actor} deleted all orders and runs of {date}',
+  'ops.audit.s.purgeAll': "{actor} deleted all of the workspace's data",
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.

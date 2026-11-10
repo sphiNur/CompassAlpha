@@ -2256,6 +2256,8 @@ export const ru = {
   'ops.audit.emptyStoreBody': 'Старые записи без магазина не видны при фильтре по магазину.',
   'ops.audit.emptyFilterTitle': 'Нет действий этого типа',
   'ops.audit.unknown': '(неизвестно)',
+  'ops.audit.change': '{field}: {before} → {after}',
+  'ops.audit.field.status': 'Статус',
   'ops.audit.s.roleGrant': '{actor}: выдана роль «{role}» для {member}',
   'ops.audit.s.roleRevoke': '{actor}: снята роль «{role}» у {member}',
   'ops.audit.s.roleCreate': '{actor}: создана роль «{role}»',
@@ -2287,6 +2289,10 @@ export const ru = {
   'ops.audit.s.catalogRestore': '{actor}: восстановлено «{name}»',
   'ops.audit.s.financeUpdate': '{actor}: изменены финансовые настройки',
   'ops.audit.s.subscriptionUpdate': '{actor}: обновлена подписка',
+  'ops.audit.s.purgeSession': '{actor}: удалён заказ от {date} в магазине {store} ({member})',
+  'ops.audit.s.purgeRun': '{actor}: удалена закупка {date} №{n}',
+  'ops.audit.s.purgeDate': '{actor}: удалены все заказы и закупки за {date}',
+  'ops.audit.s.purgeAll': '{actor}: удалены все данные рабочего пространства',
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.
