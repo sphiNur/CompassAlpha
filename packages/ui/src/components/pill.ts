@@ -4,7 +4,7 @@ import { disabledClass } from './disabled';
 /**
  * The one visual definition of a pill-shaped toggle button, shared by
  * `Chip` and `Tab` (they were two byte-identical copies of this pill —
- * `h-8 rounded-pill px-3 text-old-label font-medium` with the same
+ * `h-8 rounded-[var(--r-pill)] px-3 text-old-label font-medium` with the same
  * selected/unselected branch — kept in sync by hand). Each component
  * keeps its own semantics (Chip = filter, Tab = roving-tabindex tablist)
  * and appends its extras; the *look* lives here so a tweak lands once.

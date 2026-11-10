@@ -3,12 +3,12 @@ import { getLogger } from '@compass/telemetry';
 /**
  * Purchaser-screen telemetry (2026-11-05).
  *
- * Baseline for the purchaser-screen redesign: how each line gets entered
- * at the market. The event log already says WHEN a line was bought (see
- * scripts/sql/purchase-metrics.sql); this adds what only the screen
- * knows — how long the editor was open, whether the one-tap ✓ or the
- * editor was used, whether the carried price/qty were changed, whether
- * the phone was offline.
+ * A baseline for judging changes to the purchaser screen: how each line
+ * gets entered at the market. The event log already says WHEN a line was
+ * bought (see scripts/sql/purchase-metrics.sql); this adds what only the
+ * screen knows — how long the editor was open, whether the one-tap ✓ or
+ * the editor was used, whether the carried price/qty were changed,
+ * whether the phone was offline.
  *
  * No amounts, product names or ids leave the device: durations, flags
  * and counts only. Lands in ops.client_logs (kept 30 days).

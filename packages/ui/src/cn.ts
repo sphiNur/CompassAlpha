@@ -2,19 +2,15 @@ import { clsx, type ClassValue } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
- * tailwind-merge only knows Tailwind's stock scales. Without being told
- * about the design tokens it reads `text-body` as a text COLOUR and drops
- * it when a real colour follows (`text-body text-secondary`), and it
- * cannot tell that `p-lg` and `p-xl` conflict.
+ * tailwind-merge only knows Tailwind's stock scales. Told nothing about
+ * apps/web's type scale (tailwind.config.js) it reads `text-old-body` as a
+ * text COLOUR: a size followed by a colour lost the size, and a size
+ * after `text-white` dropped the white from every primary button.
  */
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
       'font-size': [
-        { text: ['display', 'h1', 'h2', 'body', 'label', 'caption', 'money', 'money-lg'] },
-        // apps/web's older scale (tailwind.config.js). Unregistered, a size
-        // followed by a colour lost the size, and a size after `text-white`
-        // dropped the white from every primary button.
         {
           text: [
             'old-display',
@@ -29,10 +25,6 @@ const twMerge = extendTailwindMerge({
           ],
         },
       ],
-    },
-    theme: {
-      spacing: ['xs', 'sm', 'md', 'lg', 'page', 'xl', 'xxl', 'xxxl', 'tap', 'control', 'row'],
-      borderRadius: ['pill'],
     },
   },
 });

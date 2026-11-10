@@ -84,25 +84,10 @@ void catalogReady.then(() => {
   splash?.remove();
 });
 
-// `/?kit` shows the component kit on its own, without signing in. The
-// condition is a build-time constant, so a production bundle contains
-// neither the branch nor the page.
 function render(container: HTMLElement): void {
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('kit')) {
-    // The kit draws no translated text: no splash to wait under.
-    document.getElementById('boot-splash')?.remove();
-    void import('./pages/KitGallery').then(({ KitGallery }) => {
-      createRoot(container).render(
-        <StrictMode>
-          <KitGallery />
-        </StrictMode>,
-      );
-    });
-  } else {
-    createRoot(container).render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    );
-  }
+  createRoot(container).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
 }

@@ -1,11 +1,10 @@
 {
   // Review OPS-18 (2026-11): tsconfig.json leaves the tests out (they use
   // bun's types, which the kit must not see). This checks them; `pnpm
-  // type-check` runs both. allowJs: tokens.test.ts reads tailwind-preset.js.
+  // type-check` runs both.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "allowJs": true,
     "types": ["bun"]
   },
   "include": ["src/**/__tests__/**/*"],

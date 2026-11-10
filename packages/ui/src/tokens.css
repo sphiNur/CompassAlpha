@@ -177,10 +177,9 @@
    * utilities in apps/web/tailwind.config.js. Use the utilities at call
    * sites and these vars only in plain CSS.
    *
-   * Mind the names: plain `text-h2` / `text-body` / `text-label` come from
-   * the redesign preset (packages/ui/tailwind-preset.js) and are larger
-   * (18 / 16 / 15 px). The owner kept the current look (2026-11-05), so
-   * screens use the `old-*` scale.
+   * The `old-` prefix is from when a redesign's larger scale held the
+   * plain names. The owner kept the current look (2026-11-05) and that
+   * scale is gone (review UI-16), so this is the one scale.
    *
    * Roles (docs/UI_STANDARDS.md):
    *
@@ -203,9 +202,9 @@
    * principle). A screen that needs an exception says why in a one-line
    * comment.
    *
-   * Full review 2026-11 (UI-17): this block used to recommend the preset's
-   * `text-h2` / `text-body`, an uppercase eyebrow for SectionLabel and
-   * font-mono for money, all against UI-11 / UI-14 and CI.
+   * Full review 2026-11 (UI-17): this block used to recommend the
+   * redesign's `text-h2` / `text-body`, an uppercase eyebrow for
+   * SectionLabel and font-mono for money, all against UI-11 / UI-14 and CI.
    */
   --text-display: 24px;
   --text-h1: 19px;

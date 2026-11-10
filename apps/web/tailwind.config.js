@@ -1,5 +1,4 @@
 /** @type {import('tailwindcss').Config} */
-import designTokens from '@compass/ui/tailwind-preset';
 
 /**
  * Typography scale (M3.14, 2026-05-16 — shrink pass).
@@ -46,11 +45,9 @@ const fontSizeScale = {
 };
 
 export default {
-  // The redesign preset (DESIGN.md). The owner kept the current look
-  // (2026-11-05, docs/UI_STANDARDS.md), so screens use the `old-*` scale
-  // below; the preset's own `text-h2` / `text-body` are larger sizes under
-  // the same names (review UI-16).
-  presets: [designTokens],
+  // Review UI-16 (2026-11): the preset of the rejected redesign is gone.
+  // Its `text-h2` / `rounded-md` / colours took Tailwind's names with other
+  // values; no screen used them (the built CSS is the same without it).
   content: [
     './index.html',
     './src/**/*.{ts,tsx}',
