@@ -2465,9 +2465,11 @@ export const uz = {
   'attendance.clock.locating': 'Joylashuv aniqlanmoqda…',
   'attendance.clock.doneIn': 'Kelish {time} da belgilandi',
   'attendance.clock.doneOut': 'Ketish {time} da belgilandi',
-  'attendance.clock.punches': 'Bugungi belgilar',
+  'attendance.clock.punches': 'Soʻnggi belgilar',
   'attendance.clock.noShiftToday': 'Bugun smena yoʻq',
   'attendance.clock.shiftToday': 'Bugungi smena: {times}',
+  'attendance.clock.shiftFromYesterday': 'Kechadan boshlangan smena: {times}',
+  'attendance.clock.yesterday': 'Kecha',
   'attendance.clock.upcoming': 'Keyingi smenalar',
   'attendance.clock.offlineTitle': 'Aloqa yoʻq',
   'attendance.clock.offlineBody':
@@ -2943,6 +2945,8 @@ export const uz = {
   'attendance.punch.colleagueTitle': 'Hamkasbni belgilash',
   'attendance.punch.checking': 'Tekshirilmoqda, biroz kuting…',
   'attendance.punch.checkingSlow': 'Aloqa sekin, yuborish davom etmoqda. Iltimos, yopmang.',
+  'attendance.punch.checkingLong':
+    'Hali javob yoʻq. Yopishingiz mumkin: «Davomat» boʻlimida yozilgan-yozilmagani koʻrinadi. Yozilmagan boʻlsa, qayta belgilang.',
   'attendance.punch.okIn': 'Kelish belgilandi',
   'attendance.punch.okOut': 'Ketish belgilandi',
   'attendance.punch.told': '{name} va boshqaruvchilarga xabar yuborildi.',
@@ -2953,9 +2957,9 @@ export const uz = {
   'attendance.punch.done': 'Yaxshi',
   'attendance.punch.oneMore': 'Yana bir qadam: koʻrsatilgandek boshingizni buring.',
   'attendance.punch.restart': 'Vaqt tugadi. Iltimos, yana bir marta bajaring.',
-  'attendance.punch.netFailed': 'Aloqa yoʻq: belgi yozilmadi.',
+  'attendance.punch.netFailed': 'Javob kelmadi: belgi allaqachon yozilgan boʻlishi mumkin.',
   'attendance.punch.netFailedBody':
-    'Rasmlar hozircha saqlangan: qayta yuborish uchun «Qayta urinish» tugmasini bosing.',
+    'Xuddi shu rasmlar bilan tekshirish uchun «Qayta urinish» tugmasini bosing. Belgi ikki marta yozilmaydi.',
   'attendance.punch.alreadyIn':
     'Siz {time} da kelishni allaqachon belgilagansiz. Qayta belgilash shart emas.',
   'attendance.punch.alreadyOut':

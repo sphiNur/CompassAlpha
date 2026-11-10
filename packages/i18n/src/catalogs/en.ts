@@ -2584,9 +2584,11 @@ export const en = {
   'attendance.clock.locating': 'Finding your location…',
   'attendance.clock.doneIn': 'Clocked in at {time}',
   'attendance.clock.doneOut': 'Clocked out at {time}',
-  'attendance.clock.punches': "Today's clock-ins",
+  'attendance.clock.punches': 'Recent clock-ins',
   'attendance.clock.noShiftToday': 'No shift planned today',
   'attendance.clock.shiftToday': 'Shift today: {times}',
+  'attendance.clock.shiftFromYesterday': 'Shift from yesterday: {times}',
+  'attendance.clock.yesterday': 'Yesterday',
   'attendance.clock.upcoming': 'Next shifts',
   'attendance.clock.offlineTitle': 'No connection',
   'attendance.clock.offlineBody': 'Clocking in needs a connection; it is not saved to send later.',
@@ -3059,6 +3061,8 @@ export const en = {
   'attendance.punch.checking': 'Checking, one moment…',
   'attendance.punch.checkingSlow':
     'The connection is slow and it is still sending. Please keep this open.',
+  'attendance.punch.checkingLong':
+    'Still no answer. You can close this: Attendance will show whether it was recorded. If not, clock again.',
   'attendance.punch.okIn': 'Clocked in',
   'attendance.punch.okOut': 'Clocked out',
   'attendance.punch.told': '{name} and the managers have been told.',
@@ -3069,9 +3073,9 @@ export const en = {
   'attendance.punch.done': 'OK',
   'attendance.punch.oneMore': 'One more step: turn your head as shown.',
   'attendance.punch.restart': 'That took too long. Please do it once more.',
-  'attendance.punch.netFailed': 'No connection: this punch was not recorded.',
+  'attendance.punch.netFailed': 'No answer came back: this punch may already be recorded.',
   'attendance.punch.netFailedBody':
-    'The photos are kept for now: tap Try again to send them again.',
+    'Tap Try again to check with the same photos. It will not be recorded twice.',
   'attendance.punch.alreadyIn': 'You clocked in at {time} already. No need to clock again.',
   'attendance.punch.alreadyOut': 'You clocked out at {time} already. No need to clock again.',
   'attendance.punch.alreadyInFor': '{name} clocked in at {time} already. No need to clock again.',

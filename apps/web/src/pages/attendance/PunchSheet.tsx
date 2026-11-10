@@ -36,7 +36,8 @@ export type PunchView =
   /** A clock-out past the shift: why. `then`: the camera next, or the photos taken go again. */
   | { at: 'reason'; minutes: number; name: string | null; then: 'camera' | 'send' }
   | { at: 'camera'; round: number; turns: Turn[]; acts: Act[]; notice: CatalogKey | null }
-  | { at: 'wait'; label: 'checking' | 'preparing' }
+  /** `since`: when this wait began (Date.now() ms); resends keep it. */
+  | { at: 'wait'; label: 'checking' | 'preparing'; since: number }
   | { at: 'done'; result: PunchResult }
   | {
       at: 'failed';
@@ -51,6 +52,11 @@ export type PunchView =
 const DONE_MS = { self: 3_000, colleague: 8_000, already: 4_000 };
 /** When "checking" adds that the link is slow. */
 const SLOW_MS = 10_000;
+/**
+ * When a wait can be closed (ATT-04, 2026-11-09). A punch carries photos:
+ * 120 s per try and two resends could hold the sheet for six minutes.
+ */
+export const WAIT_CLOSABLE_MS = 30_000;
 
 export function PunchSheet({
   view,
@@ -82,9 +88,11 @@ export function PunchSheet({
   onUndo: () => void;
   onClose: () => void;
 }) {
-  // Nothing closes the sheet while the punch is on its way: it may be
-  // recorded already, and the result is what the person waits for.
-  const locked = view?.at === 'wait' || undoPending;
+  // Nothing closes the sheet while the punch is on its way (it may be
+  // recorded already, and the result is what the person waits for), until
+  // the wait has gone on for WAIT_CLOSABLE_MS.
+  const closable = useWaitClosable(view);
+  const locked = (view?.at === 'wait' && !closable) || undoPending;
   return (
     <Sheet open={view !== null} onOpenChange={(o) => !o && !locked && onClose()} title={title}>
       <div className="flex flex-col gap-3 py-3">
@@ -99,7 +107,9 @@ export function PunchSheet({
             onCancel={onClose}
           />
         ) : null}
-        {view?.at === 'wait' ? <Waiting label={view.label} /> : null}
+        {view?.at === 'wait' ? (
+          <Waiting label={view.label} closable={closable} onClose={onClose} />
+        ) : null}
         {view?.at === 'reason' ? (
           <ReasonForm
             minutes={view.minutes}
@@ -132,23 +142,50 @@ export function PunchSheet({
   );
 }
 
-function Waiting({ label }: { label: 'checking' | 'preparing' }) {
+/** Whether the wait on screen has lasted WAIT_CLOSABLE_MS. */
+function useWaitClosable(view: PunchView | null): boolean {
+  const since = view?.at === 'wait' ? view.since : null;
+  // The `since` of the wait whose time is up.
+  const [due, setDue] = useState<number | null>(null);
+  useEffect(() => {
+    if (since === null) return;
+    const t = setTimeout(() => setDue(since), since + WAIT_CLOSABLE_MS - Date.now());
+    return () => clearTimeout(t);
+  }, [since]);
+  return since !== null && due === since;
+}
+
+function Waiting({
+  label,
+  closable,
+  onClose,
+}: {
+  label: 'checking' | 'preparing';
+  closable: boolean;
+  onClose: () => void;
+}) {
   const i18n = useI18n();
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setSlow(true), SLOW_MS);
     return () => clearTimeout(t);
   }, []);
+  const checking = label === 'checking';
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center" role="status">
       <Spinner size={40} className="text-[var(--c-action)]" />
       <p className="text-old-h3 font-semibold text-[var(--c-fg)]">
-        {i18n.t(label === 'checking' ? 'attendance.punch.checking' : 'attendance.punch.preparing')}
+        {i18n.t(checking ? 'attendance.punch.checking' : 'attendance.punch.preparing')}
       </p>
-      {slow && label === 'checking' ? (
+      {checking && (slow || closable) ? (
         <p className="text-old-label text-[var(--c-fg-muted)]">
-          {i18n.t('attendance.punch.checkingSlow')}
+          {i18n.t(closable ? 'attendance.punch.checkingLong' : 'attendance.punch.checkingSlow')}
         </p>
+      ) : null}
+      {closable ? (
+        <Button variant="secondary" onClick={onClose}>
+          {i18n.t('common.gotIt')}
+        </Button>
       ) : null}
     </div>
   );

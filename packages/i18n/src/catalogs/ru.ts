@@ -2480,9 +2480,11 @@ export const ru = {
   'attendance.clock.locating': 'Определяем место…',
   'attendance.clock.doneIn': 'Приход отмечен в {time}',
   'attendance.clock.doneOut': 'Уход отмечен в {time}',
-  'attendance.clock.punches': 'Отметки за сегодня',
+  'attendance.clock.punches': 'Последние отметки',
   'attendance.clock.noShiftToday': 'Сегодня смены нет',
   'attendance.clock.shiftToday': 'Смена сегодня: {times}',
+  'attendance.clock.shiftFromYesterday': 'Смена со вчерашнего дня: {times}',
+  'attendance.clock.yesterday': 'Вчера',
   'attendance.clock.upcoming': 'Следующие смены',
   'attendance.clock.offlineTitle': 'Нет связи',
   'attendance.clock.offlineBody': 'Для отметки нужна связь; она не сохраняется для отправки позже.',
@@ -2958,6 +2960,8 @@ export const ru = {
   'attendance.punch.checking': 'Проверяем, подождите…',
   'attendance.punch.checkingSlow':
     'Связь медленная, отправка продолжается. Пожалуйста, не закрывайте.',
+  'attendance.punch.checkingLong':
+    'Ответа всё ещё нет. Можно закрыть: в разделе «Учёт времени» будет видно, записана ли отметка. Если нет, отметьтесь ещё раз.',
   'attendance.punch.okIn': 'Приход отмечен',
   'attendance.punch.okOut': 'Уход отмечен',
   'attendance.punch.told': '{name} и управляющие получили уведомление.',
@@ -2968,9 +2972,9 @@ export const ru = {
   'attendance.punch.done': 'Хорошо',
   'attendance.punch.oneMore': 'Ещё один шаг: поверните голову, как показано.',
   'attendance.punch.restart': 'Время вышло. Пожалуйста, пройдите ещё раз.',
-  'attendance.punch.netFailed': 'Нет связи: отметка не записана.',
+  'attendance.punch.netFailed': 'Ответа нет: отметка, возможно, уже записана.',
   'attendance.punch.netFailedBody':
-    'Фото пока сохранены: нажмите «Попробовать ещё раз», чтобы отправить их снова.',
+    'Нажмите «Попробовать ещё раз», чтобы проверить с теми же фото. Дважды отметка не запишется.',
   'attendance.punch.alreadyIn': 'Вы уже отметили приход в {time}. Повторять не нужно.',
   'attendance.punch.alreadyOut': 'Вы уже отметили уход в {time}. Повторять не нужно.',
   'attendance.punch.alreadyInFor': 'Приход {name} уже отмечен в {time}. Повторять не нужно.',

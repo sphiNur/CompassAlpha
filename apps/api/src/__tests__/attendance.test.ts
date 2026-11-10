@@ -1593,6 +1593,20 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       enabled: true,
     });
     await enrollApproved(f.colleague(), 'Bob');
+    // A "not them" on this phone a while ago leaves the face look alone.
+    await db.insert(s.attendancePunches).values({
+      orgId: f.orgId,
+      storeId: f.storeId,
+      memberId: f.colleagueId,
+      kind: 'in',
+      punchedAt: new Date(Date.now() - 9 * 60_000),
+      source: 'self',
+      createdByMemberId: f.staffId,
+      viaMemberId: f.staffId,
+      voidedAt: new Date(Date.now() - 8 * 60_000),
+      voidedByMemberId: f.staffId,
+      voidReason: 'attendance.voidReason.wrongPerson',
+    });
     // Bob's shift ended an hour ago; he clocked in at its start.
     const start = new Date(Date.now() - 5 * 3600_000);
     const end = new Date(Date.now() - 3600_000);
@@ -1666,10 +1680,18 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
     expect(to('attendance.punchUndone')).toEqual([f.managerUserId]);
     expect(to('attendance.punchUndoneForYou')).toEqual([f.colleagueUserId]);
 
-    // Taken back, the right face clocks: the voided punch holds nothing up.
-    const right = await clock(f.staff(), {
+    // ATT-02: taken back, the same face is not taken for him again on this
+    // phone for a while. The person clocking is told they were not
+    // recognized, instead of punching him once more.
+    const sameFace = await refusal(
+      clock(f.staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' }),
+    );
+    expect(sameFace.message).toBe('attendance.errors.notRecognized');
+    // The voided punch holds nothing up: his own clock-out goes through.
+    const right = await clock(f.colleague(), {
       who: 'Bob',
-      identify: true,
+      kind: 'out',
+      device: DEVICE,
       overtimeReason: 'stocktake',
     });
     expect(right.kind).toBe('out');
