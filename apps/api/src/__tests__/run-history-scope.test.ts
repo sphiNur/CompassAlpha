@@ -327,276 +327,336 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
 });
 
 describe('purchase history permission scope', () => {
+  /**
+   * Stores A and B, and a manager of A who is staff in B. They also hold
+   * run.amend and run.create through a custom role bound to A only.
+   */
+  async function seedHistoryManager(suffix: string) {
+    const fx = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
+    const storeA = await makeStore(`History-A-${suffix}`);
+    const storeB = await makeStore(`History-B-${suffix}`);
+
+    const managerUser = await makeUser(`History manager ${suffix}`);
+    const managerMember = await makeMember(managerUser.id);
+    await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    await bindRole(managerMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+    const [scopedAmendRole] = await db
+      .insert(s.roles)
+      .values({
+        orgId: fx.orgId,
+        slug: `scoped-amend-${suffix}`,
+        name: 'Scoped amend regression role',
+        rank: 55,
+        isBuiltIn: false,
+      })
+      .returning();
+    await db.insert(s.rolePermissions).values([
+      { roleId: scopedAmendRole!.id, permissionKey: 'run.amend' },
+      { roleId: scopedAmendRole!.id, permissionKey: 'run.create' },
+    ]);
+    await bindRole(managerMember, scopedAmendRole!.id, {
+      type: 'store',
+      storeId: storeA.id,
+    });
+    const session = await sessionFor(managerMember, managerUser.id);
+    return { storeA, storeB, manager: { memberId: managerMember, session } };
+  }
+
+  /** Each seeded run gets a day of its own, so a date filter finds it alone. */
+  let historyRuns = 0;
+
+  /**
+   * A finished run that bought for both of seedHistoryManager's stores
+   * (review TEST2-04: five tests read it; it was built inside a single
+   * test of 489 lines). What the run holds:
+   *   - skuA, bought for both stores: A's share at an override of 100 in
+   *     cash; B's at the run's 200 by transfer, from the hidden supplier,
+   *     with the hidden receipt.
+   *   - skuB, which A asked for but which was bought only for B.
+   *   - skuC, bought only for A, from the visible supplier.
+   *   - a taxi split 1 to A and 2 to B.
+   * A's share is 160: 150 in cash and 10 by transfer. The run's is 780.
+   */
+  async function seedScopedHistoryRun() {
+    const fx = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    const { storeA, storeB, manager } = await seedHistoryManager(suffix);
+    const managerMember = manager.memberId;
+
+    const [skuA] = await db
+      .insert(s.skus)
+      .values({
+        orgId: fx.orgId,
+        code: `H-A-${suffix}`,
+        names: { en: `Visible apple ${suffix}` },
+        aliases: {},
+        description: {},
+        unit: 'kg',
+        step: '1',
+      })
+      .returning();
+    const [skuB] = await db
+      .insert(s.skus)
+      .values({
+        orgId: fx.orgId,
+        code: `H-B-${suffix}`,
+        names: { en: `Foreign secret ${suffix}` },
+        aliases: {},
+        description: {},
+        unit: 'kg',
+        step: '1',
+      })
+      .returning();
+    const [skuC] = await db
+      .insert(s.skus)
+      .values({
+        orgId: fx.orgId,
+        code: `H-C-${suffix}`,
+        names: { en: `Visible only pear ${suffix}` },
+        aliases: {},
+        description: {},
+        unit: 'kg',
+        step: '1',
+      })
+      .returning();
+    const [hiddenSupplier] = await db
+      .insert(s.suppliers)
+      .values({
+        orgId: fx.orgId,
+        name: `Hidden supplier ${suffix}`,
+      })
+      .returning();
+    const [visibleSupplier] = await db
+      .insert(s.suppliers)
+      .values({
+        orgId: fx.orgId,
+        name: `Visible supplier ${suffix}`,
+      })
+      .returning();
+    const runId = randomUUID();
+    const sessionAId = randomUUID();
+    const sessionBId = randomUUID();
+    // Every other day from 2042-08-05, so the day after each is free too.
+    const runDate = new Date(Date.UTC(2042, 7, 5 + 2 * historyRuns++)).toISOString().slice(0, 10);
+    await db.insert(s.marketRunsV).values({
+      id: runId,
+      orgId: fx.orgId,
+      runDate,
+      runIndex: 0,
+      status: 'finished',
+      actualTotal: '780',
+      actualCashTotal: '550',
+      actualTransferTotal: '230',
+      sessionIdsJson: [sessionAId, sessionBId],
+      finishedAt: new Date(`${runDate}T12:00:00Z`),
+    });
+    await db.insert(s.orderSessionsV).values([
+      {
+        id: sessionAId,
+        orgId: fx.orgId,
+        storeId: storeA.id,
+        orderDate: runDate,
+        status: 'archived',
+        initiatedByMemberId: managerMember,
+        runId,
+      },
+      {
+        id: sessionBId,
+        orgId: fx.orgId,
+        storeId: storeB.id,
+        orderDate: runDate,
+        status: 'archived',
+        initiatedByMemberId: fx.superAdminMemberId,
+        runId,
+      },
+    ]);
+    await db.insert(s.orderItemsV).values([
+      {
+        sessionId: sessionAId,
+        skuId: skuA!.id,
+        contributorMemberId: managerMember,
+        qty: '1',
+      },
+      {
+        // Regression: Store A requested this SKU, but the actual purchase
+        // was allocated only to hidden Store B. Demand visibility must not
+        // expose the purchase's price/supplier/payment metadata.
+        sessionId: sessionAId,
+        skuId: skuB!.id,
+        contributorMemberId: managerMember,
+        qty: '1',
+      },
+      {
+        sessionId: sessionAId,
+        skuId: skuC!.id,
+        contributorMemberId: managerMember,
+        qty: '1',
+      },
+      {
+        sessionId: sessionBId,
+        skuId: skuA!.id,
+        contributorMemberId: fx.superAdminMemberId,
+        qty: '1',
+      },
+      {
+        sessionId: sessionBId,
+        skuId: skuB!.id,
+        contributorMemberId: fx.superAdminMemberId,
+        qty: '2',
+      },
+    ]);
+    await db.insert(s.runItemsV).values([
+      {
+        runId,
+        skuId: skuA!.id,
+        plannedQty: '2',
+        purchasedQty: '2',
+        supplierId: hiddenSupplier!.id,
+        unitPrice: '200',
+        status: 'purchased',
+        paymentMethod: 'transfer',
+        receiptPhotoUrl: `https://hidden.example/${suffix}.jpg`,
+      },
+      {
+        runId,
+        skuId: skuB!.id,
+        plannedQty: '2',
+        purchasedQty: '2',
+        unitPrice: '200',
+        status: 'purchased',
+        paymentMethod: 'cash',
+      },
+      {
+        runId,
+        skuId: skuC!.id,
+        plannedQty: '1',
+        purchasedQty: '1',
+        supplierId: visibleSupplier!.id,
+        unitPrice: '50',
+        status: 'purchased',
+        paymentMethod: 'cash',
+        receiptPhotoUrl: `https://visible.example/${suffix}.jpg`,
+      },
+    ]);
+    await db.insert(s.runItemStoresV).values([
+      {
+        runId,
+        skuId: skuA!.id,
+        storeId: storeA.id,
+        qty: '1',
+        unitPrice: '100',
+        paymentMethod: 'cash',
+      },
+      // Same SKU, hidden store: null overrides inherit the org-wide
+      // run-item values (200/transfer). Store A must never receive those
+      // base values in historyDetail JSON.
+      { runId, skuId: skuA!.id, storeId: storeB.id, qty: '1' },
+      { runId, skuId: skuB!.id, storeId: storeB.id, qty: '2' },
+      { runId, skuId: skuC!.id, storeId: storeA.id, qty: '1' },
+    ]);
+    await db.insert(s.runExpensesV).values({
+      id: randomUUID(),
+      runId,
+      orgId: fx.orgId,
+      label: `Taxi ${suffix}`,
+      qty: '3',
+      unitPrice: '10',
+      storeSplitsJson: [
+        { storeId: storeA.id, qty: '1' },
+        { storeId: storeB.id, qty: '2' },
+      ],
+      paymentMethod: 'transfer',
+      reason: 'history scope fixture',
+      addedByMemberId: fx.superAdminMemberId,
+      addedAt: new Date(`${runDate}T11:00:00Z`),
+    });
+    await db.insert(s.events).values([
+      {
+        orgId: fx.orgId,
+        streamType: 'run',
+        streamId: runId,
+        seq: 1,
+        type: 'RunPlanned',
+        payload: {
+          orgId: fx.orgId,
+          runDate,
+          runIndex: 0,
+          sessionIds: [sessionAId, sessionBId],
+          plannedItems: [
+            { skuId: skuA!.id, qty: '2' },
+            { skuId: skuB!.id, qty: '2' },
+            { skuId: skuC!.id, qty: '1' },
+          ],
+          purchaserMemberId: fx.superAdminMemberId,
+        },
+        actorId: fx.superAdminUserId,
+        occurredAt: new Date(`${runDate}T10:00:00Z`),
+      },
+      {
+        orgId: fx.orgId,
+        streamType: 'run',
+        streamId: runId,
+        seq: 2,
+        type: 'RunFinished',
+        payload: {
+          totalActual: '780',
+          totalCash: '550',
+          totalTransfer: '230',
+        },
+        actorId: fx.superAdminUserId,
+        occurredAt: new Date(`${runDate}T12:00:00Z`),
+      },
+    ]);
+    return {
+      runId,
+      runDate,
+      /** In the SKU names and receipt URLs; unique to this run. */
+      suffix,
+      storeA,
+      storeB,
+      sessionAId,
+      skuA: skuA!.id,
+      skuB: skuB!.id,
+      skuC: skuC!.id,
+      hiddenSupplier: hiddenSupplier!.id,
+      visibleSupplier: visibleSupplier!.id,
+      manager,
+    };
+  }
+
   test.skipIf(!SHOULD_RUN)(
-    'paginates and totals only stores where prices.view is effective',
+    'a manager of Store A who is staff in Store B sees prices only in Store A',
     async () => {
       const fx = fixture();
       const db = getDb(undefined, { system: 'maintenance' });
       const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-      const storeA = await makeStore(`History-A-${suffix}`);
-      const storeB = await makeStore(`History-B-${suffix}`);
-
-      const managerUser = await makeUser(`History manager ${suffix}`);
-      const managerMember = await makeMember(managerUser.id);
-      await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      await bindRole(managerMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
-      const [scopedAmendRole] = await db
-        .insert(s.roles)
-        .values({
-          orgId: fx.orgId,
-          slug: `scoped-amend-${suffix}`,
-          name: 'Scoped amend regression role',
-          rank: 55,
-          isBuiltIn: false,
-        })
-        .returning();
-      await db.insert(s.rolePermissions).values([
-        { roleId: scopedAmendRole!.id, permissionKey: 'run.amend' },
-        { roleId: scopedAmendRole!.id, permissionKey: 'run.create' },
-      ]);
-      await bindRole(managerMember, scopedAmendRole!.id, {
-        type: 'store',
-        storeId: storeA.id,
-      });
-      const managerSession = await sessionFor(managerMember, managerUser.id);
-      expect(managerSession.permissions.has('run.amend')).toBe(true);
+      const { storeA, storeB, manager } = await seedHistoryManager(suffix);
       const visibleStores = await withOrgContext(db, fx.orgId, (tx) =>
-        getActorStoreIdsForPermission(tx, managerMember, 'prices.view', managerSession.permissions),
+        getActorStoreIdsForPermission(
+          tx,
+          manager.memberId,
+          'prices.view',
+          manager.session.permissions,
+        ),
       );
       expect(visibleStores).toEqual([storeA.id]);
-      const catalogCaller = callerFor(managerSession);
+      const catalogCaller = callerFor(manager.session);
       const priceStores = await catalogCaller.catalog.stores({ permission: 'prices.view' });
       expect(priceStores.map((store) => store.id)).toEqual([storeA.id]);
       const assignedStores = await catalogCaller.catalog.stores();
       expect(new Set(assignedStores.map((store) => store.id))).toEqual(
         new Set([storeA.id, storeB.id]),
       );
+    },
+  );
 
-      const [skuA] = await db
-        .insert(s.skus)
-        .values({
-          orgId: fx.orgId,
-          code: `H-A-${suffix}`,
-          names: { en: `Visible apple ${suffix}` },
-          aliases: {},
-          description: {},
-          unit: 'kg',
-          step: '1',
-        })
-        .returning();
-      const [skuB] = await db
-        .insert(s.skus)
-        .values({
-          orgId: fx.orgId,
-          code: `H-B-${suffix}`,
-          names: { en: `Foreign secret ${suffix}` },
-          aliases: {},
-          description: {},
-          unit: 'kg',
-          step: '1',
-        })
-        .returning();
-      const [skuC] = await db
-        .insert(s.skus)
-        .values({
-          orgId: fx.orgId,
-          code: `H-C-${suffix}`,
-          names: { en: `Visible only pear ${suffix}` },
-          aliases: {},
-          description: {},
-          unit: 'kg',
-          step: '1',
-        })
-        .returning();
-      const [hiddenSupplier] = await db
-        .insert(s.suppliers)
-        .values({
-          orgId: fx.orgId,
-          name: `Hidden supplier ${suffix}`,
-        })
-        .returning();
-      const [visibleSupplier] = await db
-        .insert(s.suppliers)
-        .values({
-          orgId: fx.orgId,
-          name: `Visible supplier ${suffix}`,
-        })
-        .returning();
-      const runId = randomUUID();
-      const sessionAId = randomUUID();
-      const sessionBId = randomUUID();
-      const runDate = '2042-08-05';
-      await db.insert(s.marketRunsV).values({
-        id: runId,
-        orgId: fx.orgId,
-        runDate,
-        runIndex: 0,
-        status: 'finished',
-        actualTotal: '780',
-        actualCashTotal: '550',
-        actualTransferTotal: '230',
-        sessionIdsJson: [sessionAId, sessionBId],
-        finishedAt: new Date('2042-08-05T12:00:00Z'),
-      });
-      await db.insert(s.orderSessionsV).values([
-        {
-          id: sessionAId,
-          orgId: fx.orgId,
-          storeId: storeA.id,
-          orderDate: runDate,
-          status: 'archived',
-          initiatedByMemberId: managerMember,
-          runId,
-        },
-        {
-          id: sessionBId,
-          orgId: fx.orgId,
-          storeId: storeB.id,
-          orderDate: runDate,
-          status: 'archived',
-          initiatedByMemberId: fx.superAdminMemberId,
-          runId,
-        },
-      ]);
-      await db.insert(s.orderItemsV).values([
-        {
-          sessionId: sessionAId,
-          skuId: skuA!.id,
-          contributorMemberId: managerMember,
-          qty: '1',
-        },
-        {
-          // Regression: Store A requested this SKU, but the actual purchase
-          // was allocated only to hidden Store B. Demand visibility must not
-          // expose the purchase's price/supplier/payment metadata.
-          sessionId: sessionAId,
-          skuId: skuB!.id,
-          contributorMemberId: managerMember,
-          qty: '1',
-        },
-        {
-          sessionId: sessionAId,
-          skuId: skuC!.id,
-          contributorMemberId: managerMember,
-          qty: '1',
-        },
-        {
-          sessionId: sessionBId,
-          skuId: skuA!.id,
-          contributorMemberId: fx.superAdminMemberId,
-          qty: '1',
-        },
-        {
-          sessionId: sessionBId,
-          skuId: skuB!.id,
-          contributorMemberId: fx.superAdminMemberId,
-          qty: '2',
-        },
-      ]);
-      await db.insert(s.runItemsV).values([
-        {
-          runId,
-          skuId: skuA!.id,
-          plannedQty: '2',
-          purchasedQty: '2',
-          supplierId: hiddenSupplier!.id,
-          unitPrice: '200',
-          status: 'purchased',
-          paymentMethod: 'transfer',
-          receiptPhotoUrl: `https://hidden.example/${suffix}.jpg`,
-        },
-        {
-          runId,
-          skuId: skuB!.id,
-          plannedQty: '2',
-          purchasedQty: '2',
-          unitPrice: '200',
-          status: 'purchased',
-          paymentMethod: 'cash',
-        },
-        {
-          runId,
-          skuId: skuC!.id,
-          plannedQty: '1',
-          purchasedQty: '1',
-          supplierId: visibleSupplier!.id,
-          unitPrice: '50',
-          status: 'purchased',
-          paymentMethod: 'cash',
-          receiptPhotoUrl: `https://visible.example/${suffix}.jpg`,
-        },
-      ]);
-      await db.insert(s.runItemStoresV).values([
-        {
-          runId,
-          skuId: skuA!.id,
-          storeId: storeA.id,
-          qty: '1',
-          unitPrice: '100',
-          paymentMethod: 'cash',
-        },
-        // Same SKU, hidden store: null overrides inherit the org-wide
-        // run-item values (200/transfer). Store A must never receive those
-        // base values in historyDetail JSON.
-        { runId, skuId: skuA!.id, storeId: storeB.id, qty: '1' },
-        { runId, skuId: skuB!.id, storeId: storeB.id, qty: '2' },
-        { runId, skuId: skuC!.id, storeId: storeA.id, qty: '1' },
-      ]);
-      await db.insert(s.runExpensesV).values({
-        id: randomUUID(),
-        runId,
-        orgId: fx.orgId,
-        label: `Taxi ${suffix}`,
-        qty: '3',
-        unitPrice: '10',
-        storeSplitsJson: [
-          { storeId: storeA.id, qty: '1' },
-          { storeId: storeB.id, qty: '2' },
-        ],
-        paymentMethod: 'transfer',
-        reason: 'history scope fixture',
-        addedByMemberId: fx.superAdminMemberId,
-        addedAt: new Date('2042-08-05T11:00:00Z'),
-      });
-      await db.insert(s.events).values([
-        {
-          orgId: fx.orgId,
-          streamType: 'run',
-          streamId: runId,
-          seq: 1,
-          type: 'RunPlanned',
-          payload: {
-            orgId: fx.orgId,
-            runDate,
-            runIndex: 0,
-            sessionIds: [sessionAId, sessionBId],
-            plannedItems: [
-              { skuId: skuA!.id, qty: '2' },
-              { skuId: skuB!.id, qty: '2' },
-              { skuId: skuC!.id, qty: '1' },
-            ],
-            purchaserMemberId: fx.superAdminMemberId,
-          },
-          actorId: fx.superAdminUserId,
-          occurredAt: new Date('2042-08-05T10:00:00Z'),
-        },
-        {
-          orgId: fx.orgId,
-          streamType: 'run',
-          streamId: runId,
-          seq: 2,
-          type: 'RunFinished',
-          payload: {
-            totalActual: '780',
-            totalCash: '550',
-            totalTransfer: '230',
-          },
-          actorId: fx.superAdminUserId,
-          occurredAt: new Date('2042-08-05T12:00:00Z'),
-        },
-      ]);
-
-      const caller = callerFor(managerSession);
+  test.skipIf(!SHOULD_RUN)(
+    'paginates and totals only stores where prices.view is effective',
+    async () => {
+      const { runDate, suffix, storeA, storeB, manager } = await seedScopedHistoryRun();
+      const caller = callerFor(manager.session);
       const page = await caller.run.history({
         dateFrom: runDate,
         dateTo: runDate,
@@ -643,12 +703,18 @@ describe('purchase history permission scope', () => {
       await expect(
         caller.run.history({ storeId: storeB.id, page: 1, pageSize: 10 }),
       ).rejects.toThrow('notAssignedToStore');
+    },
+  );
 
+  test.skipIf(!SHOULD_RUN)(
+    "the detail shows Store A its own lines, prices and splits, and nothing of Store B's",
+    async () => {
+      const { runId, suffix, storeA, skuA, skuB, skuC, hiddenSupplier, visibleSupplier, manager } =
+        await seedScopedHistoryRun();
+      const caller = callerFor(manager.session);
       const detail = await caller.run.historyDetail({ runId });
-      expect(new Set(detail.items.map((item) => item.skuId))).toEqual(
-        new Set([skuA!.id, skuC!.id]),
-      );
-      expect(detail.items.find((item) => item.skuId === skuA!.id)).toMatchObject({
+      expect(new Set(detail.items.map((item) => item.skuId))).toEqual(new Set([skuA, skuC]));
+      expect(detail.items.find((item) => item.skuId === skuA)).toMatchObject({
         plannedQty: '1',
         purchasedQty: '1',
         unitPrice: '100.00',
@@ -656,35 +722,40 @@ describe('purchase history permission scope', () => {
         supplierId: null,
         receiptPhotoUrl: null,
       });
-      expect(detail.items.find((item) => item.skuId === skuC!.id)).toMatchObject({
+      expect(detail.items.find((item) => item.skuId === skuC)).toMatchObject({
         unitPrice: '50.00',
         paymentMethod: 'cash',
-        supplierId: visibleSupplier!.id,
+        supplierId: visibleSupplier,
         receiptPhotoUrl: `https://visible.example/${suffix}.jpg`,
       });
       expect(detail.perStoreDemand).toContainEqual({
         storeId: storeA.id,
-        skuId: skuB!.id,
+        skuId: skuB,
         qty: '1',
       });
       expect(new Set(detail.splits.map((split) => split.storeId))).toEqual(new Set([storeA.id]));
-      expect(detail.splits.find((split) => split.skuId === skuA!.id)).toMatchObject({
-        skuId: skuA!.id,
+      expect(detail.splits.find((split) => split.skuId === skuA)).toMatchObject({
+        skuId: skuA,
         storeId: storeA.id,
         qty: '1.000',
         unitPrice: '100.00',
         paymentMethod: 'cash',
       });
-      expect(JSON.stringify(detail)).not.toContain(hiddenSupplier!.id);
+      expect(JSON.stringify(detail)).not.toContain(hiddenSupplier);
       expect(JSON.stringify(detail)).not.toContain(`https://hidden.example/${suffix}.jpg`);
       expect(detail.sessions.map((session) => session.storeId)).toEqual([storeA.id]);
       expect(detail.expenses).toHaveLength(1);
       expect(detail.expenses[0]!.qty).toBe('1');
       expect(detail.expenses[0]!.storeSplits).toEqual([{ storeId: storeA.id, qty: '1' }]);
-      // The flat session contains run.amend only because of a Store-A role.
-      // A settled-run correction requires persisted GLOBAL provenance.
-      expect(detail.canAmend).toBe(false);
+    },
+  );
 
+  test.skipIf(!SHOULD_RUN)(
+    "a live read of the run is Store A's projection, not the row for both stores",
+    async () => {
+      const fx = fixture();
+      const { runId, suffix, storeA, sessionAId, skuA, skuC, hiddenSupplier } =
+        await seedScopedHistoryRun();
       // Live run reads use generic assigned-store visibility, but must return
       // a Store-A projection instead of the raw A+B aggregate row.
       const liveReaderUser = await makeUser(`Live run reader ${suffix}`);
@@ -705,10 +776,8 @@ describe('purchase history permission scope', () => {
 
       const liveDetail = await liveReader.run.get({ runId });
       expect(liveDetail.sessionIdsJson).toEqual([sessionAId]);
-      expect(new Set(liveDetail.items.map((item) => item.skuId))).toEqual(
-        new Set([skuA!.id, skuC!.id]),
-      );
-      expect(liveDetail.items.find((item) => item.skuId === skuA!.id)).toMatchObject({
+      expect(new Set(liveDetail.items.map((item) => item.skuId))).toEqual(new Set([skuA, skuC]));
+      expect(liveDetail.items.find((item) => item.skuId === skuA)).toMatchObject({
         plannedQty: '1',
         purchasedQty: '1',
         unitPrice: '100.00',
@@ -720,11 +789,11 @@ describe('purchase history permission scope', () => {
       // DX-BUY-1: a visible split paid like the item it belongs to reads as
       // inherited (null), so the row's cash / transfer switch stays a switch;
       // the item carries the method the reader's stores were paid with.
-      expect(liveDetail.splits.find((split) => split.skuId === skuA!.id)).toMatchObject({
+      expect(liveDetail.splits.find((split) => split.skuId === skuA)).toMatchObject({
         unitPrice: '100.00',
         paymentMethod: null,
       });
-      expect(liveDetail.splits.find((split) => split.skuId === skuC!.id)?.paymentMethod).toBeNull();
+      expect(liveDetail.splits.find((split) => split.skuId === skuC)?.paymentMethod).toBeNull();
       expect(Number(liveDetail.actualTotal)).toBe(150);
       expect(Number(liveDetail.actualCashTotal)).toBe(150);
       expect(Number(liveDetail.actualTransferTotal)).toBe(0);
@@ -732,11 +801,62 @@ describe('purchase history permission scope', () => {
       expect(liveDetail.expenses).toHaveLength(1);
       expect(liveDetail.expenses[0]!.qty).toBe('1');
       expect(liveDetail.expenses[0]!.storeSplits).toEqual([{ storeId: storeA.id, qty: '1' }]);
-      expect(JSON.stringify(liveDetail)).not.toContain(hiddenSupplier!.id);
+      expect(JSON.stringify(liveDetail)).not.toContain(hiddenSupplier);
       expect(JSON.stringify(liveDetail)).not.toContain(`https://hidden.example/${suffix}.jpg`);
+    },
+  );
 
+  test.skipIf(!SHOULD_RUN)(
+    'the owner reads the whole run: every store, its prices and its supplier',
+    async () => {
+      const fx = fixture();
+      const { runId, runDate, suffix, storeA, storeB, skuA, hiddenSupplier } =
+        await seedScopedHistoryRun();
+      const adminPage = await appRouter.createCaller(fx.superAdminCtx).run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        page: 1,
+        pageSize: 10,
+        sort: 'newest',
+      });
+      expect(Number(adminPage.summary.total)).toBe(780);
+      expect(new Set(adminPage.rows[0]!.storeTotals.map((row) => row.storeId))).toEqual(
+        new Set([storeA.id, storeB.id]),
+      );
+
+      const superAdminCaller = appRouter.createCaller(fx.superAdminCtx);
+      const superAdminDetail = await superAdminCaller.run.historyDetail({ runId });
+      expect(superAdminDetail.items.find((item) => item.skuId === skuA)).toMatchObject({
+        unitPrice: '200.00',
+        paymentMethod: 'transfer',
+        supplierId: hiddenSupplier,
+        receiptPhotoUrl: `https://hidden.example/${suffix}.jpg`,
+      });
       expect(
-        (await errorOf(() => caller.run.changeDate({ runId, runDate: '2042-08-06' })))?.message,
+        superAdminDetail.splits.find(
+          (split) => split.skuId === skuA && split.storeId === storeB.id,
+        ),
+      ).toMatchObject({ unitPrice: null, paymentMethod: null });
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'only a global run.amend corrects the run, and every write path checks it',
+    async () => {
+      const fx = fixture();
+      const db = getDb(undefined, { system: 'maintenance' });
+      const { runId, runDate, suffix, storeA, skuA, manager } = await seedScopedHistoryRun();
+      const caller = callerFor(manager.session);
+      // The flat session contains run.amend only because of a Store-A role.
+      // A settled-run correction requires persisted GLOBAL provenance.
+      expect(manager.session.permissions.has('run.amend')).toBe(true);
+      expect((await caller.run.historyDetail({ runId })).canAmend).toBe(false);
+
+      const dayAfter = new Date(Date.parse(`${runDate}T00:00:00Z`) + 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      expect(
+        (await errorOf(() => caller.run.changeDate({ runId, runDate: dayAfter })))?.message,
       ).toContain('cannotAmend');
       expect(
         (await errorOf(() => caller.run.reopen({ runId, reason: 'scoped role must not reopen' })))
@@ -761,32 +881,8 @@ describe('purchase history permission scope', () => {
         globalDeniedCaller.run.reopen({ runId, reason: 'store deny must win' }),
       ).rejects.toThrow('cannotAmend');
 
-      const adminPage = await appRouter.createCaller(fx.superAdminCtx).run.history({
-        dateFrom: runDate,
-        dateTo: runDate,
-        page: 1,
-        pageSize: 10,
-        sort: 'newest',
-      });
-      expect(Number(adminPage.summary.total)).toBe(780);
-      expect(new Set(adminPage.rows[0]!.storeTotals.map((row) => row.storeId))).toEqual(
-        new Set([storeA.id, storeB.id]),
-      );
-
       const superAdminCaller = appRouter.createCaller(fx.superAdminCtx);
-      const superAdminDetail = await superAdminCaller.run.historyDetail({ runId });
-      expect(superAdminDetail.canAmend).toBe(true);
-      expect(superAdminDetail.items.find((item) => item.skuId === skuA!.id)).toMatchObject({
-        unitPrice: '200.00',
-        paymentMethod: 'transfer',
-        supplierId: hiddenSupplier!.id,
-        receiptPhotoUrl: `https://hidden.example/${suffix}.jpg`,
-      });
-      expect(
-        superAdminDetail.splits.find(
-          (split) => split.skuId === skuA!.id && split.storeId === storeB.id,
-        ),
-      ).toMatchObject({ unitPrice: null, paymentMethod: null });
+      expect((await superAdminCaller.run.historyDetail({ runId })).canAmend).toBe(true);
 
       // Once the global actor reopens the run, every write path must repeat
       // the persisted-global gate. Domain commands alone only see the flat
@@ -798,7 +894,7 @@ describe('purchase history permission scope', () => {
         () =>
           caller.run.markUnavailable({
             runId,
-            skuId: skuA!.id,
+            skuId: skuA,
             note: 'scoped role must not edit an amended run',
           }),
         () => caller.run.refinalize({ runId }),
@@ -806,16 +902,20 @@ describe('purchase history permission scope', () => {
       ]) {
         expect((await errorOf(attempt))?.message).toContain('cannotAmend');
       }
-
-      const staffUser = await makeUser(`History staff ${suffix}`);
-      const staffMember = await makeMember(staffUser.id);
-      await bindRole(staffMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
-      const staffCaller = callerFor(await sessionFor(staffMember, staffUser.id));
-      await expect(staffCaller.run.history({ page: 1, pageSize: 10 })).rejects.toThrow(
-        'missingPermission',
-      );
     },
   );
+
+  test.skipIf(!SHOULD_RUN)('store staff cannot read run history', async () => {
+    const fx = fixture();
+    const store = await makeStore(`History staff store ${Math.random()}`);
+    const staffUser = await makeUser('History staff');
+    const staffMember = await makeMember(staffUser.id);
+    await bindRole(staffMember, fx.staffRoleId, { type: 'store', storeId: store.id });
+    const staffCaller = callerFor(await sessionFor(staffMember, staffUser.id));
+    await expect(staffCaller.run.history({ page: 1, pageSize: 10 })).rejects.toThrow(
+      'missingPermission',
+    );
+  });
 
   test.skipIf(!SHOULD_RUN)(
     'global prices.view honors a store deny and keeps inactive historical stores',
