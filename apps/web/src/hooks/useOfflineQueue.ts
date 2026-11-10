@@ -40,6 +40,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { nextSeq, outbox, type OutboxEntry } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useAuthStore } from '../stores/authStore';
+import type { ReplayedProcedure } from '../lib/outboxReplay';
 
 type ReplayFn = (entry: OutboxEntry) => Promise<void>;
 
@@ -550,8 +551,11 @@ export function useOfflineQueue(): UseOfflineQueueResult {
 
   const flush = flushOutbox;
 
+  // Review TEST3-06 (2026-11-10): only a procedure with a replay handler
+  // (lib/outboxReplay.ts) may be queued. A test used to look for the
+  // queued names in the page sources.
   const enqueue = useCallback(
-    async <P,>(procedure: string, input: P, idempotencyKey?: string): Promise<number> => {
+    async <P>(procedure: ReplayedProcedure, input: P, idempotencyKey?: string): Promise<number> => {
       const clientSeq = await nextSeq();
       await outbox.add({
         clientSeq,
@@ -571,7 +575,12 @@ export function useOfflineQueue(): UseOfflineQueueResult {
   );
 
   const sendQueued = useCallback(
-    <P, R>(procedure: string, input: P, send: () => Promise<R>, idempotencyKey?: string) =>
+    <P, R>(
+      procedure: ReplayedProcedure,
+      input: P,
+      send: () => Promise<R>,
+      idempotencyKey?: string,
+    ) =>
       sendWriteAhead(procedure, input, send, idempotencyKey, (queued) => {
         notifyOutboxChanged();
         // Now an ordinary queued write: try it again as enqueue() would.
