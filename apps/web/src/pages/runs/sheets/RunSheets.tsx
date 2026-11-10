@@ -19,6 +19,7 @@ import {
   Banner,
   Button,
   Input,
+  NameCell,
   PhotoCapture,
   Segmented,
   Select,
@@ -31,7 +32,7 @@ import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { normalizeQuery, rankNameLike } from '../../../lib/searchMatch';
-import { useUnitLabel } from '../../../hooks/useI18n';
+import { useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
 import {
   toDisplayPrice,
@@ -691,10 +692,14 @@ export function AddItemSheet({
     ).slice(0, 20);
   }, [skus, existingStoreIdsBySku, search, i18n.locale]);
 
+  // UI-4 (review RUNWEB2-06): the picked product and the search results
+  // show the name on two lines, never "primary (secondary)" cut short.
+  const productNameParts = useProductNameParts();
   const selectedSku = useMemo(
     () => (draft?.skuId ? skus.find((s) => s.id === draft.skuId) : null),
     [draft?.skuId, skus],
   );
+  const selectedName = selectedSku ? productNameParts(selectedSku) : null;
 
   // Existing storeIds for the picked SKU (if any). Drives cost-mode hints
   // and marks store choices that should be recorded as independent costs.
@@ -866,9 +871,12 @@ export function AddItemSheet({
             selectedSku ? (
               <div className="flex items-center justify-between rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2">
                 <div className="min-w-0">
-                  <div className="truncate text-old-body font-semibold">
-                    {productName(selectedSku)}
-                  </div>
+                  <NameCell
+                    primary={selectedName?.primary}
+                    secondary={selectedName?.secondary}
+                    primaryLang={selectedName?.primaryLang}
+                    secondaryLang={selectedName?.secondaryLang}
+                  />
                   <div className="text-old-label text-[var(--c-fg-muted)]">
                     {unitLabel(selectedSku.unit)}
                   </div>
@@ -900,33 +908,40 @@ export function AddItemSheet({
                       {i18n.t('run.action.addItem.noMatch')}
                     </li>
                   ) : (
-                    filteredSkus.map((sku) => (
-                      <li
-                        key={sku.id}
-                        className="border-b border-[var(--c-divider)] last:border-b-0"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onChange({
-                              ...draft,
-                              skuId: sku.id,
-                              skuCostMode: existingStoreIdsBySku.has(sku.id)
-                                ? 'separateExpense'
-                                : 'merge',
-                            })
-                          }
-                          className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                    filteredSkus.map((sku) => {
+                      const nm = productNameParts(sku);
+                      return (
+                        <li
+                          key={sku.id}
+                          className="border-b border-[var(--c-divider)] last:border-b-0"
                         >
-                          <span className="min-w-0 truncate text-old-body">
-                            {productName(sku)}
-                          </span>
-                          <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
-                            {unitLabel(sku.unit)}
-                          </span>
-                        </button>
-                      </li>
-                    ))
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onChange({
+                                ...draft,
+                                skuId: sku.id,
+                                skuCostMode: existingStoreIdsBySku.has(sku.id)
+                                  ? 'separateExpense'
+                                  : 'merge',
+                              })
+                            }
+                            className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                          >
+                            <NameCell
+                              as="span"
+                              primary={nm.primary}
+                              secondary={nm.secondary}
+                              primaryLang={nm.primaryLang}
+                              secondaryLang={nm.secondaryLang}
+                            />
+                            <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
+                              {unitLabel(sku.unit)}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })
                   )}
                 </ul>
               </>
