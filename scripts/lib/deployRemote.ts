@@ -308,6 +308,105 @@ export function rlsRoleProblem(output: string): string | null {
   return `unexpected answer about the database role: ${answer || '(none)'}`;
 }
 
+/** The bun the systemd units start (their ExecStart, infra/systemd/). */
+export const UNIT_BUN = '/home/ubuntu/.bun/bin/bun';
+
+/**
+ * Review OPS-21 (2026-11-10): read-only shell script. The version of the
+ * bun the services run, and of the pnpm and node a deploy step finds on the
+ * PATH it sets, one `tool=version` line each (`missing` when one does not
+ * answer).
+ */
+export function toolchainScript(): string {
+  return [
+    'export PATH=$HOME/.bun/bin:$PATH',
+    `echo "bun=$(${UNIT_BUN} --version 2>/dev/null || echo missing)"`,
+    'echo "pnpm=$(pnpm --version 2>/dev/null || echo missing)"',
+    'echo "node=$(node --version 2>/dev/null || echo missing)"',
+  ].join('\n');
+}
+
+/** The versions the repository pins. */
+export interface PinnedToolchain {
+  /** `.bun-version`: exact. */
+  bun: string;
+  /** `packageManager` in package.json: exact. */
+  pnpm: string;
+  /** `engines.node` in package.json: `>=N[.M[.P]]` or an exact version. */
+  node: string;
+}
+
+/** The pins, from the contents of `.bun-version` and package.json. */
+export function pinnedToolchain(bunVersionFile: string, packageJson: string): PinnedToolchain {
+  const pkg = JSON.parse(packageJson) as {
+    packageManager?: string;
+    engines?: { node?: string };
+  };
+  const bun = bunVersionFile.trim();
+  if (!/^\d+\.\d+\.\d+$/.test(bun)) {
+    throw new Error(`.bun-version is not a version: ${bun || '(empty)'}`);
+  }
+  const pnpm = /^pnpm@(\d+\.\d+\.\d+)(?:\+.*)?$/.exec(pkg.packageManager ?? '')?.[1];
+  if (!pnpm) throw new Error(`packageManager does not pin pnpm: ${pkg.packageManager ?? '(none)'}`);
+  const node = pkg.engines?.node?.trim();
+  if (!node) throw new Error('package.json has no engines.node');
+  return { bun, pnpm, node };
+}
+
+/** `v26.13.0` / `26.13.0` → [26, 13, 0]; null when it is not a version. */
+function versionParts(v: string): [number, number, number] | null {
+  const m = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(v.trim());
+  return m ? [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)] : null;
+}
+
+/**
+ * Whether `version` meets `range` (`>=N[.M[.P]]` or an exact version);
+ * null when the range is neither.
+ */
+export function meetsVersionRange(version: string, range: string): boolean | null {
+  const min = /^>=\s*(.+)$/.exec(range.trim());
+  const want = versionParts(min ? min[1]! : range);
+  if (!want || (!min && !/^v?\d+\.\d+\.\d+$/.test(range.trim()))) return null;
+  const have = versionParts(version);
+  if (!have) return false;
+  const cmp = have[0] - want[0] || have[1] - want[1] || have[2] - want[2];
+  return min ? cmp >= 0 : cmp === 0;
+}
+
+/**
+ * How the server differs from the pins, from `toolchainScript`'s output:
+ * one line per tool, none when all match. A tool that did not answer is a
+ * difference. "Production, CI and dev run the same versions" (CLAUDE.md)
+ * was kept by hand; the server once ran bun 1.3.13 while the repository
+ * said 1.1.38.
+ */
+export function toolchainProblems(output: string, pinned: PinnedToolchain): string[] {
+  const kv = new Map<string, string>();
+  for (const line of output.split('\n')) {
+    const i = line.indexOf('=');
+    if (i > 0) kv.set(line.slice(0, i).trim(), line.slice(i + 1).trim());
+  }
+  const said = (tool: string) => kv.get(tool) || 'no answer';
+  const problems: string[] = [];
+  if (kv.get('bun') !== pinned.bun) {
+    problems.push(
+      `the services' bun (${UNIT_BUN}) is ${said('bun')}; .bun-version pins ${pinned.bun}`,
+    );
+  }
+  if (kv.get('pnpm') !== pinned.pnpm) {
+    problems.push(`the deploy's pnpm is ${said('pnpm')}; packageManager pins ${pinned.pnpm}`);
+  }
+  const nodeOk = meetsVersionRange(kv.get('node') ?? '', pinned.node);
+  if (nodeOk === null) {
+    problems.push(
+      `engines.node "${pinned.node}" is not >=N or an exact version, so it cannot be checked`,
+    );
+  } else if (!nodeOk) {
+    problems.push(`the deploy's node is ${said('node')}; engines.node wants ${pinned.node}`);
+  }
+  return problems;
+}
+
 /** Where compass-backup.sh writes the nightly dumps (BACKUP_DIR there). */
 export const BACKUP_DIR = '/home/ubuntu/compass-backups';
 
