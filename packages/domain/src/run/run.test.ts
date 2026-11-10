@@ -1,166 +1,63 @@
 import { describe, expect, test } from 'bun:test';
 import { applyRun, decideRun, emptyRunState } from './index';
 import { computeRunTotals } from './commands';
-import type { ActorCtx, RunCommand } from './commands';
+import type { RunCommand } from './commands';
 import { fixedClock } from '../shared/clock';
+import {
+  RUN_NOW as NOW,
+  confirmStoreAllOk,
+  confirmStoreItem,
+  confirmer,
+  deliver,
+  planAndPurchase,
+  planRun,
+  purchaseItem,
+  purchaser,
+  revisePurchase,
+  runActor,
+  runStepper,
+} from '../testing';
 
-const NOW = new Date('2026-05-01T08:00:00Z');
 const clock = fixedClock(NOW);
-
-const purchaser = (
-  perms: string[] = ['run.create', 'run.purchase', 'delivery.dispatch', 'run.finish'],
-): ActorCtx => ({
-  userId: 'u1',
-  memberId: 'm1',
-  permissions: new Set(perms),
-});
-
-const confirmer = (): ActorCtx => ({
-  userId: 'u2',
-  memberId: 'm2',
-  permissions: new Set(['delivery.confirm']),
-});
-
-function planAndPurchase(opts?: {
-  plannedQty?: string;
-  purchasedQty?: string;
-  storeSplits?: Array<{
-    storeId: string;
-    qty: string;
-    unitPrice?: string;
-    paymentMethod?: 'cash' | 'transfer';
-  }>;
-}) {
-  const plannedQty = opts?.plannedQty ?? '4';
-  const purchasedQty = opts?.purchasedQty ?? '4';
-  const splits = opts?.storeSplits ?? [{ storeId: 'A', qty: purchasedQty }];
-
-  let state = emptyRunState('run-1');
-  const cmds: RunCommand[] = [
-    {
-      type: 'PlanRun',
-      orgId: 'org-1',
-      runDate: '2026-05-01',
-      runIndex: 0,
-      sessionIds: ['s1'],
-      plannedItems: [{ skuId: 'sku-1', qty: plannedQty }],
-      actor: purchaser(),
-    },
-    { type: 'StartPurchase', actor: purchaser() },
-    {
-      type: 'PurchaseItem',
-      skuId: 'sku-1',
-      supplierId: 'sup-1',
-      unitPrice: '12000',
-      actualQty: purchasedQty,
-      receiptPhotoUrl: null,
-      storeSplits: splits,
-      paymentMethod: 'cash',
-      actor: purchaser(),
-    },
-  ];
-  for (const cmd of cmds) {
-    const evs = decideRun(state, cmd, clock);
-    for (const e of evs) state = applyRun(state, e);
-  }
-  return state;
-}
-
-/**
- * Mark every line still unchecked at `storeId` OK, then confirm the store.
- * DLV-19 (2026-10-30): ConfirmStore no longer writes those OKs itself.
- */
-function confirmStoreAllOk(
-  state: ReturnType<typeof emptyRunState>,
-  storeId: string,
-): ReturnType<typeof emptyRunState> {
-  let s = state;
-  const store = s.stores.get(storeId);
-  for (const item of s.items.values()) {
-    if (item.status !== 'purchased') continue;
-    if (!item.storeSplits.some((sp) => sp.storeId === storeId)) continue;
-    if (store?.itemConfirms.has(item.skuId)) continue;
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId,
-        skuId: item.skuId,
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-  }
-  return decideRun(s, { type: 'ConfirmStore', storeId, actor: confirmer() }, clock).reduce(
-    applyRun,
-    s,
-  );
-}
+const { step, steps } = runStepper(clock);
 
 describe('run.decide', () => {
   test('PlanRun without run.create permission throws forbidden', () => {
     const state = emptyRunState('r1');
-    const noPerm: ActorCtx = { userId: 'x', memberId: 'x', permissions: new Set() };
+    const noPerm = runActor('x', []);
     expect(() =>
-      decideRun(state, {
-        type: 'PlanRun',
-        orgId: 'org',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: noPerm,
-      }),
+      decideRun(
+        state,
+        planRun({ orgId: 'org', plannedItems: [{ skuId: 'k', qty: '1' }], actor: noPerm }),
+      ),
     ).toThrow('run.errors.cannotCreate');
   });
 
   test('PlanRun with empty sessions throws validation', () => {
     const state = emptyRunState('r1');
     expect(() =>
-      decideRun(state, {
-        type: 'PlanRun',
-        orgId: 'org',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: [],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      }),
+      decideRun(
+        state,
+        planRun({ orgId: 'org', sessionIds: [], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+      ),
     ).toThrow('run.errors.noSessions');
   });
 
   test('PurchaseItem auto-emits PurchaseStarted on first call from planned state', () => {
     let state = emptyRunState('r1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+    );
     expect(state.status).toBe('planned');
     const evs = decideRun(
       state,
-      {
-        type: 'PurchaseItem',
+      purchaseItem({
         skuId: 'k',
-        supplierId: null,
         unitPrice: '100',
         actualQty: '1',
-        receiptPhotoUrl: null,
         storeSplits: [{ storeId: 's1', qty: '1' }],
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
+      }),
       clock,
     );
     expect(evs.map((e) => e.type)).toEqual(['PurchaseStarted', 'ItemPurchased']);
@@ -174,19 +71,14 @@ describe('run.decide', () => {
     const revise = (priceConfirmed?: boolean) =>
       decideRun(
         state,
-        {
-          type: 'RevisePurchase',
+        revisePurchase({
           skuId: 'sku-1',
           supplierId: 'sup-1',
           unitPrice: '1200000',
           actualQty: '10',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '10' }],
-          paymentMethod: 'cash',
           reason: 'the price went up',
           ...(priceConfirmed === undefined ? {} : { priceConfirmed }),
-          actor: purchaser(),
-        },
+        }),
         clock,
       )[0]!.payload;
     expect(revise(true)).toMatchObject({ priceConfirmed: true });
@@ -206,17 +98,7 @@ describe('run.decide', () => {
     expect(() =>
       decideRun(
         state,
-        {
-          type: 'PurchaseItem',
-          skuId: 'sku-1',
-          supplierId: 'sup-1',
-          unitPrice: '12000',
-          actualQty: '10',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '10' }],
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
+        purchaseItem({ skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '12000', actualQty: '10' }),
         clock,
       ),
     ).toThrow('run.errors.itemAlreadyPurchased');
@@ -224,37 +106,23 @@ describe('run.decide', () => {
 
   test('PurchaseItem requires storeSplits to sum exactly to actualQty', () => {
     let s = emptyRunState('r1');
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '5' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '5' }] }),
+    );
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     expect(() =>
       decideRun(
         s,
-        {
-          type: 'PurchaseItem',
+        purchaseItem({
           skuId: 'k',
-          supplierId: null,
           unitPrice: '10',
           actualQty: '5',
-          receiptPhotoUrl: null,
           storeSplits: [
             { storeId: 'A', qty: '2' },
             { storeId: 'B', qty: '2' },
           ], // sums to 4, not 5
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
+        }),
         clock,
       ),
     ).toThrow('run.errors.splitSumMismatch');
@@ -262,34 +130,17 @@ describe('run.decide', () => {
 
   test('R2-ENG-2: a line over 1e12 (qty × price) is refused', () => {
     let s = emptyRunState('r');
-    s = decideRun(
-      s,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'k', qty: '5' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, planRun({ orgId: 'o', plannedItems: [{ skuId: 'k', qty: '5' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     const buy = (unitPrice: string, actualQty: string, splitPrice?: string) =>
       decideRun(
         s,
-        {
-          type: 'PurchaseItem',
+        purchaseItem({
           skuId: 'k',
-          supplierId: null,
           unitPrice,
           actualQty,
-          receiptPhotoUrl: null,
           storeSplits: [{ storeId: 'A', qty: actualQty, unitPrice: splitPrice }],
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
+        }),
         clock,
       );
     expect(() => buy('999999999999.99', '999999999')).toThrow('run.errors.lineTooLarge');
@@ -299,46 +150,23 @@ describe('run.decide', () => {
 
   test('allows a second purchaser to record a buy while another purchaser has claimed the run', () => {
     let state = emptyRunState('r1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
-    state = decideRun(state, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(
-      applyRun,
-      state,
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
     );
-    state = decideRun(state, { type: 'ClaimRun', actor: purchaser() }, clock).reduce(
-      applyRun,
-      state,
-    );
+    state = step(state, { type: 'StartPurchase', actor: purchaser() });
+    state = step(state, { type: 'ClaimRun', actor: purchaser() });
 
-    const secondPurchaser: ActorCtx = {
-      userId: 'u2',
-      memberId: 'm2',
-      permissions: new Set(['run.purchase']),
-    };
+    const secondPurchaser = runActor('m2', ['run.purchase'], 'u2');
     const events = decideRun(
       state,
-      {
-        type: 'PurchaseItem',
+      purchaseItem({
         skuId: 'k',
-        supplierId: null,
         unitPrice: '100',
         actualQty: '1',
-        receiptPhotoUrl: null,
         storeSplits: [{ storeId: 's1', qty: '1' }],
-        paymentMethod: 'cash',
         actor: secondPurchaser,
-      },
+      }),
       clock,
     );
 
@@ -348,20 +176,11 @@ describe('run.decide', () => {
 
   test('MarkUnavailable requires non-empty note', () => {
     let s = emptyRunState('r1');
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+    );
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     expect(() =>
       decideRun(s, { type: 'MarkUnavailable', skuId: 'k', note: '   ', actor: purchaser() }, clock),
     ).toThrow('run.errors.unavailableNoteRequired');
@@ -369,19 +188,10 @@ describe('run.decide', () => {
 
   test('MarkUnavailable is limited to live purchase phases and freezes terminal runs', () => {
     let planned = emptyRunState('mark-unavailable-phase');
-    planned = decideRun(
+    planned = step(
       planned,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, planned);
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+    );
 
     // Preserve the existing first-action behaviour: marking unavailable is
     // legal while planned as well as after StartPurchase.
@@ -420,24 +230,16 @@ describe('run.decide', () => {
     ).toThrow('run.errors.itemNotPending');
 
     let unavailable = emptyRunState('mark-unavailable-repeat');
-    unavailable = decideRun(
+    unavailable = step(
       unavailable,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, unavailable);
-    unavailable = decideRun(
-      unavailable,
-      { type: 'MarkUnavailable', skuId: 'k', note: 'sold out', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, unavailable);
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+    );
+    unavailable = step(unavailable, {
+      type: 'MarkUnavailable',
+      skuId: 'k',
+      note: 'sold out',
+      actor: purchaser(),
+    });
     expect(() =>
       decideRun(
         unavailable,
@@ -449,19 +251,10 @@ describe('run.decide', () => {
 
   test('MarkUnavailable explicitly permits only run.amend holders while amending', () => {
     let planned = emptyRunState('mark-unavailable-amending');
-    planned = decideRun(
+    planned = step(
       planned,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, planned);
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+    );
     const amending = { ...planned, status: 'amending' as const };
 
     expect(() =>
@@ -490,11 +283,12 @@ describe('run.decide', () => {
   // market, after which PurchaseItem rejects everything.
   test('StartDelivery is forbidden without run.purchase', () => {
     const s = planAndPurchase();
-    const shopStaff: ActorCtx = {
-      userId: 'staff',
-      memberId: 'staff',
-      permissions: new Set(['order.draft', 'order.submit', 'delivery.confirm', 'sales.record']),
-    };
+    const shopStaff = runActor('staff', [
+      'order.draft',
+      'order.submit',
+      'delivery.confirm',
+      'sales.record',
+    ]);
     expect(() => decideRun(s, { type: 'StartDelivery', actor: shopStaff }, clock)).toThrow(
       'run.errors.cannotPurchase',
     );
@@ -516,38 +310,27 @@ describe('run.decide', () => {
 
   test('StartDelivery requires all items handled', () => {
     let s = emptyRunState('r1');
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'PlanRun',
+      planRun({
         orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
         sessionIds: ['s'],
         plannedItems: [
           { skuId: 'a', qty: '1' },
           { skuId: 'b', qty: '1' },
         ],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(
+      }),
+    );
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
+    s = step(
       s,
-      {
-        type: 'PurchaseItem',
+      purchaseItem({
         skuId: 'a',
-        supplierId: null,
         unitPrice: '1',
         actualQty: '1',
-        receiptPhotoUrl: null,
         storeSplits: [{ storeId: 's1', qty: '1' }],
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+      }),
+    );
     // sku b still pending → StartDelivery should fail.
     expect(() => decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow(
       'run.errors.itemsPending',
@@ -556,25 +339,9 @@ describe('run.decide', () => {
 
   test('ConfirmStoreItem with non-ok status requires note', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(() =>
-      decideRun(
-        s,
-        {
-          type: 'ConfirmStoreItem',
-          storeId: 'A',
-          skuId: 'sku-1',
-          status: 'short',
-          note: '',
-          photoUrl: null,
-          actor: confirmer(),
-        },
-        clock,
-      ),
+      decideRun(s, confirmStoreItem({ skuId: 'sku-1', status: 'short', note: '' }), clock),
     ).toThrow('run.errors.confirmNoteRequiredOnIssue');
   });
 
@@ -585,28 +352,8 @@ describe('run.decide', () => {
         { storeId: 'B', qty: '2' },
       ],
     });
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'B', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s, ['A', 'B']);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     // store B not yet confirmed
     expect(() => decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock)).toThrow(
@@ -616,56 +363,20 @@ describe('run.decide', () => {
 
   test('full happy path lands in finished status', () => {
     let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
-    s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'FinishRun', actor: purchaser() });
     expect(s.status).toBe('finished');
     expect(s.finishedAt).toEqual(NOW);
   });
 
   test('super-admin amends a finished run: reopen → revise price → refinalize keeps cash+transfer=total', () => {
-    const superAdmin = (): ActorCtx => ({
-      userId: 'sa',
-      memberId: 'sa',
-      permissions: new Set(['run.purchase', 'run.amend']),
-    });
+    const superAdmin = () => runActor('sa', ['run.purchase', 'run.amend']);
     // Drive sku-1 (qty 4 @ 12,000 cash) all the way to finished → total 48,000.
     let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     s = finishEvs.reduce(applyRun, s);
@@ -681,57 +392,38 @@ describe('run.decide', () => {
     expect(() =>
       decideRun(
         s,
-        {
-          type: 'RevisePurchase',
-          skuId: 'sku-1',
-          supplierId: 'sup-1',
-          unitPrice: '15000',
-          actualQty: '4',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '4' }],
-          reason: 'x',
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
+        revisePurchase({ skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '15000', actualQty: '4' }),
         clock,
       ),
     ).toThrow('run.errors.runFrozen');
 
     // Super-admin reopens the finished run.
-    s = decideRun(
-      s,
-      { type: 'ReopenRun', reason: 'wrong unit price typed', actor: superAdmin() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, { type: 'ReopenRun', reason: 'wrong unit price typed', actor: superAdmin() });
     expect(s.status).toBe('amending');
 
     // Correct the price 12,000 → 15,000 — allowed even though store A was
     // already delivered + confirmed (the amending delivered-guard skip).
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'RevisePurchase',
+      revisePurchase({
         skuId: 'sku-1',
         supplierId: 'sup-1',
         unitPrice: '15000',
         actualQty: '4',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '4' }],
         reason: 'corrected unit price',
-        paymentMethod: 'cash',
         actor: superAdmin(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+      }),
+    );
     expect(s.items.get('sku-1')?.unitPrice).toBe('15000');
 
     // DLV-3: a purchase undone during the correction leaves the item
     // pending, and the run cannot close until it is handled.
-    const undone = decideRun(
-      s,
-      { type: 'UndoPurchase', skuId: 'sku-1', reason: 'check', actor: superAdmin() },
-      clock,
-    ).reduce(applyRun, s);
+    const undone = step(s, {
+      type: 'UndoPurchase',
+      skuId: 'sku-1',
+      reason: 'check',
+      actor: superAdmin(),
+    });
     expect(() => decideRun(undone, { type: 'RefinalizeRun', actor: superAdmin() }, clock)).toThrow(
       'run.errors.itemsPending',
     );
@@ -758,128 +450,51 @@ describe('run.decide', () => {
     // super-admin who reopened a finished run to add a buy they had
     // missed hit `runFrozen`, and the workaround was blocked too
     // (AddPurchaserItem refuses an SKU already in the run).
-    const sa: ActorCtx = {
-      userId: 'sa',
-      memberId: 'sa',
-      permissions: new Set(['run.amend', 'run.purchase']),
-    };
+    const sa = runActor('sa', ['run.amend', 'run.purchase']);
     // Two planned items; only sku-1 gets bought, sku-2 is marked
     // unavailable — the exact shape that used to dead-end.
-    let s = emptyRunState('run-amend-purchase');
-    for (const cmd of [
-      {
-        type: 'PlanRun' as const,
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
+    let s = steps(emptyRunState('run-amend-purchase'), [
+      planRun({
         plannedItems: [
           { skuId: 'sku-1', qty: '4' },
           { skuId: 'sku-2', qty: '1' },
         ],
-        actor: purchaser(),
-      },
-      { type: 'StartPurchase' as const, actor: purchaser() },
-      {
-        type: 'PurchaseItem' as const,
-        skuId: 'sku-1',
-        supplierId: 'sup-1',
-        unitPrice: '12000',
-        actualQty: '4',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '4' }],
-        paymentMethod: 'cash' as const,
-        actor: purchaser(),
-      },
-      {
-        type: 'MarkUnavailable' as const,
-        skuId: 'sku-2',
-        note: 'out of stock',
-        actor: purchaser(),
-      },
-      { type: 'StartDelivery' as const, actor: purchaser() },
-      { type: 'DeliverToStore' as const, storeId: 'A', actor: purchaser() },
-      {
-        type: 'ConfirmStoreItem' as const,
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok' as const,
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      { type: 'ConfirmStore' as const, storeId: 'A', actor: confirmer() },
-      { type: 'FinishRun' as const, actor: purchaser() },
-    ]) {
-      s = decideRun(s, cmd, clock).reduce(applyRun, s);
-    }
+      }),
+      { type: 'StartPurchase', actor: purchaser() },
+      purchaseItem({ skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '12000', actualQty: '4' }),
+      { type: 'MarkUnavailable', skuId: 'sku-2', note: 'out of stock', actor: purchaser() },
+      { type: 'StartDelivery', actor: purchaser() },
+      { type: 'DeliverToStore', storeId: 'A', actor: purchaser() },
+      confirmStoreItem({ skuId: 'sku-1' }),
+      { type: 'ConfirmStore', storeId: 'A', actor: confirmer() },
+      { type: 'FinishRun', actor: purchaser() },
+    ]).state;
     expect(s.status).toBe('finished');
 
     // Frozen while finished, for everyone.
     expect(() =>
       decideRun(
         s,
-        {
-          type: 'PurchaseItem',
-          skuId: 'sku-2',
-          supplierId: null,
-          unitPrice: '900',
-          actualQty: '1',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '1' }],
-          paymentMethod: 'cash',
-          actor: sa,
-        },
+        purchaseItem({ skuId: 'sku-2', unitPrice: '900', actualQty: '1', actor: sa }),
         clock,
       ),
     ).toThrow('run.errors.runFrozen');
 
-    s = decideRun(s, { type: 'ReopenRun', reason: 'missed a buy', actor: sa }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = step(s, { type: 'ReopenRun', reason: 'missed a buy', actor: sa });
     expect(s.status).toBe('amending');
 
     // Now it goes through — this is the line that used to throw.
-    s = decideRun(
-      s,
-      {
-        type: 'PurchaseItem',
-        skuId: 'sku-2',
-        supplierId: null,
-        unitPrice: '900',
-        actualQty: '1',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '1' }],
-        paymentMethod: 'cash',
-        actor: sa,
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, purchaseItem({ skuId: 'sku-2', unitPrice: '900', actualQty: '1', actor: sa }));
     expect(s.items.get('sku-2')?.unitPrice).toBe('900');
 
     // Still closed to an actor without run.amend, even while amending.
     expect(() =>
-      decideRun(
-        s,
-        {
-          type: 'PurchaseItem',
-          skuId: 'sku-1',
-          supplierId: null,
-          unitPrice: '1',
-          actualQty: '1',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '1' }],
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
-        clock,
-      ),
+      decideRun(s, purchaseItem({ skuId: 'sku-1', unitPrice: '1', actualQty: '1' }), clock),
     ).toThrow('run.errors.runFrozen');
   });
 
   test('ChangeRunDate moves the booking date without touching money', () => {
-    const sa: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };
+    const sa = runActor('sa', ['run.amend']);
     let s = planAndPurchase();
     const before = s.runDate;
     const totalsBefore = [...s.items.values()].map((i) => i.unitPrice);
@@ -914,7 +529,7 @@ describe('run.decide', () => {
   });
 
   test('ChangeRunDate carries the run number on the new day (2026-10-23)', () => {
-    const sa: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };
+    const sa = runActor('sa', ['run.amend']);
     let s = planAndPurchase();
     expect(s.runIndex).toBe(0);
     const evs = decideRun(
@@ -936,11 +551,7 @@ describe('run.decide', () => {
 
   test('RefinalizeRun rejected unless status is amending', () => {
     let s = planAndPurchase();
-    const superAdmin: ActorCtx = {
-      userId: 'sa',
-      memberId: 'sa',
-      permissions: new Set(['run.amend']),
-    };
+    const superAdmin = runActor('sa', ['run.amend']);
     expect(() => decideRun(s, { type: 'RefinalizeRun', actor: superAdmin }, clock)).toThrow(
       'run.errors.notRefinalizable',
     );
@@ -980,7 +591,7 @@ describe('run.decide', () => {
 
   test('DeliverToStore is a no-op for a store that is already delivered', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     const deliver = { type: 'DeliverToStore', storeId: 'A', actor: purchaser() } as const;
     const first = decideRun(s, deliver, clock);
     expect(first.map((e) => e.type)).toEqual(['StoreDelivered']);
@@ -995,11 +606,7 @@ describe('run.decide', () => {
         { storeId: 'B', qty: '2' },
       ],
     });
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     // DLV-6 (2026-10-30): delivered but not yet confirmed is refused too —
     // recall the delivery first.
     expect(() =>
@@ -1013,10 +620,7 @@ describe('run.decide', () => {
 
   test('CancelRun is refused on a run that is already cancelled', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = step(s, { type: 'CancelRun', reason: '', actor: purchaser() });
     expect(() =>
       decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock),
     ).toThrow('run.errors.runFrozen');
@@ -1024,26 +628,10 @@ describe('run.decide', () => {
 
   test('CancelRun blocked after finished', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
-    s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'FinishRun', actor: purchaser() });
     expect(() =>
       decideRun(s, { type: 'CancelRun', reason: 'oops', actor: purchaser() }, clock),
     ).toThrow('run.errors.alreadyFinished');
@@ -1059,22 +647,17 @@ describe('run.decide', () => {
 describe('run.reversals', () => {
   test('RevisePurchase updates qty/price/splits while purchasing', () => {
     let s = planAndPurchase({ purchasedQty: '4' });
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'RevisePurchase',
+      revisePurchase({
         skuId: 'sku-1',
         supplierId: 'sup-1',
         unitPrice: '15000',
         actualQty: '5',
         receiptPhotoUrl: 'https://x/y',
-        storeSplits: [{ storeId: 'A', qty: '5' }],
         reason: 'price misread on receipt',
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+      }),
+    );
     const item = s.items.get('sku-1')!;
     expect(item.unitPrice).toBe('15000');
     expect(item.purchasedQty).toBe('5');
@@ -1084,99 +667,33 @@ describe('run.reversals', () => {
 
   test('RevisePurchase rejected on a still-pending item', () => {
     let s = emptyRunState('run-1');
-    s = decideRun(
-      s,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     expect(() =>
-      decideRun(
-        s,
-        {
-          type: 'RevisePurchase',
-          skuId: 'sku-1',
-          supplierId: null,
-          unitPrice: '1',
-          actualQty: '4',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '4' }],
-          reason: 'x',
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
-        clock,
-      ),
+      decideRun(s, revisePurchase({ skuId: 'sku-1', unitPrice: '1', actualQty: '4' }), clock),
     ).toThrow('run.errors.notRevisable');
   });
 
   test('RevisePurchase of quantities blocked once the destination store has accepted', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(() =>
-      decideRun(
-        s,
-        {
-          type: 'RevisePurchase',
-          skuId: 'sku-1',
-          supplierId: null,
-          unitPrice: '1',
-          actualQty: '3',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '3' }],
-          reason: 'x',
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
-        clock,
-      ),
+      decideRun(s, revisePurchase({ skuId: 'sku-1', unitPrice: '1', actualQty: '3' }), clock),
     ).toThrow('run.errors.cannotReviseAfterDelivery');
   });
 
   test('UnmarkUnavailable flips unavailable → pending', () => {
     let s = emptyRunState('run-1');
-    s = decideRun(
-      s,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      { type: 'MarkUnavailable', skuId: 'sku-1', note: 'sold out', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
+    s = step(s, { type: 'MarkUnavailable', skuId: 'sku-1', note: 'sold out', actor: purchaser() });
     expect(s.items.get('sku-1')!.status).toBe('unavailable');
-    s = decideRun(
-      s,
-      {
-        type: 'UnmarkUnavailable',
-        skuId: 'sku-1',
-        reason: 'found another supplier',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'UnmarkUnavailable',
+      skuId: 'sku-1',
+      reason: 'found another supplier',
+      actor: purchaser(),
+    });
     expect(s.items.get('sku-1')!.status).toBe('pending');
     expect(s.items.get('sku-1')!.unavailableNote).toBeNull();
   });
@@ -1194,40 +711,21 @@ describe('run.reversals', () => {
 
   test('UndeliverStore rolls back StoreDelivered before confirm', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(s.stores.get('A')?.deliveredAt).not.toBeNull();
-    s = decideRun(
-      s,
-      { type: 'UndeliverStore', storeId: 'A', reason: 'wrong store', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'UndeliverStore',
+      storeId: 'A',
+      reason: 'wrong store',
+      actor: purchaser(),
+    });
     expect(s.stores.get('A')?.deliveredAt).toBeNull();
   });
 
   test('UndeliverStore rejected after store confirmed', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     expect(() =>
       decideRun(
@@ -1240,49 +738,20 @@ describe('run.reversals', () => {
 
   test('UndoStartPurchase reverts to planned when nothing has been bought', () => {
     let s = emptyRunState('run-1');
-    s = decideRun(
-      s,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     expect(s.status).toBe('purchasing');
-    s = decideRun(
-      s,
-      { type: 'UndoStartPurchase', reason: 'tapped by mistake', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, { type: 'UndoStartPurchase', reason: 'tapped by mistake', actor: purchaser() });
     expect(s.status).toBe('planned');
   });
 
   test('StartPurchase without run.purchase permission throws (M3.33 #11)', () => {
     let s = emptyRunState('r1');
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'PlanRun',
-        orgId: 'o',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s'],
-        plannedItems: [{ skuId: 'k', qty: '1' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    const noPurchasePerm: ActorCtx = {
-      userId: 'u-x',
-      memberId: 'm-x',
-      permissions: new Set(['run.create']),
-    };
+      planRun({ orgId: 'o', sessionIds: ['s'], plannedItems: [{ skuId: 'k', qty: '1' }] }),
+    );
+    const noPurchasePerm = runActor('m-x', ['run.create'], 'u-x');
     expect(() => decideRun(s, { type: 'StartPurchase', actor: noPurchasePerm }, clock)).toThrow(
       'run.errors.cannotPurchase',
     );
@@ -1290,22 +759,12 @@ describe('run.reversals', () => {
 
   test('PurchaseItem blocked when run.status === delivering (M3.33 #12)', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     expect(s.status).toBe('delivering');
     expect(() =>
       decideRun(
         s,
-        {
-          type: 'PurchaseItem',
-          skuId: 'sku-1',
-          supplierId: 'sup-1',
-          unitPrice: '5000',
-          actualQty: '2',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '2' }],
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
+        purchaseItem({ skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '5000', actualQty: '2' }),
         clock,
       ),
     ).toThrow('run.errors.runFrozen');
@@ -1316,35 +775,22 @@ describe('run.reversals', () => {
     // demand is sku-1 +2 and sku-2 +3. Expect plannedQty(sku-1)=6,
     // pending row created for sku-2, sessionIds extended.
     let state = emptyRunState('run-1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['sess-A'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+      planRun({ sessionIds: ['sess-A'], plannedItems: [{ skuId: 'sku-1', qty: '4' }] }),
+    );
     expect(state.sessionIds).toEqual(['sess-A']);
     expect(state.items.get('sku-1')?.plannedQty).toBe('4');
 
-    state = decideRun(
-      state,
-      {
-        type: 'AttachSessions',
-        sessionIds: ['sess-B'],
-        addedPlannedItems: [
-          { skuId: 'sku-1', qty: '2' },
-          { skuId: 'sku-2', qty: '3' },
-        ],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, {
+      type: 'AttachSessions',
+      sessionIds: ['sess-B'],
+      addedPlannedItems: [
+        { skuId: 'sku-1', qty: '2' },
+        { skuId: 'sku-2', qty: '3' },
+      ],
+      actor: purchaser(),
+    });
 
     expect(state.sessionIds).toEqual(['sess-A', 'sess-B']);
     expect(state.items.get('sku-1')?.plannedQty).toBe('6');
@@ -1361,19 +807,15 @@ describe('run.reversals', () => {
     expect(state.status).toBe('purchasing');
     expect(state.items.get('sku-1')?.status).toBe('purchased');
 
-    state = decideRun(
-      state,
-      {
-        type: 'AttachSessions',
-        sessionIds: ['sess-late'],
-        addedPlannedItems: [
-          { skuId: 'sku-1', qty: '2' },
-          { skuId: 'sku-2', qty: '5' },
-        ],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, {
+      type: 'AttachSessions',
+      sessionIds: ['sess-late'],
+      addedPlannedItems: [
+        { skuId: 'sku-1', qty: '2' },
+        { skuId: 'sku-2', qty: '5' },
+      ],
+      actor: purchaser(),
+    });
 
     const sku1 = state.items.get('sku-1')!;
     expect(sku1.plannedQty).toBe('6');
@@ -1384,19 +826,10 @@ describe('run.reversals', () => {
 
   test('AttachSessions rejects duplicate session ids', () => {
     let state = emptyRunState('run-1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['sess-A'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+      planRun({ sessionIds: ['sess-A'], plannedItems: [{ skuId: 'sku-1', qty: '4' }] }),
+    );
     expect(() =>
       decideRun(
         state,
@@ -1413,10 +846,7 @@ describe('run.reversals', () => {
 
   test('AttachSessions blocked once delivering', () => {
     let state = planAndPurchase();
-    state = decideRun(state, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(
-      applyRun,
-      state,
-    );
+    state = step(state, { type: 'StartDelivery', actor: purchaser() });
     expect(state.status).toBe('delivering');
     expect(() =>
       decideRun(
@@ -1434,37 +864,27 @@ describe('run.reversals', () => {
 
   test('EjectSession removes one session demand from a mutable run', () => {
     let state = emptyRunState('run-1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
+      planRun({
         sessionIds: ['sess-A', 'sess-B'],
         plannedItems: [
           { skuId: 'sku-1', qty: '7' },
           { skuId: 'sku-2', qty: '3' },
         ],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+      }),
+    );
 
-    state = decideRun(
-      state,
-      {
-        type: 'EjectSession',
-        sessionId: 'sess-B',
-        removedPlannedItems: [
-          { skuId: 'sku-1', qty: '2' },
-          { skuId: 'sku-2', qty: '3' },
-        ],
-        reason: 'approved by mistake',
-        actor: purchaser(['run.eject_session']),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, {
+      type: 'EjectSession',
+      sessionId: 'sess-B',
+      removedPlannedItems: [
+        { skuId: 'sku-1', qty: '2' },
+        { skuId: 'sku-2', qty: '3' },
+      ],
+      reason: 'approved by mistake',
+      actor: purchaser(['run.eject_session']),
+    });
 
     expect(state.sessionIds).toEqual(['sess-A']);
     expect(state.items.get('sku-1')?.plannedQty).toBe('5');
@@ -1475,42 +895,26 @@ describe('run.reversals', () => {
     const empty = emptyRunState('run-1');
     const plan = decideRun(
       empty,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['sess-A', 'sess-B'],
-        plannedItems: [{ skuId: 'sku-1', qty: '0.1' }],
-        actor: purchaser(),
-      },
+      planRun({ sessionIds: ['sess-A', 'sess-B'], plannedItems: [{ skuId: 'sku-1', qty: '0.1' }] }),
       clock,
     );
     let state = plan.reduce(applyRun, empty);
-    state = decideRun(
-      state,
-      {
-        type: 'AttachSessions',
-        sessionIds: ['sess-C'],
-        addedPlannedItems: [{ skuId: 'sku-1', qty: '0.2' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, {
+      type: 'AttachSessions',
+      sessionIds: ['sess-C'],
+      addedPlannedItems: [{ skuId: 'sku-1', qty: '0.2' }],
+      actor: purchaser(),
+    });
     // As floats: "0.30000000000000004".
     expect(state.items.get('sku-1')?.plannedQty).toBe('0.3');
 
-    state = decideRun(
-      state,
-      {
-        type: 'EjectSession',
-        sessionId: 'sess-C',
-        removedPlannedItems: [{ skuId: 'sku-1', qty: '0.2' }],
-        reason: 'approved by mistake',
-        actor: purchaser(['run.eject_session']),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, {
+      type: 'EjectSession',
+      sessionId: 'sess-C',
+      removedPlannedItems: [{ skuId: 'sku-1', qty: '0.2' }],
+      reason: 'approved by mistake',
+      actor: purchaser(['run.eject_session']),
+    });
     // As floats: "0.10000000000000003".
     expect(state.items.get('sku-1')?.plannedQty).toBe('0.1');
 
@@ -1531,38 +935,12 @@ describe('run.reversals', () => {
 
   test('EjectSession rejects touched SKUs', () => {
     let state = emptyRunState('run-1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['sess-A', 'sess-B'],
-        plannedItems: [{ skuId: 'sku-1', qty: '7' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
-    state = decideRun(state, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(
-      applyRun,
-      state,
+      planRun({ sessionIds: ['sess-A', 'sess-B'], plannedItems: [{ skuId: 'sku-1', qty: '7' }] }),
     );
-    state = decideRun(
-      state,
-      {
-        type: 'PurchaseItem',
-        skuId: 'sku-1',
-        supplierId: null,
-        unitPrice: '1000',
-        actualQty: '7',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '7' }],
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, { type: 'StartPurchase', actor: purchaser() });
+    state = step(state, purchaseItem({ skuId: 'sku-1', unitPrice: '1000', actualQty: '7' }));
 
     expect(() =>
       decideRun(
@@ -1580,30 +958,17 @@ describe('run.reversals', () => {
 
   test('EjectSession can remove a submission with only extra items', () => {
     let state = emptyRunState('run-1');
-    state = decideRun(
+    state = step(
       state,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['sess-A', 'sess-B'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, state);
+      planRun({ sessionIds: ['sess-A', 'sess-B'], plannedItems: [{ skuId: 'sku-1', qty: '4' }] }),
+    );
 
-    state = decideRun(
-      state,
-      {
-        type: 'EjectSession',
-        sessionId: 'sess-B',
-        removedPlannedItems: [],
-        actor: purchaser(['run.eject_session']),
-      },
-      clock,
-    ).reduce(applyRun, state);
+    state = step(state, {
+      type: 'EjectSession',
+      sessionId: 'sess-B',
+      removedPlannedItems: [],
+      actor: purchaser(['run.eject_session']),
+    });
 
     expect(state.sessionIds).toEqual(['sess-A']);
     expect(state.items.get('sku-1')?.plannedQty).toBe('4');
@@ -1621,11 +986,11 @@ describe('run.reversals', () => {
     expect(purchasedBefore.status).toBe('purchased');
     expect(purchasedBefore.purchasedQty).toBe('4');
 
-    s = decideRun(
-      s,
-      { type: 'UndoStartPurchase', reason: 'need to add another session', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'UndoStartPurchase',
+      reason: 'need to add another session',
+      actor: purchaser(),
+    });
 
     expect(s.status).toBe('planned');
     const after = s.items.get('sku-1')!;
@@ -1637,30 +1002,22 @@ describe('run.reversals', () => {
     // Restarting purchase should be a no-op for the already-purchased
     // item: it stays ✓, and the purchaser only sees pending rows left
     // to handle.
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     expect(s.status).toBe('purchasing');
     expect(s.items.get('sku-1')!.status).toBe('purchased');
   });
 
   test('UndoStartDelivery reverts to purchasing when no store has been delivered to', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     expect(s.status).toBe('delivering');
-    s = decideRun(
-      s,
-      { type: 'UndoStartDelivery', reason: 'forgot to mark a SKU', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, { type: 'UndoStartDelivery', reason: 'forgot to mark a SKU', actor: purchaser() });
     expect(s.status).toBe('purchasing');
   });
 
   test('UndoStartDelivery blocked after first store delivered', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(() =>
       decideRun(s, { type: 'UndoStartDelivery', reason: 'x', actor: purchaser() }, clock),
     ).toThrow('run.errors.deliveryAlreadyProgressed');
@@ -1672,73 +1029,25 @@ describe('run.reversals', () => {
     // a duplicate StoreItemConfirmed event. Now the second decide
     // returns [] so nothing extra is appended.
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    const dup = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    );
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
+    const dup = decideRun(s, confirmStoreItem({ skuId: 'sku-1' }), clock);
     expect(dup).toEqual([]);
   });
 
   test('ConfirmStoreItem with different status emits a new event (issue overrides ok)', () => {
     // Going from "ok" to "short" is a real change and SHOULD append.
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     const next = decideRun(
       s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
+      confirmStoreItem({
         skuId: 'sku-1',
         status: 'short',
         note: 'one bag missing',
-        photoUrl: null,
         receivedQty: '3',
-        actor: confirmer(),
-      },
+      }),
       clock,
     );
     expect(next.length).toBe(1);
@@ -1749,24 +1058,8 @@ describe('run.reversals', () => {
     // The user reported tapping "Confirm store" 5 times — log showed
     // 5 StoreConfirmed events. Now the second decide returns [].
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'sku-1',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     const dup = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock);
     expect(dup).toEqual([]);
@@ -1774,11 +1067,7 @@ describe('run.reversals', () => {
 
   test('ConfirmStore is refused while a line is unchecked (DLV-19)', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     // It used to write an "ok" for the line nobody had checked.
     expect(() =>
       decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
@@ -1790,15 +1079,8 @@ describe('run.reversals', () => {
 
   test('ConfirmStore is blocked after a run is cancelled or finished', () => {
     let delivering = planAndPurchase();
-    delivering = decideRun(delivering, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(
-      applyRun,
-      delivering,
-    );
-    delivering = decideRun(
-      delivering,
-      { type: 'DeliverToStore', storeId: 'A', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, delivering);
+    delivering = step(delivering, { type: 'StartDelivery', actor: purchaser() });
+    delivering = step(delivering, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() });
 
     // DLV-6 (2026-10-30): CancelRun now refuses a delivered run, but
     // streams written before that may hold one; the guard must hold there.
@@ -1816,10 +1098,7 @@ describe('run.reversals', () => {
     ).toThrow('run.errors.notDelivering');
 
     let finished = confirmStoreAllOk(delivering, 'A');
-    finished = decideRun(finished, { type: 'FinishRun', actor: purchaser() }, clock).reduce(
-      applyRun,
-      finished,
-    );
+    finished = step(finished, { type: 'FinishRun', actor: purchaser() });
     expect(() =>
       decideRun(finished, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
     ).toThrow('run.errors.notDelivering');
@@ -1828,11 +1107,12 @@ describe('run.reversals', () => {
   test('UndoPurchase reverts a purchased item back to pending', () => {
     let s = planAndPurchase();
     expect(s.items.get('sku-1')!.status).toBe('purchased');
-    s = decideRun(
-      s,
-      { type: 'UndoPurchase', skuId: 'sku-1', reason: 'mistapped wrong row', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'UndoPurchase',
+      skuId: 'sku-1',
+      reason: 'mistapped wrong row',
+      actor: purchaser(),
+    });
     const item = s.items.get('sku-1')!;
     expect(item.status).toBe('pending');
     expect(item.purchasedQty).toBeNull();
@@ -1842,20 +1122,8 @@ describe('run.reversals', () => {
 
   test('UndoPurchase rejected on a still-pending item', () => {
     let s = emptyRunState('run-1');
-    s = decideRun(
-      s,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     expect(() =>
       decideRun(
         s,
@@ -1870,22 +1138,19 @@ describe('run.reversals', () => {
   // with it still pending.
   test('nothing goes back to "to buy" once delivery has started', () => {
     let s = planAndPurchase();
-    s = decideRun(
-      s,
-      {
-        type: 'AttachSessions',
-        sessionIds: ['s2'],
-        addedPlannedItems: [{ skuId: 'sku-2', qty: '1' }],
-        actor: purchaser(),
-      } as RunCommand,
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      { type: 'MarkUnavailable', skuId: 'sku-2', note: 'none today', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, {
+      type: 'AttachSessions',
+      sessionIds: ['s2'],
+      addedPlannedItems: [{ skuId: 'sku-2', qty: '1' }],
+      actor: purchaser(),
+    } as RunCommand);
+    s = step(s, {
+      type: 'MarkUnavailable',
+      skuId: 'sku-2',
+      note: 'none today',
+      actor: purchaser(),
+    });
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     expect(() =>
       decideRun(
         s,
@@ -1901,11 +1166,11 @@ describe('run.reversals', () => {
       ),
     ).toThrow('run.errors.listFrozenWhileDelivering');
     // Back to purchase first, and both work again.
-    s = decideRun(
-      s,
-      { type: 'UndoStartDelivery', reason: 'one more', actor: purchaser() } as RunCommand,
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'UndoStartDelivery',
+      reason: 'one more',
+      actor: purchaser(),
+    } as RunCommand);
     expect(
       decideRun(
         s,
@@ -1917,11 +1182,7 @@ describe('run.reversals', () => {
 
   test('UndoPurchase blocked after store has accepted delivery', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(() =>
       decideRun(
         s,
@@ -1936,27 +1197,12 @@ describe('run.reversals', () => {
     expect(() =>
       decideRun(
         s,
-        {
-          type: 'RevisePurchase',
-          skuId: 'sku-1',
-          supplierId: null,
-          unitPrice: '1',
-          actualQty: '4',
-          receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '4' }],
-          reason: '   ',
-          paymentMethod: 'cash',
-          actor: purchaser(),
-        },
+        revisePurchase({ skuId: 'sku-1', unitPrice: '1', actualQty: '4', reason: '   ' }),
         clock,
       ),
     ).toThrow('run.errors.reviseReasonRequired');
 
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(() =>
       decideRun(s, { type: 'UndeliverStore', storeId: 'A', reason: '', actor: purchaser() }, clock),
     ).toThrow('run.errors.recallReasonRequired');
@@ -1972,23 +1218,16 @@ describe('run.reversals', () => {
 describe('run.paymentMethod', () => {
   function planTwoSkus(): import('./state').RunState {
     let s = emptyRunState('run-1');
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
+      planRun({
         plannedItems: [
           { skuId: 'apple', qty: '3' },
           { skuId: 'beef', qty: '2' },
         ],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+      }),
+    );
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
     return s;
   }
 
@@ -1996,17 +1235,7 @@ describe('run.paymentMethod', () => {
     let s = planTwoSkus();
     const evs = decideRun(
       s,
-      {
-        type: 'PurchaseItem',
-        skuId: 'apple',
-        supplierId: null,
-        unitPrice: '1000',
-        actualQty: '3',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '3' }],
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
+      purchaseItem({ skuId: 'apple', unitPrice: '1000', actualQty: '3' }),
       clock,
     );
     const purchased = evs.find((e) => e.type === 'ItemPurchased');
@@ -2021,67 +1250,19 @@ describe('run.paymentMethod', () => {
 
   test('FinishRun aggregates cash + transfer totals separately', () => {
     let s = planTwoSkus();
-    s = decideRun(
+    s = step(s, purchaseItem({ skuId: 'apple', unitPrice: '1000', actualQty: '3' }));
+    s = step(
       s,
-      {
-        type: 'PurchaseItem',
-        skuId: 'apple',
-        supplierId: null,
-        unitPrice: '1000',
-        actualQty: '3',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '3' }],
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      {
-        type: 'PurchaseItem',
+      purchaseItem({
         skuId: 'beef',
-        supplierId: null,
         unitPrice: '50000',
         actualQty: '2',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '2' }],
         paymentMethod: 'transfer',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
+      }),
     );
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'apple',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      {
-        type: 'ConfirmStoreItem',
-        storeId: 'A',
-        skuId: 'beef',
-        status: 'ok',
-        note: null,
-        photoUrl: null,
-        actor: confirmer(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = deliver(s);
+    s = step(s, confirmStoreItem({ skuId: 'apple' }));
+    s = step(s, confirmStoreItem({ skuId: 'beef' }));
     s = confirmStoreAllOk(s, 'A');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     expect(finishEvs).toHaveLength(1);
@@ -2103,15 +1284,7 @@ describe('run.paymentMethod', () => {
         { storeId: 'B', qty: '2', unitPrice: '1200', paymentMethod: 'transfer' },
       ],
     });
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'B', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s, ['A', 'B']);
     s = confirmStoreAllOk(s, 'A');
     s = confirmStoreAllOk(s, 'B');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
@@ -2173,62 +1346,37 @@ describe('run.paymentMethod', () => {
 
   test('RevisePurchase can flip cash → transfer (and vice versa)', () => {
     let s = planTwoSkus();
-    s = decideRun(
+    s = step(s, purchaseItem({ skuId: 'apple', unitPrice: '1000', actualQty: '3' }));
+    s = step(
       s,
-      {
-        type: 'PurchaseItem',
+      revisePurchase({
         skuId: 'apple',
-        supplierId: null,
         unitPrice: '1000',
         actualQty: '3',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '3' }],
-        paymentMethod: 'cash',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      {
-        type: 'RevisePurchase',
-        skuId: 'apple',
-        supplierId: null,
-        unitPrice: '1000',
-        actualQty: '3',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '3' }],
         reason: 'paid by wire after all',
         paymentMethod: 'transfer',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+      }),
+    );
     expect(s.items.get('apple')!.paymentMethod).toBe('transfer');
   });
 
   test('PurchaseUndone clears paymentMethod so re-purchase records a fresh choice', () => {
     let s = planTwoSkus();
-    s = decideRun(
+    s = step(
       s,
-      {
-        type: 'PurchaseItem',
+      purchaseItem({
         skuId: 'apple',
-        supplierId: null,
         unitPrice: '1000',
         actualQty: '3',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '3' }],
         paymentMethod: 'transfer',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      { type: 'UndoPurchase', skuId: 'apple', reason: 'mistapped row', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+      }),
+    );
+    s = step(s, {
+      type: 'UndoPurchase',
+      skuId: 'apple',
+      reason: 'mistapped row',
+      actor: purchaser(),
+    });
     expect(s.items.get('apple')!.paymentMethod).toBeNull();
     expect(s.items.get('apple')!.status).toBe('pending');
   });
@@ -2238,51 +1386,25 @@ describe('run.paymentMethod', () => {
 describe('run.storeScope', () => {
   const planOnly = () => {
     let s = emptyRunState('run-scope');
-    s = decideRun(
-      s,
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
-        sessionIds: ['s1'],
-        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
     return s;
   };
-  const buy = (storeId: string, runStoreIds?: string[]): RunCommand => ({
-    type: 'PurchaseItem',
-    skuId: 'sku-1',
-    supplierId: null,
-    unitPrice: '1000',
-    actualQty: '4',
-    receiptPhotoUrl: null,
-    storeSplits: [{ storeId, qty: '4' }],
-    paymentMethod: 'cash',
-    ...(runStoreIds ? { runStoreIds } : {}),
-    actor: purchaser(),
-  });
+  const buy = (storeId: string, runStoreIds?: string[]): RunCommand =>
+    purchaseItem({
+      skuId: 'sku-1',
+      unitPrice: '1000',
+      actualQty: '4',
+      storeSplits: [{ storeId, qty: '4' }],
+      ...(runStoreIds ? { runStoreIds } : {}),
+    });
   const deliveredTo = (storeId = 'A') => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId, actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
+    s = step(s, { type: 'DeliverToStore', storeId, actor: purchaser() });
     return s;
   };
-  const confirmItem = (storeId: string, skuId = 'sku-1'): RunCommand => ({
-    type: 'ConfirmStoreItem',
-    storeId,
-    skuId,
-    status: 'ok',
-    note: null,
-    photoUrl: null,
-    actor: confirmer(),
-  });
+  const confirmItem = (storeId: string, skuId = 'sku-1'): RunCommand =>
+    confirmStoreItem({ storeId, skuId });
 
   test('PurchaseItem rejects a split to a store outside runStoreIds', () => {
     expect(() => decideRun(planOnly(), buy('Z', ['A', 'B']), clock)).toThrow(
@@ -2296,19 +1418,15 @@ describe('run.storeScope', () => {
 
   test('RevisePurchase rejects moving a split to a store outside runStoreIds', () => {
     const s = planAndPurchase();
-    const revise = (storeId: string): RunCommand => ({
-      type: 'RevisePurchase',
-      skuId: 'sku-1',
-      supplierId: null,
-      unitPrice: '1000',
-      actualQty: '4',
-      receiptPhotoUrl: null,
-      storeSplits: [{ storeId, qty: '4' }],
-      reason: 'fix',
-      paymentMethod: 'cash',
-      runStoreIds: ['A'],
-      actor: purchaser(),
-    });
+    const revise = (storeId: string): RunCommand =>
+      revisePurchase({
+        skuId: 'sku-1',
+        unitPrice: '1000',
+        actualQty: '4',
+        storeSplits: [{ storeId, qty: '4' }],
+        reason: 'fix',
+        runStoreIds: ['A'],
+      });
     expect(() => decideRun(s, revise('Z'), clock)).toThrow('run.errors.storeNotInRun');
     expect(decideRun(s, revise('A'), clock)).toHaveLength(1);
   });
@@ -2348,11 +1466,12 @@ describe('run.storeScope', () => {
     let s = planAndPurchase();
     const added = decideRun(s, addExpense, clock);
     s = added.reduce(applyRun, s);
-    s = decideRun(
-      s,
-      { type: 'RemoveRunExpense', expenseId: 'exp-1', reason: 'typo', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'RemoveRunExpense',
+      expenseId: 'exp-1',
+      reason: 'typo',
+      actor: purchaser(),
+    });
     expect(decideRun(s, addExpense, clock)).toEqual([]);
     // An Added event already in a log (written before this fix) no
     // longer counts the expense back either.
@@ -2375,12 +1494,8 @@ describe('run.storeScope', () => {
       actor: purchaser(),
     };
     let s = planAndPurchase();
-    s = decideRun(s, add, clock).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      { type: 'UndoPurchase', skuId: 'sku-extra', reason: '', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, add);
+    s = step(s, { type: 'UndoPurchase', skuId: 'sku-extra', reason: '', actor: purchaser() });
     expect(s.items.has('sku-extra')).toBe(false);
     expect(decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toHaveLength(1);
     expect(decideRun(s, add, clock).map((e) => e.type)).toEqual(['PurchaserItemAdded']);
@@ -2388,7 +1503,7 @@ describe('run.storeScope', () => {
 
   test('DeliverToStore rejects a store that neither holds goods nor belongs to the run', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     expect(() =>
       decideRun(
         s,
@@ -2411,7 +1526,7 @@ describe('run.storeScope', () => {
 
   test('ConfirmStoreItem requires the store to have been delivered', () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     expect(() => decideRun(s, confirmItem('A'), clock)).toThrow('run.errors.storeNotDelivered');
   });
 
@@ -2430,11 +1545,7 @@ describe('run.storeScope', () => {
         { storeId: 'B', qty: '2' },
       ],
     });
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     expect(() => decideRun(s, confirmItem('A', 'sku-unknown'), clock)).toThrow(
       'run.errors.itemNotInRun',
     );
@@ -2446,26 +1557,16 @@ describe('run.storeScope', () => {
 describe('run.receivedQty', () => {
   const delivered = (splits?: Array<{ storeId: string; qty: string }>) => {
     let s = planAndPurchase(splits ? { storeSplits: splits } : undefined);
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = deliver(s);
     return s;
   };
-  const issue = (
-    status: 'ok' | 'short' | 'wrong' | 'quality',
-    receivedQty?: string,
-  ): RunCommand => ({
-    type: 'ConfirmStoreItem',
-    storeId: 'A',
-    skuId: 'sku-1',
-    status,
-    note: status === 'ok' ? null : 'problem',
-    photoUrl: null,
-    ...(receivedQty !== undefined ? { receivedQty } : {}),
-    actor: confirmer(),
-  });
+  const issue = (status: 'ok' | 'short' | 'wrong' | 'quality', receivedQty?: string): RunCommand =>
+    confirmStoreItem({
+      skuId: 'sku-1',
+      status,
+      note: status === 'ok' ? null : 'problem',
+      ...(receivedQty !== undefined ? { receivedQty } : {}),
+    });
   const payloadOf = (evs: ReturnType<typeof decideRun>) => {
     const e = evs[0];
     if (e?.type !== 'StoreItemConfirmed') throw new Error('expected StoreItemConfirmed');
@@ -2522,7 +1623,7 @@ describe('run.receivedQty', () => {
 
   test('state keeps the received qty; changing only the qty appends a new event', () => {
     let s = delivered();
-    s = decideRun(s, issue('short', '2'), clock).reduce(applyRun, s);
+    s = step(s, issue('short', '2'));
     expect(s.stores.get('A')?.itemConfirms.get('sku-1')?.receivedQty).toBe('2');
     expect(decideRun(s, issue('short', '2'), clock)).toEqual([]);
     expect(decideRun(s, issue('short', '3'), clock)).toHaveLength(1);
@@ -2554,31 +1655,24 @@ describe('run.totals', () => {
         { storeId: 'B', qty: '2', unitPrice: '15000', paymentMethod: 'transfer' },
       ],
     });
-    s = decideRun(
-      s,
-      {
-        type: 'AddRunExpense',
-        expenseId: 'ex-1',
-        label: 'porter',
-        qty: '1',
-        unitPrice: '5000',
-        storeSplits: [
-          { storeId: 'A', qty: '0.5' },
-          { storeId: 'B', qty: '0.5' },
-        ],
-        paymentMethod: 'cash',
-        receiptPhotoUrl: null,
-        reason: 'carry',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, {
+      type: 'AddRunExpense',
+      expenseId: 'ex-1',
+      label: 'porter',
+      qty: '1',
+      unitPrice: '5000',
+      storeSplits: [
+        { storeId: 'A', qty: '0.5' },
+        { storeId: 'B', qty: '0.5' },
+      ],
+      paymentMethod: 'cash',
+      receiptPhotoUrl: null,
+      reason: 'carry',
+      actor: purchaser(),
+    });
+    s = step(s, { type: 'StartDelivery', actor: purchaser() });
     for (const storeId of ['A', 'B']) {
-      s = decideRun(s, { type: 'DeliverToStore', storeId, actor: purchaser() }, clock).reduce(
-        applyRun,
-        s,
-      );
+      s = step(s, { type: 'DeliverToStore', storeId, actor: purchaser() });
       s = confirmStoreAllOk(s, storeId);
     }
     return s;
@@ -2606,25 +1700,21 @@ describe('run.totals', () => {
         { storeId: 'B', qty: '0.5', unitPrice: '4.03', paymentMethod: 'transfer' },
       ],
     });
-    s = decideRun(
-      s,
-      {
-        type: 'AddRunExpense',
-        expenseId: 'ex-1',
-        label: 'porter',
-        qty: '1',
-        unitPrice: '2.01',
-        storeSplits: [
-          { storeId: 'A', qty: '0.5' },
-          { storeId: 'B', qty: '0.5' },
-        ],
-        paymentMethod: 'cash',
-        receiptPhotoUrl: null,
-        reason: 'carry',
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'AddRunExpense',
+      expenseId: 'ex-1',
+      label: 'porter',
+      qty: '1',
+      unitPrice: '2.01',
+      storeSplits: [
+        { storeId: 'A', qty: '0.5' },
+        { storeId: 'B', qty: '0.5' },
+      ],
+      paymentMethod: 'cash',
+      receiptPhotoUrl: null,
+      reason: 'carry',
+      actor: purchaser(),
+    });
     expect(computeRunTotals(s)).toEqual({
       total: '3.03',
       totalCash: '1.01',
@@ -2635,22 +1725,11 @@ describe('run.totals', () => {
   });
 
   test('RefinalizeRun re-freezes the same items / expenses split', () => {
-    const amender: ActorCtx = {
-      userId: 'sa',
-      memberId: 'sa',
-      permissions: new Set(['run.purchase', 'run.amend', 'run.finish']),
-    };
+    const amender = runActor('sa', ['run.purchase', 'run.amend', 'run.finish']);
     let s = finishWith();
-    s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ReopenRun', reason: 'fix', actor: amender }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(
-      s,
-      { type: 'RemoveRunExpense', expenseId: 'ex-1', reason: 'dup', actor: amender },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, { type: 'FinishRun', actor: purchaser() });
+    s = step(s, { type: 'ReopenRun', reason: 'fix', actor: amender });
+    s = step(s, { type: 'RemoveRunExpense', expenseId: 'ex-1', reason: 'dup', actor: amender });
     const ev = decideRun(s, { type: 'RefinalizeRun', actor: amender }, clock)[0];
     if (ev?.type !== 'RunRefinalized') throw new Error('expected RunRefinalized');
     expect(ev.payload.itemsTotal).toBe('54000.00');
@@ -2659,13 +1738,9 @@ describe('run.totals', () => {
   });
 
   test('closing a correction keeps the time the run finished (DLV-15)', () => {
-    const amender: ActorCtx = {
-      userId: 'sa',
-      memberId: 'sa',
-      permissions: new Set(['run.purchase', 'run.amend', 'run.finish']),
-    };
+    const amender = runActor('sa', ['run.purchase', 'run.amend', 'run.finish']);
     let s = finishWith();
-    s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = step(s, { type: 'FinishRun', actor: purchaser() });
     const finishedAt = s.finishedAt;
     expect(finishedAt).toEqual(NOW);
     const later = fixedClock(new Date(NOW.getTime() + 3_600_000));
@@ -2687,22 +1762,19 @@ describe('run.topUp (BUY-5)', () => {
     addedPlannedItems: [{ skuId: 'sku-1', qty }],
     actor: purchaser(),
   });
-  const revise = (actualQty: string, splits: Array<{ storeId: string; qty: string }>): RunCommand => ({
-    type: 'RevisePurchase',
-    skuId: 'sku-1',
-    supplierId: 'sup-1',
-    unitPrice: '12000',
-    actualQty,
-    receiptPhotoUrl: null,
-    storeSplits: splits,
-    reason: 'top-up',
-    paymentMethod: 'cash',
-    actor: purchaser(),
-  });
+  const revise = (actualQty: string, splits: Array<{ storeId: string; qty: string }>): RunCommand =>
+    revisePurchase({
+      skuId: 'sku-1',
+      supplierId: 'sup-1',
+      unitPrice: '12000',
+      actualQty,
+      storeSplits: splits,
+      reason: 'top-up',
+    });
 
   test('demand joining a bought item is "still need X" and holds delivery', () => {
     let s = planAndPurchase();
-    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
+    s = step(s, attach('5'));
     expect(s.items.get('sku-1')?.topUpQty).toBe('5');
     expect(s.items.get('sku-1')?.status).toBe('purchased');
     expect(() => decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow(
@@ -2712,10 +1784,13 @@ describe('run.topUp (BUY-5)', () => {
 
   test('buying the difference clears it; so does saying it will not be bought', () => {
     let s = planAndPurchase();
-    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
-    const bought = decideRun(s, revise('9', [{ storeId: 'A', qty: '4' }, { storeId: 'B', qty: '5' }]), clock).reduce(
-      applyRun,
+    s = step(s, attach('5'));
+    const bought = step(
       s,
+      revise('9', [
+        { storeId: 'A', qty: '4' },
+        { storeId: 'B', qty: '5' },
+      ]),
     );
     expect(bought.items.get('sku-1')?.topUpQty).toBeNull();
     expect(decideRun(bought, { type: 'StartDelivery', actor: purchaser() }, clock)).toHaveLength(1);
@@ -2729,12 +1804,15 @@ describe('run.topUp (BUY-5)', () => {
 
   test('RE-BUY-2: a price-only or partial revision leaves the rest of the top-up', () => {
     let s = planAndPurchase();
-    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
-    const priceOnly = decideRun(s, revise('4', [{ storeId: 'A', qty: '4' }]), clock).reduce(applyRun, s);
+    s = step(s, attach('5'));
+    const priceOnly = step(s, revise('4', [{ storeId: 'A', qty: '4' }]));
     expect(priceOnly.items.get('sku-1')?.topUpQty).toBe('5');
-    const partial = decideRun(s, revise('6', [{ storeId: 'A', qty: '4' }, { storeId: 'B', qty: '2' }]), clock).reduce(
-      applyRun,
+    const partial = step(
       s,
+      revise('6', [
+        { storeId: 'A', qty: '4' },
+        { storeId: 'B', qty: '2' },
+      ]),
     );
     expect(partial.items.get('sku-1')?.topUpQty).toBe('3');
     expect(() => decideRun(partial, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow(
@@ -2744,36 +1822,34 @@ describe('run.topUp (BUY-5)', () => {
 
   test('RE-BUY-3: an order joining a purchaser-added item makes it a demand row that survives an undo', () => {
     let s = planAndPurchase();
-    s = decideRun(
-      s,
-      {
-        type: 'AddPurchaserItem',
-        skuId: 'sku-extra',
-        supplierId: null,
-        unitPrice: '1000',
-        actualQty: '2',
-        receiptPhotoUrl: null,
-        storeSplits: [{ storeId: 'A', qty: '2' }],
-        paymentMethod: 'cash',
-        reason: 'chef asked',
-        runStoreIds: ['A'],
-        actor: purchaser(),
-      },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(
-      s,
-      { type: 'AttachSessions', sessionIds: ['sess-late'], addedPlannedItems: [{ skuId: 'sku-extra', qty: '3' }], actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'AddPurchaserItem',
+      skuId: 'sku-extra',
+      supplierId: null,
+      unitPrice: '1000',
+      actualQty: '2',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: 'A', qty: '2' }],
+      paymentMethod: 'cash',
+      reason: 'chef asked',
+      runStoreIds: ['A'],
+      actor: purchaser(),
+    });
+    s = step(s, {
+      type: 'AttachSessions',
+      sessionIds: ['sess-late'],
+      addedPlannedItems: [{ skuId: 'sku-extra', qty: '3' }],
+      actor: purchaser(),
+    });
     const joined = s.items.get('sku-extra')!;
     expect(joined.addedByPurchaser).toBe(false);
     expect(joined.plannedQty).toBe('3');
-    s = decideRun(
-      s,
-      { type: 'UndoPurchase', skuId: 'sku-extra', reason: 'wrong price', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    s = step(s, {
+      type: 'UndoPurchase',
+      skuId: 'sku-extra',
+      reason: 'wrong price',
+      actor: purchaser(),
+    });
     const undone = s.items.get('sku-extra');
     expect(undone?.status).toBe('pending');
     expect(undone?.plannedQty).toBe('3');
@@ -2784,12 +1860,8 @@ describe('run.topUp (BUY-5)', () => {
 
   test('a pending item just grows, with no top-up', () => {
     let s = emptyRunState('run-p');
-    s = decideRun(
-      s,
-      { type: 'PlanRun', orgId: 'org-1', runDate: '2026-05-01', runIndex: 0, sessionIds: ['s1'], plannedItems: [{ skuId: 'sku-1', qty: '4' }], actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
-    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
+    s = step(s, attach('5'));
     expect(s.items.get('sku-1')?.plannedQty).toBe('9');
     expect(s.items.get('sku-1')?.topUpQty ?? null).toBeNull();
   });
@@ -2798,25 +1870,21 @@ describe('run.topUp (BUY-5)', () => {
 describe('run.priceAfterDelivery (2026-10-30)', () => {
   const deliveredRun = () => {
     let s = planAndPurchase();
-    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    return decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
+    return deliver(s);
   };
-  const revise = (unitPrice: string, actualQty: string): RunCommand => ({
-    type: 'RevisePurchase',
-    skuId: 'sku-1',
-    supplierId: 'sup-1',
-    unitPrice,
-    actualQty,
-    receiptPhotoUrl: null,
-    storeSplits: [{ storeId: 'A', qty: actualQty }],
-    reason: 'real price',
-    paymentMethod: 'transfer',
-    actor: purchaser(),
-  });
+  const revise = (unitPrice: string, actualQty: string): RunCommand =>
+    revisePurchase({
+      skuId: 'sku-1',
+      supplierId: 'sup-1',
+      unitPrice,
+      actualQty,
+      reason: 'real price',
+      paymentMethod: 'transfer',
+    });
 
   test('price and payment method may change after the goods went out', () => {
     const s = deliveredRun();
-    const out = decideRun(s, revise('15000', '4'), clock).reduce(applyRun, s);
+    const out = step(s, revise('15000', '4'));
     expect(out.items.get('sku-1')?.unitPrice).toBe('15000');
   });
 
@@ -2830,52 +1898,33 @@ describe('run.priceAfterDelivery (2026-10-30)', () => {
   // be moved onto store A once A has its goods.
   test('a line may not be moved onto a store that already has its goods', () => {
     let s = emptyRunState('run-2');
-    const buy = (skuId: string, storeId: string, qty: string): RunCommand => ({
-      type: 'PurchaseItem',
-      skuId,
-      supplierId: null,
-      unitPrice: '10',
-      actualQty: qty,
-      receiptPhotoUrl: null,
-      storeSplits: [{ storeId, qty }],
-      paymentMethod: 'cash',
-      actor: purchaser(),
-    });
+    const buy = (skuId: string, storeId: string, qty: string): RunCommand =>
+      purchaseItem({ skuId, unitPrice: '10', actualQty: qty, storeSplits: [{ storeId, qty }] });
     const cmds: RunCommand[] = [
-      {
-        type: 'PlanRun',
-        orgId: 'org-1',
-        runDate: '2026-05-01',
-        runIndex: 0,
+      planRun({
         sessionIds: ['s1', 's2'],
         plannedItems: [
           { skuId: 'x', qty: '2' },
           { skuId: 'y', qty: '1' },
         ],
-        actor: purchaser(),
-      },
+      }),
       { type: 'StartPurchase', actor: purchaser() },
       buy('x', 'A', '2'),
       buy('y', 'B', '1'),
       { type: 'StartDelivery', actor: purchaser() },
       { type: 'DeliverToStore', storeId: 'A', actor: purchaser() },
     ];
-    for (const cmd of cmds) s = decideRun(s, cmd, clock).reduce(applyRun, s);
-    const moveOntoA: RunCommand = {
-      type: 'RevisePurchase',
+    for (const cmd of cmds) s = step(s, cmd);
+    const moveOntoA: RunCommand = revisePurchase({
       skuId: 'y',
-      supplierId: null,
       unitPrice: '10',
       actualQty: '2',
-      receiptPhotoUrl: null,
       storeSplits: [
         { storeId: 'B', qty: '1' },
         { storeId: 'A', qty: '1' },
       ],
       reason: 'A wants one',
-      paymentMethod: 'cash',
-      actor: purchaser(),
-    };
+    });
     expect(() => decideRun(s, moveOntoA, clock)).toThrow('run.errors.cannotReviseAfterDelivery');
     // The line's own store, not yet delivered, may still change.
     const growB: RunCommand = { ...moveOntoA, storeSplits: [{ storeId: 'B', qty: '2' }] };
