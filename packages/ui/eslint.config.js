@@ -29,7 +29,7 @@ export default [
   },
 
   {
-    files: ['**/__tests__/**', '**/*.test.{ts,tsx}'],
+    files: ['**/__tests__/**', '**/*.test.{ts,tsx}', 'src/testing/**'],
     rules: TEST_RULES,
   },
 ];

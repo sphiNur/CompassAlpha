@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./testing/tokenCss": "./src/testing/tokenCss.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
