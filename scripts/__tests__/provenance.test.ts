@@ -3,7 +3,8 @@
  * origin/main, green CI for it, and no older release than the one live.
  */
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -12,6 +13,7 @@ import {
   ciProblemFor,
   liveRelease,
   liveReleaseAt,
+  runGh,
   type CheckRun,
   type Gh,
 } from '../lib/provenance';
@@ -84,6 +86,27 @@ describe('CI for the commit being deployed (OPS-06)', () => {
     expect(ciProblemFor('abc123', nonsense)).toContain('could not read the CI result');
     const nothing: Gh = (args) => (args[0] === 'repo' ? 'owner/repo' : '');
     expect(ciProblemFor('abc123', nothing)).toContain('no run');
+  });
+
+  test('gh runs without a shell, and one that gets no answer is stopped', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fake-gh-'));
+    const path = process.env.PATH;
+    try {
+      // Echoes its arguments one per line; `slow` never answers in time.
+      writeFileSync(
+        join(dir, 'gh'),
+        '#!/bin/sh\n[ "$1" = slow ] && sleep 5\nprintf "%s\\n" "$@"\n',
+        { mode: 0o755 },
+      );
+      process.env.PATH = `${dir}:${path}`;
+      expect(runGh(ROOT)(['api', '--jq', '.a | @json'])).toBe('api\n--jq\n.a | @json\n');
+      const started = Date.now();
+      expect(() => runGh(ROOT, 300)(['slow'])).toThrow('no answer within 0.3 s');
+      expect(Date.now() - started).toBeLessThan(3000);
+    } finally {
+      process.env.PATH = path;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('ci.yml still names each of those jobs', () => {

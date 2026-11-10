@@ -63,10 +63,17 @@ export function liveRelease(body: unknown): { sha: string; verified: boolean } |
 /** Runs `gh` and returns its output, or throws with its error. */
 export type Gh = (args: string[]) => string;
 
-/** `gh` in `cwd`, without a shell: cmd.exe would split the arguments. */
-export function runGh(cwd: string): Gh {
+/**
+ * `gh` in `cwd`, without a shell: cmd.exe would split the arguments. A gh
+ * that gets no answer is stopped after `timeoutMs`, instead of holding the
+ * deploy up for good (review OPS-07).
+ */
+export function runGh(cwd: string, timeoutMs = 60_000): Gh {
   return (ghArgs) => {
-    const r = spawnSync('gh', ghArgs, { cwd, encoding: 'utf8' });
+    const r = spawnSync('gh', ghArgs, { cwd, encoding: 'utf8', timeout: timeoutMs });
+    if ((r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') {
+      throw new Error(`no answer within ${timeoutMs / 1000} s`);
+    }
     if (r.error) throw r.error;
     if (r.status !== 0) throw new Error(r.stderr.trim() || `gh exited ${r.status}`);
     return r.stdout;

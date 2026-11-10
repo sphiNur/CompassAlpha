@@ -7,7 +7,7 @@
  * tar against a scratch tree laid out like /home/ubuntu/compass-alpha.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -33,8 +33,10 @@ import {
   knownHostsFile,
   markIncompleteScript,
   restoreScript,
+  remoteCommand,
   rlsRoleProblem,
   rsyncExcludes,
+  serverLimitSecs,
   snapshotScript,
   sshOptions,
   stageSeedScript,
@@ -325,6 +327,10 @@ describe('host key verification', () => {
     expect(g.status).toBe(0);
     expect(g.stdout).toMatch(/^stricthostkeychecking (yes|true)$/m);
     expect(g.stdout).toContain(`userknownhostsfile ${kh}`);
+    // OPS-07: a dead link ends the session instead of hanging the deploy.
+    expect(g.stdout).toMatch(/^connecttimeout 20$/m);
+    expect(g.stdout).toMatch(/^serveraliveinterval 15$/m);
+    expect(g.stdout).toMatch(/^serveralivecountmax 8$/m);
   });
 
   test('the production host is pinned in the repo file; env overrides the file', () => {
@@ -335,6 +341,59 @@ describe('host key verification', () => {
     expect(host).toBe('129.204.59.183');
     expect(bash(`ssh-keygen -F ${host} -f "${kh}"`).status).toBe(0);
     expect(bash(`ssh-keygen -F compass-pro.com -f "${kh}"`).status).not.toBe(0);
+  });
+});
+
+describe('a step on the server (OPS-07)', () => {
+  const hasTools = bash('command -v timeout && command -v flock').status === 0;
+  /** A lock file in a scratch directory, for one test. */
+  function scratchLock() {
+    const dir = mkdtempSync(join(tmpdir(), 'remote-step-'));
+    dirs.push(dir);
+    return join(dir, 'deploy.lock');
+  }
+  /** Whether `pid` is still running (a zombie has ended). */
+  function running(pid: number) {
+    const stat = bash(`ps -o stat= -p ${pid}`).stdout.trim();
+    return stat !== '' && !stat.startsWith('Z');
+  }
+
+  test('the server ends a step a minute and a half before the deploy gives up', () => {
+    expect(serverLimitSecs(20 * 60_000)).toBe(1110);
+    expect(serverLimitSecs(60_000)).toBe(1);
+  });
+
+  test.skipIf(!hasTools)('runs the script as written, exit code and all', () => {
+    const r = bash(remoteCommand(`echo "it's $((6 * 7))"; exit 3`, 60, scratchLock()));
+    expect([r.status, r.stdout]).toEqual([3, "it's 42\n"]);
+  });
+
+  test.skipIf(!hasTools)('ends at its limit, with what it started', async () => {
+    const lock = scratchLock();
+    const pidFile = join(dirname(lock), 'child.pid');
+    const started = Date.now();
+    const r = bash(remoteCommand(`sleep 30 & echo $! > "${pidFile}"; sleep 30`, 1, lock));
+    expect(r.status).toBe(124);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const child = Number(readFileSync(pidFile, 'utf8'));
+    for (let i = 0; i < 20 && running(child); i++) await Bun.sleep(100);
+    expect(running(child)).toBe(false);
+  });
+
+  test.skipIf(!hasTools)('waits for a step that still runs, within its limit', async () => {
+    const lock = scratchLock();
+    const held = join(dirname(lock), 'held');
+    // A step from a lost connection, still holding the lock for 3 s.
+    const earlier = spawn('flock', [lock, 'sh', '-c', `touch "${held}"; sleep 3`]);
+    const done = new Promise((resolve) => earlier.on('exit', resolve));
+    while (!existsSync(held)) await Bun.sleep(20);
+    // Waiting counts toward the limit.
+    expect(bash(remoteCommand('echo next', 1, lock)).status).toBe(124);
+    const started = Date.now();
+    const r = bash(remoteCommand('echo next', 60, lock));
+    expect(r.stdout).toBe('next\n');
+    expect(Date.now() - started).toBeGreaterThan(1000);
+    await done;
   });
 });
 

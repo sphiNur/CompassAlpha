@@ -32,6 +32,11 @@ export function hostName(target: string): string {
  * `StrictHostKeyChecking=no`, so whoever answered on that address got the
  * deploy key's session, the production .env and sudo. Now the server must
  * present a key pinned in `knownHosts`, and nothing is ever added to it.
+ *
+ * Review OPS-07 (2026-11): the link to the server is slow and drops
+ * packets, and a connection that died quietly hung the deploy for good.
+ * ssh now gives up on a connect after 20 s, and on a session that has not
+ * answered for two minutes (8 keepalives 15 s apart).
  */
 export function sshOptions(key: string, knownHosts: string): string {
   return [
@@ -41,7 +46,38 @@ export function sshOptions(key: string, knownHosts: string): string {
     // Don't fall back to ~/.ssh/known_hosts entries for other names.
     '-o GlobalKnownHostsFile=/dev/null',
     '-o BatchMode=yes',
+    '-o ConnectTimeout=20',
+    '-o ServerAliveInterval=15',
+    '-o ServerAliveCountMax=8',
   ].join(' ');
+}
+
+/** Review OPS-07 (2026-11): held by every remote step, so they run one at a time. */
+export const REMOTE_LOCK = '/home/ubuntu/.compass-deploy.lock';
+
+/**
+ * How long the server lets a step run when the deploy waits `limitMs` for
+ * it: 90 s less, so the server has ended it (or, 30 s later, killed it)
+ * before the deploy gives up.
+ */
+export function serverLimitSecs(limitMs: number): number {
+  return Math.max(1, Math.floor(limitMs / 1000) - 90);
+}
+
+/**
+ * What ssh runs on the server for one step: `script`, base64'd (see ssh()
+ * in deploy.ts), in bash.
+ *
+ * Review OPS-07 (2026-11): when the deploy gives up on a step (its time
+ * limit, a lost connection), the step can still be running on the server,
+ * and the undo that follows would work beside it. So the server ends a
+ * step after `secs` with everything it started (`timeout` signals its
+ * whole process group, and kills 30 s later), and every step holds
+ * REMOTE_LOCK: the undo waits for a step that still runs.
+ */
+export function remoteCommand(script: string, secs: number, lock = REMOTE_LOCK): string {
+  const payload = Buffer.from(script, 'utf8').toString('base64');
+  return `echo ${payload} | base64 -d | timeout -k 30 ${secs} flock ${lock} bash`;
 }
 
 /**

@@ -125,6 +125,29 @@ deploy starts, and the provenance gates also refuse unless:
 
 `--force` overrides these too, and marks the release `-unverified`.
 
+Since 2026-11 (review OPS-07/OPS-08/OPS-09):
+
+- Every step has a time limit: 20 minutes (the unit tests, a step on the
+  server), 30 for one rsync attempt, 60 for the scp of the whole
+  tarball, 10 for each smoke. ssh gives up on a connection that has not
+  answered for two minutes. A step that runs over fails like any other
+  failure. Before, a connection that died quietly hung the deploy.
+- On the server, a step ends after 18.5 minutes, with everything it
+  started, and steps run one at a time
+  (`/home/ubuntu/.compass-deploy.lock`). After a lost connection, the
+  undo waits for a step that is still running instead of working beside
+  it.
+- Step 0.4 starts the browser the smokes use, before anything is
+  shipped, and refuses when it cannot. `--rollback` only warns.
+- After the restart, the deploy waits up to 90 seconds for
+  `$COMPASS_BASE/health/ready` to answer 200 before the smokes start. If
+  it never does, the deploy stops there and `.deploy-incomplete` stays.
+- The server smoke checks that `/health/version` names the release just
+  deployed (after `--rollback`, the restored one), from an api started
+  after the restart. Any commit used to pass, so a Worker or tunnel
+  pointing at another backend went unnoticed.
+- The realtime probe gets three tries. A pass that needed more says so.
+
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
 No restart is needed — the api serves `dist` from disk on every request

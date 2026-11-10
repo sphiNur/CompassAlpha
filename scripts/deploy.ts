@@ -86,6 +86,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitUntilReady } from './lib/liveSite';
 import { ciProblemFor, liveReleaseAt, runGh } from './lib/provenance';
 import {
   APP_DIR,
@@ -100,9 +101,11 @@ import {
   hostName,
   knownHostsFile,
   markIncompleteScript,
+  remoteCommand,
   restoreScript,
   rlsRoleProblem,
   rsyncExcludes,
+  serverLimitSecs,
   snapshotScript,
   sshOptions,
   stageSeedScript,
@@ -161,12 +164,54 @@ const SSH_OPTS = sshOptions(KEY, KNOWN_HOSTS);
 function step(label: string) {
   console.log(`\n\x1b[36m▶ ${label}\x1b[0m`);
 }
-function run(cmd: string, opts?: { cwd?: string; quiet?: boolean }): void {
-  if (!opts?.quiet) console.log(`  $ ${cmd}`);
-  execSync(cmd, { cwd: opts?.cwd ?? ROOT, stdio: opts?.quiet ? 'pipe' : 'inherit' });
+
+/**
+ * Review OPS-07 (2026-11): how long one command may take. Nothing had a
+ * limit, and on the lossy link to the server a connection that died
+ * quietly left the deploy hanging for good. A command that runs over is
+ * killed and fails the step like any other failure. The ssh keepalives in
+ * sshOptions() notice a dead connection within two minutes.
+ */
+const MINUTE = 60_000;
+const LIMIT = {
+  /** Local commands and a remote step: install, build, migrate, extract. */
+  step: 20 * MINUTE,
+  /** One rsync attempt over the slow link. */
+  rsync: 30 * MINUTE,
+  /** The whole tarball over the slow link (20+ minutes has happened). */
+  scp: 60 * MINUTE,
+  /** Each smoke. */
+  smoke: 10 * MINUTE,
+};
+
+/** `err`, or for a command killed at its limit, an error that says so. */
+function overLimit(err: unknown, cmd: string, limitMs: number): unknown {
+  if ((err as NodeJS.ErrnoException).code !== 'ETIMEDOUT') return err;
+  return new Error(`${cmd.split(' ')[0]} did not finish within ${limitMs / MINUTE} min`);
 }
-function runCapture(cmd: string, opts?: { cwd?: string }): string {
-  return execSync(cmd, { cwd: opts?.cwd ?? ROOT, encoding: 'utf8' });
+/** " (stopped after N min)" for a spawnSync child killed at its limit. */
+function stoppedNote(child: { error?: Error }, limitMs: number): string {
+  return (child.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT'
+    ? ` (stopped after ${limitMs / MINUTE} min)`
+    : '';
+}
+
+function run(cmd: string, opts?: { cwd?: string; quiet?: boolean; timeoutMs?: number }): void {
+  if (!opts?.quiet) console.log(`  $ ${cmd}`);
+  const timeout = opts?.timeoutMs ?? LIMIT.step;
+  try {
+    execSync(cmd, { cwd: opts?.cwd ?? ROOT, stdio: opts?.quiet ? 'pipe' : 'inherit', timeout });
+  } catch (err) {
+    throw overLimit(err, cmd, timeout);
+  }
+}
+function runCapture(cmd: string, opts?: { cwd?: string; timeoutMs?: number }): string {
+  const timeout = opts?.timeoutMs ?? LIMIT.step;
+  try {
+    return execSync(cmd, { cwd: opts?.cwd ?? ROOT, encoding: 'utf8', timeout });
+  } catch (err) {
+    throw overLimit(err, cmd, timeout);
+  }
 }
 /**
  * Run a command on the deploy host.
@@ -189,10 +234,20 @@ function runCapture(cmd: string, opts?: { cwd?: string }): string {
  *
  * Base64 puts nothing but [A-Za-z0-9+/=] on the command line, so no
  * shell on either side has anything to misparse.
+ *
+ * Review OPS-07 (2026-11): the server ends the step before this side
+ * gives up on it, and runs one step at a time (remoteCommand()).
  */
-function ssh(cmd: string): string {
-  const payload = Buffer.from(cmd, 'utf8').toString('base64');
-  return runCapture(`ssh ${SSH_OPTS} ${HOST} "echo ${payload} | base64 -d | bash"`);
+function ssh(cmd: string, timeoutMs = LIMIT.step): string {
+  const secs = serverLimitSecs(timeoutMs);
+  try {
+    return runCapture(`ssh ${SSH_OPTS} ${HOST} "${remoteCommand(cmd, secs)}"`, { timeoutMs });
+  } catch (err) {
+    if ((err as { status?: number }).status === 124) {
+      throw new Error(`the server stopped this step after ${Math.round(secs / 6) / 10} min`);
+    }
+    throw err;
+  }
 }
 
 /** rsync here and on the server (not on Windows: cmd.exe quoting, no rsync). */
@@ -224,7 +279,7 @@ function rsyncWithRetry(): void {
   ].join(' ');
   for (let attempt = 1; ; attempt++) {
     try {
-      const out = runCapture(cmd);
+      const out = runCapture(cmd, { timeoutMs: LIMIT.rsync });
       const sent = out.match(/Total bytes sent: ([\d,.]+)/)?.[1];
       const files = out.match(/Number of regular files transferred: ([\d,.]+)/)?.[1];
       console.log(`  sent ${sent ?? '?'} bytes, ${files ?? '?'} files changed`);
@@ -328,7 +383,7 @@ async function provenanceGates(): Promise<string> {
     provenanceProblems.push(`HEAD is on "${gitBranch}", not main`);
   }
   try {
-    execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe' });
+    execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe', timeout: 2 * MINUTE });
   } catch {
     provenanceProblems.push('could not fetch origin/main, so HEAD may not be the newest main');
   }
@@ -383,6 +438,10 @@ async function provenanceGates(): Promise<string> {
 }
 // A rollback ships nothing from this machine, so provenance is moot.
 const releaseSha = ROLLBACK ? '' : await provenanceGates();
+/** The build the smoke must find live (a rollback learns it after the restore). */
+let expectedSha = DRY ? '' : releaseSha;
+/** The server's time just before step 4c restarted the api. */
+let restartedAt = '';
 
 /**
  * Pre-flight: never swap the frontend out from under a purchaser who is
@@ -444,6 +503,34 @@ if (!DRY && !args.has('--allow-active-run')) {
   }
 }
 
+// Review OPS-08 (2026-11): the browser smokes run after the restart, and a
+// machine that cannot start their browser used to find out only then. A
+// rollback goes ahead without it: the old release back matters more than
+// the checks after it.
+step('0.4. the browser the smokes use starts here');
+{
+  const limit = 2 * MINUTE;
+  const browser = spawnSync(
+    'node',
+    ['--experimental-strip-types', join(__dirname, 'check-browser.ts')],
+    { stdio: 'inherit', timeout: limit },
+  );
+  if (browser.status !== 0) {
+    const why = `the browser smokes could not run here${stoppedNote(browser, limit)}`;
+    const fix = [
+      '  Install their browser (npx playwright install chromium), or set',
+      '  PLAYWRIGHT_CHANNEL=chrome to use an installed Google Chrome.',
+    ];
+    if (!ROLLBACK) {
+      console.error(`\x1b[31m✖ Refusing to deploy — ${why}.\x1b[0m`);
+      for (const line of fix) console.error(line);
+      process.exit(1);
+    }
+    console.log(`  \x1b[33m⚠ rolling back anyway, but ${why}.\x1b[0m`);
+    for (const line of fix) console.log(line);
+  }
+}
+
 // A rollback ships nothing, so there is nothing new to test.
 if (!ROLLBACK) {
   step('0.5. unit tests (before anything is shipped)');
@@ -474,6 +561,7 @@ if (!ROLLBACK) {
     {
       stdio: 'inherit',
       cwd: ROOT,
+      timeout: LIMIT.step,
       env: {
         ...process.env,
         SKIP_PG_TESTS: '1',
@@ -485,7 +573,9 @@ if (!ROLLBACK) {
     },
   );
   if (tt.status !== 0) {
-    console.error('\x1b[31m✖ unit tests FAILED — nothing was deployed\x1b[0m');
+    console.error(
+      `\x1b[31m✖ unit tests FAILED${stoppedNote(tt, LIMIT.step)} — nothing was deployed\x1b[0m`,
+    );
     process.exit(1);
   }
 }
@@ -690,7 +780,7 @@ if (!DRY) {
       run(`tar ${tarExcludes()} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
 
       step('2. scp to server');
-      run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`);
+      run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`, { timeoutMs: LIMIT.scp });
     }
 
     // N9 (2026-10-30): the API had no way back — only the web bundle kept
@@ -816,9 +906,13 @@ if (!DRY) {
 
   step('4c. restart api + worker');
   try {
-    ssh(
-      `sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
-    );
+    // OPS-09: the server's clock just before the restart; the api the
+    // smoke reaches must have started after it.
+    restartedAt = ssh(
+      `date -u +%Y-%m-%dT%H:%M:%SZ && sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
+    )
+      .split('\n')[0]!
+      .trim();
   } catch (err) {
     // The new code is what runs now (or fails to). `.deploy-incomplete`
     // stays, so the next deploy does not keep this tree as its rollback.
@@ -827,6 +921,18 @@ if (!DRY) {
     console.error('  Put the previous release back now: bun run scripts/deploy.ts --rollback');
     process.exit(1);
   }
+  // OPS-08: the smokes start once the api answers through the public URL.
+  const ready = await waitUntilReady(BASE!);
+  if (!ready.ok) {
+    console.error(
+      `\x1b[31m✖ ${BASE}/health/ready did not answer 200 within 90 s: ${ready.last}\x1b[0m`,
+    );
+    console.error('  The api and worker were restarted. If the release is at fault, put the');
+    console.error('  previous one back: bun run scripts/deploy.ts --rollback. If the api is');
+    console.error('  fine on the server, look at the path to it (tunnel, Worker).');
+    process.exit(1);
+  }
+  console.log(`  ✓ ${BASE}/health/ready answered after ${Math.round(ready.afterMs / 1000)} s`);
   // OPS-01: the processes run the release on disk again.
   try {
     ssh(clearIncompleteScript());
@@ -866,6 +972,8 @@ if (!DRY) {
   try {
     const buildId = ssh(`cat /home/ubuntu/compass-alpha/apps/web/dist/build-id.txt`).trim();
     console.log(`  build-id: ${buildId}`);
+    // A rollback brings back whichever release the snapshot holds.
+    if (ROLLBACK) expectedSha = buildId;
   } catch {
     console.log(`  \x1b[33mbuild-id.txt missing — buildShaPlugin may not have run\x1b[0m`);
   }
@@ -875,7 +983,14 @@ if (!DRY) {
 // A rollback to a release from before it cannot answer the probe; say
 // so instead of failing the rollback on it. Checked on main.ts because
 // extraction never deletes: the newer socket.ts stays on disk, unused.
-let smokeEnv: NodeJS.ProcessEnv = process.env;
+let smokeEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  // OPS-09: the smoke checks that the public URL serves this release, from
+  // an api started after the restart. It used to accept any commit, so a
+  // Worker pointing at another backend passed.
+  ...(expectedSha ? { COMPASS_EXPECT_SHA: expectedSha } : {}),
+  ...(restartedAt ? { COMPASS_EXPECT_STARTED_AFTER: restartedAt } : {}),
+};
 if (ROLLBACK && !DRY) {
   const probeAware = ssh(
     `grep -q "realtime/socket" ${APP_DIR}/apps/api/src/main.ts && echo yes || echo no`,
@@ -884,7 +999,7 @@ if (ROLLBACK && !DRY) {
     console.log(
       '  \x1b[33m⚠ restored api predates the realtime probe — smoke cannot verify the WebSocket upgrade\x1b[0m',
     );
-    smokeEnv = { ...process.env, COMPASS_SMOKE_PRE_PROBE_API: '1' };
+    smokeEnv = { ...smokeEnv, COMPASS_SMOKE_PRE_PROBE_API: '1' };
   }
 }
 
@@ -892,18 +1007,20 @@ step('6. server-side smoke');
 const sm = spawnSync('bun', ['run', join(__dirname, 'smoke.ts')], {
   stdio: 'inherit',
   env: smokeEnv,
+  timeout: LIMIT.smoke,
 });
 if (sm.status !== 0) {
-  console.error('\x1b[31m✖ server-side smoke FAILED\x1b[0m');
+  console.error(`\x1b[31m✖ server-side smoke FAILED${stoppedNote(sm, LIMIT.smoke)}\x1b[0m`);
   process.exit(1);
 }
 
 step('7. browser smoke (shallow: render check)');
 const bsm = spawnSync('node', ['--experimental-strip-types', join(__dirname, 'browser-smoke.ts')], {
   stdio: 'inherit',
+  timeout: LIMIT.smoke,
 });
 if (bsm.status !== 0) {
-  console.error('\x1b[31m✖ browser smoke FAILED\x1b[0m');
+  console.error(`\x1b[31m✖ browser smoke FAILED${stoppedNote(bsm, LIMIT.smoke)}\x1b[0m`);
   process.exit(1);
 }
 
@@ -911,10 +1028,10 @@ step('8. browser smoke (deep: clicks, qty, submit, navigate)');
 const bsd = spawnSync(
   'node',
   ['--experimental-strip-types', join(__dirname, 'browser-smoke-deep.ts')],
-  { stdio: 'inherit' },
+  { stdio: 'inherit', timeout: LIMIT.smoke },
 );
 if (bsd.status !== 0) {
-  console.error('\x1b[31m✖ deep browser smoke FAILED\x1b[0m');
+  console.error(`\x1b[31m✖ deep browser smoke FAILED${stoppedNote(bsd, LIMIT.smoke)}\x1b[0m`);
   process.exit(1);
 }
 
