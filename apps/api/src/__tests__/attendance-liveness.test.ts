@@ -9,7 +9,7 @@
  * Skipped when DATABASE_URL is unset or SKIP_PG_TESTS=1.
  */
 import { describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { attendance, dateInTz } from '@compass/domain';
 import { signLivenessToken } from '../services/face/liveness';
@@ -38,14 +38,30 @@ import {
 attendanceSuite();
 
 describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
-  test('turns and a real face pass; prints, flat turns and reused challenges do not', async () => {
+  /** Every punch kept for `memberId`, voided ones too. */
+  const recorded = async (memberId: string) =>
+    (
+      await getDb(undefined, { system: 'maintenance' })
+        .select({ id: s.attendancePunches.id })
+        .from(s.attendancePunches)
+        .where(eq(s.attendancePunches.memberId, memberId))
+    ).map((p) => p.id);
+  /** Every bot message sent in this workspace so far, by template. */
+  const botTemplates = async () => {
     const f = fixture();
-    const db = getDb(undefined, { system: 'maintenance' });
+    const rows = await getDb(undefined, { system: 'maintenance' })
+      .select({ template: s.notifications.template })
+      .from(s.notifications)
+      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')))
+      .orderBy(s.notifications.createdAt);
+    return rows.map((row) => row.template);
+  };
+
+  test('a challenge is good for one punch, by the member it was asked for', async () => {
+    const f = fixture();
     await staffReady();
     await switchOn(f.colleagueId);
-    const rules = anyPhoneAnywhere(f.storeId);
-    await f.manager.attendance.policySave(rules);
-
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
     await expectError(
       f.staff().attendance.punch({
         storeId: f.storeId,
@@ -76,24 +92,31 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       clock(f.staff(), { kind: 'out', token: theirs.token }),
       'attendance.errors.livenessExpired',
     );
-    // Face only: a failed check is refused, never recorded.
+    expect(await recorded(f.staffId)).toEqual([first.id]);
+  });
+
+  test('a failed check is refused, never recorded, and tells nobody', async () => {
+    const f = fixture();
+    await staffReady();
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    const before = await botTemplates();
     for (const [left, right] of [
       ['Ali:print', 'Ali:print'],
       ['Ali:flat', 'Ali:flat'],
       ['Bob:left', 'Bob:right'],
     ] as const) {
-      await expectError(
-        clock(f.staff(), { kind: 'out', left, right }),
-        'attendance.errors.livenessFailed',
-      );
+      await expectError(clock(f.staff(), { left, right }), 'attendance.errors.livenessFailed');
     }
-    const date = dateInTz(new Date(first.at), TZ);
-    let sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    expect(
-      sheet.punches.filter((p) => p.memberId === f.staffId && !p.voided).map((p) => p.id),
-    ).toEqual([first.id]);
+    expect(await recorded(f.staffId)).toEqual([]);
+    expect(await botTemplates()).toEqual(before);
+  });
 
-    // A borrowed phone: Bob (the colleague) clocks on Ali's (staff's) phone.
+  test('a colleague on a borrowed phone: known by the face, only with the turns, not twice', async () => {
+    const f = fixture();
+    await staffReady();
+    await switchOn(f.colleagueId);
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    // Bob (the colleague) clocks on Ali's (staff's) phone.
     await expectError(
       clock(f.staff(), { who: 'Bob', identify: true }),
       'attendance.errors.notRecognized',
@@ -146,17 +169,20 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       'Att Colleague',
       'in',
     ]);
-    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    const date = dateInTz(new Date(borrowed.at), TZ);
+    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
     const row = sheet.punches.find((p) => p.id === borrowed.id)!;
     expect([row.memberId, row.viaName]).toEqual([f.colleagueId, 'Att Staff']);
     expect([...row.photos].sort()).toEqual(['face', 'left', 'right']);
+    expect(await botRecipients('attendance.borrowedPhone')).toEqual([f.managerUserId]);
+    expect(await botRecipients('attendance.clockedInForYou')).toEqual([f.colleagueUserId]);
+  });
 
-    // One face photo, plainly real: no turns (the server did not ask).
-    const passive = await clock(f.staff(), {
-      kind: 'out',
-      token: await passiveToken(f.staffId),
-    });
-    expect([passive.liveness, passive.face]).toEqual(['passive', 'match']);
+  test("no turns asked: only a plainly real photo of one's own face clocks", async () => {
+    const f = fixture();
+    await staffReady();
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    const before = await botTemplates();
     // A photo held up: its blink and open mouth are prints too (2026-11-07).
     await expectError(
       clock(f.staff(), { who: 'Ali:print', token: await passiveToken(f.staffId) }),
@@ -183,41 +209,46 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     );
     // Bob's face on Ali's punch: refused.
     await expectError(clock(f.staff(), { who: 'Bob' }), 'attendance.errors.faceMismatch');
+    expect(await botTemplates()).toEqual(before);
+    // One face photo, plainly real: no turns (the server did not ask).
+    const passive = await clock(f.staff(), { token: await passiveToken(f.staffId) });
+    expect([passive.liveness, passive.face]).toEqual(['passive', 'match']);
+  });
 
-    // 待核对: the flagged punches, until a manager lets one stand.
-    let queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
-    expect(queue.punches.map((p) => p.id)).toContain(borrowed.id);
-    expect(queue.punches.map((p) => p.id)).not.toContain(passive.id);
+  test("待核对: a punch on a colleague's phone waits until a manager lets it stand", async () => {
+    const f = fixture();
+    await staffReady();
+    await colleagueReady();
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    // Bob on Ali's phone is flagged; Ali's own plain punch is not.
+    const borrowed = await clock(f.staff(), { who: 'Bob', identify: true });
+    await clock(f.staff(), { token: await passiveToken(f.staffId) });
+    const waiting = async () =>
+      (await f.manager.attendance.reviewQueue({ storeId: f.storeId })).punches.map((p) => p.id);
+    expect(await waiting()).toEqual([borrowed.id]);
     await expectError(
       f.staff().attendance.reviewQueue({ storeId: f.storeId }),
       'auth.errors.missingPermission',
     );
     await f.manager.attendance.reviewPunch({ storeId: f.storeId, punchId: borrowed.id });
-    queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
-    expect(queue.punches.map((p) => p.id)).not.toContain(borrowed.id);
+    expect(await waiting()).toEqual([]);
+  });
 
-    // A new phone: the turns first, then it clocks, flagged.
-    await f.manager.attendance.policySave({ ...rules, requireDevice: true });
+  test('a new phone: the turns first, then it clocks, flagged', async () => {
+    const f = fixture();
+    await staffReady();
+    await f.manager.attendance.policySave({ ...anyPhoneAnywhere(f.storeId), requireDevice: true });
+    // The first punch binds Ali's phone.
+    await clock(f.staff());
     await expectError(
-      clock(f.staff(), { device: DEVICE, token: await passiveToken(f.staffId) }),
+      clock(f.staff(), { kind: 'out', device: DEVICE, token: await passiveToken(f.staffId) }),
       'attendance.errors.livenessNeeded',
     );
-    const moved = await clock(f.staff(), { device: DEVICE });
+    const moved = await clock(f.staff(), { kind: 'out', device: DEVICE });
     expect([moved.newDevice, moved.face]).toEqual([true, 'match']);
-
-    expect(await botRecipients('attendance.borrowedPhone')).toEqual([f.managerUserId]);
-    expect(await botRecipients('attendance.clockedInForYou')).toEqual([f.colleagueUserId]);
+    const queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    expect(queue.punches.map((p) => p.id)).toEqual([moved.id]);
     expect(await botRecipients('attendance.newDevice')).toEqual([f.managerUserId]);
-    expect(await botRecipients('attendance.livenessFailed')).toEqual([]);
-
-    // Withdrawing the consent deletes the enrolled face.
-    await f.colleague().attendance.faceConsentWithdraw();
-    expect(
-      await db
-        .select()
-        .from(s.attendanceFaceEnrollments)
-        .where(eq(s.attendanceFaceEnrollments.memberId, f.colleagueId)),
-    ).toEqual([]);
   });
 });
 
@@ -364,26 +395,11 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {
-  test('a colleague: named in the overtime question, not clocked twice, "not them" for two minutes', async () => {
+  /** Ali and Bob ready to clock. Bob's shift ended an hour ago; he clocked in at its start. */
+  async function bobsShiftOver() {
     const f = fixture();
-    const db = getDb(undefined, { system: 'maintenance' });
     await staffReady();
     await colleagueReady();
-    // A "not them" on this phone a while ago leaves the face look alone.
-    await db.insert(s.attendancePunches).values({
-      orgId: f.orgId,
-      storeId: f.storeId,
-      memberId: f.colleagueId,
-      kind: 'in',
-      punchedAt: new Date(Date.now() - 9 * 60_000),
-      source: 'self',
-      createdByMemberId: f.staffId,
-      viaMemberId: f.staffId,
-      voidedAt: new Date(Date.now() - 8 * 60_000),
-      voidedByMemberId: f.staffId,
-      voidReason: 'attendance.voidReason.wrongPerson',
-    });
-    // Bob's shift ended an hour ago; he clocked in at its start.
     const start = new Date(Date.now() - 5 * 3600_000);
     const end = new Date(Date.now() - 3600_000);
     await f.manager.attendance.shiftSave({
@@ -401,19 +417,27 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       time: attendance.localTime(start, TZ),
       reason: 'test',
     });
+  }
+  /** Bob's face on Ali's phone, with a reason for the overtime. */
+  const bobOnAlisPhone = () =>
+    clock(fixture().staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' });
 
-    // On Ali's phone, Bob's clock-out past the shift: the question says whose.
+  test("on a colleague's phone, the overtime question says whose it is", async () => {
+    const f = fixture();
+    await bobsShiftOver();
     const asked = await refusal(clock(f.staff(), { who: 'Bob', identify: true }));
     expect(asked.message).toBe('attendance.errors.overtimeReasonRequired');
     expect(asked.context?.name).toBe('Att Colleague');
     expect(Number(asked.context?.minutes)).toBeGreaterThanOrEqual(59);
-    const out = await clock(f.staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' });
+    const out = await bobOnAlisPhone();
     expect([out.kind, out.forName]).toEqual(['out', 'Att Colleague']);
+  });
 
-    // Found again within two minutes, on any phone: the same punch, not his next.
-    const again = await refusal(
-      clock(f.staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' }),
-    );
+  test('found again within two minutes, on any phone: the same punch, not his next', async () => {
+    const f = fixture();
+    await bobsShiftOver();
+    await bobOnAlisPhone();
+    const again = await refusal(bobOnAlisPhone());
     expect(again.message).toBe('attendance.errors.justPunched');
     expect(again.context).toMatchObject({ lastKind: 'out', name: 'Att Colleague' });
     expect(String(again.context?.time)).toMatch(/^\d{2}:\d{2}$/);
@@ -421,8 +445,17 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
     const own = await refusal(clock(f.colleague(), { who: 'Bob', kind: 'out', device: DEVICE }));
     expect(own.message).toBe('attendance.errors.notClockedIn');
     expect(own.context?.lastKind).toBe('out');
+  });
 
-    // "Not them": only the phone that made it, only once.
+  test('"not them": only the phone that made it, only once, and its overtime goes too', async () => {
+    const f = fixture();
+    await bobsShiftOver();
+    const out = await bobOnAlisPhone();
+    const date = dateInTz(new Date(out.at), TZ);
+    const sheet = () => f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    const pendingOvertime = async () =>
+      (await sheet()).overtime.filter((o) => o.punchId === out.id && o.status === 'pending');
+    expect(await pendingOvertime()).toHaveLength(1);
     await expectError(
       f.colleague().attendance.punchUndo({ storeId: f.storeId, punchId: out.id }),
       'attendance.errors.undoNotYours',
@@ -437,26 +470,41 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       f.staff().attendance.punchUndo({ storeId: f.storeId, punchId: out.id }),
       'attendance.errors.alreadyVoided',
     );
-    const date = dateInTz(new Date(out.at), TZ);
-    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    const row = sheet.punches.find((p) => p.id === out.id)!;
+    const row = (await sheet()).punches.find((p) => p.id === out.id)!;
     expect([row.voided?.reason, row.voided?.byName]).toEqual([
       'attendance.voidReason.wrongPerson',
       'Att Staff',
     ]);
     // Its overtime is no longer waiting for anyone.
-    expect(sheet.overtime.filter((o) => o.punchId === out.id && o.status === 'pending')).toEqual(
-      [],
-    );
+    expect(await pendingOvertime()).toEqual([]);
     expect(await botRecipients('attendance.punchUndone')).toEqual([f.managerUserId]);
     expect(await botRecipients('attendance.punchUndoneForYou')).toEqual([f.colleagueUserId]);
+  });
 
-    // ATT-02: taken back, the same face is not taken for him again on this
-    // phone for a while. The person clocking is told they were not
+  test('ATT-02: after a "not them", that face is not taken for him on this phone for a while', async () => {
+    const f = fixture();
+    await bobsShiftOver();
+    // A "not them" on this phone a while ago leaves the face look alone.
+    await getDb(undefined, { system: 'maintenance' })
+      .insert(s.attendancePunches)
+      .values({
+        orgId: f.orgId,
+        storeId: f.storeId,
+        memberId: f.colleagueId,
+        kind: 'in',
+        punchedAt: new Date(Date.now() - 9 * 60_000),
+        source: 'self',
+        createdByMemberId: f.staffId,
+        viaMemberId: f.staffId,
+        voidedAt: new Date(Date.now() - 8 * 60_000),
+        voidedByMemberId: f.staffId,
+        voidReason: 'attendance.voidReason.wrongPerson',
+      });
+    const out = await bobOnAlisPhone();
+    await f.staff().attendance.punchUndo({ storeId: f.storeId, punchId: out.id });
+    // Taken back just now: the person clocking is told they were not
     // recognized, instead of punching him once more.
-    const sameFace = await refusal(
-      clock(f.staff(), { who: 'Bob', identify: true, overtimeReason: 'stocktake' }),
-    );
+    const sameFace = await refusal(bobOnAlisPhone());
     expect(sameFace.message).toBe('attendance.errors.notRecognized');
     // The voided punch holds nothing up: his own clock-out goes through.
     const right = await clock(f.colleague(), {
@@ -466,9 +514,12 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       overtimeReason: 'stocktake',
     });
     expect(right.kind).toBe('out');
+  });
 
-    // After two minutes it is the manager's to void.
-    const [old] = await db
+  test('after two minutes, "not them" is for a manager to do', async () => {
+    const f = fixture();
+    await staffReady();
+    const [old] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.attendancePunches)
       .values({
         orgId: f.orgId,

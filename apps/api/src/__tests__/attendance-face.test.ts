@@ -66,6 +66,13 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     await staffReady();
     await f.staff().attendance.faceConsentWithdraw();
     expect((await f.staff().attendance.me({})).face.status).toBe('none');
+    // Deleted, not only hidden.
+    expect(
+      await getDb(undefined, { system: 'maintenance' })
+        .select()
+        .from(s.attendanceFaceEnrollments)
+        .where(eq(s.attendanceFaceEnrollments.memberId, f.staffId)),
+    ).toEqual([]);
     await expectError(enroll(), 'attendance.errors.consentRequired');
     await f.staff().attendance.faceConsentGive({ version: 1 });
     expect((await enroll()).status).toBe('pending');
