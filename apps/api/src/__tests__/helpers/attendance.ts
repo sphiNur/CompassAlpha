@@ -15,6 +15,7 @@ import { SHOULD_RUN } from './pg';
 import { callerFor } from './ctx';
 import { seedMember } from './fixtures';
 import { errorOf } from './errors';
+import { middayZone } from './zone';
 
 export type Caller = ReturnType<typeof appRouter.createCaller>;
 
@@ -43,7 +44,12 @@ export function fixture(): Fixture {
   return current;
 }
 
-export const TZ = 'Asia/Tashkent';
+/**
+ * The workspaces' time zone, one where this run happens around midday
+ * (zone.ts, review TEST1-08). Overnight shifts have tests of their own, at
+ * fixed times.
+ */
+export const TZ = middayZone(new Date());
 export const DEVICE = 'device-aaaaaaaaaaaaaaaa';
 export const OTHER_DEVICE = 'device-bbbbbbbbbbbbbbbb';
 export const SHOP = { lat: 41.311081, lng: 69.240562 };
