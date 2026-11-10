@@ -20,10 +20,10 @@ import type { OrderEvent } from './events';
  * own claim that is immediately followed by the caller re-claiming (see
  * `isOwnTimeoutReclaim`).
  *
- * Compared on `actorUserId`, not `actorMemberId`: the event store
- * persists the acting user (`domain.events.actor_id`) but returns
- * `actorMemberId: null` on read (eventStore.readStream), so a member-id
- * comparison would treat the approver's own claim as someone else's.
+ * Compared on `actorUserId`, the acting user the event store keeps
+ * (`domain.events.actor_id`). The member id is only looked up from it
+ * on read (eventStore.readStream, review RUNAPI-25), and an event of a
+ * member who has since left reads back without one.
  */
 export function changedByOthersSince(
   events: ReadonlyArray<StaleCheckEvent>,

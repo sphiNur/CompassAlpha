@@ -42,6 +42,12 @@ function effectivePrice(state: RunState, skuId: string, storeId: string): string
   return split?.unitPrice ?? item.unitPrice;
 }
 
+/** The store's own price on the line, or null when it pays the item price. */
+function ownPrice(state: RunState, skuId: string, storeId: string): string | null {
+  const split = state.items.get(skuId)?.storeSplits.find((sp) => sp.storeId === storeId);
+  return split?.unitPrice ?? null;
+}
+
 /**
  * `visibleStoreIds` null = every store; otherwise lines and prices are
  * limited to those stores (a store-scoped history reader).
@@ -64,43 +70,39 @@ export function runCorrections(
         .map((sp) => sp.storeId)
         .filter((storeId) => confirmedStores.has(storeId) && visible(storeId));
       const next = applyRun(state, e);
-      if (receivedBy.length > 0) {
-        if (visibleStoreIds === null) {
-          const from = before?.unitPrice ?? null;
-          const to = e.payload.unitPrice;
-          const splitChanged = receivedBy.some(
-            (storeId) =>
-              effectivePrice(state, e.payload.skuId, storeId) !==
-              effectivePrice(next, e.payload.skuId, storeId),
-          );
-          if (from !== to || splitChanged) {
-            out.push({
-              kind: 'priceAfterReceipt',
-              skuId: e.payload.skuId,
-              storeId: null,
-              at: e.occurredAt.toISOString(),
-              from,
-              to,
-              reason: e.payload.reason,
-            });
-          }
-        } else {
-          for (const storeId of receivedBy) {
-            const from = effectivePrice(state, e.payload.skuId, storeId);
-            const to = effectivePrice(next, e.payload.skuId, storeId);
-            if (to === null || from === to) continue;
-            out.push({
-              kind: 'priceAfterReceipt',
-              skuId: e.payload.skuId,
-              storeId,
-              at: e.occurredAt.toISOString(),
-              from,
-              to,
-              reason: e.payload.reason,
-            });
-          }
-        }
+      // Review RUNAPI-26: judged by what each receiving store pays, for
+      // every reader. A store-scoped reader gets a line per store. For the
+      // organisation, the stores that pay the item price share one line
+      // for the item (storeId null, as before) and a store with its own
+      // price gets its own. The organisation's line used to compare the
+      // item price only: a change no receiving store pays was logged, and
+      // a change to one store's price read "1000 → 1000".
+      const skuId = e.payload.skuId;
+      const at = e.occurredAt.toISOString();
+      const reason = e.payload.reason;
+      let itemLine = false;
+      const storeLines: RunCorrection[] = [];
+      for (const storeId of receivedBy) {
+        const from = effectivePrice(state, skuId, storeId);
+        const to = effectivePrice(next, skuId, storeId);
+        if (to === null || from === to) continue;
+        const paysItemPrice =
+          ownPrice(state, skuId, storeId) === null && ownPrice(next, skuId, storeId) === null;
+        if (visibleStoreIds === null && paysItemPrice) itemLine = true;
+        else storeLines.push({ kind: 'priceAfterReceipt', skuId, storeId, at, from, to, reason });
       }
+      if (itemLine) {
+        out.push({
+          kind: 'priceAfterReceipt',
+          skuId,
+          storeId: null,
+          at,
+          from: before?.unitPrice ?? null,
+          to: e.payload.unitPrice,
+          reason,
+        });
+      }
+      out.push(...storeLines);
       state = next;
       continue;
     }

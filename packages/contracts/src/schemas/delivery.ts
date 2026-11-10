@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UuidSchema } from './common';
+import { PhotoUrlSchema, UuidSchema } from './common';
 
 export const ConfirmStatusSchema = z.enum(['ok', 'short', 'wrong', 'quality']);
 
@@ -15,13 +15,9 @@ export const ConfirmStoreItemInputSchema = z.object({
   skuId: UuidSchema,
   status: ConfirmStatusSchema,
   note: z.string().max(500).nullable(),
-  // Accept both https URLs and data: URIs (M1 base64 fallback before S3 lands).
-  // DLV-7 (2026-10-30): only those — the purchaser's page now links it.
-  photoUrl: z
-    .string()
-    .max(300_000)
-    .regex(/^(https?:\/\/|data:image\/)/i, 'photoUrl must be an http(s) or data:image URL')
-    .nullable(),
+  // DLV-7 (2026-10-30): an http(s) or data:image URL only — the
+  // purchaser's page links it.
+  photoUrl: PhotoUrlSchema.nullable(),
   /**
    * 2026-10-21 CA-06: how much of this store's split actually arrived
    * (0 ≤ qty ≤ split qty, upper bound checked by the domain). Required

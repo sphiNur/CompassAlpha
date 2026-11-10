@@ -1,6 +1,10 @@
 /**
- * Injectable clock. Tests pass a fixed instant; production passes Date.now().
- * Domain code never calls Date.now() / new Date() directly.
+ * Injectable clock. The aggregates take the time from the Clock their
+ * caller passes (tests a fixed instant, production `systemClock`) and
+ * never read the system time themselves. The date helpers further down
+ * serve the API's routers, and default to the current instant (review
+ * ORD-17: this said no domain code reads the time, under a helper that
+ * does).
  */
 export interface Clock {
   now(): Date;

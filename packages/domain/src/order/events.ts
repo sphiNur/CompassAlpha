@@ -252,25 +252,3 @@ export type OrderEvent =
   | AttachedToRunEvent
   | EjectedFromRunEvent
   | ArchivedEvent;
-
-/** Type narrowing helper. */
-export function isOrderEvent(e: { type: string }): e is OrderEvent {
-  return [
-    'DraftStarted',
-    'ItemAdjusted',
-    'ItemNoteSet',
-    'SessionNoteSet',
-    'SessionExtrasSet',
-    'ExtraStatusSet',
-    'Submitted',
-    'Claimed',
-    'ClaimReleased',
-    'Approved',
-    'Rejected',
-    'Withdrawn',
-    'Unapproved',
-    'AttachedToRun',
-    'EjectedFromRun',
-    'Archived',
-  ].includes(e.type);
-}

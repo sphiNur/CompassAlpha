@@ -539,6 +539,7 @@ export const en = {
   'common.errors.actionFailed':
     'That did not go through. Try again; if it keeps failing, refresh the page.',
   'common.errors.invalidDecimal': 'Enter a number with at most 3 decimals.',
+  'common.errors.invalidPhotoUrl': 'The photo could not be used. Take it again.',
   'common.errors.positiveDecimal': 'Enter a number above 0 with at most 3 decimals.',
   'common.errors.invalidDate': 'Not a valid date. Pick it again from the calendar.',
   'order.errors.tooManyExtras': 'An order can have at most 50 other items.',

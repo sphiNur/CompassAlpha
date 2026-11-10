@@ -473,6 +473,7 @@ export const uz = {
   'common.errors.actionFailed':
     'Amalga oshmadi. Qayta urinib koʻring; takrorlansa, sahifani yangilang.',
   'common.errors.invalidDecimal': 'Koʻpi bilan 3 kasrli son kiriting.',
+  'common.errors.invalidPhotoUrl': 'Rasmdan foydalanib boʻlmadi. Qaytadan suratga oling.',
   'common.errors.positiveDecimal': '0 dan katta, koʻpi bilan 3 kasrli son kiriting.',
   'common.errors.invalidDate': 'Sana notoʻgʻri. Uni taqvimdan qayta tanlang.',
   'order.errors.tooManyExtras':

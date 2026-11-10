@@ -438,6 +438,7 @@ export const zh = {
   'common.errors.internal': '系统出了点问题，请稍后再试。',
   'common.errors.actionFailed': '没有成功。再试一次；一直不行就刷新页面。',
   'common.errors.invalidDecimal': '请填写数字，最多 3 位小数。',
+  'common.errors.invalidPhotoUrl': '照片无法使用，请重新拍摄。',
   'common.errors.positiveDecimal': '请填写大于 0 的数字，最多 3 位小数。',
   'common.errors.invalidDate': '日期无效，请重新从日历里选。',
   'order.errors.tooManyExtras': '一张订单最多 50 个其他物品。',
