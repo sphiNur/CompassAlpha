@@ -23,6 +23,7 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import type { CatalogKey } from '@compass/i18n';
 import {
   AttendanceCopyWeekInputSchema,
   AttendanceLivenessChallengeInputSchema,
@@ -117,9 +118,14 @@ const WRONG_PERSON_REASON = 'attendance.voidReason.wrongPerson';
 /** How long a colleague taken back as "not them" stays out of that phone's face look. */
 const TAKEN_BACK_LEFT_OUT_MS = 5 * 60_000;
 
+/** The last part of a key under `attendance.errors.`; a misspelt one fails tsc (TEST2-15). */
+type AttendanceErrorKey<K = CatalogKey> = K extends `attendance.errors.${infer Rest}`
+  ? Rest
+  : never;
+
 function fail(
   code: 'FORBIDDEN' | 'BAD_REQUEST' | 'NOT_FOUND' | 'CONFLICT',
-  key: string,
+  key: AttendanceErrorKey,
   cause?: object,
 ): never {
   throw new TRPCError({ code, message: `attendance.errors.${key}`, cause });

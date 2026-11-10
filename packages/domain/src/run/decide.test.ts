@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { applyRun, decideRun, emptyRunState } from './index';
+import { sumMoney } from '@compass/contracts/money';
+import { applyRun, computeRunTotals, decideRun, emptyRunState } from './index';
 import {
   RUN_CLOCK as clock,
   RUN_NOW as NOW,
@@ -350,7 +351,6 @@ describe('run.decide', () => {
       ],
     });
     s = deliver(s, ['A', 'B']);
-    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     // store B not yet confirmed
     expect(() => decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock)).toThrow(
@@ -361,7 +361,6 @@ describe('run.decide', () => {
   test('full happy path lands in finished status', () => {
     let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
     s = deliver(s);
-    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     s = step(s, { type: 'FinishRun', actor: purchaser() });
     expect(s.status).toBe('finished');
@@ -373,7 +372,6 @@ describe('run.decide', () => {
     // Drive sku-1 (qty 4 @ 12,000 cash) all the way to finished → total 48,000.
     let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
     s = deliver(s);
-    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     s = finishEvs.reduce(applyRun, s);
@@ -434,8 +432,8 @@ describe('run.decide', () => {
     expect(refin.payload.totalActual).toBe('60000.00'); // 4 × 15,000
     expect(refin.payload.totalCash).toBe('60000.00');
     expect(refin.payload.totalTransfer).toBe('0.00');
-    // Money integrity invariant.
-    expect((Number(refin.payload.totalCash) + Number(refin.payload.totalTransfer)).toFixed(2)).toBe(
+    // Money integrity invariant, added in cents as every total is (D1).
+    expect(sumMoney([refin.payload.totalCash, refin.payload.totalTransfer])).toBe(
       refin.payload.totalActual,
     );
   });
@@ -494,7 +492,8 @@ describe('run.decide', () => {
     const sa = runActor('sa', ['run.amend']);
     let s = planAndPurchase();
     const before = s.runDate;
-    const totalsBefore = [...s.items.values()].map((i) => i.unitPrice);
+    const pricesBefore = [...s.items.values()].map((i) => i.unitPrice);
+    const totalsBefore = computeRunTotals(s);
 
     // Permission gate.
     expect(() =>
@@ -517,7 +516,8 @@ describe('run.decide', () => {
     s = evs.reduce(applyRun, s);
     expect(s.runDate).toBe('2026-07-23');
     // Money is untouched — this reschedules, it does not re-price.
-    expect([...s.items.values()].map((i) => i.unitPrice)).toEqual(totalsBefore);
+    expect([...s.items.values()].map((i) => i.unitPrice)).toEqual(pricesBefore);
+    expect(computeRunTotals(s)).toEqual(totalsBefore);
 
     // Re-applying the same date is a no-op that must not forge an audit entry.
     expect(() =>
@@ -552,8 +552,21 @@ describe('run.decide', () => {
     expect(() => decideRun(s, { type: 'RefinalizeRun', actor: superAdmin }, clock)).toThrow(
       'run.errors.notRefinalizable',
     );
-    // Cancelled runs are permanently un-reopenable.
-    void s;
+  });
+
+  test('a cancelled run cannot be reopened, not even with run.amend', () => {
+    // Only a finished run reopens; the rule was a comment with no
+    // assertion behind it (review TEST4-23).
+    const cancelled = step(planAndPurchase(), {
+      type: 'CancelRun',
+      reason: 'misclick',
+      actor: purchaser(),
+    });
+    expect(cancelled.status).toBe('cancelled');
+    const sa = runActor('sa', ['run.amend']);
+    expect(() =>
+      decideRun(cancelled, { type: 'ReopenRun', reason: 'fix', actor: sa }, clock),
+    ).toThrow('run.errors.notReopenable');
   });
 
   // The reason being OPTIONAL is a deliberate product decision (M1.7:
@@ -626,7 +639,6 @@ describe('run.decide', () => {
   test('CancelRun blocked after finished', () => {
     let s = planAndPurchase();
     s = deliver(s);
-    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     s = step(s, { type: 'FinishRun', actor: purchaser() });
     expect(() =>

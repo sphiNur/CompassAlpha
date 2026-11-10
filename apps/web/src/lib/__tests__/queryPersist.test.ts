@@ -118,6 +118,11 @@ describe('mergeForSave', () => {
 });
 
 describe('save and restore', () => {
+  // These run on the real clock (save and restore read Date.now()). That
+  // is safe because every query here is outside TODAY_QUERIES and the
+  // limit is 36 hours: midnight or a slow machine between the save and the
+  // restore changes nothing. Day-bound queries are tested above, with
+  // explicit times (TEST3-15).
   it('saves listed queries and restores them for the same owner only', async () => {
     let owner: string | null = 'u1:o1';
     const a = new QueryClient();

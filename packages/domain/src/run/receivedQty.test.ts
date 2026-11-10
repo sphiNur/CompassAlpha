@@ -72,7 +72,7 @@ describe('run.receivedQty', () => {
 
   test('wrong / quality default to zero received', () => {
     expect(payloadOf(decideRun(delivered(), issue('wrong'), clock)).receivedQty).toBe('0');
-    expect(payloadOf(decideRun(delivered(), issue('quality', '1'), clock)).receivedQty).toBe('1');
+    expect(payloadOf(decideRun(delivered(), issue('quality'), clock)).receivedQty).toBe('0');
   });
 
   test('ok carries no received qty (old event shape) even if one is sent', () => {

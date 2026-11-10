@@ -4,11 +4,13 @@ import * as schema from './schema/index';
 
 export type DB = ReturnType<typeof drizzle<typeof schema>>;
 
-// One pool per kind of handle. A process normally has one; a test process
-// has both, the plain handle for the code under test and the maintenance
-// one for building fixtures.
+// One pool per database and kind of handle. A process normally has one; a
+// test process has both kinds, the plain handle for the code under test and
+// the maintenance one for building fixtures. The address is part of the key
+// (DB-17): a script or test that asks for a second database gets that
+// database, not the pool of the first.
 type Kind = 'app' | 'maintenance';
-const pools = new Map<Kind, { client: ReturnType<typeof postgres>; db: DB }>();
+const pools = new Map<string, { client: ReturnType<typeof postgres>; db: DB }>();
 
 export interface GetDbOptions {
   /**
@@ -26,10 +28,11 @@ export function getDb(url?: string, options: GetDbOptions = {}): DB {
   const connectionString = url ?? process.env.DATABASE_URL;
   const refusal = connectionString ? testDatabaseRefusal(connectionString) : null;
   if (refusal) return refusingHandle(refusal);
-  const kind: Kind = options.system ? 'maintenance' : 'app';
-  const existing = pools.get(kind);
-  if (existing) return existing.db;
   if (!connectionString) throw new Error('DATABASE_URL not set');
+  const kind: Kind = options.system ? 'maintenance' : 'app';
+  const key = `${kind} ${connectionString}`;
+  const existing = pools.get(key);
+  if (existing) return existing.db;
   const client = postgres(connectionString, {
     max: 20,
     idle_timeout: 30,
@@ -43,15 +46,17 @@ export function getDb(url?: string, options: GetDbOptions = {}): DB {
   // A maintenance handle is tenant-less by declaration; there is nothing
   // for the probe to find on it.
   const db = options.system ? raw : probed(raw);
-  pools.set(kind, { client, db });
+  pools.set(key, { client, db });
   return db;
 }
 
 /**
  * Tests insert fixtures and delete rows, so a test run (`bun test` sets
  * NODE_ENV=test) uses only a database whose name says it is throwaway:
- * one containing "test" or "e2e", like CI's compass_test and the
- * end-to-end run's compass_e2e. Bun reads the repository's .env by
+ * one with "test" or "e2e" as a word of its name, like CI's compass_test,
+ * a local compass_test_x and the end-to-end run's compass_e2e. Letters
+ * inside a word do not count: "latest" or "contest" is refused (the same
+ * rule as tests/e2e/env.ts). Bun reads the repository's .env by
  * itself, and there DATABASE_URL is the development database, so a run
  * that forgot SKIP_PG_TESTS=1 used to write its fixtures into it.
  *
@@ -64,9 +69,9 @@ export function testDatabaseRefusal(
 ): string | null {
   if (env.NODE_ENV !== 'test' || env.ALLOW_ANY_TEST_DB === '1') return null;
   const name = databaseName(connectionString);
-  if (/e2e|test/i.test(name)) return null;
+  if (/(^|[_-])(e2e|test)([_-]|$)/i.test(name)) return null;
   return (
-    'A test run may use only a throwaway database, one with "test" or "e2e" in its name, ' +
+    'A test run may use only a throwaway database, one with "test" or "e2e" as a word of its name, ' +
     `and this one is ${name ? `"${name}"` : 'unnamed'}. Tests write and delete rows: point ` +
     'DATABASE_URL at a database such as compass_test (bun takes it from .env when the shell ' +
     'sets none), or set ALLOW_ANY_TEST_DB=1.'
@@ -100,12 +105,13 @@ function databaseName(connectionString: string): string {
 /**
  * Finding every query that runs without a tenant.
  *
- * The row-level policies currently let everything through when no
- * organisation is set, which is how the login path and the worker read
- * across tenants, and also how any query that simply forgot would leak
- * between customers. Before the policies can be made to refuse, every
- * such query has to be either given a tenant or marked as deliberately
- * tenant-less (`withSystemContext`). This is how they are found.
+ * Since migrations/sql/950_rls_fail_closed.sql the row-level policies let
+ * a query through only for its own organisation or in a system context
+ * (`app_is_system()`). A query that set neither sees no rows and cannot
+ * write: no leak between customers, but a screen or a job that silently
+ * finds nothing. Every query has to be given a tenant or marked as
+ * deliberately tenant-less (`withSystemContext`). This is how the ones
+ * that forgot are found.
  *
  * A tenant is set per transaction, so a query issued on the root handle
  * (outside `withOrgContext` / `withSystemContext`) has none by
@@ -113,8 +119,11 @@ function databaseName(connectionString: string): string {
  * once per call site:
  *
  *   DB_TENANT_PROBE unset or `warn`   one JSON line on stderr per site
- *   DB_TENANT_PROBE=throw             the query throws (tests, and
- *                                     production once the list is empty)
+ *                                     (the default, so also production
+ *                                     unless its .env says otherwise)
+ *   DB_TENANT_PROBE=throw             the query throws (the end-to-end
+ *                                     run; the goal for production once
+ *                                     the warnings stop)
  *   DB_TENANT_PROBE=off               nothing
  */
 const ROOT_OPERATIONS = new Set([
@@ -139,15 +148,21 @@ export interface TenantlessQuery {
   site: string;
 }
 
-let reporter: (use: TenantlessQuery) => void = (use) => {
+function warnOnStderr(use: TenantlessQuery): void {
   process.stderr.write(
     `${JSON.stringify({ level: 'warn', event: 'db.no_tenant_context', ...use })}\n`,
   );
-};
+}
 
-/** Route the reports somewhere else (a logger; an array in a test). */
-export function setTenantlessQueryReporter(fn: (use: TenantlessQuery) => void): void {
-  reporter = fn;
+let reporter: (use: TenantlessQuery) => void = warnOnStderr;
+
+/**
+ * Route the reports somewhere else (a logger; an array in a test). `null`
+ * puts back the line on stderr: the reporter outlives a test file, since
+ * `bun test` runs every file in one process (TEST2-17).
+ */
+export function setTenantlessQueryReporter(fn: ((use: TenantlessQuery) => void) | null): void {
+  reporter = fn ?? warnOnStderr;
   reportedSites.clear();
 }
 

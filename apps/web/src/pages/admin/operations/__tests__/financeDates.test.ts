@@ -10,6 +10,9 @@
 import { describe, expect, test } from 'bun:test';
 import { financePresetRange, localDateValue, maintenanceToday } from '../financeDates';
 
+/** The module under test, for the child processes below. */
+const MODULE = new URL('../financeDates.ts', import.meta.url).pathname;
+
 describe('financePresetRange in Asia/Tashkent (UTC+5)', () => {
   // 2026-03-01 02:30 local = 2026-02-28 21:30 UTC: local and UTC
   // calendars disagree on day AND month.
@@ -86,5 +89,24 @@ describe('maintenanceToday (FE-07)', () => {
     // Built from local components, so this holds in any machine zone.
     const now = new Date(2026, 9, 21, 2, 0, 0);
     expect(maintenanceToday(now)).toBe('2026-10-21');
+  });
+
+  test('the default is the device zone, also when that is not Tashkent (TEST3-15)', () => {
+    // The case that matters: a device whose day differs from Tashkent's.
+    // TZ holds only when set before a process first uses Date, so each
+    // device zone gets a process of its own.
+    const at = '2026-10-21T02:00:00Z'; // 07:00 on the 21st in Tashkent, 22:00 on the 20th in New York
+    const today = (tz: string) => {
+      const code =
+        `import { financePresetRange, maintenanceToday } from ${JSON.stringify(MODULE)};` +
+        `const now = new Date(${JSON.stringify(at)});` +
+        `console.log(maintenanceToday(now), financePresetRange('today', now).startDate);`;
+      const run = Bun.spawnSync([process.execPath, '-e', code], {
+        env: { ...process.env, TZ: tz },
+      });
+      return run.stdout.toString().trim();
+    };
+    expect(today('America/New_York')).toBe('2026-10-20 2026-10-20');
+    expect(today('Asia/Tashkent')).toBe('2026-10-21 2026-10-21');
   });
 });

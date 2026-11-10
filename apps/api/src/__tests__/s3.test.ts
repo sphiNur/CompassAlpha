@@ -136,10 +136,18 @@ describe('s3 presigner', () => {
 
   it('clamps expiresInSeconds to [60, 86400]', async () => {
     const { presignPut } = await import('../services/s3');
-    const lo = presignPut({ key: 'a', contentType: 'image/jpeg', expiresInSeconds: 1 });
-    const hi = presignPut({ key: 'a', contentType: 'image/jpeg', expiresInSeconds: 10_000_000 });
-    expect(new URL(lo.url).searchParams.get('X-Amz-Expires')).toBe('60');
-    expect(new URL(hi.url).searchParams.get('X-Amz-Expires')).toBe('86400');
+    const expires = (expiresInSeconds: number) =>
+      new URL(
+        presignPut({ key: 'a', contentType: 'image/jpeg', expiresInSeconds }).url,
+      ).searchParams.get('X-Amz-Expires');
+    // Far outside, and on either side of each edge (TEST2-21).
+    expect([1, 59, 60, 61].map(expires)).toEqual(['60', '60', '60', '61']);
+    expect([86_399, 86_400, 86_401, 10_000_000].map(expires)).toEqual([
+      '86399',
+      '86400',
+      '86400',
+      '86400',
+    ]);
   });
 
   it('throws S3NotConfiguredError when credentials are missing', async () => {
