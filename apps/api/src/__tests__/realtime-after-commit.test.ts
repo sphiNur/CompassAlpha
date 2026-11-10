@@ -25,13 +25,13 @@ import {
   withSystemContext,
   type DB,
 } from '@compass/db';
-import { logger } from '../infra/log';
 import { hub } from '../realtime/hub';
 import { relayDatabaseNotices, relayRealtimeNotice } from '../realtime/dbRelay';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession, type SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -160,21 +160,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
       .insert(s.memberRoleBindings)
       .values({ memberId: member!.id, roleId: role!.id, scopeType: 'store', scopeId: storeId });
     const session = (await loadSession(app(), user!.id, orgId, member!.id)) as SessionContext;
-    const ctx: RequestContext = {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hono: {} as any,
-      db: app(),
-      log: logger,
-      traceId: `test-${Date.now()}`,
-      ip: null,
-      userAgent: null,
-      idempotencyKey: null,
-      session,
-      async withOrg(fn, options) {
-        return withOrgContext(app(), orgId, fn, options);
-      },
-    };
-    staff = appRouter.createCaller(ctx);
+    staff = callerFor(session);
     stopRelay = await relayDatabaseNotices(unprobed(app()).$client);
   });
 

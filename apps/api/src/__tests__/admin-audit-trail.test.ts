@@ -16,12 +16,12 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { auditAdmin } from '../trpc/routers/admin';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -33,28 +33,6 @@ const { BUILTIN_ROLES } = (await import(
 
 type Db = ReturnType<typeof getDb>;
 type Caller = ReturnType<typeof appRouter.createCaller>;
-
-/**
- * A Telegram id no other test file hands out: theirs stay below 10^12
- * (a time-based id cut to 12 digits collided with one of them in CI).
- */
-function callerFor(db: Db, session: SessionContext): Caller {
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
 
 interface Person {
   userId: string;
@@ -132,7 +110,7 @@ beforeAll(async () => {
     });
     const session = await loadSession(db, u!.id, orgId, m!.id);
     if (!session) throw new Error('session failed to load');
-    return { userId: u!.id, memberId: m!.id, name, as: callerFor(db, session) };
+    return { userId: u!.id, memberId: m!.id, name, as: callerFor(session) };
   };
   fix = {
     db,

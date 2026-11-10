@@ -10,13 +10,13 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { eq } from 'drizzle-orm';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -24,23 +24,6 @@ type SeedData = {
 };
 const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
 const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { db: ReturnType<typeof getDb>; storeId: string; orgId: string; admin: Caller; manager: Caller; owner: Caller; roleIds: Record<string, string> } | null = null;
@@ -91,7 +74,7 @@ beforeAll(async () => {
       .values({ memberId: m!.id, roleId: roleIds[slug]!, scopeType: scope, scopeId: scope === 'store' ? store!.id : null });
     const session = await loadSession(db, u!.id, orgId, m!.id);
     if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(db, session));
+    return callerFor(session);
   };
   const owner = await member('super_admin', 'global');
   const admin = await member('admin', 'global');
@@ -150,7 +133,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const session = await loadSession(db, u!.id, orgId, m!.id);
     // The flat session set has the key, which is what used to let it through.
     expect(session!.permissions.has('run.amend')).toBe(true);
-    const kamola = appRouter.createCaller(buildCtx(db, session!));
+    const kamola = callerFor(session!);
 
     const createErr = await errorOf(() =>
       kamola.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
@@ -276,7 +259,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
         .values({ memberId: who.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: sid });
     }
     const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
-    const manager = appRouter.createCaller(buildCtx(db, session!));
+    const manager = callerFor(session!);
     const seen = await manager.admin.memberList();
     expect(seen.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(true);
     expect(seen.find((m) => m.memberId === here.m.id)?.statusOutOfReach).toBe(false);
@@ -295,7 +278,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.memberRoleBindings)
       .values({ memberId: m!.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
     const session = await loadSession(db, u!.id, orgId, m!.id);
-    const manager = appRouter.createCaller(buildCtx(db, session!));
+    const manager = callerFor(session!);
     const seen = await manager.admin.memberList();
     const own = seen.find((x) => x.userId === u!.id)!.roles.find((r) => r.slug === 'manager')!;
     expect(own.rank).toBe(BUILTIN_ROLES.find((r) => r.slug === 'manager')!.rank);
@@ -329,7 +312,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.memberRoleBindings)
       .values({ memberId: worker.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
     const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
-    const manager = appRouter.createCaller(buildCtx(db, session!));
+    const manager = callerFor(session!);
     await manager.admin.memberSetStatus({ memberId: worker.m.id, status: 'suspended' });
     const rows = await manager.admin.adminAuditList({ limit: 50 });
     expect(
@@ -441,7 +424,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
         .insert(s.memberRoleBindings)
         .values({ memberId: m!.id, roleId, scopeType: 'store', scopeId: storeId });
       const session = await loadSession(db, u!.id, orgId, m!.id);
-      return appRouter.createCaller(buildCtx(db, session!));
+      return callerFor(session!);
     };
     const reader = await person(accountant!.id, 1);
     const range = { startDate: '2026-10-01', endDate: '2026-10-30' };
@@ -472,7 +455,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
         .values({ memberId: m!.id, roleId: roleIds[role]!, scopeType: 'store', scopeId: sid });
     }
     const session = await loadSession(db, u!.id, orgId, m!.id);
-    const me = await appRouter.createCaller(buildCtx(db, session!)).auth.me();
+    const me = await callerFor(session!).auth.me();
     expect(me.storePermissions[storeId]).not.toContain('order.approve');
     expect(me.storePermissions[other!.id]).toContain('order.approve');
     expect(me.permissions).toContain('order.approve');

@@ -8,34 +8,14 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
-
-function caller(session: SessionContext | null) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn) {
-      return withOrgContext(db, session?.orgId ?? null, fn);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
 
 describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
   let orgId = '';
@@ -180,13 +160,13 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     });
     expect(staff).toBeTruthy();
 
-    const created = await caller(adminSession()).admin.memberInviteCreate({
+    const created = await callerFor(adminSession()).admin.memberInviteCreate({
       roleSlug: staff!.slug,
       storeIds: [storeId],
     });
     expect(created.token.length).toBeGreaterThan(20);
     const tgUserId = freshTgId();
-    const accepted = await caller(null).auth.acceptInvite({
+    const accepted = await callerFor(null).auth.acceptInvite({
       token: created.token,
       initData: signInitData(tgUserId, { firstName: 'Invited Person' }),
     });
@@ -196,7 +176,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     expect(accepted.session.roleSlugs).toContain(staff!.slug);
     expect(accepted.session.user.displayName).toBe('Invited Person');
 
-    const list = await caller(adminSession()).admin.memberList();
+    const list = await callerFor(adminSession()).admin.memberList();
     expect(list.some((m) => m.userId === accepted.session.user.id)).toBe(true);
   });
 
@@ -204,16 +184,16 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     const staff = await getDb(undefined, { system: 'maintenance' }).query.roles.findFirst({
       where: (r, { eq: eq2 }) => eq2(r.id, staffRoleId),
     });
-    const created = await caller(adminSession()).admin.memberInviteCreate({
+    const created = await callerFor(adminSession()).admin.memberInviteCreate({
       roleSlug: staff!.slug,
       storeIds: [storeId],
     });
-    await caller(null).auth.acceptInvite({
+    await callerFor(null).auth.acceptInvite({
       token: created.token,
       initData: signInitData(freshTgId()),
     });
     await expect(
-      caller(null).auth.acceptInvite({
+      callerFor(null).auth.acceptInvite({
         token: created.token,
         initData: signInitData(freshTgId()),
       }),
@@ -232,14 +212,14 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     const staff = await getDb(undefined, { system: 'maintenance' }).query.roles.findFirst({
       where: (r, { eq: eq2 }) => eq2(r.id, staffRoleId),
     });
-    const allowed = await caller(session).admin.memberInviteCreate({
+    const allowed = await callerFor(session).admin.memberInviteCreate({
       roleSlug: staff!.slug,
       storeIds: [storeId],
     });
     expect(allowed.token.length).toBeGreaterThan(20);
 
     await expect(
-      caller(session).admin.memberInviteCreate({
+      callerFor(session).admin.memberInviteCreate({
         roleSlug: staff!.slug,
         storeIds: [otherStoreId],
       }),
@@ -270,24 +250,24 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
   };
 
   test('CA-19 a revoked invite is gone from the list and cannot be accepted', async () => {
-    const created = await caller(adminSession()).admin.memberInviteCreate({
+    const created = await callerFor(adminSession()).admin.memberInviteCreate({
       roleSlug: await staffSlug(),
       storeIds: [storeId],
     });
     const inviteId = await inviteIdOf(created.token);
-    const before = await caller(adminSession()).admin.memberInviteList();
+    const before = await callerFor(adminSession()).admin.memberInviteList();
     expect(before.some((i) => i.id === inviteId)).toBe(true);
 
-    await caller(adminSession()).admin.memberInviteRevoke({ inviteId });
-    const after = await caller(adminSession()).admin.memberInviteList();
+    await callerFor(adminSession()).admin.memberInviteRevoke({ inviteId });
+    const after = await callerFor(adminSession()).admin.memberInviteList();
     expect(after.some((i) => i.id === inviteId)).toBe(false);
-    await expect(caller(adminSession()).admin.memberInviteRevoke({ inviteId })).rejects.toThrow(
+    await expect(callerFor(adminSession()).admin.memberInviteRevoke({ inviteId })).rejects.toThrow(
       'admin.errors.inviteNotPending',
     );
 
     const tgUserId = freshTgId();
     await expect(
-      caller(null).auth.acceptInvite({ token: created.token, initData: signInitData(tgUserId) }),
+      callerFor(null).auth.acceptInvite({ token: created.token, initData: signInitData(tgUserId) }),
     ).rejects.toThrow('auth.errors.inviteRevoked');
     const user = await getDb(undefined, { system: 'maintenance' }).query.users.findFirst({
       where: (u, { eq: eq2 }) => eq2(u.tgUserId, tgUserId),
@@ -301,28 +281,28 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
   });
 
   test('CA-19 a store manager lists and revokes only invites into their stores', async () => {
-    const mine = await caller(managerSession()).admin.memberInviteCreate({
+    const mine = await callerFor(managerSession()).admin.memberInviteCreate({
       roleSlug: await staffSlug(),
       storeIds: [storeId],
     });
-    const theirs = await caller(adminSession()).admin.memberInviteCreate({
+    const theirs = await callerFor(adminSession()).admin.memberInviteCreate({
       roleSlug: await staffSlug(),
       storeIds: [otherStoreId],
     });
     const mineId = await inviteIdOf(mine.token);
     const theirsId = await inviteIdOf(theirs.token);
-    const list = await caller(managerSession()).admin.memberInviteList();
+    const list = await callerFor(managerSession()).admin.memberInviteList();
     expect(list.some((i) => i.id === mineId)).toBe(true);
     expect(list.some((i) => i.id === theirsId)).toBe(false);
     await expect(
-      caller(managerSession()).admin.memberInviteRevoke({ inviteId: theirsId }),
+      callerFor(managerSession()).admin.memberInviteRevoke({ inviteId: theirsId }),
     ).rejects.toThrow('admin.errors.notAdminOfStore');
-    await caller(managerSession()).admin.memberInviteRevoke({ inviteId: mineId });
+    await callerFor(managerSession()).admin.memberInviteRevoke({ inviteId: mineId });
   });
 
   test('CA-19 an invite dies with its inviter (suspended or lost users.manage)', async () => {
     const db = getDb(undefined, { system: 'maintenance' });
-    const created = await caller(managerSession()).admin.memberInviteCreate({
+    const created = await callerFor(managerSession()).admin.memberInviteCreate({
       roleSlug: await staffSlug(),
       storeIds: [storeId],
     });
@@ -332,7 +312,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       .where(eq(s.members.id, managerMemberId));
     try {
       await expect(
-        caller(null).auth.acceptInvite({
+        callerFor(null).auth.acceptInvite({
           token: created.token,
           initData: signInitData(freshTgId()),
         }),
@@ -342,7 +322,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     }
 
     // Losing the store-level users.manage voids the link as well.
-    const second = await caller(managerSession()).admin.memberInviteCreate({
+    const second = await callerFor(managerSession()).admin.memberInviteCreate({
       roleSlug: await staffSlug(),
       storeIds: [storeId],
     });
@@ -355,7 +335,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     });
     try {
       await expect(
-        caller(null).auth.acceptInvite({
+        callerFor(null).auth.acceptInvite({
           token: second.token,
           initData: signInitData(freshTgId()),
         }),
@@ -424,30 +404,36 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
 
   test('COREAPI-07 an admin link dies once its inviter no longer outranks the role', async () => {
     const owner = await makeOwner();
-    const created = await caller(owner.session).admin.memberInviteCreate({
+    const created = await callerFor(owner.session).admin.memberInviteCreate({
       roleSlug: await adminSlug(),
       storeIds: [storeId],
     });
     const inviteId = await inviteIdOf(created.token);
     // Still a global org admin, but now at the role's own rank.
     await owner.demoteTo({ roleId: adminRoleId, scopeType: 'global', scopeId: null });
-    const listed = await caller(adminSession()).admin.memberInviteList();
+    const listed = await callerFor(adminSession()).admin.memberInviteList();
     expect(listed.some((i) => i.id === inviteId)).toBe(false);
     await expect(
-      caller(null).auth.acceptInvite({ token: created.token, initData: signInitData(freshTgId()) }),
+      callerFor(null).auth.acceptInvite({
+        token: created.token,
+        initData: signInitData(freshTgId()),
+      }),
     ).rejects.toThrow('auth.errors.inviteInviterNoLongerAuthorized');
   });
 
   test('COREAPI-07 … and once its inviter only manages the invite’s store', async () => {
     const owner = await makeOwner();
-    const created = await caller(owner.session).admin.memberInviteCreate({
+    const created = await callerFor(owner.session).admin.memberInviteCreate({
       roleSlug: await adminSlug(),
       storeIds: [storeId],
     });
     // users.manage over every store on the invite used to be enough.
     await owner.demoteTo({ roleId: managerRoleId, scopeType: 'store', scopeId: storeId });
     await expect(
-      caller(null).auth.acceptInvite({ token: created.token, initData: signInitData(freshTgId()) }),
+      callerFor(null).auth.acceptInvite({
+        token: created.token,
+        initData: signInitData(freshTgId()),
+      }),
     ).rejects.toThrow('auth.errors.inviteInviterNoLongerAuthorized');
   });
 
@@ -455,17 +441,17 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     const db = getDb(undefined, { system: 'maintenance' });
     const owner = await makeOwner();
     const slug = `regional-${Math.random().toString(36).slice(2, 9)}`;
-    await caller(owner.session).admin.roleCreate({ slug, name: 'Regional', rank: 85 });
+    await callerFor(owner.session).admin.roleCreate({ slug, name: 'Regional', rank: 85 });
     const role = await db.query.roles.findFirst({
       where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, slug)),
     });
-    const created = await caller(owner.session).admin.memberInviteCreate({
+    const created = await callerFor(owner.session).admin.memberInviteCreate({
       roleSlug: slug,
       storeIds: [storeId],
     });
     // Nobody holds the role yet, so its level may still move.
-    await caller(owner.session).admin.roleUpdate({ roleId: role!.id, rank: 70 });
-    const accepted = await caller(null).auth.acceptInvite({
+    await callerFor(owner.session).admin.roleUpdate({ roleId: role!.id, rank: 70 });
+    const accepted = await callerFor(null).auth.acceptInvite({
       token: created.token,
       initData: signInitData(freshTgId()),
     });
@@ -477,7 +463,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
   });
 
   test('CA-17 a store manager reads only their own stores and members', async () => {
-    const mgr = caller(managerSession());
+    const mgr = callerFor(managerSession());
     const members = await mgr.admin.memberList();
     expect(members.some((m) => m.memberId === managerMemberId)).toBe(true);
     // The org admin has no store: not visible to a store manager.
@@ -497,7 +483,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       'admin.errors.notAdminOfStore',
     );
 
-    const adminView = await caller(adminSession()).admin.memberList();
+    const adminView = await callerFor(adminSession()).admin.memberList();
     expect(adminView.some((m) => m.memberId === adminMemberId && m.tgUserId !== null)).toBe(true);
   });
 
@@ -519,12 +505,12 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       grantedBy: adminUserId,
     });
     await expect(
-      caller(adminSession()).admin.memberSetDisplayName({
+      callerFor(adminSession()).admin.memberSetDisplayName({
         memberId: peer!.id,
         displayName: 'Hijacked',
       }),
     ).rejects.toThrow('auth.errors.cannotRevokeEqualOrHigher');
-    await caller(adminSession()).admin.memberSetDisplayName({
+    await callerFor(adminSession()).admin.memberSetDisplayName({
       memberId: adminMemberId,
       displayName: 'Admin Renamed Self',
     });
@@ -537,7 +523,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
   test('an unknown token creates nothing', async () => {
     const tgUserId = freshTgId();
     await expect(
-      caller(null).auth.acceptInvite({
+      callerFor(null).auth.acceptInvite({
         token: 'A'.repeat(43),
         initData: signInitData(tgUserId),
       }),

@@ -15,13 +15,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -29,23 +29,6 @@ type SeedData = {
 };
 const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
 const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -102,23 +85,21 @@ beforeAll(async () => {
     return { userId: u!.id, memberId: m!.id };
   };
   const a = await user(1);
-  const admin = appRouter.createCaller(
-    buildCtx(db, {
-      userId: a.userId,
-      memberId: a.memberId,
-      orgId,
-      orgTimezone: 'UTC',
-      permissions: new Set(['users.manage', 'org.admin', ...def.permissions]),
-      roleSlugs: new Set(['super_admin']),
-    }),
-  );
+  const admin = callerFor({
+    userId: a.userId,
+    memberId: a.memberId,
+    orgId,
+    orgTimezone: 'UTC',
+    permissions: new Set(['users.manage', 'org.admin', ...def.permissions]),
+    roleSlugs: new Set(['super_admin']),
+  });
   const b = await user(2);
   await db
     .insert(s.memberRoleBindings)
     .values({ memberId: b.memberId, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id });
   const staffSession = await loadSession(db, b.userId, orgId, b.memberId);
   if (!staffSession) throw new Error('session failed to load');
-  const staff = appRouter.createCaller(buildCtx(db, staffSession));
+  const staff = callerFor(staffSession);
   fix = { db, orgId, storeId: store!.id, skuId: sku!.id, memberId: a.memberId, admin, staff };
 });
 

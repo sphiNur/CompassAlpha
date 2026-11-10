@@ -3,11 +3,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, sql } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { attendance, dateInTz, todayInTz } from '@compass/domain';
 import { loadCatalog } from '@compass/i18n/catalogs';
 import { Hono } from 'hono';
-import { logger } from '../infra/log';
 import { attendanceMonthExport } from '../http/attendanceExport';
 import { appRouter } from '../trpc/router';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
@@ -17,9 +16,10 @@ import {
 } from '../services/attendancePhotoRetention';
 import { setFaceEngineForTests } from '../services/face';
 import { signLivenessToken } from '../services/face/liveness';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 describe('attendance copy', () => {
   test('every attendance error has a sentence in every language', async () => {
@@ -59,24 +59,6 @@ interface Fixture {
   staff: () => ReturnType<typeof appRouter.createCaller>;
 }
 let fx: Fixture | null = null;
-
-function buildCtx(session: SessionContext): RequestContext {
-  const db = getDb(undefined, { system: 'maintenance' });
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `attendance-test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 const TZ = 'Asia/Tashkent';
 const DEVICE = 'device-aaaaaaaaaaaaaaaa';
@@ -345,13 +327,11 @@ beforeAll(async () => {
     outsiderId: outsider.memberId,
     colleagueId: colleague.memberId,
     colleagueUserId: colleague.userId,
-    colleague: () => appRouter.createCaller(buildCtx(session(colleague, ['attendance.clock']))),
-    manager: appRouter.createCaller(buildCtx(session(mgr, ['attendance.manage']))),
+    colleague: () => callerFor(session(colleague, ['attendance.clock'])),
+    manager: callerFor(session(mgr, ['attendance.manage'])),
     superAdmin: () =>
-      appRouter.createCaller(
-        buildCtx({ ...session(mgr, ['attendance.manage']), roleSlugs: new Set(['super_admin']) }),
-      ),
-    staff: () => appRouter.createCaller(buildCtx(session(staff, ['attendance.clock']))),
+      callerFor({ ...session(mgr, ['attendance.manage']), roleSlugs: new Set(['super_admin']) }),
+    staff: () => callerFor(session(staff, ['attendance.clock'])),
   };
 });
 
@@ -1513,17 +1493,15 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 
   test('withdrawing face consent works in a read-only workspace', async () => {
     const f = fx!;
-    const readOnly = appRouter.createCaller(
-      buildCtx({
-        userId: f.colleagueUserId,
-        memberId: f.colleagueId,
-        orgId: f.orgId,
-        orgTimezone: TZ,
-        writeAccess: false,
-        permissions: new Set(['attendance.clock']),
-        roleSlugs: new Set(),
-      }),
-    );
+    const readOnly = callerFor({
+      userId: f.colleagueUserId,
+      memberId: f.colleagueId,
+      orgId: f.orgId,
+      orgTimezone: TZ,
+      writeAccess: false,
+      permissions: new Set(['attendance.clock']),
+      roleSlugs: new Set(),
+    });
     await expectError(
       readOnly.attendance.faceConsentGive({ version: 1 }),
       'subscription.errors.readOnly',
@@ -1557,17 +1535,15 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       scopeType: 'global',
       scopeId: null,
     });
-    const admin = appRouter.createCaller(
-      buildCtx({
-        userId: adminUser!.id,
-        memberId: adminMember!.id,
-        orgId: f.orgId,
-        orgTimezone: TZ,
-        writeAccess: true,
-        permissions: new Set(['org.admin', 'users.manage', 'attendance.manage']),
-        roleSlugs: new Set(),
-      }),
-    );
+    const admin = callerFor({
+      userId: adminUser!.id,
+      memberId: adminMember!.id,
+      orgId: f.orgId,
+      orgTimezone: TZ,
+      writeAccess: true,
+      permissions: new Set(['org.admin', 'users.manage', 'attendance.manage']),
+      roleSlugs: new Set(),
+    });
     await expectError(
       admin.admin.memberRemove({ memberId: f.staffId }),
       'admin.errors.memberHasAttendance',

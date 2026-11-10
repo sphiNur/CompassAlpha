@@ -17,30 +17,10 @@ import {
   withOrgContext,
   withSystemContext,
 } from '@compass/db';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-function caller(session: SessionContext) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn) {
-      return withOrgContext(db, session.orgId, fn);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
+import { callerFor } from './helpers/ctx';
 
 describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', () => {
   const cleanupOrgIds: string[] = [];
@@ -134,19 +114,19 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
   });
 
   test('only organisations the caller administers are offered', async () => {
-    const sources = await caller(session).admin.catalogImportSources();
+    const sources = await callerFor(session).admin.catalogImportSources();
     expect(sources.map((o) => o.orgId)).toEqual([orgA]);
   });
 
   test('a source the caller does not administer is refused', async () => {
     await expect(
-      caller(session).admin.catalogImport({ sourceOrgId: orgC, includeSuppliers: true }),
+      callerFor(session).admin.catalogImport({ sourceOrgId: orgC, includeSuppliers: true }),
     ).rejects.toThrow();
   });
 
   test('preview, import, and a second import that adds nothing', async () => {
     const input = { sourceOrgId: orgA, includeSuppliers: true };
-    const preview = await caller(session).admin.catalogImportPreview(input);
+    const preview = await callerFor(session).admin.catalogImportPreview(input);
     expect(preview).toEqual({
       categories: { created: 1, existing: 0 },
       suppliers: { created: 1, existing: 0 },
@@ -154,7 +134,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
       links: { created: 1 },
     });
 
-    const done = await caller(session).admin.catalogImport(input);
+    const done = await callerFor(session).admin.catalogImport(input);
     expect(done).toEqual(preview);
 
     const db = getDb(undefined, { system: 'maintenance' });
@@ -176,7 +156,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
     // prices are the source's own history, not copied
     expect(links[0]!.defaultPrice).toBeNull();
 
-    const again = await caller(session).admin.catalogImport(input);
+    const again = await callerFor(session).admin.catalogImport(input);
     expect(again.categories.created + again.suppliers.created + again.skus.created).toBe(0);
 
     const sourceSkus = await db.select().from(s.skus).where(eq(s.skus.orgId, orgA));

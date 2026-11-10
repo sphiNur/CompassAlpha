@@ -10,40 +10,15 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
 import { loadSession } from '../trpc/context';
 import { revokeAllForUser } from '../services/refreshTokens';
-import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
-
-function anonymousCaller() {
-  // The code under test gets the handle the server uses: no tenant, no
-  // system context, row-level security in force. Handing it the fixture
-  // handle would let every query through and prove nothing about whether
-  // sign-in still works once the policies refuse tenant-less queries.
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session: null,
-    async withOrg(fn, options) {
-      return withOrgContext(db, null, fn, options);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
 
 // Random, not clock-derived: two tests in the same second must not share an id.
 describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
@@ -77,7 +52,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   test('an unknown Telegram user is rejected and leaves no rows behind', async () => {
     const tgUserId = freshTgId();
     await expect(
-      anonymousCaller().auth.telegramLogin({ initData: signInitData(tgUserId) }),
+      callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) }),
     ).rejects.toThrow('auth.errors.noMembership');
     const user = await getDb(undefined, { system: 'maintenance' }).query.users.findFirst({
       where: (u, { eq: eq2 }) => eq2(u.tgUserId, tgUserId),
@@ -94,9 +69,9 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .returning();
     await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
 
-    const login = await anonymousCaller().auth.telegramLogin({ initData: signInitData(tgUserId) });
+    const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
     // Through the router, so the input schema is part of what is tested.
-    const refreshed = await anonymousCaller().auth.refresh({
+    const refreshed = await callerFor(null).auth.refresh({
       refreshToken: login.tokens.refreshToken,
     });
     expect(refreshed.session.user.id).toBe(user!.id);
@@ -104,7 +79,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
     expect(refreshed.tokens.refreshToken).not.toBe(login.tokens.refreshToken);
 
     // And again with the rotated token: the chain keeps working.
-    const again = await anonymousCaller().auth.refresh({
+    const again = await callerFor(null).auth.refresh({
       refreshToken: refreshed.tokens.refreshToken,
     });
     expect(again.session.user.id).toBe(user!.id);
@@ -127,18 +102,18 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .returning();
     const initData = signInitData(tgUserId);
 
-    const ok = await anonymousCaller().auth.telegramLogin({ initData });
+    const ok = await callerFor(null).auth.telegramLogin({ initData });
     expect(ok.session.member.memberId).toBe(member!.id);
 
     await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, member!.id));
     // AUTH-19: a suspended member is told so, not "no membership".
-    await expect(anonymousCaller().auth.telegramLogin({ initData })).rejects.toThrow(
+    await expect(callerFor(null).auth.telegramLogin({ initData })).rejects.toThrow(
       'auth.errors.membershipSuspended',
     );
 
     await db.delete(s.refreshTokens).where(eq(s.refreshTokens.userId, user!.id));
     await db.delete(s.members).where(eq(s.members.id, member!.id));
-    await expect(anonymousCaller().auth.telegramLogin({ initData })).rejects.toThrow(
+    await expect(callerFor(null).auth.telegramLogin({ initData })).rejects.toThrow(
       'auth.errors.noMembership',
     );
     const members = await db.select().from(s.members).where(eq(s.members.userId, user!.id));
@@ -166,7 +141,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .returning();
     const initData = signInitData(tgUserId);
 
-    const first = await anonymousCaller().auth.telegramLogin({ initData });
+    const first = await callerFor(null).auth.telegramLogin({ initData });
     expect(first.session.member.memberId).toBe(member!.id);
 
     // What every later request does with the access token: load the member
@@ -181,13 +156,13 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .set({ revokedAt: new Date() })
       .where(eq(s.refreshTokens.userId, user!.id));
     await expect(
-      anonymousCaller().auth.refresh({ refreshToken: first.tokens.refreshToken }),
+      callerFor(null).auth.refresh({ refreshToken: first.tokens.refreshToken }),
     ).rejects.toThrow();
 
-    const again = await anonymousCaller().auth.telegramLogin({ initData });
+    const again = await callerFor(null).auth.telegramLogin({ initData });
     expect(again.session.member.memberId).toBe(member!.id);
     expect(again.session.member.orgId).toBe(orgId);
-    const refreshed = await anonymousCaller().auth.refresh({
+    const refreshed = await callerFor(null).auth.refresh({
       refreshToken: again.tokens.refreshToken,
     });
     expect(refreshed.session.user.id).toBe(user!.id);
@@ -202,7 +177,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .values({ tgUserId, displayName: `tg:${tgUserId}` })
       .returning();
     await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
-    const login = await anonymousCaller().auth.telegramLogin({
+    const login = await callerFor(null).auth.telegramLogin({
       initData: signInitData(tgUserId, { languageCode: 'zh-hans' }),
     });
     expect(login.session.user.locale).toBe('zh');
@@ -218,7 +193,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .values({ tgUserId: earlier, displayName: `tg:${earlier}`, locale: 'ru-RU' })
       .returning();
     await db.insert(s.members).values({ orgId, userId: old!.id, status: 'active' });
-    const again = await anonymousCaller().auth.telegramLogin({ initData: signInitData(earlier) });
+    const again = await callerFor(null).auth.telegramLogin({ initData: signInitData(earlier) });
     expect(again.session.user.locale).toBe('ru');
     const kept = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, old!.id) });
     expect(kept?.locale).toBe('ru');

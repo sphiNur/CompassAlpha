@@ -37,7 +37,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import {
   apply as applyOrder,
   decide as decideOrder,
@@ -45,31 +45,14 @@ import {
 } from '@compass/domain/order';
 import { appendEvents } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
 
 /** The date under test. Fixed, so "today" drift can't affect the lookup. */
 const ORDER_DATE = '2026-05-11';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -171,7 +154,7 @@ beforeAll(async () => {
     memberId: member!.id,
     userId: user!.id,
     sessionId,
-    ctx: buildCtx(db, {
+    ctx: testContext({
       userId: user!.id,
       memberId: member!.id,
       orgId: org!.id,

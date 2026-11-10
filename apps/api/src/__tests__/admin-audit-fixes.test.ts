@@ -10,17 +10,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { TRPCError } from '@trpc/server';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { eq, sql } from 'drizzle-orm';
-import {
-  getDb,
-  provisionOrganization,
-  schema as s,
-  withOrgContext,
-  withSystemContext,
-} from '@compass/db';
+import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { GrantRoleInputSchema } from '@compass/contracts';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import {
   inviteWithinScope,
   outboxOfOrg,
@@ -32,6 +24,7 @@ import {
 import { inviterCoversInvite } from '../services/adminAuthority';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor, gateCaller } from './helpers/ctx';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
 const RUN = '00000000-0000-4000-8000-0000000000aa';
@@ -56,31 +49,17 @@ describe('grantRole.expiresAt contract (A-23)', () => {
   });
 
   test('the router answers BAD_REQUEST before touching the database', async () => {
-    const ctx: RequestContext = {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hono: {} as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      db: {} as any,
-      log: logger,
-      traceId: 'test',
-      ip: null,
-      userAgent: null,
-      idempotencyKey: null,
-      session: {
-        userId: '00000000-0000-4000-8000-000000000001',
-        memberId: '00000000-0000-4000-8000-000000000002',
-        orgId: ORG,
-        orgTimezone: 'UTC',
-        permissions: new Set(['users.manage', 'org.admin']),
-        roleSlugs: new Set(),
-      },
-      async withOrg() {
-        throw new Error('reached the handler');
-      },
-    };
+    const caller = gateCaller({
+      userId: '00000000-0000-4000-8000-000000000001',
+      memberId: '00000000-0000-4000-8000-000000000002',
+      orgId: ORG,
+      orgTimezone: 'UTC',
+      permissions: new Set(['users.manage', 'org.admin']),
+      roleSlugs: new Set(),
+    });
     let code: string | undefined;
     try {
-      await appRouter.createCaller(ctx).admin.grantRole({ ...base, expiresAt: 'not-a-date' });
+      await caller.admin.grantRole({ ...base, expiresAt: 'not-a-date' });
     } catch (err) {
       code = (err as { code?: string }).code;
     }
@@ -185,25 +164,6 @@ describe('admin read scope + invite reach (CA-17, CA-19)', () => {
 
 // ---------- PG-gated: limits + platform subscription ----------------------
 
-function caller(session: SessionContext) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
-
 async function errorMessage(run: () => Promise<unknown>): Promise<string | undefined> {
   try {
     await run();
@@ -270,11 +230,11 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       .returning();
     expect(
       await errorMessage(() =>
-        caller(session()).admin.storeUpdate({ storeId: paused!.id, isActive: true }),
+        callerFor(session()).admin.storeUpdate({ storeId: paused!.id, isActive: true }),
       ),
     ).toBe('subscription.errors.storeLimit');
     // A non-isActive edit of the paused store is now reachable for an org admin.
-    await caller(session()).admin.storeUpdate({ storeId: paused!.id, name: 'Paused (renamed)' });
+    await callerFor(session()).admin.storeUpdate({ storeId: paused!.id, name: 'Paused (renamed)' });
   });
 
   test('reactivating a suspended member respects the member limit', async () => {
@@ -296,7 +256,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     const suspended = await addMember('suspended');
     expect(
       await errorMessage(() =>
-        caller(session()).admin.memberSetStatus({ memberId: suspended, status: 'active' }),
+        callerFor(session()).admin.memberSetStatus({ memberId: suspended, status: 'active' }),
       ),
     ).toBe('subscription.errors.memberLimit');
   });
@@ -309,7 +269,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       .set({ note: 'keep me', currentPeriodStart: periodStart, cancelAtPeriodEnd: true })
       .where(eq(s.organizationSubscriptions.orgId, orgId));
 
-    await caller(session()).platform.updateSubscription({
+    await callerFor(session()).platform.updateSubscription({
       orgId,
       planCode: 'growth',
       status: 'active',
@@ -323,7 +283,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     expect(row?.cancelAtPeriodEnd).toBe(true);
 
     // Explicit null still clears.
-    await caller(session()).platform.updateSubscription({
+    await callerFor(session()).platform.updateSubscription({
       orgId,
       planCode: 'growth',
       status: 'active',
@@ -346,11 +306,11 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     for (const bad of ['0000-01-01', '2026-1-5', '2026-02-30', 'tomorrow', '2026-10-31T10:00']) {
       expect(
         await errorMessage(() =>
-          caller(session()).platform.updateSubscription({ ...base, currentPeriodEnd: bad }),
+          callerFor(session()).platform.updateSubscription({ ...base, currentPeriodEnd: bad }),
         ),
       ).toBe('platform.errors.invalidDate');
     }
-    await caller(session()).platform.updateSubscription({
+    await callerFor(session()).platform.updateSubscription({
       ...base,
       currentPeriodEnd: '2026-12-31T10:00:00.000Z',
     });

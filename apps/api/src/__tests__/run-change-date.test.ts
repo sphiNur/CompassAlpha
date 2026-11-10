@@ -20,32 +20,12 @@ import {
   withSystemContext,
 } from '@compass/db';
 import type { RunEvent } from '@compass/domain/run';
-import { logger } from '../infra/log';
 import { appendEvents } from '../services/eventStore';
 import { projectRun } from '../services/runProjection';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-function caller(session: SessionContext) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn) {
-      return withOrgContext(db, session.orgId, fn);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
+import { callerFor } from './helpers/ctx';
 
 describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated)', () => {
   let userId = '';
@@ -136,7 +116,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
     const lagman = await plannedRun('2026-10-22', 0);
     const threeStores = await plannedRun('2026-10-23', 0);
 
-    await caller(session).run.changeDate({ runId: threeStores, runDate: '2026-10-22' });
+    await callerFor(session).run.changeDate({ runId: threeStores, runDate: '2026-10-22' });
 
     const db = getDb(undefined, { system: 'maintenance' });
     const rows = await db
@@ -157,7 +137,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
 
   test('moving onto an empty day makes it that day’s first run', async () => {
     const run = await plannedRun('2026-10-24', 0);
-    await caller(session).run.changeDate({ runId: run, runDate: '2026-10-26' });
+    await callerFor(session).run.changeDate({ runId: run, runDate: '2026-10-26' });
     const db = getDb(undefined, { system: 'maintenance' });
     const [row] = await db
       .select({ runIndex: s.marketRunsV.runIndex, runDate: s.marketRunsV.runDate })
@@ -170,7 +150,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
     const run = await plannedRun('2026-10-25', 0);
     let message = '';
     try {
-      await caller(session).run.changeDate({ runId: run, runDate: '2099-01-01' });
+      await callerFor(session).run.changeDate({ runId: run, runDate: '2099-01-01' });
     } catch (error) {
       message = (error as Error).message;
     }

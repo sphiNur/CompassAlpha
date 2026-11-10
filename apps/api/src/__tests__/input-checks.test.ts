@@ -10,14 +10,14 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { randomUUID } from 'node:crypto';
 import { pickExtension } from '../trpc/routers/upload';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -25,23 +25,6 @@ type SeedData = {
 };
 const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
 const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
@@ -98,7 +81,7 @@ beforeAll(async () => {
   await db.insert(s.marketRunsV).values({ id: runId, orgId: org!.id, runDate: '2026-06-01', status: 'finished' });
   const session = await loadSession(db, u!.id, org!.id, m!.id);
   if (!session) throw new Error('session failed to load');
-  owner = appRouter.createCaller(buildCtx(db, session));
+  owner = callerFor(session);
 });
 
 describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {

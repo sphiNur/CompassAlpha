@@ -30,13 +30,13 @@ import {
   withSystemContext,
 } from '@compass/db';
 import { CompleteOnboardingInputSchema, hasControlChars } from '@compass/contracts';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import { createContext, loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { createContext, loadSession } from '../trpc/context';
 import { isLocalDevPeer, isLocalPeerAddress } from '../services/devLocality';
 import { hub, WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED } from '../realtime/hub';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor, gateCaller } from './helpers/ctx';
 
 async function errorOf(
   fn: () => Promise<unknown>,
@@ -198,30 +198,15 @@ describe('control characters in names (F10)', () => {
   });
 
   test('store / supplier / SKU / member names answer BAD_REQUEST before the handler', async () => {
-    const ctx: RequestContext = {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hono: {} as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      db: {} as any,
-      log: logger,
-      traceId: 'test',
-      ip: null,
-      userAgent: null,
-      idempotencyKey: null,
-      session: {
-        userId: randomUUID(),
-        memberId: randomUUID(),
-        orgId: randomUUID(),
-        orgTimezone: 'UTC',
-        writeAccess: true,
-        permissions: new Set(['users.manage', 'org.admin', 'catalog.manage', 'stores.manage']),
-        roleSlugs: new Set(),
-      },
-      async withOrg() {
-        throw new Error('reached the handler');
-      },
-    };
-    const caller = appRouter.createCaller(ctx);
+    const caller = gateCaller({
+      userId: randomUUID(),
+      memberId: randomUUID(),
+      orgId: randomUUID(),
+      orgTimezone: 'UTC',
+      writeAccess: true,
+      permissions: new Set(['users.manage', 'org.admin', 'catalog.manage', 'stores.manage']),
+      roleSlugs: new Set(),
+    });
     const bad = `Shop${ESC}[1A${ESC}[2K`;
     const attempts: Array<() => Promise<unknown>> = [
       () => caller.admin.storeCreate({ name: bad }),
@@ -256,27 +241,10 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
   let storeX2 = '';
   const roleX: Record<string, string> = {};
 
-  function buildCtx(session: SessionContext): RequestContext {
-    return {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hono: {} as any,
-      db,
-      log: logger,
-      traceId: `test-${Date.now()}`,
-      ip: null,
-      userAgent: null,
-      idempotencyKey: null,
-      session,
-      async withOrg(fn, options) {
-        return withOrgContext(db, session.orgId, fn, options);
-      },
-    };
-  }
-
-  async function callerFor(orgId: string, userId: string, memberId: string) {
+  async function callerAs(orgId: string, userId: string, memberId: string) {
     const session = await loadSession(db, userId, orgId, memberId);
     if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(session));
+    return callerFor(session);
   }
 
   async function makeUser(displayName: string) {
@@ -364,7 +332,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     const memberX = await makeMember(orgX, shared.id);
     await makeMember(orgY, shared.id);
     await bind(memberX, roleX.staff!, storeX1);
-    const admin = await callerFor(orgX, ownerX.userId, ownerX.memberId);
+    const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     const err = await errorOf(() =>
       admin.admin.memberSetDisplayName({ memberId: memberX, displayName: 'Y Owner' }),
     );
@@ -373,7 +341,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     expect(await nameOf(shared.id)).toEqual({ displayName: 'Shared Person', locked: false });
 
     // The person themself still can, from either organisation.
-    const self = await callerFor(orgX, shared.id, memberX);
+    const self = await callerAs(orgX, shared.id, memberX);
     // (staff hold no users.manage: the self-rename path is auth.completeOnboarding)
     await self.auth.completeOnboarding({ displayName: 'Shared Renamed' });
     expect((await nameOf(shared.id)).displayName).toBe('Shared Renamed');
@@ -384,7 +352,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     const memberX = await makeMember(orgX, both.id);
     await makeMember(orgY, both.id);
     await bind(memberX, roleX.admin!, null);
-    const self = await callerFor(orgX, both.id, memberX);
+    const self = await callerAs(orgX, both.id, memberX);
     await self.admin.memberSetDisplayName({ memberId: memberX, displayName: 'Admin Renamed' });
     expect(await nameOf(both.id)).toEqual({ displayName: 'Admin Renamed', locked: true });
   });
@@ -393,13 +361,13 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     const local = await makeUser('Only Here');
     const memberX = await makeMember(orgX, local.id);
     await bind(memberX, roleX.staff!, storeX1);
-    const admin = await callerFor(orgX, ownerX.userId, ownerX.memberId);
+    const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     await admin.admin.memberSetDisplayName({ memberId: memberX, displayName: 'Fixed Typo' });
     expect(await nameOf(local.id)).toEqual({ displayName: 'Fixed Typo', locked: true });
   });
 
   test('F1: the invite placeholder rename skips someone another organisation has', async () => {
-    const admin = await callerFor(orgX, ownerX.userId, ownerX.memberId);
+    const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
 
     const elsewhere = await makeUser(`tg:${suffix}1`);
     await makeMember(orgY, elsewhere.id);
@@ -424,7 +392,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
   // ---- F7
 
   test("F7: suspending or removing a member closes that member's sockets", async () => {
-    const admin = await callerFor(orgX, ownerX.userId, ownerX.memberId);
+    const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     for (const action of ['suspend', 'remove'] as const) {
       const person = await makeUser(`Socket ${action}`);
       const memberId = await makeMember(orgX, person.id);
@@ -457,7 +425,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     const legacyMember = await makeMember(orgX, legacy.id);
     await bind(legacyMember, roleX.super_admin!, storeX1);
     await bind(legacyMember, roleX.super_admin!, storeX2);
-    const caller = await callerFor(orgX, legacy.id, legacyMember);
+    const caller = await callerAs(orgX, legacy.id, legacyMember);
 
     const err = await errorOf(() =>
       caller.admin.memberInviteByTgId({
@@ -489,7 +457,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     const mixedMember = await makeMember(orgX, mixed.id);
     await bind(mixedMember, roleX.admin!, null);
     await bind(mixedMember, roleX.super_admin!, storeX1);
-    const caller = await callerFor(orgX, mixed.id, mixedMember);
+    const caller = await callerAs(orgX, mixed.id, mixedMember);
     const target = await makeUser('Would Be Admin');
     const err = await errorOf(() =>
       caller.admin.memberInviteByTgId({
@@ -502,7 +470,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     expect(err?.message).toBe('auth.errors.cannotGrantEqualOrHigher');
 
     // The owner (global super_admin) still invites an admin.
-    const owner = await callerFor(orgX, ownerX.userId, ownerX.memberId);
+    const owner = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     const out = await owner.admin.memberInviteByTgId({
       tgUserId: target.tgUserId.toString(),
       roleSlug: 'admin',
@@ -520,7 +488,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
   // ---- F9
 
   test('F9: a transfer does not mirror a custom role whose keys the actor lacks there', async () => {
-    const owner = await callerFor(orgX, ownerX.userId, ownerX.memberId);
+    const owner = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     // Custom role C (rank 25) carries reports.view.
     const { id: customRoleId } = await owner.admin.roleCreate({
       slug: `scan-c-${suffix}`,
@@ -552,7 +520,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
       .values({ memberId: targetMember, storeId: storeX1, assignedBy: actor.id });
     await bind(targetMember, customRoleId, storeX1);
 
-    const caller = await callerFor(orgX, actor.id, actorMember);
+    const caller = await callerAs(orgX, actor.id, actorMember);
     const err = await errorOf(() =>
       caller.admin.memberTransferStore({
         memberId: targetMember,

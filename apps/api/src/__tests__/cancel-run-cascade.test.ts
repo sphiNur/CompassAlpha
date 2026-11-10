@@ -25,7 +25,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import {
   apply as applyOrder,
   decide as decideOrder,
@@ -36,28 +36,11 @@ import { appendEvents, readStream } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
 import type { OrderEvent } from '@compass/domain/order';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { testContext } from './helpers/ctx';
 
 /**
  * Direct tRPC callers can issue the next request in the same JavaScript turn.
@@ -207,8 +190,8 @@ let fix: Fixture | null = null;
     skuId: sku!.id,
     staffMemberId: staffMember!.id,
     staffUserId: staffUser!.id,
-    cancellerCtx: buildCtx(db, cancellerSession),
-    confirmerCtx: buildCtx(db, confirmerSession),
+    cancellerCtx: testContext(cancellerSession),
+    confirmerCtx: testContext(confirmerSession),
     cancellerUserId: cancellerUser!.id,
     cancellerMemberId: cancellerMember!.id,
     slug,

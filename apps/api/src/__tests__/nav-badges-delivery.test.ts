@@ -36,11 +36,11 @@ import { appendEvents } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
 import { linkForStore } from '../services/notifyForEvent';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -48,23 +48,6 @@ type SeedData = {
 };
 const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
 const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -178,7 +161,7 @@ beforeAll(async () => {
     });
     const session = await loadSession(db, u!.id, orgId, m!.id);
     if (!session) throw new Error('session failed to load');
-    return { caller: appRouter.createCaller(buildCtx(db, session)), userId: u!.id, memberId: m!.id };
+    return { caller: callerFor(session), userId: u!.id, memberId: m!.id };
   };
   const [storeA, storeB] = storeIds as [string, string];
   fix = {

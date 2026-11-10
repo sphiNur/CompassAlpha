@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import {
   applyRun,
@@ -32,13 +32,13 @@ import {
   type RunCommand,
   type RunState,
 } from '@compass/domain/run';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { appendEvents } from '../services/eventStore';
 import { projectRun } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type SeedData = {
@@ -47,23 +47,6 @@ type SeedData = {
 };
 const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
 const { BUILTIN_ROLES, ALL_PERMISSION_KEYS } = (await import(seedDataPath)) as SeedData;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 async function errorOf(
   fn: () => Promise<unknown>,
@@ -160,7 +143,7 @@ beforeAll(async () => {
   const reload = async (userId: string, memberId: string) => {
     const session = await loadSession(db, userId, orgId, memberId);
     if (!session) throw new Error('session failed to load');
-    return appRouter.createCaller(buildCtx(db, session));
+    return callerFor(session);
   };
   const person: Fixture['person'] = async (bindings) => {
     n += 1;

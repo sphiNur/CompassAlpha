@@ -20,9 +20,7 @@ import {
   withOrgContext,
   withSystemContext,
 } from '@compass/db';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import {
   assertCanAddStore,
   computeWriteAccess,
@@ -30,27 +28,9 @@ import {
 } from '../services/subscription';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const DAY = 24 * 60 * 60 * 1000;
-
-function caller(session: SessionContext | null) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn) {
-      return withOrgContext(db, session?.orgId ?? null, fn);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
 
 describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
   let orgId = '';
@@ -126,7 +106,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
   });
 
   test('platform admin can change plan, suspend and restore access', async () => {
-    const suspended = await caller(session()).platform.updateSubscription({
+    const suspended = await callerFor(session()).platform.updateSubscription({
       orgId,
       planCode: 'growth',
       status: 'suspended',
@@ -144,7 +124,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
     );
     expect(stored?.planCode).toBe('growth');
 
-    const active = await caller(session()).platform.updateSubscription({
+    const active = await callerFor(session()).platform.updateSubscription({
       orgId,
       planCode: 'pro',
       status: 'active',
@@ -168,7 +148,7 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
 
     const readOnlySession: SessionContext = { ...session(), writeAccess: false };
     await expect(
-      caller(readOnlySession).admin.storeCreate({ name: 'Blocked store' }),
+      callerFor(readOnlySession).admin.storeCreate({ name: 'Blocked store' }),
     ).rejects.toThrow('subscription.errors.readOnly');
   });
 

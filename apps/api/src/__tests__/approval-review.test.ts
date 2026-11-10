@@ -15,30 +15,13 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
 import { claimTakenFrom, TAKEOVER_COOLDOWN_MS } from '../trpc/routers/order';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { callerFor } from './helpers/ctx';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -126,7 +109,7 @@ beforeAll(async () => {
     return {
       userId: u!.id,
       memberId: m!.id,
-      caller: appRouter.createCaller(buildCtx(db, session)),
+      caller: callerFor(session),
     };
   };
   fix = {

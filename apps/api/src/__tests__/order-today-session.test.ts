@@ -23,12 +23,12 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
 
 /** The date under test: today in the org's zone (UTC). A past date may not
  *  lazy-create a draft (CA-25) and since ORD-11 (2026-10-30) neither may a
@@ -36,23 +36,6 @@ import { freshTgId } from './helpers/telegram';
 const ORDER_DATE = new Date().toISOString().slice(0, 10);
 const EXTRAS_DATE = ORDER_DATE;
 const SEQ_DATE = ORDER_DATE;
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -153,7 +136,7 @@ beforeAll(async () => {
     extrasStoreId: extrasStore!.id,
     seqStoreId: seqStore!.id,
     skuId: sku!.id,
-    staff: buildCtx(db, {
+    staff: testContext({
       userId: staffUser!.id,
       memberId: staffMember!.id,
       orgId: org!.id,
@@ -161,7 +144,7 @@ beforeAll(async () => {
       permissions: new Set(['order.draft', 'order.submit']),
       roleSlugs: new Set(['staff']),
     }),
-    manager: buildCtx(db, {
+    manager: testContext({
       userId: mgrUser!.id,
       memberId: mgrMember!.id,
       orgId: org!.id,

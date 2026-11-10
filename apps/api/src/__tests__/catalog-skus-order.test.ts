@@ -5,29 +5,12 @@
  * PG-gated like the other router tests.
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { testContext } from './helpers/ctx';
 
 let ctx: RequestContext | null = null;
 let codes: string[] = [];
@@ -67,7 +50,7 @@ beforeAll(async () => {
     })),
   );
   codes = [`Z-${suffix}`, `B-${suffix}`, `C-${suffix}`, `A-${suffix}`];
-  ctx = buildCtx(db, {
+  ctx = testContext({
     userId: user!.id,
     memberId: member!.id,
     orgId: org!.id,

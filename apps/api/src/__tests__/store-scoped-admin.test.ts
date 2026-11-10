@@ -24,7 +24,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 import {
@@ -34,33 +33,9 @@ import {
 } from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { testContext, callerFor } from './helpers/ctx';
 
 // ---------- minimal context factory --------------------------------------
-
-/**
- * Build a tRPC RequestContext as if a request had landed with a valid
- * session for the given user/member/org. We don't go through the
- * Bearer-token path — the session shape is what authedProcedure cares
- * about, not how it got loaded.
- */
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // hono context is unused by our admin handlers; cast to any so the
-    // type doesn't force us to mock the whole Hono surface.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 /**
  * A direct tRPC caller can start its next request in the same JavaScript turn.
@@ -216,7 +191,7 @@ beforeAll(async () => {
     orgId: org.id,
     superAdminUserId: superUser!.id,
     superAdminMemberId: superMember!.id,
-    superAdminCtx: buildCtx(db, superSession),
+    superAdminCtx: testContext(superSession),
     superAdminRoleId: roleIdBySlug.super_admin!,
     adminRoleId: roleIdBySlug.admin!,
     managerRoleId: roleIdBySlug.manager!,
@@ -297,7 +272,7 @@ describe('P0 store-manager scope', () => {
         storeId: storeA.id,
       });
       const session = await sessionFor(managerMember, managerUser.id);
-      const caller = appRouter.createCaller(buildCtx(db, session));
+      const caller = callerFor(session);
 
       // This is the regression condition: store managers intentionally
       // have users.manage, but that is not organization-wide authority.
@@ -378,7 +353,7 @@ describe('P0 store-manager scope', () => {
       const adminSession = await sessionFor(adminMember, adminUser.id);
       expect(adminSession.permissions.has('org.admin')).toBe(false);
       expect(await getActorStoreIds(db, adminMember, new Set(['org.admin']))).toEqual([storeA.id]);
-      const adminMe = await appRouter.createCaller(buildCtx(db, adminSession)).auth.me();
+      const adminMe = await callerFor(adminSession).auth.me();
       expect(adminMe.permissions).not.toContain('org.admin');
       expect(adminMe.stores.map((store) => store.id)).toEqual([storeA.id]);
 
@@ -414,7 +389,7 @@ describe('P0 store-manager scope', () => {
         new Set(['org.admin']),
       );
       expect(effective.has('org.admin')).toBe(false);
-      const staffMe = await appRouter.createCaller(buildCtx(db, staffSession)).auth.me();
+      const staffMe = await callerFor(staffSession).auth.me();
       expect(staffMe.permissions).not.toContain('org.admin');
       expect(staffMe.stores.map((store) => store.id)).toEqual([storeA.id]);
 
@@ -428,7 +403,6 @@ describe('P0 store-manager scope', () => {
     'rejects new store-scoped organization roles and overrides',
     async () => {
       const fx = fix!;
-      const db = getDb(undefined, { system: 'maintenance' });
       const storeA = await makeStore(`RejectA-${Math.random()}`);
       const targetUser = await makeUser('Override Target');
       const targetMember = await makeMember(targetUser.id);
@@ -451,9 +425,7 @@ describe('P0 store-manager scope', () => {
       const managerUser = await makeUser('Scoped Override Manager');
       const managerMember = await makeMember(managerUser.id);
       await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const managerCaller = appRouter.createCaller(
-        buildCtx(db, await sessionFor(managerMember, managerUser.id)),
-      );
+      const managerCaller = callerFor(await sessionFor(managerMember, managerUser.id));
       await expect(
         managerCaller.admin.memberPermissionSet({
           memberId: targetMember,
@@ -490,7 +462,7 @@ describe('C2 store-scoped admin gates', () => {
     const mgrUser = await makeUser('A-Manager');
     const mgrMember = await makeMember(mgrUser.id);
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+    const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     // Try to invite into Store B → must be FORBIDDEN.
     const targetTg = String(freshTgId());
@@ -516,7 +488,7 @@ describe('C2 store-scoped admin gates', () => {
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
     const targetUser = await makeUser('Target');
     await makeMember(targetUser.id);
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+    const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     let threw = false;
     try {
@@ -539,7 +511,7 @@ describe('C2 store-scoped admin gates', () => {
     const mgrUser = await makeUser('A-Manager');
     const mgrMember = await makeMember(mgrUser.id);
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+    const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     // The actor's role doesn't even include `users.manage` (manager is
     // rank 30, doesn't carry it), so this throws on the requireAdmin
@@ -586,7 +558,7 @@ describe('C1 per-store rank gate', () => {
 
       const targetUser = await makeUser('Target');
       await makeMember(targetUser.id);
-      const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+      const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
       let threw = false;
       try {
@@ -907,11 +879,10 @@ describe('D4 storeCloneRoles', () => {
 describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
   async function orgAdmin(): Promise<ReturnType<typeof appRouter.createCaller>> {
     const fx = fix!;
-    const db = getDb(undefined, { system: 'maintenance' });
     const u = await makeUser('Org Admin D8');
     const m = await makeMember(u.id);
     await bindRole(m, fx.adminRoleId, { type: 'global' });
-    return appRouter.createCaller(buildCtx(db, await sessionFor(m, u.id)));
+    return callerFor(await sessionFor(m, u.id));
   }
   async function dangerRole(): Promise<{ id: string; slug: string }> {
     const fx = fix!;
@@ -992,7 +963,7 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
       const mu = await makeUser('D8 manager');
       const mm = await makeMember(mu.id);
       await bindRole(mm, fx.managerRoleId, { type: 'store', storeId: store.id });
-      const manager = appRouter.createCaller(buildCtx(db, await sessionFor(mm, mu.id)));
+      const manager = callerFor(await sessionFor(mm, mu.id));
       const target = await makeUser('D8 buyer');
       await makeMember(target.id);
       const res = await manager.admin.grantRole({
@@ -1234,7 +1205,7 @@ describe('M3.1 sales router store-scope', () => {
       type: 'store',
       storeId: storeA.id,
     });
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(staffMember, staffUser.id));
+    const ctx = testContext(await sessionFor(staffMember, staffUser.id));
     const caller = appRouter.createCaller(ctx);
 
     // POSITIVE: their own store works.
@@ -1282,7 +1253,7 @@ describe('M3.1 sales router store-scope', () => {
       const u = await makeUser('A-Sales');
       const m = await makeMember(u.id);
       await bindRole(m, salesRole!.id, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(m, u.id));
+      const ctx = testContext(await sessionFor(m, u.id));
       const caller = appRouter.createCaller(ctx);
 
       // Use a syntactically-valid (but unused) dish UUID — the gate must
@@ -1346,7 +1317,7 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
       // marker. If this test ever starts succeeding it means the
       // users.manage fallback came back; that's a regression on the
       // org-wide write gate.
-      const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), session);
+      const ctx = testContext(session);
       const caller = appRouter.createCaller(ctx);
       let threw = false;
       try {
@@ -1413,7 +1384,7 @@ describe('M3.7 inventory cannot be read for a foreign store', () => {
         type: 'store',
         storeId: storeA.id,
       });
-      const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(staffMember, staffUser.id));
+      const ctx = testContext(await sessionFor(staffMember, staffUser.id));
       const caller = appRouter.createCaller(ctx);
 
       // OWN store: passes (returns whatever inventory is there).
@@ -1460,7 +1431,7 @@ describe('M3.7 inventory cannot be read for a foreign store', () => {
         type: 'store',
         storeId: storeA.id,
       });
-      const ctx = buildCtx(db, await sessionFor(mgrMember, mgrUser.id));
+      const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
       // Real SKU UUID doesn't need to exist — the store-gate fires
@@ -1487,7 +1458,6 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
     'manager-of-A passing storeId=B to report.purchaseLines throws notAssignedToStore',
     async () => {
       const fx = fix!;
-      const db = getDb(undefined, { system: 'maintenance' });
       const storeA = await makeStore(`FinA-${Math.random()}`);
       const storeB = await makeStore(`FinB-${Math.random()}`);
       const mgrUser = await makeUser('A-Mgr-Finance');
@@ -1500,7 +1470,7 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
       // fixture), so the requireAdmin-style gate at the top of
       // report.purchaseLines passes — what kicks in next is the
       // M3.7 store-scope filter.
-      const ctx = buildCtx(db, await sessionFor(mgrMember, mgrUser.id));
+      const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
       let threw = false;
@@ -1531,7 +1501,6 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
     'manager-of-A calling report.purchaseLines without storeId is auto-filtered to bound stores',
     async () => {
       const fx = fix!;
-      const db = getDb(undefined, { system: 'maintenance' });
       const storeA = await makeStore(`FinA2-${Math.random()}`);
       const storeB = await makeStore(`FinB2-${Math.random()}`);
       const mgrUser = await makeUser('A-Mgr-Finance2');
@@ -1540,7 +1509,7 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
         type: 'store',
         storeId: storeA.id,
       });
-      const ctx = buildCtx(db, await sessionFor(mgrMember, mgrUser.id));
+      const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
       // No storeId in the query → server-side allowedStoreIds filter
@@ -1665,7 +1634,7 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
     const mgrUser = await makeUser('A-Mgr-Catalog');
     const mgrMember = await makeMember(mgrUser.id);
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+    const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     let threw = false;
     try {
@@ -1697,7 +1666,7 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
     const mgrUser = await makeUser('A-Mgr-Role');
     const mgrMember = await makeMember(mgrUser.id);
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+    const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     let threw = false;
     try {
@@ -1720,7 +1689,7 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
     const mgrUser = await makeUser('A-Mgr-Supplier');
     const mgrMember = await makeMember(mgrUser.id);
     await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-    const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+    const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
     const caller = appRouter.createCaller(ctx);
     let threw = false;
     try {
@@ -1743,7 +1712,7 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
       const mgrUser = await makeUser('A-Mgr-StoreEdit');
       const mgrMember = await makeMember(mgrUser.id);
       await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(mgrMember, mgrUser.id));
+      const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
       // Editing OWN store (A) should succeed.
@@ -1813,7 +1782,7 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
         storeId: storeA.id,
       });
 
-      const ctx = buildCtx(db, await sessionFor(buyerMember, buyer.id));
+      const ctx = testContext(await sessionFor(buyerMember, buyer.id));
       const caller = appRouter.createCaller(ctx);
 
       // No approved sessions exist yet for either store — the result
@@ -1882,7 +1851,7 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
         })
         .returning();
 
-      const ctx = buildCtx(db, await sessionFor(buyerMember, buyer.id));
+      const ctx = testContext(await sessionFor(buyerMember, buyer.id));
       const caller = appRouter.createCaller(ctx);
 
       let threw = false;
@@ -1961,7 +1930,7 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
 
       const session = await sessionFor(buyerMember, buyer.id);
       expect(session.permissions.has('run.create.org')).toBe(true);
-      const caller = appRouter.createCaller(buildCtx(db, session));
+      const caller = callerFor(session);
       const preview = await caller.run.previewCreatable({ date });
       expect(preview.sessions.map((row) => row.id)).toEqual([sessionAId]);
 
@@ -2042,7 +2011,7 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
         actorId: buyer.id,
       });
 
-      const caller = appRouter.createCaller(buildCtx(db, await sessionFor(buyerMember, buyer.id)));
+      const caller = callerFor(await sessionFor(buyerMember, buyer.id));
       await expect(caller.run.startPurchase({ runId })).rejects.toThrow('notVisible');
       await settleRolledBackTestTransaction();
       const started = await db
@@ -2107,7 +2076,7 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
 
       const session = await sessionFor(actorMember, actorUser.id);
       expect(session.permissions.has('run.eject_session')).toBe(true);
-      const caller = appRouter.createCaller(buildCtx(db, session));
+      const caller = callerFor(session);
       await expect(
         caller.run.ejectSession({ runId, sessionId: sessionBId, reason: 'scope regression' }),
       ).rejects.toThrow('missingPermission');
@@ -2160,7 +2129,7 @@ describe('purchase history permission scope', () => {
         getActorStoreIdsForPermission(tx, managerMember, 'prices.view', managerSession.permissions),
       );
       expect(visibleStores).toEqual([storeA.id]);
-      const catalogCaller = appRouter.createCaller(buildCtx(db, managerSession));
+      const catalogCaller = callerFor(managerSession);
       const priceStores = await catalogCaller.catalog.stores({ permission: 'prices.view' });
       expect(priceStores.map((store) => store.id)).toEqual([storeA.id]);
       const assignedStores = await catalogCaller.catalog.stores();
@@ -2392,7 +2361,7 @@ describe('purchase history permission scope', () => {
         },
       ]);
 
-      const caller = appRouter.createCaller(buildCtx(db, managerSession));
+      const caller = callerFor(managerSession);
       const page = await caller.run.history({
         dateFrom: runDate,
         dateTo: runDate,
@@ -2494,9 +2463,7 @@ describe('purchase history permission scope', () => {
         type: 'store',
         storeId: storeA.id,
       });
-      const liveReader = appRouter.createCaller(
-        buildCtx(db, await sessionFor(liveReaderMember, liveReaderUser.id)),
-      );
+      const liveReader = callerFor(await sessionFor(liveReaderMember, liveReaderUser.id));
       const liveRows = await liveReader.run.list();
       const liveSummary = liveRows.find((row) => row.id === runId);
       expect(liveSummary).toBeDefined();
@@ -2564,8 +2531,8 @@ describe('purchase history permission scope', () => {
         scopeId: storeA.id,
         grantedBy: fx.superAdminUserId,
       });
-      const globalDeniedCaller = appRouter.createCaller(
-        buildCtx(db, await sessionFor(globalDeniedMember, globalDeniedUser.id)),
+      const globalDeniedCaller = callerFor(
+        await sessionFor(globalDeniedMember, globalDeniedUser.id),
       );
       expect((await globalDeniedCaller.run.historyDetail({ runId })).canAmend).toBe(false);
       await expect(
@@ -2624,9 +2591,7 @@ describe('purchase history permission scope', () => {
       const staffUser = await makeUser(`History staff ${suffix}`);
       const staffMember = await makeMember(staffUser.id);
       await bindRole(staffMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
-      const staffCaller = appRouter.createCaller(
-        buildCtx(db, await sessionFor(staffMember, staffUser.id)),
-      );
+      const staffCaller = callerFor(await sessionFor(staffMember, staffUser.id));
       let missingPermissionThrew = false;
       try {
         await staffCaller.run.history({ page: 1, pageSize: 10 });
@@ -2669,7 +2634,7 @@ describe('purchase history permission scope', () => {
       expect(stores).toContain(inactiveStore.id);
       expect(stores).not.toContain(deniedStore.id);
 
-      const catalogCaller = appRouter.createCaller(buildCtx(db, session));
+      const catalogCaller = callerFor(session);
       const priceStores = await catalogCaller.catalog.stores({ permission: 'prices.view' });
       expect(priceStores.map((store) => store.id)).toContain(inactiveStore.id);
       expect(priceStores.map((store) => store.id)).not.toContain(deniedStore.id);
@@ -2838,7 +2803,7 @@ describe('memberSetStatus is rank- and store-gated', () => {
     const user = await makeUser('Status-Manager');
     const memberId = await makeMember(user.id);
     await bindRole(memberId, fix!.managerRoleId, { type: 'store', storeId });
-    return appRouter.createCaller(buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(memberId, user.id)));
+    return callerFor(await sessionFor(memberId, user.id));
   }
 
   async function staffIn(storeIds: string[], roleId = fix!.staffRoleId): Promise<string> {
@@ -2949,9 +2914,7 @@ describe('memberSetStatus is rank- and store-gated', () => {
     const adminUser = await makeUser('Status-Admin');
     const adminMember = await makeMember(adminUser.id);
     await bindRole(adminMember, fix!.adminRoleId, { type: 'global' });
-    const caller = appRouter.createCaller(
-      buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(adminMember, adminUser.id)),
-    );
+    const caller = callerFor(await sessionFor(adminMember, adminUser.id));
     const peerUser = await makeUser('Status-Peer-Admin');
     const peer = await makeMember(peerUser.id);
     await bindRole(peer, fix!.adminRoleId, { type: 'global' });
@@ -2978,7 +2941,7 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
     const user = await makeUser('Override-Actor');
     const memberId = await makeMember(user.id);
     await bindRole(memberId, roleId, scope);
-    return appRouter.createCaller(buildCtx(getDb(undefined, { system: 'maintenance' }), await sessionFor(memberId, user.id)));
+    return callerFor(await sessionFor(memberId, user.id));
   }
 
   async function staffTarget(storeId: string): Promise<string> {
@@ -3075,7 +3038,7 @@ describe('expired role bindings carry no admin authority', () => {
         scopeType: 'global',
         expiresAt: new Date(Date.now() - 60_000),
       });
-      const caller = appRouter.createCaller(buildCtx(db, await sessionFor(memberId, user.id)));
+      const caller = callerFor(await sessionFor(memberId, user.id));
 
       // Rank: still only a manager, so a peer manager is out of reach.
       const peerUser = await makeUser('Peer-Manager');
@@ -3167,9 +3130,7 @@ describe('2026-10-21 audit admin gates', () => {
       .insert(s.memberStoreAssignments)
       .values({ memberId, storeId })
       .onConflictDoNothing();
-    const caller = appRouter.createCaller(
-      buildCtx(maintenance(), await sessionFor(memberId, user.id)),
-    );
+    const caller = callerFor(await sessionFor(memberId, user.id));
     return { caller, memberId, userId: user.id };
   }
 

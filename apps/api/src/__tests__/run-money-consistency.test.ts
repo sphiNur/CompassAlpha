@@ -16,7 +16,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import {
   applyRun,
   decideRun,
@@ -25,14 +25,12 @@ import {
   type RunCommand,
   type RunState,
 } from '@compass/domain/run';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
 import { appendEvents } from '../services/eventStore';
 import { pgConstraintName, pgErrorCode } from '../services/pgErrors';
 import { projectRun, receivedDelta } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {
@@ -67,23 +65,6 @@ describe('receivedDelta (CA-06)', () => {
     );
   });
 });
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 const PERMS = [
   'users.manage',
@@ -133,16 +114,14 @@ async function buyerOrg(name: string) {
     roleId: role!.id,
     scopeType: 'global',
   });
-  const caller = appRouter.createCaller(
-    buildCtx(db, {
-      userId: user!.id,
-      memberId: member!.id,
-      orgId: org.id,
-      orgTimezone: 'UTC',
-      permissions: new Set(PERMS),
-      roleSlugs: new Set(['super_admin']),
-    }),
-  );
+  const caller = callerFor({
+    userId: user!.id,
+    memberId: member!.id,
+    orgId: org.id,
+    orgTimezone: 'UTC',
+    permissions: new Set(PERMS),
+    roleSlugs: new Set(['super_admin']),
+  });
   return { db, slug, org, user: user!, member: member!, caller };
 }
 

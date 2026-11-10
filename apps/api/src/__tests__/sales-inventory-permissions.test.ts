@@ -18,12 +18,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import { getDb, schema as s } from '@compass/db';
+import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -75,27 +74,6 @@ describe('CA-10 migration 0048 backfills the missing built-in grants only', () =
 });
 
 // ---------- PG-gated runtime gates ----------------------------------------
-
-function buildCtx(
-  db: ReturnType<typeof getDb>,
-  session: SessionContext,
-  idempotencyKey: string | null = null,
-): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
 
 interface Fixture {
   orgId: string;
@@ -215,7 +193,7 @@ async function memberCaller(
   }
   const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
   if (!session) throw new Error('session failed to load');
-  return appRouter.createCaller(buildCtx(db, session, idempotencyKey));
+  return callerFor(session, { idempotencyKey });
 }
 
 async function errorOf(

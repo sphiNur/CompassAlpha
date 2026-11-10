@@ -9,12 +9,12 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { logger } from '../infra/log';
+import { getDb, schema as s } from '@compass/db';
 import { idempotencyRequestHash, idempotentMutation, router } from '../trpc/trpc';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { testContext } from './helpers/ctx';
 
 let session: SessionContext | null = null;
 let runs = 0;
@@ -40,22 +40,7 @@ const testRouter = router({
 });
 
 function caller(key: string) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: key,
-    session: session!,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session!.orgId, fn, options);
-    },
-  };
-  return testRouter.createCaller(ctx);
+  return testRouter.createCaller(testContext(session!, { idempotencyKey: key }));
 }
 
 beforeAll(async () => {
@@ -98,7 +83,6 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
   });
 
   test('a mutation without input works over HTTP with a key (empty body)', async () => {
-    const db = getDb();
     const post = () =>
       fetchRequestHandler({
         endpoint: '/trpc',
@@ -107,20 +91,7 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
         }),
-        createContext: () =>
-          ({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            hono: {} as any,
-            db,
-            log: logger,
-            traceId: 'test-http',
-            ip: null,
-            userAgent: null,
-            idempotencyKey: randomUUID(),
-            session: session!,
-            withOrg: (fn: Parameters<RequestContext['withOrg']>[0]) =>
-              withOrgContext(db, session!.orgId, fn),
-          }) as unknown as RequestContext,
+        createContext: () => testContext(session!, { idempotencyKey: randomUUID() }),
       });
     const res = await post();
     expect(res.status).toBe(200);

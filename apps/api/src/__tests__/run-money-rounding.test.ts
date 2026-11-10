@@ -13,7 +13,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import {
   applyRun,
   decideRun,
@@ -22,31 +22,12 @@ import {
   type RunCommand,
   type RunState,
 } from '@compass/domain/run';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
 import { appendEvents } from '../services/eventStore';
 import { projectRun } from '../services/runProjection';
 import { sumMoney } from '@compass/contracts';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn, options) {
-      return withOrgContext(db, session.orgId, fn, options);
-    },
-  };
-}
+import { callerFor } from './helpers/ctx';
 
 const PERMS = [
   'users.manage',
@@ -188,16 +169,14 @@ describe('run money rounding (PG, D1)', () => {
         actor,
       });
 
-      const caller = appRouter.createCaller(
-        buildCtx(db, {
-          userId: user!.id,
-          memberId: member!.id,
-          orgId: org.id,
-          orgTimezone: 'UTC',
-          permissions: new Set(PERMS),
-          roleSlugs: new Set(['super_admin']),
-        }),
-      );
+      const caller = callerFor({
+        userId: user!.id,
+        memberId: member!.id,
+        orgId: org.id,
+        orgTimezone: 'UTC',
+        permissions: new Set(PERMS),
+        roleSlugs: new Set(['super_admin']),
+      });
       // run.get while buying: the finish sheet's three numbers.
       const live = await caller.run.get({ runId });
       // Per store: 1.01 + 2.02 + 0.01 = 3.04 items, 1.01 expense.

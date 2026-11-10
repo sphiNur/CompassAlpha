@@ -7,40 +7,14 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import {
-  getDb,
-  provisionOrganization,
-  schema as s,
-  withOrgContext,
-  withSystemContext,
-} from '@compass/db';
+import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
-import { logger } from '../infra/log';
-import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
+import { callerFor } from './helpers/ctx';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
-
-function caller(session: SessionContext | null) {
-  const db = getDb();
-  const ctx: RequestContext = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hono: {} as any,
-    db,
-    log: logger,
-    traceId: `test-${Date.now()}`,
-    ip: null,
-    userAgent: null,
-    idempotencyKey: null,
-    session,
-    async withOrg(fn) {
-      return withOrgContext(db, session?.orgId ?? null, fn);
-    },
-  };
-  return appRouter.createCaller(ctx);
-}
 
 describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   const cleanupOrgIds: string[] = [];
@@ -113,7 +87,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('login reopens the last workspace and lists every membership', async () => {
-    const login = await caller(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
+    const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
     expect(login.session.member.orgId).toBe(orgB);
     expect(login.session.member.memberId).toBe(memberB);
     expect(login.session.memberships.map((m) => m.orgId).sort()).toEqual([orgA, orgB].sort());
@@ -122,7 +96,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('switching organisation survives a refresh-token rotation', async () => {
-    const login = await caller(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
+    const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
     const sessionB: SessionContext = {
       userId,
       memberId: login.session.member.memberId,
@@ -131,10 +105,10 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       permissions: new Set(['users.manage', 'org.admin']),
       roleSlugs: new Set(['admin']),
     };
-    const switched = await caller(sessionB).auth.switchOrganization({ orgId: orgA });
+    const switched = await callerFor(sessionB).auth.switchOrganization({ orgId: orgA });
     expect(switched.session.member.orgId).toBe(orgA);
 
-    const refreshed = await caller(null).auth.refresh({
+    const refreshed = await callerFor(null).auth.refresh({
       refreshToken: switched.tokens.refreshToken,
     });
     expect(refreshed.session.member.orgId).toBe(orgA);
@@ -150,7 +124,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       permissions: new Set(['users.manage', 'org.admin']),
       roleSlugs: new Set(['admin']),
     };
-    const created = await caller(sessionB).auth.createOrganization({
+    const created = await callerFor(sessionB).auth.createOrganization({
       name: 'Brand New Restaurant',
       locale: 'en',
       timezone: 'Asia/Tashkent',
@@ -197,7 +171,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       roleSlugs: new Set(['admin']),
     };
     await expect(
-      caller(session).auth.createOrganization({ name: 'Unauthorized Tenant' }),
+      callerFor(session).auth.createOrganization({ name: 'Unauthorized Tenant' }),
     ).rejects.toThrow('auth.errors.platformAdminRequired');
   });
 });
