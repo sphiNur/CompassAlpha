@@ -112,42 +112,38 @@ describe('isClaimExpired', () => {
   });
 });
 
+// Review TEST4-17 (2026-11): only what a query's text must say. What the
+// joins and the status filters select is pinned by the PG tests below,
+// which CI's integration job now runs.
 describe('claim timeout SQL', () => {
   const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
 
-  test("order candidates use the claimer's last event on the order stream", () => {
-    const q = dialect.sqlToQuery(staleClaimCandidatesSql('order', 30));
-    const text = flat(q.sql);
-    expect(text).toContain('FROM read_model.order_sessions_v c');
-    expect(text).toContain("c.status = 'submitted'");
-    expect(text).toContain('JOIN auth.members m ON m.user_id = e.actor_id');
-    expect(text).toContain('e.stream_type = $1');
-    expect(text).toContain('m.id = c.claimed_by_member_id');
-    expect(text).toContain('WHERE GREATEST(claimed_at, last_claimer_event_at) < NOW() -');
-    expect(q.params).toEqual(['order', 30, 30, 100]);
+  test('candidates bind the stream type, the timeout twice and the batch size, in order', () => {
+    expect(dialect.sqlToQuery(staleClaimCandidatesSql('order', 30)).params).toEqual([
+      'order',
+      30,
+      30,
+      100,
+    ]);
+    expect(dialect.sqlToQuery(staleClaimCandidatesSql('run', 15, 50)).params).toEqual([
+      'run',
+      15,
+      15,
+      50,
+    ]);
   });
 
-  test('run candidates read market_runs_v and the run stream', () => {
-    const q = dialect.sqlToQuery(staleClaimCandidatesSql('run', 15, 50));
-    const text = flat(q.sql);
-    expect(text).toContain('FROM read_model.market_runs_v c');
-    expect(text).toContain("c.status IN ('planned', 'purchasing', 'delivering')");
-    expect(q.params).toEqual(['run', 15, 15, 50]);
-  });
-
-  test('the locked re-check selects the claimer activity and locks only the claim row', () => {
+  test('the locked re-check locks only the claim row', () => {
     const q = dialect.sqlToQuery(claimRowForUpdateSql('order', 'sess-1'));
-    const text = flat(q.sql);
-    expect(text).toContain('AS last_claimer_event_at');
-    expect(text).toContain('FOR UPDATE OF c');
+    expect(flat(q.sql)).toContain('FOR UPDATE OF c');
     expect(q.params).toEqual(['order', 'sess-1']);
   });
 });
 
 // ---------------------------------------------------------------------------
-// PG-gated: the same SQL against a migrated database. Not part of CI's
-// integration job (that runs apps/api only); run locally with
-// DATABASE_URL pointing at a scratch database.
+// PG-gated: the same SQL against a migrated database. CI's integration job
+// runs these as its non-owner role; locally, point DATABASE_URL at a
+// scratch database.
 // ---------------------------------------------------------------------------
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
@@ -163,7 +159,10 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     activeOrder: randomUUID(),
     idleOrder: randomUUID(),
     othersActivityOrder: randomUUID(),
+    approvedOrder: randomUUID(),
     activeRun: randomUUID(),
+    deliveringRun: randomUUID(),
+    finishedRun: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -186,28 +185,39 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       { id: ids.otherMemberId, orgId: ids.orgId, userId: ids.otherUserId, status: 'active' },
     ]);
     await db.insert(s.stores).values({ id: ids.storeId, orgId: ids.orgId, name: 'Store' });
-    const session = (id: string) => ({
+    const session = (id: string, status = 'submitted') => ({
       id,
       orgId: ids.orgId,
       storeId: ids.storeId,
       orderDate: '2026-10-22',
-      status: 'submitted',
+      status,
       claimedByMemberId: ids.claimerMemberId,
       claimedAt: ago(60),
       lastSeq: 3,
     });
-    await db
-      .insert(s.orderSessionsV)
-      .values([session(ids.activeOrder), session(ids.idleOrder), session(ids.othersActivityOrder)]);
-    await db.insert(s.marketRunsV).values({
-      id: ids.activeRun,
+    await db.insert(s.orderSessionsV).values([
+      session(ids.activeOrder),
+      session(ids.idleOrder),
+      session(ids.othersActivityOrder),
+      // Idle too, but no longer in review: never a candidate.
+      session(ids.approvedOrder, 'approved'),
+    ]);
+    const run = (id: string, status: string, runIndex: number) => ({
+      id,
       orgId: ids.orgId,
       runDate: '2026-10-22',
-      status: 'purchasing',
+      runIndex,
+      status,
       claimedByMemberId: ids.claimerMemberId,
       claimedAt: ago(60),
       lastSeq: 2,
     });
+    await db.insert(s.marketRunsV).values([
+      run(ids.activeRun, 'purchasing', 0),
+      // No event from the claimer since the claim an hour ago.
+      run(ids.deliveringRun, 'delivering', 1),
+      run(ids.finishedRun, 'finished', 2),
+    ]);
     const event = (
       streamType: 'order' | 'run',
       streamId: string,
@@ -252,16 +262,22 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     const rows = (await withSystemContext(db, 'worker', (tx) =>
       tx.execute(staleClaimCandidatesSql('order', 30, 10_000)),
     )) as unknown as Array<{ id: string }>;
-    const seeded: string[] = [ids.activeOrder, ids.idleOrder, ids.othersActivityOrder];
+    const seeded: string[] = [
+      ids.activeOrder,
+      ids.idleOrder,
+      ids.othersActivityOrder,
+      ids.approvedOrder,
+    ];
     const mine = rows.filter((r) => seeded.includes(r.id));
     expect(mine.map((r) => r.id).sort()).toEqual([ids.idleOrder, ids.othersActivityOrder].sort());
   });
 
-  test('run candidates skip a claimer who is still working the run', async () => {
+  test('run candidates: an idle claim on a live run, never one being worked or finished', async () => {
     const rows = (await withSystemContext(db, 'worker', (tx) =>
       tx.execute(staleClaimCandidatesSql('run', 30, 10_000)),
     )) as unknown as Array<{ id: string }>;
-    expect(rows.some((r) => r.id === ids.activeRun)).toBe(false);
+    const seeded: string[] = [ids.activeRun, ids.deliveringRun, ids.finishedRun];
+    expect(rows.filter((r) => seeded.includes(r.id)).map((r) => r.id)).toEqual([ids.deliveringRun]);
   });
 
   test('the locked re-check returns the claimer activity for isClaimExpired', async () => {

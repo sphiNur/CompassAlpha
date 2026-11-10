@@ -346,10 +346,13 @@ jobs:
         # a hand-kept file list — invite-acceptance, multi-tenant and
         # subscription were silently never run. Tests that sign Telegram
         # initData use the stub TELEGRAM_BOT_TOKEN above as their own key.
+        # Review TEST4-17 (2026-11): the worker's claim-timeout SQL tests
+        # too; they had only ever run on a developer's machine.
         run: |
           bun test \
             apps/api/src/__tests__ \
-            apps/api/src/services/__tests__
+            apps/api/src/services/__tests__ \
+            apps/worker/src
 
   # ============ Job 3: the app in a real browser ============
   e2e:
