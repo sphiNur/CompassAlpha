@@ -36,9 +36,13 @@ Adding a feature means walking through 8–10 steps. None are optional.
 ### 1. Define the event
 
 `packages/domain/src/<aggregate>/events.ts`. Add a TS type to the union and
-the `OrderEventType` literal. Payload is part of the **public contract** —
-once shipped, it's frozen. To change it, add a new TYPE (e.g.
-`ItemAdjustedV2`) and update the projector to handle both.
+the `OrderEventType` literal, a row to `docs/EVENT_CATALOG.md`, and the type
+to `packages/domain/src/eventCatalog.test.ts`. Payload is part of the
+**public contract**: written events are never rewritten. A payload may gain
+an optional field, or an enum a new value, when every reader handles its
+absence; the catalog records what absence means. Anything else (changing a
+field's meaning, making one required) needs a new TYPE (e.g.
+`ItemAdjustedV2`) and a projector that handles both.
 
 ### 2. Update the reducer (`apply`)
 
@@ -200,8 +204,10 @@ runtime issues, smokes do.
   IS the i18n key; FE auto-translates via `useErrToast()`.
 - **Inline comments matter**. Tag with `M1.x (YYYY-MM-DD)` when the change
   is part of a numbered milestone. Audit reports live in `docs/M1.x-AUDIT.md`.
-- **Event payloads are public contracts**. Adding a field to an existing
-  type is breaking. Use a V2 type instead.
+- **Event payloads are public contracts**. An existing type only gains
+  optional fields that every reader handles when absent, each recorded in
+  `docs/EVENT_CATALOG.md` with its meaning on older events. Anything else
+  is a V2 type.
 - **Multi-tenant safety**: every API path uses `ctx.withOrg(...)` (sets the
   `app.current_org_id` GUC for RLS). Or has explicit
   `eq(table.orgId, ctx.session.orgId)`. Both layers — RLS + app code —
@@ -225,7 +231,8 @@ runtime issues, smokes do.
 
 ## What NOT to do
 
-- **Never** mutate an existing event's payload schema — add a V2 type.
+- **Never** rewrite a stored event, or change what an existing payload
+  field means — add a V2 type.
 - **Never** splice ids into SQL (`sql.raw(\`'${id}'\`)`): the pattern is one
   PR away from an injection sink. Use Drizzle's `inArray()`, or `inUuids()` /
   `inTexts()` from `apps/api/src/services/sqlIn.ts` inside a `sql` template.
@@ -242,7 +249,8 @@ runtime issues, smokes do.
 When reviewing a PR (yours or others):
 
 - [ ] Domain layer is pure (no DB, no clock leak)
-- [ ] Event payload schema is documented in `docs/EVENT_CATALOG.md`
+- [ ] New event types and payload fields are in `docs/EVENT_CATALOG.md`
+      (a new field is optional, with its meaning when absent)
 - [ ] Migration has a journal entry
 - [ ] All user-visible strings exist in all 4 catalogs
 - [ ] Mutation has a test (unit or integration)
