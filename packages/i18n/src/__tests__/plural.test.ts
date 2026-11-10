@@ -114,10 +114,10 @@ describe('plural selection — locales without number inflection', () => {
     expect(t(9)).toBe('9 位参与人');
   });
 
-  test('uz selects its two authored forms', () => {
+  test('uz counts with «ta» for every number, 1 included', () => {
     const t = (n: number) =>
       createI18n('uz').t('approval.contributorsCount' as CatalogKey, { n });
-    expect(t(1)).toBe('1 yuboruvchi');
+    expect(t(1)).toBe('1 ta yuboruvchi');
     expect(t(4)).toBe('4 ta yuboruvchi');
   });
 });
