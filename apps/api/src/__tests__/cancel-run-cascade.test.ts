@@ -41,6 +41,7 @@ import type { RequestContext, SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
+import { orderStream, runStream } from './helpers/streams';
 
 /**
  * Direct tRPC callers can issue the next request in the same JavaScript turn.
@@ -221,78 +222,46 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
     for (let i = 0; i < 2; i++) {
       const sessionId = randomUUID();
       sessionIds.push(sessionId);
-      let oState = emptyOrderState(sessionId);
+      const orderLog = orderStream(fix.orgId, sessionId);
       const staffActor = {
         userId: fix.staffUserId,
         memberId: fix.staffMemberId,
         permissions: allPerms,
         isClaimer: false,
       };
-      const start = decideOrder(oState, {
+      await orderLog.exec({
         type: 'StartDraft',
         orgId: fix.orgId,
         storeId: fix.storeId,
         orderDate: '2026-05-02',
         actor: staffActor,
       });
-      for (const e of start) oState = applyOrder(oState, e);
-      await appendEvents(db, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId: fix.orgId,
-        events: start.map((e) => ({ ...e })),
-      });
-      await projectOrder(db, fix.orgId, start);
 
-      const adjust = decideOrder(oState, {
+      await orderLog.exec({
         type: 'AdjustItem',
         skuId: fix.skuId,
         qty: '5',
         sku: { id: fix.skuId, step: '0.5', unit: 'kg', isArchived: false },
         actor: staffActor,
       });
-      for (const e of adjust) oState = applyOrder(oState, e);
-      await appendEvents(db, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId: fix.orgId,
-        events: adjust.map((e) => ({ ...e })),
-      });
-      await projectOrder(db, fix.orgId, adjust);
 
-      const submit = decideOrder(oState, { type: 'Submit', actor: staffActor });
-      for (const e of submit) oState = applyOrder(oState, e);
-      await appendEvents(db, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId: fix.orgId,
-        events: submit.map((e) => ({ ...e })),
-      });
-      await projectOrder(db, fix.orgId, submit);
+      await orderLog.exec({ type: 'Submit', actor: staffActor });
 
-      const approve = decideOrder(oState, {
+      await orderLog.exec({
         type: 'Approve',
         actor: { ...staffActor, isClaimer: true },
       });
-      for (const e of approve) oState = applyOrder(oState, e);
-      await appendEvents(db, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId: fix.orgId,
-        events: approve.map((e) => ({ ...e })),
-      });
-      await projectOrder(db, fix.orgId, approve);
     }
 
     // ---- 2. Plan a run + attach both sessions ----
     const runId = randomUUID();
-    let rState = emptyRunState(runId);
+    const runLog = runStream(fix.orgId, runId);
     const purchaserActor = {
       userId: fix.cancellerUserId,
       memberId: fix.cancellerMemberId,
       permissions: allPerms,
     };
-    const plan = decideRun(rState, {
+    await runLog.exec({
       type: 'PlanRun',
       orgId: fix.orgId,
       runDate: '2026-05-02',
@@ -301,14 +270,6 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
       plannedItems: [{ skuId: fix.skuId, qty: '10' }],
       actor: purchaserActor,
     });
-    for (const e of plan) rState = applyRun(rState, e);
-    await appendEvents(db, {
-      streamType: 'run',
-      streamId: runId,
-      orgId: fix.orgId,
-      events: plan.map((e) => ({ ...e })),
-    });
-    await projectRun(db, fix.orgId, plan);
 
     // Cascade AttachedToRun onto each session — the run.create router
     // does this for real; we mirror it directly here.

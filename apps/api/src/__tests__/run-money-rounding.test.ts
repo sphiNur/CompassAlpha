@@ -14,20 +14,12 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
-import { projectRun } from '../services/runProjection';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { sumMoney } from '@compass/contracts';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { runStream } from './helpers/streams';
 
 const PERMS = [
   'users.manage',
@@ -109,19 +101,8 @@ describe('run money rounding (PG, D1)', () => {
         permissions: new Set(PERMS),
       };
       const runId = randomUUID();
-      let state: RunState = emptyRunState(runId);
-      const exec = async (cmd: RunCommand) => {
-        const evs = decideRun(state, cmd);
-        for (const e of evs) state = applyRun(state, e);
-        await appendEvents(db, {
-          streamType: 'run',
-          streamId: runId,
-          orgId: org.id,
-          events: evs.map((e) => ({ ...e })),
-        });
-        await projectRun(db, org.id, evs);
-        return evs;
-      };
+      const runLog = runStream(org.id, runId);
+      const exec = (cmd: RunCommand) => runLog.exec(cmd);
       await exec({
         type: 'PlanRun',
         orgId: org.id,

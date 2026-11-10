@@ -17,28 +17,13 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
-import {
-  apply as applyOrder,
-  decide as decideOrder,
-  emptyState as emptyOrderState,
-  type OrderState,
-} from '@compass/domain/order';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type RunCommand,
-  type RunEvent,
-  type RunState,
-} from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
-import { projectOrder } from '../services/orderProjection';
-import { projectRun } from '../services/runProjection';
+import { getDb, schema as s } from '@compass/db';
+import { type RunCommand } from '@compass/domain/run';
 import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { planRun, runStream, seedOrder } from './helpers/streams';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -139,47 +124,15 @@ beforeAll(async () => {
 const actorOf = (p: Person) => ({ userId: p.userId, memberId: p.memberId, permissions: ALL_PERMS });
 const orderActorOf = (p: Person) => ({ ...actorOf(p), isClaimer: false });
 
-let runCount = 0;
 /** A run delivered to the store, both products split to it (2 kg each). */
 async function deliveredRun(): Promise<string> {
   const { orgId, storeId, skuIds, a } = fix!;
-  // The application handle, as run-change-date does: the projection's
-  // inserts are checked by the tenant policies.
-  const db = getDb();
-  const runId = randomUUID();
-  let state: RunState = emptyRunState(runId);
-  const write = async (events: RunEvent[]) => {
-    if (events.length === 0) return;
-    for (const e of events) state = applyRun(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'run',
-        streamId: runId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectRun(tx, orgId, events);
-    });
-  };
-  await write([
-    {
-      streamId: runId,
-      seq: 1,
-      occurredAt: new Date(),
-      actorUserId: a.userId,
-      actorMemberId: a.memberId,
-      type: 'RunPlanned',
-      payload: {
-        orgId,
-        runDate: new Date().toISOString().slice(0, 10),
-        // One run per (day, index).
-        runIndex: runCount++,
-        sessionIds: [],
-        plannedItems: skuIds.map((skuId) => ({ skuId, qty: '2' })),
-        purchaserMemberId: a.memberId,
-      },
-    } as RunEvent,
-  ]);
+  const run = runStream(orgId);
+  await planRun(run, orgId, {
+    by: a,
+    sessionIds: [],
+    plannedItems: skuIds.map((skuId) => ({ skuId, qty: '2' })),
+  });
   const cmds: RunCommand[] = [
     { type: 'StartPurchase', actor: actorOf(a) },
     ...skuIds.map(
@@ -198,8 +151,8 @@ async function deliveredRun(): Promise<string> {
     { type: 'StartDelivery', actor: actorOf(a) },
     { type: 'DeliverToStore', storeId, actor: actorOf(a) },
   ];
-  for (const cmd of cmds) await write(decideRun(state, cmd));
-  return runId;
+  for (const cmd of cmds) await run.exec(cmd);
+  return run.id;
 }
 
 describe.skipIf(!SHOULD_RUN)('delivery rules (PG-gated)', () => {
@@ -282,65 +235,20 @@ describe.skipIf(!SHOULD_RUN)('delivery rules (PG-gated)', () => {
 
 // ---------- order fixtures
 
-let orderDay = 0;
-/** A submitted order of person `by`, optionally claimed and carried into a run. */
-async function seedOrder(opts: {
+/** A submitted order of person `c`, optionally claimed and carried into a run. */
+function storeOrder(opts: {
   claimedBy?: Person;
   extras?: number;
   inRun?: boolean;
 }): Promise<string> {
   const { orgId, storeId, skuIds, c } = fix!;
-  const db = getDb();
-  const sessionId = randomUUID();
-  let state: OrderState = emptyOrderState(sessionId);
-  const push = async (events: ReturnType<typeof decideOrder>) => {
-    for (const e of events) state = applyOrder(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectOrder(tx, orgId, events);
-    });
-  };
-  // A distinct past day per order: one draft per person, store and day.
-  orderDay += 1;
-  const orderDate = new Date(Date.UTC(2026, 0, orderDay)).toISOString().slice(0, 10);
-  const author = orderActorOf(c);
-  await push(decideOrder(state, { type: 'StartDraft', orgId, storeId, orderDate, actor: author }));
-  await push(
-    decideOrder(state, {
-      type: 'AdjustItem',
-      skuId: skuIds[0],
-      qty: '1',
-      sku: { id: skuIds[0], step: '1', unit: 'kg', isArchived: false },
-      actor: author,
-    }),
-  );
-  if (opts.extras) {
-    await push(
-      decideOrder(state, {
-        type: 'SetSessionExtras',
-        extras: Array.from({ length: opts.extras }, (_, i) => ({
-          name: `extra ${i}`,
-          qty: '1',
-          unit: 'kg',
-        })),
-        actor: author,
-      }),
-    );
-  }
-  await push(decideOrder(state, { type: 'Submit', actor: author }));
-  if (opts.claimedBy) {
-    await push(decideOrder(state, { type: 'Claim', actor: orderActorOf(opts.claimedBy) }));
-  }
-  if (opts.inRun) {
-    await push(decideOrder(state, { type: 'Approve', actor: author }));
-    await push(decideOrder(state, { type: 'AttachToRun', runId: randomUUID(), actor: author }));
-  }
-  return sessionId;
+  return seedOrder(orgId, orderActorOf(c), {
+    storeId,
+    items: [{ skuId: skuIds[0], qty: '1' }],
+    extras: opts.extras,
+    claimedBy: opts.claimedBy ? orderActorOf(opts.claimedBy) : undefined,
+    until: opts.inRun ? { runId: randomUUID() } : 'submitted',
+  });
 }
 
 async function lastSeqOf(sessionId: string): Promise<number> {
@@ -354,7 +262,7 @@ async function lastSeqOf(sessionId: string): Promise<number> {
 describe.skipIf(!SHOULD_RUN)('approval rules (PG-gated)', () => {
   test('APR-18: own marks in a row pass; a change by someone else is refused', async () => {
     const { a, b } = fix!;
-    const sessionId = await seedOrder({ extras: 3, inRun: true });
+    const sessionId = await storeOrder({ extras: 3, inRun: true });
     const seen = await lastSeqOf(sessionId);
     await a.caller.order.markExtraStatus({
       sessionId,
@@ -394,7 +302,7 @@ describe.skipIf(!SHOULD_RUN)('approval rules (PG-gated)', () => {
 
   test('RE-APR-2: of two approvers taking over at once, one gets it and the other is told', async () => {
     const { a, b, c, db } = fix!;
-    const sessionId = await seedOrder({ claimedBy: a });
+    const sessionId = await storeOrder({ claimedBy: a });
     const results = await Promise.allSettled([
       b.caller.order.takeOverClaim({ sessionId, fromMemberId: a.memberId }),
       c.caller.order.takeOverClaim({ sessionId, fromMemberId: a.memberId }),
@@ -423,7 +331,7 @@ describe.skipIf(!SHOULD_RUN)('approval rules (PG-gated)', () => {
 
   test("RE-APR-2: taking over a claim that has moved on, or one's own, writes nothing", async () => {
     const { a, b } = fix!;
-    const sessionId = await seedOrder({ claimedBy: a });
+    const sessionId = await storeOrder({ claimedBy: a });
     await b.caller.order.takeOverClaim({ sessionId, fromMemberId: a.memberId });
     // A's page still shows A's own claim being taken; A taps "take over"
     // from what it last saw — itself — and must not snatch it back.

@@ -17,20 +17,13 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { pgConstraintName, pgErrorCode } from '../services/pgErrors';
-import { projectRun, receivedDelta } from '../services/runProjection';
+import { receivedDelta } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { runStream } from './helpers/streams';
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {
@@ -156,19 +149,8 @@ describe('run money consistency (PG)', () => {
         permissions: new Set(PERMS),
       };
       const runId = randomUUID();
-      let state: RunState = emptyRunState(runId);
-      const exec = async (cmd: RunCommand) => {
-        const evs = decideRun(state, cmd);
-        for (const e of evs) state = applyRun(state, e);
-        await appendEvents(db, {
-          streamType: 'run',
-          streamId: runId,
-          orgId: org.id,
-          events: evs.map((e) => ({ ...e })),
-        });
-        await projectRun(db, org.id, evs);
-        return evs;
-      };
+      const runLog = runStream(org.id, runId);
+      const exec = (cmd: RunCommand) => runLog.exec(cmd);
 
       await exec({
         type: 'PlanRun',

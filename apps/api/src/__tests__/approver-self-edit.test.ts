@@ -38,18 +38,12 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
-import {
-  apply as applyOrder,
-  decide as decideOrder,
-  emptyState as emptyOrderState,
-} from '@compass/domain/order';
-import { appendEvents } from '../services/eventStore';
-import { projectOrder } from '../services/orderProjection';
 import { appRouter } from '../trpc/router';
 import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
+import { orderStream } from './helpers/streams';
 
 /** The date under test. Fixed, so "today" drift can't affect the lookup. */
 const ORDER_DATE = '2026-05-11';
@@ -113,39 +107,24 @@ beforeAll(async () => {
     isClaimer: false,
   };
   const sessionId = randomUUID();
-  let state = emptyOrderState(sessionId);
+  const order = orderStream(org!.id, sessionId);
 
-  const push = async (events: ReturnType<typeof decideOrder>) => {
-    for (const e of events) state = applyOrder(state, e);
-    await appendEvents(db, {
-      streamType: 'order',
-      streamId: sessionId,
-      orgId: org!.id,
-      events: events.map((e) => ({ ...e })),
-    });
-    await projectOrder(db, org!.id, events);
-  };
-
-  await push(
-    decideOrder(state, {
-      type: 'StartDraft',
-      orgId: org!.id,
-      storeId: store!.id,
-      orderDate: ORDER_DATE,
-      actor,
-    }),
-  );
-  await push(
-    decideOrder(state, {
-      type: 'AdjustItem',
-      skuId: sku!.id,
-      qty: '0.5',
-      sku: { id: sku!.id, step: '0.5', unit: 'kg', isArchived: false },
-      actor,
-    }),
-  );
-  await push(decideOrder(state, { type: 'Submit', actor }));
-  await push(decideOrder(state, { type: 'Claim', actor }));
+  await order.exec({
+    type: 'StartDraft',
+    orgId: org!.id,
+    storeId: store!.id,
+    orderDate: ORDER_DATE,
+    actor,
+  });
+  await order.exec({
+    type: 'AdjustItem',
+    skuId: sku!.id,
+    qty: '0.5',
+    sku: { id: sku!.id, step: '0.5', unit: 'kg', isArchived: false },
+    actor,
+  });
+  await order.exec({ type: 'Submit', actor });
+  await order.exec({ type: 'Claim', actor });
 
   fix = {
     orgId: org!.id,
@@ -249,37 +228,23 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
     // recently updated one, which the old (store, date, submitter,
     // claimer) guess would pick.
     const secondId = randomUUID();
-    let second = emptyOrderState(secondId);
-    const push = async (events: ReturnType<typeof decideOrder>) => {
-      for (const e of events) second = applyOrder(second, e);
-      await appendEvents(db, {
-        streamType: 'order',
-        streamId: secondId,
-        orgId: fix!.orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectOrder(db, fix!.orgId, events);
-    };
-    await push(
-      decideOrder(second, {
-        type: 'StartDraft',
-        orgId: fix.orgId,
-        storeId: fix.storeId,
-        orderDate: ORDER_DATE,
-        actor,
-      }),
-    );
-    await push(
-      decideOrder(second, {
-        type: 'AdjustItem',
-        skuId: fix.skuId,
-        qty: '4',
-        sku: { id: fix.skuId, step: '0.5', unit: 'kg', isArchived: false },
-        actor,
-      }),
-    );
-    await push(decideOrder(second, { type: 'Submit', actor }));
-    await push(decideOrder(second, { type: 'Claim', actor }));
+    const secondOrder = orderStream(fix!.orgId, secondId);
+    await secondOrder.exec({
+      type: 'StartDraft',
+      orgId: fix.orgId,
+      storeId: fix.storeId,
+      orderDate: ORDER_DATE,
+      actor,
+    });
+    await secondOrder.exec({
+      type: 'AdjustItem',
+      skuId: fix.skuId,
+      qty: '4',
+      sku: { id: fix.skuId, step: '0.5', unit: 'kg', isArchived: false },
+      actor,
+    });
+    await secondOrder.exec({ type: 'Submit', actor });
+    await secondOrder.exec({ type: 'Claim', actor });
 
     const qtyOf = async (sessionId: string) => {
       const [row] = await db

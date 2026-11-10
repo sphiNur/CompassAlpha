@@ -24,23 +24,15 @@ import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type ActorCtx,
-  type RunCommand,
-  type RunState,
-} from '@compass/domain/run';
+import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { appRouter } from '../trpc/router';
 import { loadSession } from '../trpc/context';
-import { appendEvents } from '../services/eventStore';
-import { projectRun } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { ALL_PERMISSION_KEYS } from '@compass/db/seed-data';
 import { seedRoles } from './helpers/fixtures';
+import { runStream, type RunStream } from './helpers/streams';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -171,15 +163,11 @@ beforeAll(async () => {
     memberId: ownerP.memberId,
     permissions: new Set(ALL_PERMISSION_KEYS),
   };
-  const states = new Map<string, RunState>();
-  const exec: Fixture['exec'] = async (runId, cmd) => {
-    let state = states.get(runId) ?? emptyRunState(runId);
-    const evs = decideRun(state, cmd);
-    for (const e of evs) state = applyRun(state, e);
-    states.set(runId, state);
-    await appendEvents(db, { streamType: 'run', streamId: runId, orgId, events: evs.map((e) => ({ ...e })) });
-    await projectRun(db, orgId, evs);
-    return evs;
+  const runs = new Map<string, RunStream>();
+  const exec: Fixture['exec'] = (runId, cmd) => {
+    const run = runs.get(runId) ?? runStream(orgId, runId);
+    runs.set(runId, run);
+    return run.exec(cmd);
   };
   const runId = randomUUID();
   const sessionIds = [randomUUID(), randomUUID()];

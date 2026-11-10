@@ -24,16 +24,8 @@ import {
   decide as decideOrder,
   emptyState as emptyOrderState,
   type OrderEvent,
-  type OrderState,
 } from '@compass/domain/order';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type RunCommand,
-  type RunEvent,
-  type RunState,
-} from '@compass/domain/run';
+import { type RunCommand, type RunEvent } from '@compass/domain/run';
 import { appendEvents, readStream } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
@@ -43,6 +35,7 @@ import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember } from './helpers/fixtures';
+import { planRun, runStream, seedOrder } from './helpers/streams';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -169,58 +162,17 @@ beforeAll(async () => {
 const actorOf = (p: Person) => ({ userId: p.userId, memberId: p.memberId, permissions: ALL_PERMS });
 const orderActorOf = (p: Person) => ({ ...actorOf(p), isClaimer: false });
 
-let orderDay = 0;
 /** An order of `storeId` for 2 kg of `skuId` (+ extras), carried into `runId`. */
-async function seedOrder(storeId: string, skuId: string, runId: string, extras = 0) {
+function storeOrder(storeId: string, skuId: string, runId: string, extras = 0): Promise<string> {
   const { orgId, admin } = fix!;
-  const db = getDb();
-  const sessionId = randomUUID();
-  let state: OrderState = emptyOrderState(sessionId);
-  const push = async (events: ReturnType<typeof decideOrder>) => {
-    for (const e of events) state = applyOrder(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectOrder(tx, orgId, events);
-    });
-  };
-  orderDay += 1;
-  const orderDate = new Date(Date.UTC(2026, 1, orderDay)).toISOString().slice(0, 10);
-  const author = orderActorOf(admin);
-  await push(decideOrder(state, { type: 'StartDraft', orgId, storeId, orderDate, actor: author }));
-  await push(
-    decideOrder(state, {
-      type: 'AdjustItem',
-      skuId,
-      qty: '2',
-      sku: { id: skuId, step: '1', unit: 'kg', isArchived: false },
-      actor: author,
-    }),
-  );
-  if (extras > 0) {
-    await push(
-      decideOrder(state, {
-        type: 'SetSessionExtras',
-        extras: Array.from({ length: extras }, (_, i) => ({
-          name: `extra ${i}`,
-          qty: '1',
-          unit: 'kg',
-        })),
-        actor: author,
-      }),
-    );
-  }
-  await push(decideOrder(state, { type: 'Submit', actor: author }));
-  await push(decideOrder(state, { type: 'Approve', actor: author }));
-  await push(decideOrder(state, { type: 'AttachToRun', runId, actor: author }));
-  return sessionId;
+  return seedOrder(orgId, orderActorOf(admin), {
+    storeId,
+    items: [{ skuId, qty: '2' }],
+    extras,
+    until: { runId },
+  });
 }
 
-let runCount = 0;
 /**
  * A run with store A's order (2 kg rice, two extras) and store B's order
  * (2 kg onion), bought as ordered at 1000. `stage` says how far it goes.
@@ -230,45 +182,17 @@ async function seedRun(stage: 'purchasing' | 'delivered'): Promise<{
   sessionA: string;
 }> {
   const { orgId, storeA, storeB, skuIds, admin } = fix!;
-  const db = getDb();
-  const runId = randomUUID();
-  const sessionA = await seedOrder(storeA, skuIds[0], runId, 2);
-  const sessionB = await seedOrder(storeB, skuIds[1], runId);
-  let state: RunState = emptyRunState(runId);
-  const write = async (events: RunEvent[]) => {
-    if (events.length === 0) return;
-    for (const e of events) state = applyRun(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'run',
-        streamId: runId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectRun(tx, orgId, events);
-    });
-  };
-  await write([
-    {
-      streamId: runId,
-      seq: 1,
-      occurredAt: new Date(),
-      actorUserId: admin.userId,
-      actorMemberId: admin.memberId,
-      type: 'RunPlanned',
-      payload: {
-        orgId,
-        runDate: new Date().toISOString().slice(0, 10),
-        runIndex: runCount++,
-        sessionIds: [sessionA, sessionB],
-        plannedItems: [
-          { skuId: skuIds[0], qty: '2' },
-          { skuId: skuIds[1], qty: '2' },
-        ],
-        purchaserMemberId: admin.memberId,
-      },
-    } as RunEvent,
-  ]);
+  const run = runStream(orgId);
+  const sessionA = await storeOrder(storeA, skuIds[0], run.id, 2);
+  const sessionB = await storeOrder(storeB, skuIds[1], run.id);
+  await planRun(run, orgId, {
+    by: admin,
+    sessionIds: [sessionA, sessionB],
+    plannedItems: [
+      { skuId: skuIds[0], qty: '2' },
+      { skuId: skuIds[1], qty: '2' },
+    ],
+  });
   const cmds: RunCommand[] = [{ type: 'StartPurchase', actor: actorOf(admin) }];
   if (stage === 'delivered') {
     cmds.push(
@@ -293,8 +217,8 @@ async function seedRun(stage: 'purchasing' | 'delivered'): Promise<{
       { type: 'DeliverToStore', storeId: storeB, actor: actorOf(admin) },
     );
   }
-  for (const cmd of cmds) await write(decideRun(state, cmd));
-  return { runId, sessionA };
+  for (const cmd of cmds) await run.exec(cmd);
+  return { runId: run.id, sessionA };
 }
 
 /** One run may be planned or purchasing per org: cancel it when done. */

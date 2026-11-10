@@ -12,32 +12,16 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/nav-badges-delivery.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
-import {
-  apply as applyOrder,
-  decide as decideOrder,
-  emptyState as emptyOrderState,
-  type OrderState,
-} from '@compass/domain/order';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-  type RunCommand,
-  type RunEvent,
-  type RunState,
-} from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
-import { projectOrder } from '../services/orderProjection';
-import { projectRun } from '../services/runProjection';
+import { type RunCommand } from '@compass/domain/run';
 import { linkForStore } from '../services/notifyForEvent';
 import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { planRun, runStream, seedOrder } from './helpers/streams';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -140,95 +124,33 @@ beforeAll(async () => {
 
 const actorOf = (p: Person) => ({ userId: p.userId, memberId: p.memberId, permissions: ALL_PERMS });
 
-let orderDay = 0;
 /** An order of `storeId` for 2 kg of each sku, taken as far as `until`. */
-async function seedOrder(
+function storeOrder(
   storeId: string,
   skuIds: readonly string[],
   until: 'submitted' | 'approved' | { runId: string },
 ): Promise<string> {
   const { orgId, admin } = fix!;
-  const db = getDb();
-  const sessionId = randomUUID();
-  let state: OrderState = emptyOrderState(sessionId);
-  const push = async (events: ReturnType<typeof decideOrder>) => {
-    for (const e of events) state = applyOrder(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'order',
-        streamId: sessionId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectOrder(tx, orgId, events);
-    });
-  };
-  orderDay += 1;
-  const orderDate = new Date(Date.UTC(2026, 2, orderDay)).toISOString().slice(0, 10);
-  const author = { ...actorOf(admin), isClaimer: false };
-  await push(decideOrder(state, { type: 'StartDraft', orgId, storeId, orderDate, actor: author }));
-  for (const skuId of skuIds) {
-    await push(
-      decideOrder(state, {
-        type: 'AdjustItem',
-        skuId,
-        qty: '2',
-        sku: { id: skuId, step: '1', unit: 'kg', isArchived: false },
-        actor: author,
-      }),
-    );
-  }
-  await push(decideOrder(state, { type: 'Submit', actor: author }));
-  if (until === 'submitted') return sessionId;
-  await push(decideOrder(state, { type: 'Approve', actor: author }));
-  if (until === 'approved') return sessionId;
-  await push(decideOrder(state, { type: 'AttachToRun', runId: until.runId, actor: author }));
-  return sessionId;
+  const items = skuIds.map((skuId) => ({ skuId, qty: '2' }));
+  return seedOrder(orgId, { ...actorOf(admin), isClaimer: false }, { storeId, items, until });
 }
 
-let runCount = 0;
 /**
  * A run with store A's order: rice bought at 1000 from the supplier, onion
  * not found. Delivered to store A.
  */
 async function deliveredRun(): Promise<{ runId: string; write: (cmd: RunCommand) => Promise<void> }> {
   const { orgId, storeA, skuIds, admin, supplierId } = fix!;
-  const db = getDb();
-  const runId = randomUUID();
-  const sessionA = await seedOrder(storeA, skuIds, { runId });
-  let state: RunState = emptyRunState(runId);
-  const writeEvents = async (events: RunEvent[]) => {
-    if (events.length === 0) return;
-    for (const e of events) state = applyRun(state, e);
-    await withOrgContext(db, orgId, async (tx) => {
-      await appendEvents(tx, {
-        streamType: 'run',
-        streamId: runId,
-        orgId,
-        events: events.map((e) => ({ ...e })),
-      });
-      await projectRun(tx, orgId, events);
-    });
+  const run = runStream(orgId);
+  const sessionA = await storeOrder(storeA, skuIds, { runId: run.id });
+  await planRun(run, orgId, {
+    by: admin,
+    sessionIds: [sessionA],
+    plannedItems: skuIds.map((skuId) => ({ skuId, qty: '2' })),
+  });
+  const write = async (cmd: RunCommand) => {
+    await run.exec(cmd);
   };
-  await writeEvents([
-    {
-      streamId: runId,
-      seq: 1,
-      occurredAt: new Date(),
-      actorUserId: admin.userId,
-      actorMemberId: admin.memberId,
-      type: 'RunPlanned',
-      payload: {
-        orgId,
-        runDate: new Date().toISOString().slice(0, 10),
-        runIndex: runCount++,
-        sessionIds: [sessionA],
-        plannedItems: skuIds.map((skuId) => ({ skuId, qty: '2' })),
-        purchaserMemberId: admin.memberId,
-      },
-    } as RunEvent,
-  ]);
-  const write = async (cmd: RunCommand) => writeEvents(decideRun(state, cmd));
   await write({ type: 'StartPurchase', actor: actorOf(admin) });
   await write({
     type: 'PurchaseItem',
@@ -244,16 +166,16 @@ async function deliveredRun(): Promise<{ runId: string; write: (cmd: RunCommand)
   await write({ type: 'MarkUnavailable', skuId: skuIds[1], note: 'none at the bazaar', actor: actorOf(admin) });
   await write({ type: 'StartDelivery', actor: actorOf(admin) });
   await write({ type: 'DeliverToStore', storeId: storeA, actor: actorOf(admin) });
-  return { runId, write };
+  return { runId: run.id, write };
 }
 
 describe.skipIf(!SHOULD_RUN)('nav badges and delivery links (PG-gated)', () => {
   test('nav.counts: 审核 leaves out orders another reviewer holds, per store', async () => {
     const { manager, admin, staff, storeA, storeB, skuIds } = fix!;
     const before = await manager.caller.nav.counts({ storeId: storeA });
-    const s1 = await seedOrder(storeA, [skuIds[0]], 'submitted');
-    await seedOrder(storeA, [skuIds[1]], 'submitted');
-    await seedOrder(storeB, [skuIds[0]], 'submitted');
+    const s1 = await storeOrder(storeA, [skuIds[0]], 'submitted');
+    await storeOrder(storeA, [skuIds[1]], 'submitted');
+    await storeOrder(storeB, [skuIds[0]], 'submitted');
     const after = await manager.caller.nav.counts({ storeId: storeA });
     expect(after.approve).toBe((before.approve ?? 0) + 2);
     // Store B is not the manager's: no count leaks from it.
@@ -274,8 +196,8 @@ describe.skipIf(!SHOULD_RUN)('nav badges and delivery links (PG-gated)', () => {
     const { admin, buyerB, manager, storeA, storeB, skuIds } = fix!;
     const adminBefore = (await admin.caller.nav.counts({})).run ?? 0;
     const buyerBefore = (await buyerB.caller.nav.counts({})).run ?? 0;
-    await seedOrder(storeA, [skuIds[0]], 'approved');
-    await seedOrder(storeB, [skuIds[0]], 'approved');
+    await storeOrder(storeA, [skuIds[0]], 'approved');
+    await storeOrder(storeB, [skuIds[0]], 'approved');
     expect((await admin.caller.nav.counts({})).run).toBe(adminBefore + 2);
     // A purchaser of store B only sees store B's order.
     expect((await buyerB.caller.nav.counts({ storeId: storeA })).run).toBe(buyerBefore + 1);
