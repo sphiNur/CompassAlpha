@@ -11,6 +11,7 @@
  * RLS policies as in production. Fixtures are still written with
  * `getDb(undefined, { system: 'maintenance' })`.
  */
+import { sql } from 'drizzle-orm';
 import { getDb, withOrgContext } from '@compass/db';
 import { logger } from '../../infra/log';
 import type { RequestContext, SessionContext } from '../../trpc/context';
@@ -74,4 +75,22 @@ export function gateCaller(
       throw new Error('reached the handler');
     },
   });
+}
+
+/**
+ * Opens `n` connections on the server's handle and leaves them in the
+ * pool, so that `n` calls a test starts together do run at the same time
+ * (review TEST1-11, 2026-11). Otherwise the first call can take an open
+ * connection while the others wait the 25 ms or so it takes to open new
+ * ones. By then the first has committed, and a race test never races.
+ */
+export async function openConnections(orgId: string, n: number): Promise<void> {
+  const db = getDb();
+  // Each holds its connection for 50 ms, so none is handed back before
+  // the others are open.
+  await Promise.all(
+    Array.from({ length: n }, () =>
+      withOrgContext(db, orgId, (tx) => tx.execute(sql`SELECT pg_sleep(0.05)`)),
+    ),
+  );
 }

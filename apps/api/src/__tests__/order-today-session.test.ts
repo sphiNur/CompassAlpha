@@ -155,6 +155,15 @@ beforeAll(async () => {
   };
 });
 
+/** How many events order `sessionId` has; a no-op retry adds none. */
+async function eventCount(sessionId: string): Promise<number> {
+  const rows = await getDb(undefined, { system: 'maintenance' })
+    .select({ seq: s.events.seq })
+    .from(s.events)
+    .where(and(eq(s.events.streamType, 'order'), eq(s.events.streamId, sessionId)));
+  return rows.length;
+}
+
 describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)', () => {
   test('claimed batch stays visible; rejected batch is edited in place and re-submitted', async () => {
     if (!fix) throw new Error('fixture missing');
@@ -167,7 +176,9 @@ describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)'
     const sessionId = first.sessionId;
     await staff.order.submit({ sessionId });
     // CA-26: double tap / lost-response retry is a no-op success.
-    await expect(staff.order.submit({ sessionId })).resolves.toBeDefined();
+    const submitted = await eventCount(sessionId);
+    await staff.order.submit({ sessionId });
+    expect(await eventCount(sessionId)).toBe(submitted);
 
     // CA-01: claimed → still returned, with the claimer's name.
     await mgr.order.claim({ sessionId });
@@ -210,7 +221,9 @@ describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)'
     // CA-26: repeated approve by the same decider is a no-op success.
     await mgr.order.claim({ sessionId });
     await mgr.order.approve({ sessionId });
-    await expect(mgr.order.approve({ sessionId })).resolves.toBeDefined();
+    const approved = await eventCount(sessionId);
+    await mgr.order.approve({ sessionId });
+    expect(await eventCount(sessionId)).toBe(approved);
   });
 });
 
@@ -302,9 +315,11 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
     // Fresh look → the approver's own claim after it does not count.
     const fresh = (await mgr.order.pendingList(input)).find((r) => r.id === sessionId)!.lastSeq;
     await mgr.order.claim({ sessionId });
-    await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
+    await mgr.order.approve({ sessionId, expectedSeq: fresh });
     // CA-26 retry with the same (now behind) seq stays a no-op success.
-    await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
+    const approved = await eventCount(sessionId);
+    await mgr.order.approve({ sessionId, expectedSeq: fresh });
+    expect(await eventCount(sessionId)).toBe(approved);
   });
   test('RE-ORD-5: an emptied draft no longer blocks withdrawing an earlier batch, and is not listed', async () => {
     if (!fix) throw new Error('fixture missing');

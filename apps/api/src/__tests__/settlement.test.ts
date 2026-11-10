@@ -1182,6 +1182,9 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     const fx = fixture!;
     await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(1), 0));
     await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(0), 0));
+    // No other test closes these two days.
+    await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(19), 0));
+    await fx.caller.settlement.save(saveInput(fx.ownStoreId, dayBack(20), 0));
 
     const recent = await fx.caller.settlement.recent({
       storeId: fx.ownStoreId,
@@ -1189,11 +1192,12 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     });
     expect(recent.map((row) => row.date)).toEqual([dayBack(0), dayBack(1)]);
 
+    // Not the cursor's own day; the latest close before it.
     const prior = await fx.caller.settlement.recent({
       storeId: fx.ownStoreId,
-      beforeDate: dayBack(1),
-      limit: 7,
+      beforeDate: dayBack(19),
+      limit: 1,
     });
-    expect(prior.every((row) => row.date < dayBack(1))).toBe(true);
+    expect(prior.map((row) => row.date)).toEqual([dayBack(20)]);
   });
 });

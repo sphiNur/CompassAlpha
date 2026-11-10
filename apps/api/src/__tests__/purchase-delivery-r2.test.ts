@@ -425,7 +425,12 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     const removeErr = await errorOf(() =>
       buyerA.caller.run.removeExpense({ runId: r2, expenseId: e1, reason: 'gone' }),
     );
-    expect(removeErr).not.toBeNull();
+    // R2's own state has no E1, so E1 serves none of buyer A's stores
+    // there: the store gate refuses before anything is decided.
+    expect(removeErr).toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'run.errors.expenseServesOtherStores',
+    });
     expect(await e1Row()).toEqual({ runId: r1, removedAt: null });
 
     // And the removal projection itself only touches its own run's row

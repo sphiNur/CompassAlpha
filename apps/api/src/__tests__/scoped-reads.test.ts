@@ -13,7 +13,7 @@ import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
-import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -24,6 +24,8 @@ interface Fixture {
   staffA: Caller;
   otherStaffA: Caller;
   submittedSessionId: string;
+  /** Waiting for approval in B. */
+  submittedSessionB: string;
 }
 let fix: Fixture | null = null;
 
@@ -68,12 +70,33 @@ beforeAll(async () => {
   const mixed = await member([['manager', a!.id], ['cashier', b!.id]]);
   const staffA = await member([['staff', a!.id]]);
   const otherStaffA = await member([['staff', a!.id]]);
+  const staffB = await member([['staff', b!.id]]);
 
-  // A submitted order in A, waiting for approval.
+  // A submitted order in each store, waiting for approval.
   const draft = await staffA.order.adjustItem({ storeId: a!.id, skuId: sku!.id, qty: '2' });
   await staffA.order.submit({ sessionId: draft.sessionId });
+  const draftB = await staffB.order.adjustItem({ storeId: b!.id, skuId: sku!.id, qty: '1' });
+  await staffB.order.submit({ sessionId: draftB.sessionId });
 
-  fix = { storeA: a!.id, storeB: b!.id, mixed, staffA, otherStaffA, submittedSessionId: draft.sessionId };
+  // One purchase for both stores: 2 × 1000 for A, 3 × 1000 for B.
+  await seedFinishedPurchase(db, orgId, {
+    runDate: '2026-07-15',
+    unitPrice: '1000',
+    splits: [
+      { storeId: a!.id, qty: '2' },
+      { storeId: b!.id, qty: '3' },
+    ],
+  });
+
+  fix = {
+    storeA: a!.id,
+    storeB: b!.id,
+    mixed,
+    staffA,
+    otherStaffA,
+    submittedSessionId: draft.sessionId,
+    submittedSessionB: draftB.sessionId,
+  };
 });
 
 describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () => {
@@ -82,7 +105,13 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
   test('HIS-1: finance for a store where the reader is only a cashier is refused', async () => {
     const err = await errorOf(() => fix!.mixed.report.totals({ ...range, storeId: fix!.storeB }));
     expect(err?.code).toBe('FORBIDDEN');
-    expect(await errorOf(() => fix!.mixed.report.totals({ ...range, storeId: fix!.storeA }))).toBeNull();
+    // A's own figures: A's share of the purchase, none of B's.
+    expect(await fix!.mixed.report.totals({ ...range, storeId: fix!.storeA })).toMatchObject({
+      total: '2000.00',
+      itemsTotal: '2000.00',
+      cashLines: 1,
+      runCount: 1,
+    });
     const lines = await errorOf(() => fix!.mixed.report.purchaseLines({ ...range, storeId: fix!.storeB }));
     expect(lines?.code).toBe('FORBIDDEN');
   });
@@ -90,15 +119,18 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
   test('HIS-2: order history for that store is refused, and unfiltered history stays in A', async () => {
     const err = await errorOf(() => fix!.mixed.admin.submissionHistory({ storeId: fix!.storeB }));
     expect(err?.code).toBe('FORBIDDEN');
-    const rows = (await fix!.mixed.admin.submissionHistory({})) as unknown as Array<{ storeId?: string; store_id?: string }>;
-    const list = Array.isArray(rows) ? rows : ((rows as { items?: typeof rows }).items ?? []);
-    for (const r of list) expect(r.storeId ?? r.store_id).not.toBe(fix!.storeB);
+    // B has a submission too; only A's are listed.
+    const rows = await fix!.mixed.admin.submissionHistory({});
+    expect(rows.map((r) => r.sessionId)).toContain(fix!.submittedSessionId);
+    expect([...new Set(rows.map((r) => r.storeId))]).toEqual([fix!.storeA]);
   });
 
   test('APR-4: staff do not read the approval queue; the store manager does', async () => {
     expect(await fix!.staffA.order.pendingList({})).toHaveLength(0);
     const queue = await fix!.mixed.order.pendingList({});
+    // B's order waits too, but they are only a cashier there.
     expect(queue.map((q: { id: string }) => q.id)).toContain(fix!.submittedSessionId);
+    expect(queue.map((q: { id: string }) => q.id)).not.toContain(fix!.submittedSessionB);
   });
 
   test("APR-4: someone else's order detail is for approvers; one's own stays readable", async () => {

@@ -59,7 +59,12 @@ describe('flatEffectivePermissions', () => {
   });
 });
 
-let callers: { denied: ReturnType<typeof appRouter.createCaller>; plain: ReturnType<typeof appRouter.createCaller> } | null = null;
+type Caller = ReturnType<typeof appRouter.createCaller>;
+interface Manager {
+  memberId: string;
+  caller: Caller;
+}
+let managers: { denied: Manager; plain: Manager } | null = null;
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -88,16 +93,16 @@ beforeAll(async () => {
         scopeType: 'global',
       });
     }
-    return callerFor(await sessionOf(org!.id, who));
+    return { memberId: who.memberId, caller: callerFor(await sessionOf(org!.id, who)) };
   };
-  callers = { denied: await make(1, true), plain: await make(2, false) };
+  managers = { denied: await make(1, true), plain: await make(2, false) };
 });
 
 describe.skipIf(!SHOULD_RUN)('session permissions with overrides (PG-gated)', () => {
   test('ADM-1: a manager denied users.manage globally is refused by admin reads', async () => {
     let code: string | undefined;
     try {
-      await callers!.denied.admin.memberList();
+      await managers!.denied.caller.admin.memberList();
     } catch (err) {
       code = (err as { code?: string }).code;
     }
@@ -105,7 +110,10 @@ describe.skipIf(!SHOULD_RUN)('session permissions with overrides (PG-gated)', ()
   });
 
   test('a manager without the deny still reads them', async () => {
-    const list = await callers!.plain.admin.memberList();
-    expect(Array.isArray(list) || typeof list === 'object').toBe(true);
+    const list = await managers!.plain.caller.admin.memberList();
+    // Both work in the store this manager runs.
+    expect(list.map((m) => m.memberId).sort()).toEqual(
+      [managers!.denied.memberId, managers!.plain.memberId].sort(),
+    );
   });
 });

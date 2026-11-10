@@ -35,6 +35,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext, callerFor } from './helpers/ctx';
 import { codeOf, errorOf, pgErrorOf } from './helpers/errors';
+import { seedFinishedPurchase } from './helpers/fixtures';
 
 // ---------- one fixture org shared across tests --------------------------
 
@@ -1173,10 +1174,22 @@ describe('M3.1 sales router store-scope', () => {
     });
     const ctx = testContext(await sessionFor(staffMember, staffUser.id));
     const caller = appRouter.createCaller(ctx);
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [dish] = await db
+      .insert(s.dishes)
+      .values({ orgId: fx.orgId, names: { en: 'Plov' } })
+      .returning();
+    const [saleA] = await db
+      .insert(s.sales)
+      .values([
+        { orgId: fx.orgId, storeId: storeA.id, dishId: dish!.id, qty: '1' },
+        { orgId: fx.orgId, storeId: storeB.id, dishId: dish!.id, qty: '2' },
+      ])
+      .returning({ id: s.sales.id });
 
-    // POSITIVE: their own store works.
+    // POSITIVE: their own store's sales, and no other's.
     const own = await caller.sales.list({ storeId: storeA.id });
-    expect(Array.isArray(own)).toBe(true);
+    expect(own.map((sale) => sale.id)).toEqual([saleA!.id]);
 
     // NEGATIVE: foreign store throws notAssignedToStore.
     await expect(caller.sales.list({ storeId: storeB.id })).rejects.toThrow('notAssignedToStore');
@@ -1331,10 +1344,27 @@ describe('M3.7 inventory cannot be read for a foreign store', () => {
       });
       const ctx = testContext(await sessionFor(staffMember, staffUser.id));
       const caller = appRouter.createCaller(ctx);
+      const db = getDb(undefined, { system: 'maintenance' });
+      const [sku] = await db
+        .insert(s.skus)
+        .values({
+          orgId: fx.orgId,
+          code: `INV-${randomUUID().slice(0, 8)}`,
+          names: { en: 'Flour' },
+          unit: 'kg',
+          step: '1',
+        })
+        .returning();
+      await db.insert(s.inventoryMovements).values([
+        { orgId: fx.orgId, storeId: storeA.id, skuId: sku!.id, delta: '3', reason: 'adjustment' },
+        { orgId: fx.orgId, storeId: storeB.id, skuId: sku!.id, delta: '5', reason: 'adjustment' },
+      ]);
 
-      // OWN store: passes (returns whatever inventory is there).
+      // OWN store: its stock, not B's.
       const own = await caller.inventory.levels({ storeId: storeA.id });
-      expect(Array.isArray(own)).toBe(true);
+      expect(own).toEqual([
+        expect.objectContaining({ skuId: sku!.id, onHand: '3.000', movementCount: 1 }),
+      ]);
 
       // FOREIGN store: must throw notAssignedToStore. Pre-M3.7 this
       // returned Store B's full on-hand list.
@@ -1416,14 +1446,24 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
         }),
       ).rejects.toThrow('notAssignedToStore');
 
-      // Sanity: passing OWN storeId returns a well-formed list (likely
-      // empty, but no throw).
+      // OWN store: A's half of a purchase made for both stores.
+      const db = getDb(undefined, { system: 'maintenance' });
+      const { runId } = await seedFinishedPurchase(db, fx.orgId, {
+        runDate: '2026-07-15',
+        unitPrice: '1000',
+        splits: [
+          { storeId: storeA.id, qty: '1' },
+          { storeId: storeB.id, qty: '1' },
+        ],
+      });
       const own = await caller.report.purchaseLines({
         startDate: '2026-01-01',
         endDate: '2026-12-31',
         storeId: storeA.id,
       });
-      expect(Array.isArray(own)).toBe(true);
+      expect(own.filter((row) => row.runId === runId)).toEqual([
+        expect.objectContaining({ storeId: storeA.id, lineTotal: '1000.00' }),
+      ]);
     },
   );
 
@@ -1442,18 +1482,30 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
       const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
+      // A finished run in the range that bought one product for both
+      // stores.
+      const db = getDb(undefined, { system: 'maintenance' });
+      const { runId } = await seedFinishedPurchase(db, fx.orgId, {
+        runDate: '2026-07-15',
+        unitPrice: '1000',
+        splits: [
+          { storeId: storeA.id, qty: '1' },
+          { storeId: storeB.id, qty: '1' },
+        ],
+      });
+
       // No storeId in the query → server-side allowedStoreIds filter
-      // kicks in. Manager only bound to A, so any returned rows must
-      // have storeId === storeA.id. Pre-M3.7 the result would include
-      // every store's purchases org-wide.
+      // kicks in. Manager only bound to A, so the run shows only A's
+      // half, and nothing else is listed. Pre-M3.7 the result would
+      // include every store's purchases org-wide.
       const lines = await caller.report.purchaseLines({
         startDate: '2026-01-01',
         endDate: '2026-12-31',
       });
-      for (const row of lines) {
-        expect(row.storeId).toBe(storeA.id);
-        expect(row.storeId).not.toBe(storeB.id);
-      }
+      expect(lines.filter((row) => row.runId === runId).map((row) => row.storeId)).toEqual([
+        storeA.id,
+      ]);
+      expect(lines.every((row) => row.storeId === storeA.id)).toBe(true);
     },
   );
 });
@@ -1695,16 +1747,32 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const ctx = testContext(await sessionFor(buyerMember, buyer.id));
       const caller = appRouter.createCaller(ctx);
 
-      // No approved sessions exist yet for either store — the result
-      // should still be a well-formed empty preview, NOT a leak of
-      // Store B's data. (We assert structure shape — the filter has
-      // to short-circuit before the inArray would otherwise error.)
-      const preview = await caller.run.previewCreatable({});
-      expect(Array.isArray(preview.sessions)).toBe(true);
-      // Whatever sessions come back, none can be from a store the
-      // purchaser isn't bound to. (`storeB.id` must never appear.)
-      const involvedStoreIds = new Set(preview.perStoreDemand.map((d) => d.storeId));
-      expect(involvedStoreIds.has(storeB.id)).toBe(false);
+      // An approved order in each store, on a day no other test uses: the
+      // purchaser's preview has Store A's and not Store B's.
+      const date = '2098-12-27';
+      const sessionAId = randomUUID();
+      const sessionBId = randomUUID();
+      await db.insert(s.orderSessionsV).values([
+        {
+          id: sessionAId,
+          orgId: fx.orgId,
+          storeId: storeA.id,
+          initiatedByMemberId: buyerMember,
+          orderDate: date,
+          status: 'approved',
+        },
+        {
+          id: sessionBId,
+          orgId: fx.orgId,
+          storeId: storeB.id,
+          initiatedByMemberId: fx.superAdminMemberId,
+          orderDate: date,
+          status: 'approved',
+        },
+      ]);
+      const preview = await caller.run.previewCreatable({ date });
+      expect(preview.sessions.map((row) => row.id)).toEqual([sessionAId]);
+      expect(preview.perStoreDemand.some((d) => d.storeId === storeB.id)).toBe(false);
     },
   );
 

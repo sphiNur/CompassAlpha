@@ -3,6 +3,8 @@
  * 2026-11). Written with the maintenance handle, as fixtures are; the
  * code under test runs on the server's handle (helpers/ctx.ts).
  */
+import { randomUUID } from 'node:crypto';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { BUILTIN_ROLES, PERMISSIONS } from '@compass/db/seed-data';
 import { loadSession, type SessionContext } from '../../trpc/context';
@@ -102,4 +104,57 @@ export async function sessionOf(
   const session = await loadSession(getDb(), member.userId, orgId, member.memberId);
   if (!session) throw new Error('session failed to load');
   return session;
+}
+
+export interface PurchaseSpec {
+  runDate: string;
+  /** The price of one unit, paid in cash. */
+  unitPrice: string;
+  /** How much of the purchase each store received. */
+  splits: ReadonlyArray<{ storeId: string; qty: string }>;
+}
+
+/**
+ * A finished run that bought one new product for the stores in `splits`,
+ * written straight into the read model, which is all the finance reports
+ * read. For tests of whose purchases a person may see.
+ */
+export async function seedFinishedPurchase(
+  db: Db,
+  orgId: string,
+  spec: PurchaseSpec,
+): Promise<{ runId: string; skuId: string }> {
+  const code = `BUY-${randomUUID().slice(0, 8)}`;
+  const [sku] = await db
+    .insert(s.skus)
+    .values({ orgId, code, names: { en: code }, unit: 'kg', step: '1' })
+    .returning();
+  if (!sku) throw new Error('sku was not inserted');
+  const runId = randomUUID();
+  const qty = String(spec.splits.reduce((sum, split) => sum + Number(split.qty), 0));
+  // A day's runs are numbered; take the next number on that day.
+  const [day] = await db
+    .select({ next: sql<number>`COALESCE(MAX(${s.marketRunsV.runIndex}) + 1, 0)::int` })
+    .from(s.marketRunsV)
+    .where(and(eq(s.marketRunsV.orgId, orgId), eq(s.marketRunsV.runDate, spec.runDate)));
+  await db.insert(s.marketRunsV).values({
+    id: runId,
+    orgId,
+    runDate: spec.runDate,
+    runIndex: day?.next ?? 0,
+    status: 'finished',
+  });
+  await db.insert(s.runItemsV).values({
+    runId,
+    skuId: sku.id,
+    plannedQty: qty,
+    purchasedQty: qty,
+    unitPrice: spec.unitPrice,
+    status: 'purchased',
+    paymentMethod: 'cash',
+  });
+  await db
+    .insert(s.runItemStoresV)
+    .values(spec.splits.map((split) => ({ runId, skuId: sku.id, ...split })));
+  return { runId, skuId: sku.id };
 }

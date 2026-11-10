@@ -19,7 +19,7 @@
  * runs.
  */
 import { describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
 import { decideRun, type RunEvent } from '@compass/domain/run';
@@ -289,7 +289,30 @@ describe('full lifecycle (PG)', () => {
     expect(finalSplit?.confirmStatus).toBe('ok');
     expect(finalSplit?.confirmedAt).not.toBeNull();
 
-    // ---- Replay determinism: drop read model rows for this run + replay ----
+    // ---- Replay determinism: the read model rebuilt from the events alone
+    // is the one the commands wrote: the run, its items and their splits.
+    // A run's and an item's updatedAt say when the row was last projected,
+    // so a replay moves them.
+    const projected = <Row extends { updatedAt: Date }>(rows: Row[]) =>
+      rows.map(({ updatedAt: _projectedAt, ...row }) => row);
+    const readModel = async () => ({
+      run: projected(await db.select().from(s.marketRunsV).where(eq(s.marketRunsV.id, runId))),
+      items: projected(
+        await db
+          .select()
+          .from(s.runItemsV)
+          .where(eq(s.runItemsV.runId, runId))
+          .orderBy(asc(s.runItemsV.skuId)),
+      ),
+      splits: await db
+        .select()
+        .from(s.runItemStoresV)
+        .where(eq(s.runItemStoresV.runId, runId))
+        .orderBy(asc(s.runItemStoresV.skuId), asc(s.runItemStoresV.storeId)),
+    });
+    const written = await readModel();
+    expect(written.items.length).toBeGreaterThan(0);
+    expect(written.splits.length).toBeGreaterThan(0);
     await db.delete(s.runItemsV).where(eq(s.runItemsV.runId, runId));
     await db.delete(s.runItemStoresV).where(eq(s.runItemStoresV.runId, runId));
     await db.delete(s.marketRunsV).where(eq(s.marketRunsV.id, runId));
@@ -308,11 +331,7 @@ describe('full lifecycle (PG)', () => {
       payload: row.payload,
     } as unknown as RunEvent));
     await projectRun(db, org.id, replayed);
-    const rebuilt = await db.query.marketRunsV.findFirst({
-      where: (r, { eq: eq2 }) => eq2(r.id, runId),
-    });
-    expect(rebuilt?.status).toBe('finished');
-    expect(rebuilt?.actualTotal).toBe('75000.00');
+    expect(await readModel()).toEqual(written);
   });
 });
 

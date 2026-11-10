@@ -50,14 +50,33 @@ describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
       dispatchRunEventNotifications(tx, orgId, randomUUID(), emptyRunState(runId), events),
     );
     const rows = await db
-      .select({ template: s.notifications.template, dedupKey: s.notifications.dedupKey })
+      .select({
+        template: s.notifications.template,
+        dedupKey: s.notifications.dedupKey,
+        to: s.notifications.recipientUserId,
+        channel: s.notifications.channel,
+      })
       .from(s.notifications)
       .where(eq(s.notifications.orgId, orgId));
-    const keysOf = (template: string) =>
-      new Set(rows.filter((r) => r.template === template).map((r) => r.dedupKey)).size;
-    // One key per channel; both deliveries got their own, as did the recall.
-    const recalled = keysOf('run.storeDeliveryRecalled');
-    expect(recalled).toBeGreaterThan(0);
-    expect(keysOf('run.storeDelivered')).toBe(2 * recalled);
+    // A row's key is the event's, then its recipient and channel.
+    const eventKeysOf = (template: string) => [
+      ...new Set(
+        rows
+          .filter((r) => r.template === template)
+          .map((r) => {
+            const own = `:${r.to}:${r.channel}`;
+            return r.dedupKey?.endsWith(own) ? r.dedupKey.slice(0, -own.length) : r.dedupKey;
+          }),
+      ),
+    ];
+    const key = (what: string, seq: number) => `run:${runId}:store:${store!.id}:${what}:${seq}`;
+    // Each event has a key of its own: both deliveries, and the recall
+    // between them. All of them go to the store's staff.
+    expect(eventKeysOf('run.storeDelivered').sort()).toEqual([
+      key('delivered', 5),
+      key('delivered', 7),
+    ]);
+    expect(eventKeysOf('run.storeDeliveryRecalled')).toEqual([key('recalled', 6)]);
+    expect([...new Set(rows.map((r) => r.to))]).toEqual([user!.id]);
   });
 });

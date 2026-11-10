@@ -66,7 +66,8 @@ interface Outcome {
   frames: string[];
   code: number | null;
 }
-function connect(query: string): Promise<Outcome> {
+/** `onFrame` runs as each frame arrives, while the socket is still open. */
+function connect(query: string, onFrame?: () => void): Promise<Outcome> {
   lastToken = new URLSearchParams(query).get('token') ?? '';
   return new Promise((resolve) => {
     const out: Outcome = { opened: false, frames: [], code: null };
@@ -76,6 +77,7 @@ function connect(query: string): Promise<Outcome> {
     });
     ws.addEventListener('message', (e) => {
       out.frames.push(String(e.data));
+      onFrame?.();
       // A real socket stays open; record the hello and hang up. A probe
       // answers its hello with a message, as the deploy smoke does.
       if (!String(e.data).includes('"probe"')) ws.close(1000);
@@ -86,6 +88,15 @@ function connect(query: string): Promise<Outcome> {
       resolve(out);
     });
   });
+}
+
+/**
+ * Waits for the hub to be empty: a socket the client has closed leaves
+ * it when the server handles the close, a moment later.
+ */
+async function hubEmptied(): Promise<void> {
+  for (let i = 0; i < 100 && hub.size() > 0; i++) await Bun.sleep(10);
+  expect(hub.size()).toBe(0);
 }
 
 describe('/ws handshake', () => {
@@ -127,14 +138,14 @@ describe('/ws handshake', () => {
   });
 
   test('N1: the token-less probe says hello, echoes a message and closes 4002', async () => {
-    const subsBefore = hub.size(ORG);
-    const o = await connect('?probe=1');
+    await hubEmptied();
+    // Sampled while the probe is open: once it closes, it would have left.
+    const inHub: number[] = [];
+    const o = await connect('?probe=1', () => inHub.push(hub.size()));
     expect(o.opened).toBe(true);
     expect(o.frames.map((f) => JSON.parse(f).stage)).toEqual(['hello', 'echo']);
     expect(o.code).toBe(WS_CLOSE_PROBE);
-    // (the previous test's socket may still be closing server-side)
-    expect(hub.size(ORG)).toBeLessThanOrEqual(subsBefore);
-    expect(hub.size('')).toBe(0);
+    expect(inHub).toEqual([0, 0]);
   });
 
   test('R2-ENG-3: token-less probes are limited per client address', async () => {

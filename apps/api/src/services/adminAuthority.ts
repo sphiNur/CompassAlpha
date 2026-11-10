@@ -3,6 +3,8 @@
  * rules behind granting a role, shared by the admin router and invite
  * acceptance (2026-11-09, a first step of ADM1-11). The routers used to
  * import these from each other (admin → auth for inviterStillAuthorized).
+ * It also counts the admins a removal would leave, for the last-admin
+ * guard (countAdminsInOrg).
  *
  * Ranks, by what is being done:
  *   - an organisation-level act (a global grant or revoke, the role
@@ -15,7 +17,7 @@
  *   - the person acted on is ranked by every live binding they hold
  *     (getActorMaxRank): the strongest protection.
  */
-import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import { ADMIN_RANK } from '@compass/contracts';
 import { schema as s, type DB } from '@compass/db';
 import { hasGlobalOrgAdmin } from './orgAdmin';
@@ -89,6 +91,40 @@ export function getActorMaxRankInStore(
     userId,
     (b) => b.scopeType === 'global' || (b.scopeType === 'store' && b.scopeId === storeId),
   );
+}
+
+/**
+ * Active admin-rank members of the org. ADM-6 (2026-10-30): the guards
+ * ask how many would be LEFT, so they pass the member or binding being
+ * removed; counting the target used to refuse removing a suspended admin
+ * (not counted at all) whenever only one other admin remained.
+ */
+export async function countAdminsInOrg(
+  tx: DB,
+  orgId: string,
+  except: { memberId?: string; bindingId?: string } = {},
+): Promise<number> {
+  const rows = await tx
+    .select({ memberId: s.memberRoleBindings.memberId, bindingId: s.memberRoleBindings.id })
+    .from(s.memberRoleBindings)
+    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
+    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+    .where(
+      and(
+        eq(s.members.orgId, orgId),
+        eq(s.members.status, 'active'),
+        gte(s.roles.rank, ADMIN_RANK),
+        bindingIsLive(),
+      ),
+    );
+  // Distinct member ids — one member with two admin-level roles still
+  // counts as ONE admin for "last admin" purposes.
+  const distinct = new Set(
+    rows
+      .filter((r) => r.memberId !== except.memberId && r.bindingId !== except.bindingId)
+      .map((r) => r.memberId),
+  );
+  return distinct.size;
 }
 
 /**
