@@ -37,11 +37,11 @@
  * Pipeline:
  *   0. Provenance gates (local) + no-active-run pre-flight (server)
  *   0.5 Unit tests (local) — a red suite stops here, before shipping
- *   1-2. rsync the changed files to a staging copy on the server and build
+ *   1. the release, from git: the files git sees in this checkout, never
+ *      an ignored one or an .env (scripts/lib/release.ts)
+ *   2. rsync the changed files to a staging copy on the server and build
  *      the tarball there (2026-11-06: the link is slow and lossy); where
- *      rsync is missing (or on Windows), tar the local CompassAlpha
- *      sources (excl. node_modules / .env / .turbo / .git / .claude) and
- *      scp the whole tarball
+ *      rsync is missing (or on Windows), scp the whole tarball
  *   2.5 keep the live release as /home/ubuntu/compass-alpha.prev.tar.gz
  *      (the rollback target — see "Rollback" below)
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
@@ -86,14 +86,17 @@
  *     "Backups" for verify + restore commands.
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { waitUntilReady } from './lib/liveSite';
 import { ciProblemFor, liveReleaseAt, runGh } from './lib/provenance';
+import { RSYNC_FLAGS, releaseTree, unpackRelease, writeRelease } from './lib/release';
 import {
   APP_DIR,
   PREV_TARBALL,
+  RELEASE_TOP,
   STAGE_DIR,
   backupHealthScript,
   backupProblem,
@@ -109,18 +112,15 @@ import {
   remoteStepError,
   restoreScript,
   rlsRoleProblem,
-  rsyncExcludes,
   serverLimitSecs,
   snapshotScript,
   sshOptions,
   stageSeedScript,
   stageTarScript,
-  tarExcludes,
 } from './lib/deployRemote';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname); // .../CompassAlpha
-const PARENT = dirname(ROOT); // .../gemini
 
 /**
  * Deploy target (M3.18, launch hardening 2026-05-16).
@@ -147,10 +147,6 @@ if (!HOST) {
 const KEY =
   process.env.COMPASS_DEPLOY_KEY ??
   join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.ssh', 'compass_alpha.pem');
-const TARBALL = join(PARENT, 'compass-alpha-deploy.tar.gz');
-// MSYS2 tar on Windows sees `C:` and thinks it's a remote host. Use a
-// relative path from PARENT to keep tar happy.
-const TARBALL_RELATIVE = 'compass-alpha-deploy.tar.gz';
 
 /**
  * The public URL the smokes test (they refuse to run without it). Review
@@ -265,19 +261,17 @@ function canRsync(): boolean {
 }
 
 /**
- * Send the working tree to the staging copy. Files are compared by
- * checksum (-c): the seeded copy carries tar's whole-second times, and a
- * same-size edit within that second would otherwise look unchanged. The
- * link drops packets, so a broken transfer is resumed (--partial) up to
- * three times.
+ * Send the unpacked release (`source`) to the staging copy. Files are
+ * compared by checksum (-c): every unpacked release has new times, and
+ * the seeded copy has tar's whole-second ones. The link drops packets, so
+ * a broken transfer is resumed (--partial) up to three times.
  */
-function rsyncWithRetry(): void {
+function rsyncWithRetry(source: string): void {
   const cmd = [
-    'rsync -rlptzc --delete --delete-excluded --partial --stats',
-    rsyncExcludes(),
+    `rsync ${RSYNC_FLAGS}`,
     `-e 'ssh ${SSH_OPTS}'`,
-    './',
-    `${HOST}:${STAGE_DIR}/CompassAlpha/`,
+    `"${source}/"`,
+    `${HOST}:${STAGE_DIR}/${RELEASE_TOP}/`,
   ].join(' ');
   for (let attempt = 1; ; attempt++) {
     try {
@@ -774,27 +768,41 @@ if (!DRY) {
     // Incremental upload (2026-11-06) where both ends have rsync: only
     // the changed files cross the slow link, and the server builds the
     // tarball. Otherwise the whole tarball is uploaded, as before.
-    let shipped = false;
-    if (canRsync()) {
-      step('1-2. rsync changed files to the server, build the tarball there');
+    // Review OPS-13 (2026-11): the release is what git sees in this
+    // checkout, never an ignored file (scripts/lib/release.ts).
+    step('1. the release, from git');
+    const work = mkdtempSync(join(tmpdir(), 'compass-deploy-'));
+    try {
+      const tarball = join(work, 'compass-alpha-deploy.tar.gz');
       try {
-        console.log('  staging copy: ' + ssh(stageSeedScript()).trim());
-        rsyncWithRetry();
-        console.log('  ' + ssh(stageTarScript()).trim());
-        shipped = true;
+        const tree = releaseTree(ROOT);
+        writeRelease(ROOT, tree, tarball);
+        console.log(`  tree ${tree.slice(0, 12)}, ${(statSync(tarball).size / 1e6).toFixed(1)} MB`);
       } catch (err) {
-        console.warn('\x1b[33m⚠ incremental upload failed — uploading the whole tarball\x1b[0m');
-        console.warn('  ' + String((err as Error).message ?? err).split('\n')[0]);
+        console.error('\x1b[31m✖ could not make the release with git — nothing was shipped\x1b[0m');
+        console.error('  ' + String((err as Error).message ?? err));
+        rmSync(work, { recursive: true, force: true });
+        process.exit(1);
       }
-    }
-    if (!shipped) {
-      step('1. Tar local source');
-      // Excludes: scripts/lib/deployRemote.ts SHIP_EXCLUDES (node_modules,
-      // build output, every .env, .git, .claude, .worktrees, keys).
-      run(`tar ${tarExcludes()} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
-
-      step('2. scp to server');
-      run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`, { timeoutMs: LIMIT.scp });
+      let shipped = false;
+      if (canRsync()) {
+        step('2. rsync changed files to the server, build the tarball there');
+        try {
+          console.log('  staging copy: ' + ssh(stageSeedScript()).trim());
+          rsyncWithRetry(unpackRelease(tarball, work));
+          console.log('  ' + ssh(stageTarScript()).trim());
+          shipped = true;
+        } catch (err) {
+          console.warn('\x1b[33m⚠ incremental upload failed — uploading the whole tarball\x1b[0m');
+          console.warn('  ' + String((err as Error).message ?? err).split('\n')[0]);
+        }
+      }
+      if (!shipped) {
+        step('2. scp the whole tarball to the server');
+        run(`scp ${SSH_OPTS} "${tarball}" ${HOST}:/home/ubuntu/`, { timeoutMs: LIMIT.scp });
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
     }
 
     // N9 (2026-10-30): the API had no way back — only the web bundle kept

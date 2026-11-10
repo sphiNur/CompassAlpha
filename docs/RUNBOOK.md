@@ -74,16 +74,16 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 3. User reloads the Mini App.
 
 ### Roll back a bad deploy
-Production is not image-based: `scripts/deploy.ts` tars the local working
-tree, extracts it over `/home/ubuntu/compass-alpha` (in place, no
-`--delete`), runs `pnpm install --frozen-lockfile`, builds the web bundle
-into `apps/web/dist.next`, runs `pnpm --filter @compass/db migrate`,
-refreshes the systemd units, renames the bundle into place (`dist` →
-`dist.prev`, `dist.next` → `dist`), and only then restarts `compass-api`
-and `compass-worker` (2026-10-21, CA-37: the build used to run after the
-restart, leaving the new api serving a missing/half-written `dist`). A
-failed web build aborts the deploy before the restart and leaves the live
-`dist` untouched.
+Production is not image-based: `scripts/deploy.ts` ships what git sees
+in the local checkout, extracts it over `/home/ubuntu/compass-alpha` (in
+place, no `--delete`), runs `pnpm install --frozen-lockfile`, builds the
+web bundle into `apps/web/dist.next`, runs
+`pnpm --filter @compass/db migrate`, refreshes the systemd units, renames
+the bundle into place (`dist` → `dist.prev`, `dist.next` → `dist`), and
+only then restarts `compass-api` and `compass-worker` (2026-10-21, CA-37:
+the build used to run after the restart, leaving the new api serving a
+missing/half-written `dist`). A failed web build aborts the deploy before
+the restart and leaves the live `dist` untouched.
 
 Since 2026-11-09 (review OPS-01/OPS-02):
 - The read-only checks of the server's `.env` files and database role run
@@ -162,6 +162,16 @@ Since 2026-11 (review OPS-10/OPS-12):
   Starting the timer (install, boot) no longer starts a backup, so
   `INSTALL_SKIP_FIRST_RUN=1` works, and stopping a stuck backup no longer
   stops the timer. The deploy's `daemon-reload` applies it.
+
+Since 2026-11 (review OPS-13), a release is what git sees in the local
+checkout: tracked files with their local changes, and new files that
+`.gitignore` does not hide (`scripts/lib/release.ts`). An ignored file
+never ships, and neither does any `.env`, `*.pem`, `*.key`, `*.crt`,
+`.claude/` or `.worktrees/`, even if tracked. It used to be the working
+tree minus a hand-kept list, which let ignored files through (nested
+`node_modules`, `.turbo` caches, test reports) and required the checkout
+to be named `CompassAlpha`. Text files ship with LF line endings, whatever
+the machine's `core.autocrlf`.
 
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
