@@ -911,9 +911,10 @@ describe('B2 adminAuditList', () => {
 // introduces a dedicated `org.admin` permission held only by
 // admin + super_admin and migrates 17 mutations to it.
 //
-// Tests pick one mutation per family (catalog SKU, role catalog, store
-// catalog, member-remove). If any of these regress to allow manager,
-// the underlying gate at that line broke.
+// Tests pick one mutation per family (the SKU catalog, the role
+// catalog, the supplier list), plus storeUpdate on a store the manager
+// does not run. If any of these regress to allow manager, the
+// underlying gate at that line broke.
 
 describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
   test.skipIf(!SHOULD_RUN)('manager cannot skuCreate (catalog write)', async () => {

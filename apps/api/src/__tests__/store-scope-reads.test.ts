@@ -164,7 +164,7 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
 
 // ---------- M3.7: inventory + finance reports cannot leak cross-store ---
 //
-// Audit found two procedures that took an input.storeId but never
+// Audit found procedures that took an input.storeId but never
 // verified the actor was bound to that store:
 //   - inventory.levels: read on-hand stock
 //   - inventory.recentMovements: read movement history
@@ -174,9 +174,9 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
 //     users.manage; manager-of-A could read Store B's finance because
 //     users.manage doesn't imply per-store scope
 //
-// All five procedures now go through assertActorAssignedToStore OR a
-// getActorStoreIds intersect (for the org-tier-vs-store-tier split
-// on finance reports).
+// The inventory procedures now go through assertActorAssignedToStore.
+// The finance reports read only the stores financeStoreIds returns
+// (every store for an org-wide reader).
 
 describe('M3.7 inventory cannot be read for a foreign store', () => {
   test.skipIf(!SHOULD_RUN)(
