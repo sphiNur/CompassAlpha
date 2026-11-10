@@ -629,6 +629,8 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
+  /** The pay test's shift date, which the export test reads back. */
+  let payDate = '';
   test('late is deducted; a late clock-out needs a reason and an approval', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
@@ -639,6 +641,7 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
     const start = new Date(now.getTime() - 5 * 3600_000);
     const end = new Date(now.getTime() - 3600_000);
     const date = dateInTz(start, TZ);
+    payDate = date;
     const hhmm = (d: Date) => attendance.localTime(d, TZ);
     await f.manager.attendance.shiftSave({
       storeId: f.storeId,
@@ -713,7 +716,10 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 
   test('the month exports as an xlsx behind a signed link', async () => {
     const f = fx!;
-    const month = todayInTz(TZ, new Date()).slice(0, 7);
+    // The month of the pay test's shift. "This month" missed it on the
+    // first of a month between midnight and 05:00 in Tashkent, when that
+    // shift began the day before (review TEST1-08).
+    const month = payDate.slice(0, 7);
     await expectError(
       f.staff().attendance.exportLink({ storeId: f.storeId, month, locale: 'en' }),
       'auth.errors.missingPermission',
@@ -736,6 +742,75 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 
     const bad = await http.request('/files/attendance-month.xlsx?t=nope');
     expect(bad.status).toBe(410);
+  });
+
+  test("an overnight clock-out and its overtime count for the shift's day, also when entered later", async () => {
+    const f = fx!;
+    // Ten days ago, entered by a manager now: the overtime row is created
+    // today, its clock-out is ten days old.
+    const day = attendance.nextDate(todayInTz(TZ, new Date()), -10);
+    const nextDay = attendance.nextDate(day);
+    await f.manager.attendance.shiftSave({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      date: day,
+      start: '20:00',
+      end: '23:00',
+    });
+    await f.manager.attendance.manualPunch({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      kind: 'in',
+      date: day,
+      time: '20:00',
+      reason: 'Overnight test',
+    });
+    const out = await f.manager.attendance.manualPunch({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      kind: 'out',
+      date: nextDay,
+      time: '00:30',
+      reason: 'Overnight test',
+    });
+
+    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: day, to: day });
+    const punch = sheet.punches.find((p) => p.id === out.id)!;
+    expect({ date: punch.date, day: punch.day }).toEqual({ date: nextDay, day });
+    const row = sheet.days.find((d) => d.memberId === f.staffId && d.date === day)!;
+    expect(row.punchIds).toContain(out.id);
+    expect(row.workedMinutes).toBe(270);
+    // It used to be in no sheet: loaded by when the record was made, and
+    // dated by the clock-out's own day. A manager's entry approves it.
+    expect(sheet.overtime.find((o) => o.punchId === out.id)).toMatchObject({
+      date: day,
+      minutes: 90,
+      status: 'approved',
+    });
+    const next = await f.manager.attendance.sheet({
+      storeId: f.storeId,
+      from: nextDay,
+      to: nextDay,
+    });
+    expect(next.overtime.find((o) => o.punchId === out.id)).toBeUndefined();
+
+    // The month's file puts the clock-out and its overtime on that row.
+    const link = await f.manager.attendance.exportLink({
+      storeId: f.storeId,
+      month: day.slice(0, 7),
+      locale: 'en',
+    });
+    const http = new Hono().get('/files/attendance-month.xlsx', attendanceMonthExport);
+    const text = new TextDecoder().decode(
+      new Uint8Array(await (await http.request(link.path)).arrayBuffer()),
+    );
+    const daily = text.slice(text.lastIndexOf('<sheetData>'));
+    const dayRow = [...daily.matchAll(/<row r="\d+">[\s\S]*?<\/row>/g)]
+      .map((m) => m[0])
+      .find((r) => r.includes(`>${day}<`) && r.includes('00:30'));
+    expect(dayRow).toBeDefined();
+    expect(dayRow).toContain(`00:30 (${nextDay}) (manual)`);
+    expect(dayRow).toContain('>90<');
   });
 });
 

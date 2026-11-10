@@ -20,7 +20,7 @@ import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
 import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendance';
-import { minutesText } from '../../lib/attendanceFormat';
+import { minutesText, punchKindText } from '../../lib/attendanceFormat';
 import { currencyOf, formatMoney } from '../../lib/format';
 import { useAuthStore } from '../../stores/authStore';
 import { GeoMap } from '../../components/geo/GeoMap';
@@ -234,7 +234,7 @@ export function AttendanceSheet({ storeId }: { storeId: string }) {
             (m) =>
               m.enabled ||
               data.shifts.some((x) => x.memberId === m.memberId) ||
-              data.punches.some((p) => p.memberId === m.memberId && p.date === date),
+              data.punches.some((p) => p.memberId === m.memberId && p.day === date),
           );
           if (rows.length === 0) {
             return (
@@ -297,11 +297,10 @@ function MemberDayRow({
   const i18n = useI18n();
   const day = data.days.find((d) => d.memberId === member.memberId && d.date === date);
   const shifts = data.shifts.filter((x) => x.memberId === member.memberId && x.date === date);
+  // By the day each counts for: an overnight shift's clock-out is on the
+  // shift's row, not also on the next day's.
   const punches = data.punches.filter(
-    (p) =>
-      p.memberId === member.memberId &&
-      !p.voided &&
-      (day ? day.punchIds.includes(p.id) : p.date === date),
+    (p) => p.memberId === member.memberId && !p.voided && p.day === date,
   );
   return (
     <li>
@@ -402,14 +401,13 @@ function MemberDaySheet({
   onClose: () => void;
 }) {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const member = data.members.find((m) => m.memberId === memberId);
   const day = data.days.find((d) => d.memberId === memberId && d.date === date);
-  const punches = data.punches.filter(
-    (p) => p.memberId === memberId && (p.date === date || (day?.punchIds.includes(p.id) ?? false)),
-  );
+  const punches = data.punches.filter((p) => p.memberId === memberId && p.day === date);
   const [kind, setKind] = useState<'in' | 'out'>('in');
   const [time, setTime] = useState('');
   const [reason, setReason] = useState('');
@@ -485,8 +483,7 @@ function MemberDaySheet({
                     }
                   >
                     <span className="tabular-nums font-semibold">{p.time}</span>{' '}
-                    {i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')}
-                    {p.date !== date ? ` (${p.date})` : ''}
+                    {punchKindText(i18n, dates, p, date)}
                     <span className="block text-old-label text-[var(--c-fg-muted)] no-underline">
                       {p.source === 'manual'
                         ? i18n.t('attendance.sheet.manualBy', {

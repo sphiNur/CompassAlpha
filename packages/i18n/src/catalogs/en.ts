@@ -2637,6 +2637,10 @@ export const en = {
     'Clock-ins for this day. Wrong ones are voided with a reason, never deleted.',
   'attendance.sheet.noPunches': 'No clock-ins this day.',
   'attendance.sheet.manualBy': 'Added by {name}: {reason}',
+  // A clock-in's kind (the app) or time (the month's file) with the day it
+  // was made on, when that is not the row's day: an overnight shift's
+  // clock-out.
+  'attendance.sheet.madeOn': '{label} ({date})',
   'attendance.sheet.selfAt': 'Own clock-in, {m} m from the store',
   'attendance.sheet.voidedBy': 'voided by {name}: {reason}',
   'attendance.void.action': 'Void',
@@ -2763,7 +2767,7 @@ export const en = {
   'attendance.export.button': 'Export to Excel',
   'attendance.export.failed': 'Could not export. Try again.',
   'attendance.export.fileName': 'Attendance-{store}-{month}.xlsx',
-  'attendance.export.manualMark': '(manual)',
+  'attendance.export.manualMark': '{time} (manual)',
   'attendance.export.sheetSummary': 'Summary',
   'attendance.export.sheetDays': 'By day',
   'attendance.export.status.payable': 'Paid day',

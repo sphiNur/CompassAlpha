@@ -53,7 +53,10 @@ export interface MonthSheet {
   shifts: readonly { memberId: string; date: string; start: string; end: string }[];
   punches: readonly {
     memberId: string;
+    /** The day it was made on. */
     date: string;
+    /** The day it counts for: an overnight shift keeps its early-morning out. */
+    day: string;
     kind: 'in' | 'out';
     time: string;
     source: 'self' | 'manual';
@@ -124,7 +127,10 @@ export async function monthWorkbook(
   const checksBy = new Map<string, Set<string>>();
   for (const p of sheet.punches) {
     if (p.voided) continue;
-    const k = key(p.memberId, p.date);
+    // 2026-11-10: on the row of the day it counts for, as in the app. A
+    // clock-out past midnight was looked up under the next date, which
+    // has no row, so the shift's row lost it.
+    const k = key(p.memberId, p.day);
     if (p.face) faceBy.set(k, new Set([...(faceBy.get(k) ?? []), p.face.result]));
     const checks = checksBy.get(k) ?? new Set<string>();
     if (p.liveness === 'fail') checks.add(t('check.livenessFailed'));
@@ -133,7 +139,13 @@ export async function monthWorkbook(
     if (p.newDevice) checks.add(t('check.newDevice'));
     if (checks.size > 0) checksBy.set(k, checks);
     const slot = punchesBy.get(k) ?? { in: [], out: [] };
-    slot[p.kind].push(p.source === 'manual' ? `${p.time} ${t('manualMark')}` : p.time);
+    // Made on another day than the row's: that date too, as in the app.
+    // The catalog sets brackets and spacing (Chinese: 00:30（2026-11-10）).
+    const time =
+      p.date === p.day
+        ? p.time
+        : format('attendance.sheet.madeOn', locale, { label: p.time, date: p.date });
+    slot[p.kind].push(p.source === 'manual' ? t('manualMark', { time }) : time);
     punchesBy.set(k, slot);
   }
   const overtimeBy = new Map<string, MonthSheet['overtime'][number][]>();
