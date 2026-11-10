@@ -16,7 +16,7 @@ import { countAdminsInOrg } from '../services/adminAuthority';
 import { and, eq, like } from 'drizzle-orm';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor, openConnections } from './helpers/ctx';
-import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { seedOwnedOrg, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
@@ -170,12 +170,23 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
   });
 
   test('ADM-6: a suspended admin can lose the admin role and be removed', async () => {
-    const { owner, db, admins } = fix!;
-    const [a1, a2] = admins as [Fixture['admins'][0], Fixture['admins'][0]];
-    // Leave the owner as the one other active admin-rank member.
-    await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, a1.memberId));
-    await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, a2.memberId));
-    expect(await errorOf(() => owner.admin.revokeRole({ bindingId: a1.bindingId }))).toBeNull();
+    // An organisation of the test's own, where the owner is the one other
+    // active admin-rank member. The test used to suspend the shared admins,
+    // and run before APR-6 it left APR-6 nobody to tell (review NEW-RAND-01).
+    const db = fix!.db;
+    const org = await seedOwnedOrg(db, 'ADM-6 suspended admins');
+    const owner = callerFor(org.session);
+    const suspendedAdmin = (name: string) =>
+      seedMember(db, org.orgId, {
+        name,
+        status: 'suspended',
+        roles: [{ roleId: org.roleIds.admin! }],
+      });
+    const a1 = await suspendedAdmin('Suspended admin 1');
+    const a2 = await suspendedAdmin('Suspended admin 2');
+    expect(
+      await errorOf(() => owner.admin.revokeRole({ bindingId: a1.bindingIds[0]! })),
+    ).toBeNull();
     expect(await errorOf(() => owner.admin.memberRemove({ memberId: a2.memberId }))).toBeNull();
   });
 
