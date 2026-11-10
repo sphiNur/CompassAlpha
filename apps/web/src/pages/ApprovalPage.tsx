@@ -1290,7 +1290,7 @@ function SessionItems({
                     Number(singleRow.qty)
                   }
                   step={Number(sku.step)}
-                  unit={unitLabel(sku.unit)}
+                  unit={unitLabel.uncounted(sku.unit)}
                   unitFor={(qty) => unitLabel(sku.unit, qty)}
                   max={ORDER_QTY_MAX}
                   disabled={drafts.isSaving(qtyKey(t.skuId, singleRow.contributorMemberId))}
@@ -1332,7 +1332,9 @@ function SessionItems({
                 className="mt-0.5 flex items-baseline justify-between gap-2 text-old-label tabular-nums text-[var(--c-fg-muted)]"
               >
                 <span className="min-w-0">
-                  {unitPrice ? `~${formatMoney(unitPrice)} / ${unitLabel(sku?.unit ?? '')}` : null}
+                  {unitPrice
+                    ? `~${formatMoney(unitPrice)} / ${unitLabel.uncounted(sku?.unit ?? '')}`
+                    : null}
                   {unitPrice && t.usualPayment ? ' · ' : null}
                   {t.usualPayment
                     ? i18n.t(
@@ -1374,7 +1376,7 @@ function SessionItems({
                           drafts.value(qtyKey(t.skuId, r.contributorMemberId)) ?? Number(r.qty)
                         }
                         step={Number(sku.step)}
-                        unit={unitLabel(sku.unit)}
+                        unit={unitLabel.uncounted(sku.unit)}
                         unitFor={(qty) => unitLabel(sku.unit, qty)}
                         max={ORDER_QTY_MAX}
                         disabled={drafts.isSaving(qtyKey(t.skuId, r.contributorMemberId))}
@@ -1418,7 +1420,7 @@ function SessionItems({
                     itemLabel={productName(sku)}
                     value={drafts.value(key) ?? 0}
                     step={Number(sku.step)}
-                    unit={unitLabel(sku.unit)}
+                    unit={unitLabel.uncounted(sku.unit)}
                     unitFor={(qty) => unitLabel(sku.unit, qty)}
                     max={ORDER_QTY_MAX}
                     disabled={drafts.isSaving(key)}

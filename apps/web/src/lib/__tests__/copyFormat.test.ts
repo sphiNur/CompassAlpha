@@ -60,8 +60,8 @@ describe('R2-COPY-3 / R2-COPY-4: units', () => {
   });
 
   test('without a quantity: the singular label the pickers show', () => {
-    expect(unitLabeller(createI18n('ru').t)('pair')).toBe('пара');
-    expect(unitLabeller(createI18n('zh').t)('pair')).toBe('副');
+    expect(unitLabeller(createI18n('ru').t).uncounted('pair')).toBe('пара');
+    expect(unitLabeller(createI18n('zh').t).uncounted('pair')).toBe('副');
   });
 
   test('box has a label in every language; unknown units stay as typed', () => {
@@ -69,7 +69,7 @@ describe('R2-COPY-3 / R2-COPY-4: units', () => {
     expect(unitLabeller(createI18n('en').t)('box', 3)).toBe('boxes');
     expect(unitLabeller(createI18n('ru').t)('box', 3)).toBe('коробки');
     expect(unitLabeller(createI18n('uz').t)('box', 3)).toBe('quti');
-    expect(unitLabeller(createI18n('zh').t)('karobka')).toBe('karobka');
+    expect(unitLabeller(createI18n('zh').t).uncounted('karobka')).toBe('karobka');
   });
 });
 

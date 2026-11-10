@@ -801,7 +801,7 @@ export function AdminAuditSection() {
   const changeFormat: ChangeFormat = {
     empty: '—',
     localName: (names) => productName({ names }),
-    unit: unitLabel,
+    unit: unitLabel.uncounted,
     paymentMethod: (method) =>
       method === 'transfer'
         ? i18n.t('run.history.payment.transfer')
@@ -1131,7 +1131,7 @@ export function PriceReportSection() {
                   <span className="text-old-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
                     <span className="text-old-label font-normal text-[var(--c-fg-muted)]">
-                      / {unitLabel(r.unit)}
+                      / {unitLabel.uncounted(r.unit)}
                     </span>
                   </span>
                 </div>
@@ -1435,7 +1435,7 @@ export function FinanceSection() {
           l.supplierId ? (supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8)) : '—',
           methodLabel(l.paymentMethod),
           toQtyInput(l.qty),
-          sku ? unitLabel(sku.unit) : '',
+          sku ? unitLabel.uncounted(sku.unit) : '',
           l.unitPrice ?? '',
           l.lineTotal ?? '',
         ].join('\t');
