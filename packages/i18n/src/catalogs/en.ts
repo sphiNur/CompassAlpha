@@ -96,7 +96,7 @@ export const en = {
   'catalog.supplier.confirmArchive':
     'Archive supplier "{name}"? It can no longer be picked for purchases; past records are kept.',
   'catalog.category.confirmArchive': 'Archive category "{name}"?',
-  'catalog.category.meta': 'Code {slug} · order {sort}',
+  'catalog.category.meta': 'Short code {slug} · order {sort}',
   'catalog.category.slugPlaceholder': 'e.g. dairy',
   'catalog.sku.stepMeta': 'order step {step}',
   'catalog.supplier.tgPlaceholder': 'username (without @)',
