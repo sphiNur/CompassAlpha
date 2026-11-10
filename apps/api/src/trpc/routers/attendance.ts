@@ -51,10 +51,9 @@ import {
   AttendanceReviewQueueInputSchema,
 } from '@compass/contracts';
 import {
-  ATTENDANCE_ACCURACY_SLACK_M,
   ATTENDANCE_FACE_CONSENT_VERSION,
-  ATTENDANCE_MAX_ACCURACY_M,
   ATTENDANCE_UNDO_WINDOW_MS,
+  locationVerdict,
 } from '@compass/contracts/limits';
 import { z } from 'zod';
 import { attendance as rules, dateInTz, todayInTz } from '@compass/domain';
@@ -1273,14 +1272,18 @@ export const attendanceRouter = router({
       if (policy.requireGeo && policy.geo) {
         const loc = input.location;
         if (!loc) fail('BAD_REQUEST', 'locationRequired');
-        if (loc.accuracy > ATTENDANCE_MAX_ACCURACY_M) {
+        distanceM = Math.round(rules.distanceMeters(loc, policy.geo));
+        const verdict = locationVerdict({
+          distanceM,
+          accuracyM: loc.accuracy,
+          radiusM: policy.geo.radiusM,
+        });
+        if (verdict === 'inaccurate') {
           fail('BAD_REQUEST', 'locationInaccurate', {
             context: { accuracy: Math.round(loc.accuracy) },
           });
         }
-        distanceM = Math.round(rules.distanceMeters(loc, policy.geo));
-        const slack = Math.min(loc.accuracy, ATTENDANCE_ACCURACY_SLACK_M);
-        if (distanceM > policy.geo.radiusM + slack) {
+        if (verdict === 'outside') {
           fail('FORBIDDEN', 'outsideArea', {
             context: { distance: distanceM, radius: policy.geo.radiusM },
           });

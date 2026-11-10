@@ -16,6 +16,7 @@ import {
   Textarea,
   useToast,
 } from '@compass/ui';
+import { locationVerdict } from '@compass/contracts/limits';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
@@ -991,7 +992,9 @@ function ShiftSheet({
 /**
  * Where the day's punches were, on a map with the store's area
  * (2026-11-07): green inside, red outside, the faint circle the phone's
- * accuracy. Only punches that carried a location.
+ * accuracy. Inside is the punch's own rule (locationVerdict, review
+ * ATT-08); an accuracy the phone did not send counts as none. Only
+ * punches that carried a location.
  */
 function PunchMap({ data, punches }: { data: SheetData; punches: readonly Punch[] }) {
   const i18n = useI18n();
@@ -1009,7 +1012,11 @@ function PunchMap({ data, punches }: { data: SheetData; punches: readonly Punch[
           const outside =
             area !== null &&
             p.distanceM !== null &&
-            p.distanceM > area.radiusM + Math.min(p.location!.accuracyM ?? 0, 50);
+            locationVerdict({
+              distanceM: p.distanceM,
+              accuracyM: p.location!.accuracyM ?? 0,
+              radiusM: area.radiusM,
+            }) !== 'inside';
           return {
             lat: p.location!.lat,
             lng: p.location!.lng,
