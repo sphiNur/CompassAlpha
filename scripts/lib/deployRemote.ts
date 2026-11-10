@@ -15,8 +15,10 @@ export const PREV_TARBALL = '/home/ubuntu/compass-alpha.prev.tar.gz';
 
 /**
  * Host keys of the production server, pinned in the repo. Obtained with
- * `ssh-keyscan 129.204.59.183` on 2026-10-30 and checked against the keys
- * already in the deploying Mac's ~/.ssh/known_hosts (identical).
+ * `ssh-keyscan` on 2026-10-30 and checked against the keys already in the
+ * deploying Mac's ~/.ssh/known_hosts (identical). The host names are
+ * hashed (`ssh-keygen -H`, 2026-11-10) so this public repo does not name
+ * the server; ssh and `ssh-keygen -F <host>` still find them.
  */
 export function knownHostsFile(root: string, env: NodeJS.ProcessEnv = process.env): string {
   return env.COMPASS_DEPLOY_KNOWN_HOSTS ?? join(root, 'infra', 'deploy', 'known_hosts');

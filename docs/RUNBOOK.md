@@ -238,13 +238,16 @@ git checkout main
 
 ### Deploy host key (N9)
 `scripts/deploy.ts` connects with `StrictHostKeyChecking=yes` against the
-keys pinned in `infra/deploy/known_hosts` (129.204.59.183; taken with
-`ssh-keyscan` on 2026-10-30 and identical to the keys the deploy Mac had
-already accepted). A host that is not in that file, or presents another
-key, is refused. If the server is rebuilt or moves: read the new key
-fingerprints from the provider console, compare them with
-`ssh-keyscan <host> | ssh-keygen -lf -`, and only then replace the lines
-in the file (or point `COMPASS_DEPLOY_KNOWN_HOSTS` at another file).
+keys pinned in `infra/deploy/known_hosts` (taken with `ssh-keyscan` on
+2026-10-30 and identical to the keys the deploy Mac had already
+accepted). The host names in that file are hashed, so the public repo
+does not name the server; `ssh-keygen -F <host> -f
+infra/deploy/known_hosts` finds them. A host that is not in that file,
+or presents another key, is refused. If the server is rebuilt or moves:
+read the new key fingerprints from the provider console, compare them
+with `ssh-keyscan <host> | ssh-keygen -lf -`, and only then replace the
+lines in the file with `ssh-keyscan -H <host>` (hashed), or point
+`COMPASS_DEPLOY_KNOWN_HOSTS` at another file.
 
 ### Workspace-wide purges are off on production (D1/D5)
 `admin.purgeAllTestData` (清空整个工作区) and `admin.purgeByDate`

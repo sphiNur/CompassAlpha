@@ -339,7 +339,8 @@ describe('host key verification', () => {
 
   test('ssh resolves those options as written (ssh -G, no connection)', () => {
     const kh = knownHostsFile(ROOT, {});
-    const g = bash(`ssh -G ${sshOptions('/dev/null', kh)} ubuntu@129.204.59.183`);
+    // TEST-NET-3: ssh -G resolves options without connecting anywhere.
+    const g = bash(`ssh -G ${sshOptions('/dev/null', kh)} ubuntu@203.0.113.10`);
     expect(g.status).toBe(0);
     expect(g.stdout).toMatch(/^stricthostkeychecking (yes|true)$/m);
     expect(g.stdout).toContain(`userknownhostsfile ${kh}`);
@@ -353,10 +354,24 @@ describe('host key verification', () => {
     const kh = knownHostsFile(ROOT, {});
     expect(kh).toBe(join(ROOT, 'infra', 'deploy', 'known_hosts'));
     expect(knownHostsFile(ROOT, { COMPASS_DEPLOY_KNOWN_HOSTS: '/x/kh' })).toBe('/x/kh');
-    const host = hostName('ubuntu@129.204.59.183');
-    expect(host).toBe('129.204.59.183');
-    expect(bash(`ssh-keygen -F ${host} -f "${kh}"`).status).toBe(0);
+    expect(hostName('ubuntu@203.0.113.10')).toBe('203.0.113.10');
+    expect(hostName('203.0.113.10')).toBe('203.0.113.10');
+    // One host, three key types, its name hashed: the repo is public and
+    // does not name the server (2026-11-10).
+    const lines = readFileSync(kh, 'utf8').trim().split('\n');
+    expect(lines.map((l) => l.split(' ')[1]).sort()).toEqual([
+      'ecdsa-sha2-nistp256',
+      'ssh-ed25519',
+      'ssh-rsa',
+    ]);
+    for (const line of lines) expect(line).toMatch(/^\|1\|[A-Za-z0-9+/=]+\|[A-Za-z0-9+/=]+ /);
     expect(bash(`ssh-keygen -F compass-pro.com -f "${kh}"`).status).not.toBe(0);
+    // With the address at hand (the deploy's own env), all three are its.
+    const target = process.env.COMPASS_DEPLOY_HOST;
+    if (target) {
+      const found = bash(`ssh-keygen -F ${hostName(target)} -f "${kh}"`);
+      expect(found.stdout.split('\n').filter((l) => l.startsWith('|1|'))).toHaveLength(3);
+    }
   });
 });
 

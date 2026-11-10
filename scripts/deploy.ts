@@ -305,8 +305,9 @@ if (!existsSync(KEY)) {
     console.error("  Get the server's key fingerprints from the provider console (not over");
     console.error('  the network you are deploying through), compare them with');
     console.error(`    ssh-keyscan ${hostName(HOST)} | ssh-keygen -lf -`);
-    console.error('  and only then append the keyscan output to that file (or point');
-    console.error('  COMPASS_DEPLOY_KNOWN_HOSTS at a file that has them).');
+    console.error(`  and only then append \`ssh-keyscan -H ${hostName(HOST)}\` (hashed names: the`);
+    console.error('  repo is public) to that file, or point COMPASS_DEPLOY_KNOWN_HOSTS at a');
+    console.error('  file that has them.');
     process.exit(2);
   }
 }
