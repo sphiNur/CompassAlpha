@@ -172,7 +172,7 @@ export async function sendWriteAhead<P, R>(
     return result;
   } catch (err) {
     if (clientSeq !== null) {
-      if (isLikelyNetworkError(err)) queued = true;
+      if (staysQueued(err)) queued = true;
       else await store.remove(clientSeq).catch(() => undefined);
     }
     throw err;
@@ -232,7 +232,7 @@ export function flushOutbox(): Promise<void> {
           await fn(entry);
           await outbox.remove(entry.clientSeq);
         } catch (err) {
-          const code = (err as { data?: { code?: string } } | undefined)?.data?.code;
+          const code = trpcErrorCode(err);
           if (classifyReplayError(code, entry.procedure, entry.retries) === 'drop') {
             // Server-side rejection — keeping it in the queue won't help.
             await outbox.remove(entry.clientSeq);
@@ -261,6 +261,11 @@ export function flushOutbox(): Promise<void> {
           break;
         }
       }
+    } catch {
+      // COREWEB2-04: the outbox itself could not be read or written
+      // (IndexedDB unavailable). Nothing to replay now; the next flush
+      // tries again. This used to surface as an unhandled rejection on
+      // every timer tick.
     } finally {
       flushInFlight = null;
       notifyOutboxChanged();
@@ -282,6 +287,24 @@ export function isOwnEntry(
 ): boolean {
   if (!currentUserId) return false;
   return ownerUserId === undefined || ownerUserId === currentUserId;
+}
+
+/** The tRPC error code of a failed call, if the server answered with one. */
+export function trpcErrorCode(err: unknown): string | undefined {
+  return (err as { data?: { code?: string } } | undefined)?.data?.code;
+}
+
+/**
+ * Does a write-ahead send that failed leave its entry queued? The
+ * replay's rule (countsTowardGiveUp): no answer, or an answer about the
+ * session rather than the write. Pages keep such a change on screen.
+ *
+ * COREWEB2-02 (2026-11-09): the send used to delete the entry on
+ * UNAUTHORIZED (the refresh token was refused; the person is signed in
+ * again at once), which the replay deliberately keeps.
+ */
+export function staysQueued(err: unknown): boolean {
+  return isLikelyNetworkError(err) || !countsTowardGiveUp(trpcErrorCode(err));
 }
 
 /**
@@ -461,8 +484,9 @@ interface UseOfflineQueueResult {
   savingSlow: boolean;
   /**
    * Send a write with its outbox entry stored FIRST (write-ahead,
-   * R2-ORD-5). On success the entry is removed; on a network failure it
-   * stays queued (the caller must not enqueue again); on a server
+   * R2-ORD-5). On success the entry is removed; on a failure that
+   * `staysQueued` (no answer, or signed out) it stays queued and the
+   * error is rethrown (the caller must not enqueue again); on a server
    * rejection it is removed and the error rethrown. Closing the page
    * while the request hangs no longer loses the change: the next start
    * replays it — with `idempotencyKey`, or for absolute-value writes
@@ -477,7 +501,10 @@ interface UseOfflineQueueResult {
   /** R2-INT-1 (2026-10-31): the queued writes, oldest first. */
   pendingEntries: readonly PendingWrite[];
   /** `idempotencyKey`: pass the SAME key the first attempt used so the
-   *  replay dedupes server-side (H2). Omit for non-idempotent procedures. */
+   *  replay dedupes server-side (H2). Omit for non-idempotent procedures.
+   *  Rejects when the device could not store the write (IndexedDB
+   *  unavailable): nothing is queued, so tell the person it was not saved
+   *  and keep what they typed (COREWEB2-04). */
   enqueue<P>(procedure: string, input: P, idempotencyKey?: string): Promise<number>;
   flush(): Promise<void>;
   online: boolean;

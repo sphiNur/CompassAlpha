@@ -25,6 +25,8 @@ import {
   isRetryDue,
   samePendingWrites,
   shouldGiveUp,
+  staysQueued,
+  trpcErrorCode,
   MAX_OVERRIDE_RETRIES,
   MAX_REPLAY_RETRIES,
 } from '../useOfflineQueue';
@@ -151,6 +153,27 @@ describe('countsTowardGiveUp', () => {
   it('counts failures the server actually returned', () => {
     expect(countsTowardGiveUp('INTERNAL_SERVER_ERROR')).toBe(true);
     expect(countsTowardGiveUp('TOO_MANY_REQUESTS')).toBe(true);
+  });
+});
+
+describe('staysQueued (COREWEB2-02)', () => {
+  const answered = (code: string) => Object.assign(new Error('x'), { data: { code } });
+
+  it('keeps a write that got no answer, or an answer about the session', () => {
+    expect(staysQueued(new TypeError('Failed to fetch'))).toBe(true);
+    expect(staysQueued(answered('UNAUTHORIZED'))).toBe(true);
+  });
+
+  it('lets go of one the server refused', () => {
+    expect(staysQueued(answered('BAD_REQUEST'))).toBe(false);
+    expect(staysQueued(answered('CONFLICT'))).toBe(false);
+    expect(staysQueued(answered('FORBIDDEN'))).toBe(false);
+  });
+
+  it('reads the code only from a tRPC answer', () => {
+    expect(trpcErrorCode(answered('NOT_FOUND'))).toBe('NOT_FOUND');
+    expect(trpcErrorCode(new Error('x'))).toBeUndefined();
+    expect(trpcErrorCode(undefined)).toBeUndefined();
   });
 });
 

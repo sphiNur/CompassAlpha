@@ -198,6 +198,8 @@ export function requestTimeoutMs(url: string, method: string): number {
 }
 /** What a proxy says when the API behind it is restarting or unreachable. */
 const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530]);
+/** Statuses a Response may not carry a body with. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 
 /**
  * One request that cannot hang and does not mistake a proxy's error page
@@ -208,6 +210,9 @@ const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 5
  *   - a 502/503/52x HTML page from nginx or Cloudflare while the API
  *     restarts (every deploy) failed JSON parsing as an ordinary error,
  *     so the write was refused instead of queued; it is a network failure.
+ *   - COREWEB2-05: the timeout used to end when the headers arrived, so
+ *     an answer whose body stalled after them hung the caller again. The
+ *     body is now read inside the same timeout and abort.
  * A caller's own abort (a cancelled query) still surfaces as an abort.
  */
 export async function guardedFetch(
@@ -239,7 +244,12 @@ export async function guardedFetch(
     ) {
       throw new TypeError(`Failed to fetch (gateway ${res.status})`);
     }
-    return res;
+    const body = NULL_BODY_STATUSES.has(res.status) ? null : await res.arrayBuffer();
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
   } catch (err) {
     if (timedOut) throw new TypeError('Failed to fetch (timed out)');
     throw err;

@@ -335,9 +335,15 @@ export function RunPage() {
     onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
         const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
-        void offline.enqueue('run.addPurchaserItem', vars, key);
-        setAddItemDraft(null);
-        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+        // COREWEB2-04: "saved offline" only once it is; the draft stays
+        // when the device could not store it either.
+        void offline.enqueue('run.addPurchaserItem', vars, key).then(
+          () => {
+            setAddItemDraft(null);
+            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+          },
+          () => errToast('run.toast.couldNotAddItem')(err),
+        );
       } else {
         errToast('run.toast.couldNotAddItem')(err);
       }
@@ -382,9 +388,13 @@ export function RunPage() {
     onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
         const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
-        void offline.enqueue('run.addExpense', vars, key);
-        setAddItemDraft(null);
-        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+        void offline.enqueue('run.addExpense', vars, key).then(
+          () => {
+            setAddItemDraft(null);
+            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+          },
+          () => errToast('run.toast.couldNotAddExpense')(err),
+        );
       } else {
         errToast('run.toast.couldNotAddExpense')(err);
       }
@@ -434,9 +444,13 @@ export function RunPage() {
       setInlineSavingSkuId((cur) => (cur === vars.skuId ? null : cur));
       if (isLikelyNetworkError(err)) {
         const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
-        void offline.enqueue('run.purchaseItem', vars, key);
-        setPurchaseDraft(null);
-        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+        void offline.enqueue('run.purchaseItem', vars, key).then(
+          () => {
+            setPurchaseDraft(null);
+            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+          },
+          () => errToast('run.toast.couldNotSavePurchase')(err),
+        );
       } else {
         errToast('run.toast.couldNotSavePurchase')(err);
       }
@@ -499,10 +513,14 @@ export function RunPage() {
     },
     onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.markUnavailable', vars, ctx?.idempotencyKey);
-        setUnavailableFor(null);
-        setUnavailableNote('');
-        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+        void offline.enqueue('run.markUnavailable', vars, ctx?.idempotencyKey).then(
+          () => {
+            setUnavailableFor(null);
+            setUnavailableNote('');
+            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+          },
+          () => errToast('common.errors.actionFailed')(err),
+        );
       } else {
         errToast('common.errors.actionFailed')(err);
       }
@@ -557,11 +575,15 @@ export function RunPage() {
     },
     onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.deliverToStore', vars, ctx?.idempotencyKey);
-        // RE-DLV-1: close the sheet; the store row shows the queued
-        // delivery, so a second tap cannot queue it again.
-        setConfirmAction(null);
-        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+        void offline.enqueue('run.deliverToStore', vars, ctx?.idempotencyKey).then(
+          () => {
+            // RE-DLV-1: close the sheet; the store row shows the queued
+            // delivery, so a second tap cannot queue it again.
+            setConfirmAction(null);
+            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+          },
+          () => errToast('common.errors.actionFailed')(err),
+        );
       } else {
         errToast('common.errors.actionFailed')(err);
       }

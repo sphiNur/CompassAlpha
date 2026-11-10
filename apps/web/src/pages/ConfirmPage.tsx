@@ -235,12 +235,18 @@ export function ConfirmPage() {
     },
     onError: (err, vars) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.confirmStoreItem', vars);
-        setIssueOpen(null);
-        setIssueNote('');
-        setIssuePhoto(null);
-        setIssueReceived('');
-        toast.info(i18n.t('confirm.toast.savedOffline'));
+        // COREWEB2-04: "saved offline" only once it is; the form keeps
+        // what was typed when the device could not store it either.
+        void offline.enqueue('run.confirmStoreItem', vars).then(
+          () => {
+            setIssueOpen(null);
+            setIssueNote('');
+            setIssuePhoto(null);
+            setIssueReceived('');
+            toast.info(i18n.t('confirm.toast.savedOffline'));
+          },
+          () => errToast('common.errors.actionFailed')(err),
+        );
       } else {
         // Roll back the optimistic write since the server refused it.
         void utils.run.get.invalidate();
@@ -257,9 +263,13 @@ export function ConfirmPage() {
     },
     onError: (err, vars) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.confirmStore', vars);
-        setFinalConfirmOpen(false);
-        toast.info(i18n.t('confirm.toast.savedOffline'));
+        void offline.enqueue('run.confirmStore', vars).then(
+          () => {
+            setFinalConfirmOpen(false);
+            toast.info(i18n.t('confirm.toast.savedOffline'));
+          },
+          () => errToast('common.errors.actionFailed')(err),
+        );
       } else {
         errToast('common.errors.actionFailed')(err);
       }
@@ -278,9 +288,13 @@ export function ConfirmPage() {
     },
     onError: (err, vars) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.markStoreItemsOk', vars);
-        setBulkConfirmOpen(false);
-        toast.info(i18n.t('confirm.toast.savedOffline'));
+        void offline.enqueue('run.markStoreItemsOk', vars).then(
+          () => {
+            setBulkConfirmOpen(false);
+            toast.info(i18n.t('confirm.toast.savedOffline'));
+          },
+          () => errToast('common.errors.actionFailed')(err),
+        );
       } else {
         errToast('common.errors.actionFailed')(err);
       }

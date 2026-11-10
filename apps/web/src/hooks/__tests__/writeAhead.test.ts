@@ -58,6 +58,25 @@ describe('sendWriteAhead', () => {
     expect(isLiveEntry(entry!.clientSeq)).toBe(false);
   });
 
+  it('a refused session leaves the entry queued too, as the replay does (COREWEB2-02)', async () => {
+    const store = fakeStore();
+    const queued: boolean[] = [];
+    const signedOut = Object.assign(new Error('auth.errors.required'), {
+      data: { code: 'UNAUTHORIZED' },
+    });
+    const err = await sendWriteAhead(
+      'order.adjustItem',
+      { qty: '3' },
+      () => Promise.reject(signedOut),
+      undefined,
+      (q) => queued.push(q),
+      store,
+    ).catch((e) => e);
+    expect(err).toBe(signedOut);
+    expect(queued).toEqual([true]);
+    expect([...store.rows.values()].map((e) => e.input)).toEqual([{ qty: '3' }]);
+  });
+
   it('a server rejection removes the entry and is rethrown', async () => {
     const store = fakeStore();
     const rejection = Object.assign(new Error('order.errors.cannotDraft'), {

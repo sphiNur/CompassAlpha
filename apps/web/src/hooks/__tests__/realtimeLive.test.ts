@@ -8,6 +8,7 @@ import {
   REALTIME_STALE_MS,
   getRealtimeLive,
   isRealtimeLive,
+  isRealtimeStale,
   pollWhenOffline,
   setRealtimeLive,
 } from '../useRealtime';
@@ -26,6 +27,19 @@ describe('isRealtimeLive', () => {
 
   it('an open socket that has gone quiet (half-open after a network change) is not', () => {
     expect(isRealtimeLive(true, now - REALTIME_STALE_MS - 1, now)).toBe(false);
+  });
+});
+
+describe('isRealtimeStale (COREWEB2-07)', () => {
+  const now = 1_000_000;
+
+  it('keeps a socket that hears the 25 s pings', () => {
+    expect(isRealtimeStale(now - 25_000, now)).toBe(false);
+    expect(isRealtimeStale(now - REALTIME_STALE_MS, now)).toBe(false);
+  });
+
+  it('gives up on one that has heard nothing for longer, or never got an answer', () => {
+    expect(isRealtimeStale(now - REALTIME_STALE_MS - 1, now)).toBe(true);
   });
 });
 
