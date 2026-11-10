@@ -223,7 +223,7 @@ export function PurchaseSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.actualQty]);
 
-  // RUNWEB2-04: the one rule, which the page's main button reads too.
+  // RUNWEB2-04: the one rule (runs/lib/purchaseForm.ts).
   const { splitTotal, splitMatches, reasonOk, canSubmit } = draft
     ? purchaseDraftCheck(draft)
     : { splitTotal: 0, splitMatches: false, reasonOk: true, canSubmit: false };
@@ -1416,9 +1416,9 @@ export function ConfirmSheet({
   const isSoftReason = !!(config && !isHardReason && config.reasonOptional);
   const showReasonField = isHardReason || (isSoftReason && reasonExpanded);
   const showReasonToggle = isSoftReason && !reasonExpanded;
-  // Inside Telegram the MainButton drives the primary action — the sheet
-  // doesn't need its own confirm button. The Cancel button was also
-  // dropped (2026-05-04, user feedback) because:
+  // The sheet carries its own confirm button: the page's main button is
+  // under the sheet (M3.49). Cancel was dropped (2026-05-04, user
+  // feedback) because:
   //   - tap-on-backdrop, swipe-down, and Telegram BackButton all close the
   //     sheet — three dismiss paths is plenty for a 1-action confirmation
   //   - on a 640px WebView the trailing "Cancel" was ~52px of muted-pearl
@@ -1427,10 +1427,6 @@ export function ConfirmSheet({
   // We DO keep the Cancel button when the user has to type a reason —
   // the soft keyboard covers the backdrop, so without an explicit close
   // target they'd have to dismiss the keyboard first to tap outside.
-  // M3.49 (2026-05-23): the in-page PageMainButton sits behind any
-  // open sheet — so we always show the confirm sheet's own primary
-  // button now, regardless of Telegram presence. Was `!inTelegram`
-  // (Telegram MainButton was the canonical CTA), no longer correct.
   // DX-IX-6 (2026-11-01): destructive and locking confirms always offer
   // Cancel and focus it, so Enter on the opener followed by a repeated
   // Enter cannot finish a purchase (confirmCancelPolicy).
@@ -1440,8 +1436,6 @@ export function ConfirmSheet({
     requireReason: isHardReason,
     showCancelInSheet: isHardReason || (isSoftReason && reasonExpanded),
   });
-  const showPrimary = true;
-  const hasFooter = showPrimary || showCancel;
   return (
     <Sheet
       open={!!config}
@@ -1457,32 +1451,28 @@ export function ConfirmSheet({
       }}
       title={config?.title ?? ''}
       footer={
-        hasFooter ? (
-          <div className="flex flex-col gap-2">
-            {showPrimary ? (
-              <Button
-                block
-                variant={config?.danger ? 'danger' : undefined}
-                loading={config?.isPending}
-                disabled={!reasonOk}
-                onClick={() => config?.run()}
-              >
-                {config?.confirmLabel ?? ''}
-              </Button>
-            ) : null}
-            {showCancel ? (
-              <Button
-                block
-                variant="pearl"
-                onClick={onCancel}
-                // DX-IX-6: Sheet focuses [data-autofocus] when it opens.
-                data-autofocus={focusCancel || undefined}
-              >
-                {i18n.t('common.cancel')}
-              </Button>
-            ) : null}
-          </div>
-        ) : undefined
+        <div className="flex flex-col gap-2">
+          <Button
+            block
+            variant={config?.danger ? 'danger' : undefined}
+            loading={config?.isPending}
+            disabled={!reasonOk}
+            onClick={() => config?.run()}
+          >
+            {config?.confirmLabel ?? ''}
+          </Button>
+          {showCancel ? (
+            <Button
+              block
+              variant="pearl"
+              onClick={onCancel}
+              // DX-IX-6: Sheet focuses [data-autofocus] when it opens.
+              data-autofocus={focusCancel || undefined}
+            >
+              {i18n.t('common.cancel')}
+            </Button>
+          ) : null}
+        </div>
       }
     >
       {config ? (
