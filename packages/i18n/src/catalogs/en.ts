@@ -647,7 +647,7 @@ export const en = {
   // 2026-07-30: was "open Settings (gear icon)" — the store chip in the
   // page's sticky bar is now the direct route.
   'storeSwitcher.pickPrompt.body':
-    'This page needs one specific store. Tap the store chip at the top to choose.',
+    'This page needs one specific store. Tap the store name at the top to choose one.',
   'auth.signIn': 'Sign in',
   'auth.shareThisId': 'Send this Telegram ID to your store manager to get access:',
   'auth.loginTimeout.title': 'Sign-in is taking too long',
@@ -952,7 +952,7 @@ export const en = {
     'This role includes permissions you do not have yourself, so you cannot grant it.',
   'auth.errors.cannotRevokeEqualOrHigher': 'You cannot revoke a role at or above your own level',
   'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again',
-  'system.errors.logRateLimited': 'Too many client log events — slow down',
+  'system.errors.logRateLimited': 'Too many messages from this device — wait a moment.',
 
   // ── 6. Admin errors ────────────────────────────────────────────
   'admin.errors.bindingNotFound': 'This role was already taken away. Refresh to check.',
@@ -980,7 +980,7 @@ export const en = {
     'Workspace-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound':
     'This role is gone — it may have just been deleted. Refresh to check.',
-  'admin.errors.roleSlugTaken': 'This role id is already taken',
+  'admin.errors.roleSlugTaken': 'Another role already uses that short code.',
   'admin.errors.memberInactiveReactivateFirst':
     'This member is suspended. Reactivate them first, then assign stores and roles',
   'admin.errors.unknownPermission': 'There is no such permission',
@@ -2876,7 +2876,8 @@ export const en = {
     "Marked punches of the last two weeks show here: a face that does not match, a failed liveness check, a colleague's phone, a new phone.",
   'attendance.review.ok': 'Looks fine',
   'attendance.review.overtimeTitle': 'Overtime waiting for you',
-  'attendance.review.overtimeBody': 'Waiting: {count}. Approve or reject it on the sheet.',
+  'attendance.review.overtimeBody':
+    'Waiting: {count}. Approve or reject them in the Attendance view.',
   'attendance.export.check.faceLike': 'Looks like {name}',
   'attendance.errors.faceNotEnrolled':
     'Enroll your face first; you can clock once a manager approves it.',
