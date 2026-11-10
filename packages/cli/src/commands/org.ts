@@ -1,19 +1,21 @@
 import type { Command } from 'commander';
 import kleur from 'kleur';
-import { closeDb, getDb, provisionOrganization, withSystemContext } from '@compass/db';
+import { provisionOrganization, withSystemContext } from '@compass/db';
+import { withMaintenanceDb } from '../db';
+import { parseTgUserId, Refusal } from '../refusal';
 
 export function registerOrgCommands(parent: Command): void {
   parent
     .command('list')
     .description('List organizations')
-    .action(async () => {
-      const db = getDb(undefined, { system: 'maintenance' });
-      const rows = await db.query.organizations.findMany({
-        orderBy: (o, { asc }) => asc(o.createdAt),
-      });
-      console.table(rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, plan: r.plan })));
-      await closeDb();
-    });
+    .action(() =>
+      withMaintenanceDb(async (db) => {
+        const rows = await db.query.organizations.findMany({
+          orderBy: (o, { asc }) => asc(o.createdAt),
+        });
+        console.table(rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, plan: r.plan })));
+      }),
+    );
 
   parent
     .command('create <slug>')
@@ -27,30 +29,29 @@ export function registerOrgCommands(parent: Command): void {
         slug: string,
         opts: { name?: string; locale: string; timezone: string; owner?: string },
       ) => {
-        const db = getDb(undefined, { system: 'maintenance' });
-        let ownerUserId: string | null = null;
-        if (opts.owner) {
-          const owner = await db.query.users.findFirst({
-            where: (u, { eq }) => eq(u.tgUserId, BigInt(opts.owner!)),
-          });
-          if (!owner) {
-            console.error(`No user with Telegram id ${opts.owner}. Invite them first.`);
-            await closeDb();
-            process.exit(1);
+        const ownerTgUserId = opts.owner === undefined ? null : parseTgUserId(opts.owner);
+        const created = await withMaintenanceDb(async (db) => {
+          let ownerUserId: string | null = null;
+          if (ownerTgUserId !== null) {
+            const owner = await db.query.users.findFirst({
+              where: (u, { eq }) => eq(u.tgUserId, ownerTgUserId),
+            });
+            if (!owner) {
+              throw new Refusal(`No user with Telegram id ${opts.owner}. Invite them first.`);
+            }
+            ownerUserId = owner.id;
           }
-          ownerUserId = owner.id;
-        }
-        const created = await withSystemContext(db, 'maintenance', (tx) =>
-          provisionOrganization(tx, {
-            slug,
-            name: opts.name || slug,
-            locale: opts.locale,
-            timezone: opts.timezone,
-            ownerUserId,
-          }),
-        );
+          return withSystemContext(db, 'maintenance', (tx) =>
+            provisionOrganization(tx, {
+              slug,
+              name: opts.name || slug,
+              locale: opts.locale,
+              timezone: opts.timezone,
+              ownerUserId,
+            }),
+          );
+        });
         console.log(kleur.green('Created'), created);
-        await closeDb();
       },
     );
 }
