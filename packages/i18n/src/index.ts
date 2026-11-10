@@ -71,8 +71,60 @@ export interface FormatVars {
 
 export function format(key: CatalogKey, locale: Locale, vars: FormatVars = {}): string {
   let template = lookup(key, locale) ?? key;
-  template = selectPlurals(template, locale, vars);
-  return template.replace(/\{(\w+)\}/g, (_m, name: string) => String(vars[name] ?? ''));
+  template = selectPlurals(template, locale, vars, key);
+  return template.replace(/\{(\w+)\}/g, (_m, name: string) => {
+    const value = vars[name];
+    return value === undefined ? missingVariable(key, name) : String(value ?? '');
+  });
+}
+
+/**
+ * A variable the template names and the call did not pass (review
+ * I18N1-24). A screen gets an empty string, as before: "Enter  or more"
+ * reads oddly, but nothing breaks for the user. A test run (`bun test`
+ * sets NODE_ENV=test) gets an error naming the key, so the call that
+ * forgot it fails where it is written instead of passing unnoticed.
+ */
+function missingVariable(key: string, name: string): string {
+  if (inTestRun()) throw new Error(`i18n: ${key} needs {${name}}, and the call passed none.`);
+  return '';
+}
+
+function inTestRun(): boolean {
+  // Through globalThis: the web build has no `process`, and no Node types.
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env;
+  return env?.NODE_ENV === 'test';
+}
+
+/**
+ * How `#` prints a count: the app's one number format (`formatQty` in the
+ * web), comma thousands and up to three decimals in every language. It
+ * printed `String(count)`, so Russian read "1500 товаров" next to
+ * "1,500" everywhere else (review I18N1-24).
+ */
+const COUNT_FORMAT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 });
+
+/**
+ * The number a plural block counts by. A string is read the way the app
+ * writes numbers (comma thousands), so a formatted "1,000" counts as 1000;
+ * `Number("1,000")` was NaN, and `#` printed "NaN". Missing counts as 0, as
+ * before, except in a test run. Text that is not a number at all picks the
+ * `other` form and `#` shows the text as it was given.
+ */
+function pluralCount(
+  key: string,
+  name: string,
+  raw: string | number | undefined,
+): { count: number; shown: string } {
+  if (raw === undefined) {
+    missingVariable(key, name);
+    return { count: 0, shown: '0' };
+  }
+  const count = typeof raw === 'number' ? raw : Number(raw.replace(/,/g, '').trim() || '0');
+  if (Number.isFinite(count)) return { count, shown: COUNT_FORMAT.format(count) };
+  if (inTestRun()) throw new Error(`i18n: ${key} counts {${name}}, and "${raw}" is not a number.`);
+  return { count, shown: String(raw) };
 }
 
 /**
@@ -113,13 +165,13 @@ export function format(key: CatalogKey, locale: Locale, vars: FormatVars = {}): 
  *   {name, plural, =0 {…} =1 {…} one {…} few {…} many {…} other {…}}
  *
  * Exact `=N` matches win over category matches, per ICU. `#` inside a case
- * body is replaced with the count. Nested `{var}` in a case body is left for
+ * body is replaced with the count, in the app's number format (1,500). Nested `{var}` in a case body is left for
  * the caller's interpolation pass. `other` is required in practice; if it is
  * missing and nothing matches, the block renders empty rather than throwing.
  *
  * Brace matching is depth-counted (not regex) — that was the original bug.
  */
-function selectPlurals(input: string, locale: Locale, vars: FormatVars): string {
+function selectPlurals(input: string, locale: Locale, vars: FormatVars, key: string): string {
   // Perf (2026-11-05): every t() call came through here and was walked char by
   // char; most strings have no plural block at all.
   if (!input.includes('plural')) return input;
@@ -155,10 +207,9 @@ function selectPlurals(input: string, locale: Locale, vars: FormatVars): string 
     const header = block.match(/^\{\s*(\w+)\s*,\s*plural\s*,/);
     if (header) {
       const varName = header[1]!;
-      const raw = vars[varName];
-      const count = typeof raw === 'number' ? raw : Number(raw ?? 0);
+      const { count, shown } = pluralCount(key, varName, vars[varName]);
       const body = block.slice(header[0].length, -1);
-      out += pickPluralCase(body, count, locale);
+      out += pickPluralCase(body, count, shown, locale);
     } else {
       // A plain `{name}` placeholder — leave it for the interpolation pass.
       out += block;
@@ -190,17 +241,17 @@ function pluralRules(locale: Locale): Intl.PluralRules | null {
 }
 const parsedPluralBodies = new Map<string, Map<string, string>>();
 
-function pickPluralCase(body: string, count: number, locale: Locale): string {
+function pickPluralCase(body: string, count: number, shown: string, locale: Locale): string {
   let cases = parsedPluralBodies.get(body);
   if (!cases) {
     cases = parsePluralCases(body);
     parsedPluralBodies.set(body, cases);
   }
   const exact = cases.get('=' + String(count));
-  if (exact !== undefined) return exact.replace(/#/g, String(count));
-  const category = pluralRules(locale)?.select(count) ?? 'other';
+  if (exact !== undefined) return exact.replace(/#/g, shown);
+  const category = (Number.isFinite(count) && pluralRules(locale)?.select(count)) || 'other';
   const chosen = cases.get(category) ?? cases.get('other') ?? '';
-  return chosen.replace(/#/g, String(count));
+  return chosen.replace(/#/g, shown);
 }
 
 function parsePluralCases(body: string): Map<string, string> {
