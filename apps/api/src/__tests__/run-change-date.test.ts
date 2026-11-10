@@ -10,107 +10,46 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import {
-  getDb,
-  provisionOrganization,
-  schema as s,
-  withOrgContext,
-  withSystemContext,
-} from '@compass/db';
-import type { RunEvent } from '@compass/domain/run';
-import { appendEvents } from '../services/eventStore';
-import { projectRun } from '../services/runProjection';
+import { getDb, schema as s } from '@compass/db';
 import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
+import { seedOwnedOrg, type SeededMember } from './helpers/fixtures';
+import { planRun, runStream } from './helpers/streams';
 
 describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated)', () => {
-  let userId = '';
   let orgId = '';
-  let memberId = '';
+  let owner: SeededMember | null = null;
   let session: SessionContext;
 
   async function plannedRun(runDate: string, runIndex: number): Promise<string> {
-    const runId = randomUUID();
-    const event: RunEvent = {
-      streamId: runId,
-      seq: 1,
-      occurredAt: new Date(),
-      actorUserId: userId,
-      actorMemberId: memberId,
-      type: 'RunPlanned',
-      payload: {
-        orgId,
-        runDate,
-        runIndex,
-        sessionIds: [],
-        plannedItems: [],
-        purchaserMemberId: memberId,
-      },
-    };
-    await withOrgContext(getDb(), orgId, async (tx) => {
-      await appendEvents(tx, { streamType: 'run', streamId: runId, orgId, events: [event] });
-      await projectRun(tx, orgId, [event]);
-      // Only one planned/purchasing run may exist per org (0047), and the
-      // runs being re-dated are finished ones; mark the row finished so the
-      // next one can be planned. The domain allows a date change in any
-      // phase but cancelled.
-      await tx
-        .update(s.marketRunsV)
-        .set({ status: 'finished' })
-        .where(eq(s.marketRunsV.id, runId));
-    });
-    return runId;
+    const run = runStream(orgId);
+    await planRun(run, orgId, { by: owner!, sessionIds: [], plannedItems: [], runDate, runIndex });
+    // Only one planned/purchasing run may exist per org (0047), and the
+    // runs being re-dated are finished ones; mark the row finished so the
+    // next one can be planned. The domain allows a date change in any
+    // phase but cancelled.
+    await getDb(undefined, { system: 'maintenance' })
+      .update(s.marketRunsV)
+      .set({ status: 'finished' })
+      .where(eq(s.marketRunsV.id, run.id));
+    return run.id;
   }
 
   beforeAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    const [user] = await db
-      .insert(s.users)
-      .values({
-        tgUserId: freshTgId(),
-        displayName: 'Date Fixer',
-        displayNameLocked: true,
-      })
-      .returning();
-    userId = user!.id;
-    const org = await withSystemContext(db, 'maintenance', (tx) =>
-      provisionOrganization(tx, {
-        name: 'Redate',
-        slug: `redate-${Math.random().toString(36).slice(2, 8)}`,
-        ownerUserId: userId,
-      }),
-    );
+    // run.amend is for Super Admin, which the owner holds.
+    const org = await seedOwnedOrg(getDb(undefined, { system: 'maintenance' }), 'Redate');
     orgId = org.orgId;
-    memberId = org.ownerMemberId!;
-    // run.amend is super-admin only.
-    await withOrgContext(db, orgId, async (tx) => {
-      const superAdmin = await tx.query.roles.findFirst({
-        where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, 'super_admin')),
-      });
-      await tx
-        .insert(s.memberRoleBindings)
-        .values({ memberId, roleId: superAdmin!.id, scopeType: 'global' })
-        .onConflictDoNothing();
-    });
-    session = {
-      userId,
-      memberId,
-      orgId,
-      orgTimezone: 'UTC',
-      permissions: new Set(['run.amend', 'org.admin']),
-      roleSlugs: new Set(['super_admin']),
-    };
+    owner = org.owner;
+    session = org.session;
   });
 
   afterAll(async () => {
     const db = getDb(undefined, { system: 'maintenance' });
     if (orgId) await db.delete(s.organizations).where(eq(s.organizations.id, orgId));
-    if (userId) await db.delete(s.users).where(eq(s.users.id, userId));
+    if (owner) await db.delete(s.users).where(eq(s.users.id, owner.userId));
   });
 
   test('the moved run becomes the next run of that day', async () => {

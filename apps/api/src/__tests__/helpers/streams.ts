@@ -101,10 +101,11 @@ export function runStream(orgId: string, id: string = randomUUID()): RunStream {
 let runIndex = 0;
 
 /**
- * Starts `run` with RunPlanned for today (UTC). Written directly rather
- * than decided from PlanRun, which refuses a plan without orders: some
- * fixture runs have none. Each run gets an index of its own, as one run
- * per day and index is allowed.
+ * Starts `run` with RunPlanned, for today (UTC) unless `runDate` says
+ * otherwise. Written directly rather than decided from PlanRun, which
+ * refuses a plan without orders: some fixture runs have none. Each run
+ * gets an index of its own unless `runIndex` is given, as one run per
+ * day and index is allowed.
  */
 export async function planRun(
   run: RunStream,
@@ -115,6 +116,8 @@ export async function planRun(
     plannedItems: Array<{ skuId: string; qty: string }>;
     /** Defaults to `by`. */
     purchaserMemberId?: string;
+    runDate?: string;
+    runIndex?: number;
   },
 ): Promise<void> {
   await run.write([
@@ -127,8 +130,8 @@ export async function planRun(
       type: 'RunPlanned',
       payload: {
         orgId,
-        runDate: new Date().toISOString().slice(0, 10),
-        runIndex: runIndex++,
+        runDate: plan.runDate ?? new Date().toISOString().slice(0, 10),
+        runIndex: plan.runIndex ?? runIndex++,
         sessionIds: plan.sessionIds,
         plannedItems: plan.plannedItems,
         purchaserMemberId: plan.purchaserMemberId ?? plan.by.memberId,

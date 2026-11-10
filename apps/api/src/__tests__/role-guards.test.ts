@@ -10,13 +10,11 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession } from '../trpc/context';
 import { eq } from 'drizzle-orm';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
-import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
@@ -87,20 +85,15 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .values({ orgId, slug: `night-${tag}`, name: 'Night shift', rank: 30 })
       .returning();
     await db.insert(s.rolePermissions).values({ roleId: night!.id, permissionKey: 'run.amend' });
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'DX-ADM-2 admin', tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db.insert(s.memberRoleBindings).values([
-      { memberId: m!.id, roleId: roleIds.admin!, scopeType: 'global', scopeId: null },
-      { memberId: m!.id, roleId: night!.id, scopeType: 'store', scopeId: storeId },
-    ]);
-    const session = await loadSession(db, u!.id, orgId, m!.id);
+    const who = await seedMember(db, orgId, {
+      name: 'DX-ADM-2 admin',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.admin! }, { roleId: night!.id, storeId }],
+    });
+    const session = await sessionOf(orgId, who);
     // The flat session set has the key, which is what used to let it through.
-    expect(session!.permissions.has('run.amend')).toBe(true);
-    const kamola = callerFor(session!);
+    expect(session.permissions.has('run.amend')).toBe(true);
+    const kamola = callerFor(session);
 
     const createErr = await errorOf(() =>
       kamola.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
@@ -204,50 +197,37 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Other', code: `O-${tag.slice(-6)}` })
       .returning();
-    const person = async (name: string) => {
-      const [u] = await db
-        .insert(s.users)
-        .values({ displayName: name, tgUserId: freshTgId() })
-        .returning();
-      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-      return { u: u!, m: m! };
-    };
-    const boss = await person('ADM16 manager');
-    await db.insert(s.memberStoreAssignments).values({ memberId: boss.m.id, storeId, assignedBy: boss.u.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const both = await person('ADM16 both stores');
-    const here = await person('ADM16 here only');
-    for (const [who, sid] of [[both, storeId], [both, other!.id], [here, storeId]] as const) {
-      await db.insert(s.memberStoreAssignments).values({ memberId: who.m.id, storeId: sid, assignedBy: boss.u.id });
-      await db
-        .insert(s.memberRoleBindings)
-        .values({ memberId: who.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: sid });
-    }
-    const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
-    const manager = callerFor(session!);
+    // Staff in each of `stores`.
+    const staffIn = (name: string, stores: string[]) =>
+      seedMember(db, orgId, {
+        name,
+        stores,
+        roles: stores.map((sid) => ({ roleId: roleIds.staff!, storeId: sid })),
+      });
+    const boss = await seedMember(db, orgId, {
+      name: 'ADM16 manager',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.manager!, storeId }],
+    });
+    const both = await staffIn('ADM16 both stores', [storeId, other!.id]);
+    const here = await staffIn('ADM16 here only', [storeId]);
+    const manager = callerFor(await sessionOf(orgId, boss));
     const seen = await manager.admin.memberList();
-    expect(seen.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(true);
-    expect(seen.find((m) => m.memberId === here.m.id)?.statusOutOfReach).toBe(false);
+    expect(seen.find((m) => m.memberId === both.memberId)?.statusOutOfReach).toBe(true);
+    expect(seen.find((m) => m.memberId === here.memberId)?.statusOutOfReach).toBe(false);
     const full = await owner.admin.memberList();
-    expect(full.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(false);
+    expect(full.find((m) => m.memberId === both.memberId)?.statusOutOfReach).toBe(false);
   });
   test('CMP-ADM-1: the member list gives each role its rank; the manager cannot revoke their own', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'ADM1 manager', tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    const manager = callerFor(session!);
+    const who = await seedMember(db, orgId, {
+      name: 'ADM1 manager',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.manager!, storeId }],
+    });
+    const manager = callerFor(await sessionOf(orgId, who));
     const seen = await manager.admin.memberList();
-    const own = seen.find((x) => x.userId === u!.id)!.roles.find((r) => r.slug === 'manager')!;
+    const own = seen.find((x) => x.userId === who.userId)!.roles.find((r) => r.slug === 'manager')!;
     expect(own.rank).toBe(BUILTIN_ROLES.find((r) => r.slug === 'manager')!.rank);
     // What the web hides (lib/authority canRevokeRole) is what the server refuses.
     const err = await errorOf(() => manager.admin.revokeRole({ bindingId: own.bindingId }));
@@ -261,29 +241,15 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
   });
   test('ADM-13: a store manager finds their own suspend in the audit log', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
-    const person = async (name: string) => {
-      const [u] = await db
-        .insert(s.users)
-        .values({ displayName: name, tgUserId: freshTgId() })
-        .returning();
-      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-      return { u: u!, m: m! };
-    };
-    const boss = await person('ADM13 manager');
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
-    const worker = await person('ADM13 staff');
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: worker.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
-    const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
-    const manager = callerFor(session!);
-    await manager.admin.memberSetStatus({ memberId: worker.m.id, status: 'suspended' });
+    const person = (name: string, roleId: string) =>
+      seedMember(db, orgId, { name, stores: [storeId], roles: [{ roleId, storeId }] });
+    const boss = await person('ADM13 manager', roleIds.manager!);
+    const worker = await person('ADM13 staff', roleIds.staff!);
+    const manager = callerFor(await sessionOf(orgId, boss));
+    await manager.admin.memberSetStatus({ memberId: worker.memberId, status: 'suspended' });
     const rows = await manager.admin.adminAuditList({ limit: 50 });
     expect(
-      rows.some((r) => r.action === 'admin.member.setStatus' && r.resourceId === worker.m.id),
+      rows.some((r) => r.action === 'admin.member.setStatus' && r.resourceId === worker.memberId),
     ).toBe(true);
   });
 
@@ -318,18 +284,14 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Elsewhere', code: `E-${tag.slice(-6)}` })
       .returning();
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'ADM23 staff', tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
+    const who = await seedMember(db, orgId, {
+      name: 'ADM23 staff',
+      stores: [storeId],
+      roles: [{ roleId: roleIds.staff!, storeId }],
+    });
     const wrong = await errorOf(() =>
       owner.admin.memberTransferStore({
-        memberId: m!.id,
+        memberId: who.memberId,
         fromStoreId: other!.id,
         toStoreId: storeId,
         mirrorRoles: true,
@@ -337,7 +299,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     );
     expect(wrong?.message).toBe('admin.errors.memberNotInSourceStore');
     await owner.admin.memberTransferStore({
-      memberId: m!.id,
+      memberId: who.memberId,
       fromStoreId: storeId,
       toStoreId: other!.id,
       mirrorRoles: true,
@@ -390,7 +352,18 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     };
     const reader = await person(accountant!.id, 1);
     const range = { startDate: '2026-10-01', endDate: '2026-10-30' };
-    await expect(reader.report.totals(range)).resolves.toBeDefined();
+    await seedFinishedPurchase(db, orgId, {
+      runDate: '2026-10-15',
+      unitPrice: '1000',
+      splits: [{ storeId, qty: '1' }],
+    });
+    // The store's purchase is counted. Without prices.view the money
+    // stays hidden (D6).
+    expect(await reader.report.totals(range)).toMatchObject({
+      runCount: 1,
+      cashLines: 1,
+      total: null,
+    });
     const stores = await reader.catalog.stores({ permission: 'finance' });
     expect(stores.map((st) => st.id)).toEqual([storeId]);
     const staff = await person(roleIds.staff!, 2);
@@ -405,19 +378,15 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       .insert(s.stores)
       .values({ orgId, name: 'Second', code: `S-${tag.slice(-6)}` })
       .returning();
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: 'SHL2 split', tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    for (const [sid, role] of [[storeId, 'staff'], [other!.id, 'manager']] as const) {
-      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: sid, assignedBy: u!.id });
-      await db
-        .insert(s.memberRoleBindings)
-        .values({ memberId: m!.id, roleId: roleIds[role]!, scopeType: 'store', scopeId: sid });
-    }
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    const me = await callerFor(session!).auth.me();
+    const who = await seedMember(db, orgId, {
+      name: 'SHL2 split',
+      stores: [storeId, other!.id],
+      roles: [
+        { roleId: roleIds.staff!, storeId },
+        { roleId: roleIds.manager!, storeId: other!.id },
+      ],
+    });
+    const me = await callerFor(await sessionOf(orgId, who)).auth.me();
     expect(me.storePermissions[storeId]).not.toContain('order.approve');
     expect(me.storePermissions[other!.id]).toContain('order.approve');
     expect(me.permissions).toContain('order.approve');

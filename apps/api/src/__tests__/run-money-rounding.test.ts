@@ -17,74 +17,30 @@ import { getDb, schema as s } from '@compass/db';
 import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { sumMoney } from '@compass/contracts';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { runStream } from './helpers/streams';
-
-const PERMS = [
-  'users.manage',
-  'prices.view',
-  'org.admin',
-  'run.create',
-  'run.create.org',
-  'run.purchase',
-  'run.finish',
-  'delivery.dispatch',
-  'delivery.confirm',
-];
+import { seedOwnedOrg } from './helpers/fixtures';
 
 describe('run money rounding (PG, D1)', () => {
   test.skipIf(!SHOULD_RUN)(
     'half-cent lines: every view shows the same cents',
     async () => {
       const db = getDb(undefined, { system: 'maintenance' });
-      const slug = `cents-${Date.now()}`;
-      const [org] = await db
-        .insert(s.organizations)
-        .values({ slug, name: 'Money Rounding', localeDefault: 'en', timezone: 'UTC' })
-        .returning();
-      if (!org) throw new Error('org insert failed');
-      const [role] = await db
-        .insert(s.roles)
-        .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
-        .returning();
-      for (const key of PERMS) {
-        await db
-          .insert(s.permissions)
-          .values({ key, description: `Test perm ${key}` })
-          .onConflictDoNothing();
-        await db
-          .insert(s.rolePermissions)
-          .values({ roleId: role!.id, permissionKey: key })
-          .onConflictDoNothing();
-      }
-      const [user] = await db
-        .insert(s.users)
-        .values({ displayName: 'Buyer', tgUserId: freshTgId() })
-        .returning();
-      const [member] = await db
-        .insert(s.members)
-        .values({ orgId: org.id, userId: user!.id, status: 'active' })
-        .returning();
-      await db.insert(s.memberRoleBindings).values({
-        memberId: member!.id,
-        roleId: role!.id,
-        scopeType: 'global',
-      });
+      const { orgId, slug, session } = await seedOwnedOrg(db, 'Money Rounding');
       const [storeA] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'A', code: `A-${slug.slice(-6)}` })
+        .values({ orgId, name: 'A', code: `A-${slug.slice(-6)}` })
         .returning();
       const [storeB] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'B', code: `B-${slug.slice(-6)}` })
+        .values({ orgId, name: 'B', code: `B-${slug.slice(-6)}` })
         .returning();
       const skus = [];
       for (const code of ['CHK', 'BTR', 'SLT']) {
         const [sku] = await db
           .insert(s.skus)
           .values({
-            orgId: org.id,
+            orgId,
             code: `${code}-${slug.slice(-6)}`,
             names: { en: code },
             unit: 'kg',
@@ -96,16 +52,16 @@ describe('run money rounding (PG, D1)', () => {
       if (!storeA || !storeB) throw new Error('fixture insert failed');
 
       const actor: ActorCtx = {
-        userId: user!.id,
-        memberId: member!.id,
-        permissions: new Set(PERMS),
+        userId: session.userId,
+        memberId: session.memberId,
+        permissions: session.permissions,
       };
       const runId = randomUUID();
-      const runLog = runStream(org.id, runId);
+      const runLog = runStream(orgId, runId);
       const exec = (cmd: RunCommand) => runLog.exec(cmd);
       await exec({
         type: 'PlanRun',
-        orgId: org.id,
+        orgId,
         runDate: '2026-10-21',
         runIndex: 0,
         sessionIds: [randomUUID()],
@@ -150,14 +106,7 @@ describe('run money rounding (PG, D1)', () => {
         actor,
       });
 
-      const caller = callerFor({
-        userId: user!.id,
-        memberId: member!.id,
-        orgId: org.id,
-        orgTimezone: 'UTC',
-        permissions: new Set(PERMS),
-        roleSlugs: new Set(['super_admin']),
-      });
+      const caller = callerFor(session);
       // run.get while buying: the finish sheet's three numbers.
       const live = await caller.run.get({ runId });
       // Per store: 1.01 + 2.02 + 0.01 = 3.04 items, 1.01 expense.

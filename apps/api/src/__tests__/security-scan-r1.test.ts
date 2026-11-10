@@ -21,23 +21,16 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import {
-  getDb,
-  printable,
-  provisionOrganization,
-  schema as s,
-  withOrgContext,
-  withSystemContext,
-} from '@compass/db';
+import { getDb, printable, schema as s, withOrgContext } from '@compass/db';
 import { CompleteOnboardingInputSchema, hasControlChars } from '@compass/contracts';
 import { appRouter } from '../trpc/router';
-import { createContext, loadSession, type RequestContext } from '../trpc/context';
+import { createContext, type RequestContext } from '../trpc/context';
 import { isLocalDevPeer, isLocalPeerAddress } from '../services/devLocality';
 import { hub, WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED } from '../realtime/hub';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor, gateCaller } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
+import { seedMember, seedOwnedOrg, seedUser, sessionOf, type MemberSpec } from './helpers/fixtures';
 
 // ---------- F5 / D21 ------------------------------------------------------
 
@@ -218,7 +211,6 @@ describe('control characters in names (F10)', () => {
 describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', () => {
   const db = SHOULD_RUN ? getDb(undefined, { system: 'maintenance' }) : (null as never);
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
-  let n = 0;
   const orgIds: string[] = [];
   const userIds: string[] = [];
 
@@ -231,53 +223,30 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
   const roleX: Record<string, string> = {};
 
   async function callerAs(orgId: string, userId: string, memberId: string) {
-    const session = await loadSession(db, userId, orgId, memberId);
-    if (!session) throw new Error('session failed to load');
-    return callerFor(session);
+    return callerFor(await sessionOf(orgId, { userId, memberId }));
   }
 
+  /** A new user, removed after the suite. */
   async function makeUser(displayName: string) {
-    n += 1;
-    const tgUserId = freshTgId();
-    const [u] = await db.insert(s.users).values({ displayName, tgUserId }).returning();
-    userIds.push(u!.id);
-    return { id: u!.id, tgUserId };
+    const user = await seedUser(db, displayName);
+    userIds.push(user.id);
+    return user;
   }
 
-  async function makeMember(orgId: string, userId: string) {
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId, status: 'active' })
-      .returning();
-    return m!.id;
-  }
-
-  async function bind(memberId: string, roleId: string, storeId: string | null) {
-    await db.insert(s.memberRoleBindings).values({
-      memberId,
-      roleId,
-      scopeType: storeId ? 'store' : 'global',
-      scopeId: storeId,
-    });
+  /** `userId` as a member of `orgId`, assigned and bound as `options` say. */
+  async function makeMember(
+    orgId: string,
+    userId: string,
+    options: Pick<MemberSpec, 'stores' | 'roles'> = {},
+  ) {
+    return (await seedMember(db, orgId, { userId, ...options })).memberId;
   }
 
   async function makeOrg(label: string) {
-    const owner = await makeUser(`${label} owner`);
-    const created = await withSystemContext(db, 'auth', (tx) =>
-      provisionOrganization(tx, {
-        name: `Scan ${label}`,
-        slug: `scan-${label.toLowerCase()}-${suffix}`,
-        ownerUserId: owner.id,
-        timezone: 'UTC',
-      }),
-    );
-    orgIds.push(created.orgId);
-    // No plan limits in the way of the fixture.
-    await db
-      .update(s.organizationSubscriptions)
-      .set({ planCode: 'legacy', status: 'active' })
-      .where(eq(s.organizationSubscriptions.orgId, created.orgId));
-    return { orgId: created.orgId, owner: { userId: owner.id, memberId: created.ownerMemberId! } };
+    const org = await seedOwnedOrg(db, `Scan ${label}`);
+    orgIds.push(org.orgId);
+    userIds.push(org.owner.userId);
+    return org;
   }
 
   async function nameOf(userId: string) {
@@ -302,11 +271,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
       if (label === 'X1') storeX1 = store!.id;
       else storeX2 = store!.id;
     }
-    const roles = await db
-      .select({ id: s.roles.id, slug: s.roles.slug })
-      .from(s.roles)
-      .where(eq(s.roles.orgId, orgX));
-    for (const r of roles) roleX[r.slug] = r.id;
+    Object.assign(roleX, x.roleIds);
   });
 
   afterAll(async () => {
@@ -318,9 +283,10 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
 
   test('F1: an admin cannot rename or lock someone another organisation also has', async () => {
     const shared = await makeUser('Shared Person');
-    const memberX = await makeMember(orgX, shared.id);
+    const memberX = await makeMember(orgX, shared.id, {
+      roles: [{ roleId: roleX.staff!, storeId: storeX1 }],
+    });
     await makeMember(orgY, shared.id);
-    await bind(memberX, roleX.staff!, storeX1);
     const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     const err = await errorOf(() =>
       admin.admin.memberSetDisplayName({ memberId: memberX, displayName: 'Y Owner' }),
@@ -338,9 +304,8 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
 
   test('F1: an admin who is in two organisations may still rename themself', async () => {
     const both = await makeUser('Two Org Admin');
-    const memberX = await makeMember(orgX, both.id);
+    const memberX = await makeMember(orgX, both.id, { roles: [{ roleId: roleX.admin! }] });
     await makeMember(orgY, both.id);
-    await bind(memberX, roleX.admin!, null);
     const self = await callerAs(orgX, both.id, memberX);
     await self.admin.memberSetDisplayName({ memberId: memberX, displayName: 'Admin Renamed' });
     expect(await nameOf(both.id)).toEqual({ displayName: 'Admin Renamed', locked: true });
@@ -348,8 +313,9 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
 
   test('F1: a member of this organisation alone is renamed as before', async () => {
     const local = await makeUser('Only Here');
-    const memberX = await makeMember(orgX, local.id);
-    await bind(memberX, roleX.staff!, storeX1);
+    const memberX = await makeMember(orgX, local.id, {
+      roles: [{ roleId: roleX.staff!, storeId: storeX1 }],
+    });
     const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     await admin.admin.memberSetDisplayName({ memberId: memberX, displayName: 'Fixed Typo' });
     expect(await nameOf(local.id)).toEqual({ displayName: 'Fixed Typo', locked: true });
@@ -384,8 +350,9 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     const admin = await callerAs(orgX, ownerX.userId, ownerX.memberId);
     for (const action of ['suspend', 'remove'] as const) {
       const person = await makeUser(`Socket ${action}`);
-      const memberId = await makeMember(orgX, person.id);
-      await bind(memberId, roleX.staff!, storeX1);
+      const memberId = await makeMember(orgX, person.id, {
+        roles: [{ roleId: roleX.staff!, storeId: storeX1 }],
+      });
       const codes: number[] = [];
       const unsub = hub.subscribe(orgX, () => {}, (code) => codes.push(code), memberId);
       const bystander: number[] = [];
@@ -411,9 +378,12 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
 
   test('F8: a store-scoped super_admin binding cannot invite an org admin', async () => {
     const legacy = await makeUser('Legacy Scoped Super');
-    const legacyMember = await makeMember(orgX, legacy.id);
-    await bind(legacyMember, roleX.super_admin!, storeX1);
-    await bind(legacyMember, roleX.super_admin!, storeX2);
+    const legacyMember = await makeMember(orgX, legacy.id, {
+      roles: [
+        { roleId: roleX.super_admin!, storeId: storeX1 },
+        { roleId: roleX.super_admin!, storeId: storeX2 },
+      ],
+    });
     const caller = await callerAs(orgX, legacy.id, legacyMember);
 
     const err = await errorOf(() =>
@@ -443,9 +413,9 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     // Global admin (80) plus a legacy store-scoped super_admin (100): the
     // store binding must not let them hand out admin (80) org-wide.
     const mixed = await makeUser('Admin With Scoped Super');
-    const mixedMember = await makeMember(orgX, mixed.id);
-    await bind(mixedMember, roleX.admin!, null);
-    await bind(mixedMember, roleX.super_admin!, storeX1);
+    const mixedMember = await makeMember(orgX, mixed.id, {
+      roles: [{ roleId: roleX.admin! }, { roleId: roleX.super_admin!, storeId: storeX1 }],
+    });
     const caller = await callerAs(orgX, mixed.id, mixedMember);
     const target = await makeUser('Would Be Admin');
     const err = await errorOf(() =>
@@ -494,20 +464,18 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
       permissionKeys: ['users.manage'],
     });
     const actor = await makeUser('Two Store Manager');
-    const actorMember = await makeMember(orgX, actor.id);
-    await bind(actorMember, roleX.manager!, storeX1);
-    await bind(actorMember, noReportsRoleId, storeX2);
-    for (const storeId of [storeX1, storeX2]) {
-      await db
-        .insert(s.memberStoreAssignments)
-        .values({ memberId: actorMember, storeId, assignedBy: actor.id });
-    }
+    const actorMember = await makeMember(orgX, actor.id, {
+      stores: [storeX1, storeX2],
+      roles: [
+        { roleId: roleX.manager!, storeId: storeX1 },
+        { roleId: noReportsRoleId, storeId: storeX2 },
+      ],
+    });
     const target = await makeUser('Carries C');
-    const targetMember = await makeMember(orgX, target.id);
-    await db
-      .insert(s.memberStoreAssignments)
-      .values({ memberId: targetMember, storeId: storeX1, assignedBy: actor.id });
-    await bind(targetMember, customRoleId, storeX1);
+    const targetMember = await makeMember(orgX, target.id, {
+      stores: [storeX1],
+      roles: [{ roleId: customRoleId, storeId: storeX1 }],
+    });
 
     const caller = await callerAs(orgX, actor.id, actorMember);
     const err = await errorOf(() =>

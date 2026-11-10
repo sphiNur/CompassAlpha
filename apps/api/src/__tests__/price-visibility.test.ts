@@ -434,7 +434,8 @@ describe.skipIf(!SHOULD_RUN)('D6: money only with prices.view, per store', () =>
     expect(plan.lastPurchasePriceBySku).toEqual({});
     expect(plan.perStoreBudgets).toEqual([]);
     const ownerPlan = await owner.run.previewCreatable({});
-    expect(ownerPlan.lastPurchasePriceBySku[skuId]).toBeDefined();
+    // The fixture's run bought it at 12,000.
+    expect(ownerPlan.lastPurchasePriceBySku[skuId]).toBe('12000.00');
     expect(ownerPlan.perStoreBudgets.length).toBeGreaterThan(0);
     await db.delete(s.orderItemsV).where(eq(s.orderItemsV.sessionId, sessionId));
     await db.delete(s.orderSessionsV).where(eq(s.orderSessionsV.id, sessionId));
@@ -459,8 +460,12 @@ describe.skipIf(!SHOULD_RUN)('inputs', () => {
       expect(err?.code).toBe('BAD_REQUEST');
       expect(err?.message).toContain('sales.errors.qtyPrecision');
     }
-    await expect(owner.sales.record({ storeId: storeA, dishId, qty: '0.01' })).resolves.toBeDefined();
-    await expect(owner.sales.record({ storeId: storeA, dishId, qty: '1.50' })).resolves.toBeDefined();
+    // Hundredths go through, and the sale keeps the quantity given.
+    for (const qty of ['0.01', '1.50']) {
+      const { saleId } = await owner.sales.record({ storeId: storeA, dishId, qty });
+      const sale = (await owner.sales.list({ storeId: storeA })).find((row) => row.id === saleId);
+      expect(Number(sale?.qty)).toBe(Number(qty));
+    }
   });
 });
 

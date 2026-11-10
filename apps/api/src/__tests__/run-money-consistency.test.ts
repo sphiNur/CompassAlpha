@@ -20,9 +20,9 @@ import { getDb, schema as s } from '@compass/db';
 import { type ActorCtx, type RunCommand } from '@compass/domain/run';
 import { receivedDelta } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { runStream } from './helpers/streams';
+import { seedOwnedOrg } from './helpers/fixtures';
 import { pgErrorOf } from './helpers/errors';
 
 describe('receivedDelta (CA-06)', () => {
@@ -59,82 +59,35 @@ describe('receivedDelta (CA-06)', () => {
   });
 });
 
-const PERMS = [
-  'users.manage',
-  'prices.view',
-  'org.admin',
-  'run.create',
-  'run.create.org',
-  'run.purchase',
-  'run.finish',
-  'delivery.dispatch',
-  'delivery.confirm',
-];
-
-/** An organisation with one member who holds PERMS across it. */
+/** A new organisation whose owner does the buying. */
 async function buyerOrg(name: string) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const slug = `${name.toLowerCase().replace(/\W+/g, '-')}-${Date.now()}`;
-  const [org] = await db
-    .insert(s.organizations)
-    .values({ slug, name, localeDefault: 'en', timezone: 'UTC' })
-    .returning();
-  if (!org) throw new Error('org insert failed');
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId: org.id, slug: 'super_admin', name: 'SA', rank: 100, isBuiltIn: true })
-    .returning();
-  for (const key of PERMS) {
-    await db
-      .insert(s.permissions)
-      .values({ key, description: `Test perm ${key}` })
-      .onConflictDoNothing();
-    await db
-      .insert(s.rolePermissions)
-      .values({ roleId: role!.id, permissionKey: key })
-      .onConflictDoNothing();
-  }
-  const [user] = await db
-    .insert(s.users)
-    .values({ displayName: 'Buyer', tgUserId: freshTgId() })
-    .returning();
-  const [member] = await db
-    .insert(s.members)
-    .values({ orgId: org.id, userId: user!.id, status: 'active' })
-    .returning();
-  await db.insert(s.memberRoleBindings).values({
-    memberId: member!.id,
-    roleId: role!.id,
-    scopeType: 'global',
-  });
-  const caller = callerFor({
-    userId: user!.id,
-    memberId: member!.id,
-    orgId: org.id,
-    orgTimezone: 'UTC',
-    permissions: new Set(PERMS),
-    roleSlugs: new Set(['super_admin']),
-  });
-  return { db, slug, org, user: user!, member: member!, caller };
+  const { orgId, slug, session } = await seedOwnedOrg(db, name);
+  const actor: ActorCtx = {
+    userId: session.userId,
+    memberId: session.memberId,
+    permissions: session.permissions,
+  };
+  return { db, orgId, slug, actor, caller: callerFor(session) };
 }
 
 describe('run money consistency (PG)', () => {
   test.skipIf(!SHOULD_RUN)(
     'report.totals == run.history totals == frozen items + expenses; short line books received qty',
     async () => {
-      const { db, slug, org, user, member, caller } = await buyerOrg('Money Consistency');
+      const { db, orgId, slug, actor, caller } = await buyerOrg('Money Consistency');
       const [storeA] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'A', code: `A-${slug.slice(-6)}` })
+        .values({ orgId, name: 'A', code: `A-${slug.slice(-6)}` })
         .returning();
       const [storeB] = await db
         .insert(s.stores)
-        .values({ orgId: org.id, name: 'B', code: `B-${slug.slice(-6)}` })
+        .values({ orgId, name: 'B', code: `B-${slug.slice(-6)}` })
         .returning();
       const [sku] = await db
         .insert(s.skus)
         .values({
-          orgId: org.id,
+          orgId,
           code: `APL-${slug.slice(-6)}`,
           names: { en: 'Apple' },
           unit: 'kg',
@@ -143,18 +96,13 @@ describe('run money consistency (PG)', () => {
         .returning();
       if (!storeA || !storeB || !sku) throw new Error('fixture insert failed');
 
-      const actor: ActorCtx = {
-        userId: user!.id,
-        memberId: member!.id,
-        permissions: new Set(PERMS),
-      };
       const runId = randomUUID();
-      const runLog = runStream(org.id, runId);
+      const runLog = runStream(orgId, runId);
       const exec = (cmd: RunCommand) => runLog.exec(cmd);
 
       await exec({
         type: 'PlanRun',
-        orgId: org.id,
+        orgId,
         runDate: '2026-10-20',
         runIndex: 0,
         sessionIds: [randomUUID()],
@@ -262,8 +210,8 @@ describe('run money consistency (PG)', () => {
   test.skipIf(!SHOULD_RUN)(
     'CA-04: a delivering run does not block a new one; a planned or purchasing one does',
     async () => {
-      const { db, org, caller } = await buyerOrg('Parallel Runs');
-      const base = { orgId: org.id, runDate: '2026-10-20' };
+      const { db, orgId, caller } = await buyerOrg('Parallel Runs');
+      const base = { orgId, runDate: '2026-10-20' };
       await db
         .insert(s.marketRunsV)
         .values({ ...base, id: randomUUID(), runIndex: 0, status: 'delivering' });
