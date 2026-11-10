@@ -130,6 +130,19 @@ async function sessionFor(memberId: string, userId: string): Promise<SessionCont
   return sessionOf(fix.orgId, { memberId, userId });
 }
 
+/**
+ * Another org-wide Super Admin, for a test that tries to act against one
+ * (review TEST2-09). Should the gate break, this member is changed, not
+ * the owner every other test acts as.
+ */
+async function makeSuperAdmin(displayName: string): Promise<{ userId: string; memberId: string }> {
+  if (!fix) throw new Error('fixture missing');
+  const user = await makeUser(displayName);
+  const memberId = await makeMember(user.id);
+  await bindRole(memberId, fix.superAdminRoleId, { type: 'global' });
+  return { userId: user.id, memberId };
+}
+
 // ---------- P0: store managers never become organization-wide ----------
 
 describe('P0 store-manager scope', () => {
@@ -2554,7 +2567,7 @@ describe('memberSetStatus is rank- and store-gated', () => {
   test.skipIf(!SHOULD_RUN)('store manager cannot suspend a super admin', async () => {
     const storeA = await makeStore(`A-${Math.random()}`);
     const caller = await storeManager(storeA.id);
-    const target = fix!.superAdminMemberId;
+    const target = (await makeSuperAdmin('Status-Super-Admin')).memberId;
     await expectForbidden(
       () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
       target,
@@ -2637,8 +2650,9 @@ describe('memberSetStatus is rank- and store-gated', () => {
     const peerUser = await makeUser('Status-Peer-Admin');
     const peer = await makeMember(peerUser.id);
     await bindRole(peer, fix!.adminRoleId, { type: 'global' });
+    const superAdmin = await makeSuperAdmin('Status-Higher-Super-Admin');
 
-    for (const target of [fix!.superAdminMemberId, peer]) {
+    for (const target of [superAdmin.memberId, peer]) {
       await expectForbidden(
         () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
         target,
@@ -2856,16 +2870,16 @@ describe('2026-10-21 audit admin gates', () => {
   test.skipIf(!SHOULD_RUN)('CA-07 store manager cannot rename a super admin', async () => {
     const store = await makeStore(`Ren-${Math.random()}`);
     const { caller } = await managerOf(store.id);
-    const before = await nameOf(fix!.superAdminUserId);
+    const target = await makeSuperAdmin('Rename-Super-Admin');
     expect(
       await codeOf(() =>
         caller.admin.memberSetDisplayName({
-          memberId: fix!.superAdminMemberId,
+          memberId: target.memberId,
           displayName: 'Hijacked',
         }),
       ),
     ).toBe('FORBIDDEN');
-    expect(await nameOf(fix!.superAdminUserId)).toBe(before);
+    expect(await nameOf(target.userId)).toBe('Rename-Super-Admin');
   });
 
   test.skipIf(!SHOULD_RUN)('CA-07 store manager cannot rename staff of another store', async () => {
