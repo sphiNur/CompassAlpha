@@ -6,6 +6,7 @@ import {
   errorVars,
   isServerSideFailure,
   networkFailureKey,
+  writeErrorTextOf,
 } from '../errorText';
 
 describe('errorTextKey', () => {
@@ -121,7 +122,7 @@ describe('errorTextOf: placeholders from the server', () => {
       message: JSON.stringify([{ code: 'invalid_string', message: 'invalid decimal' }]),
       data: { i18nKey: 'common.errors.validation' },
     };
-    expect(errorTextOf(err, 'order.toast.saveFailed').key).toBe('order.toast.saveFailed');
+    expect(errorTextOf(err, 'order.toast.adjustFailed').key).toBe('order.toast.adjustFailed');
   });
 
   test('only plain values are used; transport failures still map as before', () => {
@@ -135,5 +136,77 @@ describe('errorTextOf: placeholders from the server', () => {
       key: 'common.networkError',
       vars: {},
     });
+  });
+});
+
+// Review TEST3-08 (2026-11-10): the toast of a failed write, which used to
+// be decided inside the errToast hook without a test.
+describe('writeErrorTextOf', () => {
+  const ONLINE = { online: true, retrySafe: false };
+  const lost = new Error('Failed to fetch');
+
+  test('a server key wins, with its placeholders, whatever the connection', () => {
+    const err = {
+      message: 'order.errors.qtyNotMultipleOfStep',
+      data: { context: { step: '0.500' } },
+    };
+    for (const write of [ONLINE, { online: false, retrySafe: true }]) {
+      expect(writeErrorTextOf(err, 'order.toast.adjustFailed', write)).toEqual({
+        key: 'order.errors.qtyNotMultipleOfStep',
+        vars: { step: '0.5' },
+      });
+    }
+  });
+
+  test('a schema refusal names its field key, or keeps the action sentence', () => {
+    const issue = JSON.stringify([{ message: 'dishes.errors.codeTaken' }]);
+    expect(writeErrorTextOf({ message: issue }, 'common.errors.actionFailed', ONLINE).key).toBe(
+      'dishes.errors.codeTaken',
+    );
+    const generic = { message: '[]', data: { i18nKey: 'common.errors.validation' } };
+    expect(writeErrorTextOf(generic, 'common.errors.actionFailed', ONLINE).key).toBe(
+      'common.errors.actionFailed',
+    );
+  });
+
+  test('a lost connection says whether the write may have been saved', () => {
+    const key = (online: boolean, retrySafe: boolean) =>
+      writeErrorTextOf(lost, 'order.toast.adjustFailed', { online, retrySafe }).key;
+    expect(key(false, false)).toBe('common.offlineNotSaved');
+    expect(key(false, true)).toBe('common.offlineNotSaved');
+    expect(key(true, false)).toBe('common.maybeSaved');
+    expect(key(true, true)).toBe('common.maybeSavedRetrySafe');
+    // A fetch that failed below tRPC is a lost connection too.
+    const below = { message: 'boom', cause: { name: 'TypeError' } };
+    expect(writeErrorTextOf(below, 'order.toast.adjustFailed', ONLINE).key).toBe(
+      'common.maybeSaved',
+    );
+  });
+
+  test('an answer from the server or its proxy is not the connection', () => {
+    for (const message of [
+      'Failed to fetch (gateway 502)',
+      'Failed to fetch (session refresh did not complete: server 500)',
+    ]) {
+      const write = { online: false, retrySafe: true };
+      expect(writeErrorTextOf(new Error(message), 'order.toast.adjustFailed', write)).toEqual({
+        key: 'common.errors.internal',
+        vars: {},
+      });
+    }
+  });
+
+  test('anything else gets the action sentence, never the raw text', () => {
+    for (const err of [
+      new Error('FORBIDDEN'),
+      { message: 'Unexpected token <' },
+      null,
+      undefined,
+    ]) {
+      expect(writeErrorTextOf(err, 'order.toast.adjustFailed', ONLINE)).toEqual({
+        key: 'order.toast.adjustFailed',
+        vars: {},
+      });
+    }
   });
 });
