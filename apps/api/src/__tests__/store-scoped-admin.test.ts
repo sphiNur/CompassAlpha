@@ -20,12 +20,12 @@
  * Skipped automatically when DATABASE_URL is unset OR
  * SKIP_PG_TESTS=1 (deploy.ts sets this on the dev box).
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import type { RequestContext, SessionContext } from '../trpc/context';
 import {
   effectivePermissionsForStore,
   getActorStoreIds,
@@ -35,166 +35,60 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext, callerFor } from './helpers/ctx';
 import { codeOf, errorOf, pgErrorOf } from './helpers/errors';
-import { seedFinishedPurchase } from './helpers/fixtures';
+import {
+  seedFinishedPurchase,
+  seedMember,
+  seedOwnedOrg,
+  seedUser,
+  sessionOf,
+} from './helpers/fixtures';
 
 // ---------- one fixture org shared across tests --------------------------
 
 interface Fixture {
   orgId: string;
+  /** The owner, who holds Super Admin org-wide. */
   superAdminUserId: string;
   superAdminMemberId: string;
   superAdminCtx: RequestContext;
-  // built-in roles, looked up after seed.
+  // The built-in roles, as every organisation gets them.
   superAdminRoleId: string;
   adminRoleId: string;
   managerRoleId: string;
+  purchaserRoleId: string;
   staffRoleId: string;
-  // unique slug so re-runs don't collide.
-  slugSuffix: string;
 }
 
 let fix: Fixture | null = null;
 
+/**
+ * An organisation made as sign-up makes one, so the roles and their keys
+ * are the built-in ones (review TEST2-08: this suite used to carry its
+ * own copy, which had drifted from the seed). Nothing is cleaned up
+ * afterwards: the slug is unique, and a failed run can be inspected.
+ */
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
-  const db = getDb(undefined, { system: 'maintenance' });
-  const slugSuffix = `${Date.now()}`;
-
-  // 1. Org
-  const [org] = await db
-    .insert(s.organizations)
-    .values({
-      slug: `m1test-${slugSuffix}`,
-      name: 'M1 Store-Scoped Admin Tests',
-      localeDefault: 'en',
-      timezone: 'UTC',
-    })
-    .returning();
-  if (!org) throw new Error('org insert failed');
-
-  // 2. Built-in roles. We'd normally rely on the seed, but the seed is
-  //    org-agnostic — fresh orgs need their roles inserted explicitly.
-  //    We mirror packages/db seed-data.ts ranks.
-  const seedRoles = [
-    {
-      slug: 'super_admin',
-      name: 'Super Admin',
-      rank: 100,
-      perms: [
-        'users.manage',
-        'users.invite',
-        'users.grant_role',
-        'users.revoke_role',
-        'prices.view',
-        'run.amend',
-        'org.admin',
-      ],
-    },
-    {
-      slug: 'admin',
-      name: 'Admin',
-      rank: 80,
-      perms: [
-        'users.manage',
-        'users.invite',
-        'users.grant_role',
-        'users.revoke_role',
-        'prices.view',
-        'org.admin',
-      ],
-    },
-    {
-      slug: 'manager',
-      name: 'Manager',
-      rank: 60,
-      perms: [
-        'order.draft',
-        'order.submit',
-        'order.approve',
-        'order.claim',
-        'order.unapprove',
-        'reports.view',
-        'prices.view',
-        'users.manage',
-        'inventory.adjust',
-        'sales.record',
-      ],
-    },
-    {
-      slug: 'staff',
-      name: 'Staff',
-      rank: 20,
-      perms: ['order.draft', 'order.submit', 'delivery.confirm', 'sales.record'],
-    },
-  ];
-  const roleIdBySlug: Record<string, string> = {};
-  for (const r of seedRoles) {
-    const [row] = await db
-      .insert(s.roles)
-      .values({
-        orgId: org.id,
-        slug: r.slug,
-        name: r.name,
-        rank: r.rank,
-        isBuiltIn: true,
-      })
-      .returning();
-    if (!row) throw new Error(`role insert failed: ${r.slug}`);
-    roleIdBySlug[r.slug] = row.id;
-    // Make sure the perm dictionary has each key, then insert role-perm rows.
-    for (const k of r.perms) {
-      await db
-        .insert(s.permissions)
-        .values({ key: k, description: `Test perm ${k}` })
-        .onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: row.id, permissionKey: k })
-        .onConflictDoNothing();
-    }
-  }
-
-  // 3. Super-admin user + member
-  const [superUser] = await db
-    .insert(s.users)
-    .values({ displayName: 'Super Admin', tgUserId: freshTgId() })
-    .returning();
-  const [superMember] = await db
-    .insert(s.members)
-    .values({ orgId: org.id, userId: superUser!.id, status: 'active' })
-    .returning();
-  await db.insert(s.memberRoleBindings).values({
-    memberId: superMember!.id,
-    roleId: roleIdBySlug.super_admin!,
-    scopeType: 'global',
-  });
-
-  const superSession: SessionContext = {
-    userId: superUser!.id,
-    memberId: superMember!.id,
-    orgId: org.id,
-    orgTimezone: 'UTC',
-    permissions: new Set(seedRoles.find((r) => r.slug === 'super_admin')!.perms),
-    roleSlugs: new Set(['super_admin']),
+  const org = await seedOwnedOrg(
+    getDb(undefined, { system: 'maintenance' }),
+    'M1 Store-Scoped Admin Tests',
+  );
+  const roleId = (slug: string): string => {
+    const id = org.roleIds[slug];
+    if (!id) throw new Error(`no built-in role "${slug}"`);
+    return id;
   };
-
   fix = {
-    orgId: org.id,
-    superAdminUserId: superUser!.id,
-    superAdminMemberId: superMember!.id,
-    superAdminCtx: testContext(superSession),
-    superAdminRoleId: roleIdBySlug.super_admin!,
-    adminRoleId: roleIdBySlug.admin!,
-    managerRoleId: roleIdBySlug.manager!,
-    staffRoleId: roleIdBySlug.staff!,
-    slugSuffix,
+    orgId: org.orgId,
+    superAdminUserId: org.owner.userId,
+    superAdminMemberId: org.owner.memberId,
+    superAdminCtx: testContext(org.session),
+    superAdminRoleId: roleId('super_admin'),
+    adminRoleId: roleId('admin'),
+    managerRoleId: roleId('manager'),
+    purchaserRoleId: roleId('purchaser'),
+    staffRoleId: roleId('staff'),
   };
-});
-
-afterAll(() => {
-  // Don't clean up — the slug is timestamped and rows are tagged so
-  // back-to-back runs don't collide. Leaving them simplifies forensic
-  // inspection if a test ever fails.
 });
 
 // ---------- helpers used by individual tests -----------------------------
@@ -207,21 +101,14 @@ async function makeStore(name: string): Promise<{ id: string; name: string }> {
 }
 
 async function makeUser(displayName: string): Promise<{ id: string; tgUserId: bigint }> {
-  if (!fix) throw new Error('fixture missing');
-  const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = freshTgId();
-  const [u] = await db.insert(s.users).values({ displayName, tgUserId }).returning();
-  return { id: u!.id, tgUserId };
+  return seedUser(getDb(undefined, { system: 'maintenance' }), displayName);
 }
 
+/** `userId`'s membership of the fixture organisation, with no roles yet. */
 async function makeMember(userId: string): Promise<string> {
   if (!fix) throw new Error('fixture missing');
   const db = getDb(undefined, { system: 'maintenance' });
-  const [m] = await db
-    .insert(s.members)
-    .values({ orgId: fix.orgId, userId, status: 'active' })
-    .returning();
-  return m!.id;
+  return (await seedMember(db, fix.orgId, { userId })).memberId;
 }
 
 async function bindRole(
@@ -240,10 +127,7 @@ async function bindRole(
 
 async function sessionFor(memberId: string, userId: string): Promise<SessionContext> {
   if (!fix) throw new Error('fixture missing');
-  const db = getDb(undefined, { system: 'maintenance' });
-  const session = await loadSession(db, userId, fix.orgId, memberId);
-  if (!session) throw new Error('session failed to load');
-  return session;
+  return sessionOf(fix.orgId, { memberId, userId });
 }
 
 // ---------- P0: store managers never become organization-wide ----------
@@ -522,19 +406,8 @@ describe('C1 per-store rank gate', () => {
       const mgrUser = await makeUser('A-Manager');
       const mgrMember = await makeMember(mgrUser.id);
       await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      // Need the manager to also have `users.grant_role` — bypass via
-      // a per-member override since the seed doesn't put it on the
-      // manager role. (In production a manager wouldn't try to grant
-      // anyway; this is a synthetic test of the rank-tie path.)
-      // Add it to the manager role permissions for this org.
-      await getDb(undefined, { system: 'maintenance' })
-        .insert(s.permissions)
-        .values({ key: 'users.manage', description: 'manage' })
-        .onConflictDoNothing();
-      await getDb(undefined, { system: 'maintenance' })
-        .insert(s.rolePermissions)
-        .values({ roleId: fx.managerRoleId, permissionKey: 'users.manage' })
-        .onConflictDoNothing();
+      // The manager role carries users.manage, which lets its holder into
+      // grantRole; the rank gate is what must refuse.
 
       const targetUser = await makeUser('Target');
       await makeMember(targetUser.id);
@@ -543,7 +416,7 @@ describe('C1 per-store rank gate', () => {
       await expect(
         caller.admin.grantRole({
           userId: targetUser.id,
-          roleSlug: 'manager', // rank 30
+          roleSlug: 'manager', // rank 60, the granter's own
           scopeType: 'store',
           scopeId: storeA.id,
         }),
@@ -858,10 +731,15 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
       .insert(s.roles)
       .values({ orgId: fx.orgId, slug, name: 'Danger', rank: 70 })
       .returning();
-    for (const key of ['run.amend', 'order.draft']) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key });
-    }
+    // Admin holds neither key. Super Admin holds run.amend but not
+    // attendance.clock, which is switched on per member and is in no
+    // built-in role.
+    await db.insert(s.rolePermissions).values(
+      ['run.amend', 'attendance.clock'].map((permissionKey) => ({
+        roleId: role!.id,
+        permissionKey,
+      })),
+    );
     return { id: role!.id, slug };
   }
 
@@ -906,23 +784,14 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     'a built-in role keeps the rank rule alone: a manager can still grant purchaser',
     async () => {
       const fx = fix!;
-      const db = getDb(undefined, { system: 'maintenance' });
       const store = await makeStore(`D8b-${Math.random()}`);
-      let purchaser = await db.query.roles.findFirst({
-        where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, fx.orgId), eq2(r.slug, 'purchaser')),
-      });
-      if (!purchaser) {
-        [purchaser] = await db
-          .insert(s.roles)
-          .values({ orgId: fx.orgId, slug: 'purchaser', name: 'Purchaser', rank: 40, isBuiltIn: true })
-          .returning();
-        await db.insert(s.permissions).values({ key: 'run.create', description: 'run.create' }).onConflictDoNothing();
-        await db.insert(s.rolePermissions).values({ roleId: purchaser!.id, permissionKey: 'run.create' });
-      }
       const mu = await makeUser('D8 manager');
       const mm = await makeMember(mu.id);
       await bindRole(mm, fx.managerRoleId, { type: 'store', storeId: store.id });
-      const manager = callerFor(await sessionFor(mm, mu.id));
+      const session = await sessionFor(mm, mu.id);
+      // The purchaser's run keys are ones a manager does not hold.
+      expect(session.permissions.has('run.purchase')).toBe(false);
+      const manager = callerFor(session);
       const target = await makeUser('D8 buyer');
       await makeMember(target.id);
       const res = await manager.admin.grantRole({
@@ -942,7 +811,8 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     const target = await makeUser('D8 target 2');
     await makeMember(target.id);
     const danger = await dangerRole();
-    // super_admin's own role lacks order.draft here; exempt anyway.
+    // Super Admin lacks attendance.clock; exempt anyway.
+    expect(fx.superAdminCtx.session?.permissions.has('attendance.clock')).toBe(false);
     const res = await caller.admin.grantRole({
       userId: target.id,
       roleSlug: danger.slug,
@@ -1193,12 +1063,7 @@ describe('M3.1 sales router store-scope', () => {
       const db = getDb(undefined, { system: 'maintenance' });
       const storeA = await makeStore(`SalesA2-${Math.random()}`);
       const storeB = await makeStore(`SalesB2-${Math.random()}`);
-      // Make sure the sales.record perm key exists, then mint a custom
-      // role that carries it. Bind the role to Store A only.
-      await db
-        .insert(s.permissions)
-        .values({ key: 'sales.record', description: 'record sales' })
-        .onConflictDoNothing();
+      // A custom role that carries sales.record, bound to Store A only.
       const [salesRole] = await db
         .insert(s.roles)
         .values({
@@ -1368,22 +1233,11 @@ describe('M3.7 inventory cannot be read for a foreign store', () => {
   test.skipIf(!SHOULD_RUN)(
     'manager bound to Store A cannot inventory.stocktake(storeId=B)',
     async () => {
-      // The manager seed in this fixture doesn't include
-      // inventory.adjust (the real seed adds it in M2.0a; the test
-      // fixture is leaner). Grant it via the role_permissions table
-      // to exercise the path. The gate must fire BEFORE the perm
-      // check — order matters because we want the FORBIDDEN to be
-      // notAssignedToStore, not cannotAdjust.
+      // The manager role carries inventory.adjust, but only in Store A.
+      // The store gate must fire BEFORE the perm check — order matters
+      // because we want the FORBIDDEN to be notAssignedToStore, not
+      // cannotAdjust.
       const fx = fix!;
-      const db = getDb(undefined, { system: 'maintenance' });
-      await db
-        .insert(s.permissions)
-        .values({ key: 'inventory.adjust', description: 'inventory adjust' })
-        .onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: fx.managerRoleId, permissionKey: 'inventory.adjust' })
-        .onConflictDoNothing();
       const storeA = await makeStore(`StockA-${Math.random()}`);
       const storeB = await makeStore(`StockB-${Math.random()}`);
       const mgrUser = await makeUser('A-Mgr-Stocktake');
@@ -1422,10 +1276,9 @@ describe('M3.7 finance reports filter by actor bindings unless org.admin', () =>
         type: 'store',
         storeId: storeA.id,
       });
-      // Manager seed already carries users.manage (line 159 in this
-      // fixture), so the requireAdmin-style gate at the top of
-      // report.purchaseLines passes — what kicks in next is the
-      // M3.7 store-scope filter.
+      // The manager role carries reports.view, so the finance gate at
+      // the top of report.purchaseLines passes — what kicks in next is
+      // the M3.7 store-scope filter.
       const ctx = testContext(await sessionFor(mgrMember, mgrUser.id));
       const caller = appRouter.createCaller(ctx);
 
@@ -1524,8 +1377,8 @@ describe('M3.6 notification recipients respect store scope', () => {
       const storeA = await makeStore(`NotifyA-${Math.random()}`);
       const storeB = await makeStore(`NotifyB-${Math.random()}`);
 
-      // Two managers bound to A and B respectively. The fixture's
-      // manager role carries `order.approve`.
+      // Two managers bound to A and B respectively. The manager role
+      // carries `order.approve`.
       const mgrAUser = await makeUser('A-Mgr-Notify');
       const mgrAMember = await makeMember(mgrAUser.id);
       await bindRole(mgrAMember, fx.managerRoleId, {
@@ -1555,15 +1408,9 @@ describe('M3.6 notification recipients respect store scope', () => {
       expect(recipients).toContain(mgrAUser.id);
       // Manager of Store B: EXCLUDED. This is the leak that M3.6 closes.
       expect(recipients).not.toContain(mgrBUser.id);
-      // Fixture super_admin has a global binding with users.manage etc.
-      // and the seeded manager perm set DOES include order.approve via
-      // the fixture (line ~159 seedRoles). Super-admin gets order.approve
-      // through their own role only if it was granted; the fixture
-      // grants super_admin only users.manage/invite/grant/revoke (line
-      // ~158), so super_admin may or may not be in the recipient list
-      // depending on whether order.approve was added to their role.
-      // We don't assert on super_admin presence — the precise contract
-      // we lock in is "store filter excludes foreign stores".
+      // The owner: INCLUDED. Their Super Admin binding is org-wide and
+      // carries order.approve.
+      expect(recipients).toContain(fx.superAdminUserId);
     },
   );
 
@@ -1702,41 +1549,19 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const storeA = await makeStore(`Run-A-${Math.random()}`);
       const storeB = await makeStore(`Run-B-${Math.random()}`);
 
-      // Mint a `purchaser` role (rank 40) for this org with the
-      // store-tier run perms only. The fixture's seedRoles list
-      // doesn't include purchaser; create one fresh.
-      await db
-        .insert(s.permissions)
-        .values([
-          { key: 'run.create', description: 'plan run for bound stores' },
-          { key: 'run.create.org', description: 'plan run org-wide' },
-        ])
-        .onConflictDoNothing();
-      const [purchaserRole] = await db
-        .insert(s.roles)
-        .values({
-          orgId: fx.orgId,
-          slug: `purchaser-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: 'Purchaser',
-          rank: 40,
-          isBuiltIn: false,
-        })
-        .returning();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: purchaserRole!.id, permissionKey: 'run.create' });
-      // IMPORTANT: no run.create.org binding — the whole point is to
-      // verify the store-tier path filters correctly.
-
+      // The built-in purchaser, bound to Store A. It holds run.create,
+      // not run.create.org — the whole point is to verify the store-tier
+      // path filters correctly.
       const buyer = await makeUser('A-Buyer');
       const buyerMember = await makeMember(buyer.id);
-      await bindRole(buyerMember, purchaserRole!.id, {
+      await bindRole(buyerMember, fx.purchaserRoleId, {
         type: 'store',
         storeId: storeA.id,
       });
 
-      const ctx = testContext(await sessionFor(buyerMember, buyer.id));
-      const caller = appRouter.createCaller(ctx);
+      const session = await sessionFor(buyerMember, buyer.id);
+      expect(session.permissions.has('run.create.org')).toBe(false);
+      const caller = callerFor(session);
 
       // An approved order in each store, on a day no other test uses: the
       // purchaser's preview has Store A's and not Store B's.
@@ -1774,27 +1599,9 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const db = getDb(undefined, { system: 'maintenance' });
       const storeA = await makeStore(`RunC-A-${Math.random()}`);
       const storeB = await makeStore(`RunC-B-${Math.random()}`);
-      await db
-        .insert(s.permissions)
-        .values({ key: 'run.create', description: 'plan run for bound stores' })
-        .onConflictDoNothing();
-      const [purchaserRole] = await db
-        .insert(s.roles)
-        .values({
-          orgId: fx.orgId,
-          slug: `purchaser2-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: 'Purchaser',
-          rank: 40,
-          isBuiltIn: false,
-        })
-        .returning();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: purchaserRole!.id, permissionKey: 'run.create' });
-
       const buyer = await makeUser('A-Buyer2');
       const buyerMember = await makeMember(buyer.id);
-      await bindRole(buyerMember, purchaserRole!.id, {
+      await bindRole(buyerMember, fx.purchaserRoleId, {
         type: 'store',
         storeId: storeA.id,
       });
@@ -1839,13 +1646,6 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
       const storeA = await makeStore(`Run provenance A ${suffix}`);
       const storeB = await makeStore(`Run provenance B ${suffix}`);
-      await db
-        .insert(s.permissions)
-        .values([
-          { key: 'run.create', description: 'Create runs for a store' },
-          { key: 'run.create.org', description: 'Create runs across an organization' },
-        ])
-        .onConflictDoNothing();
       const [scopedRole] = await db
         .insert(s.roles)
         .values({
@@ -1909,10 +1709,6 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
       const storeA = await makeStore(`Run mutation A ${suffix}`);
       const storeB = await makeStore(`Run mutation B ${suffix}`);
-      await db
-        .insert(s.permissions)
-        .values({ key: 'run.purchase', description: 'Purchase a run' })
-        .onConflictDoNothing();
       const [purchaserRole] = await db
         .insert(s.roles)
         .values({
@@ -1992,10 +1788,6 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
       const storeA = await makeStore(`Run eject A ${suffix}`);
       const storeB = await makeStore(`Run eject B ${suffix}`);
-      await db
-        .insert(s.permissions)
-        .values({ key: 'run.eject_session', description: 'Eject a session from a run' })
-        .onConflictDoNothing();
       const [ejectRole] = await db
         .insert(s.roles)
         .values({
@@ -2060,13 +1852,6 @@ describe('purchase history permission scope', () => {
       const managerMember = await makeMember(managerUser.id);
       await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
       await bindRole(managerMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
-      await db
-        .insert(s.permissions)
-        .values([
-          { key: 'run.amend', description: 'Amend a settled run' },
-          { key: 'run.create', description: 'Create or cancel a run' },
-        ])
-        .onConflictDoNothing();
       const [scopedAmendRole] = await db
         .insert(s.roles)
         .values({
