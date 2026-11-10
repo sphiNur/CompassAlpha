@@ -1,21 +1,33 @@
 import { z } from 'zod';
 import { DateStringSchema, UuidSchema } from './common';
+import { SETTLEMENT_DETAIL_ITEMS_MAX, settlementMoneyProblem } from '../limits';
 
-/** Money is transported as a decimal string to avoid float drift. */
+/**
+ * Money is transported as a decimal string to avoid float drift. The rule
+ * is `settlementMoneyProblem` (limits.ts), which the close page asks too.
+ */
 export const SettlementMoneySchema = z
   .string()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'settlement.errors.invalidMoney')
-  .refine((value) => Number(value) <= 999_999_999_999.99, {
-    message: 'settlement.errors.invalidMoney',
-  });
+  .refine((value) => settlementMoneyProblem(value) === null, 'settlement.errors.invalidMoney');
 
 /** Previous-procurement carry may be debt (+) or unused credit (-). */
 export const SignedSettlementMoneySchema = z
   .string()
-  .regex(/^-?\d{1,12}(\.\d{1,2})?$/, 'settlement.errors.invalidMoney')
-  .refine((value) => Math.abs(Number(value)) <= 999_999_999_999.99, {
-    message: 'settlement.errors.invalidMoney',
+  .refine(
+    (value) => settlementMoneyProblem(value, { signed: true }) === null,
+    'settlement.errors.invalidMoney',
+  );
+
+/** An expense or wage line's amount: above zero. */
+const SettlementLineAmountSchema = z.string().superRefine((value, ctx) => {
+  const problem = settlementMoneyProblem(value, { positive: true });
+  if (!problem) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message:
+      problem === 'zero' ? 'settlement.errors.invalidDetails' : 'settlement.errors.invalidMoney',
   });
+});
 
 export const SettlementGetInputSchema = z.object({
   storeId: UuidSchema,
@@ -43,9 +55,7 @@ export const SettlementWageRosterInputSchema = z.object({
  */
 export const SettlementOperatingExpenseItemSchema = z.object({
   id: UuidSchema.optional(),
-  amount: SettlementMoneySchema.refine((value) => Number(value) > 0, {
-    message: 'expense amount must be greater than zero',
-  }),
+  amount: SettlementLineAmountSchema,
   /** Why this outflow was necessary. Required for an auditable close. */
   reason: z.string().trim().min(1).max(500),
 });
@@ -64,9 +74,7 @@ export const SettlementWageItemSchema = z.object({
   memberId: UuidSchema.optional(),
   personName: z.string().trim().min(1).max(160).optional(),
   status: z.enum(['paid', 'unpaid']),
-  amount: SettlementMoneySchema.refine((value) => Number(value) > 0, {
-    message: 'wage amount must be greater than zero',
-  }),
+  amount: SettlementLineAmountSchema,
   /** Shift, pay period, allowance, or another explanation for the wage. */
   reason: z.string().trim().min(1).max(500),
 });
@@ -85,13 +93,16 @@ export const SettlementSaveInputSchema = SettlementGetInputSchema.extend({
    * Optional only for an unchanged re-save from an older client; non-zero
    * outflows on a new or corrected close always require their detail rows.
    */
-  operatingExpenseItems: z.array(SettlementOperatingExpenseItemSchema).max(100).optional(),
+  operatingExpenseItems: z
+    .array(SettlementOperatingExpenseItemSchema)
+    .max(SETTLEMENT_DETAIL_ITEMS_MAX)
+    .optional(),
   /**
    * Paid rows derive wagesPaid; unpaid rows derive wagesAccrued. See the
    * compatibility note above for why this stays optional instead of
    * defaulting to an empty array.
    */
-  wageItems: z.array(SettlementWageItemSchema).max(100).optional(),
+  wageItems: z.array(SettlementWageItemSchema).max(SETTLEMENT_DETAIL_ITEMS_MAX).optional(),
   note: z.string().trim().max(1000).nullable().optional(),
   /** Required by the API whenever an existing settlement is corrected. */
   correctionReason: z.string().trim().max(500).nullable().optional(),
