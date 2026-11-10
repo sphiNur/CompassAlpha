@@ -220,6 +220,31 @@ async function approverStoreIds(
 }
 
 /**
+ * APR-4: an order is read by the one who placed it, or by someone who
+ * approves or claims orders at its store. Review ORD-05 (2026-11-09):
+ * submittedVersion checked only the store assignment, so any member of
+ * the store could read another member's order as submitted, which
+ * sessionDetail refused. Both use this now.
+ */
+async function assertCanReadSession(
+  tx: import('@compass/db').DB,
+  session: { memberId: string; permissions: ReadonlySet<string> },
+  order: { storeId: string; initiatedByMemberId: string | null },
+): Promise<void> {
+  await assertActorAssignedToStore(tx, session.memberId, order.storeId, session.permissions);
+  if (order.initiatedByMemberId === session.memberId) return;
+  const effective = await effectivePermissionsForStore(
+    tx,
+    session.memberId,
+    order.storeId,
+    session.permissions,
+  );
+  if (!effective.has('order.approve') && !effective.has('order.claim')) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'order.errors.cannotApprove' });
+  }
+}
+
+/**
  * One order write, decided again when it lost a race (ORD-6, 2026-10-30):
  * the stream sequence, or two devices of the same person lazily creating
  * today's draft at once (osv_org_store_member_date_draft_unique, which
@@ -556,24 +581,7 @@ export const orderRouter = router({
         if (!session) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
         }
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
-        // APR-4: someone else's order is for approvers of that store.
-        if (session.initiatedByMemberId !== ctx.session!.memberId) {
-          const effective = await effectivePermissionsForStore(
-            tx,
-            ctx.session!.memberId,
-            session.storeId,
-            ctx.session!.permissions,
-          );
-          if (!effective.has('order.approve') && !effective.has('order.claim')) {
-            throw new TRPCError({ code: 'FORBIDDEN', message: 'order.errors.cannotApprove' });
-          }
-        }
+        await assertCanReadSession(tx, ctx.session!, session);
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),
         });
@@ -663,8 +671,8 @@ export const orderRouter = router({
   /** 2026-11-05: the order as it was submitted (its last `Submitted`),
    *  so a receipt can show what the store asked for next to what review
    *  approved. Reviewer edits overwrite the read model; the event log
-   *  keeps the original. Null for a draft. Visible to whoever may see the
-   *  store's orders. */
+   *  keeps the original. Null for a draft. Read by the same people as
+   *  sessionDetail (ORD-05). */
   submittedVersion: authedProcedure
     .input(SessionDetailInputSchema)
     .query(async ({ ctx, input }) => {
@@ -676,12 +684,7 @@ export const orderRouter = router({
         if (!session) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
         }
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
+        await assertCanReadSession(tx, ctx.session!, session);
         if (session.status === 'draft') return null;
         const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
         const snap = submittedSnapshot(session.id, events);

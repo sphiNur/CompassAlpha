@@ -133,6 +133,23 @@ describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
     expect(adjusted?.correlationId).toBeNull();
   });
 
+  test('ORD-05: an order as submitted is for its author and the store\'s approvers', async () => {
+    const { staff, other, manager, storeId, skuId } = fix!;
+    const draft = await staff.order.adjustItem({ storeId, skuId, qty: '5' });
+    await staff.order.submit({ sessionId: draft.sessionId });
+    expect((await staff.order.submittedVersion({ sessionId: draft.sessionId }))?.totals).toEqual([
+      { skuId, qty: '5' },
+    ]);
+    expect(await manager.order.submittedVersion({ sessionId: draft.sessionId })).not.toBeNull();
+    // Another member of the same store: refused, as by sessionDetail.
+    await expect(other.order.submittedVersion({ sessionId: draft.sessionId })).rejects.toThrow(
+      'order.errors.cannotApprove',
+    );
+    await expect(other.order.sessionDetail({ sessionId: draft.sessionId })).rejects.toThrow(
+      'order.errors.cannotApprove',
+    );
+  });
+
   test('APR-13: taking over a claim leaves it claimed by the one who took it', async () => {
     const { staff, manager, manager2, storeId, skuId } = fix!;
     const draft = await staff.order.adjustItem({ storeId, skuId, qty: '4' });
