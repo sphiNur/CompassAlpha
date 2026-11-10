@@ -685,6 +685,8 @@ export const en = {
   'approval.offline.needsConnection':
     'Review needs a connection: approvals and rejections are not kept on this phone.',
   'workspace.switchConfirm': 'Switch to {name}? Anything not saved on this page will be lost.',
+  'workspace.switchConfirmPending':
+    'Switch to {name}? {n, plural, one {# change made here has} other {# changes made here have}} not been sent yet and will be sent when you come back to this workspace. Anything not saved on this page will be lost.',
   'storeSwitcher.switched': 'Now working in {store}',
   'run.alloc.qtyFor': 'Quantity for {store}',
   'run.alloc.priceFor': 'Unit price for {store}',

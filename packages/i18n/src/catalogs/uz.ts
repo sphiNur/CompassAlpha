@@ -629,6 +629,8 @@ export const uz = {
     'Tekshiruv uchun internet kerak: maʼqullash va rad etish telefonda saqlanmaydi.',
   'workspace.switchConfirm':
     '{name} ga oʻtilsinmi? Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
+  'workspace.switchConfirmPending':
+    '{name} ga oʻtilsinmi? Bu yerdagi {n} ta oʻzgarish hali yuborilmagan, ular shu ish maydoniga qaytganingizda yuboriladi. Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
   'storeSwitcher.switched': '{store} tanlandi',
   'run.alloc.qtyFor': '{store} uchun miqdor',
   'run.alloc.priceFor': '{store} uchun birlik narxi',

@@ -321,11 +321,13 @@ export function isTabVisible(
 /**
  * Drop the persisted navigation (2026-10-21 audit CA-33 / E-07).
  *
- * Called on organisation switch, workspace creation, sign-out / auth
- * clear, and the crash-screen and debug resets. Without it a new tenant
- * (or a new user on the same device) reopened the previous one's Admin
- * drill-down — e.g. a `storeFocus` holding another org's storeId — and a
- * crash caused by a bad persisted value survived "reset".
+ * Called whenever the session changes hands (App's
+ * useQueryCachePersistence: a workspace switch or creation, an invite into
+ * another organisation, another person signing in), by authStore.clear()
+ * on sign-out, and by the crash-screen and debug resets. Without it a new
+ * tenant (or a new user on the same device) reopened the previous one's
+ * Admin drill-down — e.g. a `storeFocus` holding another org's storeId —
+ * and a crash caused by a bad persisted value survived "reset".
  */
 export function resetNavStore(): void {
   try {

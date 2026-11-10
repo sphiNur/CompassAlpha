@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import type { OutboxEntry } from '../../lib/idb';
+import { useAuthStore } from '../../stores/authStore';
+import { testSession } from '../../__tests__/fixtures/session';
 import { isLiveEntry, sendWriteAhead } from '../useOfflineQueue';
+
+const initialAuth = useAuthStore.getState();
+afterEach(() => {
+  useAuthStore.setState(initialAuth, true);
+});
 
 // R2-ORD-5 (2026-10-31): a write is stored in the outbox BEFORE it is sent.
 // Closing the app while the request hangs must leave it there for the next
@@ -116,5 +123,27 @@ describe('sendWriteAhead', () => {
     expect(await sendWriteAhead('order.adjustItem', {}, async () => 'sent', undefined, () => {}, store)).toBe(
       'sent',
     );
+  });
+});
+
+describe('who a queued write belongs to', () => {
+  // COREWEB2-03: the replay only sends a write for the person AND the
+  // organisation it was made in, so both are stored with it.
+  it('records the signed-in person and their organisation', async () => {
+    const session = testSession();
+    useAuthStore.setState({ session });
+    const store = fakeStore();
+    const err = await sendWriteAhead(
+      'run.purchaseItem',
+      { skuId: 's' },
+      () => Promise.reject(new TypeError('Failed to fetch')),
+      undefined,
+      () => {},
+      store,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TypeError);
+    const [entry] = [...store.rows.values()];
+    expect(entry?.ownerUserId).toBe(session.user.id);
+    expect(entry?.ownerOrgId).toBe(session.member.orgId);
   });
 });

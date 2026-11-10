@@ -128,18 +128,35 @@ describe('shouldGiveUp', () => {
 });
 
 describe('isOwnEntry', () => {
+  const u1InA = { userId: 'u1', orgId: 'orgA' };
+
   it('replays an entry only for the user who queued it', () => {
-    expect(isOwnEntry('u1', 'u1')).toBe(true);
-    expect(isOwnEntry('u1', 'u2')).toBe(false);
+    expect(isOwnEntry({ ownerUserId: 'u1', ownerOrgId: 'orgA' }, u1InA)).toBe(true);
+    expect(isOwnEntry({ ownerUserId: 'u1', ownerOrgId: 'orgA' }, { ...u1InA, userId: 'u2' })).toBe(
+      false,
+    );
+  });
+
+  // COREWEB2-03: the same person in another organisation. Replayed there,
+  // the write's ids do not exist, the refusal is "terminal" and the write
+  // was deleted.
+  it('replays an entry only in the organisation it was made in', () => {
+    expect(isOwnEntry({ ownerUserId: 'u1', ownerOrgId: 'orgA' }, { ...u1InA, orgId: 'orgB' })).toBe(
+      false,
+    );
   });
 
   it('replays nothing while signed out', () => {
-    expect(isOwnEntry('u1', undefined)).toBe(false);
-    expect(isOwnEntry(undefined, undefined)).toBe(false);
+    const out = { userId: undefined, orgId: undefined };
+    expect(isOwnEntry({ ownerUserId: 'u1', ownerOrgId: 'orgA' }, out)).toBe(false);
+    expect(isOwnEntry({}, out)).toBe(false);
   });
 
   it('keeps replaying entries queued before ownership was recorded', () => {
-    expect(isOwnEntry(undefined, 'u1')).toBe(true);
+    expect(isOwnEntry({}, u1InA)).toBe(true);
+    // Queued after the person was recorded but before the organisation.
+    expect(isOwnEntry({ ownerUserId: 'u1' }, u1InA)).toBe(true);
+    expect(isOwnEntry({ ownerUserId: 'u2' }, u1InA)).toBe(false);
   });
 });
 

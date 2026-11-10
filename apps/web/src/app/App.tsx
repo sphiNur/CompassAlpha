@@ -13,6 +13,7 @@ import {
   startQueryPersistence,
 } from '../lib/queryPersist';
 import { useAuthStore } from '../stores/authStore';
+import { resetNavStore } from '../stores/navStore';
 import { useTelegramInit } from '../hooks/useTelegram';
 import { useTapGuard } from '../hooks/useTapGuard';
 import { useVersionCheck } from '../hooks/useVersionCheck';
@@ -75,6 +76,14 @@ if (isBrowser && typeof navigator !== 'undefined') {
  * or the session ends, however it ended — the in-memory cache and the
  * saved copy both go, so the next person on this phone never sees the
  * previous one's data, not even for the second before a refetch.
+ *
+ * COREWEB1-04 (2026-11-10): this is also where the persisted navigation
+ * is reset (CA-33: a tab or Admin drill-down such as a storeFocus on the
+ * old organisation's store must not carry over). It covers every way the
+ * session changes hands: switching or creating a workspace, accepting an
+ * invite to another organisation (which used to keep the old drill-down)
+ * and the dev persona picker. authStore.clear() still resets both itself,
+ * so a sign-out before this hook has mounted wipes them too.
  */
 function useQueryCachePersistence(): void {
   const queryClient = useQueryClient();
@@ -91,6 +100,7 @@ function useQueryCachePersistence(): void {
       if (previous !== null) {
         queryClient.clear();
         void clearPersistedQueries();
+        resetNavStore();
       }
     });
     return () => {

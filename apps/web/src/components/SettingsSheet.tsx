@@ -22,13 +22,13 @@
  * Admin-of-org things stay in Admin so the mental model stays clean.
  */
 import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { Sheet, Button, Field, SectionLabel, PickerGroup, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { requestTabChange, resetNavStore, type Tab } from '../stores/navStore';
+import { requestTabChange, type Tab } from '../stores/navStore';
+import { waitingWriteCount } from '../hooks/useOfflineQueue';
 import { isInTelegram } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
@@ -88,7 +88,6 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const setSession = useAuthStore((s) => s.setSession);
   const patchSession = useAuthStore((s) => s.patchSession);
   const toast = useToast();
-  const queryClient = useQueryClient();
   // M1.21: i18n-aware error toast so server-side error keys like
   // `auth.errors.displayNameTaken` render translated for the user
   // rather than dumped as the raw key string.
@@ -118,15 +117,13 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const switchOrganization = trpc.auth.switchOrganization.useMutation({
     meta: BLOCKS_NAVIGATION,
     onSuccess: (data) => {
+      // The new session drops the old workspace's cached data and
+      // navigation (App's useQueryCachePersistence, COREWEB1-04).
       setSession({
         accessToken: data.tokens.accessToken,
         refreshToken: data.tokens.refreshToken,
         session: data.session,
       });
-      queryClient.clear();
-      // 2026-10-21 audit CA-33: the old tenant's tab / Admin drill-down
-      // (e.g. a storeFocus on another org's store) must not carry over.
-      resetNavStore();
       toast.success(i18n.t('workspace.switched'));
       onOpenChange(false);
     },
@@ -230,10 +227,19 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                     onClick={() => {
                       if (selected) return;
                       void mayLeaveWorkspace({
-                        confirm: () =>
-                          confirmNative(
-                            i18n.t('workspace.switchConfirm', { name: membership.orgName }),
-                          ),
+                        // COREWEB2-03: writes still waiting to be sent stay
+                        // with this workspace; say so before leaving it.
+                        confirm: async () => {
+                          const waiting = await waitingWriteCount();
+                          return confirmNative(
+                            waiting > 0
+                              ? i18n.t('workspace.switchConfirmPending', {
+                                  name: membership.orgName,
+                                  n: waiting,
+                                })
+                              : i18n.t('workspace.switchConfirm', { name: membership.orgName }),
+                          );
+                        },
                         requestTabChange,
                         requestStoreChange,
                       }).then((ok) => {
@@ -367,8 +373,6 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             block
             variant="secondary"
             onClick={() => {
-              queryClient.clear();
-              resetNavStore();
               useAuthStore.getState().clear();
               onOpenChange(false);
             }}
