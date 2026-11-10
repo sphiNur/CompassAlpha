@@ -21,7 +21,8 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "env": ["SKIP_PG_TESTS", "ALLOW_ANY_TEST_DB"]
     },
     "generate": {
       "cache": false

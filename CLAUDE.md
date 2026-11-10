@@ -27,6 +27,7 @@ DATABASE_URL=postgres://…/compass_test_x JWT_SECRET=<≥32 chars> JWT_REFRESH_
 
 - `packages/db` migrate reads `DATABASE_URL_DIRECT` (from `.env`) before `DATABASE_URL`. Always set both explicitly to the database you mean; a copied `.env` once pointed migrations at the shared dev DB.
 - CI runs the integration tests as a non-owner, non-BYPASSRLS role (`compass_ci_app`). A few event-store guard tests fail locally when you run them as the table owner; that is expected.
+- A test run (`bun test` sets `NODE_ENV=test`) uses only a database with `test` or `e2e` in its name; for any other, `getDb` hands out a handle that throws on every query. Bun loads the root `.env` (the dev database) by itself, so a run that forgot `SKIP_PG_TESTS=1` used to write its fixtures there. `ALLOW_ANY_TEST_DB=1` lifts the rule for one run.
 - Workspace packages are linked through `node_modules`. If a package gains a dependency on another workspace package (e.g. `@compass/domain` → `@compass/contracts`), a checkout or worktree that was not reinstalled needs the link (`packages/domain/node_modules/@compass/contracts → ../../../contracts`) or local tsc and the deploy's unit-test gate fail.
 
 ### Running the web app locally
