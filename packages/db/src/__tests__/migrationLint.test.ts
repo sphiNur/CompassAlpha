@@ -1,5 +1,7 @@
 /**
  * Review DB-01 (2026-11-09): migrations may not BEGIN or COMMIT.
+ * Review DB-07 (2026-11-10): the journal stays in order, and no database
+ * passes over an entry.
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -7,8 +9,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   LEGACY_TRANSACTION_CONTROL,
+  journalOrderProblems,
   transactionControl,
   transactionControlViolations,
+  unreachableMigrations,
+  type JournalEntry,
 } from '../migrationLint';
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'migrations');
@@ -71,5 +76,60 @@ describe('the migrations folder', () => {
     expect(
       transactionControlViolations([{ tag: '9999_new', sql: 'BEGIN;\nSELECT 1;\nCOMMIT;' }]),
     ).toEqual([{ tag: '9999_new', statements: ['BEGIN;', 'COMMIT;'] }]);
+  });
+});
+
+const entry = (idx: number, when: number): JournalEntry => ({
+  idx,
+  when,
+  tag: `${String(idx).padStart(4, '0')}_x`,
+});
+
+describe('journalOrderProblems', () => {
+  test('accepts idx counting up from 0 and a growing when', () => {
+    expect(journalOrderProblems([entry(0, 10), entry(1, 11), entry(2, 20)])).toEqual([]);
+  });
+
+  test('flags a gap in idx', () => {
+    expect(journalOrderProblems([entry(0, 10), entry(2, 11)])).toEqual([
+      '0002_x: idx is 2, expected 1',
+    ]);
+  });
+
+  test('flags a when that does not grow', () => {
+    expect(journalOrderProblems([entry(0, 10), entry(1, 10)])).toEqual([
+      "0001_x: when 10 is not after 0000_x's 10",
+    ]);
+    expect(journalOrderProblems([entry(0, 10), entry(1, 9)])).toEqual([
+      "0001_x: when 9 is not after 0000_x's 10",
+    ]);
+  });
+});
+
+describe('unreachableMigrations', () => {
+  const journal = [entry(0, 10), entry(1, 20), entry(2, 30), entry(3, 40)];
+
+  test('a new database has nothing to pass over', () => {
+    expect(unreachableMigrations(journal, [])).toEqual([]);
+  });
+
+  test('entries after the newest recorded one are pending, not passed over', () => {
+    expect(unreachableMigrations(journal, [10, 20])).toEqual([]);
+  });
+
+  test('an unrecorded entry dated before the newest recorded one is passed over', () => {
+    // 0001 merged after 0002 had been deployed.
+    expect(unreachableMigrations(journal, [10, 30])).toEqual([entry(1, 20)]);
+  });
+});
+
+describe('the journal', () => {
+  const journal = JSON.parse(readFileSync(join(MIGRATIONS, 'meta', '_journal.json'), 'utf8')) as {
+    entries: JournalEntry[];
+  };
+
+  test('is in order', () => {
+    expect(journal.entries.length).toBeGreaterThan(0);
+    expect(journalOrderProblems(journal.entries)).toEqual([]);
   });
 });

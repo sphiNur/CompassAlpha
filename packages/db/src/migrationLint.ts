@@ -59,3 +59,50 @@ export function transactionControlViolations(
     return statements.length > 0 ? [{ tag, statements }] : [];
   });
 }
+
+/** A `migrations/meta/_journal.json` entry, as far as these checks read it. */
+export interface JournalEntry {
+  idx: number;
+  when: number;
+  tag: string;
+}
+
+/**
+ * Review DB-07 (2026-11-10): the journal must stay in order.
+ *
+ * Drizzle applies an entry only when its `when` is later than the newest
+ * migration the database has recorded (drizzle-orm 0.45, pg-core/dialect.js),
+ * and says nothing about the entries it passes over. `when` is typed by hand
+ * here: two branches merged within the hour can both take "the last one +
+ * 1", and whichever deploys second is then skipped for good while the
+ * deploy reports success.
+ */
+export function journalOrderProblems(entries: readonly JournalEntry[]): string[] {
+  const problems: string[] = [];
+  entries.forEach((entry, i) => {
+    if (entry.idx !== i) problems.push(`${entry.tag}: idx is ${entry.idx}, expected ${i}`);
+    const previous = entries[i - 1];
+    if (previous && !(entry.when > previous.when)) {
+      problems.push(
+        `${entry.tag}: when ${entry.when} is not after ${previous.tag}'s ${previous.when}`,
+      );
+    }
+  });
+  return problems;
+}
+
+/**
+ * The entries a database would never apply: dated no later than the
+ * newest migration it recorded, and not recorded themselves. `recorded`
+ * holds the `created_at` values of drizzle.__drizzle_migrations, which are
+ * the `when` of each applied entry.
+ */
+export function unreachableMigrations(
+  entries: readonly JournalEntry[],
+  recorded: readonly number[],
+): JournalEntry[] {
+  if (recorded.length === 0) return [];
+  const newest = Math.max(...recorded);
+  const applied = new Set(recorded);
+  return entries.filter((entry) => entry.when <= newest && !applied.has(entry.when));
+}

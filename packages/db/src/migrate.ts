@@ -22,11 +22,17 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { transactionControlViolations } from './migrationLint';
+import {
+  journalOrderProblems,
+  transactionControlViolations,
+  unreachableMigrations,
+  type JournalEntry,
+} from './migrationLint';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsRoot = join(__dirname, '..', 'migrations');
 const rawSqlDir = join(migrationsRoot, 'sql');
+const journalPath = join(migrationsRoot, 'meta', '_journal.json');
 
 (function loadRootEnv() {
   let dir = __dirname;
@@ -68,6 +74,17 @@ async function runRawSql(
   }
 }
 
+/** The entries of `migrations/meta/_journal.json`. */
+function readJournal(): JournalEntry[] {
+  if (!existsSync(journalPath)) {
+    throw new Error(`[migrate] journal not found at ${journalPath}`);
+  }
+  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+    entries?: JournalEntry[];
+  };
+  return journal.entries ?? [];
+}
+
 /**
  * Cross-check (M1.7, 2026-05-06): every drizzle SQL file in
  * `migrations/` MUST have a matching entry in
@@ -92,15 +109,7 @@ async function runRawSql(
  *     before partial migrations.
  */
 async function checkMigrationJournalConsistency(): Promise<void> {
-  type JournalEntry = { idx: number; tag: string };
-  const journalPath = join(migrationsRoot, 'meta', '_journal.json');
-  if (!existsSync(journalPath)) {
-    throw new Error(`[migrate] journal not found at ${journalPath}`);
-  }
-  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
-    entries?: JournalEntry[];
-  };
-  const journalTags = new Set((journal.entries ?? []).map((e) => e.tag));
+  const journalTags = new Set(readJournal().map((e) => e.tag));
 
   let sqlFiles: string[] = [];
   try {
@@ -157,6 +166,49 @@ async function checkNoTransactionControl(): Promise<void> {
   );
 }
 
+/**
+ * Review DB-07 (2026-11-10): `idx` counts up from 0 and each `when` is
+ * later than the one before (see `journalOrderProblems`). Fails before the
+ * drizzle migrator touches the database.
+ */
+function checkJournalOrder(entries: readonly JournalEntry[]): void {
+  const problems = journalOrderProblems(entries);
+  if (problems.length === 0) return;
+  console.error('[migrate] meta/_journal.json is out of order:');
+  for (const p of problems) console.error(`  ✗ ${p}`);
+  throw new Error(
+    'Put meta/_journal.json in order: idx counts up from 0, and each `when` is later than the one before.',
+  );
+}
+
+/**
+ * Review DB-07 (2026-11-10): no entry may be dated before the newest
+ * migration this database recorded unless it is recorded too. Drizzle
+ * would pass over it without a word (see `unreachableMigrations`).
+ */
+async function checkNothingSkipped(
+  client: ReturnType<typeof postgres>,
+  entries: readonly JournalEntry[],
+): Promise<void> {
+  const [table] = await client<{ name: string | null }[]>`
+    select to_regclass('drizzle.__drizzle_migrations')::text as name`;
+  // A new database: drizzle creates the table and applies everything.
+  if (!table?.name) return;
+  const rows = await client<{ createdAt: string | null }[]>`
+    select created_at::text as "createdAt" from drizzle.__drizzle_migrations`;
+  const recorded = rows.flatMap((r) => (r.createdAt === null ? [] : [Number(r.createdAt)]));
+  const skipped = unreachableMigrations(entries, recorded);
+  if (skipped.length === 0) return;
+  const newest = Math.max(...recorded);
+  console.error(
+    `[migrate] Journal entries this database would never apply (dated before its newest recorded migration, ${newest}):`,
+  );
+  for (const e of skipped) console.error(`  ✗ ${e.tag} (when ${e.when})`);
+  throw new Error(
+    'Move these entries to the end of meta/_journal.json, each with a `when` after the newest recorded one, before deploying.',
+  );
+}
+
 async function main() {
   const url = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
   if (!url) {
@@ -180,9 +232,16 @@ async function main() {
 
   console.log('[migrate] Checking journal/SQL file consistency...');
   await checkMigrationJournalConsistency();
+  const journal = readJournal();
+
+  console.log('[migrate] Checking the journal order...');
+  checkJournalOrder(journal);
 
   console.log('[migrate] Checking that no migration controls the transaction...');
   await checkNoTransactionControl();
+
+  console.log('[migrate] Checking that the database would apply every pending entry...');
+  await checkNothingSkipped(client, journal);
 
   console.log('[migrate] Drizzle migrations...');
   await migrate(db, { migrationsFolder: migrationsRoot });

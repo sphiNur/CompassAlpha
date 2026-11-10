@@ -73,6 +73,14 @@ Both are required. CI fails-closed on orphan SQL files (the bug that broke
 0009 in prod for a week). Drizzle migrator skips the SQL file silently
 if the journal entry is missing.
 
+The new entry goes last: `idx` one more than the entry before, and `when`
+later than its `when`. Drizzle applies an entry only when its `when` is
+later than the newest migration the database recorded, and passes over an
+earlier one without a word. Two branches can both take "the last `when` +
+1"; the one that merges second moves its entry to the end. `migrate`
+refuses a journal out of order, and a database that recorded a migration
+dated after an entry it never applied (DB-07).
+
 No `BEGIN`, `COMMIT` or `ROLLBACK` in a migration: the runner applies each
 batch in one transaction, and a file's own `COMMIT` ends it early for every
 file after it (`migrate` refuses such a file; 23 early ones are
