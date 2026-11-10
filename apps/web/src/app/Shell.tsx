@@ -80,7 +80,7 @@ import { subscribeAnnouncements } from '../lib/announce';
 import { setPageTitleBase } from '../lib/pageTitle';
 import { createTabScrollMemory, restoreScroll } from '../lib/tabScroll';
 import { scrollBehavior } from '../lib/reducedMotion';
-import { useI18n } from '../hooks/useI18n';
+import { useDateFormat, useI18n } from '../hooks/useI18n';
 import {
   getTg,
   isInTelegram,
@@ -307,6 +307,7 @@ function ShellInner() {
     };
   }, []);
   const cachedAt = useCachedDataAge(!online);
+  const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
   // M1.12: contextual "this page" actions live in the same gear as the
   // global SettingsSheet. Pages register via usePageMenu(). When the
@@ -835,7 +836,7 @@ function ShellInner() {
               title={
                 cachedAt !== null
                   ? `${i18n.t('shell.offline.title')} · ${i18n.t('shell.offline.lastUpdated', {
-                      time: lastUpdatedLabel(cachedAt),
+                      time: lastUpdatedLabel(cachedAt, dateFmt),
                     })}`
                   : i18n.t('shell.offline.title')
               }

@@ -45,6 +45,12 @@ export function reloadApp(reason: ReloadReason, fromBuild: string | null = null)
 const STALE_CHUNK_KEY = 'compass.staleChunkReloadAt';
 
 /**
+ * A page's code reloads for a missing chunk at most once in this long; if
+ * that did not help, the page says so instead of reloading in a loop.
+ */
+export const STALE_CHUNK_RELOAD_WINDOW_MS = 60_000;
+
+/**
  * Reload for a stale lazy chunk (F10), unless one was already done within
  * `withinMs` — then a reload did not help and must not loop. Kept apart
  * from STORAGE_KEY, which reportLastReload() consumes at boot.

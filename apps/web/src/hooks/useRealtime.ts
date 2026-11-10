@@ -14,6 +14,13 @@
  */
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
+import {
+  WS_CLOSE_EVICTED,
+  WS_CLOSE_MEMBERSHIP_ENDED,
+  WS_CLOSE_TOKEN_EXPIRED,
+  type EvictionNotice,
+  type RealtimeMessage,
+} from '@compass/contracts/schemas/realtime';
 import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
 import { useRefreshSession } from '../lib/refreshSession';
@@ -48,9 +55,20 @@ export function shouldDeferInvalidate(
   if (localWrites && waitedMs < LOCAL_WRITES_MAX_WAIT_MS) return true;
   return mutating && waitedMs < MUTATION_QUIET_MAX_WAIT_MS;
 }
-// 2026-10-21 audit CA-35: close codes the API's WS layer uses.
-const WS_CLOSE_EVICTED = 4000;
-const WS_CLOSE_TOKEN_EXPIRED = 4001;
+/**
+ * What to do once the socket has closed with `code` (review COREWEB2-24).
+ * Exported for tests.
+ *   - `refreshToken`: the token expired; a refreshed one opens a socket.
+ *   - `readSession`: the member was suspended or removed. The upgrade
+ *     refuses them, and reconnecting every 30 s went on for good; the
+ *     session is read again instead, and AuthGate shows what follows.
+ *   - `reconnect`: anything else, with backoff.
+ */
+export function afterClose(code: number): 'refreshToken' | 'readSession' | 'reconnect' {
+  if (code === WS_CLOSE_TOKEN_EXPIRED) return 'refreshToken';
+  if (code === WS_CLOSE_MEMBERSHIP_ENDED) return 'readSession';
+  return 'reconnect';
+}
 
 // The server pings every socket every 25 s (apps/api/src/main.ts). An
 // open socket that has heard nothing for longer than this is treated as
@@ -107,26 +125,12 @@ export function pollWhenOffline(intervalMs: number, live: boolean): number | fal
   return live ? false : intervalMs;
 }
 
-interface RealtimeMessage {
-  type:
-    | 'order.changed'
-    | 'run.changed'
-    // catalog.changed / people.changed added 2026-05-03 so admin pages
-    // (stores, skus, suppliers, categories, members, role bindings)
-    // auto-refresh when another admin in the org commits a change.
-    | 'catalog.changed'
-    | 'people.changed'
-    | 'attendance.changed'
-    // 2026-10-21 audit CA-35 / E-06: the hub drops its OLDEST socket at the
-    // connection cap and sends this, but used to leave it open — a zombie
-    // that never received another event.
-    | 'evicted'
-    | 'ping';
-  orgId?: string;
-  sessionId?: string;
-  runId?: string;
-  entity?: 'store' | 'sku' | 'supplier' | 'category';
-}
+/**
+ * What the socket hears: the hub's pushes, and the notice sent to the
+ * oldest socket at the connection cap (2026-10-21 audit CA-35 / E-06: it
+ * used to be left open, a zombie that never heard another event).
+ */
+type Incoming = RealtimeMessage | EvictionNotice;
 
 function wsUrl(token: string): string {
   const fromEnv = import.meta.env.VITE_WS_URL as string | undefined;
@@ -273,9 +277,9 @@ export function useRealtime(): void {
           lastMessageAt = Date.now();
           updateLive();
         }
-        let msg: RealtimeMessage;
+        let msg: Incoming;
         try {
-          msg = JSON.parse(e.data) as RealtimeMessage;
+          msg = JSON.parse(e.data) as Incoming;
         } catch {
           return;
         }
@@ -319,23 +323,30 @@ export function useRealtime(): void {
         // A socket dropped as stale was replaced already (COREWEB2-07).
         if (disposed || !current) return;
         if (ev.code === WS_CLOSE_EVICTED) reopenAfterEviction = true;
-        if (ev.code === WS_CLOSE_TOKEN_EXPIRED) {
-          // Reconnecting with the same token would just be refused again.
-          // Any authed tRPC call goes through the client's single-flight
-          // refresh on 401; a rotated token re-runs this effect, which
-          // opens a fresh socket. Only if the token did NOT change (refresh
-          // failed or not needed) fall back to the backoff reconnect.
-          void utilsRef.current.client.auth.me
-            .query()
-            .catch(() => undefined)
-            .finally(() => {
-              if (disposed) return;
-              if (useAuthStore.getState().accessToken !== accessToken) return;
-              scheduleReconnect();
-            });
-          return;
+        switch (afterClose(ev.code)) {
+          case 'refreshToken':
+            // Reconnecting with the same token would just be refused again.
+            // Any authed tRPC call goes through the client's single-flight
+            // refresh on 401; a rotated token re-runs this effect, which
+            // opens a fresh socket. Only if the token did NOT change (refresh
+            // failed or not needed) fall back to the backoff reconnect.
+            void utilsRef.current.client.auth.me
+              .query()
+              .catch(() => undefined)
+              .finally(() => {
+                if (disposed) return;
+                if (useAuthStore.getState().accessToken !== accessToken) return;
+                scheduleReconnect();
+              });
+            return;
+          case 'readSession':
+            // A session that changed (another workspace, a new token)
+            // re-runs this effect; pages poll meanwhile.
+            void refreshSessionRef.current();
+            return;
+          case 'reconnect':
+            scheduleReconnect();
         }
-        scheduleReconnect();
       });
       ws.addEventListener('error', () => {
         // Browsers fire close after error; rely on close handler.

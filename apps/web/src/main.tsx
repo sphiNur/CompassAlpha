@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ensureCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
-import { reloadForStaleChunk } from './lib/reload';
+import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from './lib/reload';
 import { startLocale } from './lib/startLocale';
 import { preloadPage, savedTab } from './app/pageChunks';
 
@@ -15,7 +15,7 @@ import { preloadPage, savedTab } from './app/pageChunks';
 // within a minute if a reload did not help (the boundary then shows).
 window.addEventListener('vite:preloadError', (event) => {
   if (!navigator.onLine) return;
-  if (reloadForStaleChunk(60_000)) event.preventDefault();
+  if (reloadForStaleChunk(STALE_CHUNK_RELOAD_WINDOW_MS)) event.preventDefault();
 });
 
 // N12 (2026-10-30): an offline reload showed a blank page — the document
