@@ -18,10 +18,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
 import { claimTakenFrom, TAKEOVER_COOLDOWN_MS } from '../trpc/routers/order';
-import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { seedMember, sessionOf } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -90,27 +89,13 @@ beforeAll(async () => {
   const plainRole = await role('approver-np', 50, approverKeys);
 
   const person = async (n: number, roleId: string): Promise<Person> => {
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Reviewer ${n}`, tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    await db
-      .insert(s.memberStoreAssignments)
-      .values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId, scopeType: 'store', scopeId: store!.id });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return {
-      userId: u!.id,
-      memberId: m!.id,
-      caller: callerFor(session),
-    };
+    const who = await seedMember(db, orgId, {
+      name: `Reviewer ${n}`,
+      stores: [store!.id],
+      roles: [{ roleId, storeId: store!.id }],
+    });
+    const caller = callerFor(await sessionOf(orgId, who));
+    return { userId: who.userId, memberId: who.memberId, caller };
   };
   fix = {
     db,

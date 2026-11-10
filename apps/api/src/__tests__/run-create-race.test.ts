@@ -13,23 +13,13 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/run-create-race.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
+import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { orgId: string; storeId: string; skuId: string; a: Caller; b: Caller } | null = null;
@@ -43,18 +33,7 @@ beforeAll(async () => {
     .values({ slug: `race-${suffix}`, name: 'Run race', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const def = BUILTIN_ROLES.find((r) => r.slug === 'super_admin')!;
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId, slug: 'super_admin', name: 'super_admin', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db
-      .insert(s.rolePermissions)
-      .values({ roleId: role!.id, permissionKey: key })
-      .onConflictDoNothing();
-  }
+  const roleId = (await seedRoles(db, orgId, ['super_admin'])).super_admin!;
   const [store] = await db
     .insert(s.stores)
     .values({ orgId, name: 'Store', code: `RC-${suffix.slice(-6)}` })
@@ -72,23 +51,12 @@ beforeAll(async () => {
   let n = 0;
   const person = async (): Promise<Caller> => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Race ${n}`, tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    await db
-      .insert(s.memberStoreAssignments)
-      .values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    await db
-      .insert(s.memberRoleBindings)
-      .values({ memberId: m!.id, roleId: role!.id, scopeType: 'global' });
-    const session = await loadSession(db, u!.id, orgId, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return callerFor(session);
+    const who = await seedMember(db, orgId, {
+      name: `Race ${n}`,
+      stores: [store!.id],
+      roles: [{ roleId }],
+    });
+    return callerFor(await sessionOf(orgId, who));
   };
   fix = { orgId, storeId: store!.id, skuId: sku!.id, a: await person(), b: await person() };
 });

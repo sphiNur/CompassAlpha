@@ -8,8 +8,6 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/input-checks.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
 import { loadSession } from '../trpc/context';
@@ -18,13 +16,7 @@ import { pickExtension } from '../trpc/routers/upload';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
+import { seedRoles } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
@@ -62,21 +54,15 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `checks-${suffix}`, name: 'Input checks', localeDefault: 'en', timezone: 'UTC' })
     .returning();
-  const def = BUILTIN_ROLES.find((r) => r.slug === 'super_admin')!;
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId: org!.id, slug: 'super_admin', name: 'super_admin', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key }).onConflictDoNothing();
-  }
+  const roleId = (await seedRoles(db, org!.id, ['super_admin'])).super_admin!;
   const [u] = await db
     .insert(s.users)
     .values({ displayName: 'Checks', tgUserId: freshTgId() })
     .returning();
   const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: u!.id, status: 'active' }).returning();
-  await db.insert(s.memberRoleBindings).values({ memberId: m!.id, roleId: role!.id, scopeType: 'global', scopeId: null });
+  await db
+    .insert(s.memberRoleBindings)
+    .values({ memberId: m!.id, roleId: roleId, scopeType: 'global', scopeId: null });
   runId = randomUUID();
   await db.insert(s.marketRunsV).values({ id: runId, orgId: org!.id, runDate: '2026-06-01', status: 'finished' });
   const session = await loadSession(db, u!.id, org!.id, m!.id);

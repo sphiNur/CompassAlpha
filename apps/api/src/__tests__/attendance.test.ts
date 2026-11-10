@@ -20,6 +20,7 @@ import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { seedMember } from './helpers/fixtures';
 
 describe('attendance copy', () => {
   test('every attendance error has a sentence in every language', async () => {
@@ -255,15 +256,8 @@ beforeAll(async () => {
     })
     .returning();
   const person = async (name: string) => {
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: name, tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId: org!.id, userId: u!.id, status: 'active' })
-      .returning();
-    return { userId: u!.id, memberId: m!.id };
+    const who = await seedMember(db, org!.id, { name });
+    return { userId: who.userId, memberId: who.memberId };
   };
   const mgr = await person('Att Manager');
   const staff = await person('Att Staff');

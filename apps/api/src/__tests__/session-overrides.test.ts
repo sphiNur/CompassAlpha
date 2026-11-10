@@ -3,23 +3,12 @@
  * atlas ADM-1/2/3). Run with: DATABASE_URL=… bun test apps/api/src/__tests__/session-overrides.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { loadSession } from '../trpc/context';
 import { flatEffectivePermissions } from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const { BUILTIN_ROLES } = (await import(
-  resolve(HERE, '../../../../packages/db/src/seed-data.ts')
-)) as SeedData;
+import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 
 describe('flatEffectivePermissions', () => {
   const store = (key: string, id: string) => ({ key, scopeType: 'store', scopeId: id });
@@ -80,38 +69,26 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `ovr-${suffix}`, name: 'Session overrides', localeDefault: 'en', timezone: 'UTC' })
     .returning();
-  const def = BUILTIN_ROLES.find((r) => r.slug === 'manager')!;
-  const [role] = await db
-    .insert(s.roles)
-    .values({ orgId: org!.id, slug: 'manager', name: 'manager', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key }).onConflictDoNothing();
-  }
+  const roleId = (await seedRoles(db, org!.id, ['manager'])).manager!;
   const [store] = await db
     .insert(s.stores)
     .values({ orgId: org!.id, name: 'Store', code: `O-${suffix.slice(-6)}` })
     .returning();
   const make = async (n: number, deny: boolean) => {
-    const [user] = await db
-      .insert(s.users)
-      .values({ displayName: `Mgr ${n}`, tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: user!.id, status: 'active' }).returning();
-    await db.insert(s.memberRoleBindings).values({ memberId: m!.id, roleId: role!.id, scopeType: 'store', scopeId: store!.id });
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: user!.id });
+    const who = await seedMember(db, org!.id, {
+      name: `Mgr ${n}`,
+      stores: [store!.id],
+      roles: [{ roleId, storeId: store!.id }],
+    });
     if (deny) {
       await db.insert(s.memberPermissionOverrides).values({
-        memberId: m!.id,
+        memberId: who.memberId,
         permissionKey: 'users.manage',
         effect: 'deny',
         scopeType: 'global',
       });
     }
-    const session = await loadSession(db, user!.id, org!.id, m!.id);
-    if (!session) throw new Error('session failed to load');
-    return callerFor(session);
+    return callerFor(await sessionOf(org!.id, who));
   };
   callers = { denied: await make(1, true), plain: await make(2, false) };
 });

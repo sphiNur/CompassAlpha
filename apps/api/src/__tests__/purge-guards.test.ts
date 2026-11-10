@@ -11,8 +11,6 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/purge-guards.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
@@ -22,13 +20,8 @@ import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
+import { BUILTIN_ROLES } from '@compass/db/seed-data';
+import { seedRoles, seedMember } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -61,14 +54,7 @@ beforeAll(async () => {
     .returning();
   const orgId = org!.id;
   const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
-  const [staffRole] = await db
-    .insert(s.roles)
-    .values({ orgId, slug: 'staff', name: 'staff', rank: def.rank, isBuiltIn: true })
-    .returning();
-  for (const key of def.permissions) {
-    await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-    await db.insert(s.rolePermissions).values({ roleId: staffRole!.id, permissionKey: key }).onConflictDoNothing();
-  }
+  const staffRoleId = (await seedRoles(db, orgId, ['staff'])).staff!;
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `P-${suffix.slice(-6)}` }).returning();
   const [sku] = await db
     .insert(s.skus)
@@ -76,13 +62,8 @@ beforeAll(async () => {
     .returning();
 
   const user = async (n: number) => {
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `Purge ${n}`, tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
-    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: store!.id, assignedBy: u!.id });
-    return { userId: u!.id, memberId: m!.id };
+    const who = await seedMember(db, orgId, { name: `Purge ${n}`, stores: [store!.id] });
+    return { userId: who.userId, memberId: who.memberId };
   };
   const a = await user(1);
   const admin = callerFor({
@@ -96,7 +77,7 @@ beforeAll(async () => {
   const b = await user(2);
   await db
     .insert(s.memberRoleBindings)
-    .values({ memberId: b.memberId, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id });
+    .values({ memberId: b.memberId, roleId: staffRoleId, scopeType: 'store', scopeId: store!.id });
   const staffSession = await loadSession(db, b.userId, orgId, b.memberId);
   if (!staffSession) throw new Error('session failed to load');
   const staff = callerFor(staffSession);

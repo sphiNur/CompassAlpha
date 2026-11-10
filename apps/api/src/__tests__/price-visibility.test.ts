@@ -39,14 +39,10 @@ import { projectRun } from '../services/runProjection';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { ALL_PERMISSION_KEYS } from '@compass/db/seed-data';
+import { seedRoles } from './helpers/fixtures';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-  ALL_PERMISSION_KEYS: readonly string[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES, ALL_PERMISSION_KEYS } = (await import(seedDataPath)) as SeedData;
 
 async function errorOf(
   fn: () => Promise<unknown>,
@@ -100,22 +96,7 @@ beforeAll(async () => {
     .values({ slug: `prices-${suffix}`, name: 'Price visibility', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'manager', 'staff', 'purchaser']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'manager', 'staff', 'purchaser']);
   const [accountantRole] = await db
     .insert(s.roles)
     .values({ orgId, slug: 'accountant', name: 'Accountant', rank: 15, isBuiltIn: false })

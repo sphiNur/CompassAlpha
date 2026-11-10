@@ -25,6 +25,7 @@ import { inviterCoversInvite } from '../services/adminAuthority';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor, gateCaller } from './helpers/ctx';
+import { seedMember } from './helpers/fixtures';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
 const RUN = '00000000-0000-4000-8000-0000000000aa';
@@ -240,16 +241,9 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
   test('reactivating a suspended member respects the member limit', async () => {
     const db = getDb(undefined, { system: 'maintenance' });
     const addMember = async (status: 'active' | 'suspended'): Promise<string> => {
-      const [u] = await db
-        .insert(s.users)
-        .values({
-          tgUserId: freshTgId(),
-          displayName: `Seat ${status}`,
-        })
-        .returning();
-      extraUserIds.push(u!.id);
-      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status }).returning();
-      return m!.id;
+      const who = await seedMember(db, orgId, { name: `Seat ${status}`, status });
+      extraUserIds.push(who.userId);
+      return who.memberId;
     };
     // Owner + 9 = 10 active members: the starter plan is full.
     for (let i = 0; i < 9; i += 1) await addMember('active');

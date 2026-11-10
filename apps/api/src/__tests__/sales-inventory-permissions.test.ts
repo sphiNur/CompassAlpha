@@ -19,21 +19,12 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
-import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { BUILTIN_ROLES } from '@compass/db/seed-data';
+import { seedMember, sessionOf } from './helpers/fixtures';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-// seed-data.ts isn't exported from @compass/db and sits outside this
-// package's rootDir, so load it at runtime (a non-literal specifier
-// keeps tsc from pulling it into the program).
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
 
 // ---------- migration 0048 is a narrow backfill ---------------------------
 
@@ -170,30 +161,17 @@ async function memberCaller(
   idempotencyKey: string | null = null,
 ) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = freshTgId();
-  const [user] = await db.insert(s.users).values({ displayName: 'CA10', tgUserId }).returning();
-  const [member] = await db
-    .insert(s.members)
-    .values({ orgId: fix!.orgId, userId: user!.id, status: 'active' })
-    .returning();
-  await db.insert(s.memberRoleBindings).values({
-    memberId: member!.id,
-    roleId,
-    scopeType: 'store',
-    scopeId: storeId,
-  });
+  const who = await seedMember(db, fix!.orgId, { name: 'CA10', roles: [{ roleId, storeId }] });
   for (const key of denies) {
     await db.insert(s.memberPermissionOverrides).values({
-      memberId: member!.id,
+      memberId: who.memberId,
       permissionKey: key,
       effect: 'deny',
       scopeType: 'store',
       scopeId: storeId,
     });
   }
-  const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
-  if (!session) throw new Error('session failed to load');
-  return callerFor(session, { idempotencyKey });
+  return callerFor(await sessionOf(fix!.orgId, who), { idempotencyKey });
 }
 
 async function errorOf(

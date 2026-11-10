@@ -12,12 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
-import { loadSession } from '../trpc/context';
 import { buildSaleReversal, SALE_VOID_REASON, SALE_VOID_SOURCE_TYPE } from '../trpc/routers/sales';
 import { duplicateIngredientSkuIds } from '../trpc/routers/dishes';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { seedMember, sessionOf } from './helpers/fixtures';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -157,23 +156,8 @@ async function makeStore(name: string): Promise<string> {
 /** A member holding `roleId` in one store, or organisation-wide when `storeId` is null. */
 async function memberCaller(roleId: string, storeId: string | null) {
   const db = getDb(undefined, { system: 'maintenance' });
-  const tgUserId = freshTgId();
-  const [user] = await db.insert(s.users).values({ displayName: 'Void', tgUserId }).returning();
-  const [member] = await db
-    .insert(s.members)
-    .values({ orgId: fix!.orgId, userId: user!.id, status: 'active' })
-    .returning();
-  await db
-    .insert(s.memberRoleBindings)
-    .values({
-      memberId: member!.id,
-      roleId,
-      scopeType: storeId ? 'store' : 'global',
-      scopeId: storeId,
-    });
-  const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
-  if (!session) throw new Error('session failed to load');
-  return callerFor(session);
+  const who = await seedMember(db, fix!.orgId, { name: 'Void', roles: [{ roleId, storeId }] });
+  return callerFor(await sessionOf(fix!.orgId, who));
 }
 
 async function onHand(storeId: string, skuId: string): Promise<number> {

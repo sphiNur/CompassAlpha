@@ -7,20 +7,11 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/notify-recipients.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getDb, schema as s } from '@compass/db';
 import { findRecipientsByPermission, findRecipientsByPermissionInStore } from '../services/notify';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const { BUILTIN_ROLES } = (await import(
-  resolve(HERE, '../../../../packages/db/src/seed-data.ts')
-)) as SeedData;
+import { seedRoles } from './helpers/fixtures';
 
 const KEY = 'order.approve';
 
@@ -50,22 +41,7 @@ beforeAll(async () => {
     .values({ slug: `notify-${suffix}`, name: 'Notify', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['manager', 'staff']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['manager', 'staff']);
   await db.insert(s.permissions).values({ key: KEY, description: KEY }).onConflictDoNothing();
   const [a] = await db
     .insert(s.stores)

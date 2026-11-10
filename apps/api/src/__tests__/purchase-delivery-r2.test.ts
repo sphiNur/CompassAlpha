@@ -16,8 +16,6 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/purchase-delivery-r2.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
@@ -43,15 +41,8 @@ import { loadSkuPriceStats } from '../services/priceStats';
 import { appRouter } from '../trpc/router';
 import { loadSession } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
-import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-type SeedData = {
-  BUILTIN_ROLES: readonly { slug: string; rank: number; permissions: readonly string[] }[];
-};
-const seedDataPath = resolve(HERE, '../../../../packages/db/src/seed-data.ts');
-const { BUILTIN_ROLES } = (await import(seedDataPath)) as SeedData;
+import { seedRoles, seedMember } from './helpers/fixtures';
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -108,22 +99,7 @@ beforeAll(async () => {
     .values({ slug: `pdr2-${suffix}`, name: 'Purchase r2', localeDefault: 'en', timezone: 'UTC' })
     .returning();
   const orgId = org!.id;
-  const roleIds: Record<string, string> = {};
-  for (const slug of ['super_admin', 'purchaser']) {
-    const def = BUILTIN_ROLES.find((r) => r.slug === slug)!;
-    const [role] = await db
-      .insert(s.roles)
-      .values({ orgId, slug, name: slug, rank: def.rank, isBuiltIn: true })
-      .returning();
-    roleIds[slug] = role!.id;
-    for (const key of def.permissions) {
-      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
-      await db
-        .insert(s.rolePermissions)
-        .values({ roleId: role!.id, permissionKey: key })
-        .onConflictDoNothing();
-    }
-  }
+  const roleIds = await seedRoles(db, orgId, ['super_admin', 'purchaser']);
   const storeIds: string[] = [];
   for (const name of ['A', 'B']) {
     const [store] = await db
@@ -153,26 +129,12 @@ beforeAll(async () => {
     scopeStoreId: string | null,
   ): Promise<Person> => {
     n += 1;
-    const [u] = await db
-      .insert(s.users)
-      .values({ displayName: `R2 ${n}`, tgUserId: freshTgId() })
-      .returning();
-    const [m] = await db
-      .insert(s.members)
-      .values({ orgId, userId: u!.id, status: 'active' })
-      .returning();
-    for (const storeId of stores) {
-      await db
-        .insert(s.memberStoreAssignments)
-        .values({ memberId: m!.id, storeId, assignedBy: u!.id });
-    }
-    await db.insert(s.memberRoleBindings).values({
-      memberId: m!.id,
-      roleId: roleIds[slug]!,
-      scopeType: scopeStoreId ? 'store' : 'global',
-      scopeId: scopeStoreId,
+    const who = await seedMember(db, orgId, {
+      name: `R2 ${n}`,
+      stores,
+      roles: [{ roleId: roleIds[slug]!, storeId: scopeStoreId }],
     });
-    return { caller: null as unknown as Caller, userId: u!.id, memberId: m!.id };
+    return { caller: null as unknown as Caller, userId: who.userId, memberId: who.memberId };
   };
   const withCaller = async (p: Person): Promise<Person> => {
     const session = await loadSession(db, p.userId, orgId, p.memberId);
