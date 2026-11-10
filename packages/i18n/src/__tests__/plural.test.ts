@@ -103,8 +103,8 @@ describe('plural selection — locales without number inflection', () => {
   test('zh renders the same noun for every count', () => {
     const t = (n: number) =>
       createI18n('zh').t('approval.contributorsCount' as CatalogKey, { n });
-    expect(t(1)).toBe('1 位提交人');
-    expect(t(9)).toBe('9 位提交人');
+    expect(t(1)).toBe('1 位参与人');
+    expect(t(9)).toBe('9 位参与人');
   });
 
   test('uz selects its two authored forms', () => {
