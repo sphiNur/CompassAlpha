@@ -330,7 +330,7 @@ describe('full lifecycle (PG)', () => {
     const current = afterFix.filter((row) => row.supersededAt === null);
     expect(current.map((row) => row.unitPrice)).toEqual(['15000.00']);
     const stats = await loadSkuPriceStats(db, org.id, [sku.id]);
-    expect(stats.get(sku.id)?.lastPrice).toBe(15000);
+    expect(stats.get(sku.id)?.lastPrice).toBe('15000.00');
     expect(stats.get(sku.id)?.avg7d).toBe(15000);
     expect(stats.get(sku.id)?.observations30d).toBe(1);
 
@@ -348,7 +348,7 @@ describe('full lifecycle (PG)', () => {
       paymentMethod: 'cash',
       actor: purchaserActor,
     });
-    expect((await loadSkuPriceStats(db, org.id, [sku.id])).get(sku.id)?.lastPrice).toBe(15000);
+    expect((await loadSkuPriceStats(db, org.id, [sku.id])).get(sku.id)?.lastPrice).toBe('15000.00');
 
     const startDeliver = decideRun(rState, { type: 'StartDelivery', actor: purchaserActor });
     for (const e of startDeliver) rState = applyRun(rState, e);

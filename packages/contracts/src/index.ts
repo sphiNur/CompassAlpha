@@ -9,4 +9,5 @@ export * from './schemas/admin';
 export * from './schemas/system';
 export * from './schemas/settlement';
 export * from './money';
+export * from './quantity';
 export * from './schemas/attendance';

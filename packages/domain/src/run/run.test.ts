@@ -1471,6 +1471,64 @@ describe('run.reversals', () => {
     expect(state.items.has('sku-2')).toBe(false);
   });
 
+  test('quantities add and subtract in whole thousandths (RUNAPI-05)', () => {
+    const empty = emptyRunState('run-1');
+    const plan = decideRun(
+      empty,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['sess-A', 'sess-B'],
+        plannedItems: [{ skuId: 'sku-1', qty: '0.1' }],
+        actor: purchaser(),
+      },
+      clock,
+    );
+    let state = plan.reduce(applyRun, empty);
+    state = decideRun(
+      state,
+      {
+        type: 'AttachSessions',
+        sessionIds: ['sess-C'],
+        addedPlannedItems: [{ skuId: 'sku-1', qty: '0.2' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+    // As floats: "0.30000000000000004".
+    expect(state.items.get('sku-1')?.plannedQty).toBe('0.3');
+
+    state = decideRun(
+      state,
+      {
+        type: 'EjectSession',
+        sessionId: 'sess-C',
+        removedPlannedItems: [{ skuId: 'sku-1', qty: '0.2' }],
+        reason: 'approved by mistake',
+        actor: purchaser(['run.eject_session']),
+      },
+      clock,
+    ).reduce(applyRun, state);
+    // As floats: "0.10000000000000003".
+    expect(state.items.get('sku-1')?.plannedQty).toBe('0.1');
+
+    // A payload written before the fix replays to the clean value.
+    const noisy = plan.map((e) =>
+      e.type === 'RunPlanned'
+        ? {
+            ...e,
+            payload: {
+              ...e.payload,
+              plannedItems: [{ skuId: 'sku-1', qty: '0.30000000000000004' }],
+            },
+          }
+        : e,
+    );
+    expect(noisy.reduce(applyRun, empty).items.get('sku-1')?.plannedQty).toBe('0.3');
+  });
+
   test('EjectSession rejects touched SKUs', () => {
     let state = emptyRunState('run-1');
     state = decideRun(

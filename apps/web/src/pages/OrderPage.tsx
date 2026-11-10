@@ -78,8 +78,7 @@ import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
-import { moneyLine } from '../lib/money';
-import { addMoney } from '@compass/contracts/money';
+import { estimateOrder } from '@compass/contracts/money';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -2125,11 +2124,11 @@ function ReviewList({
   const unitLabel = useUnitLabel();
   // M1.21: org-wide currency for the estimate suffix.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
-  // Pull avg-7d price stats for the SKUs being reviewed so we can show
-  // an estimated total (added 2026-05-05). The API is keyed by skuId
-  // and uses 7-day mean to avoid one freak-sale day skewing tomorrow's
-  // expected cost. Stats might be null for new SKUs with no purchase
-  // history yet — those rows just don't contribute to the estimate.
+  // Pull price stats for the SKUs being reviewed so we can show an
+  // estimated total (added 2026-05-05). The estimate goes by the last
+  // price paid (2026-10-11). Stats might be null for new SKUs with no
+  // purchase history yet — those rows just don't contribute to the
+  // estimate.
   const skuIds = useMemo(
     () => totals.filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
     [totals],
@@ -2150,24 +2149,10 @@ function ReviewList({
     return m;
   }, [priceStats.data]);
   const estimate = useMemo(() => {
-    let total = 0;
-    let known = 0;
-    let unknown = 0;
-    for (const t of totals) {
-      const qty = Number(t.qty);
-      if (!(qty > 0)) continue;
-      const stats = priceBySku.get(t.skuId);
-      // The last price paid: the same rule as the server's estimateLines.
-      const price = stats?.lastPrice;
-      if (price) {
-        // DX-PFE-12: half-up cents per line, added in cents (D1).
-        total = addMoney(total, moneyLine(t.qty, price));
-        known += 1;
-      } else {
-        unknown += 1;
-      }
-    }
-    return { total, known, unknown };
+    // ORD-01: the server's rule for the batch list and approval cards,
+    // so this figure and theirs agree to the cent.
+    const est = estimateOrder(totals, (skuId) => priceBySku.get(skuId)?.lastPrice);
+    return { total: Number(est.total), known: est.known, unknown: est.unknown };
   }, [totals, priceBySku]);
   // Show the AGGREGATE qty per SKU (sum across all contributors). Group
   // by category. Items without a known SKU fall under "Other".

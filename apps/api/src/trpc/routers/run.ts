@@ -38,8 +38,12 @@ import {
   UnmarkUnavailableInputSchema,
   DismissTopUpInputSchema,
   centsToMoney,
+  estimateOrder,
   lineAmount,
+  milliQty,
+  qtyMilli,
   sumMoney,
+  sumQty,
   toCents,
 } from '@compass/contracts';
 import {
@@ -112,29 +116,6 @@ function executeRows<T>(result: unknown): T[] {
     if (Array.isArray(rows)) return rows as T[];
   }
   return [];
-}
-
-/** Exact decimal addition for quantities represented as DB strings. */
-function sumDecimalStrings(values: readonly string[]): string {
-  if (values.length === 0) return '0';
-  const scale = values.reduce((max, value) => {
-    const point = value.indexOf('.');
-    return Math.max(max, point < 0 ? 0 : value.length - point - 1);
-  }, 0);
-  let total = 0n;
-  for (const value of values) {
-    const negative = value.startsWith('-');
-    const unsigned = negative ? value.slice(1) : value;
-    const [whole = '0', fraction = ''] = unsigned.split('.');
-    const units = BigInt(`${whole || '0'}${fraction.padEnd(scale, '0')}`);
-    total += negative ? -units : units;
-  }
-  const negative = total < 0n;
-  const digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
-  if (scale === 0) return `${negative ? '-' : ''}${digits}`;
-  const whole = digits.slice(0, -scale) || '0';
-  const fraction = digits.slice(-scale).replace(/0+$/, '');
-  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
 }
 
 export const runRouter = router({
@@ -300,23 +281,24 @@ export const runRouter = router({
       const storeBySession = new Map<string, string>();
       for (const sess of sessions) storeBySession.set(sess.id, sess.storeId);
 
-      const aggregated = new Map<string, number>();
-      const perStoreSkuQty = new Map<string, Map<string, number>>(); // storeId → skuId → qty
+      // RUNAPI-05: quantities in whole thousandths (bigint), not floats.
+      const aggregated = new Map<string, bigint>();
+      const perStoreSkuQty = new Map<string, Map<string, bigint>>(); // storeId → skuId → qty
       // 2026-10-21 CA-03: demand per SESSION, so the client can
       // re-aggregate the preview over the sessions the purchaser ticked
       // without a round trip per checkbox.
-      const perSessionSkuQty = new Map<string, Map<string, number>>();
+      const perSessionSkuQty = new Map<string, Map<string, bigint>>();
       for (const it of items) {
-        const qty = Number(it.qty);
-        if (qty <= 0) continue;
-        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
-        const bySession = perSessionSkuQty.get(it.sessionId) ?? new Map<string, number>();
-        bySession.set(it.skuId, (bySession.get(it.skuId) ?? 0) + qty);
+        const qty = qtyMilli(it.qty);
+        if (qty <= 0n) continue;
+        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
+        const bySession = perSessionSkuQty.get(it.sessionId) ?? new Map<string, bigint>();
+        bySession.set(it.skuId, (bySession.get(it.skuId) ?? 0n) + qty);
         perSessionSkuQty.set(it.sessionId, bySession);
         const sid = storeBySession.get(it.sessionId);
         if (!sid) continue;
-        const inner = perStoreSkuQty.get(sid) ?? new Map<string, number>();
-        inner.set(it.skuId, (inner.get(it.skuId) ?? 0) + qty);
+        const inner = perStoreSkuQty.get(sid) ?? new Map<string, bigint>();
+        inner.set(it.skuId, (inner.get(it.skuId) ?? 0n) + qty);
         perStoreSkuQty.set(sid, inner);
       }
 
@@ -356,7 +338,7 @@ export const runRouter = router({
             storeId: sid,
             storeName,
             skuId,
-            qty: qty.toString(),
+            qty: milliQty(qty),
           });
         }
       }
@@ -526,30 +508,28 @@ export const runRouter = router({
         sessionExtrasByStore[sid] = arr;
       }
 
+      // ORD-01: D1 money lines added in cents, as every estimate is.
       const perStoreBudgets = involvedStoreIds.map((storeId) => {
-        let estimatedTotal = 0;
-        let unknownPriceCount = 0;
-        for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
-          const estimatedUnitPrice =
-            lastPurchasePriceBySku[skuId] ?? supplierBySku[skuId]?.estimatedUnitPrice ?? null;
-          if (!estimatedUnitPrice) {
-            unknownPriceCount += 1;
-            continue;
-          }
-          estimatedTotal += Number(qty) * Number(estimatedUnitPrice);
-        }
+        const est = estimateOrder(
+          [...(perStoreSkuQty.get(storeId)?.entries() ?? [])].map(([skuId, qty]) => ({
+            skuId,
+            qty: milliQty(qty),
+          })),
+          (skuId) =>
+            lastPurchasePriceBySku[skuId] ?? supplierBySku[skuId]?.estimatedUnitPrice ?? null,
+        );
         return {
           storeId,
           storeName: storeNameById.get(storeId) ?? '—',
-          estimatedTotal: estimatedTotal.toFixed(2),
-          unknownPriceCount,
+          estimatedTotal: est.total,
+          unknownPriceCount: est.unknown,
         };
       });
 
       const perSessionDemand: Array<{ sessionId: string; skuId: string; qty: string }> = [];
       for (const [sessionId, inner] of perSessionSkuQty.entries()) {
         for (const [skuId, qty] of inner.entries()) {
-          perSessionDemand.push({ sessionId, skuId, qty: qty.toString() });
+          perSessionDemand.push({ sessionId, skuId, qty: milliQty(qty) });
         }
       }
 
@@ -607,7 +587,7 @@ export const runRouter = router({
         })),
         plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
           skuId,
-          qty: qty.toString(),
+          qty: milliQty(qty),
         })),
         perStoreDemand,
         perSessionDemand,
@@ -837,15 +817,16 @@ export const runRouter = router({
       const items = await tx.query.orderItemsV.findMany({
         where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, input.sessionIds),
       });
-      const aggregated = new Map<string, number>();
+      // RUNAPI-05: in whole thousandths; the strings go into RunPlanned.
+      const aggregated = new Map<string, bigint>();
       for (const it of items) {
-        const qty = Number(it.qty);
-        if (qty <= 0) continue;
-        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+        const qty = qtyMilli(it.qty);
+        if (qty <= 0n) continue;
+        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
       }
       const plannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
         skuId,
-        qty: qty.toString(),
+        qty: milliQty(qty),
       }));
 
       const runId = randomUUID();
@@ -1058,15 +1039,16 @@ export const runRouter = router({
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, dedupedNewIds),
         });
-        const aggregated = new Map<string, number>();
+        // RUNAPI-05: in whole thousandths, as in run.create.
+        const aggregated = new Map<string, bigint>();
         for (const it of items) {
-          const qty = Number(it.qty);
-          if (qty <= 0) continue;
-          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+          const qty = qtyMilli(it.qty);
+          if (qty <= 0n) continue;
+          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
         }
         const addedPlannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
           skuId,
-          qty: qty.toString(),
+          qty: milliQty(qty),
         }));
 
         // Replay the run aggregate, then decide AttachSessions.
@@ -1884,7 +1866,7 @@ export const runRouter = router({
         }
         const perStoreDemand = [...demandParts.entries()].map(([key, qtyParts]) => {
           const [storeId, skuId] = key.split('|');
-          return { storeId: storeId!, skuId: skuId!, qty: sumDecimalStrings(qtyParts) };
+          return { storeId: storeId!, skuId: skuId!, qty: sumQty(qtyParts) };
         });
 
         const splitQtyParts = new Map<string, string[]>();
@@ -1909,8 +1891,8 @@ export const runRouter = router({
                     : demandQtyParts.has(item.skuId),
                 )
                 .map((item) => {
-                  const splitQty = sumDecimalStrings(splitQtyParts.get(item.skuId) ?? []);
-                  const demandQty = sumDecimalStrings(demandQtyParts.get(item.skuId) ?? []);
+                  const splitQty = sumQty(splitQtyParts.get(item.skuId) ?? []);
+                  const demandQty = sumQty(demandQtyParts.get(item.skuId) ?? []);
                   const itemSplits = splits.filter((split) => split.skuId === item.skuId);
                   const unitPrices = new Set(
                     itemSplits
@@ -1986,7 +1968,7 @@ export const runRouter = router({
               ? (displayNameByMemberId.get(submitterId) ?? null)
               : null,
             itemCount: sessionSkuIds.get(session.id)?.size ?? 0,
-            totalQty: sumDecimalStrings(sessionQtyParts.get(session.id) ?? []),
+            totalQty: sumQty(sessionQtyParts.get(session.id) ?? []),
             extrasCount: Array.isArray(extras) ? extras.length : 0,
             status: session.status,
           };
@@ -2047,7 +2029,7 @@ export const runRouter = router({
               id: expense.id,
               label: expense.label,
               unitHint: expense.unitHint,
-              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
+              qty: sumQty(storeSplits.map((split) => split.qty)),
               unitPrice: expense.unitPrice,
               storeSplits,
               paymentMethod: expense.paymentMethod,
@@ -2242,7 +2224,7 @@ export const runRouter = router({
                 })
               : [];
           const sessionStoreById = new Map<string, string>();
-          const sessionStats = new Map<string, { itemCount: number; totalQty: number }>();
+          const sessionStats = new Map<string, { itemCount: number; totalQty: bigint }>();
           const noteAccumulator = new Map<string, string[]>();
           const extrasAccumulator = new Map<string, ExtraItem[]>();
           for (const s of sessions) {
@@ -2270,9 +2252,9 @@ export const runRouter = router({
             }
           }
           for (const it of sessionItems) {
-            const qty = Number(it.qty);
-            if (qty <= 0) continue;
-            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0 };
+            const qty = qtyMilli(it.qty);
+            if (qty <= 0n) continue;
+            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0n };
             stat.itemCount += 1;
             stat.totalQty += qty;
             sessionStats.set(it.sessionId, stat);
@@ -2297,7 +2279,7 @@ export const runRouter = router({
             for (const row of rows) displayNameByMemberId.set(row.memberId, row.displayName);
           }
           runSessions = sessions.map((sess) => {
-            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0 };
+            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0n };
             const submitterId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
             const extras = (sess.extrasJson ?? []) as unknown[];
             return {
@@ -2309,7 +2291,7 @@ export const runRouter = router({
                 ? (displayNameByMemberId.get(submitterId) ?? null)
                 : null,
               itemCount: stat.itemCount,
-              totalQty: stat.totalQty.toString(),
+              totalQty: milliQty(stat.totalQty),
               extrasCount: Array.isArray(extras) ? extras.length : 0,
               status: sess.status,
             };
@@ -2321,21 +2303,23 @@ export const runRouter = router({
             sessionExtrasByStore[sid] = arr;
           }
           // Aggregate qty by (storeId, skuId).
-          const acc = new Map<string, number>();
+          // RUNAPI-05: in whole thousandths. The run page puts these in
+          // the per-store fields, which refuse more than 3 decimals.
+          const acc = new Map<string, bigint>();
           for (const it of sessionItems) {
             const storeId = sessionStoreById.get(it.sessionId);
             if (!storeId) continue;
-            const qty = Number(it.qty);
-            if (qty <= 0) continue;
+            const qty = qtyMilli(it.qty);
+            if (qty <= 0n) continue;
             const key = `${storeId}|${it.skuId}`;
-            acc.set(key, (acc.get(key) ?? 0) + qty);
+            acc.set(key, (acc.get(key) ?? 0n) + qty);
           }
           for (const [key, qty] of acc) {
             const [storeId, skuId] = key.split('|');
             perStoreDemand.push({
               storeId: storeId!,
               skuId: skuId!,
-              qty: qty.toString(),
+              qty: milliQty(qty),
             });
           }
         }
@@ -2360,8 +2344,8 @@ export const runRouter = router({
                 : demandQtyParts.has(item.skuId),
             )
             .map((item) => {
-              const splitQty = sumDecimalStrings(splitQtyParts.get(item.skuId) ?? []);
-              const demandQty = sumDecimalStrings(demandQtyParts.get(item.skuId) ?? []);
+              const splitQty = sumQty(splitQtyParts.get(item.skuId) ?? []);
+              const demandQty = sumQty(demandQtyParts.get(item.skuId) ?? []);
               const itemSplits = splits.filter((split) => split.skuId === item.skuId);
               const unitPrices = new Set(
                 itemSplits
@@ -2625,7 +2609,7 @@ export const runRouter = router({
               id: expense.id,
               label: expense.label,
               unitHint: expense.unitHint,
-              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
+              qty: sumQty(storeSplits.map((split) => split.qty)),
               unitPrice: expense.unitPrice,
               storeSplits,
               paymentMethod: expense.paymentMethod,
@@ -3846,15 +3830,16 @@ export const runRouter = router({
         }
       }
 
-      const removedBySku = new Map<string, number>();
+      // RUNAPI-05: in whole thousandths, as in run.create.
+      const removedBySku = new Map<string, bigint>();
       for (const item of sessionItems) {
-        const qty = Number(item.qty);
-        if (qty <= 0) continue;
-        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0) + qty);
+        const qty = qtyMilli(item.qty);
+        if (qty <= 0n) continue;
+        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0n) + qty);
       }
       const removedPlannedItems = [...removedBySku.entries()].map(([skuId, qty]) => ({
         skuId,
-        qty: qty.toString(),
+        qty: milliQty(qty),
       }));
 
       try {
