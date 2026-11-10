@@ -24,6 +24,7 @@ import {
   expectError,
   jpeg,
   staffReady,
+  switchOn,
   TZ,
 } from './helpers/attendance';
 
@@ -33,11 +34,7 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
   /** Ali switched on and agreed to the face checks, with no face yet. */
   async function consented() {
     const f = fixture();
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.staffId,
-      enabled: true,
-    });
+    await switchOn(f.staffId);
     await f.staff().attendance.faceConsentGive({ version: 1 });
   }
   /** Ali's photos, `over` in place of some. */

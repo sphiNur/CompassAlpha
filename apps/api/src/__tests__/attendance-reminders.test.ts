@@ -14,7 +14,7 @@ import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
 import { SHOULD_RUN } from './helpers/pg';
-import { attendanceSuite, fixture, botRecipients, TZ } from './helpers/attendance';
+import { attendanceSuite, fixture, botRecipients, switchOn, TZ } from './helpers/attendance';
 
 attendanceSuite();
 
@@ -22,11 +22,7 @@ describe.skipIf(!SHOULD_RUN)('attendance reminders', () => {
   test('missed clock-in reminds the person, then the managers, once each', async () => {
     const f = fixture();
     const db = getDb(undefined, { system: 'maintenance' });
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.staffId,
-      enabled: true,
-    });
+    await switchOn(f.staffId);
     const now = new Date();
     // A shift that began 40 minutes ago, and no clock-in.
     await db.insert(s.attendanceShifts).values({

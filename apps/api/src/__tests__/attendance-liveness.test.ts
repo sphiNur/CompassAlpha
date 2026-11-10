@@ -21,6 +21,7 @@ import {
   anyPhoneAnywhere,
   botRecipients,
   clock,
+  colleagueReady,
   enrollApproved,
   expectError,
   jpeg,
@@ -28,6 +29,7 @@ import {
   refusal,
   resetPunches,
   staffReady,
+  switchOn,
   DEVICE,
   OTHER_DEVICE,
   TZ,
@@ -40,11 +42,7 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     const f = fixture();
     const db = getDb(undefined, { system: 'maintenance' });
     await staffReady();
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.colleagueId,
-      enabled: true,
-    });
+    await switchOn(f.colleagueId);
     const rules = anyPhoneAnywhere(f.storeId);
     await f.manager.attendance.policySave(rules);
 
@@ -348,12 +346,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
   test("a colleague's face only somewhat like them is not enough to clock them", async () => {
     const f = fixture();
     await staffReady();
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.colleagueId,
-      enabled: true,
-    });
-    await enrollApproved(f.colleague(), 'Bob');
+    await colleagueReady();
     await expectError(
       clock(f.staff(), {
         identify: true,
@@ -375,12 +368,7 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
     const f = fixture();
     const db = getDb(undefined, { system: 'maintenance' });
     await staffReady();
-    await f.manager.attendance.memberSet({
-      storeId: f.storeId,
-      memberId: f.colleagueId,
-      enabled: true,
-    });
-    await enrollApproved(f.colleague(), 'Bob');
+    await colleagueReady();
     // A "not them" on this phone a while ago leaves the face look alone.
     await db.insert(s.attendancePunches).values({
       orgId: f.orgId,

@@ -355,11 +355,24 @@ export function attendanceSuite(): void {
   });
 }
 
+/** Switch `memberId` on for clocking at the test's store. */
+export async function switchOn(memberId: string) {
+  const f = fixture();
+  await f.manager.attendance.memberSet({ storeId: f.storeId, memberId, enabled: true });
+}
+
 /** Ali switched on for clocking, with an approved face. */
 export async function staffReady() {
   const f = fixture();
-  await f.manager.attendance.memberSet({ storeId: f.storeId, memberId: f.staffId, enabled: true });
+  await switchOn(f.staffId);
   await enrollApproved(f.staff(), 'Ali');
+}
+
+/** Bob switched on for clocking, with an approved face. */
+export async function colleagueReady() {
+  const f = fixture();
+  await switchOn(f.colleagueId);
+  await enrollApproved(f.colleague(), 'Bob');
 }
 
 /** A refused call's key and the placeholders it sent. */
