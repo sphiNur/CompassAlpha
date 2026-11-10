@@ -183,9 +183,9 @@ export function StoreSalesPanel({
   const dishOptions = useMemo(() => {
     const list = [...dishById.values()].filter((d) => !d.isArchived);
     return list.sort((a, b) =>
-      productName({ names: a.names }).localeCompare(productName({ names: b.names })),
+      productName({ names: a.names }).localeCompare(productName({ names: b.names }), i18n.locale),
     );
-  }, [dishById, productName]);
+  }, [dishById, productName, i18n.locale]);
   // R2-INT-2 (2026-10-31): dishes without a recipe can't be sold; when that
   // is all there is, say so instead of "tap Record for the first sale".
   const canManageDishes = session?.permissions.includes('dishes.manage') ?? false;

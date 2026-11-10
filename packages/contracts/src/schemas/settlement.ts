@@ -57,7 +57,7 @@ export const SettlementOperatingExpenseItemSchema = z.object({
   id: UuidSchema.optional(),
   amount: SettlementLineAmountSchema,
   /** Why this outflow was necessary. Required for an auditable close. */
-  reason: z.string().trim().min(1).max(500),
+  reason: z.string().trim().min(1, 'settlement.errors.invalidDetails').max(500),
 });
 
 /**
@@ -72,11 +72,11 @@ export const SettlementWageItemSchema = z.object({
   /** Stable server-generated identity for preserving a historical wage snapshot. */
   id: UuidSchema.optional(),
   memberId: UuidSchema.optional(),
-  personName: z.string().trim().min(1).max(160).optional(),
+  personName: z.string().trim().min(1, 'settlement.errors.employeeRequired').max(160).optional(),
   status: z.enum(['paid', 'unpaid']),
   amount: SettlementLineAmountSchema,
   /** Shift, pay period, allowance, or another explanation for the wage. */
-  reason: z.string().trim().min(1).max(500),
+  reason: z.string().trim().min(1, 'settlement.errors.invalidDetails').max(500),
 });
 
 export const SettlementSaveInputSchema = SettlementGetInputSchema.extend({

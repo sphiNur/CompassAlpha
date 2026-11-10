@@ -1352,6 +1352,7 @@ export const ru = {
   'run.action.finishBlocked.otherStores': 'Завершить может только закупщик всех магазинов',
   'run.action.finishBlocked.noPermission': 'У вас нет права завершать закупку',
   'common.listSeparator': ', ',
+  'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Записать покупку',
   'offline.action.markUnavailable': 'Отметка «нет в наличии»',
   'offline.action.deliverToStore': 'Подтверждение доставки',
