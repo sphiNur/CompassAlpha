@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { pushTelegramBackHandler } from '@compass/ui';
 import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
 
@@ -79,11 +79,20 @@ export function haptic(intent: HapticIntent = 'light'): void {
   }
 }
 
+/** One canvas for every reading (review COREWEB2-26: one was made per call). */
+let colorContext: CanvasRenderingContext2D | null | undefined;
+
 /** Any CSS colour (the tokens are OKLCH) as #rrggbb, which Telegram needs. */
 function cssColorToHex(color: string): string | null {
   try {
-    const ctx = document.createElement('canvas').getContext('2d');
+    colorContext ??= document
+      .createElement('canvas')
+      .getContext('2d', { willReadFrequently: true });
+    const ctx = colorContext;
     if (!ctx) return null;
+    // As on a new canvas: clear, and black when `color` does not parse.
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = '#000';
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, 1, 1);
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
@@ -94,12 +103,23 @@ function cssColorToHex(color: string): string | null {
 }
 
 /**
+ * A painter that passes on only a colour that differs from the last one
+ * (review COREWEB2-26). Exported for tests.
+ */
+export function onColorChange(paint: (hex: string) => void): (hex: string | null) => void {
+  let last: string | null = null;
+  return (hex) => {
+    if (!hex || hex === last) return;
+    last = hex;
+    paint(hex);
+  };
+}
+
+/**
  * Paint Telegram's own header, background and bottom bar with the page's
  * background, so the frame around the app matches it in light and dark.
  */
-function syncTelegramChrome(tg: TelegramWebApp): void {
-  const hex = cssColorToHex(getComputedStyle(document.body).backgroundColor);
-  if (!hex) return;
+function paintTelegramChrome(tg: TelegramWebApp, hex: string): void {
   const atLeast = (v: string) => tg.isVersionAtLeast?.(v) ?? false;
   if (atLeast('6.9')) tg.setHeaderColor(hex);
   if (atLeast('6.1')) tg.setBackgroundColor(hex);
@@ -134,12 +154,20 @@ export function useTelegramInit(): void {
     let themeObserver: MutationObserver | null = null;
     if (tg && isInTelegram()) {
       if (tg.isVersionAtLeast?.('7.7')) tg.disableVerticalSwipes?.();
-      const sync = () => requestAnimationFrame(() => syncTelegramChrome(tg));
+      const paint = onColorChange((hex) => paintTelegramChrome(tg, hex));
+      const sync = () =>
+        requestAnimationFrame(() =>
+          paint(cssColorToHex(getComputedStyle(document.body).backgroundColor)),
+        );
       sync();
       themeObserver = new MutationObserver(sync);
+      // The theme is ThemeProvider's data-theme and data-color-scheme.
+      // Review COREWEB2-26: not `style`, which takes the viewport's CSS
+      // variables on every resize, keyboard and drag; each one used to
+      // send Telegram the same colours three times.
       themeObserver.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ['data-color-scheme', 'data-theme', 'class', 'style'],
+        attributeFilter: ['data-color-scheme', 'data-theme', 'class'],
       });
     }
 
@@ -269,20 +297,26 @@ const _pageMainButtonStack = createOwnerStack<PageMainButtonState>((top) => {
   _pageMainButtonListeners.forEach((l) => l());
 });
 
+function subscribePageMainButton(listener: () => void): () => void {
+  _pageMainButtonListeners.add(listener);
+  return () => {
+    _pageMainButtonListeners.delete(listener);
+  };
+}
+
+const pageMainButtonSnapshot = (): PageMainButtonState | null => _pageMainButton;
+
 /**
  * Subscribe React to the page-main-button state. Used by the
  * <PageMainButton /> component in Shell.tsx.
+ *
+ * Review COREWEB2-28: through useSyncExternalStore, which also catches a
+ * change made between the render and the subscription. A page's effect
+ * can push its button in that gap; an effect-made subscription missed it,
+ * and the button waited for Shell to draw again for another reason.
  */
 export function usePageMainButtonState(): PageMainButtonState | null {
-  const [, force] = useState(0);
-  useEffect(() => {
-    const sub = () => force((n) => n + 1);
-    _pageMainButtonListeners.add(sub);
-    return () => {
-      _pageMainButtonListeners.delete(sub);
-    };
-  }, []);
-  return _pageMainButton;
+  return useSyncExternalStore(subscribePageMainButton, pageMainButtonSnapshot, () => null);
 }
 
 export function usePageMainButton(

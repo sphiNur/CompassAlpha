@@ -7,6 +7,7 @@
  * plugs the real `verifyAccess` and `loadSession` in.
  */
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
+import { WS_CLOSE_TOKEN_EXPIRED } from '@compass/contracts/schemas/realtime';
 import { hub, WS_CLOSE_GOING_AWAY, WS_CLOSE_MEMBERSHIP_ENDED } from './hub';
 import { checkClientRate } from '../services/rateLimit';
 
@@ -23,8 +24,8 @@ export interface WSData {
   probe?: boolean;
 }
 
-/** Close code for a socket whose access token expired (client should refresh). */
-export const WS_CLOSE_TOKEN_EXPIRED = 4001;
+// The client refreshes its token on this one (shared with the web).
+export { WS_CLOSE_TOKEN_EXPIRED };
 
 /**
  * Close code for a probe socket (N1, 2026-10-30).

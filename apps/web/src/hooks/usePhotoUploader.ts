@@ -10,28 +10,30 @@
  * keeps the workflow shippable.
  */
 import { useMemo } from 'react';
+import { STALE } from '../config/timings';
 import { trpc } from '../lib/trpc';
 import type { PhotoUploader, PresignedUpload } from '@compass/ui';
 
 export function usePhotoUploader(kind: 'receipt' | 'issue' | 'avatar' | 'sku'): PhotoUploader | undefined {
   const cfgQuery = trpc.upload.config.useQuery(undefined, {
-    staleTime: 60_000,
+    staleTime: STALE.medium,
     refetchOnWindowFocus: false,
     retry: false,
   });
-  const requestPresign = trpc.upload.requestPresign.useMutation();
+  // Review COREWEB2-30: mutateAsync keeps its identity across renders, so
+  // it can be a dependency; the lint suppression is gone.
+  const { mutateAsync } = trpc.upload.requestPresign.useMutation();
+  const enabled = cfgQuery.data?.enabled === true;
 
   return useMemo<PhotoUploader | undefined>(() => {
-    if (!cfgQuery.data?.enabled) return undefined;
+    if (!enabled) return undefined;
     return {
       requestPresign: (args: { contentType: string; contentLength: number }): Promise<PresignedUpload> =>
-        requestPresign.mutateAsync({
+        mutateAsync({
           kind,
           contentType: args.contentType,
           contentLength: args.contentLength,
         }),
     };
-    // requestPresign is stable across renders thanks to tRPC's hook.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfgQuery.data?.enabled, kind]);
+  }, [enabled, kind, mutateAsync]);
 }

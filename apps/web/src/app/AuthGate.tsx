@@ -5,6 +5,7 @@ import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { I18nGate, useI18n, useRoleLabels } from '../hooks/useI18n';
+import { STALE } from '../config/timings';
 import { useTranslateError } from '../lib/errToast';
 import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -165,7 +166,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
   const loginModes = trpc.auth.loginModes.useQuery(undefined, {
     enabled: authHydrated && !activeSession,
     retry: false,
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
   const shouldShowDevPersonas = Boolean(
     !activeSession &&
@@ -176,7 +177,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
   const devPersonas = trpc.auth.devPersonas.useQuery(undefined, {
     enabled: authHydrated && shouldShowDevPersonas,
     retry: false,
-    staleTime: 15_000,
+    staleTime: STALE.short,
   });
 
   // If an existing token is bad, drop it. In Telegram Mini App we can

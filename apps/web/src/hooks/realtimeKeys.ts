@@ -1,4 +1,5 @@
 import type { QueryKey } from '@tanstack/react-query';
+import type { RealtimeChange } from '@compass/contracts/schemas/realtime';
 
 /**
  * What each realtime push makes stale (useRealtime). Each key is a tRPC
@@ -63,7 +64,7 @@ export const PUSH_KEYS = {
   'catalog.changed': CATALOG_CHANGED_KEYS,
   'people.changed': PEOPLE_CHANGED_KEYS,
   'attendance.changed': ATTENDANCE_CHANGED_KEYS,
-} satisfies Record<string, QueryKey[]>;
+} satisfies Record<RealtimeChange, QueryKey[]>;
 
 /** Is `prefix` the start of `key` (or the same key)? */
 function startsWith(key: QueryKey, prefix: QueryKey): boolean {

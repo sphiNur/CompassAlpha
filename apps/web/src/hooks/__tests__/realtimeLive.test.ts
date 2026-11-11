@@ -5,7 +5,13 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
+  WS_CLOSE_EVICTED,
+  WS_CLOSE_MEMBERSHIP_ENDED,
+  WS_CLOSE_TOKEN_EXPIRED,
+} from '@compass/contracts/schemas/realtime';
+import {
   REALTIME_STALE_MS,
+  afterClose,
   getRealtimeLive,
   isRealtimeLive,
   isRealtimeStale,
@@ -62,5 +68,22 @@ describe('realtime live flag', () => {
     expect(getRealtimeLive()).toBe(true);
     setRealtimeLive(false);
     expect(getRealtimeLive()).toBe(false);
+  });
+});
+
+describe('afterClose (review COREWEB2-24)', () => {
+  it('an expired token is refreshed', () => {
+    expect(afterClose(WS_CLOSE_TOKEN_EXPIRED)).toBe('refreshToken');
+  });
+
+  it('a member who left reads the session again instead of reconnecting', () => {
+    expect(WS_CLOSE_MEMBERSHIP_ENDED).toBe(4003);
+    expect(afterClose(WS_CLOSE_MEMBERSHIP_ENDED)).toBe('readSession');
+  });
+
+  it('anything else reconnects: an eviction, the server going away, a lost connection', () => {
+    for (const code of [WS_CLOSE_EVICTED, 1000, 1001, 1006]) {
+      expect(afterClose(code)).toBe('reconnect');
+    }
   });
 });
