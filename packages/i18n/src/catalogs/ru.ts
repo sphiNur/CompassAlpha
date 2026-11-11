@@ -101,6 +101,9 @@ export const ru = {
   'catalog.import.done':
     'Импортировано: товаров {skus}, категорий {categories}, поставщиков {suppliers}',
   'admin.store.new': 'Новый магазин',
+  'admin.store.unavailableTitle': 'Магазин недоступен',
+  'admin.store.unavailableBody': 'Возможно, его архивировали или у вас больше нет к нему доступа.',
+  'admin.store.backToList': 'К списку магазинов',
   'admin.store.emptyTitle': 'Нет магазинов',
   'admin.store.emptyBody': 'Создайте магазин кнопкой выше, чтобы добавить команду.',
   'admin.store.confirmArchive': 'Архивировать «{name}»?',

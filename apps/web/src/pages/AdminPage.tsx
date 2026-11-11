@@ -226,6 +226,12 @@ export function AdminPage() {
     (section === 'catalog' && !seesCatalog) ||
     (section === 'attendance' && !seesAttendance) ||
     (section === 'platform' && !isPlatformAdmin);
+  // Back from a store to the store list: the header's back, and the way
+  // out a store's settings offer once the store is gone (ADM2-22).
+  const leaveStore = () => {
+    setStoreFocus(null);
+    setStoreSub('team');
+  };
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
@@ -236,8 +242,7 @@ export function AdminPage() {
           drill.markReturn();
           // Drill-up: one level at a time. Sub-route → section root → home.
           if (section === 'stores' && storeFocus !== null) {
-            setStoreFocus(null);
-            setStoreSub('team');
+            leaveStore();
           } else if (section === 'catalog' && catalogSub) {
             setCatalogSub(null);
           } else if (section === 'operations' && opsSub) {
@@ -259,7 +264,15 @@ export function AdminPage() {
           />
         ) : null}
         {section === 'stores' && storeFocus !== null ? (
-          <StoreDetailScreen focus={storeFocus} sub={storeSub} onSubChange={setStoreSub} />
+          <StoreDetailScreen
+            focus={storeFocus}
+            sub={storeSub}
+            onSubChange={setStoreSub}
+            onLeave={() => {
+              drill.markReturn();
+              leaveStore();
+            }}
+          />
         ) : null}
         {section === 'permissions' ? <PermissionsSection isSuperAdmin={isSuperAdmin} /> : null}
         {section === 'catalog' && !catalogSub ? (

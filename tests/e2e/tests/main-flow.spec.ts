@@ -372,6 +372,57 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
   await expect(main()).toContainText('1 bought · 0 n/a · 1 left');
 });
 
+test('a store that cannot be loaded, or is gone, says so', async ({ browser }) => {
+  const row = (name: RegExp): Locator => main().getByRole('button', { name });
+  // The app reopens on the store that was open when it closed.
+  await tab('admin').click();
+  await row(/^Stores/).click();
+  await row(/Central Kitchen/).click();
+  await main().getByRole('radio', { name: 'Settings' }).click();
+  await expect(main().getByRole('textbox', { name: /^Name/ })).toHaveValue('Central Kitchen');
+  const nav = await page.evaluate(() => localStorage.getItem('compass.nav.v1'));
+  expect(nav).toContain('"storeSub":"settings"');
+
+  // ADM2-22: both spun on "Loading store…" for good. A new browser each
+  // time, so nothing comes from the saved copy of the list.
+  async function reopen(): Promise<Page> {
+    const later = await browser.newPage();
+    // Same origin, no app code: a place to seed storage before the app boots.
+    await later.goto('/boot.css');
+    await later.evaluate((saved) => localStorage.setItem('compass.nav.v1', saved), nav ?? '');
+    return later;
+  }
+
+  // The store list does not load: the error, and a retry that recovers.
+  const offline = await reopen();
+  await offline.route(/admin\.storeList/, (route) => route.abort('failed'));
+  await offline.goto('/');
+  const retry = offline.getByRole('main').getByRole('button', { name: 'Retry' });
+  await expect(retry).toBeVisible({ timeout: 20_000 });
+  await offline.unroute(/admin\.storeList/);
+  await retry.click();
+  await expect(offline.getByRole('main').getByRole('textbox', { name: /^Name/ })).toHaveValue(
+    'Central Kitchen',
+  );
+  await offline.close();
+
+  // The store is no longer in the list (archived, or no longer theirs).
+  const gone = await reopen();
+  await gone.route(/admin\.storeList/, async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as { result: { data: { name: string }[] } };
+    body.result.data = body.result.data.filter((s) => s.name !== 'Central Kitchen');
+    await route.fulfill({ response: res, json: body });
+  });
+  await gone.goto('/');
+  const goneMain = gone.getByRole('main');
+  await expect(goneMain.getByText('Store not available')).toBeVisible();
+  await goneMain.getByRole('button', { name: 'Back to stores' }).click();
+  await expect(goneMain.getByRole('button', { name: /Riverside Hotel/ })).toBeVisible();
+  await expect(goneMain.getByRole('button', { name: /Central Kitchen/ })).toHaveCount(0);
+  await gone.close();
+});
+
 test('nothing went wrong along the way', () => {
   expect(problems).toEqual([]);
 });

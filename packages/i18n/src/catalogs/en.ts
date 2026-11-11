@@ -130,6 +130,9 @@ export const en = {
   'catalog.import.done':
     'Imported {skus, plural, one {# product} other {# products}}, {categories, plural, one {# category} other {# categories}}, {suppliers, plural, one {# supplier} other {# suppliers}}',
   'admin.store.new': 'New store',
+  'admin.store.unavailableTitle': 'Store not available',
+  'admin.store.unavailableBody': 'It may have been archived, or you no longer have access to it.',
+  'admin.store.backToList': 'Back to stores',
   'admin.store.emptyTitle': 'No stores',
   'admin.store.emptyBody': 'Create one with the button above, then add your team.',
   'admin.store.confirmArchive': 'Archive "{name}"?',
