@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CLIENT_FAULT_MESSAGE,
   CONTROL_CHARS_MESSAGE,
   LocaleSchema,
   noControlChars,
@@ -21,11 +22,9 @@ export const TelegramLoginInputSchema = z.object({
  */
 export const AcceptInviteInputSchema = z.object({
   initData: z.string().min(1),
-  token: z
-    .string()
-    .min(20)
-    .max(128)
-    .regex(/^[A-Za-z0-9_-]+$/, 'invite token has an invalid shape'),
+  // 20–128 characters. A cut or mistyped link is, to the person, the
+  // same as an invite that does not exist.
+  token: z.string().regex(/^[A-Za-z0-9_-]{20,128}$/, 'auth.errors.inviteNotFound'),
   locale: LocaleSchema.optional(),
 });
 
@@ -201,12 +200,13 @@ export const SwitchOrganizationInputSchema = z.object({
 
 export const CreateOrganizationInputSchema = z.object({
   name: z.string().trim().min(2).max(200).refine(noControlChars, CONTROL_CHARS_MESSAGE),
-  /** Optional operator-chosen slug; omitted lets the server derive one. */
+  /** Optional operator-chosen slug; omitted lets the server derive one.
+   *  No screen asks for it. */
   slug: z
     .string()
     .trim()
     .toLowerCase()
-    .regex(/^[a-z0-9][a-z0-9-]{1,62}$/, 'slug must use lowercase letters, digits and hyphens')
+    .regex(/^[a-z0-9][a-z0-9-]{1,62}$/, CLIENT_FAULT_MESSAGE)
     .optional(),
   locale: LocaleSchema.optional(),
   timezone: TimeZoneSchema.optional(),

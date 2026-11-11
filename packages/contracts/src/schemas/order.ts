@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CANONICAL_UNITS, QTY_TEXT_RE, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '../limits';
 import {
+  CLIENT_FAULT_MESSAGE,
   DateStringSchema,
   DecimalStringSchema,
   IdempotencyKeySchema,
@@ -181,7 +182,7 @@ export const SetSessionExtrasInputSchema = z
     expectedSeq: z.number().int().optional(),
   })
   .refine((v) => v.sessionId !== undefined || v.storeId !== undefined, {
-    message: 'sessionId or storeId is required',
+    message: CLIENT_FAULT_MESSAGE,
     path: ['sessionId'],
   });
 

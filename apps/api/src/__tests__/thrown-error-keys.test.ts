@@ -32,6 +32,26 @@ function sources(dir: string): string[] {
   });
 }
 
+/** A quoted string without `${}`: '…', "…" or `…`. */
+const STRING = String.raw`'[^'\n]*'|"[^"\n]*"|\`[^\`$\n]*\``;
+/** A regex literal; a character class may hold a slash or a comma. */
+const REGEX = String.raw`/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n\[])+/[a-z]*`;
+/** The argument before a check's message: a regex, a number, a name, a call. */
+const ARG = String.raw`(?:${REGEX}|[^,()'"\`/]|\((?:[^()]|\([^()]*\))*\))*?`;
+/**
+ * Where a message is written out: a `message:` (an error or a zod issue),
+ * a zod type's error option, or the last argument of a zod check. A
+ * message held in a constant (CONTROL_CHARS_MESSAGE, TAX_RATE_MESSAGE) is
+ * not followed; the first test checks the keys those hold.
+ */
+const MESSAGE_LITERALS = [
+  new RegExp(String.raw`(?:message|invalid_type_error|required_error):\s*(${STRING})`, 'g'),
+  new RegExp(
+    String.raw`\.(?:regex|refine|min|max|length|gte|lte|gt|lt|nonempty|email|url|uuid|int|positive|nonnegative)\(\s*(?:${ARG}\s*,\s*)?(${STRING})\s*,?\s*\)`,
+    'g',
+  ),
+];
+
 describe('thrown error keys', () => {
   test('every key the server throws is in the en catalog', () => {
     const en = readFileSync(join(ROOT, 'packages/i18n/src/catalogs/en.ts'), 'utf8');
@@ -54,13 +74,16 @@ describe('thrown error keys', () => {
   // showed the caller's generic sentence instead of its own. common.error
   // is the internal-error placeholder (trpc.ts); the web shows the
   // caller's sentence for it on purpose.
-  test('every key sent as a message has the shape the web reads as a key', () => {
+  // Review ADM1-26 (2026-11-12): sentences count too, and so do the
+  // messages of zod checks. Seven checks refused in English ("Telegram ID
+  // must be a numeric string"), which the app cannot show, so a person saw
+  // a bare failure instead of the reason.
+  test('every message the server writes out has the shape the web reads as a key', () => {
     const sent: string[] = [];
     for (const file of SCANNED.flatMap((dir) => sources(join(ROOT, dir)))) {
-      for (const m of readFileSync(file, 'utf8').matchAll(
-        /message:\s*[`'"]([a-z]+\.[a-zA-Z0-9_.]+)[`'"]/g,
-      )) {
-        sent.push(m[1]!);
+      const text = readFileSync(file, 'utf8');
+      for (const pattern of MESSAGE_LITERALS) {
+        for (const m of text.matchAll(pattern)) sent.push(m[1]!.slice(1, -1));
       }
     }
     expect(sent.length).toBeGreaterThan(100);

@@ -79,7 +79,7 @@ export const en = {
   'common.edit': 'Edit',
   'common.delete': 'Delete',
   'catalog.category.new': 'New category',
-  'catalog.category.slugInvalid': 'Use lowercase letters, digits and "-" only.',
+  'admin.errors.categorySlugInvalid': 'Use lowercase letters, digits and "-" only.',
   'catalog.names.atLeastOne': 'A name in at least one language.',
   'catalog.confirm.discardEdits': 'Discard the changes you have not saved?',
   'catalog.category.edit': 'Edit category',
@@ -218,7 +218,8 @@ export const en = {
   'people.rolePlaceholderDesc': 'Optional',
   'people.rankField': 'Level ({min}–{max})',
   'people.slugRule': 'Lowercase Latin letters, digits and hyphens, e.g. night-shift.',
-  'people.slugInvalid': 'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
+  'admin.errors.roleSlugInvalid':
+    'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
   'people.slugRequired': 'Required.',
   'people.rankInvalid': 'Enter a whole number from {min} to {max}.',
   'people.rankTierLocked':
@@ -232,7 +233,7 @@ export const en = {
   'people.revokeRoleInStoreAria': 'Revoke {role} in {store} from {name}',
   'people.searchNoMatch': 'No one matches "{q}"',
   'people.clearSearch': 'Clear search',
-  'admin.invite.tgIdInvalid': 'A Telegram ID is 4–15 digits, not a phone number or @username.',
+  'admin.errors.tgIdInvalid': 'A Telegram ID is 4–15 digits, not a phone number or @username.',
   'people.deleteRole': 'Delete role',
   'people.confirmDeleteRole': 'Delete role "{name}"?',
   'people.noRole': 'No role',

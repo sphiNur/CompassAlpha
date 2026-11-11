@@ -27,6 +27,14 @@ export function isErrorKey(value: unknown): value is CatalogKey {
 }
 
 /**
+ * The key the server puts on every schema refusal (`data.i18nKey`), and
+ * the message of the checks only a faulty client can fail (review
+ * ADM1-26: CLIENT_FAULT_MESSAGE in the contracts). It names no reason, so
+ * the caller's own failure sentence says more.
+ */
+const GENERIC_VALIDATION_KEY = 'common.errors.validation';
+
+/**
  * - a server i18n key → that key
  * - a transport failure ("Failed to fetch", offline) → `common.networkError`
  * - anything else (framework text, stack-ish strings) → `fallbackKey`,
@@ -80,7 +88,7 @@ export function serverErrorKey(err: unknown): CatalogKey | null {
   const fromZod = zodIssueKey(message);
   if (fromZod) return fromZod;
   const dataKey = (err as { data?: { i18nKey?: unknown } } | null)?.data?.i18nKey;
-  return isErrorKey(dataKey) && dataKey !== 'common.errors.validation' ? dataKey : null;
+  return isErrorKey(dataKey) && dataKey !== GENERIC_VALIDATION_KEY ? dataKey : null;
 }
 
 /**
@@ -145,9 +153,9 @@ export function isServerSideFailure(message: string | undefined): boolean {
 
 /**
  * CAT-10 / CLS-12 (2026-10-30): an input the server's schema refuses comes
- * back as the zod issue list serialised into the message. When the first
- * issue carries a catalog key ("dishes.errors.codeTaken"), use it rather
- * than the generic fallback.
+ * back as the zod issue list serialised into the message. The first issue
+ * that names a reason ("dishes.errors.codeTaken") is used rather than the
+ * generic fallback; the generic key names none.
  */
 export function zodIssueKey(message: string | undefined): CatalogKey | null {
   if (typeof message !== 'string' || !message.trimStart().startsWith('[')) return null;
@@ -155,7 +163,9 @@ export function zodIssueKey(message: string | undefined): CatalogKey | null {
     const issues = JSON.parse(message) as Array<{ message?: unknown }>;
     if (!Array.isArray(issues)) return null;
     for (const issue of issues) {
-      if (isErrorKey(issue?.message)) return issue.message;
+      if (isErrorKey(issue?.message) && issue.message !== GENERIC_VALIDATION_KEY) {
+        return issue.message;
+      }
     }
   } catch {
     /* not JSON */

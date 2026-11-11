@@ -63,7 +63,7 @@ export const ru = {
   'common.edit': 'Изменить',
   'common.delete': 'Удалить',
   'catalog.category.new': 'Новая категория',
-  'catalog.category.slugInvalid': 'Только строчные латинские буквы, цифры и «-».',
+  'admin.errors.categorySlugInvalid': 'Только строчные латинские буквы, цифры и «-».',
   'catalog.names.atLeastOne': 'Название хотя бы на одном языке.',
   'catalog.confirm.discardEdits': 'Отменить несохранённые изменения?',
   'catalog.category.edit': 'Изменить категорию',
@@ -189,7 +189,8 @@ export const ru = {
   'people.rolePlaceholderDesc': 'Необязательно',
   'people.rankField': 'Уровень ({min}–{max})',
   'people.slugRule': 'Строчные латинские буквы, цифры и дефис, например night-shift.',
-  'people.slugInvalid': 'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
+  'admin.errors.roleSlugInvalid':
+    'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
   'people.slugRequired': 'Обязательное поле.',
   'people.rankInvalid': 'Введите целое число от {min} до {max}.',
   'people.rankTierLocked':
@@ -203,7 +204,7 @@ export const ru = {
   'people.revokeRoleInStoreAria': '{name}: снять роль «{role}» в магазине «{store}»',
   'people.searchNoMatch': 'По запросу «{q}» никого нет',
   'people.clearSearch': 'Сбросить поиск',
-  'admin.invite.tgIdInvalid': 'Telegram ID — это 4–15 цифр, а не номер телефона или @имя.',
+  'admin.errors.tgIdInvalid': 'Telegram ID — это 4–15 цифр, а не номер телефона или @имя.',
   'people.deleteRole': 'Удалить роль',
   'people.confirmDeleteRole': 'Удалить роль «{name}»?',
   'people.noRole': 'Нет роли',

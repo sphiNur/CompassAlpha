@@ -63,6 +63,23 @@ describe('errorTextKey', () => {
     ]);
     expect(errorTextKey(zod, 'common.errorUnknown')).toBe('finance.errors.invalidRange');
   });
+
+  // Review ADM1-26 (2026-11-12): a check only a faulty client can fail
+  // carries the generic key, which names no reason.
+  test('the generic key in an issue list keeps the fallback; a reason after it wins', () => {
+    const generic = { code: 'custom', message: 'common.errors.validation', path: ['currency'] };
+    expect(errorTextKey(JSON.stringify([generic]), 'common.errorUnknown')).toBe(
+      'common.errorUnknown',
+    );
+    const reason = {
+      code: 'invalid_string',
+      message: 'admin.errors.taxRateFormat',
+      path: ['taxRatePct'],
+    };
+    expect(errorTextKey(JSON.stringify([generic, reason]), 'common.errorUnknown')).toBe(
+      'admin.errors.taxRateFormat',
+    );
+  });
 });
 
 // R2-AUTH-3 (2026-10-31): the server answering with an error is not the
@@ -156,6 +173,14 @@ describe('errorTextOf: placeholders from the server', () => {
       data: { i18nKey: 'common.errors.validation' },
     };
     expect(errorTextOf(err, 'order.toast.adjustFailed').key).toBe('order.toast.adjustFailed');
+    // ADM1-26: also when the issue itself carries the generic key.
+    const clientFault = {
+      message: JSON.stringify([{ code: 'custom', message: 'common.errors.validation' }]),
+      data: { i18nKey: 'common.errors.validation' },
+    };
+    expect(errorTextOf(clientFault, 'order.toast.adjustFailed').key).toBe(
+      'order.toast.adjustFailed',
+    );
   });
 
   test('only plain values are used; transport failures still map as before', () => {

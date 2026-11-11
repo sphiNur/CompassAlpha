@@ -11,6 +11,7 @@ import {
   noControlChars,
   RevokeRoleInputSchema,
 } from '@compass/contracts';
+import { SLUG_MESSAGE, SLUG_RE } from '@compass/contracts/limits';
 import { authedProcedure, withUniqueKey } from '../../trpc';
 import { hub } from '../../../realtime/hub';
 import { effectiveGlobalPermissions } from '../../../services/storeScope';
@@ -228,11 +229,7 @@ export const roleProcedures = {
   roleCreate: authedProcedure
     .input(
       z.object({
-        slug: z
-          .string()
-          .min(1)
-          .max(64)
-          .regex(/^[a-z0-9-]+$/, 'lowercase letters, digits, hyphens only'),
+        slug: z.string().min(1).max(64).regex(SLUG_RE, SLUG_MESSAGE.role),
         name: z.string().min(1).max(100).refine(noControlChars, CONTROL_CHARS_MESSAGE),
         description: z.string().max(500).optional().nullable(),
         rank: z.number().int().min(1).max(99),

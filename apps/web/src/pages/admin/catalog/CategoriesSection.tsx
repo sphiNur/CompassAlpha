@@ -15,7 +15,7 @@ import {
   useToast,
   rowGroupClass,
 } from '@compass/ui';
-import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
+import { CATALOG_TEXT_MAX, SLUG_MESSAGE } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { useI18n, useProductNameParts } from '../../../hooks/useI18n';
@@ -35,6 +35,7 @@ import {
   type CatalogNames,
 } from './catalogNames';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
+import { slugIsValid } from '../../../lib/adminFields';
 
 interface CategoryDraft {
   categoryId?: string;
@@ -42,9 +43,6 @@ interface CategoryDraft {
   names: CatalogNames;
   sortIndex: number;
 }
-
-/** Category slugs: what CreateCategoryInput accepts. */
-const SLUG_RE = /^[a-z0-9-]+$/;
 
 /** Example names, each in its own field's language. */
 const CATEGORY_EXAMPLES: CatalogNames = {
@@ -165,7 +163,7 @@ export function CategoriesSection() {
           <Button
             block
             loading={create.isPending || update.isPending}
-            disabled={!draft?.slug.trim() || !SLUG_RE.test(draft.slug) || !hasAnyName(draft.names)}
+            disabled={!draft?.slug.trim() || !slugIsValid(draft.slug) || !hasAnyName(draft.names)}
             onClick={() => {
               if (!draft) return;
               const names = cleanNames(draft.names);
@@ -192,11 +190,7 @@ export function CategoriesSection() {
             <Field
               label={i18n.t('admin.field.slug')}
               required
-              error={
-                draft.slug && !SLUG_RE.test(draft.slug)
-                  ? i18n.t('catalog.category.slugInvalid')
-                  : null
-              }
+              error={draft.slug && !slugIsValid(draft.slug) ? i18n.t(SLUG_MESSAGE.category) : null}
             >
               <Input
                 value={draft.slug}

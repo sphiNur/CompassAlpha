@@ -8,6 +8,7 @@
  * test-data purge input and result, and an invite by username or email.
  */
 import { z } from 'zod';
+import { TG_USER_ID_MESSAGE, TG_USER_ID_RE } from '../limits';
 import { TrimmedNameSchema, codeTextSchema } from './catalog';
 import { DateStringSchema, TimeZoneSchema, UuidSchema } from './common';
 
@@ -60,7 +61,7 @@ export const CreateMemberInviteInputSchema = z.object({
 export const InviteMemberByTgIdInputSchema = z.object({
   tgUserId: z
     .string()
-    .regex(/^\d{4,15}$/, 'Telegram ID must be a numeric string')
+    .regex(TG_USER_ID_RE, TG_USER_ID_MESSAGE)
     .transform((s) => BigInt(s)),
   displayName: TrimmedNameSchema.optional(),
   roleSlug: z.string().min(1).max(64).optional(),
