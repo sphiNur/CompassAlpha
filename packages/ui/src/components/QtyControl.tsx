@@ -5,6 +5,7 @@ import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { QTY_DECIMALS, isMultipleOfStep, readQtyDraft } from '../qtyDraft';
 import { NumberInput } from './NumberInput';
+import { FieldError } from './FieldError';
 
 interface QtyControlProps {
   value: number;
@@ -513,11 +514,7 @@ function QtyQuickPickSheet({
             formatError="none"
           />
         </label>
-        {draftProblem ? (
-          <p role="alert" className="text-old-label text-[var(--c-danger)]">
-            {draftProblem}
-          </p>
-        ) : null}
+        {draftProblem ? <FieldError className="mt-0">{draftProblem}</FieldError> : null}
       </div>
     </Sheet>
   );

@@ -18,6 +18,8 @@ import {
   ConfirmSheet,
   DataState,
   EmptyState,
+  FieldError,
+  FieldLabel,
   NameCell,
   PhotoCapture,
   SectionLabel,
@@ -1040,15 +1042,12 @@ export function ConfirmPage() {
                   DX-DLV-07: the label is the field's name (no placeholder
                   or aria-label repeating it), and the error waits until
                   the field was used or Save was tried. */}
-              <label
-                htmlFor="issue-received"
-                className="text-old-label font-semibold text-[var(--c-fg-muted)]"
-              >
+              <FieldLabel htmlFor="issue-received">
                 {i18n.t('confirm.issue.receivedQty', {
                   max: formatQty(issueOpen.splitQty),
                   unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
                 })}
-              </label>
+              </FieldLabel>
               <Input
                 id="issue-received"
                 type="text"
@@ -1062,23 +1061,16 @@ export function ConfirmPage() {
                 aria-invalid={receivedError ? true : undefined}
                 aria-describedby={receivedError ? 'issue-received-error' : undefined}
               />
+              {/* CONF-21: the kit's field error, as on every other form. */}
               {receivedError ? (
-                <span
-                  id="issue-received-error"
-                  className="text-old-label text-[var(--c-warning-fg)]"
-                >
+                <FieldError id="issue-received-error" className="mt-0">
                   {receivedError}
-                </span>
+                </FieldError>
               ) : null}
             </div>
           ) : null}
           <div className="flex flex-col gap-1">
-            <label
-              htmlFor="issue-note"
-              className="text-old-label font-semibold text-[var(--c-fg-muted)]"
-            >
-              {i18n.t('confirm.issue.noteLabel')}
-            </label>
+            <FieldLabel htmlFor="issue-note">{i18n.t('confirm.issue.noteLabel')}</FieldLabel>
             <Input
               id="issue-note"
               value={issueNote}
@@ -1091,9 +1083,9 @@ export function ConfirmPage() {
               aria-describedby={noteMissingShown ? 'issue-note-error' : undefined}
             />
             {noteMissingShown ? (
-              <span id="issue-note-error" className="text-old-label text-[var(--c-warning-fg)]">
+              <FieldError id="issue-note-error" className="mt-0">
                 {i18n.t('confirm.issue.noteRequired')}
-              </span>
+              </FieldError>
             ) : null}
           </div>
           <PhotoCapture

@@ -87,6 +87,7 @@ export type {
   PickerRowProps,
   NameCellProps,
 } from './components/Rows';
+export { FieldError } from './components/FieldError';
 export { ConfirmSheet, confirmCancelPolicy } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';
 export { PhotoCapture } from './components/PhotoCapture';
