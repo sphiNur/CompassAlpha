@@ -1668,8 +1668,6 @@ export const zh = {
   'dishes.empty.title': '暂无菜品',
   'dishes.empty.description': '在此添加菜单项；配方把每道菜和它的食材商品关联。',
   'dishes.action.new': '+ 新建菜品',
-  'dishes.action.showArchived': '显示已归档',
-  'dishes.action.hideArchived': '隐藏已归档',
   'dishes.action.addIngredient': '+ 添加食材',
   'dishes.label.noIngredients': '尚无配方',
   'dishes.label.noIngredientsHint': '添加食材后，录入销售时会自动扣减库存。',

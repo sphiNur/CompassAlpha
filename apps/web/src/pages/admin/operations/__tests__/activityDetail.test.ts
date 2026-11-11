@@ -3,7 +3,7 @@ import { activityDetail } from '../activityDetail';
 
 const fmt = {
   productName: (names: Record<string, string>) => names.en ?? '',
-  qty: (v: string) => String(Number(v)),
+  qty: (v: string, unit: string | null) => String(Number(v)) + (unit ? ` ${unit}` : ''),
   day: (d: string) => `<${d}>`,
   orderOf: (date: string) => `order of ${date}`,
   runLabel: (date: string, n: number) => `run ${date} #${n}`,
@@ -31,6 +31,12 @@ describe('activityDetail (DX-CAT-2)', () => {
         fmt,
       ),
     ).toBe('Tomato 2.5 · Store 1 · order of <2026-11-01>');
+  });
+
+  test("ADM2-43: the quantity carries the product's unit when the server sends it", () => {
+    expect(
+      activityDetail({ ...empty, skuNames: { en: 'Tomato' }, skuUnit: 'kg', qty: '2.500' }, fmt),
+    ).toBe('Tomato 2.5 kg');
   });
 
   test('a run event names the run with its 1-based number', () => {

@@ -12,6 +12,8 @@ export interface ActivityContextLike {
   runDate: string | null;
   runIndex: number | null;
   skuNames: Record<string, string> | null;
+  /** Review ADM2-43 (2026-11-11). Absent from a server older than this. */
+  skuUnit?: string | null;
   qty: string | null;
 }
 
@@ -19,7 +21,8 @@ export function activityDetail(
   context: ActivityContextLike | null | undefined,
   fmt: {
     productName: (names: Record<string, string>) => string;
-    qty: (v: string) => string;
+    /** The quantity with its unit when the product's unit is known. */
+    qty: (v: string, unit: string | null) => string;
     day: (isoDate: string) => string;
     orderOf: (date: string) => string;
     runLabel: (date: string, n: number) => string;
@@ -29,7 +32,7 @@ export function activityDetail(
   const parts: string[] = [];
   if (context.skuNames) {
     const name = fmt.productName(context.skuNames);
-    parts.push(context.qty ? `${name} ${fmt.qty(context.qty)}` : name);
+    parts.push(context.qty ? `${name} ${fmt.qty(context.qty, context.skuUnit ?? null)}` : name);
   }
   if (context.storeName) parts.push(context.storeName);
   if (context.orderDate) parts.push(fmt.orderOf(fmt.day(context.orderDate)));

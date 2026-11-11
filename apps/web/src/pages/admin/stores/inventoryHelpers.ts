@@ -1,7 +1,11 @@
 /**
  * Pure helpers for Admin → Stores → Inventory (2026-10-21).
  */
+import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts/quantity';
 import { toQtyInput } from '../../../lib/format';
+
+/** How a typed number is read: `readDecimalText` from the kit, passed in. */
+type DecimalReader = (raw: string) => { ok: true; value: string } | { ok: false };
 
 /**
  * SKUs that can get an opening stocktake: active SKUs of the org with no
@@ -51,12 +55,44 @@ export function signedDelta(delta: string): { sign: '+' | '-' | ''; abs: string 
 export function wastageMissing(
   qtyText: string,
   note: string,
-  read: (raw: string) => { ok: true; value: string } | { ok: false },
+  read: DecimalReader,
 ): 'qty' | 'note' | null {
   const qty = read(qtyText);
   if (!qty.ok || qty.value === '' || !(Number(qty.value) > 0)) return 'qty';
   if (!note.trim()) return 'note';
   return null;
+}
+
+/**
+ * Review ADM2-37 (2026-11-11): stock left after a wastage, exact to the
+ * thousandth, or null while the amount does not read. The check before a
+ * wastage that takes stock below zero swapped one comma for a dot and
+ * subtracted floats; the amount is now read like every number field.
+ * Both helpers run while rendering, so the stored figure is read with
+ * `qtyMilliOrZero`, which never throws.
+ */
+export function stockAfterWastage(
+  onHand: string,
+  qtyText: string,
+  read: DecimalReader,
+): string | null {
+  const qty = read(qtyText);
+  if (!qty.ok || qty.value === '') return null;
+  return milliQty(qtyMilliOrZero(onHand) - qtyMilli(qty.value));
+}
+
+/**
+ * Walkthrough F24 / review ADM2-37: what a count changes, exactly ("1.5",
+ * "-0.25", "0"), or null while the count does not read.
+ */
+export function stocktakeDiff(
+  countText: string,
+  current: string,
+  read: DecimalReader,
+): string | null {
+  const count = read(countText);
+  if (!count.ok || count.value === '') return null;
+  return milliQty(qtyMilli(count.value) - qtyMilliOrZero(current));
 }
 
 /**

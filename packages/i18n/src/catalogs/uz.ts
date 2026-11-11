@@ -1876,8 +1876,6 @@ export const uz = {
   'dishes.empty.description':
     'Menyu taomlarini qoʻshing; retsept har bir taomni ingredient mahsulotlar bilan bogʻlaydi.',
   'dishes.action.new': '+ Yangi taom',
-  'dishes.action.showArchived': 'Arxivlanganlarni koʻrsatish',
-  'dishes.action.hideArchived': 'Arxivlanganlarni yashirish',
   'dishes.action.addIngredient': '+ Ingredient qoʻshish',
   'dishes.label.noIngredients': 'Retsept yoʻq',
   'dishes.label.noIngredientsHint':

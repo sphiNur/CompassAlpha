@@ -10,7 +10,7 @@
  *   - MaintenanceSection danger zone (+ TargetedPurgeBrowser, internal)
  */
 import { addMoney } from '@compass/contracts/money';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Badge,
   Banner,
@@ -31,6 +31,9 @@ import {
   Sheet,
   Spinner,
   Tile,
+  cn,
+  rowGroupClass,
+  rowListClass,
   useToast,
 } from '@compass/ui';
 import { PAGE_SIZE } from '../../../config/timings';
@@ -60,6 +63,7 @@ export function ActivitySection() {
   const dateFmt = useDateFormat();
   const i18n = useI18n();
   const productName = useProductName();
+  const unitLabel = useUnitLabel();
   const eventLabel = (streamType: string, type: string): string => {
     const key = `ops.event.${type}` as Parameters<typeof i18n.t>[0];
     const label = i18n.t(key);
@@ -108,7 +112,7 @@ export function ActivitySection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
+          <ul className={rowGroupClass} role="list">
             {rows.map((e) => {
               // M3.21 (2026-05-18): surface ClaimReleased.reason inline
               // so admins can spot non-routine releases (override / timeout)
@@ -126,7 +130,7 @@ export function ActivitySection() {
               // run — in place of "seq N". Older servers send no context.
               const detail = activityDetail(e.context, {
                 productName: (names) => productName({ names }),
-                qty: formatQty,
+                qty: (v, unit) => (unit ? `${formatQty(v)} ${unitLabel(unit, v)}` : formatQty(v)),
                 day: (d) => dateFmt.calendarDay(d),
                 orderOf: (date) => i18n.t('ops.activity.orderOf', { date }),
                 runLabel: (date, n) => i18n.t('ops.purge.runLabel', { date, n }),
@@ -140,10 +144,7 @@ export function ActivitySection() {
                     ? i18n.t('ops.activity.claimTimeout')
                     : null;
               return (
-                <li
-                  key={e.id}
-                  className={`flex flex-col gap-0.5 px-4 py-2.5 border-b border-[var(--c-divider)] last:border-b-0 ${rowBg}`}
-                >
+                <li key={e.id} className={cn('flex flex-col gap-0.5 px-4 py-2.5', rowBg)}>
                   <span className="text-old-label font-semibold text-[var(--c-fg)]">
                     {/* ADM-17: the event in words, from the catalog;
                         an event type it does not know yet stays raw. */}
@@ -240,7 +241,9 @@ export function HistorySection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          // Review ADM2-12 (2026-11-11): one card with hairline rows (UI-6),
+          // not a stack of cards.
+          <ul className={rowGroupClass} role="list">
             {rows.map((r) => {
               const isOpen = openId === r.sessionId;
               const statusTone =
@@ -250,7 +253,7 @@ export function HistorySection() {
                     ? 'danger'
                     : 'info';
               return (
-                <Card as="li" key={r.sessionId}>
+                <li key={r.sessionId} className="min-w-0">
                   <button
                     type="button"
                     onClick={() => setOpenId(isOpen ? null : r.sessionId)}
@@ -330,7 +333,7 @@ export function HistorySection() {
                       ) : null}
                     </div>
                   ) : null}
-                </Card>
+                </li>
               );
             })}
           </ul>
@@ -385,6 +388,9 @@ function TargetedPurgeBrowser() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  // Review ADM2-21 (2026-11-11): dates in the interface language, as on the
+  // rest of this screen, not the raw 2026-11-11.
+  const dates = useDateFormat();
 
   const [sessionTarget, setSessionTarget] = useState<{
     sessionId: string;
@@ -455,13 +461,14 @@ function TargetedPurgeBrowser() {
       {/* Review ADM2-13 (2026-11-11): wraps. At 320px the tabs left the date
           field «11/11» in Uzbek; 9rem holds the whole date and its icon. */}
       <div className="flex flex-wrap items-center gap-2">
-        <input
+        {/* Review ADM2-33 (2026-11-11): the kit field, not a copy of its
+            classes. DX-IX-8 (2026-11-01): named. */}
+        <Input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
           aria-label={i18n.t('ops.purge.dateLabel')}
-          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field min-w-[9rem] appearance-none"
+          className="min-w-[9rem] flex-1"
         />
         {/* DX-VIS-7 (2026-11-01): was two hand-rolled pills whose state
             was colour only; Segmented says which is selected. */}
@@ -483,12 +490,15 @@ function TargetedPurgeBrowser() {
           empty={
             <EmptyState
               title={i18n.t('ops.purge.noSessionsTitle')}
-              description={i18n.t('ops.purge.noSessionsBody', { date })}
+              description={i18n.t('ops.purge.noSessionsBody', { date: dates.calendarDay(date) })}
             />
           }
         >
           {(rows) => (
-            <ul className="flex flex-col gap-1.5" role="list">
+            // Review ADM2-12 (2026-11-11): rows divided by hairlines (UI-6),
+            // with no surface of their own: this list sits inside the
+            // maintenance card (UI-13), so it is not a card either.
+            <ul className={rowListClass} role="list">
               {rows.map((sess) => {
                 const attribLabel =
                   sess.attribDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
@@ -498,10 +508,7 @@ function TargetedPurgeBrowser() {
                 const blockText = sessionBlockText(i18n, sess.deleteBlock, attribLabel);
                 const label = `${sess.storeName ?? i18n.t('ops.purge.unknownStore')} · ${attribLabel}`;
                 return (
-                  <li
-                    key={sess.sessionId}
-                    className="flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
-                  >
+                  <li key={sess.sessionId} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
                         <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
@@ -520,7 +527,7 @@ function TargetedPurgeBrowser() {
                                 : sess.status)) as Parameters<typeof i18n.t>[0],
                           ),
                           items: i18n.t('run.label.itemsCount', { n: sess.itemCount }),
-                          date: sess.orderDate,
+                          date: dates.calendarDay(sess.orderDate),
                         })}
                       </div>
                     </div>
@@ -559,20 +566,20 @@ function TargetedPurgeBrowser() {
           empty={
             <EmptyState
               title={i18n.t('ops.purge.noRunsTitle')}
-              description={i18n.t('ops.purge.noRunsBody', { date })}
+              description={i18n.t('ops.purge.noRunsBody', { date: dates.calendarDay(date) })}
             />
           }
         >
           {(rows) => (
-            <ul className="flex flex-col gap-1.5" role="list">
+            <ul className={rowListClass} role="list">
               {rows.map((r) => {
-                const label = i18n.t('ops.purge.runLabel', { date: r.runDate, n: r.runIndex + 1 });
+                const label = i18n.t('ops.purge.runLabel', {
+                  date: dates.calendarDay(r.runDate),
+                  n: r.runIndex + 1,
+                });
                 const blockText = runBlockText(i18n, r.deleteBlock);
                 return (
-                  <li
-                    key={r.runId}
-                    className="flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
-                  >
+                  <li key={r.runId} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
                         <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
@@ -658,9 +665,9 @@ function TargetedPurgeBrowser() {
               <Spinner size={14} /> {i18n.t('admin.label.counting')}
             </div>
           ) : sessionTarget?.preview ? (
-            <CascadePreview
+            <PurgePreview
+              title={i18n.t('ops.purge.rowsWouldBeDeleted', { n: sessionTarget.preview.total })}
               byTable={sessionTarget.preview.byTable}
-              total={sessionTarget.preview.total}
             />
           ) : null}
         </div>
@@ -707,7 +714,10 @@ function TargetedPurgeBrowser() {
                   n: runTarget.preview.sessionIds.length,
                 })}
               </Banner>
-              <CascadePreview byTable={runTarget.preview.byTable} total={runTarget.preview.total} />
+              <PurgePreview
+                title={i18n.t('ops.purge.rowsWouldBeDeleted', { n: runTarget.preview.total })}
+                byTable={runTarget.preview.byTable}
+              />
             </>
           ) : null}
         </div>
@@ -757,15 +767,27 @@ function runBlockText(
   }
 }
 
-function CascadePreview({ byTable, total }: { byTable: Record<string, number>; total: number }) {
-  const i18n = useI18n();
+/**
+ * What a purge would delete: a headline, then the counts by kind. Review
+ * ADM2-12 (2026-11-11): the order, run, day and full purges each drew this
+ * box themselves, two of them as grey cards (UI-13: grey is for inputs).
+ */
+function PurgePreview({
+  title,
+  byTable,
+  children,
+}: {
+  title: string;
+  /** Left out when there is nothing to delete. */
+  byTable?: Record<string, number>;
+  children?: ReactNode;
+}) {
   return (
-    <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
-      <div className="text-old-body font-semibold text-[var(--c-fg)]">
-        {i18n.t('ops.purge.rowsWouldBeDeleted', { n: total })}
-      </div>
-      <PurgeCountList byTable={byTable} />
-    </div>
+    <Card className="p-3">
+      <div className="text-old-body font-semibold text-[var(--c-fg)]">{title}</div>
+      {byTable ? <PurgeCountList byTable={byTable} /> : null}
+      {children}
+    </Card>
   );
 }
 
@@ -827,7 +849,7 @@ export function AdminAuditSection() {
   // disappear under the filter, which is correct — they predate the
   // column.
   const session = useAuthStore((s) => s.session);
-  const sessionStores = session?.stores ?? [];
+  const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   // ADM-16: the server only returns rows for stores the actor administers,
   // so a store they merely work in was a filter that always came up empty.
   const adminStoreIds = new Set(session?.adminStoreIds ?? []);
@@ -934,7 +956,7 @@ export function AdminAuditSection() {
             return <EmptyState title={i18n.t('ops.audit.emptyFilterTitle')} />;
           }
           return (
-            <ul className="flex flex-col gap-2" role="list">
+            <ul className={rowGroupClass} role="list">
               {rows.map((r) => {
                 // 2026-10-21 FE-08: one readable sentence per row ("A
                 // granted Manager to B") from server-resolved names,
@@ -962,7 +984,7 @@ export function AdminAuditSection() {
                 // 2026-07-30: `undefined` meant "browser locale".
                 const when = dateFmt.dateTime(r.occurredAt);
                 return (
-                  <Card as="li" key={r.id}>
+                  <li key={r.id} className="min-w-0">
                     <div className="flex items-start gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-baseline gap-2">
@@ -1007,7 +1029,7 @@ export function AdminAuditSection() {
                         ) : null}
                       </div>
                     </div>
-                  </Card>
+                  </li>
                 );
               })}
             </ul>
@@ -1122,7 +1144,7 @@ export function PriceReportSection() {
           description={i18n.t('ops.price.emptyBody')}
         />
       ) : (
-        <ul className="mt-3 flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
+        <ul className={cn('mt-3', rowGroupClass)} role="list">
           {rows.map((r) => {
             const tone =
               r.deltaPct === null
@@ -1137,10 +1159,7 @@ export function PriceReportSection() {
             const deltaLabel =
               r.deltaPct === null ? '—' : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct.toFixed(1)}%`;
             return (
-              <li
-                key={r.skuId}
-                className="flex flex-col gap-1 px-4 py-2.5 border-b border-[var(--c-divider)] last:border-b-0"
-              >
+              <li key={r.skuId} className="flex flex-col gap-1 px-4 py-2.5">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
                     {r.name}
@@ -1236,13 +1255,14 @@ export function FinanceSection() {
   );
 
   // Apply preset → derive [start, end]. Custom keeps whatever the user
-  // typed in the two inputs.
+  // typed in the two inputs. Review ADM2-35 (2026-11-11): again when the
+  // org's time zone arrives after the first render (it read the device's).
   useEffect(() => {
     if (preset === 'custom') return;
     const range = financePresetRange(preset, new Date(), orgTimeZone);
     setStartDate(range.startDate);
     setEndDate(range.endDate);
-  }, [preset]);
+  }, [preset, orgTimeZone]);
 
   const [view, setView] = useState<FinanceView>('daily');
 
@@ -1282,7 +1302,7 @@ export function FinanceSection() {
     return m;
   }, [storesQuery.data]);
 
-  const lines = linesQuery.data ?? [];
+  const lines = useMemo(() => linesQuery.data ?? [], [linesQuery.data]);
 
   /**
    * 2026-10-21 CA-11: purchaseLines now also carries off-catalog expense
@@ -1485,9 +1505,9 @@ export function FinanceSection() {
 
   return (
     <div className="px-4 py-3">
-      {/* Range picker — preset segmented control + two date inputs.
-          M3.17 (2026-05-16): preset chips migrated to shared <Segmented>. */}
-      <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline p-3">
+      {/* Range picker: the store, the preset chips (DX-HIS-3 below) and, for
+          a custom range, two dates. */}
+      <Card className="mb-3 flex flex-col gap-2 p-3">
         {/* CMP-HIS-1: which stores every amount below covers. */}
         <Select
           value={reportStore.storeId}
@@ -1550,7 +1570,7 @@ export function FinanceSection() {
             {dates.calendarDay(startDate)} → {dates.calendarDay(endDate)}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Totals scorecard.
           2026-10-21 FE-01 (F6-04): a failed totals query used to make the
@@ -1564,7 +1584,7 @@ export function FinanceSection() {
         // at 360/390 wide; cash and transfer share a row, the total gets
         // its own. D6: without prices.view the money is left out by the
         // server and only the counts show.
-        <div className="mb-3 grid grid-cols-2 gap-x-2 gap-y-2 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline p-3">
+        <Card className="mb-3 grid grid-cols-2 gap-x-2 gap-y-2 p-3">
           <div className="min-w-0">
             <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
             {totalsQuery.data.totalCash !== null ? (
@@ -1609,7 +1629,7 @@ export function FinanceSection() {
               })}
             </div>
           ) : null}
-        </div>
+        </Card>
       ) : null}
 
       {/* View switcher + export.
@@ -1671,15 +1691,12 @@ export function FinanceSection() {
           description={i18n.t('finance.empty.description')}
         />
       ) : view === 'daily' ? (
-        <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
+        <ul className={rowGroupClass} role="list">
           {dailyGroups.map((g) => {
             const isOpen = expanded === g.date;
             const mixed = g.cash > 0 && g.transfer > 0;
             return (
-              <li
-                key={g.date}
-                className="border-b border-[var(--c-divider)] last:border-b-0"
-              >
+              <li key={g.date}>
                 <button
                   type="button"
                   onClick={() => setExpanded(isOpen ? null : g.date)}
@@ -1742,7 +1759,7 @@ export function FinanceSection() {
           })}
         </ul>
       ) : view === 'bySupplier' ? (
-        <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
+        <ul className={rowGroupClass} role="list">
           {supplierGroups.map((g) => {
             const key = g.key;
             const isOpen = expanded === key;
@@ -1754,10 +1771,7 @@ export function FinanceSection() {
                   : `— ${i18n.t('finance.label.noSupplier')}`;
             const mixed = g.cash > 0 && g.transfer > 0;
             return (
-              <li
-                key={key}
-                className="border-b border-[var(--c-divider)] last:border-b-0"
-              >
+              <li key={key}>
                 <button
                   type="button"
                   onClick={() => setExpanded(isOpen ? null : key)}
@@ -1805,16 +1819,13 @@ export function FinanceSection() {
           })}
         </ul>
       ) : (
-        <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
+        <ul className={rowGroupClass} role="list">
           {storeGroups.map((g) => {
             const isOpen = expanded === g.storeId;
             const name = storeById.get(g.storeId) ?? g.storeId.slice(0, 8);
             const mixed = g.cash > 0 && g.transfer > 0;
             return (
-              <li
-                key={g.storeId}
-                className="border-b border-[var(--c-divider)] last:border-b-0"
-              >
+              <li key={g.storeId}>
                 <button
                   type="button"
                   onClick={() => setExpanded(isOpen ? null : g.storeId)}
@@ -1939,7 +1950,9 @@ export function MaintenanceSection() {
   });
   const dateCommitMut = trpc.admin.purgeByDate.useMutation({
     onSuccess: (data) => {
-      toast.success(i18n.t('admin.toast.dateReset', { date: data.date, n: data.total }));
+      toast.success(
+        i18n.t('admin.toast.dateReset', { date: dates.calendarDay(data.date), n: data.total }),
+      );
       setDateConfirmOpen(false);
       setDatePreview(null);
       void utils.invalidate();
@@ -2002,7 +2015,9 @@ export function MaintenanceSection() {
                     {i18n.t('ops.maint.resetTodayTitle')}
                   </div>
                   <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('ops.maint.resetTodayBody', { date: todayIso(orgTimeZone) })}
+                    {i18n.t('ops.maint.resetTodayBody', {
+                      date: dates.calendarDay(todayIso(orgTimeZone)),
+                    })}
                   </p>
                 </div>
                 <Button
@@ -2032,13 +2047,13 @@ export function MaintenanceSection() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
+                  {/* ADM2-33: the kit field. DX-IX-8: named. */}
+                  <Input
                     type="date"
                     value={dateInput}
                     onChange={(e) => setDateInput(e.target.value)}
-                    // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
                     aria-label={i18n.t('ops.maint.resetDateTitle')}
-                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-field min-w-0 appearance-none"
+                    className="flex-1"
                   />
                   <Button
                     size="sm"
@@ -2097,7 +2112,9 @@ export function MaintenanceSection() {
       <Sheet
         open={dateConfirmOpen}
         onOpenChange={(o) => !o && !dateCommitMut.isPending && setDateConfirmOpen(false)}
-        title={i18n.t('ops.maint.resetSheetTitle', { date: datePreview?.date ?? '' })}
+        title={i18n.t('ops.maint.resetSheetTitle', {
+          date: datePreview ? dates.calendarDay(datePreview.date) : '',
+        })}
         description={i18n.t('ops.maint.resetSheetBody')}
         footer={
           <Button
@@ -2120,14 +2137,17 @@ export function MaintenanceSection() {
       >
         <div className="flex flex-col gap-3 py-3">
           {datePreview ? (
-            <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-              <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                {datePreview.total === 0
-                  ? i18n.t('ops.maint.alreadyClean', { date: datePreview.date })
-                  : i18n.t('ops.maint.rowsFromDate', { n: datePreview.total, date: datePreview.date })}
-              </div>
-              {datePreview.total > 0 ? <PurgeCountList byTable={datePreview.byTable} /> : null}
-            </div>
+            <PurgePreview
+              title={
+                datePreview.total === 0
+                  ? i18n.t('ops.maint.alreadyClean', { date: dates.calendarDay(datePreview.date) })
+                  : i18n.t('ops.maint.rowsFromDate', {
+                      n: datePreview.total,
+                      date: dates.calendarDay(datePreview.date),
+                    })
+              }
+              byTable={datePreview.total > 0 ? datePreview.byTable : undefined}
+            />
           ) : null}
           {/* DX-CAT-5 (2026-11-01): what is this day's, and what goes with
               it from other dates because an order and its run are deleted
@@ -2173,6 +2193,7 @@ export function MaintenanceSection() {
           {datePreview && datePreview.total > 0 ? (
             <Field
               label={i18n.t('ops.maint.confirmResetLabel')}
+              // ADM2-21: the one date left as 2026-11-11 — it is typed back.
               hint={i18n.t('ops.maint.confirmResetBody', { date: datePreview.date })}
             >
               <Input
@@ -2215,17 +2236,16 @@ export function MaintenanceSection() {
       >
         <div className="flex flex-col gap-3 py-3">
           {allDryRun.data ? (
-            <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-              <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                {i18n.t('ops.purge.rowsWouldBeDeleted', { n: allDryRun.data.total })}
-              </div>
-              <PurgeCountList byTable={allDryRun.data.byTable} />
+            <PurgePreview
+              title={i18n.t('ops.purge.rowsWouldBeDeleted', { n: allDryRun.data.total })}
+              byTable={allDryRun.data.byTable}
+            >
               {allDryRun.data.total === 0 ? (
                 <p className="mt-2 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('ops.maint.nothingToPurge')}
                 </p>
               ) : null}
-            </div>
+            </PurgePreview>
           ) : null}
 
           <Field label={i18n.t('ops.maint.confirmPurgeNameLabel')}>

@@ -122,15 +122,14 @@ interface CategoryDraft {
   sortIndex: number;
 }
 
+/** Category slugs: what CreateCategoryInput accepts. */
+const SLUG_RE = /^[a-z0-9-]+$/;
 
 /**
  * Closing a catalog editor by Esc, a backdrop tap or Telegram's back button
  * used to drop whatever was typed, and could close mid-save (atlas CAT-18).
  * While saving the sheet stays open; with unsaved edits it asks first.
  */
-/** Category slugs: what CreateCategoryInput accepts. */
-const SLUG_RE = /^[a-z0-9-]+$/;
-
 function useEditorClose<T>(draft: T | null, setDraft: (d: null) => void, busy: boolean) {
   const i18n = useI18n();
   const opened = useRef<string | null>(null);
@@ -788,9 +787,10 @@ export function SkusSection() {
                   value={draft.step}
                   onChange={(e) => setDraft({ ...draft, step: e.target.value as SkuStep })}
                 >
+                  {/* Review ADM2-43 (2026-11-11): «0,5» in ru / uz, like the list. */}
                   {SKU_STEPS.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {formatQty(s)}
                     </option>
                   ))}
                 </Select>
@@ -1405,11 +1405,21 @@ interface DishDraft {
   description: Record<string, string>;
   unitPrice: string;
   ingredients: Array<{
+    /** The row's React key; never sent. */
+    key: string;
     skuId: string;
     qtyPerServing: string;
     note: string;
   }>;
 }
+
+/**
+ * Review ADM2-43 (2026-11-11): an ingredient row is keyed by an id of its
+ * own. Keyed by position, removing a middle row handed the next row's
+ * fields (and its "archived" note id) to the removed one's components.
+ */
+let ingredientKeySeq = 0;
+const newIngredientKey = () => `ing-${++ingredientKeySeq}`;
 
 const EMPTY_DISH: DishDraft = {
   code: '',
@@ -1525,6 +1535,7 @@ export function DishesSection() {
       description: d.description as Record<string, string>,
       unitPrice: d.unitPrice ?? '',
       ingredients: ing.map((i) => ({
+        key: newIngredientKey(),
         skuId: i.skuId,
         qtyPerServing: i.qtyPerServing,
         note: i.note ?? '',
@@ -1596,7 +1607,10 @@ export function DishesSection() {
     if (!draft) return;
     setDraft({
       ...draft,
-      ingredients: [...draft.ingredients, { skuId: '', qtyPerServing: '', note: '' }],
+      ingredients: [
+        ...draft.ingredients,
+        { key: newIngredientKey(), skuId: '', qtyPerServing: '', note: '' },
+      ],
     });
   };
 
@@ -1604,26 +1618,23 @@ export function DishesSection() {
 
   return (
     <div className="px-4 py-3">
-      {/* Top bar: archive toggle + new dish. Wraps like the other catalog
-          bars (ADM2-13). */}
+      {/* Top bar: new dish + archive switch. Wraps like the other catalog
+          bars (ADM2-13). Review ADM2-33 (2026-11-11): the archive toggle is
+          the Switch the product, supplier and expense lists use, in the
+          same place (it was a button that changed its own words). */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        {/* M2.1: archive toggle now uses Button (was raw <button>).
-            Sat awkwardly next to the proper Button below — same size,
-            same shape, but different DOM. Unified to one primitive. */}
-        <Button
-          variant="pearl"
-          size="sm"
-          onClick={() => setIncludeArchived((v) => !v)}
-        >
-          {includeArchived
-            ? i18n.t('dishes.action.hideArchived')
-            : i18n.t('dishes.action.showArchived')}
-        </Button>
         {canManage ? (
-          <Button size="sm" onClick={() => setDraft({ ...EMPTY_DISH })} className="ml-auto">
+          <Button size="sm" onClick={() => setDraft({ ...EMPTY_DISH })}>
             {i18n.t('dishes.action.new')}
           </Button>
         ) : null}
+        <div className="ml-auto">
+          <Switch
+            label={i18n.t('admin.label.showArchived')}
+            checked={includeArchived}
+            onChange={(e) => setIncludeArchived(e.target.checked)}
+          />
+        </div>
       </div>
 
       {/* 2026-10-21 FE-01 / F6-04: a failed dishes.list rendered as "no
@@ -1818,16 +1829,15 @@ export function DishesSection() {
                   {i18n.t('dishes.label.noIngredientsHint')}
                 </p>
               ) : (
-                <ul className="flex flex-col gap-2" role="list">
+                // Review ADM2-12 (2026-11-11): rows of one white card, not
+                // grey cards (UI-6, UI-13).
+                <ul className={rowGroupClass} role="list">
                   {draft.ingredients.map((ing, idx) => {
                     const sku = skuById.get(ing.skuId);
                     const archivedSku = sku?.isArchived ? sku : null;
-                    const archivedNoteId = `dish-ing-${idx}-archived`;
+                    const archivedNoteId = `dish-${ing.key}-archived`;
                     return (
-                      <li
-                        key={idx}
-                        className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline"
-                      >
+                      <li key={ing.key} className="flex flex-col gap-1 px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           {/* DX-VIS-5: the kit Select (field edge at 3:1);
                               an archived product is marked by its danger ring. */}
