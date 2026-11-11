@@ -2,7 +2,7 @@
  * The receiving page's main button (review CONF-07): which of the three
  * jobs it does, and its words, come from `confirmMainButton`.
  */
-import { usePageMainButton } from '../../hooks/useTelegram';
+import { usePageMainButton } from '../../hooks/usePageMainButton';
 import { useI18n } from '../../hooks/useI18n';
 import { confirmMainButton, type ConfirmMainButtonState } from './confirmLogic';
 

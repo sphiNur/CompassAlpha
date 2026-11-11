@@ -17,6 +17,14 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 import { BROWSER_GLOBALS, SOURCE_RULES, TEST_RULES } from '../../eslint.shared.mjs';
 
+/** 4c below: values come from the zod-free subpaths of @compass/contracts. */
+const CONTRACTS_BARREL = {
+  name: '@compass/contracts',
+  allowTypeImports: true,
+  message:
+    'The barrel pulls zod into the bundle: import only types from it, and values from a zod-free subpath (@compass/contracts/limits, /money, /quantity, /schemas/roles).',
+};
+
 export default [
   // 1) Files to ignore entirely.
   {
@@ -120,12 +128,30 @@ export default [
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [
+          paths: [CONTRACTS_BARREL],
+        },
+      ],
+    },
+  },
+
+  // 4d) Review COREWEB2-14 (2026-11-11): lib/ holds plain modules, no
+  //     React hooks or components, and sits below hooks/, components/,
+  //     pages/ and app/. It used to import hooks, and hooks were kept in
+  //     it. Tests are exempt. The rule restates 4c's barrel path: a later
+  //     block's options for a rule replace an earlier block's.
+  {
+    files: ['src/lib/**/*.{ts,tsx}', 'src/pages/**/lib/**/*.{ts,tsx}'],
+    ignores: ['**/__tests__/**', '**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [CONTRACTS_BARREL],
+          patterns: [
             {
-              name: '@compass/contracts',
-              allowTypeImports: true,
+              regex: '(^|/)(hooks|components|pages|app)/',
               message:
-                'The barrel pulls zod into the bundle: import only types from it, and values from a zod-free subpath (@compass/contracts/limits, /money, /quantity, /schemas/roles).',
+                'lib/ is the layer below hooks, components, pages and app: move the shared part into lib, or the code that needs the upper layer out of lib.',
             },
           ],
         },

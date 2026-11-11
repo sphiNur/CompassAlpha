@@ -33,8 +33,8 @@ import {
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
-import { useErrToast } from '../../../lib/errToast';
-import { useRefreshSession } from '../../../lib/refreshSession';
+import { useErrToast } from '../../../hooks/useErrToast';
+import { useRefreshSession } from '../../../hooks/useRefreshSession';
 import { rolePassesOn } from '../../../lib/authority';
 import { useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';

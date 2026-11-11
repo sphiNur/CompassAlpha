@@ -7,7 +7,7 @@
  */
 import { Banner, Button, useToast } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 import { confirmThen } from '../../lib/confirm';
 import { formatMoney } from '../../lib/format';

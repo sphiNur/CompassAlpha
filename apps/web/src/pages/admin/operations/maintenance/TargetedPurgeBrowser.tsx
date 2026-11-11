@@ -20,7 +20,7 @@ import {
 import { PAGE_SIZE } from '../../../../config/timings';
 import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
-import { useErrToast } from '../../../../lib/errToast';
+import { useErrToast } from '../../../../hooks/useErrToast';
 import { useDateFormat, useI18n } from '../../../../hooks/useI18n';
 import { maintenanceToday } from '../financeDates';
 import { PurgePreview } from './PurgePreview';

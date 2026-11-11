@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import type { OutboxEntry } from '../../lib/idb';
-import { useAuthStore } from '../../stores/authStore';
-import { testSession } from '../../__tests__/fixtures/session';
-import { isLiveEntry, sendWriteAhead } from '../useOfflineQueue';
+import type { OutboxEntry } from '../../idb';
+import { useAuthStore } from '../../../stores/authStore';
+import { testSession } from '../../../__tests__/fixtures/session';
+import { isLiveEntry, sendWriteAhead } from '../engine';
 
 const initialAuth = useAuthStore.getState();
 afterEach(() => {
@@ -120,9 +120,16 @@ describe('sendWriteAhead', () => {
       remove: async () => {},
       nextSeq: async () => 1,
     };
-    expect(await sendWriteAhead('order.adjustItem', {}, async () => 'sent', undefined, () => {}, store)).toBe(
-      'sent',
-    );
+    expect(
+      await sendWriteAhead(
+        'order.adjustItem',
+        {},
+        async () => 'sent',
+        undefined,
+        () => {},
+        store,
+      ),
+    ).toBe('sent');
   });
 });
 

@@ -1,15 +1,13 @@
 /**
- * Tests for the offline-outbox flush decision logic.
+ * Tests for the offline outbox's rules (policy.ts) and handler registry.
  *
- * The hook wires IDB + React + connectivity events, which is hard to drive
- * headless. The two decisions that carry the risk are exported as pure
- * functions and pinned here (same pattern as useTapGuard):
+ * The engine (engine.ts) wires IndexedDB and connectivity events, which is
+ * hard to drive headless. The decisions that carry the risk are pure
+ * functions, pinned here (same pattern as useTapGuard):
  *
  *   - classifyEntry: the C1 data-loss regression guard. A queued financial
- *     write whose procedure the *currently mounted* page doesn't recognise
- *     must NOT be deleted — it belongs to another (unmounted) page and has
- *     to survive until that page can replay it. Only genuinely stale
- *     (retired-bundle) entries may be discarded.
+ *     write with no replay handler must NOT be deleted on sight; only
+ *     genuinely stale (retired-bundle) entries may be discarded.
  *   - classifyReplayError: terminal server rejections vs transient retries.
  */
 import { describe, it, expect } from 'bun:test';
@@ -17,8 +15,6 @@ import {
   classifyEntry,
   classifyReplayError,
   countsTowardGiveUp,
-  hasReplayHandler,
-  registerReplayHandlers,
   isOwnEntry,
   isRetryDue,
   samePendingWrites,
@@ -27,7 +23,8 @@ import {
   trpcErrorCode,
   MAX_OVERRIDE_RETRIES,
   MAX_REPLAY_RETRIES,
-} from '../useOfflineQueue';
+} from '../policy';
+import { hasReplayHandler, registerReplayHandlers } from '../engine';
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL = 7 * DAY;
@@ -208,10 +205,10 @@ describe('isRetryDue', () => {
     expect(isRetryDue(7, now - 300_000, now)).toBe(true);
   });
 
-  it('eight page mounts in a row cannot spend the retry budget', () => {
+  it('eight flushes in a row cannot spend the retry budget', () => {
     let retries = 1;
-    for (let mount = 0; mount < MAX_REPLAY_RETRIES; mount++) {
-      if (isRetryDue(retries, now, now + mount * 500)) retries += 1;
+    for (let flush = 0; flush < MAX_REPLAY_RETRIES; flush++) {
+      if (isRetryDue(retries, now, now + flush * 500)) retries += 1;
     }
     expect(retries).toBe(1);
   });

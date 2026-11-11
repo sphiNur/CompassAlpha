@@ -1,5 +1,5 @@
 import type { AuthSession } from '../stores/authStore';
-import { hasStorePermission, useStorePermission } from './storePermission';
+import { hasStorePermission } from './storePermission';
 
 /**
  * D6 (2026-10-31): whether money is shown for `storeId` — prices.view as
@@ -13,8 +13,4 @@ export function canSeePricesIn(
   storeId?: string | null,
 ): boolean {
   return hasStorePermission(session, storeId, 'prices.view');
-}
-
-export function useCanSeePrices(storeId?: string | null): boolean {
-  return useStorePermission('prices.view', storeId);
 }

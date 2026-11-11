@@ -134,7 +134,7 @@ automatically.
 `apps/web/src/pages/<Page>.tsx`:
 
 ```ts
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 
 const errToast = useErrToast();
 const myMutation = trpc.order.someMutation.useMutation({

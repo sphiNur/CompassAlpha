@@ -18,8 +18,8 @@ import {
 } from '@compass/ui';
 import { locationVerdict } from '@compass/contracts/limits';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
-import { haptic } from '../../hooks/useTelegram';
-import { useErrToast } from '../../lib/errToast';
+import { haptic } from '../../lib/telegram';
+import { useErrToast } from '../../hooks/useErrToast';
 import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendance';
 import { minutesText, punchKindText } from '../../lib/attendanceFormat';
 import { currencyOf, formatMoney } from '../../lib/format';

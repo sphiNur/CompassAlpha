@@ -11,8 +11,8 @@
 import { useState } from 'react';
 import { Badge, Banner, Button, DataState, EmptyState, Field, Input } from '@compass/ui';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
-import { haptic } from '../../hooks/useTelegram';
-import { useErrToast } from '../../lib/errToast';
+import { haptic } from '../../lib/telegram';
+import { useErrToast } from '../../hooks/useErrToast';
 import { trpc } from '../../lib/trpc';
 import { FACE_TONE, LIVE_TONE, PunchPhotoStrip } from './AttendanceManage';
 import { EnrollPhotos } from './AttendanceSettings';

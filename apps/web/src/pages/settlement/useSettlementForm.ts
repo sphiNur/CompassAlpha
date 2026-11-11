@@ -10,17 +10,17 @@ import { useToast } from '@compass/ui';
 import { BACKDATE_LIMIT_DAYS, isoDateDaysBefore } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useStoreContext } from '../../components/StoreSwitcher';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 import { useLeaveGuards } from '../../hooks/useLeaveGuards';
 import { useStableCallbacks } from '../../hooks/useStableCallbacks';
 import { confirmNative, confirmThen } from '../../lib/confirm';
 import { conflictKind } from '../../lib/conflict';
 import { showFieldError, withTouched } from '../../lib/fieldErrors';
-import { useErrToast } from '../../lib/errToast';
+import { useErrToast } from '../../hooks/useErrToast';
 import { currencyOf } from '../../lib/format';
 import { focusFirstInvalid } from '../../lib/focusFirstInvalid';
-import { useRefreshSession } from '../../lib/refreshSession';
+import { useRefreshSession } from '../../hooks/useRefreshSession';
 import { useAuthStore } from '../../stores/authStore';
 import {
   draftKey,

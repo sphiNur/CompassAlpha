@@ -53,11 +53,12 @@ import {
 } from '@compass/ui';
 import { TAX_RATE_MESSAGE, taxRateProblem, taxRateToSend } from '@compass/contracts/limits';
 import { trpc } from '../lib/trpc';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
-import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
+import { isInTelegram } from '../lib/telegram';
+import { useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';

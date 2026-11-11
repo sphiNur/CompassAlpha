@@ -23,10 +23,11 @@ import { useToast } from '@compass/ui';
 import type { CatalogKey } from '@compass/i18n';
 import { newIdempotencyKey } from '../lib/trpc';
 import { isLikelyNetworkError } from '../lib/networkError';
-import { useErrToast, type WriteFallbackKey } from '../lib/errToast';
-import type { ReplayedProcedure } from '../lib/outboxReplay';
+import { useErrToast } from './useErrToast';
+import type { WriteFallbackKey } from '../lib/errorText';
+import type { ReplayedProcedure } from '../lib/outbox/replayHandlers';
 import { useI18n } from './useI18n';
-import { enqueueWrite } from './useOfflineQueue';
+import { enqueueWrite } from '../lib/outbox/engine';
 
 /**
  * Mutation options that give each attempt one idempotency key (H2). It is

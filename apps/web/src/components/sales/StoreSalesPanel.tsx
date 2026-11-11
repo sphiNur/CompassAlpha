@@ -43,10 +43,9 @@ import {
 } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
-import { useErrToast } from '../../lib/errToast';
+import { useErrToast } from '../../hooks/useErrToast';
 import { currencyOf, formatMoney, formatQty } from '../../lib/format';
-import { useCanSeePrices } from '../../lib/pricesVisible';
-import { useStorePermission } from '../../lib/storePermission';
+import { useCanSeePrices, useStorePermission } from '../../hooks/useStorePermission';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
 import { normalizeVoidReason, salesListView } from './salesSummary';
 import { moneyLine } from '../../lib/money';

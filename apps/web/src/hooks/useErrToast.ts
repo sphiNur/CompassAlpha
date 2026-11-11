@@ -11,9 +11,10 @@
  *   ConfirmPage.
  *
  * Pre-M1.9 this was inlined in ~4 spots across the four pages with
- * the same heuristic regex. Hoisting to lib/ kills the drift risk
+ * the same heuristic regex. One shared module kills the drift risk
  * (the regex changed once already; if it changes again the inlined
- * copies WILL diverge).
+ * copies WILL diverge). Review COREWEB2-14 (2026-11-11): moved here
+ * from lib/errToast.ts; a hook belongs in hooks/.
  *
  * Usage:
  *   const errToast = useErrToast();
@@ -35,18 +36,14 @@
  * title, not a toast: it says neither why nor what to do.
  */
 import { useToast } from '@compass/ui';
-import type { CatalogKey } from '@compass/i18n';
-import { useI18n } from '../hooks/useI18n';
-import { haptic } from '../hooks/useTelegram';
-import { errorVars, serverErrorKey, writeErrorTextOf } from './errorText';
-
-/**
- * The sentence a failed write falls back to: its own failure sentence, or
- * `common.errors.actionFailed`. Never the bare `common.error`, which says
- * neither why nor what to do (DX-COPY-8); the type refuses it (review
- * TEST3-06: a test used to look for it in the source).
- */
-export type WriteFallbackKey = Exclude<CatalogKey, 'common.error'>;
+import { haptic } from '../lib/telegram';
+import {
+  errorVars,
+  serverErrorKey,
+  writeErrorTextOf,
+  type WriteFallbackKey,
+} from '../lib/errorText';
+import { useI18n } from './useI18n';
 
 export interface ErrToastOptions {
   /**

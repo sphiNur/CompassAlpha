@@ -99,7 +99,7 @@
 | -------------- | -------------------------------------------------------------------------------------- |
 | Service Worker | 已启用（N12，2026-10-30）：只缓存应用外壳，数据请求不经过它（`apps/web/public/sw.js`） |
 | PWA manifest   | **未提供**                                                                             |
-| IDB outbox     | 已实现 (`useOfflineQueue`)，按 procedure 注入 replayMap                                |
+| IDB outbox     | 已实现（`apps/web/src/lib/outbox/`），应用启动时为每个 procedure 注册重放处理函数      |
 | 网络恢复       | `navigator.online` 事件触发顺序重放 + 服务端幂等键去重                                 |
 
 **重要事实**：离线做到了 **mutation outbox + 网络恢复重放**，加上 SW 缓存的应用外壳（断网刷新也能打开，显示离线横幅）。没有 PWA manifest，数据不能离线读取。
@@ -436,21 +436,27 @@ apps/web/src/
 ├── components/
 │   ├── LanguageSheet.tsx
 │   ├── SettingsSheet.tsx
+│   ├── resilientLazy.tsx   # 页面分块加载失败时的重试占位
 │   └── StoreSwitcher.tsx
 ├── config/timings.ts
 ├── hooks/
 │   ├── useI18n.ts          # 订阅式 catalog 切换 + format
-│   ├── useTelegram.ts      # WebApp SDK 封装；MainButton / BackButton / Haptic
+│   ├── useTelegram.ts      # Telegram 启动、BackButton、SettingsButton 的 hook
+│   ├── usePageMainButton.ts # 页面主按钮（Shell 画在底栏上方）
 │   ├── useRealtime.ts      # WS + 400ms coalesce invalidate
-│   ├── useOfflineQueue.ts  # IDB outbox 重放
+│   ├── useOfflineQueue.ts  # 页面读写 outbox 的 hook
+│   ├── useOutboxReplay.ts  # 应用级重放：注册处理函数、触发 flush
+│   ├── useErrToast.ts      # mutation 失败的 toast
 │   ├── usePhotoUploader.ts # <input type="file"> 上传，非 getUserMedia
 │   ├── useTapGuard.ts      # 抑制滚动中误触
 │   └── useVersionCheck.ts  # 检测 build-id 变化 → 提示刷新
-├── lib/
+├── lib/                    # 不含 hook 和组件，不 import hooks/、components/、pages/、app/（eslint 检查）
 │   ├── trpc.ts             # createTRPCReact + httpLink + 单航班 refresh + X-Idempotency-Key
 │   ├── idb.ts              # outbox 持久化
+│   ├── outbox/             # 离线 outbox：engine.ts（flush、write-ahead）、policy.ts（纯规则）、replayHandlers.ts
+│   ├── telegram.ts         # WebApp SDK：getTg / isInTelegram / haptic
 │   ├── format.ts           # money / qty 格式
-│   ├── errToast.ts
+│   ├── errorText.ts        # 错误信息 → catalog key
 │   ├── networkError.ts
 │   ├── searchMatch.ts      # 跨语言 SKU 搜索
 │   └── telegramLinks.ts    # tg:// / t.me/ 链接构造

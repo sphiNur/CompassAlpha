@@ -42,13 +42,13 @@ import {
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { copyText } from '../../../lib/clipboard';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
 import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
-import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
+import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,

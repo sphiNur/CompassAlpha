@@ -3,13 +3,13 @@ import type { ReactNode } from 'react';
 import { Button, Banner, Field, FieldLabel, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
-import { getTg, haptic } from '../hooks/useTelegram';
+import { getTg, haptic } from '../lib/telegram';
 import { I18nGate, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { STALE } from '../config/timings';
-import { useTranslateError } from '../lib/errToast';
+import { useTranslateError } from '../hooks/useErrToast';
 import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
-import { useRefreshSession } from '../lib/refreshSession';
+import { useRefreshSession } from '../hooks/useRefreshSession';
 import { inviteSettled, markInviteSettled } from '../lib/launchInvite';
 import { accessBlock, authErrorText, type AuthError } from '../lib/authAccess';
 

@@ -39,7 +39,7 @@ import {
 import { trpc } from '../../../lib/trpc';
 import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';

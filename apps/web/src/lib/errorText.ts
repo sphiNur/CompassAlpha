@@ -2,8 +2,9 @@
  * Which catalog key describes an error message (2026-10-21 FE-10).
  *
  * Kept free of React / @compass/ui so it can be unit-tested and shared by
- * errToast (mutation toasts) and UiLabelsBridge (DataState's error banner).
+ * useErrToast (mutation toasts) and UiLabelsBridge (DataState's error banner).
  */
+import type { CatalogKey } from '@compass/i18n';
 import { isLikelyNetworkError } from './networkError';
 import { toQtyInput } from './format';
 
@@ -84,6 +85,14 @@ export function errorTextOf(
   const raw = (err as { message?: unknown } | null)?.message;
   return { key: errorTextKey(typeof raw === 'string' ? raw : undefined, fallbackKey), vars: {} };
 }
+
+/**
+ * The sentence a failed write falls back to: its own failure sentence, or
+ * `common.errors.actionFailed`. Never the bare `common.error`, which says
+ * neither why nor what to do (DX-COPY-8); the type refuses it (review
+ * TEST3-06: a test used to look for it in the source).
+ */
+export type WriteFallbackKey = Exclude<CatalogKey, 'common.error'>;
 
 /**
  * The toast for a write that failed and was not queued (errToast; review

@@ -11,12 +11,13 @@ import { useSheetFocus } from '../sheetFocus';
  * across all consumers, so this is the org-wide source of truth.
  *
  * Why: Telegram's WebApp BackButton APPENDS click handlers (not
- * replace). When a section frame and an open sheet both register
- * handlers, a single back-tap fires both — drilling the section up
- * AND closing the sheet at once. With this counter, the section
- * frame can disable its own BackButton hook while ANY sheet is open
- * (see useSheetCount in apps/web/hooks/useTelegram), letting the
- * sheet's BackButton wiring take over uncontested.
+ * replace). When a section frame and an open sheet both registered
+ * handlers, a single back-tap fired both — drilling the section up
+ * AND closing the sheet at once — so the section frame turned its own
+ * BackButton off while any sheet was open. Since CA-34 the button is
+ * owned through ../telegramBackStack (see below). The count is read by
+ * the toast stack, which follows an open sheet (Toast.tsx), and by the
+ * web app's update check, which does not reload under an open sheet.
  *
  * We also wire the Telegram BackButton from inside Sheet itself so
  * every sheet — including ones we forget — gets close-on-back for
@@ -45,9 +46,8 @@ export function subscribeSheetCount(listener: () => void): () => void {
 }
 
 /**
- * Convenience hook for consumers — the counter as React state. Used
- * by SectionFrame to disable its own BackButton hook while sheets are
- * stacked on top.
+ * The counter as React state. The toast stack reads it to follow an
+ * open sheet (Toast.tsx).
  */
 export function useSheetCount(): number {
   const [n, setN] = useState(_sheetCount);

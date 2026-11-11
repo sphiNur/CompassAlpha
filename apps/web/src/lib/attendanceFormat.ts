@@ -1,7 +1,8 @@
-import type { useDateFormat, useI18n } from '../hooks/useI18n';
+import type { I18n } from '@compass/i18n';
+import type { DateFormatters } from './dateFormat';
 
 /** "1 h 20 min" in the UI language. */
-export function minutesText(i18n: ReturnType<typeof useI18n>, minutes: number): string {
+export function minutesText(i18n: I18n, minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   if (h === 0) return i18n.t('attendance.duration.minutes', { m });
@@ -15,8 +16,8 @@ export function minutesText(i18n: ReturnType<typeof useI18n>, minutes: number): 
  * catalog sets brackets and spacing (Chinese: 下班（11月10日）).
  */
 export function punchKindText(
-  i18n: ReturnType<typeof useI18n>,
-  dates: Pick<ReturnType<typeof useDateFormat>, 'calendarDay'>,
+  i18n: I18n,
+  dates: Pick<DateFormatters, 'calendarDay'>,
   punch: { kind: 'in' | 'out'; date: string },
   rowDate: string,
 ): string {
