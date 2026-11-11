@@ -52,8 +52,14 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
-import { UuidSchema } from '@compass/contracts';
-import { PURCHASE_PRICE_RE } from '@compass/contracts/limits';
+import {
+  DishCreateInputSchema,
+  DishSaveInputSchema,
+  DishSetIngredientsInputSchema,
+  DishUpdateInputSchema,
+  UuidSchema,
+  type DishIngredientInput,
+} from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { isUniqueViolation } from '../../services/pgErrors';
 import {
@@ -78,69 +84,6 @@ async function codeChecked<T>(op: PromiseLike<T>): Promise<T> {
 }
 
 /**
- * i18n names jsonb shape. At least one non-empty locale required —
- * an unnamed dish is useless. Same validator as catalog SKUs.
- */
-const NamesSchema = z
-  .record(z.string(), z.string().max(200))
-  .refine(
-    (v) => Object.values(v).some((s2) => typeof s2 === 'string' && s2.trim().length > 0),
-    { message: 'dishes.errors.namesRequired' },
-  );
-
-const IngredientSchema = z.object({
-  skuId: UuidSchema,
-  /** Decimal string with up to 4 fraction digits, must be > 0. */
-  qtyPerServing: z
-    .string()
-    .regex(/^\d{1,8}(\.\d{1,4})?$/, 'dishes.errors.qtyTooLarge')
-    .refine((s2) => Number(s2) > 0, { message: 'dishes.errors.ingredientQtyMustBePositive' }),
-  note: z.string().max(500).optional().nullable(),
-});
-
-/**
- * A dish's sale price: the numeric(14,2) shape every price column has
- * (contracts' PURCHASE_PRICE_RE; CONF-08 kept one copy of the pattern).
- */
-const DishPriceSchema = z.string().regex(PURCHASE_PRICE_RE, 'dishes.errors.priceTooLarge');
-
-const CreateInputSchema = z.object({
-  code: z.string().max(32).optional().nullable(),
-  names: NamesSchema,
-  description: z.record(z.string(), z.string().max(2000)).optional(),
-  unitPrice: DishPriceSchema.optional().nullable(),
-  ingredients: z.array(IngredientSchema).max(100),
-});
-
-const UpdateInputSchema = z.object({
-  dishId: UuidSchema,
-  code: z.string().max(32).optional().nullable(),
-  names: NamesSchema.optional(),
-  description: z.record(z.string(), z.string().max(2000)).optional(),
-  unitPrice: DishPriceSchema.optional().nullable(),
-  sortIndex: z.number().int().optional(),
-});
-
-const SetIngredientsInputSchema = z.object({
-  dishId: UuidSchema,
-  ingredients: z.array(IngredientSchema).max(100),
-});
-
-const SaveInputSchema = CreateInputSchema.extend({
-  /** Absent → create a new dish; present → update that dish. */
-  dishId: UuidSchema.optional(),
-  /**
-   * CLS-25 (2026-10-30): the dish's `updatedAt` when the editor opened it.
-   * When given and the dish has changed since, the save is refused instead
-   * of silently overwriting the other person's edit. Optional so clients
-   * that don't send it keep working.
-   */
-  expectedUpdatedAt: z.string().datetime().optional(),
-});
-
-type IngredientInput = z.infer<typeof IngredientSchema>;
-
-/**
  * 2026-10-21 (CA-55): skuIds that appear more than once in a recipe.
  * (dish_id, sku_id) is the PK, so duplicates used to surface as a 500
  * (create) or a half-applied diff (setIngredients). Exported for tests.
@@ -161,7 +104,7 @@ export function duplicateIngredientSkuIds(
 async function assertIngredientsValid(
   tx: DB,
   orgId: string,
-  ingredients: ReadonlyArray<IngredientInput>,
+  ingredients: ReadonlyArray<DishIngredientInput>,
 ): Promise<void> {
   if (duplicateIngredientSkuIds(ingredients).length > 0) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'dishes.errors.duplicateIngredient' });
@@ -200,7 +143,7 @@ async function assertIngredientsValid(
 async function replaceIngredients(
   tx: DB,
   dishId: string,
-  ingredients: ReadonlyArray<IngredientInput>,
+  ingredients: ReadonlyArray<DishIngredientInput>,
 ): Promise<void> {
   const current = await tx
     .select()
@@ -313,7 +256,7 @@ export const dishesRouter = router({
     }),
 
   create: authedProcedure
-    .input(CreateInputSchema)
+    .input(DishCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireDishesManage(ctx.session!.permissions);
       // Validate every SKU referenced actually belongs to this org.
@@ -358,7 +301,7 @@ export const dishesRouter = router({
     }),
 
   update: authedProcedure
-    .input(UpdateInputSchema)
+    .input(DishUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireDishesManage(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
@@ -389,7 +332,7 @@ export const dishesRouter = router({
    * rows are upserted; removed rows are deleted.
    */
   setIngredients: authedProcedure
-    .input(SetIngredientsInputSchema)
+    .input(DishSetIngredientsInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireDishesManage(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
@@ -415,7 +358,7 @@ export const dishesRouter = router({
    * recipe — all in one withOrg transaction, so either the whole edit
    * lands or nothing does.
    */
-  save: authedProcedure.input(SaveInputSchema).mutation(async ({ ctx, input }) => {
+  save: authedProcedure.input(DishSaveInputSchema).mutation(async ({ ctx, input }) => {
     requireDishesManage(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;

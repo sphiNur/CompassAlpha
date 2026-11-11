@@ -18,8 +18,20 @@ import {
   SUPER_ADMIN_RANK,
   GrantRoleInputSchema,
   MemberInviteRevokeInputSchema,
-  SkuStepSchema,
-  SkuUnitSchema,
+  CategoryCreateInputSchema,
+  CategoryDeleteInputSchema,
+  CategoryUpdateInputSchema,
+  ExpenseTemplateCreateInputSchema,
+  ExpenseTemplateDeleteInputSchema,
+  ExpenseTemplateUpdateInputSchema,
+  SkuCreateInputSchema,
+  SkuDeleteInputSchema,
+  SkuUpdateInputSchema,
+  SupplierCreateInputSchema,
+  SupplierDeleteInputSchema,
+  SupplierUpdateInputSchema,
+  TrimmedNameSchema,
+  codeTextSchema,
   UuidSchema,
   TimeZoneSchema,
   DateStringSchema,
@@ -772,79 +784,22 @@ const RevokeRoleInputSchema = z.object({
   bindingId: UuidSchema,
 });
 
-// History: 2026-05-05 made all four languages (uz, ru, en, zh) mandatory
-// because a single-locale row rendered as the bare SKU code on OrderPage.
-// Display now goes through useProductName/pickName, which falls back
-// across locales, so that failure mode is gone.
-//
-// `aliases` is left lax (record<string,string[]>) — those are search
-// keywords, not display strings, and a missing locale just means
-// fewer hits, not a broken render.
-// 2026-10-21 CA-40: relaxed from "all four locales required" to "at least
-// one" (the dishes rule). Blank locales are dropped before storage so
-// display fallbacks (`pickName`'s `??` chain) skip them instead of
-// rendering an empty string.
-const NamesSchema = z
-  .object({
-    uz: z.string().max(200).optional(),
-    ru: z.string().max(200).optional(),
-    en: z.string().max(200).optional(),
-    zh: z.string().max(200).optional(),
-  })
-  .strict()
-  .transform((v) => {
-    const out: Partial<Record<'uz' | 'ru' | 'en' | 'zh', string>> = {};
-    for (const k of ['uz', 'ru', 'en', 'zh'] as const) {
-      const t = v[k]?.trim();
-      if (t) out[k] = t;
-    }
-    return out;
-  })
-  .refine((v) => Object.keys(v).length > 0, { message: 'admin.errors.namesRequired' })
-  // F10: names are printed by the operator's scripts; no control characters.
-  .refine((v) => Object.values(v).every(noControlChars), { message: CONTROL_CHARS_MESSAGE });
-
-// M3.14 (2026-05-16) restricted step to {'0.5','1'}; 2026-07-30 widened
-// it to the canonical {'0.5','1','10','50','100'} grid and locked unit
-// to a fixed vocabulary. Both enums live in @compass/contracts
-// (SkuStepSchema / SkuUnitSchema) so the admin sheet's Selects and this
-// gate can't drift apart. Migration 0036 backfills existing rows.
-const StepSchema = SkuStepSchema;
-
-/**
- * CAT-10 (2026-10-31): a sort position. A fractional or huge value came
- * back as zod's English "Expected integer" — "出错了" in the form — or
- * overflowed the int column as a 500.
- */
-const SortIndexSchema = z
-  .number({ invalid_type_error: 'admin.errors.sortIndexInteger' })
-  .int('admin.errors.sortIndexInteger')
-  .min(-1_000_000, 'admin.errors.sortIndexInteger')
-  .max(1_000_000, 'admin.errors.sortIndexInteger');
-
 /** A store's own time zone, or empty/null to follow the organisation's (CLS-7). */
 const StoreTimeZoneSchema = z
   .preprocess((value) => (value === '' ? null : value), TimeZoneSchema.nullable())
   .optional();
 
-// ADM-11 (2026-10-30): names are trimmed before the length check, so
-// "   " is refused instead of stored; an empty code means no code.
-// F10 (2026-10-31): and refuse control characters (an escape sequence in
-// a store name reached the operator's terminal through the ops scripts).
-const TrimmedName = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .refine(noControlChars, CONTROL_CHARS_MESSAGE);
-const CodeText = (max: number) =>
-  z.string().trim().max(max).refine(noControlChars, CONTROL_CHARS_MESSAGE);
+// ADM-11 (2026-10-30): an empty code means no code. Names and codes are
+// trimmed and refuse control characters (TrimmedNameSchema, F10).
 const StoreCodeSchema = z
-  .preprocess((value) => (typeof value === 'string' && value.trim() === '' ? null : value), CodeText(32).nullable())
+  .preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+    codeTextSchema(32).nullable(),
+  )
   .optional();
 
 const StoreCreateInputSchema = z.object({
-  name: TrimmedName,
+  name: TrimmedNameSchema,
   code: StoreCodeSchema,
   address: z.string().max(500).optional().nullable(),
   timezone: StoreTimeZoneSchema,
@@ -852,7 +807,7 @@ const StoreCreateInputSchema = z.object({
 
 const StoreUpdateInputSchema = z.object({
   storeId: UuidSchema,
-  name: TrimmedName.optional(),
+  name: TrimmedNameSchema.optional(),
   code: StoreCodeSchema,
   address: z.string().max(500).optional().nullable(),
   timezone: StoreTimeZoneSchema,
@@ -877,114 +832,6 @@ const StoreDeleteInputSchema = z.object({
   storeId: UuidSchema,
 });
 
-const SkuCreateInputSchema = z.object({
-  categoryId: UuidSchema.optional().nullable(),
-  code: z.string().max(64).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional().nullable(),
-  names: NamesSchema,
-  unit: SkuUnitSchema,
-  step: StepSchema.default('1'),
-  sortIndex: SortIndexSchema.default(0),
-});
-
-const SkuUpdateInputSchema = z.object({
-  skuId: UuidSchema,
-  categoryId: UuidSchema.optional().nullable(),
-  code: z.string().max(64).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional().nullable(),
-  names: NamesSchema.optional(),
-  unit: SkuUnitSchema.optional(),
-  step: StepSchema.optional(),
-  sortIndex: SortIndexSchema.optional(),
-  isArchived: z.boolean().optional(),
-});
-
-const SkuDeleteInputSchema = z.object({
-  skuId: UuidSchema,
-});
-
-const SupplierCreateInputSchema = z.object({
-  name: TrimmedName,
-  contactPhone: z.string().max(32).optional().nullable(),
-  contactTg: z.string().max(64).optional().nullable(),
-  address: z.string().max(500).optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-});
-
-const SupplierUpdateInputSchema = z.object({
-  supplierId: UuidSchema,
-  name: TrimmedName.optional(),
-  contactPhone: z.string().max(32).optional().nullable(),
-  contactTg: z.string().max(64).optional().nullable(),
-  address: z.string().max(500).optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-  isArchived: z.boolean().optional(),
-});
-
-const SupplierDeleteInputSchema = z.object({
-  supplierId: UuidSchema,
-});
-
-// M3.57 (2026-05-23): expense-template CRUD schemas. Same shape as
-// the inventory.expense_templates row except `id` is server-generated
-// on create. `defaultUnitPrice` must be > 0 because the auto-attach
-// loop calls AddRunExpense which uses the existing
-// PositiveDecimalString check — a zero default would fail validation
-// at run-create time and break the whole transaction.
-// CAT-11 (2026-10-30): bounded to the columns (a 15-digit price was a
-// 500, a third decimal was rounded away silently) and a quantity must be
-// positive (a 0 default reached the purchaser as a 0-quantity line).
-const DecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,9}(\.\d{1,3})?$/);
-const PositiveDecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,12}(\.\d{1,2})?$/);
-const ExpenseTemplateCreateInputSchema = z.object({
-  label: TrimmedName,
-  unitHint: CodeText(32).optional().nullable(),
-  defaultQty: DecimalStr.default('1'),
-  defaultUnitPrice: PositiveDecimalStr,
-  defaultPaymentMethod: z.enum(['cash', 'transfer']).default('cash'),
-  sortIndex: SortIndexSchema.default(0),
-});
-
-const ExpenseTemplateUpdateInputSchema = z.object({
-  templateId: UuidSchema,
-  label: TrimmedName.optional(),
-  unitHint: CodeText(32).optional().nullable(),
-  defaultQty: DecimalStr.optional(),
-  defaultUnitPrice: PositiveDecimalStr.optional(),
-  defaultPaymentMethod: z.enum(['cash', 'transfer']).optional(),
-  sortIndex: SortIndexSchema.optional(),
-  isArchived: z.boolean().optional(),
-});
-
-const ExpenseTemplateDeleteInputSchema = z.object({
-  templateId: UuidSchema,
-});
-
-const CategoryCreateInputSchema = z.object({
-  slug: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9-]+$/),
-  names: NamesSchema,
-  sortIndex: SortIndexSchema.default(0),
-});
-
-const CategoryUpdateInputSchema = z.object({
-  categoryId: UuidSchema,
-  slug: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9-]+$/)
-    .optional(),
-  names: NamesSchema.optional(),
-  sortIndex: SortIndexSchema.optional(),
-  isArchived: z.boolean().optional(),
-});
-
-const CategoryDeleteInputSchema = z.object({
-  categoryId: UuidSchema,
-});
-
 const MemberSetStatusInputSchema = z.object({
   memberId: UuidSchema,
   status: z.enum(['active', 'suspended']),
@@ -999,7 +846,7 @@ const InviteMemberByTgIdInputSchema = z.object({
     .string()
     .regex(/^\d{4,15}$/, 'Telegram ID must be a numeric string')
     .transform((s) => BigInt(s)),
-  displayName: TrimmedName.optional(),
+  displayName: TrimmedNameSchema.optional(),
   roleSlug: z.string().min(1).max(64).optional(),
   /** Stores to assign at invite time. The new model REQUIRES at least
    *  one store unless the role is admin/super_admin (which bypass via
@@ -1015,7 +862,7 @@ const CreateMemberInviteInputSchema = z.object({
 
 const MemberSetDisplayNameInputSchema = z.object({
   memberId: UuidSchema,
-  displayName: TrimmedName,
+  displayName: TrimmedNameSchema,
 });
 
 const MemberAssignStoreInputSchema = z.object({

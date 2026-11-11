@@ -36,6 +36,24 @@ export const SKU_UNITS = ['kg', 'L', 'pcs', 'pack', 'bunch', 'box', 'roll', 'pai
 export const SKU_STEPS = ['0.5', '1', '10', '50', '100'] as const;
 
 /**
+ * ADM2-09 (2026-11-11): the longest text each catalog field takes. The
+ * input schemas (`schemas/catalog.ts`) and the admin forms' `maxLength`
+ * read the same numbers, so a form can't take text the server refuses.
+ */
+export const CATALOG_TEXT_MAX = {
+  /** A name in one language; also a supplier name and an expense label. */
+  name: 200,
+  skuCode: 64,
+  categorySlug: 64,
+  dishCode: 32,
+  unitHint: 32,
+  phone: 32,
+  telegram: 64,
+  address: 500,
+  notes: 1000,
+} as const;
+
+/**
  * RE-ENG-1 / BUY-15 (2026-10-30): a purchase price the column stores —
  * numeric(14,2): above 0, at most 12 digits and 2 decimals.
  * `PurchasePriceSchema` uses the same rule.
