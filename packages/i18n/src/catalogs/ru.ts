@@ -478,6 +478,7 @@ export const ru = {
   'common.errors.actionFailed':
     'Не получилось. Попробуйте ещё раз; если не помогает, обновите страницу.',
   'common.errors.invalidDecimal': 'Введите число, не более 3 знаков после запятой.',
+  'common.errors.invalidPhotoUrl': 'Не удалось использовать фото. Сделайте снимок ещё раз.',
   'common.errors.positiveDecimal': 'Введите число больше 0, не более 3 знаков после запятой.',
   'common.errors.invalidDate': 'Неверная дата. Выберите её заново в календаре.',
   'order.errors.tooManyExtras': 'В заказе может быть не больше 50 других позиций.',

@@ -145,6 +145,44 @@ describe('run.decide', () => {
     expect(buy('1000000000', '1000').length).toBeGreaterThan(0);
   });
 
+  test('RUNAPI-19: a price that is not above 0 is called a price, not a quantity', () => {
+    let s = emptyRunState('r');
+    s = step(s, planRun({ orgId: 'o', plannedItems: [{ skuId: 'k', qty: '5' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
+    const ownPrice = (unitPrice: string) =>
+      decideRun(
+        s,
+        purchaseItem({
+          skuId: 'k',
+          unitPrice: '10',
+          actualQty: '1',
+          storeSplits: [{ storeId: 'A', qty: '1', unitPrice }],
+        }),
+        clock,
+      );
+    const expense = (unitPrice: string) =>
+      decideRun(
+        s,
+        {
+          type: 'AddRunExpense',
+          expenseId: 'e1',
+          label: 'porter',
+          qty: '1',
+          unitPrice,
+          storeSplits: [{ storeId: 'A', qty: '1' }],
+          paymentMethod: 'cash',
+          receiptPhotoUrl: null,
+          reason: 'carry',
+          actor: purchaser(),
+        },
+        clock,
+      );
+    expect(() => ownPrice('0')).toThrow('run.errors.priceFormat');
+    expect(() => expense('0')).toThrow('run.errors.priceFormat');
+    expect(() => expense('abc')).toThrow('run.errors.priceFormat');
+    expect(expense('5').length).toBeGreaterThan(0);
+  });
+
   test('allows a second purchaser to record a buy while another purchaser has claimed the run', () => {
     let state = emptyRunState('r1');
     state = step(

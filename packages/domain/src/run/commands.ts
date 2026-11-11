@@ -1,4 +1,5 @@
-import { centsToMoney, lineCents, lineWithinCap, MAX_LINE_AMOUNT } from '@compass/contracts';
+// RUNAPI-31: the money module only; the package root brings every zod contract.
+import { centsToMoney, lineCents, lineWithinCap, MAX_LINE_AMOUNT } from '@compass/contracts/money';
 import { conflict, forbidden, preconditionFailed, validation } from '../shared/errors';
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
@@ -381,8 +382,9 @@ export function decideRun(
 
       const actual = num(command.actualQty, 'run.errors.invalidQty');
       if (actual <= 0) throw validation('run.errors.qtyMustBePositive');
-      const price = num(command.unitPrice, 'run.errors.invalidQty');
-      if (price <= 0) throw validation('run.errors.qtyMustBePositive');
+      // RUNAPI-19: a bad price says so; it read "quantity must be positive".
+      const price = num(command.unitPrice, 'run.errors.priceFormat');
+      if (price <= 0) throw validation('run.errors.priceFormat');
 
       const splitSum = command.storeSplits.reduce(
         (s, x) => s + num(x.qty, 'run.errors.invalidQty'),
@@ -462,8 +464,9 @@ export function decideRun(
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       const qty = num(command.qty, 'run.errors.invalidQty');
       if (qty <= 0) throw validation('run.errors.qtyMustBePositive');
-      const price = num(command.unitPrice, 'run.errors.invalidQty');
-      if (price <= 0) throw validation('run.errors.qtyMustBePositive');
+      // RUNAPI-19: a bad price says so; it read "quantity must be positive".
+      const price = num(command.unitPrice, 'run.errors.priceFormat');
+      if (price <= 0) throw validation('run.errors.priceFormat');
       const splitSum = command.storeSplits.reduce(
         (s, x) => s + num(x.qty, 'run.errors.invalidQty'),
         0,
@@ -1556,8 +1559,8 @@ function purchasedSplitStores(state: RunState): Set<string> {
 function assertSplitOverrides(splits: StoreSplitCommand[]): void {
   for (const split of splits) {
     if (split.unitPrice !== undefined) {
-      const price = num(split.unitPrice, 'run.errors.invalidQty');
-      if (price <= 0) throw validation('run.errors.qtyMustBePositive');
+      const price = num(split.unitPrice, 'run.errors.priceFormat');
+      if (price <= 0) throw validation('run.errors.priceFormat');
     }
   }
 }

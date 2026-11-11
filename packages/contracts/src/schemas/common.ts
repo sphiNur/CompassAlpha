@@ -16,6 +16,17 @@ export type { StocktakeCountProblem } from '../limits';
 export const UuidSchema = z.string().uuid();
 
 /**
+ * A photo the app shows and links: an http(s) URL, or a data:image URI
+ * (the base64 fallback when the upload store is not there), at most
+ * 300,000 characters. Review RUNAPI-24: receipt photos took any string,
+ * `javascript:` included; delivery photos had this rule since DLV-7.
+ */
+export const PhotoUrlSchema = z
+  .string()
+  .max(300_000)
+  .regex(/^(https?:\/\/|data:image\/)/i, 'common.errors.invalidPhotoUrl');
+
+/**
  * True when the text holds a C0/C1 control character (U+0000–U+001F,
  * U+007F–U+009F). Security scan F10 (2026-10-31): names a tenant admin
  * types are later printed raw by the operator's maintenance scripts, and

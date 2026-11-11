@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  DateStringSchema,
-  DecimalStringSchema,
-  UuidSchema,
-} from './common';
+import { DateStringSchema, DecimalStringSchema, PhotoUrlSchema, UuidSchema } from './common';
 import { PURCHASE_PRICE_RE } from '../limits';
 
 export const RunStatusSchema = z.enum([
@@ -42,7 +38,8 @@ export const RunHistoryInputSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['dateTo'],
-        message: 'dateTo must be on or after dateFrom',
+        // RUNAPI-19: a catalog key the client can show (was English).
+        message: 'run.history.invalidDateRange',
       });
     }
   });
@@ -119,8 +116,8 @@ export const PurchaseItemInputSchema = z.object({
   // run totals — see PositiveDecimalStringSchema rationale.
   unitPrice: PurchasePriceSchema,
   actualQty: PurchaseQtySchema,
-  // Accept both https URLs and data: URIs.
-  receiptPhotoUrl: z.string().max(300_000).nullable(),
+  // An http(s) URL or a data:image URI (RUNAPI-24).
+  receiptPhotoUrl: PhotoUrlSchema.nullable(),
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
   /**
@@ -146,7 +143,7 @@ export const AddPurchaserItemInputSchema = z.object({
   supplierId: UuidSchema.nullable(),
   unitPrice: PurchasePriceSchema,
   actualQty: PurchaseQtySchema,
-  receiptPhotoUrl: z.string().max(300_000).nullable(),
+  receiptPhotoUrl: PhotoUrlSchema.nullable(),
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
   reason: z.string().trim().min(1).max(500),
@@ -176,7 +173,7 @@ export const AddRunExpenseInputSchema = z.object({
   unitPrice: PurchasePriceSchema,
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
-  receiptPhotoUrl: z.string().max(300_000).nullable(),
+  receiptPhotoUrl: PhotoUrlSchema.nullable(),
   reason: z.string().trim().min(1).max(500),
   expectedSeq: z.number().int().optional(),
 });
