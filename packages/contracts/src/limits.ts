@@ -126,10 +126,30 @@ export const ATTENDANCE_FACE_CONSENT_VERSION = 1;
  * than this cannot, and the phone's own uncertainty counts for up to the
  * slack. The phone checks the same before it opens the camera
  * (2026-11-07), so nobody does the face check only to hear they are too
- * far; the server decides.
+ * far; the server decides. The rule itself is `locationVerdict`.
  */
 export const ATTENDANCE_MAX_ACCURACY_M = 300;
 export const ATTENDANCE_ACCURACY_SLACK_M = 50;
+
+/** Where a phone's fix places someone, for a store's clock-in area. */
+export type LocationVerdict = 'inside' | 'outside' | 'inaccurate';
+
+/**
+ * The one rule for "inside the clock-in area" (review ATT-08,
+ * 2026-11-10): the server's at the punch, the phone's before the camera,
+ * and the two maps'. They were four copies, and the maps disagreed with
+ * the server. `distanceM` is from the area's centre, rounded to the metre
+ * as the server stores it; `accuracyM` is the fix's own uncertainty.
+ */
+export function locationVerdict(fix: {
+  distanceM: number;
+  accuracyM: number;
+  radiusM: number;
+}): LocationVerdict {
+  if (fix.accuracyM > ATTENDANCE_MAX_ACCURACY_M) return 'inaccurate';
+  const slack = Math.min(fix.accuracyM, ATTENDANCE_ACCURACY_SLACK_M);
+  return fix.distanceM > fix.radiusM + slack ? 'outside' : 'inside';
+}
 
 /**
  * A colleague clocked on someone's phone (owner decision 2026-11-07):

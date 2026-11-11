@@ -6,7 +6,10 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
+  ATTENDANCE_ACCURACY_SLACK_M,
+  ATTENDANCE_MAX_ACCURACY_M,
   isPurchasePrice,
+  locationVerdict,
   ORDER_QTY_MAX,
   SKU_STEPS,
   SKU_UNITS,
@@ -113,5 +116,18 @@ describe('limits.ts', () => {
     expect(zero.success).toBe(false);
     expect(zero.error?.issues[0]?.message).toBe('settlement.errors.invalidDetails');
     expect(line('12.345').error?.issues[0]?.message).toBe('settlement.errors.invalidMoney');
+  });
+
+  it('locationVerdict is the one rule for the clock-in area (ATT-08)', () => {
+    const at = (distanceM: number, accuracyM: number) =>
+      locationVerdict({ distanceM, accuracyM, radiusM: 100 });
+    expect([at(100, 0), at(101, 0)]).toEqual(['inside', 'outside']);
+    // The fix's own uncertainty counts, up to the slack.
+    expect([at(130, 30), at(131, 30)]).toEqual(['inside', 'outside']);
+    const slack = ATTENDANCE_ACCURACY_SLACK_M;
+    expect([at(100 + slack, 200), at(101 + slack, 200)]).toEqual(['inside', 'outside']);
+    // A fix coarser than the cap places no one, even at the centre.
+    expect(at(0, ATTENDANCE_MAX_ACCURACY_M)).toBe('inside');
+    expect(at(0, ATTENDANCE_MAX_ACCURACY_M + 1)).toBe('inaccurate');
   });
 });

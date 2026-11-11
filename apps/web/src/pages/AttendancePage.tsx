@@ -28,11 +28,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Banner, Button, ConfirmSheet, DataState, EmptyState, PageHeader } from '@compass/ui';
-import {
-  ATTENDANCE_ACCURACY_SLACK_M,
-  ATTENDANCE_FACE_CONSENT_VERSION,
-  ATTENDANCE_MAX_ACCURACY_M,
-} from '@compass/contracts/limits';
+import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
 import { haptic } from '../hooks/useTelegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
@@ -65,17 +61,18 @@ type Far =
   | { kind: 'inaccurate'; accuracy: number };
 
 /**
- * The server's own location lines (attendance.punch), checked before the
+ * The server's own location rule (locationVerdict), checked before the
  * camera: the phone never refuses what the server would take.
  */
 function tooFar(fix: Fix, area: GeoArea): Far | null {
-  if (fix.accuracy > ATTENDANCE_MAX_ACCURACY_M) {
-    return { kind: 'inaccurate', accuracy: Math.round(fix.accuracy) };
-  }
   const distance = Math.round(distanceMeters(fix, area));
-  if (distance > area.radiusM + Math.min(fix.accuracy, ATTENDANCE_ACCURACY_SLACK_M)) {
-    return { kind: 'outside', distance, radius: area.radiusM };
-  }
+  const verdict = locationVerdict({
+    distanceM: distance,
+    accuracyM: fix.accuracy,
+    radiusM: area.radiusM,
+  });
+  if (verdict === 'inaccurate') return { kind: 'inaccurate', accuracy: Math.round(fix.accuracy) };
+  if (verdict === 'outside') return { kind: 'outside', distance, radius: area.radiusM };
   return null;
 }
 
@@ -470,11 +467,11 @@ function ClockPanel({ storeId }: { storeId: string }) {
   );
 }
 
-/** Before the first punch: enroll the face, wait for approval, or enroll again. */
 /**
  * The store's clock-in area on a map, and on request where the phone is
- * now: whether a punch here would be inside it (2026-11-07). The server
- * decides at the punch; this is only a look.
+ * now: whether a punch here would be inside it (2026-11-07), by the
+ * punch's own rule (locationVerdict, review ATT-08). The server decides
+ * at the punch; this is only a look.
  */
 function WhereAmI({ area }: { area: GeoArea }) {
   const i18n = useI18n();
@@ -493,7 +490,11 @@ function WhereAmI({ area }: { area: GeoArea }) {
     }
   };
   const distance = fix ? Math.round(distanceMeters(fix, area)) : null;
-  const inside = distance !== null && distance <= area.radiusM;
+  const verdict =
+    fix && distance !== null
+      ? locationVerdict({ distanceM: distance, accuracyM: fix.accuracy, radiusM: area.radiusM })
+      : null;
+  const inside = verdict === 'inside';
   return (
     <section className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
       <GeoMap
@@ -518,12 +519,19 @@ function WhereAmI({ area }: { area: GeoArea }) {
           className={`text-old-body font-semibold ${inside ? 'text-[var(--c-success-ink)]' : 'text-[var(--c-danger-ink)]'}`}
           aria-live="polite"
         >
-          {inside
-            ? i18n.t('attendance.map.inside', { m: distance })
-            : i18n.t('attendance.map.outside', { m: distance - area.radiusM })}
-          <span className="block text-old-label font-normal text-[var(--c-fg-muted)]">
-            {i18n.t('attendance.map.accuracy', { m: Math.round(fix.accuracy) })}
-          </span>
+          {verdict === 'inaccurate' ? (
+            // What the punch would say: too coarse to place anyone.
+            i18n.t('attendance.errors.locationInaccurate', { accuracy: Math.round(fix.accuracy) })
+          ) : (
+            <>
+              {inside
+                ? i18n.t('attendance.map.inside', { m: distance })
+                : i18n.t('attendance.map.outside', { m: distance - area.radiusM })}
+              <span className="block text-old-label font-normal text-[var(--c-fg-muted)]">
+                {i18n.t('attendance.map.accuracy', { m: Math.round(fix.accuracy) })}
+              </span>
+            </>
+          )}
         </p>
       ) : null}
       {problem ? (
@@ -538,6 +546,7 @@ function WhereAmI({ area }: { area: GeoArea }) {
   );
 }
 
+/** Before the first punch: enroll the face, wait for approval, or enroll again. */
 function EnrollCard({
   status,
   note,
