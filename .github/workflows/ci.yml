@@ -345,6 +345,12 @@ jobs:
     env:
       # global-setup wipes and rebuilds this database on every run.
       E2E_DATABASE_URL: postgres://compass:compass@localhost:5432/compass_e2e
+      # The runner image ships Google Chrome; the e2e config runs on it,
+      # as local runs and the deploy smokes do. Installing Playwright's own
+      # Chromium fetched its system packages from the Ubuntu mirrors on
+      # every run, and a mirror outage (2026-11-11) failed every PR for
+      # hours before a single test ran.
+      PLAYWRIGHT_CHANNEL: chrome
 
     steps:
       - uses: actions/checkout@v6
@@ -364,8 +370,8 @@ jobs:
       - name: Install workspace deps
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium
-        run: pnpm --filter @compass/e2e exec playwright install --with-deps chromium
+      - name: Browser version
+        run: google-chrome --version
 
       - name: Walk the main flow
         # Real api, real database, web dev server, development login.
