@@ -88,13 +88,14 @@ import { useTelegramSettingsButton } from '../hooks/useTelegram';
 import { usePageMainButtonState } from '../hooks/usePageMainButton';
 import { useAppMutating, useNavigationBlocked } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
-import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
-import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
+import { StoreChip } from '../components/StoreSwitcher';
+import { useStoreContext } from '../hooks/useStoreContext';
+import { PageMenuProvider, usePageMenuRegistration } from '../components/PageMenuContext';
 import { lastUpdatedLabel, useCachedDataAge } from '../hooks/useCachedDataAge';
 import { trpc } from '../lib/trpc';
 import { navBadges, type NavBadge } from '../lib/navBadges';
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
-import { requestStoreChange } from '../components/StoreSwitcher';
+import { requestStoreChange } from '../lib/storeContext';
 import { storeFromDeepLinkSearch, stripStoreParam } from '../lib/deepLink';
 
 // Debug tab moved INTO Admin as a sub-tab. Reduces bottom-nav clutter

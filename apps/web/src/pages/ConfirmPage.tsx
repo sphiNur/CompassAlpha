@@ -37,7 +37,7 @@ import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
 import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../hooks/useStoreContext';
 import {
   countVerdicts,
   defaultDeliveringRunId,

@@ -16,7 +16,7 @@
 import { EmptyState } from '@compass/ui';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../hooks/useStoreContext';
 import { useI18n } from '../hooks/useI18n';
 
 export function SalesPage() {

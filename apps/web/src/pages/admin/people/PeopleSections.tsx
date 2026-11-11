@@ -49,7 +49,7 @@ import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { getTg } from '../../../lib/telegram';
-import { useStoreContext } from '../../../components/StoreSwitcher';
+import { useStoreContext } from '../../../hooks/useStoreContext';
 import {
   inviteLink as makeInviteLink,
   shareLink as makeShareLink,

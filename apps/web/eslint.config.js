@@ -17,6 +17,17 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 import { BROWSER_GLOBALS, SOURCE_RULES, TEST_RULES } from '../../eslint.shared.mjs';
 
+/** 4d below: each layer of src and the layers above it, top layer first. */
+const LAYERS = [
+  { files: ['src/pages/**/*.{ts,tsx}'], above: ['app'] },
+  { files: ['src/components/**/*.{ts,tsx}'], above: ['pages', 'app'] },
+  { files: ['src/hooks/**/*.{ts,tsx}'], above: ['components', 'pages', 'app'] },
+  {
+    files: ['src/lib/**/*.{ts,tsx}', 'src/stores/**/*.{ts,tsx}', 'src/pages/**/lib/**/*.{ts,tsx}'],
+    above: ['hooks', 'components', 'pages', 'app'],
+  },
+];
+
 /** 4c below: values come from the zod-free subpaths of @compass/contracts. */
 const CONTRACTS_BARREL = {
   name: '@compass/contracts',
@@ -102,7 +113,7 @@ export default [
   //     findings are fixed; never add one.
   {
     files: [
-      'src/app/PageMenuContext.tsx',
+      'src/components/PageMenuContext.tsx',
       'src/components/sales/StoreSalesPanel.tsx',
       'src/pages/DebugPage.tsx',
       'src/pages/OrderPage.tsx',
@@ -134,13 +145,16 @@ export default [
     },
   },
 
-  // 4d) Review COREWEB2-14 (2026-11-11): lib/ holds plain modules, no
-  //     React hooks or components, and sits below hooks/, components/,
-  //     pages/ and app/. It used to import hooks, and hooks were kept in
-  //     it. Tests are exempt. The rule restates 4c's barrel path: a later
-  //     block's options for a rule replace an earlier block's.
-  {
-    files: ['src/lib/**/*.{ts,tsx}', 'src/pages/**/lib/**/*.{ts,tsx}'],
+  // 4d) Layers (review COREWEB2-14 and NEW-08, 2026-11-11). Lowest
+  //     first: lib/ and stores/ (plain modules, no React hooks or
+  //     components), hooks/, components/, pages/, app/. A file may import
+  //     its own layer and the ones below, never one above: lib/ used to
+  //     import hooks, and hooks and pages imported components and app.
+  //     Tests are exempt. Each block restates 4c's barrel path, because a
+  //     later block's options for a rule replace an earlier block's; the
+  //     lib block comes last, so it is the one that applies to pages/*/lib.
+  ...LAYERS.map(({ files, above }) => ({
+    files,
     ignores: ['**/__tests__/**', '**/*.test.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
@@ -149,15 +163,14 @@ export default [
           paths: [CONTRACTS_BARREL],
           patterns: [
             {
-              regex: '(^|/)(hooks|components|pages|app)/',
-              message:
-                'lib/ is the layer below hooks, components, pages and app: move the shared part into lib, or the code that needs the upper layer out of lib.',
+              regex: `(^|/)(${above.join('|')})/`,
+              message: `Imports go down the layers (lib, stores < hooks < components < pages < app): this file may not import from ${above.join(', ')}. Move the shared part down, or the code that needs the upper layer up.`,
             },
           ],
         },
       ],
     },
-  },
+  })),
 
   // 5) ErrorBoundary tolerates console.error as a true last-resort
   //    fallback when the structured logger itself fails.

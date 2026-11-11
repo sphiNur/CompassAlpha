@@ -1,5 +1,5 @@
 /**
- * Store-context plumbing — picker UI + state hooks.
+ * The store picker and the store chip.
  *
  * History
  *   2026-05-05  First version. Added a global pill button rendered in
@@ -38,76 +38,20 @@
  *               privilege), and only becomes tappable for `org.admin` —
  *               who get the picker in a sheet the chip owns, rather than
  *               being sent to Settings to hunt for it.
+ *
+ *   2026-11-11  (review NEW-08) Only the picker and the chip live here.
+ *               useStoreContext and useCanSeeStorePicker are in
+ *               hooks/useStoreContext.ts, the switch rule and the guards
+ *               in lib/storeContext.ts: pages and hooks imported them from
+ *               this component file.
  */
 import { useState } from 'react';
 import { cn, SectionLabel, PickerGroup, PickerRow, Sheet, useToast } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
-import type { AuthSession, StoreContext } from '../stores/authStore';
+import type { StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
-
-/**
- * Module-level empty array for the `stores` selector below.
- *
- * Why this exists: zustand compares selector output with `Object.is` and
- * feeds it to `useSyncExternalStore`. A selector that ends in `?? []`
- * mints a FRESH array on every call, so the snapshot always looks
- * "changed" — React re-renders, re-reads, sees another new array, and
- * loops until it throws `Maximum update depth exceeded` out of
- * `forceStoreRerender`. That crash was observed once while navigating
- * Run → Confirm (both pages call useStoreContext) on 2026-07-30.
- *
- * Returning the SAME reference every time keeps the snapshot
- * stable when `session` is null or `session.stores` is undefined.
- */
-const NO_STORES: AuthSession['stores'] = [];
-
-/**
- * A page can veto a global store-context change while it has unsaved local
- * work. The switcher itself owns the only global trigger, so putting this
- * small registry here keeps a StoreChip change from silently discarding a
- * form that already protects its page-local selector.
- */
-type StoreChangeGuard = (nextStoreId: StoreContext) => boolean | Promise<boolean>;
-const storeChangeGuards = new Set<StoreChangeGuard>();
-
-export function registerStoreChangeGuard(guard: StoreChangeGuard): () => void {
-  storeChangeGuards.add(guard);
-  return () => storeChangeGuards.delete(guard);
-}
-
-export async function requestStoreChange(nextStoreId: StoreContext): Promise<boolean> {
-  for (const guard of storeChangeGuards) {
-    try {
-      if (!(await guard(nextStoreId))) return false;
-    } catch {
-      // A rejected guard must fail closed: preserving an unsaved financial
-      // draft is safer than changing global context without confirmation.
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * True iff the actor is allowed to see + use the store picker.
- *
- * M3.5 rule was `org.admin` only. 2026-10-21 audit CA-22 / E-08: a
- * non-admin assigned to two or more stores (multi-store manager,
- * regional purchaser) was pinned to `stores[0]` forever with no way to
- * switch, so the rule is now `org.admin` OR ≥2 assigned stores. The
- * "all organisation stores" row stays `org.admin`-only (see
- * StorePickerSection and authStore's canUseAllStores).
- */
-export function canSwitchStore(
-  session: Pick<AuthSession, 'permissions' | 'stores'> | null | undefined,
-): boolean {
-  if (!session) return false;
-  return session.permissions.includes('org.admin') || session.stores.length >= 2;
-}
-
-export function useCanSeeStorePicker(): boolean {
-  return useAuthStore((s) => canSwitchStore(s.session));
-}
+import { NO_STORES, useCanSeeStorePicker, useStoreContext } from '../hooks/useStoreContext';
+import { requestStoreChange } from '../lib/storeContext';
 
 /**
  * Inline picker rendered INSIDE the Settings sheet. No trigger button,
@@ -279,41 +223,3 @@ export function StoreChip({ className }: { className?: string } = {}) {
     </>
   );
 }
-
-/**
- * Hook helper — does the current page need a specific store?
- *
- * Returns:
- *   - { kind: 'specific', storeId } — caller can use storeId directly
- *   - { kind: 'all' } — page should aggregate; if it can't, show pick-prompt
- *   - { kind: 'none' } — user has no store assignments at all
- *
- * Centralizes the "what's our store context right now" logic so each
- * page doesn't reinvent the discriminated-union check.
- *
- * A persisted context is validated against the current session. A store
- * manager can only resolve to a store present in that session; `all` is
- * reserved for the explicit `org.admin` permission.
- */
-export function useStoreContext():
-  | { kind: 'specific'; storeId: string }
-  | { kind: 'all' }
-  | { kind: 'none' } {
-  const currentStoreId = useAuthStore((s) => s.currentStoreId);
-  // NO_STORES (module-level) — never `?? []` inline here. See the
-  // constant's docblock: a fresh array per call loops useSyncExternalStore.
-  const stores = useAuthStore((s) => s.session?.stores ?? NO_STORES);
-  const isOrgAdmin = useAuthStore((s) => s.session?.permissions.includes('org.admin') ?? false);
-  if (currentStoreId === ALL_STORES && isOrgAdmin) return { kind: 'all' };
-  if (typeof currentStoreId === 'string' && stores.some((store) => store.id === currentStoreId)) {
-    return { kind: 'specific', storeId: currentStoreId };
-  }
-  if (stores[0]) return { kind: 'specific', storeId: stores[0].id };
-  // A missing or stale context falls back to the first authorized store;
-  // without an authorized store, only an org admin may use the all-stores
-  // read context.
-  if (!isOrgAdmin) return { kind: 'none' };
-  return { kind: 'all' };
-}
-
-export type { StoreContext };

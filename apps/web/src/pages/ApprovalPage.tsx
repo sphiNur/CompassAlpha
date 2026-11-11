@@ -44,7 +44,7 @@ import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../hooks/useErrToast';
 import { extrasChanged, submittedDiff } from './order/submittedDiff';
 import { formatQty, formatMoney } from '../lib/format';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../hooks/useStoreContext';
 import { sessionItemsView } from './approval/sessionItemsView';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
 import {

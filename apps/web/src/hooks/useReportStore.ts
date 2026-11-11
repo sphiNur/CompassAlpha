@@ -4,7 +4,7 @@
  * top bar starts following it again. See lib/reportStore.ts.
  */
 import { useEffect, useState } from 'react';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from './useStoreContext';
 import { defaultReportStore } from '../lib/reportStore';
 
 export function useReportStore(readableStores: ReadonlyArray<{ id: string }> | undefined): {

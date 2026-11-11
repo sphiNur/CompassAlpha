@@ -89,8 +89,7 @@ export function usePageMenu(registration: PageMenuRegistration | null): void {
       : `${registration.title}::` +
         registration.actions
           .map(
-            (a) =>
-              `${a.label}|${a.variant ?? 'pearl'}|${a.disabled ? 'd' : 'e'}|${a.hint ?? ''}`,
+            (a) => `${a.label}|${a.variant ?? 'pearl'}|${a.disabled ? 'd' : 'e'}|${a.hint ?? ''}`,
           )
           .join('||');
 

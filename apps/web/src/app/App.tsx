@@ -20,7 +20,7 @@ import { useVersionCheck } from '../hooks/useVersionCheck';
 import { useRealtime } from '../hooks/useRealtime';
 import { useRefetchFailedOnReconnect } from '../hooks/useRefetchFailedOnReconnect';
 import { useOutboxReplay } from '../hooks/useOutboxReplay';
-import { useWarmRunQueries } from '../hooks/useWarmRunQueries';
+import { useWarmRunQueries } from './useWarmRunQueries';
 import { AuthGate } from './AuthGate';
 import { Shell } from './Shell';
 import { ErrorBoundary } from './ErrorBoundary';

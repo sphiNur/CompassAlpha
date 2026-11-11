@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { canSwitchStore } from '../../components/StoreSwitcher';
+import { canSwitchStore } from '../storeContext';
 import type { AuthSession } from '../../stores/authStore';
 
 const store = (id: string) => ({ id, name: id, code: null, isActive: true });

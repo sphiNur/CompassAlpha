@@ -84,7 +84,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
 }
 import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../hooks/useStoreContext';
 import {
   CANONICAL_UNITS,
   ORDER_QTY_MAX,
