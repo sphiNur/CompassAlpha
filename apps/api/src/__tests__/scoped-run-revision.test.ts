@@ -14,7 +14,7 @@ import {
   type ScopedRevisionInput,
   type ScopedRevisionItem,
 } from '../services/scopedRunRevision';
-import { deriveScopeStoreId } from '../trpc/routers/admin';
+import { deriveScopeStoreId } from '../services/adminAudit';
 
 const A = 'store-a';
 const B = 'store-b';

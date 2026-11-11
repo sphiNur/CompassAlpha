@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { auditAdmin } from '../trpc/routers/admin';
+import { auditAdmin } from '../services/adminAudit';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
