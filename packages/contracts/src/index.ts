@@ -10,6 +10,8 @@ export * from './schemas/admin';
 export * from './schemas/system';
 export * from './schemas/settlement';
 export * from './schemas/sales';
+export * from './schemas/inventory';
+export * from './schemas/report';
 export * from './money';
 export * from './quantity';
 export * from './schemas/attendance';

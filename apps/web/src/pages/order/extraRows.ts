@@ -3,7 +3,12 @@
  * the editor on the order page that shows them (ORD-13, 2026-11-11).
  */
 import type { CanonicalUnit } from '@compass/contracts';
-import { ORDER_QTY_MAX, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '@compass/contracts/limits';
+import {
+  ORDER_QTY_MAX,
+  WHOLE_NUMBER_UNITS,
+  isCanonicalUnit,
+  isPositiveQty,
+} from '@compass/contracts/limits';
 
 export interface ExtraDraft {
   name: string;
@@ -20,8 +25,6 @@ export interface ExtraDraft {
 /** A row as it is sent: its unit is one CanonicalUnitSchema accepts. */
 export type ExtraLine = Omit<ExtraDraft, 'unit'> & { unit: CanonicalUnit };
 
-const QTY_RE = /^\d+(\.\d{1,3})?$/;
-
 /**
  * The rows worth showing or sending: named, with a quantity the server
  * takes, trimmed. The server enforces the same rules; this just doesn't
@@ -34,7 +37,7 @@ export function cleanExtraRows(draft: readonly ExtraDraft[]): ExtraDraft[] {
     const name = r.name.trim();
     const qty = r.qty.trim();
     if (!name) continue;
-    if (!QTY_RE.test(qty) || Number(qty) <= 0) continue;
+    if (!isPositiveQty(qty)) continue;
     const note = r.note?.trim();
     out.push({ name, qty, unit: r.unit, ...(note ? { note } : {}) });
   }
@@ -73,9 +76,7 @@ export function isInvalidExtraRow(row: ExtraDraft): boolean {
 export function badExtraQty(row: ExtraDraft): boolean {
   const qty = row.qty.trim();
   // ORD-9: the server's upper bound too, so the row is flagged before save.
-  return (
-    !QTY_RE.test(qty) || Number(qty) <= 0 || Number(qty) > ORDER_QTY_MAX || wholeNumberRequired(row)
-  );
+  return !isPositiveQty(qty) || Number(qty) > ORDER_QTY_MAX || wholeNumberRequired(row);
 }
 
 /** DX-ORD-13: a whole-number unit (个, 包, 箱 …) with a fractional qty. */

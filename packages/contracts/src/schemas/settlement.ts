@@ -116,6 +116,9 @@ export const SettlementRecentInputSchema = z.object({
   limit: z.number().int().min(1).max(31).default(7),
 });
 
+/** settlement.revisions: every saved version of one daily close (CLS-20). */
+export const SettlementRevisionsInputSchema = z.object({ settlementId: UuidSchema });
+
 export type SettlementSaveInput = z.infer<typeof SettlementSaveInputSchema>;
 export type SettlementOperatingExpenseItem = z.infer<typeof SettlementOperatingExpenseItemSchema>;
 export type SettlementWageItem = z.infer<typeof SettlementWageItemSchema>;

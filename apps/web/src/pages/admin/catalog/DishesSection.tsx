@@ -25,7 +25,9 @@ import { formatMoney } from '../../../lib/format';
 import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
 import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
-import { EMPTY_NAMES, cleanNames, namesForEdit, type CatalogNames } from './catalogNames';
+import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
+import { checkDishDraft, type DishIngredientDraft } from './dishDraft';
+import { haptic } from '../../../hooks/useTelegram';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 
 // ============ Dishes (M2.0b) ============
@@ -57,13 +59,7 @@ interface DishDraft {
   names: CatalogNames;
   description: Record<string, string>;
   unitPrice: string;
-  ingredients: Array<{
-    /** The row's React key; never sent. */
-    key: string;
-    skuId: string;
-    qtyPerServing: string;
-    note: string;
-  }>;
+  ingredients: DishIngredientDraft[];
 }
 
 /**
@@ -198,55 +194,20 @@ export function DishesSection() {
 
   const handleSave = () => {
     if (!draft) return;
-    // Empty languages are left out (cleanNames), not sent as ''.
-    const names = cleanNames(draft.names);
-    if (Object.keys(names).length === 0) {
-      errToast('common.errors.actionFailed')(new Error('dishes.errors.namesRequired'));
-      return;
-    }
-    // CLS-11 (2026-10-30): a row with a product but no amount (or the
-    // reverse) was dropped without a word, and amounts / prices were
-    // rounded by toFixed. Only a row left completely blank is skipped now;
-    // anything half-filled or with too many digits stops the save.
-    const filled = draft.ingredients.filter((i) => i.skuId || i.qtyPerServing.trim());
-    // DX-DSH-1: an archived product must be replaced or its row removed;
-    // the row itself says so. The server refuses it as well.
-    if (filled.some((i) => skuById.get(i.skuId)?.isArchived)) {
-      errToast('common.errors.actionFailed')(new Error('dishes.errors.archivedIngredient'));
-      return;
-    }
-    if (filled.some((i) => !i.skuId || !(Number(i.qtyPerServing) > 0))) {
-      errToast('common.errors.actionFailed')(new Error('dishes.errors.incompleteIngredient'));
-      return;
-    }
-    if (filled.some((i) => !/^\d{1,8}(\.\d{1,4})?$/.test(i.qtyPerServing.trim()))) {
-      errToast('common.errors.actionFailed')(new Error('dishes.errors.qtyTooLarge'));
-      return;
-    }
-    const price = draft.unitPrice.trim();
-    if (price && !/^\d{1,12}(\.\d{1,2})?$/.test(price)) {
-      errToast('common.errors.actionFailed')(new Error('dishes.errors.priceTooLarge'));
-      return;
-    }
-    const cleanIngredients = filled.map((i) => ({
-      skuId: i.skuId,
-      qtyPerServing: i.qtyPerServing.trim(),
-      note: i.note.trim() || null,
-    }));
-    // 2026-10-21 CA-55: the server rejects a SKU listed twice; say so
-    // before the round trip.
-    if (new Set(cleanIngredients.map((i) => i.skuId)).size !== cleanIngredients.length) {
-      errToast('common.errors.actionFailed')(new Error('dishes.errors.duplicateIngredient'));
+    const check = checkDishDraft(draft, (skuId) => skuById.get(skuId)?.isArchived ?? false);
+    if (!check.ok) {
+      haptic('error');
+      toast.error(i18n.t(check.problem));
       return;
     }
     save.mutate({
       ...(draft.dishId ? { dishId: draft.dishId } : {}),
       ...(draft.expectedUpdatedAt ? { expectedUpdatedAt: draft.expectedUpdatedAt } : {}),
       code: draft.code.trim() || null,
-      names,
+      names: check.names,
       description: draft.description,
-      unitPrice: price || null,
-      ingredients: cleanIngredients,
+      unitPrice: check.unitPrice,
+      ingredients: check.ingredients,
     });
   };
 

@@ -46,6 +46,7 @@ import { otherStoreSkusOf, type ActiveRun } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { rowName } from '../lib/rowName';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
+import { isPositiveQty } from '@compass/contracts/limits';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -1651,18 +1652,14 @@ export const PurchaseRow = memo(function PurchaseRow({
   // it used to show up only on the store chips after saving.
   const plannedSum = demand.reduce((total, d) => total + Number(d.qty), 0);
   const splitPreview =
-    demand.length > 1 &&
-    /^\d+(\.\d{1,3})?$/.test(qty.trim()) &&
-    Number(qty) > 0 &&
-    Math.abs(Number(qty) - plannedSum) > 1e-9
+    demand.length > 1 && isPositiveQty(qty.trim()) && Math.abs(Number(qty) - plannedSum) > 1e-9
       ? proportionalSplitQty(demand, qty.trim(), step)
       : null;
 
   const canSave =
     item.status === 'pending' &&
     !saving &&
-    /^\d+(\.\d{1,3})?$/.test(qty.trim()) &&
-    Number(qty) > 0 &&
+    isPositiveQty(qty.trim()) &&
     rawPrice !== null &&
     !lineTooLarge;
 

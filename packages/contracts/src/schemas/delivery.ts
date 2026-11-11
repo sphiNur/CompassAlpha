@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { QTY_TEXT_RE } from '../limits';
 import { PhotoUrlSchema, UuidSchema } from './common';
 
 export const ConfirmStatusSchema = z.enum(['ok', 'short', 'wrong', 'quality']);
@@ -25,11 +26,7 @@ export const ConfirmStoreItemInputSchema = z.object({
    * for 'ok'. Optional so older clients keep working — an older client
    * sending 'short' without it gets run.errors.receivedQtyRequired.
    */
-  receivedQty: z
-    .string()
-    .regex(/^\d+(\.\d{1,3})?$/, 'common.errors.invalidDecimal')
-    .nullable()
-    .optional(),
+  receivedQty: z.string().regex(QTY_TEXT_RE, 'common.errors.invalidDecimal').nullable().optional(),
   expectedSeq: z.number().int().optional(),
 });
 

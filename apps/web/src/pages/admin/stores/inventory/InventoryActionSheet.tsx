@@ -15,7 +15,11 @@ import {
   readDecimalText,
   useToast,
 } from '@compass/ui';
-import { STOCKTAKE_COUNT_MESSAGE, stocktakeCountProblem } from '@compass/contracts/limits';
+import {
+  INVENTORY_NOTE_MAX,
+  STOCKTAKE_COUNT_MESSAGE,
+  stocktakeCountProblem,
+} from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../lib/errToast';
 import { formatQty } from '../../../../lib/format';
@@ -26,6 +30,7 @@ import {
   stockAfterWastage,
   stocktakeDiff,
   stocktakePrefill,
+  WASTAGE_GAP_MESSAGE,
   wastageMissing,
 } from '../inventoryHelpers';
 
@@ -172,11 +177,7 @@ export function InventoryActionSheet({
                 id="wastage-missing"
                 className="pb-2 text-center text-old-body-sm text-[var(--c-fg-muted)]"
               >
-                {i18n.t(
-                  wasteMissing === 'qty'
-                    ? 'inventory.sheet.wastage.needQty'
-                    : 'inventory.errors.wastageNeedsNote',
-                )}
+                {i18n.t(WASTAGE_GAP_MESSAGE[wasteMissing])}
               </p>
             ) : null}
             <Button
@@ -325,6 +326,7 @@ export function InventoryActionSheet({
               <Field label={i18n.t('inventory.sheet.note')}>
                 <Input
                   value={draftNote}
+                  maxLength={INVENTORY_NOTE_MAX}
                   aria-label={i18n.t('inventory.sheet.note')}
                   onChange={(e) => setDraftNote(e.target.value)}
                   placeholder={i18n.t('inventory.sheet.stocktake.notePlaceholder')}
@@ -336,9 +338,6 @@ export function InventoryActionSheet({
               <Field label={i18n.t('inventory.sheet.wastage.qtyLabel')}>
                 <Input
                   type="number"
-                  inputMode="decimal"
-                  step={skuById.get(action.skuId)?.step ?? '0.1'}
-                  min="0"
                   aria-label={i18n.t('inventory.sheet.wastage.qtyLabel')}
                   value={draftWasteQty}
                   onChange={(e) => setDraftWasteQty(e.target.value)}
@@ -351,6 +350,7 @@ export function InventoryActionSheet({
               >
                 <Input
                   value={draftNote}
+                  maxLength={INVENTORY_NOTE_MAX}
                   aria-label={i18n.t('inventory.sheet.note')}
                   onChange={(e) => setDraftNote(e.target.value)}
                   placeholder={i18n.t('inventory.sheet.wastage.notePlaceholder')}

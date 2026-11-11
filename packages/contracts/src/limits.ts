@@ -165,6 +165,63 @@ export const STOCKTAKE_COUNT_MESSAGE = {
 } as const satisfies Record<StocktakeCountProblem, string>;
 
 /**
+ * A quantity as the API takes it: digits, at most three decimals (the
+ * numeric(…,3) columns). `PositiveDecimalStringSchema` adds "above 0".
+ * Review CONF-10 (2026-11-11): the run, order and receiving screens each
+ * wrote the pattern out again.
+ */
+export const QTY_TEXT_RE = /^\d+(\.\d{1,3})?$/;
+
+/** `value` is a quantity above 0 that the API takes. */
+export function isPositiveQty(value: string): boolean {
+  return QTY_TEXT_RE.test(value) && Number(value) > 0;
+}
+
+/** CLS-19 (2026-10-30): a wastage stays below this, like a stocktake count. */
+export const WASTAGE_QTY_LIMIT = 100_000_000;
+
+export type WastageQtyProblem = 'format' | 'tooLarge';
+
+/**
+ * Why `value` cannot be the amount of a wastage: a quantity above 0 with
+ * at most three decimals, below WASTAGE_QTY_LIMIT. The server and the
+ * wastage sheet ask this one function (review CONF-10).
+ */
+export function wastageQtyProblem(value: string): WastageQtyProblem | null {
+  if (!isPositiveQty(value)) return 'format';
+  if (Number(value) >= WASTAGE_QTY_LIMIT) return 'tooLarge';
+  return null;
+}
+
+/** The catalog key the server and the wastage sheet show for each problem. */
+export const WASTAGE_QTY_MESSAGE = {
+  format: 'common.errors.positiveDecimal',
+  tooLarge: 'inventory.errors.qtyTooLarge',
+} as const satisfies Record<WastageQtyProblem, string>;
+
+/** The longest note a stocktake or a wastage keeps. */
+export const INVENTORY_NOTE_MAX = 500;
+
+export type RecipeQtyProblem = 'format' | 'notPositive';
+
+/**
+ * Why `value` cannot be how much of a product one serving of a dish uses:
+ * at most 8 digits and 4 decimals, above 0. `DishIngredientSchema` and
+ * the dish editor ask this one function (review CONF-10).
+ */
+export function recipeQtyProblem(value: string): RecipeQtyProblem | null {
+  if (!/^\d{1,8}(\.\d{1,4})?$/.test(value)) return 'format';
+  if (!(Number(value) > 0)) return 'notPositive';
+  return null;
+}
+
+/** The catalog key the server and the dish editor show for each problem. */
+export const RECIPE_QTY_MESSAGE = {
+  format: 'dishes.errors.qtyTooLarge',
+  notPositive: 'dishes.errors.ingredientQtyMustBePositive',
+} as const satisfies Record<RecipeQtyProblem, string>;
+
+/**
  * CONF-08 (2026-11-09): an amount in the daily close, stored as
  * numeric(14,2): digits, at most 12 before the point and 2 after; a minus
  * only where the field allows one (the previous procurement's carry);
