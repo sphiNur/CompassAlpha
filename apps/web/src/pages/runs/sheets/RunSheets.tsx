@@ -18,6 +18,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
+  Field,
+  FieldGroup,
+  FieldLabel,
   Input,
   NameCell,
   PhotoCapture,
@@ -290,27 +293,31 @@ export function PurchaseSheet({
             />
           ) : null}
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {/* R2-BUY-4: the localised unit ("升"), not the code ("L"); no
-                  empty brackets when the SKU has none. */}
-              {sku?.unit
-                ? i18n.t('run.action.actualQty', { unit: unitLabel.uncounted(sku.unit) })
-                : i18n.t('run.action.actualQtyPlain')}
+            {/* R2-BUY-4: the localised unit ("升"), not the code ("L"); no
+                empty brackets when the SKU has none. */}
+            <Field
+              label={
+                sku?.unit
+                  ? i18n.t('run.action.actualQty', { unit: unitLabel.uncounted(sku.unit) })
+                  : i18n.t('run.action.actualQtyPlain')
+              }
+            >
               <Input
-                className="mt-1"
                 type="number"
                 value={draft.actualQty}
                 onChange={(e) => onChange({ ...draft, actualQty: e.target.value })}
                 disabled={draft.qtyLocked}
                 autoFocus={!draft.qtyLocked}
               />
-            </label>
-            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {priceInThousands
-                ? i18n.t('run.action.unitPriceUzsThousands', { currency })
-                : i18n.t('run.action.unitPriceUzs', { currency })}
+            </Field>
+            <Field
+              label={
+                priceInThousands
+                  ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                  : i18n.t('run.action.unitPriceUzs', { currency })
+              }
+            >
               <Input
-                className="mt-1"
                 type="number"
                 inputMode="decimal"
                 value={priceInput}
@@ -331,7 +338,7 @@ export function PurchaseSheet({
                   });
                 }}
               />
-            </label>
+            </Field>
           </div>
           {/* Which unit the price is in, and what it comes to. See PriceUnit.tsx. */}
           <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
@@ -354,9 +361,7 @@ export function PurchaseSheet({
               both options are always visible — radio behaviour without
               the OS-styled radio buttons. */}
           <div>
-            <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.label.paymentMethod')}
-            </div>
+            <FieldLabel className="mb-1">{i18n.t('run.label.paymentMethod')}</FieldLabel>
             <PaymentMethodChips
               value={draft.paymentMethod}
               onChange={(m) =>
@@ -410,22 +415,19 @@ export function PurchaseSheet({
               : i18n.t('run.purchase.pricingPerStore')}
           </button>
           {suppliers.length > 0 ? (
-            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.action.supplier')}
-              <span className="mt-1 block">
-                <Select
-                  value={draft.supplierId ?? ''}
-                  onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
-                >
-                  <option value="">—</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-              </span>
-            </label>
+            <Field label={i18n.t('run.action.supplier')}>
+              <Select
+                value={draft.supplierId ?? ''}
+                onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
+              >
+                <option value="">—</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           ) : null}
           <PhotoCapture
             label={i18n.t('run.action.receiptPhoto')}
@@ -436,9 +438,7 @@ export function PurchaseSheet({
           />
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
-                {i18n.t('run.action.allocateAcrossStores')}
-              </span>
+              <FieldLabel>{i18n.t('run.action.allocateAcrossStores')}</FieldLabel>
               <span
                 className={`text-old-label tabular-nums ${
                   splitMatches ? 'text-[var(--c-success)]' : 'text-[var(--c-warning-fg)]'
@@ -518,15 +518,13 @@ export function PurchaseSheet({
             </ul>
           </div>
           {draft.isEdit ? (
-            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.label.reasonForChange')}
+            <Field label={i18n.t('run.label.reasonForChange')}>
               <Input
-                className="mt-1"
                 value={draft.reason}
                 onChange={(e) => onChange({ ...draft, reason: e.target.value })}
                 placeholder={i18n.t('run.label.reasonPlaceholder')}
               />
-            </label>
+            </Field>
           ) : null}
           {/* Undo lives here now.
               It used to be a 20px text button on the purchased row,
@@ -948,30 +946,23 @@ export function AddItemSheet({
           ) : (
             // M3.44: expense mode — free-text label + optional unit hint.
             <>
-              <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                {i18n.t('run.action.addExpense.labelInput')}
+              <Field label={i18n.t('run.action.addExpense.labelInput')}>
                 <Input
-                  className="mt-1"
                   value={draft.label}
                   onChange={(e) => onChange({ ...draft, label: e.target.value })}
                   placeholder={i18n.t('run.action.addExpense.labelPlaceholder')}
                   autoFocus
                 />
-              </label>
-              <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                {i18n.t('run.action.addExpense.unitHint')}
+              </Field>
+              <Field label={i18n.t('run.action.addExpense.unitHint')}>
                 <Input
-                  className="mt-1"
                   value={draft.unitHint}
                   onChange={(e) => onChange({ ...draft, unitHint: e.target.value })}
                   placeholder={i18n.t('run.action.addExpense.unitHintPlaceholder')}
                 />
-              </label>
+              </Field>
               {expenseTemplates.length > 0 ? (
-                <div>
-                  <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                    {i18n.t('run.action.addExpense.templates')}
-                  </div>
+                <FieldGroup label={i18n.t('run.action.addExpense.templates')}>
                   <div className="flex flex-wrap gap-1.5">
                     {expenseTemplates.map((tpl) => (
                       <button
@@ -1003,7 +994,7 @@ export function AddItemSheet({
                       </button>
                     ))}
                   </div>
-                </div>
+                </FieldGroup>
               ) : null}
             </>
           )}
@@ -1028,9 +1019,7 @@ export function AddItemSheet({
                  expense mode is multi-store chips with auto-even-split. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
             <div className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-2">
-              <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                {i18n.t('run.action.addItem.costModeTitle')}
-              </div>
+              <FieldLabel className="mb-1">{i18n.t('run.action.addItem.costModeTitle')}</FieldLabel>
               {/* Review UI-07 (2026-11-11): the kit's Segmented, now that an
                   option can be disabled (DX-VIS-6 / DX-VIS-7 kept two
                   hand-written buttons for that). "Add to existing" is
@@ -1066,46 +1055,43 @@ export function AddItemSheet({
             </div>
           ) : null}
           {draft.mode === 'sku' && selectedSku ? (
-            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.action.addItem.targetStore')}
-              <span className="mt-1 block">
-                <Select
-                  value={selectedStoreId}
-                  onChange={(e) => {
-                    const next = new Map<string, string>();
-                    if (e.target.value && draft.actualQty) {
-                      next.set(e.target.value, draft.actualQty);
-                    } else if (e.target.value) {
-                      next.set(e.target.value, '');
-                    }
-                    onChange({
-                      ...draft,
-                      splits: next,
-                      skuCostMode: selectedSkuExisting?.storeIds.has(e.target.value)
-                        ? 'separateExpense'
-                        : draft.skuCostMode,
-                    });
-                  }}
-                >
-                  <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
-                  {storeChoices.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name}
-                      {selectedSkuExisting?.storeIds.has(st.id)
-                        ? ` (${i18n.t('run.action.addItem.storeAlreadyHasSkuShort')})`
-                        : ''}
-                    </option>
-                  ))}
-                </Select>
-              </span>
-            </label>
+            <Field label={i18n.t('run.action.addItem.targetStore')}>
+              <Select
+                value={selectedStoreId}
+                onChange={(e) => {
+                  const next = new Map<string, string>();
+                  if (e.target.value && draft.actualQty) {
+                    next.set(e.target.value, draft.actualQty);
+                  } else if (e.target.value) {
+                    next.set(e.target.value, '');
+                  }
+                  onChange({
+                    ...draft,
+                    splits: next,
+                    skuCostMode: selectedSkuExisting?.storeIds.has(e.target.value)
+                      ? 'separateExpense'
+                      : draft.skuCostMode,
+                  });
+                }}
+              >
+                <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
+                {storeChoices.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                    {selectedSkuExisting?.storeIds.has(st.id)
+                      ? ` (${i18n.t('run.action.addItem.storeAlreadyHasSkuShort')})`
+                      : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           ) : null}
           {draft.mode === 'expense' && draft.label.trim() ? (
             <div>
               <div className="mb-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
+                <FieldLabel className="mb-1">
                   {i18n.t('run.action.addExpense.scopeTitle')}
-                </div>
+                </FieldLabel>
                 {/* DX-VIS-7 (2026-11-01): Segmented (selection announced). */}
                 <Segmented
                   value={draft.expenseScope}
@@ -1132,11 +1118,11 @@ export function AddItemSheet({
                 </p>
               </div>
               <div className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+                <FieldLabel>
                   {draft.expenseScope === 'shared'
                     ? i18n.t('run.action.addExpense.targetStores')
                     : i18n.t('run.action.addItem.targetStore')}
-                </span>
+                </FieldLabel>
                 <span className="text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addExpense.splitHint', {
                     n: draft.splits.size,
@@ -1203,8 +1189,8 @@ export function AddItemSheet({
             draft.splits.size > 0) ? (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                  {(() => {
+                <Field
+                  label={(() => {
                     // R2-BUY-4: localised unit; no "（）" without one.
                     const unit =
                       draft.mode === 'sku'
@@ -1214,8 +1200,8 @@ export function AddItemSheet({
                       ? i18n.t('run.action.actualQty', { unit })
                       : i18n.t('run.action.actualQtyPlain');
                   })()}
+                >
                   <Input
-                    className="mt-1"
                     type="number"
                     value={draft.actualQty}
                     onChange={(e) => {
@@ -1238,13 +1224,15 @@ export function AddItemSheet({
                       onChange({ ...draft, actualQty: qty, splits: next });
                     }}
                   />
-                </label>
-                <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                  {priceInThousands
-                    ? i18n.t('run.action.unitPriceUzsThousands', { currency })
-                    : i18n.t('run.action.unitPriceUzs', { currency })}
+                </Field>
+                <Field
+                  label={
+                    priceInThousands
+                      ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                      : i18n.t('run.action.unitPriceUzs', { currency })
+                  }
+                >
                   <Input
-                    className="mt-1"
                     type="number"
                     inputMode="decimal"
                     value={priceInput}
@@ -1257,7 +1245,7 @@ export function AddItemSheet({
                       });
                     }}
                   />
-                </label>
+                </Field>
               </div>
               <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
                 <PriceUnitSwitch
@@ -1289,9 +1277,7 @@ export function AddItemSheet({
 
               {/* Payment method chips — mirror PurchaseSheet's shape. */}
               <div>
-                <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                  {i18n.t('run.label.paymentMethod')}
-                </div>
+                <FieldLabel className="mb-1">{i18n.t('run.label.paymentMethod')}</FieldLabel>
                 <PaymentMethodChips
                   value={draft.paymentMethod}
                   onChange={(m) => onChange({ ...draft, paymentMethod: m })}
@@ -1301,35 +1287,24 @@ export function AddItemSheet({
               {/* Reason (required) — the audit gate. The placeholder
                   cues the operator on what's expected (vendor freebie,
                   chef call-in, market deal). */}
-              <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                {i18n.t('run.action.addItem.reasonLabel')}
+              <Field label={i18n.t('run.action.addItem.reasonLabel')}>
                 <Input
-                  className="mt-1"
                   value={draft.reason}
                   onChange={(e) => onChange({ ...draft, reason: e.target.value })}
                   placeholder={i18n.t('run.action.addItem.reasonPlaceholder')}
                 />
-              </label>
+              </Field>
 
               {/* Receipt photo — expense mode only, always optional
                   (2026-07-06: dropped the >200k mandatory gate). */}
               {draft.mode === 'expense' || skuRecordsAsExpense ? (
-                <div>
-                  <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                    {i18n.t('run.action.addExpense.receiptOptional')}
-                  </div>
-                  <PhotoCapture
-                    label={i18n.t('run.action.receiptPhoto')}
-                    value={draft.receiptPhotoUrl}
-                    onCapture={(url) =>
-                      onChange({ ...draft, receiptPhotoUrl: url })
-                    }
-                    onClear={() =>
-                      onChange({ ...draft, receiptPhotoUrl: null })
-                    }
-                    uploader={photoUploader}
-                  />
-                </div>
+                <PhotoCapture
+                  label={i18n.t('run.action.receiptPhoto')}
+                  value={draft.receiptPhotoUrl}
+                  onCapture={(url) => onChange({ ...draft, receiptPhotoUrl: url })}
+                  onClear={() => onChange({ ...draft, receiptPhotoUrl: null })}
+                  uploader={photoUploader}
+                />
               ) : null}
             </>
           ) : null}

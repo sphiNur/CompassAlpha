@@ -1314,7 +1314,6 @@ export const zh = {
   'run.action.addExpense.targetStores': '分摊到哪些门店？',
   'run.action.addExpense.splitHint': '已选 {n} 个 · 自动平分',
   'run.action.addExpense.resplitEvenly': '重新平分',
-  'run.action.addExpense.receiptOptional': '收据（可选）',
   'run.action.addExpense.save': '保存开销',
   'run.action.removeExpense': '删除开销',
   'run.section.expenses': '目录外物品和开销',

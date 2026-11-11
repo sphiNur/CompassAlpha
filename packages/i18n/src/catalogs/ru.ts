@@ -1492,7 +1492,6 @@ export const ru = {
   'run.action.addExpense.targetStores': 'Какие магазины платят?',
   'run.action.addExpense.splitHint': 'выбрано {n} · авто-деление поровну',
   'run.action.addExpense.resplitEvenly': 'Разделить поровну',
-  'run.action.addExpense.receiptOptional': 'Чек (необязательно)',
   'run.action.addExpense.save': 'Сохранить расход',
   'run.action.removeExpense': 'Удалить расход',
   'run.section.expenses': 'Вне каталога и расходы',

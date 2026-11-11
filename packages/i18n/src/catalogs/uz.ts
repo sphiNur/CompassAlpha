@@ -1484,7 +1484,6 @@ export const uz = {
   'run.action.addExpense.targetStores': 'Qaysi doʻkonlar toʻlaydi?',
   'run.action.addExpense.splitHint': '{n} ta tanlandi · avtomatik teng taqsimlanadi',
   'run.action.addExpense.resplitEvenly': 'Qayta teng taqsimlash',
-  'run.action.addExpense.receiptOptional': 'Chek (ixtiyoriy)',
   'run.action.addExpense.save': 'Xarajatni saqlash',
   'run.action.removeExpense': 'Xarajatni oʻchirish',
   'run.section.expenses': 'Katalogdan tashqari, xarajat',

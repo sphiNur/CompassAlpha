@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Button, Banner, Input, Spinner, useToast } from '@compass/ui';
+import { Button, Banner, Field, FieldLabel, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
@@ -625,10 +625,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
                 {i18n.t('dev.browserLogin.body')}
               </p>
             </div>
-            <label className="block">
-              <span className="mb-1 block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                Telegram ID
-              </span>
+            <Field label="Telegram ID">
               <Input
                 inputMode="numeric"
                 autoComplete="username"
@@ -637,11 +634,8 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
                 autoFocus={!browserTgUserId}
                 placeholder={i18n.t('dev.browserLogin.tgIdPlaceholder', { example: '123456789' })}
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                {i18n.t('dev.browserLogin.accessCode')}
-              </span>
+            </Field>
+            <Field label={i18n.t('dev.browserLogin.accessCode')}>
               <Input
                 type="password"
                 autoComplete="current-password"
@@ -650,7 +644,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
                 autoFocus={!!browserTgUserId}
                 placeholder={i18n.t('dev.browserLogin.accessCodePlaceholder')}
               />
-            </label>
+            </Field>
             <Button
               block
               type="submit"
@@ -882,12 +876,7 @@ function OnboardingScreen() {
           {i18n.t('auth.onboarding.body')}
         </p>
         <div>
-          <label
-            htmlFor={nameId}
-            className="block text-old-label font-semibold text-[var(--c-fg-muted)]"
-          >
-            {i18n.t('auth.onboarding.nameLabel')}
-          </label>
+          <FieldLabel htmlFor={nameId}>{i18n.t('auth.onboarding.nameLabel')}</FieldLabel>
           <Input
             id={nameId}
             enterKeyHint="done"

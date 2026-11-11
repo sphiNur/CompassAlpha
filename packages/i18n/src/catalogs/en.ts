@@ -1545,7 +1545,6 @@ export const en = {
   'run.action.addExpense.targetStores': 'Which stores pay?',
   'run.action.addExpense.splitHint': '{n} selected · auto-split evenly',
   'run.action.addExpense.resplitEvenly': 'Re-split evenly',
-  'run.action.addExpense.receiptOptional': 'Receipt (optional)',
   'run.action.addExpense.save': 'Save expense',
   'run.action.removeExpense': 'Remove expense',
   'run.section.expenses': 'Off-catalog items and expenses',
