@@ -26,6 +26,17 @@ export function milliQty(milli: bigint): string {
   return `${negative ? '-' : ''}${digits.slice(0, -3)}${fraction ? `.${fraction}` : ''}`;
 }
 
+/**
+ * Thousandths with all three decimals: "1.500", "-0.250", "0.000". The
+ * form the stock ledger's API has always returned, and the one a
+ * numeric(…, 3) column prints (review QTY-03, 2026-11-11).
+ */
+export function milliQtyFixed(milli: bigint): string {
+  const negative = milli < 0n;
+  const digits = (negative ? -milli : milli).toString().padStart(4, '0');
+  return `${negative ? '-' : ''}${digits.slice(0, -3)}.${digits.slice(-3)}`;
+}
+
 /** A quantity in that form, rounded to 3 decimals ("0.30000000000000004" → "0.3"). */
 export function normalizeQty(value: string | number): string {
   return milliQty(qtyMilli(value));
@@ -87,4 +98,23 @@ export function qtyMilliOrZero(value: string | number | null | undefined): bigin
   } catch {
     return 0n;
   }
+}
+
+/**
+ * Each product's total over its contributors' lines, in thousandths: the
+ * order's "yours 3, total 5" and the reviewer's totals. Lines of 0 or less
+ * add nothing, so a product nobody wants is absent; a stored line that does
+ * not read counts as 0. Products keep the order of their first line.
+ * Review QTY-01 (2026-11-11): the order API, the domain and the order page
+ * each added these as floats and cut the noise off with toFixed(3).
+ */
+export function qtyTotalsBySku(
+  lines: Iterable<{ skuId: string; qty: string | number | null | undefined }>,
+): Map<string, bigint> {
+  const totals = new Map<string, bigint>();
+  for (const line of lines) {
+    const milli = qtyMilliOrZero(line.qty);
+    if (milli > 0n) totals.set(line.skuId, (totals.get(line.skuId) ?? 0n) + milli);
+  }
+  return totals;
 }

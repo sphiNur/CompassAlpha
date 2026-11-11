@@ -30,6 +30,7 @@ import {
   UuidSchema,
   milliQty,
   qtyMilli,
+  qtyTotalsBySku,
 } from '@compass/contracts';
 import {
   apply,
@@ -397,12 +398,9 @@ export const orderRouter = router({
       // Per-(sku, member) rows. Aggregate by sku for the UI's running
       // total; also expose the raw per-contributor rows so the OrderPage
       // can show "Apple — your 3, total 5" and ApprovalPage can show
-      // the breakdown for in-place manager edits.
-      const totalBySku = new Map<string, number>();
-      for (const it of items) {
-        const v = Number(it.qty);
-        if (v > 0) totalBySku.set(it.skuId, (totalBySku.get(it.skuId) ?? 0) + v);
-      }
+      // the breakdown for in-place manager edits. Review QTY-01
+      // (2026-11-11): exact, in thousandths, not float sums.
+      const totalBySku = qtyTotalsBySku(items);
       return {
         id: session.id,
         storeId: session.storeId,
@@ -437,9 +435,9 @@ export const orderRouter = router({
           note?: string;
         }>,
         /** Aggregate qty per SKU (sum across contributors). */
-        totals: [...totalBySku.entries()].map(([skuId, qty]) => ({
+        totals: [...totalBySku.entries()].map(([skuId, milli]) => ({
           skuId,
-          qty: qty.toFixed(3).replace(/\.?0+$/, ''),
+          qty: milliQty(milli),
         })),
         /** Raw per-(sku, contributor) rows. */
         items: items.map((i) => ({
@@ -619,11 +617,7 @@ export const orderRouter = router({
           ? (memberById.get(session.previousClaimerMemberId) ?? null)
           : null;
         // Same shape as todaySession: per-(sku, contributor) rows + sku totals.
-        const totalBySku = new Map<string, number>();
-        for (const it of items) {
-          const v = Number(it.qty);
-          if (v > 0) totalBySku.set(it.skuId, (totalBySku.get(it.skuId) ?? 0) + v);
-        }
+        const totalBySku = qtyTotalsBySku(items);
         // 2026-10-11: how each product was last paid, so the approver
         // reads a line as "about this much, in cash". Null when it has
         // never been bought: there is nothing to go on.
@@ -657,9 +651,9 @@ export const orderRouter = router({
             unit: string;
             note?: string;
           }>,
-          totals: [...totalBySku.entries()].map(([skuId, qty]) => ({
+          totals: [...totalBySku.entries()].map(([skuId, milli]) => ({
             skuId,
-            qty: qty.toFixed(3).replace(/\.?0+$/, ''),
+            qty: milliQty(milli),
             usualPayment:
               usualPayment.byStoreSku.get(`${session.storeId}:${skuId}`) ??
               usualPayment.bySku.get(skuId) ??
@@ -701,10 +695,7 @@ export const orderRouter = router({
         if (!snap) return null;
         return {
           seq: snap.seq,
-          totals: [...snap.totals.entries()].map(([skuId, qty]) => ({
-            skuId,
-            qty: qty.toFixed(3).replace(/\.?0+$/, ''),
-          })),
+          totals: [...snap.totals.entries()].map(([skuId, qty]) => ({ skuId, qty })),
           extras: snap.extras.map((e) => ({ name: e.name, qty: e.qty, unit: e.unit })),
         };
       });

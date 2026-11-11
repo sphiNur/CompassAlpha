@@ -8,14 +8,15 @@
  * version is the state folded up to the LAST `Submitted` event (a
  * rejected order sent again is reviewed as its new submission).
  */
+import { milliQty, qtyTotalsBySku } from '@compass/contracts/quantity';
 import { apply, emptyState, type OrderState } from './state';
 import type { OrderEvent, SessionExtraItem } from './events';
 
 export interface SubmittedSnapshot {
   /** seq of the Submitted event the snapshot was taken at. */
   seq: number;
-  /** skuId → total qty across contributors, lines above 0 only. */
-  totals: Map<string, number>;
+  /** skuId → total qty across contributors ("2.5"), lines above 0 only. */
+  totals: Map<string, string>;
   extras: SessionExtraItem[];
 }
 
@@ -38,10 +39,10 @@ export function submittedSnapshot(
 }
 
 function snapshotOf(state: OrderState): SubmittedSnapshot {
-  const totals = new Map<string, number>();
-  for (const it of state.items.values()) {
-    const q = Number(it.qty);
-    if (q > 0) totals.set(it.skuId, (totals.get(it.skuId) ?? 0) + q);
+  // Review QTY-01 (2026-11-11): exact, not float sums.
+  const totals = new Map<string, string>();
+  for (const [skuId, milli] of qtyTotalsBySku(state.items.values())) {
+    totals.set(skuId, milliQty(milli));
   }
   return { seq: state.seq, totals, extras: state.extras.map((e) => ({ ...e })) };
 }
