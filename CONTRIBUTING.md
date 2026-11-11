@@ -275,8 +275,12 @@ When reviewing a PR (yours or others):
 - **Adding a status to an aggregate**: events.ts (the `*EventType` union)
   → state.ts (the `*Status` type + apply cases) → commands.ts (decide
   branches that gate transitions) → projector → migration → API → FE.
-- **Adding a page**: `apps/web/src/pages/`. Wire into `apps/web/src/Shell.tsx`
-  bottom nav. Add an i18n key for the tab label in all 4 catalogs.
+- **Adding a page**: `apps/web/src/pages/`. Add the tab to `TAB_KEYS`
+  (`apps/web/src/stores/navStore.ts`), then its entries in
+  `apps/web/src/app/shell/tabs.ts` (permission, labels, icon) and
+  `app/shell/pages.tsx` (a lazy page also in `app/pageChunks.ts`); both are
+  keyed by the tab, so type-check names a missing one. Add the label keys
+  (`nav.<tab>`, `nav.short.<tab>`) in all 4 catalogs.
 - **Adding a worker job**: `apps/worker/src/`. Drains from `sync.outbox`
   every 5 s with exponential backoff.
 

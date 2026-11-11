@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { createI18n, loadCatalog } from '@compass/i18n';
-import { accessBlock, authErrorText } from '../authAccess';
+import { accessBlock, authErrorText, readsFinanceOnly } from '../authAccess';
 
 beforeAll(async () => {
   await Promise.all([loadCatalog('en'), loadCatalog('zh')]);
@@ -44,4 +44,19 @@ test('a key this build does not know reads as the generic failure (CMP-SHL-2)', 
   expect(authErrorText(en, { key: 'auth.errors.somethingNew' })).toBe(
     en.t('auth.errors.signInFailed'),
   );
+});
+
+describe('readsFinanceOnly (HIS-19)', () => {
+  const finance = ['reports.view', 'prices.view'];
+  test('finance without managing people: the report alone', () => {
+    expect(readsFinanceOnly({ permissions: finance })).toBe(true);
+  });
+  test('a manager or a platform admin gets the whole Admin page', () => {
+    expect(readsFinanceOnly({ permissions: [...finance, 'users.manage'] })).toBe(false);
+    expect(readsFinanceOnly({ permissions: finance, isPlatformAdmin: true })).toBe(false);
+  });
+  test('no finance, or no session: not a finance reader', () => {
+    expect(readsFinanceOnly({ permissions: ['order.draft'] })).toBe(false);
+    expect(readsFinanceOnly(null)).toBe(false);
+  });
 });

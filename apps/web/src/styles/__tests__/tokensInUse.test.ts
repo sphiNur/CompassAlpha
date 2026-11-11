@@ -23,8 +23,9 @@ const light = themeOf({ 'data-theme': 'native' });
 
 /**
  * Custom properties the app sets from JavaScript (no stylesheet declares
- * them; every reader has a fallback): the Telegram chrome insets measured
- * in Shell.tsx and the MainButton height (lib/mainButtonInset.ts).
+ * them; every reader has a fallback): the Telegram chrome insets
+ * (hooks/useTelegramChromeInsets.ts) and the MainButton height
+ * (lib/mainButtonInset.ts).
  */
 const RUNTIME_VARS = [
   '--app-chrome-reserve',

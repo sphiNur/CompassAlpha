@@ -17,8 +17,8 @@ import { cn } from '../cn';
  * while the SKU rows immediately beneath used px-4, so the filters sat
  * 40px/80px narrower than the list they filter and the chip row was
  * clipped mid-character on the right. Clearing the chrome is the
- * strip's job (see Shell.tsx); everything below it is ordinary page
- * content and uses ordinary page padding.
+ * strip's job (see apps/web/src/app/shell/TopBar.tsx); everything below
+ * it is ordinary page content and uses ordinary page padding.
  *
  * `direction`:
  *   - 'row' (default) — horizontal `items-center` strip (Confirm/Run

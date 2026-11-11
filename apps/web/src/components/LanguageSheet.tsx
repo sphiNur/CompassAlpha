@@ -59,7 +59,7 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
       // Server returned the fresh session payload — patch it into the
       // auth store (tokens stay valid). Every page re-renders with the
       // new locale immediately, no reload needed.
-      patchSession(next as never);
+      patchSession(next);
       onOpenChange(false);
     },
     onError: errToast('common.errors.actionFailed'),

@@ -89,9 +89,9 @@ export function QtyControl({
   // Old behaviour fired `adjust()` on `onPointerDown`. That made the
   // increment instantaneous, but it also meant any pointerdown — even
   // one that the user then turned into a scroll gesture — registered a
-  // qty change before they let go. The document-level `useTapGuard`
-  // hook cancels `click` events on drag, but it has no effect on
-  // pointerdown handlers.
+  // qty change before they let go. The web app's document-level
+  // scroll-tap suppression (useScrollTapSuppression) cancels `click`
+  // events on drag, but it has no effect on pointerdown handlers.
   //
   // New flow:
   //   - pointerdown only starts the hold timer; no immediate adjust
@@ -100,7 +100,8 @@ export function QtyControl({
   //   - tap = pointerdown → pointerup → onClick → 1 adjust
   //   - drag = pointerdown → pointermove → pointerleave → no click
   //     (the browser cancels the synthetic click when the touch
-  //     drifts off-element, and useTapGuard cancels it if it didn't)
+  //     drifts off-element, and the scroll-tap suppression cancels it
+  //     if it didn't)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rampedRef = useRef(false);
