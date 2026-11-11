@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
+import { CLIENT_FAULT_MESSAGE } from '@compass/contracts';
 import { TAX_RATE_MESSAGE, TAX_RATE_RE, taxRateProblem } from '@compass/contracts/limits';
 import { authedProcedure } from '../../trpc';
 import { requireAdmin, requireOrgAdmin } from './guards';
@@ -108,10 +109,8 @@ export const overviewProcedures = {
   orgFinanceUpdate: authedProcedure
     .input(
       z.object({
-        currency: z
-          .string()
-          .length(3)
-          .regex(/^[A-Z]{3}$/, 'currency must be ISO-4217 (3 uppercase letters)'),
+        // An ISO 4217 code; the finance sheet offers a fixed list.
+        currency: z.string().regex(/^[A-Z]{3}$/, CLIENT_FAULT_MESSAGE),
         taxRatePct: z.string().regex(TAX_RATE_RE, TAX_RATE_MESSAGE.format),
         pricesIncludeTax: z.boolean(),
       }),

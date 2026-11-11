@@ -131,6 +131,29 @@ export function taxRateToSend(text: string): string {
   return /^(\d+\.?\d*|\.\d+)$/.test(text) ? String(Number(text)) : text;
 }
 
+/**
+ * Review ADM1-26 (2026-11-12): a role's or a category's identifier is
+ * lowercase Latin letters, digits and hyphens. The forms say so while it
+ * is typed, and roleCreate and the category schemas refuse the rest with
+ * the same sentence. Their refusal used to be English the app cannot
+ * show, so the form gave its general failure sentence instead.
+ */
+export const SLUG_RE = /^[a-z0-9-]+$/;
+
+/** The catalog key the server and the form show for a refused identifier. */
+export const SLUG_MESSAGE = {
+  role: 'admin.errors.roleSlugInvalid',
+  category: 'admin.errors.categorySlugInvalid',
+} as const;
+
+/**
+ * DX-ADM-5 / review ADM1-26: a Telegram user id is 4–15 digits. The
+ * invite form names the problem while it is typed (tgIdProblem in the
+ * web); the server refuses the rest with the same sentence.
+ */
+export const TG_USER_ID_RE = /^\d{4,15}$/;
+export const TG_USER_ID_MESSAGE = 'admin.errors.tgIdInvalid';
+
 /** CLS-19 (2026-10-30): a stocktake count has at most 8 integer digits. */
 export const STOCKTAKE_COUNT_MAX = 99_999_999.999;
 

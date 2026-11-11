@@ -68,7 +68,7 @@ export const uz = {
   'common.edit': 'Tahrirlash',
   'common.delete': 'Oʻchirish',
   'catalog.category.new': 'Yangi kategoriya',
-  'catalog.category.slugInvalid': 'Faqat kichik lotin harflari, raqamlar va «-».',
+  'admin.errors.categorySlugInvalid': 'Faqat kichik lotin harflari, raqamlar va «-».',
   'catalog.names.atLeastOne': 'Kamida bitta tilda nom.',
   'catalog.confirm.discardEdits': 'Saqlanmagan oʻzgarishlar bekor qilinsinmi?',
   'catalog.category.edit': 'Kategoriyani tahrirlash',
@@ -197,7 +197,7 @@ export const uz = {
   'people.rolePlaceholderDesc': 'Majburiy emas',
   'people.rankField': 'Daraja ({min}–{max})',
   'people.slugRule': 'Kichik lotin harflari, raqamlar va chiziqcha, masalan night-shift.',
-  'people.slugInvalid':
+  'admin.errors.roleSlugInvalid':
     'Faqat kichik lotin harflari, raqamlar va chiziqcha (-), masalan night-shift.',
   'people.slugRequired': 'Majburiy.',
   'people.rankInvalid': '{min} dan {max} gacha butun son kiriting.',
@@ -211,7 +211,7 @@ export const uz = {
   'people.revokeRoleInStoreAria': '{name}: {store} doʻkonidagi «{role}» rolini olib tashlash',
   'people.searchNoMatch': '«{q}» boʻyicha hech kim topilmadi',
   'people.clearSearch': 'Qidiruvni tozalash',
-  'admin.invite.tgIdInvalid':
+  'admin.errors.tgIdInvalid':
     'Telegram ID 4–15 ta raqamdan iborat, telefon raqami yoki @foydalanuvchi_nomi emas.',
   'people.deleteRole': 'Rolni oʻchirish',
   'people.confirmDeleteRole': '«{name}» roli oʻchirilsinmi?',

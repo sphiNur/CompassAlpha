@@ -9,10 +9,15 @@ import type { ZodTypeAny } from 'zod';
 import {
   DateStringSchema,
   DecimalStringSchema,
+  IdempotencyKeySchema,
   OrderQtySchema,
   PositiveDecimalStringSchema,
   TimeZoneSchema,
 } from './schemas/common';
+import { InviteMemberByTgIdInputSchema } from './schemas/admin';
+import { AcceptInviteInputSchema, CreateOrganizationInputSchema } from './schemas/auth';
+import { CategoryCreateInputSchema } from './schemas/catalog';
+import { SetSessionExtrasInputSchema } from './schemas/order';
 import { PurchaseQtySchema } from './schemas/run';
 import {
   SettlementMoneySchema,
@@ -177,5 +182,48 @@ describe('TimeZoneSchema', () => {
       'Mars/Olympus': 'admin.errors.timeZoneUnknown',
       '': 'admin.errors.timeZoneUnknown',
     });
+  });
+});
+
+// Review ADM1-26 (2026-11-12): these refusals were English, which the app
+// cannot show; a person got the screen's general failure sentence instead
+// of the reason.
+describe('identifiers and links', () => {
+  it('a Telegram id is 4–15 digits, refused with the invite form’s key', () => {
+    const tgUserId = (value: string) => verdict(InviteMemberByTgIdInputSchema, { tgUserId: value });
+    expect(tgUserId('123456789')).toBe('ok');
+    for (const bad of ['+998 90 123', '@someone', '123', '1234567890123456']) {
+      expect({ bad, got: tgUserId(bad) }).toEqual({ bad, got: 'admin.errors.tgIdInvalid' });
+    }
+  });
+
+  it('a category identifier is lowercase Latin letters, digits and hyphens', () => {
+    const slug = (value: string) =>
+      verdict(CategoryCreateInputSchema, { slug: value, names: { en: 'Greens' } });
+    expect(slug('greens-2')).toBe('ok');
+    for (const bad of ['Greens', 'leafy greens', 'зелень']) {
+      expect({ bad, got: slug(bad) }).toEqual({ bad, got: 'admin.errors.categorySlugInvalid' });
+    }
+  });
+
+  it('a cut or mistyped invite link reads as an invite that does not exist', () => {
+    const token = (value: string) =>
+      verdict(AcceptInviteInputSchema, { initData: 'x', token: value });
+    expect(token('a'.repeat(20))).toBe('ok');
+    for (const bad of [
+      'a'.repeat(19),
+      'a'.repeat(129),
+      `${'a'.repeat(20)} `,
+      `${'a'.repeat(20)}%`,
+    ]) {
+      expect({ bad, got: token(bad) }).toEqual({ bad, got: 'auth.errors.inviteNotFound' });
+    }
+  });
+
+  it('a check only a faulty client can fail gives the generic key', () => {
+    const generic = 'common.errors.validation';
+    expect(verdict(SetSessionExtrasInputSchema, { extras: [] })).toBe(generic);
+    check(IdempotencyKeySchema, { 'web:1234': 'ok', 'web:123': generic, 'web 1234': generic });
+    expect(verdict(CreateOrganizationInputSchema, { name: 'Acme', slug: '-acme' })).toBe(generic);
   });
 });

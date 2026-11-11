@@ -41,6 +41,7 @@ import {
   rowGroupClass,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
+import { SLUG_MESSAGE, TG_USER_ID_MESSAGE } from '@compass/contracts/limits';
 import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -1172,7 +1173,7 @@ function RoleCreateSheet({
           hint={slugBad ? null : i18n.t('people.slugRule')}
           error={
             slugBad
-              ? i18n.t('people.slugInvalid')
+              ? i18n.t(SLUG_MESSAGE.role)
               : slugTouched && slug === ''
                 ? i18n.t('people.slugRequired')
                 : null
@@ -1996,7 +1997,7 @@ function ManualInviteSheet({
                 label={i18n.t('admin.field.tgUserId')}
                 required
                 hint={tgShown ? null : i18n.t('admin.invite.tgIdHint')}
-                error={tgShown ? i18n.t('admin.invite.tgIdInvalid') : null}
+                error={tgShown ? i18n.t(TG_USER_ID_MESSAGE) : null}
               >
                 <Input
                   value={draft.tgUserId}

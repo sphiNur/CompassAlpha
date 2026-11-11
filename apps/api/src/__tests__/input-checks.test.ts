@@ -108,6 +108,27 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
     expect(await keyOf(() => owner!.order.adjustItem({ ...order, qty: '0.0004' }))).toBe(
       'common.errors.invalidDecimal',
     );
+    // ADM1-26: identifiers, a Telegram id and an invite link say what is
+    // wrong, with the key the form shows for it.
+    expect(
+      await keyOf(() => owner!.admin.roleCreate({ slug: 'Night Shift', name: 'Night', rank: 10 })),
+    ).toBe('admin.errors.roleSlugInvalid');
+    expect(
+      await keyOf(() => owner!.admin.categoryCreate({ slug: 'Greens', names: { en: 'Greens' } })),
+    ).toBe('admin.errors.categorySlugInvalid');
+    expect(await keyOf(() => owner!.admin.memberInviteByTgId({ tgUserId: '+998 90 123' }))).toBe(
+      'admin.errors.tgIdInvalid',
+    );
+    expect(await keyOf(() => owner!.auth.acceptInvite({ initData: 'x', token: 'cut-off' }))).toBe(
+      'auth.errors.inviteNotFound',
+    );
+    // A currency the finance sheet does not offer: only a faulty client
+    // sends one, and the generic key leaves the sheet its own sentence.
+    expect(
+      await keyOf(() =>
+        owner!.admin.orgFinanceUpdate({ ...finance, currency: 'uzs', taxRatePct: '12' }),
+      ),
+    ).toBe('common.errors.validation');
   });
 
   test('a blank store name is refused; an empty code means none', async () => {

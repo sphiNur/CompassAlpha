@@ -1,7 +1,9 @@
 /**
  * Rules for the typed fields of the admin sheets, kept pure so they can
- * be tested without rendering.
+ * be tested without rendering. The rules the server checks too come from
+ * the contracts (review ADM1-26).
  */
+import { SLUG_RE, TG_USER_ID_RE } from '@compass/contracts/limits';
 
 /**
  * DX-ADM-4 (2026-11-01): a role's rank is a whole number from `min`
@@ -54,12 +56,13 @@ export function defaultNewRoleRank(myMaxRank: number, adminRank: number): number
  * delete everything else, so a pasted phone number "+998 90 123" became
  * the id 99890123 and created someone who does not exist. `notDigits`
  * is wrong as soon as it is typed; `length` only once the person is done.
+ * The whole rule is the server's (TG_USER_ID_RE).
  */
 export function tgIdProblem(text: string): null | 'notDigits' | 'length' {
   const t = text.trim();
   if (t === '') return null;
   if (!/^\d+$/.test(t)) return 'notDigits';
-  return t.length >= 4 && t.length <= 15 ? null : 'length';
+  return TG_USER_ID_RE.test(t) ? null : 'length';
 }
 
 /**
@@ -73,5 +76,5 @@ export function normaliseSlugInput(text: string): string {
 }
 
 export function slugIsValid(slug: string): boolean {
-  return /^[a-z0-9-]+$/.test(slug);
+  return SLUG_RE.test(slug);
 }

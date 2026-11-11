@@ -16,6 +16,8 @@ import {
   RECIPE_QTY_MESSAGE,
   SKU_STEPS,
   SKU_UNITS,
+  SLUG_MESSAGE,
+  SLUG_RE,
   recipeQtyProblem,
 } from '../limits';
 
@@ -180,7 +182,7 @@ const CategorySlugSchema = z
   .string()
   .min(1)
   .max(CATALOG_TEXT_MAX.categorySlug)
-  .regex(/^[a-z0-9-]+$/);
+  .regex(SLUG_RE, SLUG_MESSAGE.category);
 
 export const CategoryCreateInputSchema = z.object({
   slug: CategorySlugSchema,
