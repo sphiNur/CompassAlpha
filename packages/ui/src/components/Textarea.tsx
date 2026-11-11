@@ -15,7 +15,7 @@ import { joinIds, useFieldControl } from './fieldControl';
  *     more room, they scroll within the textarea.
  *   - Same shape primitives as Input: `rounded-[var(--r-card)]`
  *     (slightly less round than Input's pill since the field is
- *     visibly taller), `bg-[var(--c-surface-2)]`, `ring-hairline`,
+ *     visibly taller), `bg-[var(--c-surface-2)]`, `ring-field`,
  *     focus ring tokenized.
  *
  * The label, error and hint come from the `<Field>` around it (UI-02).
@@ -50,6 +50,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       )}
       {...rest}
       // After the spread: what the caller passed adds to the field's own.
+      id={rest.id ?? field?.id}
       aria-invalid={marked || rest['aria-invalid'] || undefined}
       aria-required={field?.required || rest['aria-required'] || undefined}
       aria-describedby={joinIds(field?.describedBy, rest['aria-describedby'])}

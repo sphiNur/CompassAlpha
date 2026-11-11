@@ -124,6 +124,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       )}
       {...rest}
       // After the spread: what the caller passed adds to the field's own.
+      id={props.id ?? field?.id}
       aria-invalid={marked || props['aria-invalid'] || undefined}
       aria-required={field?.required || props['aria-required'] || undefined}
       aria-describedby={joinIds(

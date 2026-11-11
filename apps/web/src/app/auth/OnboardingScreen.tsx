@@ -1,5 +1,5 @@
-import { useId, useState } from 'react';
-import { Banner, Button, FieldLabel, Input } from '@compass/ui';
+import { useState } from 'react';
+import { Banner, Button, Field, Input } from '@compass/ui';
 import { useAuthStore } from '../../stores/authStore';
 import { trpc } from '../../lib/trpc';
 import { haptic } from '../../lib/telegram';
@@ -23,7 +23,6 @@ export function OnboardingScreen() {
       : '';
   const [name, setName] = useState(initial);
   const [error, setError] = useState<string | null>(null);
-  const nameId = useId();
   const translateError = useTranslateError();
 
   const complete = trpc.auth.completeOnboarding.useMutation({
@@ -60,10 +59,8 @@ export function OnboardingScreen() {
         <p className="text-old-body leading-relaxed text-[var(--c-fg-muted)]">
           {i18n.t('auth.onboarding.body')}
         </p>
-        <div>
-          <FieldLabel htmlFor={nameId}>{i18n.t('auth.onboarding.nameLabel')}</FieldLabel>
+        <Field label={i18n.t('auth.onboarding.nameLabel')}>
           <Input
-            id={nameId}
             enterKeyHint="done"
             autoComplete="name"
             value={name}
@@ -71,9 +68,8 @@ export function OnboardingScreen() {
             maxLength={200}
             placeholder={i18n.t('auth.onboarding.namePlaceholder')}
             autoFocus
-            className="mt-1"
           />
-        </div>
+        </Field>
         {error ? (
           <Banner tone="danger" title={i18n.t('auth.onboarding.failed')}>
             {error}

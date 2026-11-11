@@ -3,6 +3,7 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FieldError } from '../components/FieldError';
 import { Input } from '../components/Input';
+import { PickerButton } from '../components/PickerButton';
 import { Field, FieldGroup, FieldLabel } from '../components/Rows';
 import { Select } from '../components/Select';
 import { Textarea } from '../components/Textarea';
@@ -95,6 +96,51 @@ describe('Field wiring', () => {
     const area = render({ error: 'Write why' }, createElement(Textarea, {}));
     expect(attr(area, 'textarea', 'aria-invalid')).toBe('true');
     expect(attr(area, 'textarea', 'aria-describedby')).toBe(idOf(area, 'Write why'));
+  });
+
+  // Review UI-01: the label wrapped the content, so it named the first
+  // control inside, a Save button beside the input sat in it too, and it
+  // held a <div>, which a <label> may not.
+  test('the label names the control by its id and holds only its text', () => {
+    const html = render({ required: true });
+    const label = /<label[^>]*>(.*?)<\/label>/.exec(html);
+    expect(label?.[1]).toBe('Name<span aria-hidden="true"> *</span>');
+    const controlId = attr(html, 'input', 'id');
+    expect(controlId).toBeTruthy();
+    expect(attr(html, 'label', 'for')).toBe(controlId);
+  });
+
+  test('a select and a textarea take the id too; a control keeps an id of its own', () => {
+    for (const control of [createElement(Select, {}), createElement(Textarea, {})]) {
+      const html = render({}, control);
+      const tag = /<(select|textarea)/.exec(html)?.[1] ?? '';
+      const id = attr(html, tag, 'id');
+      expect({ tag, id: Boolean(id) }).toEqual({ tag, id: true });
+      expect(attr(html, 'label', 'for')).toBe(id);
+    }
+    const own = render({}, createElement(Input, { readOnly: true, id: 'own-id' }));
+    expect(attr(own, 'input', 'id')).toBe('own-id');
+  });
+
+  test("a picker button is named by the field's label and its choice", () => {
+    const html = render(
+      { error: 'Choose someone' },
+      createElement(PickerButton, { onClick: () => {}, children: 'Ali' }),
+    );
+    const buttonId = attr(html, 'button', 'id');
+    expect(attr(html, 'label', 'for')).toBe(buttonId);
+    const labelId = attr(html, 'label', 'id');
+    const valueId = /<span id="([^"]+)"[^>]*>Ali<\/span>/.exec(html)?.[1];
+    expect(attr(html, 'button', 'aria-labelledby')).toBe(`${labelId} ${valueId}`);
+    expect(attr(html, 'button', 'aria-describedby')).toBe(idOf(html, 'Choose someone'));
+    expect(attr(html, 'button', 'aria-invalid')).toBe('true');
+    expect(attr(html, 'button', 'aria-haspopup')).toBe('dialog');
+    // Outside a Field its text is its name.
+    const alone = renderToStaticMarkup(
+      createElement(PickerButton, { onClick: () => {}, children: 'Ali' }),
+    );
+    expect(attr(alone, 'button', 'aria-labelledby')).toBeUndefined();
+    expect(attr(alone, 'button', 'id')).toBeUndefined();
   });
 
   test('a group is described by its error and hint', () => {

@@ -3,8 +3,8 @@
  * choosing who each one pays, changing and removing them. Review
  * CONF-06: moved out of SettlementPage.
  */
-import { useId, useState } from 'react';
-import { Banner, Button, Field, FieldError, IconChevronRight, Select, useToast } from '@compass/ui';
+import { useState } from 'react';
+import { Banner, Button, Field, PickerButton, Select, useToast } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
 import { trpc } from '../../lib/trpc';
 import { haptic } from '../../lib/telegram';
@@ -283,7 +283,6 @@ function WageLine({
   const i18n = useI18n();
   const problems = lineProblems(wage, reveal);
   const employeeMissing = !wage.isHistorical && selectionRequired && !wage.memberId;
-  const employeeErrorId = useId();
   const displayedEmployee = wage.isHistorical
     ? i18n.t('settlement.wages.historicalEmployee')
     : wage.personName || i18n.t('settlement.wages.chooseEmployee');
@@ -294,39 +293,18 @@ function WageLine({
       onRemove={onRemove}
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label={i18n.t('settlement.wages.employee')}>
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full justify-between text-left"
-            // 2026-11-11: inside the field's <label> the button was named
-            // by the label alone, so a screen reader said "Employee" and
-            // never who was chosen.
-            aria-label={i18n.t('common.labelValue', {
-              label: i18n.t('settlement.wages.employee'),
-              value: displayedEmployee,
-            })}
-            aria-haspopup="dialog"
-            aria-invalid={employeeMissing || undefined}
-            aria-describedby={employeeMissing ? employeeErrorId : undefined}
-            disabled={wage.isHistorical}
-            // CONF-11: the arrow is the button's trailing icon. Inside the
-            // label's span it sat right after the name, not at the edge.
-            trailingIcon={<IconChevronRight size={16} />}
-            onClick={onChoose}
-          >
+        {/* UI-01: the field names the button by its label and the choice
+            ("Employee Ali"), and its error and note describe it. */}
+        <Field
+          label={i18n.t('settlement.wages.employee')}
+          error={employeeMissing ? i18n.t('settlement.errors.employeeRequired') : null}
+          hint={
+            !wage.memberId && wage.personName ? i18n.t('settlement.wages.legacyEmployee') : null
+          }
+        >
+          <PickerButton disabled={wage.isHistorical} onClick={onChoose}>
             {displayedEmployee}
-          </Button>
-          {!wage.memberId && wage.personName ? (
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('settlement.wages.legacyEmployee')}
-            </p>
-          ) : null}
-          {employeeMissing ? (
-            <FieldError id={employeeErrorId}>
-              {i18n.t('settlement.errors.employeeRequired')}
-            </FieldError>
-          ) : null}
+          </PickerButton>
         </Field>
         <Field label={i18n.t('settlement.wages.status')}>
           <Select
