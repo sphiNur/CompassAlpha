@@ -1604,7 +1604,6 @@ export const zh = {
   'admin.field.roleSlugPlaceholder': '例如：shift-lead',
   'admin.field.memberNamePlaceholder': '显示名称',
   'admin.label.counting': '正在统计…',
-  'admin.label.loadingStore': '正在加载门店…',
   'admin.field.sortIndex': '排序',
   'admin.field.unit': '单位',
   'admin.field.step': '每次加减量',

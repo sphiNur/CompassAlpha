@@ -1824,7 +1824,6 @@ export const ru = {
   'admin.field.roleSlugPlaceholder': 'например, shift-lead',
   'admin.field.memberNamePlaceholder': 'Отображаемое имя',
   'admin.label.counting': 'Подсчёт…',
-  'admin.label.loadingStore': 'Загрузка магазина…',
   'admin.field.sortIndex': 'Порядок',
   'admin.field.unit': 'Ед. изм.',
   'admin.field.step': 'Шаг заказа',

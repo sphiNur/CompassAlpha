@@ -73,7 +73,9 @@ export interface UiLabels {
   /** R2-ORD-2: the text in a number field is not one number ("1e3"). */
   numberInvalid: string;
 
-  // --- DataState ---
+  // --- DataState / LoadingState ---
+  /** UI-13: what a loading state says to a screen reader, or on its line. */
+  loading: string;
   errorTitle: string;
   errorUnknown: string;
   emptyNoData: string;
@@ -136,6 +138,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   qtyMaxDecimals: (decimals) => `At most ${decimals} decimals`,
   qtyNotMultiple: (step) => `Enter a multiple of ${step}`,
   numberInvalid: 'Not a number — write it like 1500 or 1.5',
+  loading: 'Loading…',
   errorTitle: 'Something went wrong',
   errorUnknown: 'Unknown error',
   emptyNoData: 'No data',

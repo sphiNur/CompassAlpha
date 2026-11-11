@@ -700,9 +700,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
             </>
           ) : null}
           {visibleRunItems.length === 0 ? (
-            <p className="px-4 py-6 text-center text-old-body text-[var(--c-fg-muted)]">
-              {i18n.t('run.filter.noMatch')}
-            </p>
+            <EmptyState compact title={i18n.t('run.filter.noMatch')} />
           ) : null}
           <ul className="flex flex-col" role="list">
             {visibleRunItems.map((it) => {
@@ -2022,14 +2020,11 @@ export function PreviewSummaryCard({
       ) : null}
 
       {filtering && matchCount === 0 ? (
-        <div className="px-4 py-6 text-center">
-          <div className="text-old-body font-semibold text-[var(--c-fg)]">
-            {i18n.t('order.search.noMatches.title')}
-          </div>
-          <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('order.search.noMatches.description')}
-          </div>
-        </div>
+        <EmptyState
+          compact
+          title={i18n.t('order.search.noMatches.title')}
+          description={i18n.t('order.search.noMatches.description')}
+        />
       ) : null}
 
       {view === 'byStore' ? (

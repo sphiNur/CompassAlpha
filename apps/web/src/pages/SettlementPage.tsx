@@ -20,12 +20,13 @@ import {
   Field,
   FieldError,
   Input,
+  LoadingState,
   NumberInput,
+  PendingState,
   SearchInput,
   SectionLabel,
   Select,
   Sheet,
-  Spinner,
   Textarea,
   useToast,
   QueryErrorBanner,
@@ -39,7 +40,6 @@ import {
   settlementMoneyProblem,
 } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
-import { PendingSpinner } from '../components/PendingSpinner';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
@@ -1033,9 +1033,7 @@ export function SettlementPage() {
     return (
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
         {pageHeading}
-        <div className="flex justify-center py-8">
-          <PendingSpinner query={storesQuery} />
-        </div>
+        <PendingState query={storesQuery} variant="block" />
       </div>
     );
   }
@@ -1079,9 +1077,7 @@ export function SettlementPage() {
     return (
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
         {pageHeading}
-        <div className="flex justify-center py-8">
-          <Spinner size={20} />
-        </div>
+        <LoadingState />
       </div>
     );
   }
@@ -1102,9 +1098,7 @@ export function SettlementPage() {
             }
           />
         ) : (
-          <div className="flex justify-center py-8">
-            <PendingSpinner query={businessDateQuery} />
-          </div>
+          <PendingState query={businessDateQuery} variant="block" />
         )}
       </div>
     );
@@ -1139,11 +1133,9 @@ export function SettlementPage() {
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
         {pageHeading}
         {storeSelector}
-        <div className="flex justify-center py-8" aria-label={i18n.t('settlement.title')}>
-          {/* CONF-02: offline with no saved copy of this day, say so; a
-              bare spinner turned until the network came back. */}
-          <PendingSpinner query={closeQuery} />
-        </div>
+        {/* CONF-02: offline with no saved copy of this day, say so; a
+            bare spinner turned until the network came back. */}
+        <PendingState query={closeQuery} variant="block" />
       </div>
     );
   }
@@ -2073,9 +2065,7 @@ export function SettlementPage() {
         <section className="flex flex-col gap-2">
           <SectionLabel as="h2">{i18n.t('settlement.recent.title')}</SectionLabel>
           {recentQuery.isPending ? (
-            <div className="flex justify-center py-3">
-              <PendingSpinner query={recentQuery} size={18} />
-            </div>
+            <PendingState query={recentQuery} />
           ) : recentQuery.isError && !recentQuery.data ? (
             // F11 (2026-10-30): a failed load read "no settlements yet".
             <QueryErrorBanner query={recentQuery} />
@@ -2158,11 +2148,7 @@ export function SettlementPage() {
             onClear={() => setWageSearch('')}
           />
 
-          {wageRosterQuery.isPending ? (
-            <div className="flex justify-center py-5">
-              <PendingSpinner query={wageRosterQuery} />
-            </div>
-          ) : null}
+          {wageRosterQuery.isPending ? <PendingState query={wageRosterQuery} /> : null}
           {wageRosterQuery.isError ? (
             <Banner
               tone="danger"
@@ -2263,13 +2249,7 @@ function SettlementHistory({ settlementId }: { settlementId: string }) {
       </button>
       {open ? (
         history.isPending ? (
-          <div
-            role="status"
-            aria-label={i18n.t('common.loading')}
-            className="flex justify-center py-4"
-          >
-            <Spinner size={28} />
-          </div>
+          <LoadingState variant="compact" />
         ) : history.isError ? (
           <Banner tone="danger" title={i18n.t('settlement.errors.load')} />
         ) : (

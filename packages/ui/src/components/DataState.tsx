@@ -4,7 +4,8 @@ import { Banner } from './Banner';
 import { Button } from './Button';
 import { resolveDataStateError } from './dataStateError';
 import { EmptyState } from './EmptyState';
-import { Spinner } from './Spinner';
+import { LoadingState } from './LoadingState';
+import { isWaitingOffline, OfflineState } from './OfflineState';
 
 interface QueryLike<T> {
   data: T | undefined;
@@ -39,18 +40,15 @@ export function DataState<T>({
   // untranslated. See packages/ui/src/labels.tsx.
   const labels = useUiLabels();
   if (query.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12 text-[var(--c-fg-muted)]">
-        {loading ?? <Spinner size={28} />}
-      </div>
-    );
+    // UI-13 (2026-11-11): announced; the bare spinner said nothing.
+    return <>{loading ?? <LoadingState />}</>;
   }
   // R2-ENG-1 / HIS-18 (2026-10-31): offline with nothing saved, a query
   // waits (paused) instead of failing, and fell through to "no data" —
   // read as "there is nothing", not "you are offline". It loads by itself
   // once the network is back.
-  if (query.data === undefined && query.fetchStatus === 'paused') {
-    return <EmptyState title={labels.offlineNoData} />;
+  if (isWaitingOffline(query)) {
+    return <OfflineState />;
   }
   if (query.isError) {
     // Data from before (or the offline copy) stays readable under the error.

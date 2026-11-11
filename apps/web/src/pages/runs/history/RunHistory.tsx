@@ -28,11 +28,12 @@ import {
   ChipBar,
   EmptyState,
   Input,
+  LoadingState,
   NameCell,
+  OfflineState,
   QueryErrorBanner,
   SectionLabel,
   Sheet,
-  Spinner,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
@@ -251,11 +252,9 @@ export function RunHistoryPage({
           </div>
         ) : null}
         {waitingOffline ? (
-          <EmptyState title={i18n.t('common.offlineNoData')} />
+          <OfflineState />
         ) : loading ? (
-          <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
-            <Spinner size={28} />
-          </div>
+          <LoadingState />
         ) : failed ? null : runs.length === 0 ? (
           // R2-HIS-2 (2026-10-31): a failed load shows its error banner
           // above; "no runs match — clear all" under it blamed the filters.
@@ -934,9 +933,7 @@ export function RunHistoryDetailSheet({
       }
     >
       {!target ? null : detail.isLoading ? (
-        <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
-            <Spinner size={28} />
-          </div>
+        <LoadingState />
       ) : detail.isError && !breakdown ? (
         // F11 (2026-10-30): a failed load said "no data", so nobody retried.
         // RUNWEB2-21: the kit's banner, with the translated reason.
@@ -944,7 +941,7 @@ export function RunHistoryDetailSheet({
       ) : !breakdown && detail.fetchStatus === 'paused' ? (
         // HIS-18 (2026-10-31): offline, a detail never opened before waits
         // for the network; it is not "no data" and loads once back online.
-        <EmptyState title={i18n.t('common.offlineNoData')} />
+        <OfflineState />
       ) : !breakdown ? (
         <EmptyState title={i18n.t('run.history.noDetail')} />
       ) : (

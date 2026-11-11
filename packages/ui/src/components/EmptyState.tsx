@@ -7,9 +7,42 @@ interface EmptyStateProps {
   description?: ReactNode;
   action?: ReactNode;
   className?: string;
+  /**
+   * A sentence instead of a heading, for "nothing matches" inside a list,
+   * a card or a sheet (review UI-13, 2026-11-11). The full state's h2
+   * was too heavy there, so pages wrote their own muted line, each with
+   * its own padding.
+   */
+  compact?: boolean;
 }
 
-export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  className,
+  compact,
+}: EmptyStateProps) {
+  if (compact) {
+    return (
+      <div className={cn('flex flex-col items-center gap-2 px-4 py-6 text-center', className)}>
+        {/* A lone line is a quiet note; over a description it leads. */}
+        <p
+          className={cn(
+            'text-old-body',
+            description ? 'font-medium text-[var(--c-fg)]' : 'text-[var(--c-fg-muted)]',
+          )}
+        >
+          {title}
+        </p>
+        {description ? (
+          <p className="max-w-sm text-old-body-sm text-[var(--c-fg-muted)]">{description}</p>
+        ) : null}
+        {action ? <div>{action}</div> : null}
+      </div>
+    );
+  }
   return (
     <div className={cn('flex flex-col items-center justify-center gap-3 px-6 py-12 text-center', className)}>
       {icon ? <div className="text-[var(--c-fg-subtle)] text-3xl">{icon}</div> : null}

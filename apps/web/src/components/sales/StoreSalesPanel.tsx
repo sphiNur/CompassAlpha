@@ -14,9 +14,10 @@ import {
   EmptyState,
   Field,
   Input,
+  LoadingState,
   SectionLabel,
   Sheet,
-  Spinner,
+  isWaitingOffline,
   useToast,
   Select,
 } from '@compass/ui';
@@ -252,10 +253,8 @@ export function StoreSalesPanel({
           {/* 2026-10-21 F4-12: while dishes load, don't tell the cashier to
               go create dishes in the Catalog. */}
           {dishesQuery.isLoading ? (
-            <div className="py-2 text-center">
-              <Spinner size={16} />
-            </div>
-          ) : dishesQuery.data === undefined && dishesQuery.fetchStatus === 'paused' ? (
+            <LoadingState variant="inline" />
+          ) : isWaitingOffline(dishesQuery) ? (
             // CLS-6: offline with no saved menu is not "no dishes yet".
             <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('common.offlineNoData')}</p>
           ) : dishOptions.length === 0 ? (
@@ -336,9 +335,7 @@ export function StoreSalesPanel({
         {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
         <SectionLabel className="mb-2 px-0">{i18n.t('sales.list.title')}</SectionLabel>
         {listView === 'loading' ? (
-          <div className="py-4 text-center">
-            <Spinner size={16} />
-          </div>
+          <LoadingState variant="compact" />
         ) : listView === 'error' ? (
           <Banner
             tone="danger"

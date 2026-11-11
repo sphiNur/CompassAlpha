@@ -1568,8 +1568,11 @@ export function OrderPage() {
         {() => (
           <ul className="flex flex-col" role="list">
             {filteredSkus.length === 0 && (deferredSearch || activeCategory) ? (
-              <li className="px-4 py-8">
+              <li>
+                {/* Review UI-13 (2026-11-11): a line in the list, as on the
+                    run preview, not a page heading inside it. */}
                 <EmptyState
+                  compact
                   title={i18n.t('order.search.noMatches.title')}
                   description={i18n.t('order.search.noMatches.description')}
                 />
@@ -2178,11 +2181,7 @@ function ReviewList({
   }, [totals, skuById, categories, productName, i18n, edit, diff]);
 
   if (groups.length === 0) {
-    return (
-      <div className="py-6 text-center text-old-body text-[var(--c-fg-muted)]">
-        {i18n.t('order.review.empty')}
-      </div>
-    );
+    return <EmptyState compact title={i18n.t('order.review.empty')} />;
   }
   return (
     <div className="flex flex-col gap-3 py-3">

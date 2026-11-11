@@ -25,11 +25,11 @@ import {
   EmptyState,
   Field,
   Input,
+  LoadingState,
   SectionLabel,
   Segmented,
   Select,
   Sheet,
-  Spinner,
   Tile,
   cn,
   rowGroupClass,
@@ -662,9 +662,7 @@ function TargetedPurgeBrowser() {
       >
         <div className="flex flex-col gap-3 py-3">
           {sessionDryRun.isPending ? (
-            <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-              <Spinner size={14} /> {i18n.t('admin.label.counting')}
-            </div>
+            <LoadingState variant="inline" label={i18n.t('admin.label.counting')} />
           ) : sessionTarget?.preview ? (
             <PurgePreview
               title={i18n.t('ops.purge.rowsWouldBeDeleted', { n: sessionTarget.preview.total })}
@@ -705,9 +703,7 @@ function TargetedPurgeBrowser() {
       >
         <div className="flex flex-col gap-3 py-3">
           {runDryRun.isPending ? (
-            <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-              <Spinner size={14} /> {i18n.t('admin.label.counting')}
-            </div>
+            <LoadingState variant="inline" label={i18n.t('admin.label.counting')} />
           ) : runTarget?.preview ? (
             <>
               <Banner tone="warn" title={i18n.t('ops.purge.cascadeTitle')}>
@@ -1115,9 +1111,7 @@ export function PriceReportSection() {
         {i18n.t('ops.price.howBody')}
       </Banner>
       {statsQuery.isLoading || skusQuery.isLoading ? (
-        <div className="mt-4">
-          <Spinner size={16} />
-        </div>
+        <LoadingState variant="compact" />
       ) : statsQuery.isError || skusQuery.isError ? (
         // 2026-10-21 FE-01 (F6-04): a failed query used to fall through
         // to "no price data yet". DataState renders the translated error
@@ -1680,9 +1674,7 @@ export function FinanceSection() {
       {!rangeOk ? (
         <Banner tone="warn" title={i18n.t('finance.range.invalid')} />
       ) : linesQuery.isLoading ? (
-        <div className="py-6 text-center">
-          <Spinner size={16} />
-        </div>
+        <LoadingState variant="compact" />
       ) : linesQuery.isError ? (
         // 2026-10-21 FE-01 (F6-04): was rendered as "no expenses".
         <DataState query={linesQuery}>{() => null}</DataState>

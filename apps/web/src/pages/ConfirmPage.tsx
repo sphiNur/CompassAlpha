@@ -20,13 +20,14 @@ import {
   EmptyState,
   FieldError,
   FieldLabel,
+  LoadingState,
   NameCell,
+  OfflineState,
   PhotoCapture,
   SectionLabel,
   Sheet,
   StickyPageBar,
   Input,
-  Spinner,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -613,11 +614,9 @@ export function ConfirmPage() {
           </ChipBar>
         ) : null}
         {runsView.kind === 'loading' ? (
-          <div className="flex items-center justify-center py-12 text-[var(--c-fg-muted)]">
-            <Spinner size={28} />
-          </div>
+          <LoadingState />
         ) : runsView.kind === 'offline' ? (
-          <EmptyState title={i18n.t('common.offlineNoData')} />
+          <OfflineState />
         ) : runsView.kind === 'error' ? null : !activeRun ? (
           <ReceivingWaitState wait={wait} />
         ) : (
