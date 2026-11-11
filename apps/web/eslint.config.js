@@ -111,6 +111,31 @@ export default [
     },
   },
 
+  // 4c) Review TEST3-06 (2026-11-10): P-5 (2026-10-31) — a value import
+  //     from the `@compass/contracts` barrel pulls zod and every schema
+  //     into the web bundle (the schema modules run `z.object(...)` at
+  //     load, so they cannot be tree-shaken). Types are free; values come
+  //     from the zod-free subpaths. A test used to look for this with a
+  //     regex that missed `export … from`.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@compass/contracts',
+              allowTypeImports: true,
+              message:
+                'The barrel pulls zod into the bundle: import only types from it, and values from a zod-free subpath (@compass/contracts/limits, /money, /quantity, /schemas/roles).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // 5) ErrorBoundary tolerates console.error as a true last-resort
   //    fallback when the structured logger itself fails.
   {
