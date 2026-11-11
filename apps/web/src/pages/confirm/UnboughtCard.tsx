@@ -5,6 +5,7 @@
  */
 import { Card, NameCell, SectionLabel } from '@compass/ui';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../hooks/useI18n';
+import { rowName } from '../../lib/productName';
 import { formatQty } from '../../lib/format';
 
 export function UnboughtCard({
@@ -33,7 +34,6 @@ export function UnboughtCard({
       <ul className="flex flex-col" role="list">
         {items.map((it) => {
           const sku = skuById.get(it.skuId);
-          const nm = sku ? productNameParts(sku) : null;
           return (
             <li
               key={it.skuId}
@@ -41,10 +41,7 @@ export function UnboughtCard({
             >
               <div className="flex items-start justify-between gap-3">
                 <NameCell
-                  primary={nm ? nm.primary : i18n.t('common.unknownProduct')}
-                  secondary={nm?.secondary}
-                  primaryLang={nm?.primaryLang}
-                  secondaryLang={nm?.secondaryLang}
+                  {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
                   size="default"
                 />
                 <span className="shrink-0 text-old-label tabular-nums">

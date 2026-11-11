@@ -175,6 +175,14 @@ export function useUnitLabel() {
   return useMemo(() => unitLabeller(i18n.t), [i18n]);
 }
 
+/**
+ * A product's name as one line of text: "primary (secondary)" for a user
+ * who reads a second language (productName). For text that has one line:
+ * a toast, a label for screen readers, a select option, a sentence, a
+ * sort key, or a label saved with data. A row shows the name on two lines
+ * instead (UI-4): useProductNameParts with rowName, into NameCell. Review
+ * COREWEB2-18 (2026-11-12).
+ */
 export function useProductName() {
   const i18n = useI18n();
   const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);

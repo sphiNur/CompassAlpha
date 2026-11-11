@@ -88,11 +88,15 @@ export function CatalogToolbar({
  */
 export function CatalogRowHeader({
   title,
+  titleLang,
   names,
   meta,
   archived,
 }: {
+  /** The name in the reader's language only; `names` lists the others. */
   title: string;
+  /** The title's language when it is not the interface's (A11Y-3). */
+  titleLang?: string;
   /**
    * The item's names in every language. Those that differ from the title
    * show under it, so an admin sees at a glance what is translated.
@@ -108,7 +112,9 @@ export function CatalogRowHeader({
   return (
     <CardHeader>
       <div className="min-w-0">
-        <CardTitle as="h2">{title}</CardTitle>
+        <CardTitle as="h2">
+          <span lang={titleLang}>{title}</span>
+        </CardTitle>
         {names && otherLangs.length > 0 ? (
           <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
             <OtherLangNames names={names} langs={otherLangs} />

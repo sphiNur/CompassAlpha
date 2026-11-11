@@ -27,6 +27,7 @@ import {
   FieldError,
   Input,
   LoadingState,
+  NameCell,
   SectionLabel,
   Select,
   Sheet,
@@ -46,7 +47,8 @@ import { useAuthStore } from '../../stores/authStore';
 import { useErrToast } from '../../hooks/useErrToast';
 import { currencyOf, formatMoney, formatQty } from '../../lib/format';
 import { useCanSeePrices, useStorePermission } from '../../hooks/useStorePermission';
-import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useProductNameParts } from '../../hooks/useI18n';
+import { rowName } from '../../lib/productName';
 import { normalizeVoidReason, salesListView } from './salesSummary';
 import { moneyLine } from '../../lib/money';
 
@@ -59,6 +61,7 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
   const toast = useToast();
   const errToast = useErrToast();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const utils = trpc.useUtils();
   const session = useAuthStore((s) => s.session);
   // Mirrors the server's requireSalesRecord (CA-10/CA-57: no users.manage
@@ -377,6 +380,7 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
           <ul className={rowGroupClass} role="list">
             {sales.map((sale) => {
               const dish = dishById.get(sale.dishId);
+              // One line for the void sheet; two in the row (UI-4).
               const name = dish ? productName({ names: dish.names }) : i18n.t('common.unknownDish');
               // 2026-07-30: `undefined` meant "browser locale".
               const time = dateFmt.time(sale.occurredAt);
@@ -398,7 +402,10 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
                       <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {time}
                       </span>
-                      <span className="truncate text-old-body font-medium">{name}</span>
+                      <NameCell
+                        {...rowName(productNameParts, dish, i18n.t('common.unknownDish'))}
+                        primaryClassName={cn('font-medium', voided && 'text-[var(--c-fg-muted)]')}
+                      />
                     </div>
                     {lineTotal !== null ? (
                       <div className="text-old-label text-[var(--c-fg-muted)]">

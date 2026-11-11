@@ -44,7 +44,7 @@ import { expenseLine, expensesTotal } from '../lib/expenseMoney';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
-import { rowName } from '../lib/rowName';
+import { rowName } from '../../../lib/productName';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 import { isPositiveQty } from '@compass/contracts/limits';
 

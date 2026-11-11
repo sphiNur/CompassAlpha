@@ -6,6 +6,7 @@
 import { Chip, ChipBar, NameCell } from '@compass/ui';
 import { haptic } from '../../lib/telegram';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../hooks/useI18n';
+import { rowName } from '../../lib/productName';
 import { formatQty } from '../../lib/format';
 import { DECISION_LABEL, DECISIONS, type ConfirmDecisionStatus } from './confirmLogic';
 
@@ -38,7 +39,6 @@ export function ConfirmItemRow({
   // unit ("kg") while Run — the screen the goods just came from — printed
   // "公斤". Same goods, same locale, two spellings.
   const unitLabel = useUnitLabel();
-  const nm = sku ? productNameParts(sku) : null;
   const unit = unitLabel(sku?.unit, line.qty);
   // 2026-07-30 (flow review): was `it.confirmStatus ?? 'ok'`, which
   // pre-selected 正常 on every untouched line. The receiver's screen
@@ -52,10 +52,7 @@ export function ConfirmItemRow({
         {/* Confirm is the "default" (dense) name tier per the 2026-07-05
             two-tier decision. */}
         <NameCell
-          primary={nm ? nm.primary : i18n.t('common.unknownProduct')}
-          secondary={nm?.secondary}
-          primaryLang={nm?.primaryLang}
-          secondaryLang={nm?.secondaryLang}
+          {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
           size="default"
         />
         <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">

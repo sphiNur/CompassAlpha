@@ -23,6 +23,7 @@ import {
   Field,
   Input,
   LoadingState,
+  NameCell,
   OfflineState,
   QtyControl,
   SectionLabel,
@@ -36,7 +37,14 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import {
+  useDateFormat,
+  useI18n,
+  useProductName,
+  useProductNameParts,
+  useUnitLabel,
+} from '../hooks/useI18n';
+import { rowName } from '../lib/productName';
 import { useCurrency } from '../hooks/useCurrency';
 import { haptic } from '../lib/telegram';
 import { useOnline } from '../hooks/useOnline';
@@ -949,6 +957,8 @@ function SessionItems({
   const i18n = useI18n();
   const canEdit = isClaimedByMe || claimOnEditSeq !== undefined;
   const unitLabel = useUnitLabel();
+  // UI-4: a row's name on two lines; `productName` is for one-line text.
+  const productNameParts = useProductNameParts();
   // M1.21: pull org currency from session for the estimate-total
   // suffix. Hardcoded "UZS" pre-M1.21 blocked the multi-currency
   // foundation from M1.17.
@@ -1274,9 +1284,11 @@ function SessionItems({
               </div>
             ) : null}
             <div className="flex items-center justify-between gap-2 text-old-body">
-              <span className="min-w-0 flex-1 break-words font-semibold text-[var(--c-fg)]">
-                {sku ? productName(sku) : i18n.t('common.unknownProduct')}
-              </span>
+              <NameCell
+                {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
+                className="flex-1"
+                primaryClassName="line-clamp-none"
+              />
               {canEdit && isSingleContributor && sku && singleRow ? (
                 <QtyControl
                   size="sm"
@@ -1401,9 +1413,11 @@ function SessionItems({
                   and broke over three lines ("提交/时"). It now runs under
                   the name and stepper at full width. */}
               <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 flex-1 break-words text-[var(--c-fg-muted)] line-through">
-                  {sku ? productName(sku) : i18n.t('common.unknownProduct')}
-                </span>
+                <NameCell
+                  {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
+                  className="flex-1 text-[var(--c-fg-muted)] line-through"
+                  primaryClassName="line-clamp-none font-normal text-[var(--c-fg-muted)]"
+                />
                 {canEdit && sku ? (
                   <QtyControl
                     size="sm"
@@ -1470,9 +1484,11 @@ function SessionItems({
                   key={t.skuId}
                   className="flex items-baseline justify-between gap-3 border-b border-[var(--c-divider)] py-1.5 text-old-body last:border-b-0"
                 >
-                  <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">
-                    {sku ? productName(sku) : i18n.t('common.unknownProduct')}
-                  </span>
+                  <NameCell
+                    {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
+                    className="flex-1"
+                    primaryClassName="line-clamp-none font-normal"
+                  />
                   <span
                     className={`shrink-0 tabular-nums ${ch ? 'font-semibold text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]'}`}
                   >

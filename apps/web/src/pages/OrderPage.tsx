@@ -2113,6 +2113,8 @@ function ReviewList({
 }) {
   const diff = useMemo(() => submittedDiff(submitted, totals), [submitted, totals]);
   const i18n = useI18n();
+  // UI-4: each line's name on two lines; `productName` is for one-line text.
+  const productNameParts = useProductNameParts();
   // Lines stepped down to 0 stay in place (at 0) while the sheet is open, so
   // a mis-tap can be undone with + instead of the row jumping out of view.
   const seenRef = useRef(new Set<string>());
@@ -2186,13 +2188,14 @@ function ReviewList({
       rows: g.skus.map((sku) => ({
         skuId: sku.id,
         name: productName({ names: sku.names as Record<string, string> }),
+        nameParts: productNameParts({ names: sku.names as Record<string, string> }),
         qty: sku.qty,
         unit: sku.unit,
         step: sku.step,
         archived: !!sku.isArchived,
       })),
     }));
-  }, [totals, skuById, categories, productName, i18n, edit, diff]);
+  }, [totals, skuById, categories, productName, productNameParts, i18n, edit, diff]);
 
   if (groups.length === 0) {
     return <EmptyState compact title={i18n.t('order.review.empty')} />;
@@ -2239,6 +2242,7 @@ function ReviewList({
                 const total = Number(r.qty);
                 const others = total - myQty;
                 if (edit) {
+                  const dropped = !(myQty > 0 || others > 0);
                   return (
                     <li
                       key={r.skuId}
@@ -2248,15 +2252,15 @@ function ReviewList({
                           the whole row, + included, so it looked as if it
                           could not be added back. Only the name dims now. */}
                       <div className="min-w-[7rem] flex-1">
-                        <div
-                          className={`break-words text-old-h2 font-semibold leading-snug ${
-                            myQty > 0 || others > 0
-                              ? 'text-[var(--c-fg)]'
-                              : 'text-[var(--c-fg-muted)] line-through'
-                          }`}
-                        >
-                          {r.name}
-                        </div>
+                        <NameCell
+                          {...r.nameParts}
+                          size="prominent"
+                          className={dropped ? 'text-[var(--c-fg-muted)] line-through' : undefined}
+                          primaryClassName={cn(
+                            'line-clamp-none',
+                            dropped && 'text-[var(--c-fg-muted)]',
+                          )}
+                        />
                         {r.archived ? (
                           <div className="text-old-label text-[var(--c-warning-fg)]">
                             {i18n.t('order.review.archived')}
@@ -2297,15 +2301,17 @@ function ReviewList({
                       list read at the same size. 2026-11-05: names wrap
                       instead of being cut off on a narrow phone. */}
                   <div className="min-w-0 flex-1">
-                    <div
-                      className={`break-words text-old-h2 font-semibold leading-snug ${
-                        ch?.kind === 'removed'
-                          ? 'text-[var(--c-fg-muted)] line-through'
-                          : 'text-[var(--c-fg)]'
-                      }`}
-                    >
-                      {r.name}
-                    </div>
+                    <NameCell
+                      {...r.nameParts}
+                      size="prominent"
+                      className={
+                        ch?.kind === 'removed' ? 'text-[var(--c-fg-muted)] line-through' : undefined
+                      }
+                      primaryClassName={cn(
+                        'line-clamp-none',
+                        ch?.kind === 'removed' && 'text-[var(--c-fg-muted)]',
+                      )}
+                    />
                     {r.archived ? (
                       <div className="text-old-label text-[var(--c-warning-fg)]">
                         {i18n.t('order.review.archived')}
