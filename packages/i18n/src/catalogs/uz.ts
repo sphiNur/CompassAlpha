@@ -1352,6 +1352,7 @@ export const uz = {
   'run.action.finishBlocked.otherStores': 'Yakunlashni barcha doʻkonlar xaridori bajaradi',
   'run.action.finishBlocked.noPermission': 'Xaridni yakunlashga ruxsatingiz yoʻq',
   'common.listSeparator': ', ',
+  'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Xaridni yozish',
   'offline.action.markUnavailable': 'Mavjud emas deb belgilash',
   'offline.action.deliverToStore': 'Yetkazishni tasdiqlash',

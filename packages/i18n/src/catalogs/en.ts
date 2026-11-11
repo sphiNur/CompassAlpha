@@ -1438,6 +1438,8 @@ export const en = {
   'run.action.finishBlocked.otherStores': 'Finishing needs someone who buys for all stores',
   'run.action.finishBlocked.noPermission': 'You do not have permission to finish',
   'common.listSeparator': ', ',
+  // Two whole sentences in one message (CONF-18): Chinese puts no space after 。.
+  'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Record purchase',
   'offline.action.markUnavailable': 'Mark unavailable',
   'offline.action.deliverToStore': 'Confirm delivery',

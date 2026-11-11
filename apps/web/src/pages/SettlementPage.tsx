@@ -46,6 +46,7 @@ import { confirmNative } from '../lib/confirm';
 import { showFieldError, withTouched } from '../lib/fieldErrors';
 import { useErrToast } from '../lib/errToast';
 import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
+import { zoneName } from '../lib/dateFormat';
 import { formatMoney, currencyOf } from '../lib/format';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
@@ -56,6 +57,7 @@ import {
   draftKey,
   draftStorage,
   forgetDraft,
+  pruneDrafts,
   readDraft,
   writeDraft,
 } from './settlement/draftStore';
@@ -559,6 +561,20 @@ export function SettlementPage() {
       session && BUSINESS_DATE.test(date)
         ? readDraft<SettlementDraft>(draftStorage(), draftKey(session.user.id, recordKey))
         : null;
+    // CONF-13: tidy the other drafts. Only a record that has loaded says
+    // which versions are behind it; while it loads, recordKey reads "new".
+    if (session && BUSINESS_DATE.test(date)) {
+      pruneDrafts(
+        draftStorage(),
+        draftKey(session.user.id, recordKey),
+        existing
+          ? {
+              prefix: draftKey(session.user.id, `${currentStoreId}:${date}:${existing.id}:`),
+              version: existing.version,
+            }
+          : null,
+      );
+    }
     if (carry && carry.at === `${currentStoreId}:${date}` && Object.keys(carry.fields).length) {
       setDraft({ ...fresh, ...carry.fields });
       setRestoredDraft(false);
@@ -681,9 +697,14 @@ export function SettlementPage() {
     () =>
       registerStoreChangeGuard((nextStoreId) => {
         if (nextStoreId === requestedStoreId || !hasUnsavedChanges) return true;
-        return confirmSettlement(i18n.t('settlement.confirm.discard'));
+        // CONF-13: "discard" drops the stored draft too, as the page's own
+        // store and date pickers do; it used to come back as "restored".
+        return confirmSettlement(i18n.t('settlement.confirm.discard')).then((ok) => {
+          if (ok && storedDraftKey) forgetDraft(draftStorage(), storedDraftKey);
+          return ok;
+        });
       }),
-    [hasUnsavedChanges, i18n, requestedStoreId],
+    [hasUnsavedChanges, i18n, requestedStoreId, storedDraftKey],
   );
   // The shell only renders the active bottom-tab page, so leaving this tab
   // otherwise unmounts the form. Keep the same explicit confirmation used
@@ -769,8 +790,12 @@ export function SettlementPage() {
     for (const employee of wageRoster) {
       for (const role of employee.roles) byId.set(role.id, role);
     }
-    return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name));
-  }, [wageRoster]);
+    // CONF-18: in the order the names are shown (built-in roles are
+    // translated), in the UI language's collation.
+    return [...byId.values()].sort((left, right) =>
+      roleText.name(left).localeCompare(roleText.name(right), i18n.locale),
+    );
+  }, [wageRoster, roleText, i18n.locale]);
   const filteredWageRoster = useMemo(() => {
     const query = wageSearch.trim().toLocaleLowerCase();
     return wageRoster.filter((employee) => {
@@ -967,7 +992,9 @@ export function SettlementPage() {
   const dateField = businessDate ? (
     <Field
       label={i18n.t('settlement.date.label')}
-      hint={i18n.t('settlement.date.timezone', { timezone: businessDate.timezone })}
+      hint={i18n.t('settlement.date.timezone', {
+        timezone: zoneName(businessDate.timezone, i18n.locale),
+      })}
     >
       <Input
         type="date"
@@ -1284,11 +1311,16 @@ export function SettlementPage() {
       }));
       haptic('success');
       setDraft((current) => ({ ...current, wageItems: [...current.wageItems, ...added] }));
+      // CONF-18: the two sentences join the way the language does (no
+      // space after 。 in Chinese).
+      const addedText = i18n.t('settlement.wages.fromAttendanceAdded', { n: added.length });
       toast.success(
-        i18n.t('settlement.wages.fromAttendanceAdded', { n: added.length }) +
-          (review > 0
-            ? ` ${i18n.t('settlement.wages.fromAttendanceNeedsReview', { n: review })}`
-            : ''),
+        review > 0
+          ? i18n.t('common.twoSentences', {
+              first: addedText,
+              second: i18n.t('settlement.wages.fromAttendanceNeedsReview', { n: review }),
+            })
+          : addedText,
       );
     } catch (err) {
       errToast('settlement.wages.fromAttendanceFailed')(err);
@@ -2165,7 +2197,9 @@ export function SettlementPage() {
                       </span>
                       <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">
                         {employee.roles.length > 0
-                          ? employee.roles.map((role) => roleText.name(role)).join(' · ')
+                          ? employee.roles
+                              .map((role) => roleText.name(role))
+                              .join(i18n.t('common.listSeparator'))
                           : i18n.t('settlement.wages.noRole')}
                       </span>
                     </span>
@@ -2255,7 +2289,7 @@ function SettlementHistory({ settlementId }: { settlementId: string }) {
                             ? i18n.t(HISTORY_FIELD_KEY[f] as Parameters<typeof i18n.t>[0])
                             : f,
                         )
-                        .join(i18n.locale === 'zh' ? '、' : ', '),
+                        .join(i18n.t('common.listSeparator')),
                     })}
                   </div>
                 ) : null}

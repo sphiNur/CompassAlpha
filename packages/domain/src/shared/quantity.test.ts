@@ -1,7 +1,15 @@
 // Quantity arithmetic lives in @compass/contracts (no test runner types
 // there); the run reducer and the API's demand sums use it (RUNAPI-05).
 import { describe, expect, it } from 'bun:test';
-import { addQty, milliQty, normalizeQty, qtyMilli, subQty, sumQty } from '@compass/contracts';
+import {
+  addQty,
+  milliQty,
+  mulQty,
+  normalizeQty,
+  qtyMilli,
+  subQty,
+  sumQty,
+} from '@compass/contracts';
 
 describe('quantity arithmetic (RUNAPI-05)', () => {
   it('adds without float noise', () => {
@@ -39,5 +47,17 @@ describe('quantity arithmetic (RUNAPI-05)', () => {
     expect(sumQty(['1', null, undefined, '', '2'])).toBe('3');
     expect(() => qtyMilli('abc')).toThrow(RangeError);
     expect(() => qtyMilli('1e3')).toThrow(RangeError);
+  });
+
+  it('multiplies exactly and rounds once, half away from zero (CONF-15)', () => {
+    expect((1.0005 * 1).toFixed(3)).toBe('1.000'); // the float rounding this replaces
+    expect(mulQty('1.0005', '1')).toBe('1.001');
+    expect(mulQty('0.0045', '1')).toBe('0.005');
+    expect(mulQty('0.25', '3')).toBe('0.75');
+    expect(mulQty('0.1235', '10')).toBe('1.235');
+    expect(mulQty('2.5', '0.33')).toBe('0.825');
+    expect(mulQty('0.0125', '0.5')).toBe('0.006');
+    expect(mulQty('0', '7')).toBe('0');
+    expect(subQty(0, mulQty('1.0005', '1'))).toBe('-1.001');
   });
 });

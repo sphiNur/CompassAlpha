@@ -1197,6 +1197,7 @@ export const zh = {
   'run.action.finishBlocked.otherStores': '结束采购需要负责全部门店的人',
   'run.action.finishBlocked.noPermission': '你没有结束采购的权限',
   'common.listSeparator': '、',
+  'common.twoSentences': '{first}{second}',
   'offline.action.purchaseItem': '记采购',
   'offline.action.markUnavailable': '标记缺货',
   'offline.action.deliverToStore': '确认送达',

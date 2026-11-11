@@ -50,3 +50,15 @@ export function sumQty(values: Iterable<string | number | null | undefined>): st
   }
   return milliQty(total);
 }
+
+/**
+ * a × b, rounded once to 3 decimals, half away from zero: a recipe's amount
+ * per serving times the servings sold (review CONF-15). Multiplying floats
+ * and calling toFixed(3) rounded some halves down, unlike every other
+ * quantity here: 1.0005 × 1 gave "1.000" and 0.0045 × 1 gave "0.004".
+ */
+export function mulQty(a: string | number, b: string | number): string {
+  const x = toUnits(typeof a === 'number' ? numberText(a) : a);
+  const y = toUnits(typeof b === 'number' ? numberText(b) : b);
+  return milliQty(roundShift(x.units * y.units, x.scale + y.scale - 3));
+}

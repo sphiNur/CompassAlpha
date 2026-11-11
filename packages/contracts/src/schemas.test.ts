@@ -14,7 +14,12 @@ import {
   TimeZoneSchema,
 } from './schemas/common';
 import { PurchaseQtySchema } from './schemas/run';
-import { SettlementMoneySchema, SignedSettlementMoneySchema } from './schemas/settlement';
+import {
+  SettlementMoneySchema,
+  SettlementOperatingExpenseItemSchema,
+  SettlementWageItemSchema,
+  SignedSettlementMoneySchema,
+} from './schemas/settlement';
 
 function verdict(schema: ZodTypeAny, value: unknown): string {
   const r = schema.safeParse(value);
@@ -108,6 +113,20 @@ describe('daily-close money', () => {
       '-999999999999.99': 'ok',
       '--5': 'settlement.errors.invalidMoney',
     });
+  });
+
+  it('an expense or wage line without a reason or a name gets a catalog key (CONF-19)', () => {
+    expect(verdict(SettlementOperatingExpenseItemSchema, { amount: '10.00', reason: '  ' })).toBe(
+      'settlement.errors.invalidDetails',
+    );
+    const wage = { status: 'paid', amount: '10.00', reason: 'Shift' };
+    expect(verdict(SettlementWageItemSchema, { ...wage, reason: '' })).toBe(
+      'settlement.errors.invalidDetails',
+    );
+    expect(verdict(SettlementWageItemSchema, { ...wage, personName: ' ' })).toBe(
+      'settlement.errors.employeeRequired',
+    );
+    expect(verdict(SettlementWageItemSchema, wage)).toBe('ok');
   });
 });
 

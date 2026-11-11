@@ -51,6 +51,8 @@ import {
   DateStringSchema,
   PositiveDecimalStringSchema,
   UuidSchema,
+  mulQty,
+  subQty,
 } from '@compass/contracts';
 import { todayInTz } from '@compass/domain';
 import { BACKDATE_LIMIT_DAYS } from '@compass/contracts';
@@ -310,12 +312,17 @@ export const salesRouter = router({
         const saleId = inserted!.id;
 
         // 5. Auto-deduct ingredient inventory.
-        const saleQty = Number(input.qty);
+        // CONF-15: exact decimals, rounded once to 3 places like every
+        // other quantity (float × and toFixed rounded some halves down).
+        // The response keeps toFixed(3)'s form ("0.500").
+        const fixed3 = (qty: string) => {
+          const [whole, fraction = ''] = qty.split('.');
+          return `${whole}.${fraction.padEnd(3, '0')}`;
+        };
         const deductions = recipe.map((r) => {
-          const lineQty = Number(r.qtyPerServing) * saleQty;
+          const qty = mulQty(r.qtyPerServing, input.qty);
           // Negative delta — that's a consumption.
-          const delta = (-lineQty).toFixed(3);
-          return { skuId: r.skuId, qty: lineQty.toFixed(3), delta };
+          return { skuId: r.skuId, qty: fixed3(qty), delta: subQty(0, qty) };
         });
 
         await tx
