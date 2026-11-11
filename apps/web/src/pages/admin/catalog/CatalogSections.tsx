@@ -1154,8 +1154,8 @@ export function ExpenseTemplatesSection() {
                         </span>
                         {' · '}
                         {tpl.defaultPaymentMethod === 'transfer'
-                          ? `🏦 ${i18n.t('run.label.paymentTransfer')}`
-                          : `💵 ${i18n.t('run.label.paymentCash')}`}
+                          ? i18n.t('run.label.paymentTransfer')
+                          : i18n.t('run.label.paymentCash')}
                       </CardMeta>
                     </div>
                     {tpl.isArchived ? (

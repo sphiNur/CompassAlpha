@@ -38,4 +38,24 @@ describe('crash screen', () => {
       g.window = before;
     }
   });
+
+  // Review COREWEB1-23 / COREWEB1-25 (2026-11-11).
+  test('no warning glyph, and button colours from the theme', () => {
+    const g = globalThis as { window?: unknown };
+    const before = g.window;
+    g.window = { localStorage: { getItem: () => null } };
+    try {
+      const boundary = new ErrorBoundary({ children: null });
+      boundary.state = { error: new Error('x') };
+      const html = renderToStaticMarkup(boundary.render() as ReactElement);
+      expect(html).not.toContain('⚠');
+      // White text on the dark theme's light-blue action colour was 2.4:1.
+      expect(html).toContain('color:var(--c-action-fg, white)');
+      expect(html).not.toContain('color:white');
+      // A black hairline vanished on the dark theme.
+      expect(html).toContain('border:1px solid var(--c-divider');
+    } finally {
+      g.window = before;
+    }
+  });
 });

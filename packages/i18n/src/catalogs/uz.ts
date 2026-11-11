@@ -603,12 +603,14 @@ export const uz = {
   'storeSwitcher.pickStore': 'Doʻkon tanlang',
   'storeSwitcher.allOrgStores': 'Hamma doʻkonlar',
   'storeSwitcher.allOrgHint': 'Butun ish maydoni boʻylab umumiy faollik.',
-  'storeSwitcher.aria': 'Doʻkonni almashtirish',
+  'storeSwitcher.aria': '{name}, doʻkonni almashtirish',
   'storeSwitcher.pickPrompt.title': 'Avval doʻkon tanlang',
   'storeSwitcher.pickPrompt.body':
     'Bu sahifaga aniq doʻkon kerak. Tanlash uchun yuqoridagi doʻkon chipini bosing.',
   'auth.signIn': 'Kirish',
   'auth.shareThisId': 'Ruxsat olish uchun bu Telegram ID ni doʻkon boshqaruvchisiga yuboring:',
+  'auth.copyTelegramId': 'Telegram ID {id}, nusxalash uchun bosing',
+  'auth.telegramIdCopied': 'Nusxalandi. Doʻkon boshqaruvchisiga yuboring.',
   'auth.loginTimeout.title': 'Kirish juda uzoq davom etmoqda',
   'auth.loginTimeout.body': 'Internet aloqasini tekshiring, soʻng ilovani yopib, qayta oching.',
   'auth.noAccess.title': 'Hozircha ruxsat yoʻq',
@@ -1439,7 +1441,7 @@ export const uz = {
   'run.action.addItem.save': 'Saqlash',
   'run.label.addedByPurchaser': 'Xaridor xarid davomida qoʻshgan',
   'run.confirm.finish.addedByPurchaser':
-    '➕ Buyurtmadan tashqari {n} ta mahsulot qoʻshildi · {total} {currency}',
+    'Buyurtmadan tashqari {n} ta mahsulot qoʻshildi · {total} {currency}',
   'run.toast.itemAdded': 'Mahsulot qoʻshildi',
   'run.toast.couldNotAddItem': 'Mahsulotni qoʻshib boʻlmadi. Qayta urinib koʻring.',
   'run.errors.alreadyInRun': 'Bu mahsulot xaridda allaqachon bor — mavjud mahsulotni tahrirlang',
@@ -1466,7 +1468,7 @@ export const uz = {
   'run.toast.expenseRemoved': 'Xarajat oʻchirildi',
   'run.toast.couldNotAddExpense':
     'Xarajatni saqlab boʻlmadi. Summani tekshirib, qayta urinib koʻring.',
-  'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} {currency}',
+  'run.confirm.finish.expenses': '{n} ta katalogdan tashqari / xarajat · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Doʻkonlar boʻyicha taqsimot:',
   'run.confirm.finish.receiptIssues':
     'Qabulda muammo boʻlgan mahsulot: {n} ta; taxminan {amount} {currency} qabul qilinmagan. Doʻkon hisoblari hali ham taqsimlangan miqdor boʻyicha.',
@@ -1517,7 +1519,7 @@ export const uz = {
   'run.label.splitPreview': 'Doʻkonlarga: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Yana mavjud deb belgilash: {name}',
   'run.reason.paymentMethodChanged': 'Roʻyxatda toʻlov usuli tuzatildi',
-  'run.confirm.finish.paymentBreakdown': '💵 naqd {cash} · 🏦 oʻtkazma {transfer}',
+  'run.confirm.finish.paymentBreakdown': 'naqd {cash} · oʻtkazma {transfer}',
   'run.confirm.cancel.title': 'Butun xaridni bekor qilamizmi?',
   'run.confirm.cancel.body':
     'Xarid bekor qilinadi. Barcha buyurtmalar «Maʼqullangan»ga qaytadi va ularni qayta rejalashtirish mumkin. Yozilgan xaridlar saqlanadi, lekin yetkazilmaydi.',
@@ -2155,6 +2157,7 @@ export const uz = {
   'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
   'confirm.runPicker.option': '#{n} · {date}',
   'finance.label.expense': 'Xarajat',
+  'finance.label.expenseNamed': 'Xarajat: {name}',
   'finance.label.expenses': 'Katalogdan tashqari xarajatlar',
   'run.select.title': 'Xarid qilinadigan buyurtmalar',
   'run.select.meta': '{total} tadan {n} tasi tanlandi',
@@ -2181,7 +2184,6 @@ export const uz = {
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sotuvlar',
-  'sales.page.title': 'Sotuvlar',
   'sales.action.void': 'Yaroqsiz qilish',
   'sales.void.title': 'Sotuvni yaroqsiz qilish',
   'sales.void.description': '{dish} — masalliqlar omborga qaytariladi.',

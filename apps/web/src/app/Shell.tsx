@@ -77,6 +77,7 @@ import {
 } from '../lib/deepLink';
 import { publishMainButtonInset } from '../lib/mainButtonInset';
 import { subscribeAnnouncements } from '../lib/announce';
+import { focusFirst } from '../lib/focusFirst';
 import { setPageTitleBase } from '../lib/pageTitle';
 import { createTabScrollMemory, restoreScroll } from '../lib/tabScroll';
 import { scrollBehavior } from '../lib/reducedMotion';
@@ -873,16 +874,23 @@ function ShellInner() {
         {visibleKeys.length > 0 ? (
           <PageErrorBoundary
             key={tab}
+            // Review COREWEB1-23 (2026-11-11): an error is a danger
+            // Banner with retry, as DataState draws one (UI-15), not the
+            // empty-list look.
             fallback={(retry) => (
-              <EmptyState
-                title={i18n.t('shell.pageError.title')}
-                description={i18n.t('shell.pageError.body')}
-                action={
-                  <Button variant="pearl" onClick={retry}>
-                    {i18n.t('common.retry')}
-                  </Button>
-                }
-              />
+              <div className="px-4 pt-3">
+                <Banner
+                  tone="danger"
+                  title={i18n.t('shell.pageError.title')}
+                  action={
+                    <Button size="sm" variant="secondary" onClick={retry}>
+                      {i18n.t('common.retry')}
+                    </Button>
+                  }
+                >
+                  {i18n.t('shell.pageError.body')}
+                </Banner>
+              </div>
             )}
           >
             {PAGES[tab]()}
@@ -1056,8 +1064,11 @@ function BottomNav({
   );
 }
 
-/** A11Y-10: pages that render their own visible <h1>. */
-const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'sales', 'admin']);
+/**
+ * A11Y-10: pages that render their own visible <h1>. Review COREWEB1-23
+ * (2026-11-11): not Sales, which no longer shows a title (UI-12).
+ */
+const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'admin']);
 
 /**
  * DX-IX-5 (2026-11-01): the page's main button and the bottom nav come
@@ -1067,9 +1078,13 @@ const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'sales', 'ad
 function SkipLinks({ hasNav }: { hasNav: boolean }) {
   const i18n = useI18n();
   const mainButton = usePageMainButtonState();
-  const jump = (selector: string) => () => {
-    document.querySelector<HTMLElement>(selector)?.focus();
-  };
+  // Review COREWEB1-25 (2026-11-11): selectors tried in order, so the
+  // current tab wins over the first one (focusFirst).
+  const jump =
+    (...selectors: string[]) =>
+    () => {
+      focusFirst(selectors);
+    };
   const linkClass =
     'sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[60] focus:rounded-[var(--r-pill)] ' +
     'focus:bg-[var(--c-surface)] focus:px-4 focus:py-2 focus:text-old-h3 focus:text-[var(--c-action)] focus:shadow-sheet';
@@ -1084,7 +1099,10 @@ function SkipLinks({ hasNav }: { hasNav: boolean }) {
         <button
           type="button"
           className={linkClass}
-          onClick={jump('[data-testid="primary-nav"] [aria-current="page"], [data-testid="primary-nav"] button')}
+          onClick={jump(
+            '[data-testid="primary-nav"] [aria-current="page"]',
+            '[data-testid="primary-nav"] button',
+          )}
         >
           {i18n.t('shell.skip.nav')}
         </button>

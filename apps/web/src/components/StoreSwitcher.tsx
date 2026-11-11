@@ -255,7 +255,10 @@ export function StoreChip({ className }: { className?: string } = {}) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={i18n.t('storeSwitcher.aria')}
+        // Review COREWEB1-25 (2026-11-11): the name is the reason the chip
+        // is there; "change store" alone hid it from a screen reader, and
+        // a label must contain the visible text (WCAG 2.5.3).
+        aria-label={i18n.t('storeSwitcher.aria', { name: label })}
         className={cn(shell, 'press active:opacity-60', className)}
       >
         <span className="truncate text-[var(--c-fg)]">{label}</span>
