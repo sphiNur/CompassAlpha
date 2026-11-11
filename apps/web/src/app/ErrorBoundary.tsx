@@ -4,6 +4,12 @@
  * `<div id="root">` element + body bg — i.e. a black screen on dark
  * Telegram themes. With this, we render a recoverable fatal screen and
  * (if the client logger is initialized) ship the error to `system.log`.
+ *
+ * main.tsx renders it around <App />. Review COREWEB1-17 (2026-11-12): it
+ * used to be the first thing App returned, so an error in App's own hooks
+ * (Telegram start-up, the query and tRPC clients) unmounted everything,
+ * and once the language arrived main.tsx removed the splash with
+ * boot-guard's error on it: a blank page with no way out.
  */
 import { Component } from 'react';
 import { clearLocalSession } from '../lib/localSession';
@@ -15,10 +21,11 @@ import { startLocale } from '../lib/startLocale';
 /**
  * Resolve the user's locale WITHOUT hooks (2026-07-30).
  *
- * ErrorBoundary is the outermost component — it wraps ThemeProvider and
- * UiLabelsBridge — so it can't use `useI18n()` and can't read any React
- * context: it is the ancestor of all of them. lib/bootLocale reads the
- * persisted session straight from storage, then the platform hint.
+ * ErrorBoundary is the outermost component — it wraps App, and so
+ * ThemeProvider and UiLabelsBridge — so it can't use `useI18n()` and
+ * can't read any React context: it is the ancestor of all of them.
+ * lib/bootLocale reads the persisted session straight from storage, then
+ * the platform hint.
  *
  * A crash before any catalog arrived (no catalog is bundled since
  * DX-PFE-2) draws keys for the moment componentDidCatch takes to fetch

@@ -14,7 +14,7 @@
  * user clearly trying to scroll.
  */
 import { describe, it, expect } from 'bun:test';
-import { shouldCancel, updateMoved } from '../useTapGuard';
+import { CLICK_WINDOW_MS, shouldCancel, updateMoved } from '../useScrollTapSuppression';
 
 function makeState(): {
   pointerId: number | null;
@@ -22,8 +22,9 @@ function makeState(): {
   startY: number;
   moved: boolean;
   bypass: boolean;
+  endedAt: number | null;
 } {
-  return { pointerId: 1, startX: 100, startY: 200, moved: false, bypass: false };
+  return { pointerId: 1, startX: 100, startY: 200, moved: false, bypass: false, endedAt: null };
 }
 
 describe('updateMoved', () => {
@@ -61,28 +62,49 @@ describe('updateMoved', () => {
   });
 
   it('is a no-op when no pointer is being tracked (pointerId null)', () => {
-    const s = { pointerId: null, startX: 0, startY: 0, moved: false, bypass: false };
+    const s = { pointerId: null, startX: 0, startY: 0, moved: false, bypass: false, endedAt: null };
     updateMoved(s, 100, 100);
     expect(s.moved).toBe(false);
   });
 });
 
 describe('shouldCancel', () => {
-  it('cancels when moved && !bypass', () => {
-    expect(shouldCancel({ moved: true, bypass: false })).toBe(true);
+  /** A touch that ended at t = 1000 ms; the tap's click comes 50 ms later. */
+  const ended = { endedAt: 1_000 };
+  const tapClick = { detail: 1, at: 1_050 };
+
+  it('cancels the click of a touch that moved', () => {
+    expect(shouldCancel({ moved: true, bypass: false, ...ended }, tapClick)).toBe(true);
   });
 
   it('does not cancel a clean tap', () => {
-    expect(shouldCancel({ moved: false, bypass: false })).toBe(false);
+    expect(shouldCancel({ moved: false, bypass: false, ...ended }, tapClick)).toBe(false);
   });
 
   it('does not cancel when bypass is set, even if moved', () => {
     // bypass is for elements with [data-allow-drag] in their ancestor
     // chain. We don't have any today but reserving the convention.
-    expect(shouldCancel({ moved: true, bypass: true })).toBe(false);
+    expect(shouldCancel({ moved: true, bypass: true, ...ended }, tapClick)).toBe(false);
   });
 
   it('does not cancel when both flags are false', () => {
-    expect(shouldCancel({ moved: false, bypass: true })).toBe(false);
+    expect(shouldCancel({ moved: false, bypass: true, ...ended }, tapClick)).toBe(false);
+  });
+
+  // Review COREWEB2-17 (2026-11-12): a scroll's `moved` used to swallow
+  // the next click, whatever made it.
+  it('does not cancel a click no pointer made (Enter, Space, a screen reader)', () => {
+    expect(shouldCancel({ moved: true, bypass: false, ...ended }, { detail: 0, at: 1_050 })).toBe(
+      false,
+    );
+  });
+
+  it('does not cancel a click that comes long after the scroll', () => {
+    const late = { detail: 1, at: 1_000 + CLICK_WINDOW_MS + 1 };
+    expect(shouldCancel({ moved: true, bypass: false, ...ended }, late)).toBe(false);
+  });
+
+  it('does not cancel while no guarded touch has ended', () => {
+    expect(shouldCancel({ moved: true, bypass: false, endedAt: null }, tapClick)).toBe(false);
   });
 });

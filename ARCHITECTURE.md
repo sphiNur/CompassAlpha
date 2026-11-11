@@ -452,7 +452,7 @@ apps/web/src/
 │   ├── useErrToast.ts      # mutation 失败的 toast
 │   ├── useStoreContext.ts  # 当前门店、能否切换门店
 │   ├── usePhotoUploader.ts # <input type="file"> 上传，非 getUserMedia
-│   ├── useTapGuard.ts      # 抑制滚动中误触
+│   ├── useScrollTapSuppression.ts # 抑制滚动中误触
 │   └── useVersionCheck.ts  # 检测 build-id 变化 → 提示刷新
 ├── lib/                    # 不含 hook 和组件，不 import hooks/、components/、pages/、app/（eslint 检查）
 │   ├── trpc.ts             # createTRPCReact + httpLink + 单航班 refresh + X-Idempotency-Key
@@ -460,6 +460,7 @@ apps/web/src/
 │   ├── outbox/             # 离线 outbox：engine.ts（flush、write-ahead）、policy.ts（纯规则）、replayHandlers.ts
 │   ├── telegram.ts         # WebApp SDK：getTg / isInTelegram / haptic
 │   ├── storeContext.ts     # 能否切换门店、切换前的未保存守卫
+│   ├── localSession.ts     # 重置会话：清登录、导航和查询副本，保留 outbox
 │   ├── format.ts           # money / qty 格式
 │   ├── errorText.ts        # 错误信息 → catalog key
 │   ├── networkError.ts

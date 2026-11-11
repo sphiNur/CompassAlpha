@@ -72,12 +72,13 @@ export function usePageMenuRegistration(): PageMenuRegistration | null {
  * The hook holds the latest registration in a ref so re-renders that
  * change action handlers (e.g., closures over fresh state) don't churn
  * the context. Only structural changes (title, label list, variant
- * mix) write through.
+ * mix) write through; a click runs the handler of the latest render.
  */
 export function usePageMenu(registration: PageMenuRegistration | null): void {
-  // Outside a provider `ctx` is null and the effect below is a no-op,
-  // which lets pages be tested in isolation without a wrapper.
-  const ctx = useContext(PageMenuContext);
+  // Outside a provider there is no setter and the effect below is a
+  // no-op, which lets pages be tested in isolation without a wrapper.
+  // The setter is a state setter: the same function on every render.
+  const setRegistration = useContext(PageMenuContext)?.setRegistration;
   // Stable identity: hash on title + label list + disabled bits +
   // variant mix. Click handlers are kept fresh via ref so consumers
   // don't have to memoise their own closures.
@@ -93,10 +94,31 @@ export function usePageMenu(registration: PageMenuRegistration | null): void {
           )
           .join('||');
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!ctx) return;
-    ctx.setRegistration(ref.current);
-    return () => ctx.setRegistration(null);
-  }, [key]);
+    if (!setRegistration) return;
+    setRegistration(liveRegistration(ref.current, () => ref.current));
+    return () => setRegistration(null);
+  }, [key, setRegistration]);
+}
+
+/**
+ * The registration as the sheet stores it: each action's click runs the
+ * handler of the latest render (`latest`), not of the render that stored
+ * it. Review COREWEB1-13 (2026-11-12): the stored actions were that
+ * render's own closures, so a click ran with whatever state (a run id, an
+ * expected seq) they had closed over when the label list last changed.
+ */
+export function liveRegistration(
+  registration: PageMenuRegistration | null,
+  latest: () => PageMenuRegistration | null,
+): PageMenuRegistration | null {
+  return (
+    registration && {
+      ...registration,
+      actions: registration.actions.map((action, i) => ({
+        ...action,
+        onClick: () => latest()?.actions[i]?.onClick(),
+      })),
+    }
+  );
 }

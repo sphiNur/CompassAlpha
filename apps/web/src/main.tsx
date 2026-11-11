@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ensureCatalog } from '@compass/i18n';
 import { App } from './app/App';
+import { ErrorBoundary } from './app/ErrorBoundary';
 import './styles/index.css';
 import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from './lib/reload';
 import { startLocale } from './lib/startLocale';
@@ -87,7 +88,10 @@ void catalogReady.then(() => {
 function render(container: HTMLElement): void {
   createRoot(container).render(
     <StrictMode>
-      <App />
+      {/* Around App, so its own hooks are covered too (COREWEB1-17). */}
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </StrictMode>,
   );
 }

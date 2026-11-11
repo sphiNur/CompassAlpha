@@ -16,7 +16,7 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import { resetNavStore } from '../stores/navStore';
 import { useTelegramInit } from '../hooks/useTelegram';
-import { useTapGuard } from '../hooks/useTapGuard';
+import { useScrollTapSuppression } from '../hooks/useScrollTapSuppression';
 import { useVersionCheck } from '../hooks/useVersionCheck';
 import { useRealtime } from '../hooks/useRealtime';
 import { useRefetchFailedOnReconnect } from '../hooks/useRefetchFailedOnReconnect';
@@ -24,7 +24,6 @@ import { useOutboxReplay } from '../hooks/useOutboxReplay';
 import { useWarmRunQueries } from './useWarmRunQueries';
 import { AuthGate } from './AuthGate';
 import { Shell } from './Shell';
-import { ErrorBoundary } from './ErrorBoundary';
 import { UiLabelsBridge } from './UiLabelsBridge';
 
 const isBrowser = typeof window !== 'undefined';
@@ -154,8 +153,9 @@ export function App() {
   useTelegramInit();
   // Block accidental button activation during scroll. Has to run at the
   // App root so it covers every page including the AuthGate / onboarding
-  // screens, which also have tappable controls. See useTapGuard for why.
-  useTapGuard();
+  // screens, which also have tappable controls. See
+  // hooks/useScrollTapSuppression.ts for why.
+  useScrollTapSuppression();
   const queryClient = useMemo(
     () =>
       new QueryClient({
@@ -202,30 +202,28 @@ export function App() {
     (import.meta.env.VITE_DEFAULT_THEME as 'native' | 'apple' | undefined) ?? 'native';
 
   return (
-    <ErrorBoundary>
-      <ThemeProvider defaultTheme={defaultTheme}>
-        {/* UiLabelsBridge feeds the i18n catalog into @compass/ui so the
-            strings the design system renders itself (QtyControl's
-            quick-pick sheet + aria-labels, DataState empty/error states,
-            PhotoCapture hints) follow the user's language instead of
-            being frozen English. Sits outside AuthGate so the auth and
-            onboarding screens get it too. */}
-        <UiLabelsBridge>
-          <ToastProvider>
-            <trpc.Provider client={trpcClient} queryClient={queryClient}>
-                <QueryClientProvider client={queryClient}>
-                  <QueryConsumers>
-                    <AuthGate>
-                      <CacheRestoreGate>
-                        <Shell />
-                      </CacheRestoreGate>
-                    </AuthGate>
-                  </QueryConsumers>
-                </QueryClientProvider>
-            </trpc.Provider>
-          </ToastProvider>
-        </UiLabelsBridge>
-      </ThemeProvider>
-    </ErrorBoundary>
+    <ThemeProvider defaultTheme={defaultTheme}>
+      {/* UiLabelsBridge feeds the i18n catalog into @compass/ui so the
+          strings the design system renders itself (QtyControl's
+          quick-pick sheet + aria-labels, DataState empty/error states,
+          PhotoCapture hints) follow the user's language instead of
+          being frozen English. Sits outside AuthGate so the auth and
+          onboarding screens get it too. */}
+      <UiLabelsBridge>
+        <ToastProvider>
+          <trpc.Provider client={trpcClient} queryClient={queryClient}>
+            <QueryClientProvider client={queryClient}>
+              <QueryConsumers>
+                <AuthGate>
+                  <CacheRestoreGate>
+                    <Shell />
+                  </CacheRestoreGate>
+                </AuthGate>
+              </QueryConsumers>
+            </QueryClientProvider>
+          </trpc.Provider>
+        </ToastProvider>
+      </UiLabelsBridge>
+    </ThemeProvider>
   );
 }
