@@ -793,6 +793,41 @@ export function RunPage() {
     for (const [id, store] of storeById) if (allowed.has(id)) m.set(id, store);
     return m;
   }, [runStoreIds, purchaseDraft?.splits, storeById]);
+  // Review RUNWEB1-07: the sheets' lists, kept until their data changes.
+  // The sheets' drafts live here, so each keystroke in one draws this page
+  // again, and a new array or map each time made AddItemSheet filter the
+  // whole catalogue again on every key.
+  const pickableSkus = useMemo(
+    () => (skusQuery.data ?? []).filter((s) => !s.isArchived),
+    [skusQuery.data],
+  );
+  const purchaseSuppliers = useMemo(
+    () =>
+      (suppliersQuery.data ?? []).filter(
+        (sup) => !sup.isArchived || sup.id === purchaseDraft?.supplierId,
+      ),
+    [suppliersQuery.data, purchaseDraft?.supplierId],
+  );
+  // M3.54 (2026-05-23): for each SKU in the run, which stores already
+  // have demand. AddItemSheet uses this to (1) still SHOW in-run SKUs as
+  // long as some store hasn't claimed them yet, (2) restrict the store
+  // dropdown to non-conflicting stores, (3) print the "augmenting
+  // existing item" hint.
+  const existingStoreIdsBySku = useMemo(() => {
+    const m = new Map<string, { storeIds: Set<string>; status: string }>();
+    for (const it of runDetailQuery.data?.items ?? []) {
+      m.set(it.skuId, { storeIds: new Set<string>(), status: it.status });
+    }
+    for (const sp of runDetailQuery.data?.splits ?? []) {
+      const e = m.get(sp.skuId);
+      if (e) e.storeIds.add(sp.storeId);
+    }
+    for (const d of runDetailQuery.data?.perStoreDemand ?? []) {
+      const e = m.get(d.skuId);
+      if (e) e.storeIds.add(d.storeId);
+    }
+    return m;
+  }, [runDetailQuery.data]);
 
   useEffect(() => {
     if (!inlineSavingSkuId) return;
@@ -2769,9 +2804,7 @@ export function RunPage() {
         draft={purchaseDraft}
         skuById={skuById}
         storeById={purchaseStoreById}
-        suppliers={(suppliersQuery.data ?? []).filter(
-          (sup) => !sup.isArchived || sup.id === purchaseDraft?.supplierId,
-        )}
+        suppliers={purchaseSuppliers}
         productName={productName}
         photoUploader={photoUploader}
         i18n={i18n}
@@ -2812,27 +2845,8 @@ export function RunPage() {
       <AddItemSheet
         draft={addItemDraft}
         runStoreIds={addableStoreIds}
-        existingStoreIdsBySku={(() => {
-          // M3.54 (2026-05-23): for each SKU in the run, which stores
-          // already have demand. AddItemSheet uses this to (1) still
-          // SHOW in-run SKUs as long as some store hasn't claimed them
-          // yet, (2) restrict the store dropdown to non-conflicting
-          // stores, (3) print the "augmenting existing item" hint.
-          const m = new Map<string, { storeIds: Set<string>; status: string }>();
-          for (const it of runDetailQuery.data?.items ?? []) {
-            m.set(it.skuId, { storeIds: new Set<string>(), status: it.status });
-          }
-          for (const sp of runDetailQuery.data?.splits ?? []) {
-            const e = m.get(sp.skuId);
-            if (e) e.storeIds.add(sp.storeId);
-          }
-          for (const d of runDetailQuery.data?.perStoreDemand ?? []) {
-            const e = m.get(d.skuId);
-            if (e) e.storeIds.add(d.storeId);
-          }
-          return m;
-        })()}
-        skus={(skusQuery.data ?? []).filter((s) => !s.isArchived)}
+        existingStoreIdsBySku={existingStoreIdsBySku}
+        skus={pickableSkus}
         expenseTemplates={expenseTemplatesQuery.data ?? []}
         storeById={storeById}
         productName={productName}

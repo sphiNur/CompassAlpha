@@ -13,13 +13,13 @@
  *
  * All props-driven; mutations stay in RunPage and arrive as callbacks.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   logPurchaseAbandon,
   logPurchaseEntry,
   logPurchaseUnavailable,
 } from '../lib/purchaseTelemetry';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { Button, Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
@@ -37,6 +37,7 @@ import { paidPerStore } from '../lib/purchaseOverrides';
 import { expenseLine, expensesTotal } from '../lib/expenseMoney';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
+import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 
 /**
@@ -330,22 +331,26 @@ export function PerVendorView({
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
   // Indexed once each — every row did run.items.find(...) plus
-  // run.splits.filter(...), which on an 87-item run with ~260 splits is
-  // roughly 30,000 comparisons per render, recomputed whenever the
-  // 6-second poll returns fresh array identities.
+  // run.splits.filter(...) (now rowSplitsOf), which on an 87-item run with
+  // ~260 splits is roughly 30,000 comparisons per render, recomputed
+  // whenever the 6-second poll returns fresh array identities.
   const itemBySku = useMemo(
     () => new Map(run.items.map((it) => [it.skuId, it])),
     [run.items],
   );
-  const splitsBySku = useMemo(() => {
-    const m = new Map<string, typeof run.splits>();
-    for (const sp of run.splits) {
-      const arr = m.get(sp.skuId) ?? [];
-      arr.push(sp);
-      m.set(sp.skuId, arr);
-    }
-    return m;
-  }, [run.splits]);
+  // One save per stall for as long as onSavePurchaseInline stays the same:
+  // a closure per row drew every memo()'d row again (review RUNWEB1-07).
+  const saveAt = useMemo(() => {
+    const bySupplier = new Map<string | null, ComponentProps<typeof PurchaseRow>['onSave']>();
+    return (supplierId: string | null) => {
+      let save = bySupplier.get(supplierId);
+      if (!save) {
+        save = (p) => onSavePurchaseInline({ ...p, supplierId });
+        bySupplier.set(supplierId, save);
+      }
+      return save;
+    };
+  }, [onSavePurchaseInline]);
   // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
   // whether to render per-store chips on EVERY row of the run (true
   // when the run spans ≥2 stores) — without this single-store-demand
@@ -469,12 +474,7 @@ export function PerVendorView({
                   // per-vendor view is where the purchaser actually
                   // stands at the stall counting items into bags;
                   // they need the per-store qty in front of them.
-                  const actualSplits = (splitsBySku.get(r.skuId) ?? []).map((sp) => ({
-                    storeId: sp.storeId,
-                    qty: sp.qty,
-                    unitPrice: sp.unitPrice,
-                    paymentMethod: sp.paymentMethod,
-                  }));
+                  const actualSplits = rowSplitsOf(run.splits, r.skuId);
                   return (
                     <PurchaseRow
                       key={r.skuId}
@@ -483,7 +483,7 @@ export function PerVendorView({
                       skuName={skuName}
                       unitCode={r.sku?.unit}
                       step={r.sku?.step ?? '0.1'}
-                      demand={demandBySku.get(r.skuId) ?? []}
+                      demand={demandBySku.get(r.skuId) ?? NO_DEMAND}
                       storeById={storeById}
                       actualSplits={actualSplits}
                       isMultiStoreRun={isMultiStoreRun}
@@ -497,7 +497,7 @@ export function PerVendorView({
                       // purchase happened: the purchaser is working
                       // this stall's bucket. Everything else sends
                       // null — see the handler in RunPage.
-                      onSave={(p) => onSavePurchaseInline({ ...p, supplierId: b.supplierId })}
+                      onSave={saveAt(b.supplierId)}
                       onMarkNa={onMarkNa}
                       onEdit={onEditPurchased}
                       onUnmark={onUnmark}
@@ -982,16 +982,6 @@ export function PerCategoryView({
     if (ids.size === 0) for (const sp of run.splits) ids.add(sp.storeId);
     return [...ids];
   }, [run.perStoreDemand, run.splits]);
-  // Indexed once — see PerVendorView.
-  const splitsBySku = useMemo(() => {
-    const m = new Map<string, typeof run.splits>();
-    for (const sp of run.splits) {
-      const arr = m.get(sp.skuId) ?? [];
-      arr.push(sp);
-      m.set(sp.skuId, arr);
-    }
-    return m;
-  }, [run.splits]);
   const groups = useMemo(() => {
     const byCategory = new Map<string, ActiveRun['items']>();
     for (const item of run.items) {
@@ -1042,12 +1032,7 @@ export function PerCategoryView({
             {group.items.map((item) => {
               const sku = skuById.get(item.skuId);
               const skuName = sku ? productName(sku) : item.skuId.slice(0, 8);
-              const actualSplits = (splitsBySku.get(item.skuId) ?? []).map((sp) => ({
-                storeId: sp.storeId,
-                qty: sp.qty,
-                unitPrice: sp.unitPrice,
-                paymentMethod: sp.paymentMethod,
-              }));
+              const actualSplits = rowSplitsOf(run.splits, item.skuId);
               return (
                 <PurchaseRow
                   key={item.skuId}
@@ -1056,7 +1041,7 @@ export function PerCategoryView({
                   skuName={skuName}
                   unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
-                  demand={demandBySku.get(item.skuId) ?? []}
+                  demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
                   storeById={storeById}
                   actualSplits={actualSplits}
                   isMultiStoreRun={demandStoreIds.length > 1}
@@ -1216,6 +1201,8 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
 /**
  * One row of the purchasing list. Holds its OWN qty/price input state
  * (not in the parent) so typing one row doesn't re-render the whole list.
+ * memo()'d, so its lists hand it the same arrays and handlers until they
+ * change (lib/rowSplits.ts, review RUNWEB1-07).
  *
  * Auto-save logic: fires `onSave` when (a) the row is `pending`, (b) qty
  * matches the per-store demand we know about (so we can derive splits
@@ -1228,7 +1215,7 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
  * button blurs the input — natural commit point). We don't save on every
  * keystroke; that would race the network on slow links.
  */
-export function PurchaseRow({
+export const PurchaseRow = memo(function PurchaseRow({
   item,
   skuName,
   unitCode,
@@ -2417,4 +2404,4 @@ export function PurchaseRow({
       {pendingSyncLine}
     </li>
   );
-}
+});
