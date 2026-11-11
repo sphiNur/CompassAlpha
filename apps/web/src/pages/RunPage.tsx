@@ -45,7 +45,7 @@ import {
   Skeleton,
   useToast,
 } from '@compass/ui';
-import { trpc, newIdempotencyKey } from '../lib/trpc';
+import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { scrollBehavior } from '../lib/reducedMotion';
@@ -57,10 +57,10 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // through other paths if needed.
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { useQueueOnNetworkError, useStableIdempotencyKey } from '../hooks/useOfflineWrite';
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
-import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useCanSeePrices } from '../lib/pricesVisible';
@@ -257,6 +257,7 @@ export function RunPage() {
   // and falls back to the caller-provided key on raw / unknown
   // strings.
   const errToast = useErrToast();
+  const queueOnNetworkError = useQueueOnNetworkError();
   const create = trpc.run.create.useMutation({
     onSuccess: (res) => {
       void utils.run.list.invalidate();
@@ -328,43 +329,27 @@ export function RunPage() {
   // error, but neither minted a STABLE idempotency key — so the replay
   // sent a fresh one and the server's 24h dedupe cache never matched.
   // A committed-but-lost response (the iOS "Load failed" case) therefore
-  // recorded the off-catalog purchase or the expense TWICE. Same shape as
-  // purchaseIdemCtx below; safe to share one ref per mutation because the
-  // add-item sheet's submit button carries `loading` (disabled while the
-  // mutation runs, and a repeat tap is dropped), so two concurrent calls
-  // of the same mutation can't interleave.
-  const addItemIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
-  const addExpenseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  // recorded the off-catalog purchase or the expense TWICE.
+  const addItemKey = useStableIdempotencyKey();
+  const addExpenseKey = useStableIdempotencyKey();
 
   const addPurchaserItem = trpc.run.addPurchaserItem.useMutation({
-    trpc: { context: addItemIdemCtx },
-    onMutate: () => {
-      const idempotencyKey = newIdempotencyKey();
-      addItemIdemCtx.idempotencyKey = idempotencyKey;
-      return { idempotencyKey };
-    },
+    ...addItemKey,
     onSuccess: () => {
       invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.itemAdded'));
     },
-    onError: (err, vars, ctx) => {
-      if (isLikelyNetworkError(err)) {
-        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
-        // COREWEB2-04: "saved offline" only once it is; the draft stays
-        // when the device could not store it either.
-        void offline.enqueue('run.addPurchaserItem', vars, key).then(
-          () => {
-            setAddItemDraft(null);
-            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
-          },
-          () => errToast('run.toast.couldNotAddItem')(err),
-        );
-      } else {
-        errToast('run.toast.couldNotAddItem')(err);
-      }
-    },
+    onError: (err, vars, ctx) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.addPurchaserItem',
+        input: vars,
+        idempotencyKey: ctx?.idempotencyKey,
+        failedKey: 'run.toast.couldNotAddItem',
+        queuedKey: 'run.toast.purchaseSavedOffline',
+        onQueued: () => setAddItemDraft(null),
+      }),
   });
   // M3.44 (2026-05-22): off-catalog expense add + remove. Same
   // optimistic + offline-queue pattern as the SKU-item path so the
@@ -380,12 +365,7 @@ export function RunPage() {
     seq?: number;
   } | null>(null);
   const addExpense = trpc.run.addExpense.useMutation({
-    trpc: { context: addExpenseIdemCtx },
-    onMutate: () => {
-      const idempotencyKey = newIdempotencyKey();
-      addExpenseIdemCtx.idempotencyKey = idempotencyKey;
-      return { idempotencyKey };
-    },
+    ...addExpenseKey,
     onSuccess: (_data, vars) => {
       const fromExtra = extraForExpense.current;
       if (fromExtra && fromExtra.expenseId === vars.expenseId) {
@@ -402,20 +382,15 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.expenseAdded'));
     },
-    onError: (err, vars, ctx) => {
-      if (isLikelyNetworkError(err)) {
-        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
-        void offline.enqueue('run.addExpense', vars, key).then(
-          () => {
-            setAddItemDraft(null);
-            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
-          },
-          () => errToast('run.toast.couldNotAddExpense')(err),
-        );
-      } else {
-        errToast('run.toast.couldNotAddExpense')(err);
-      }
-    },
+    onError: (err, vars, ctx) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.addExpense',
+        input: vars,
+        idempotencyKey: ctx?.idempotencyKey,
+        failedKey: 'run.toast.couldNotAddExpense',
+        queuedKey: 'run.toast.purchaseSavedOffline',
+        onQueued: () => setAddItemDraft(null),
+      }),
   });
   const removeExpense = trpc.run.removeExpense.useMutation({
     onSuccess: () => {
@@ -438,19 +413,10 @@ export function RunPage() {
     onError: errToast('run.toast.couldNotEjectSession'),
   });
   // H2: one stable idempotency key per purchase, shared between the first
-  // attempt (sent via trpc.context → httpLink header) and any offline
-  // replay (stored on the outbox entry). onMutate runs before the request
-  // is built, so the header picks up the key; the app's mutation-in-flight
-  // guard serialises purchases, so the shared context object can't be
-  // clobbered by a concurrent one.
-  const purchaseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  // attempt and any offline replay (hooks/useOfflineWrite.ts).
+  const purchaseKey = useStableIdempotencyKey();
   const purchaseItem = trpc.run.purchaseItem.useMutation({
-    trpc: { context: purchaseIdemCtx },
-    onMutate: () => {
-      const idempotencyKey = newIdempotencyKey();
-      purchaseIdemCtx.idempotencyKey = idempotencyKey;
-      return { idempotencyKey };
-    },
+    ...purchaseKey,
     onSuccess: (_data, vars) => {
       invalidateRunQuietly(true);
       // RUNWEB1-01 / -02: close only the form this purchase came from
@@ -462,19 +428,17 @@ export function RunPage() {
     },
     onError: (err, vars, ctx) => {
       setInlineSavingSkuId((cur) => (cur === vars.skuId ? null : cur));
-      if (isLikelyNetworkError(err)) {
-        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
-        void offline.enqueue('run.purchaseItem', vars, key).then(
-          () => {
-            setPurchaseDraft((d) => closedFor(d, vars));
-            setAddItemDraft((d) => closedFor(d, vars));
-            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
-          },
-          () => errToast('run.toast.couldNotSavePurchase')(err),
-        );
-      } else {
-        errToast('run.toast.couldNotSavePurchase')(err);
-      }
+      queueOnNetworkError(err, {
+        procedure: 'run.purchaseItem',
+        input: vars,
+        idempotencyKey: ctx?.idempotencyKey,
+        failedKey: 'run.toast.couldNotSavePurchase',
+        queuedKey: 'run.toast.purchaseSavedOffline',
+        onQueued: () => {
+          setPurchaseDraft((d) => closedFor(d, vars));
+          setAddItemDraft((d) => closedFor(d, vars));
+        },
+      });
     },
   });
   // The purchase sheet's and "+ Add item"'s revisions. A failed one
@@ -513,34 +477,27 @@ export function RunPage() {
   // BUY-9 (2026-10-30): the replay carries the first attempt's key (as
   // purchaseItem does), so a request that landed with its response lost
   // is not replayed into "item not pending" and a false "please review".
-  const markUnavailableIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  const markUnavailableKey = useStableIdempotencyKey();
   const markUnavailable = trpc.run.markUnavailable.useMutation({
-    trpc: { context: markUnavailableIdemCtx },
-    onMutate: () => {
-      const idempotencyKey = newIdempotencyKey();
-      markUnavailableIdemCtx.idempotencyKey = idempotencyKey;
-      return { idempotencyKey };
-    },
+    ...markUnavailableKey,
     onSuccess: () => {
       invalidateRunQuietly();
       setUnavailableFor(null);
       setUnavailableNote('');
       toast.info(i18n.t('run.toast.markedUnavailable'));
     },
-    onError: (err, vars, ctx) => {
-      if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.markUnavailable', vars, ctx?.idempotencyKey).then(
-          () => {
-            setUnavailableFor(null);
-            setUnavailableNote('');
-            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
-          },
-          () => errToast('common.errors.actionFailed')(err),
-        );
-      } else {
-        errToast('common.errors.actionFailed')(err);
-      }
-    },
+    onError: (err, vars, ctx) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.markUnavailable',
+        input: vars,
+        idempotencyKey: ctx?.idempotencyKey,
+        failedKey: 'common.errors.actionFailed',
+        queuedKey: 'run.toast.purchaseSavedOffline',
+        onQueued: () => {
+          setUnavailableFor(null);
+          setUnavailableNote('');
+        },
+      }),
   });
   // BUY-5 (2026-10-30): the demand that joined after an item was decided
   // will not be bought.
@@ -575,35 +532,26 @@ export function RunPage() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const deliverIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  const deliverKey = useStableIdempotencyKey();
   const deliverToStore = trpc.run.deliverToStore.useMutation({
-    trpc: { context: deliverIdemCtx },
-    onMutate: () => {
-      const idempotencyKey = newIdempotencyKey();
-      deliverIdemCtx.idempotencyKey = idempotencyKey;
-      return { idempotencyKey };
-    },
+    ...deliverKey,
     onSuccess: () => {
       invalidateRunQuietly(true);
       // DLV-17 (2026-10-30): the only state change with no feedback.
       haptic('success');
       toast.success(i18n.t('run.toast.delivered'));
     },
-    onError: (err, vars, ctx) => {
-      if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.deliverToStore', vars, ctx?.idempotencyKey).then(
-          () => {
-            // RE-DLV-1: close the sheet; the store row shows the queued
-            // delivery, so a second tap cannot queue it again.
-            setConfirmAction(null);
-            toast.info(i18n.t('run.toast.purchaseSavedOffline'));
-          },
-          () => errToast('common.errors.actionFailed')(err),
-        );
-      } else {
-        errToast('common.errors.actionFailed')(err);
-      }
-    },
+    onError: (err, vars, ctx) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.deliverToStore',
+        input: vars,
+        idempotencyKey: ctx?.idempotencyKey,
+        failedKey: 'common.errors.actionFailed',
+        queuedKey: 'run.toast.purchaseSavedOffline',
+        // RE-DLV-1: close the sheet; the store row shows the queued
+        // delivery, so a second tap cannot queue it again.
+        onQueued: () => setConfirmAction(null),
+      }),
   });
   const undeliverStore = trpc.run.undeliverStore.useMutation({
     onSuccess: () => {

@@ -6,13 +6,19 @@ import { describe, it, expect } from 'bun:test';
 import { setDecimalLocale } from '@compass/ui';
 import {
   checkReceivedQty,
+  confirmMainButton,
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
+  issueFormCheck,
   issueSaveState,
   receivingWait,
   runsListView,
+  sameLine,
   unboughtForStore,
+  withLineVerdict,
+  type ConfirmMainButtonState,
+  type IssueFormFields,
 } from '../confirmLogic';
 
 const run = (
@@ -200,5 +206,225 @@ describe('DX-DLV-13: the store sees what is coming', () => {
     expect(unboughtForStore(items, demand, 'A')).toEqual([
       { skuId: 's1', status: 'unavailable', unavailableNote: 'sold out', orderedQty: '2' },
     ]);
+  });
+});
+
+describe('issueFormCheck (review CONF-07)', () => {
+  const form = (patch: Partial<IssueFormFields> = {}): IssueFormFields => ({
+    status: 'short',
+    splitQty: '2',
+    note: '',
+    received: '',
+    receivedTouched: false,
+    saveTried: false,
+    ...patch,
+  });
+  const idle = { photoUploading: false, saving: false };
+
+  it('a fresh form shows no errors but cannot be saved, and says why', () => {
+    expect(issueFormCheck(form(), idle)).toEqual({
+      received: { ok: false, reason: 'required' },
+      shownReceivedProblem: null,
+      noteMissing: true,
+      noteMissingShown: false,
+      canSave: false,
+      waitingForPhoto: false,
+      saveBlockedBy: 'note',
+    });
+  });
+
+  it('DX-DLV-07: the quantity error shows once the field was used, every error once Save was tried', () => {
+    expect(issueFormCheck(form({ received: '3', receivedTouched: true }), idle)).toMatchObject({
+      shownReceivedProblem: 'exceeds',
+      noteMissingShown: false,
+    });
+    expect(issueFormCheck(form({ saveTried: true }), idle)).toMatchObject({
+      shownReceivedProblem: 'required',
+      noteMissingShown: true,
+    });
+  });
+
+  it('a note and a valid quantity can be saved; a blank note is still missing', () => {
+    expect(issueFormCheck(form({ note: 'two missing', received: '1,5' }), idle)).toMatchObject({
+      received: { ok: true, value: '1.5' },
+      canSave: true,
+      saveBlockedBy: null,
+    });
+    expect(issueFormCheck(form({ note: '   ', received: '1' }), idle)).toMatchObject({
+      noteMissing: true,
+      canSave: false,
+    });
+    // A wrong item starts at the delivered quantity, which is valid.
+    expect(
+      issueFormCheck(form({ status: 'wrong', note: 'beef, not lamb', received: '2' }), idle)
+        .canSave,
+    ).toBe(true);
+  });
+
+  it('CMP-DLV-6: Save waits for the photo, and the photo is the reason given', () => {
+    expect(
+      issueFormCheck(form({ note: 'x', received: '1' }), { photoUploading: true, saving: false }),
+    ).toMatchObject({
+      canSave: false,
+      waitingForPhoto: true,
+      saveBlockedBy: 'photo',
+    });
+    expect(issueFormCheck(form(), { photoUploading: true, saving: false }).saveBlockedBy).toBe(
+      'photo',
+    );
+  });
+
+  it('cannot be saved twice while the first save is on its way', () => {
+    expect(
+      issueFormCheck(form({ note: 'x', received: '1' }), { photoUploading: false, saving: true }),
+    ).toMatchObject({
+      canSave: false,
+      saveBlockedBy: null,
+    });
+  });
+});
+
+describe('sameLine / withLineVerdict (review CONF-07)', () => {
+  const line = (skuId: string, storeId = 'A') => ({
+    runId: 'r1',
+    skuId,
+    storeId,
+    qty: '2',
+    confirmStatus: null as string | null,
+    confirmNote: null as string | null,
+    confirmPhotoUrl: null as string | null,
+    confirmReceivedQty: null as string | null,
+  });
+
+  it('a line is named by run, product and store', () => {
+    const a = { runId: 'r1', skuId: 's1', storeId: 'A' };
+    expect(sameLine(a, { ...a })).toBe(true);
+    expect(sameLine(a, { ...a, runId: 'r2' })).toBe(false);
+    expect(sameLine(a, { ...a, skuId: 's2' })).toBe(false);
+    expect(sameLine(a, { ...a, storeId: 'B' })).toBe(false);
+  });
+
+  it('puts the verdict on its line only, without changing the list it was given', () => {
+    const splits = [line('s1'), line('s2'), line('s1', 'B')];
+    const next = withLineVerdict(splits, {
+      runId: 'r1',
+      skuId: 's1',
+      storeId: 'A',
+      status: 'short',
+      note: 'one bag torn',
+      photoUrl: 'https://cdn.example/p.jpg',
+      receivedQty: '1.5',
+    });
+    expect(next[0]).toEqual({
+      ...line('s1'),
+      confirmStatus: 'short',
+      confirmNote: 'one bag torn',
+      confirmPhotoUrl: 'https://cdn.example/p.jpg',
+      confirmReceivedQty: '1.5',
+    });
+    expect(next[1]).toBe(splits[1]);
+    expect(next[2]).toBe(splits[2]);
+    expect(splits[0]).toEqual(line('s1'));
+  });
+
+  it('an ok verdict clears what an earlier problem said', () => {
+    const reported: ReturnType<typeof line> = {
+      ...line('s1'),
+      confirmStatus: 'short',
+      confirmNote: 'x',
+      confirmPhotoUrl: 'https://cdn.example/p.jpg',
+      confirmReceivedQty: '1',
+    };
+    const [next] = withLineVerdict([reported], {
+      runId: 'r1',
+      skuId: 's1',
+      storeId: 'A',
+      status: 'ok',
+      note: null,
+      photoUrl: null,
+    });
+    expect(next).toEqual({ ...line('s1'), confirmStatus: 'ok' });
+  });
+});
+
+describe('confirmMainButton (review CONF-07)', () => {
+  const state = (patch: Partial<ConfirmMainButtonState> = {}): ConfirmMainButtonState => ({
+    issue: null,
+    finalOpen: false,
+    confirming: false,
+    markingAll: false,
+    hasRun: true,
+    lineCount: 3,
+    undecided: 0,
+    storeConfirmed: false,
+    ...patch,
+  });
+
+  it('the open problem form drives its Save, even over the summary sheet', () => {
+    expect(
+      confirmMainButton(
+        state({ issue: { canSave: true, waitingForPhoto: false }, finalOpen: true }),
+      ),
+    ).toEqual({
+      action: 'saveIssue',
+      label: { key: 'confirm.issue.save' },
+      visible: true,
+      active: true,
+    });
+    expect(confirmMainButton(state({ issue: { canSave: false, waitingForPhoto: true } }))).toEqual({
+      action: 'saveIssue',
+      label: { key: 'photo.uploading' },
+      visible: true,
+      active: false,
+    });
+  });
+
+  it('U4: the summary sheet drives 确认收货', () => {
+    expect(confirmMainButton(state({ finalOpen: true }))).toEqual({
+      action: 'submitConfirm',
+      label: { key: 'confirm.final.submit' },
+      visible: true,
+      active: true,
+    });
+    expect(confirmMainButton(state({ finalOpen: true, confirming: true }))).toMatchObject({
+      label: { key: 'confirm.confirmingHint' },
+      active: false,
+    });
+    expect(confirmMainButton(state({ finalOpen: true, undecided: 1 })).active).toBe(false);
+  });
+
+  it('2026-07-30: says how many lines still need a verdict instead of an inert 确认收货', () => {
+    expect(confirmMainButton(state({ undecided: 2 }))).toEqual({
+      action: 'openConfirm',
+      label: { key: 'confirm.confirmStoreBlocked', vars: { n: 2 } },
+      visible: true,
+      active: false,
+    });
+    expect(confirmMainButton(state())).toEqual({
+      action: 'openConfirm',
+      label: { key: 'confirm.confirmStore' },
+      visible: true,
+      active: true,
+    });
+  });
+
+  it('waits for a confirm or a mark-all on its way', () => {
+    expect(confirmMainButton(state({ confirming: true }))).toMatchObject({
+      label: { key: 'confirm.confirmingHint' },
+      active: false,
+    });
+    expect(confirmMainButton(state({ markingAll: true })).active).toBe(false);
+  });
+
+  it('hides once signed, and with no run or nothing delivered', () => {
+    expect(confirmMainButton(state({ storeConfirmed: true }))).toMatchObject({
+      label: { key: 'confirm.confirmStoreFinal' },
+      visible: false,
+    });
+    expect(confirmMainButton(state({ hasRun: false })).visible).toBe(false);
+    expect(confirmMainButton(state({ lineCount: 0 }))).toMatchObject({
+      visible: false,
+      active: false,
+    });
   });
 });

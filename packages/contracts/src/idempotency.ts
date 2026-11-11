@@ -32,9 +32,9 @@ export const IDEMPOTENT_ROUTES = [
   // (that path re-issues the SAME init, so the key survives). Surviving
   // a LOST RESPONSE additionally needs a stable key threaded through
   // op.context, which addPurchaserItem / addExpense now do (RunPage's
-  // addItemIdemCtx / addExpenseIdemCtx + the outbox replay). Without
-  // that, the web client's `genKey()` mints a fresh key per attempt and
-  // the replay never matches.
+  // useStableIdempotencyKey in apps/web/src/hooks/useOfflineWrite.ts, and
+  // the outbox replay). Without that, the web client's `genKey()` mints a
+  // fresh key per attempt and the replay never matches.
   //
   // attachSessions has no offline-replay path, so the 401 retry is the
   // whole of its benefit — which is still worth having, since a double

@@ -3,9 +3,21 @@
  * component so the two rules that decide WHAT a receiver signs for are
  * unit-tested.
  */
+import type { CatalogKey } from '@compass/i18n';
 import { readDecimalText } from '@compass/ui';
 
 export type ConfirmDecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
+
+/** The verdicts a delivered line can get, in the order the chips show them. */
+export const DECISIONS: readonly ConfirmDecisionStatus[] = ['ok', 'short', 'wrong', 'quality'];
+
+/** M1.9-fix (2026-05-07): each verdict's words; the chips showed the raw enum. */
+export const DECISION_LABEL = {
+  ok: 'confirm.status.ok',
+  short: 'confirm.status.short',
+  wrong: 'confirm.status.wrong',
+  quality: 'confirm.status.quality',
+} as const satisfies Record<ConfirmDecisionStatus, CatalogKey>;
 
 type DeliveringRunRow = {
   id: string;
@@ -115,9 +127,24 @@ export function defaultDeliveringRunId(
   return (open ?? candidates[0]!).id;
 }
 
+export type ReceivedQtyProblem = 'required' | 'invalid' | 'tooPrecise' | 'exceeds' | 'notShort';
+
 export type ReceivedQtyCheck =
   | { ok: true; value: string | null }
-  | { ok: false; reason: 'required' | 'invalid' | 'tooPrecise' | 'exceeds' | 'notShort' };
+  | { ok: false; reason: ReceivedQtyProblem };
+
+/**
+ * The line under the received-quantity field (DX-DLV-07), by problem. Each
+ * may use `{max}`, the quantity delivered. Review CONF-07: it was a
+ * five-deep ternary in the page.
+ */
+export const RECEIVED_QTY_MESSAGE = {
+  required: 'confirm.issue.receivedQtyRequired',
+  notShort: 'confirm.issue.receivedQtyNotShort',
+  invalid: 'confirm.issue.receivedQtyNotNumber',
+  tooPrecise: 'confirm.issue.receivedQtyTooPrecise',
+  exceeds: 'confirm.issue.receivedQtyRange',
+} as const satisfies Record<ReceivedQtyProblem, CatalogKey>;
 
 /**
  * 2026-10-21 CA-06: client mirror of the domain's receivedQty rule.
@@ -224,5 +251,159 @@ export function issueSaveState(q: {
   return {
     canSave: q.reasonOk && !q.photoUploading && !q.saving,
     waitingForPhoto: q.photoUploading,
+  };
+}
+
+/** The fields of the problem form that its checks read. */
+export interface IssueFormFields {
+  status: ConfirmDecisionStatus;
+  /** 2026-10-21 CA-06: this store's split qty, the received-qty ceiling. */
+  splitQty: string;
+  note: string;
+  received: string;
+  receivedTouched: boolean;
+  saveTried: boolean;
+}
+
+export interface IssueFormCheck {
+  received: ReceivedQtyCheck;
+  /**
+   * The received-quantity problem to show. DX-DLV-07 (2026-11-01): only
+   * once the field was typed into or left, or Save was tried — not the
+   * moment the form opens.
+   */
+  shownReceivedProblem: ReceivedQtyProblem | null;
+  noteMissing: boolean;
+  /** The note's "required" line shows once Save was tried. */
+  noteMissingShown: boolean;
+  canSave: boolean;
+  waitingForPhoto: boolean;
+  /** DX-DLV-07: why Save is grey, said next to it instead of a dead button. */
+  saveBlockedBy: 'photo' | 'note' | null;
+}
+
+/** Whether the problem form may be saved, and what it says when not. */
+export function issueFormCheck(
+  form: IssueFormFields,
+  q: { photoUploading: boolean; saving: boolean },
+): IssueFormCheck {
+  const received = checkReceivedQty(form.status, form.received, form.splitQty);
+  const noteMissing = form.note.trim().length === 0;
+  const save = issueSaveState({
+    reasonOk: !noteMissing && received.ok,
+    photoUploading: q.photoUploading,
+    saving: q.saving,
+  });
+  return {
+    received,
+    shownReceivedProblem:
+      !received.ok && (form.receivedTouched || form.saveTried) ? received.reason : null,
+    noteMissing,
+    noteMissingShown: noteMissing && form.saveTried,
+    canSave: save.canSave,
+    waitingForPhoto: save.waitingForPhoto,
+    saveBlockedBy: save.waitingForPhoto ? 'photo' : noteMissing ? 'note' : null,
+  };
+}
+
+/** A verdict on one delivered line, as run.confirmStoreItem takes it. */
+export interface ItemVerdict {
+  runId: string;
+  skuId: string;
+  storeId: string;
+  status: ConfirmDecisionStatus;
+  note: string | null;
+  photoUrl: string | null;
+  receivedQty?: string | null;
+}
+
+type LineKey = { runId: string; skuId: string; storeId: string };
+
+/** Whether `a` and `b` name the same delivered line. */
+export function sameLine(a: LineKey, b: LineKey): boolean {
+  return a.runId === b.runId && a.skuId === b.skuId && a.storeId === b.storeId;
+}
+
+/**
+ * The run's splits with one line's verdict in place, shown before the
+ * server answers. A tap on 正常 used to change nothing for ~400 ms (the
+ * CN ↔ Tashkent round trip), so people tapped again and the server
+ * appended four identical StoreItemConfirmed events. A refusal refetches
+ * the truth.
+ */
+export function withLineVerdict<S extends LineKey>(
+  splits: readonly S[],
+  verdict: ItemVerdict,
+): S[] {
+  return splits.map((split) =>
+    sameLine(split, verdict)
+      ? {
+          ...split,
+          confirmStatus: verdict.status,
+          confirmNote: verdict.note,
+          confirmPhotoUrl: verdict.photoUrl,
+          confirmReceivedQty: verdict.receivedQty ?? null,
+        }
+      : split,
+  );
+}
+
+export interface ConfirmMainButtonState {
+  /** The problem form, when it is open. */
+  issue: { canSave: boolean; waitingForPhoto: boolean } | null;
+  /** U4 (2026-10-31): the summary sheet before 确认收货. */
+  finalOpen: boolean;
+  confirming: boolean;
+  markingAll: boolean;
+  hasRun: boolean;
+  lineCount: number;
+  undecided: number;
+  storeConfirmed: boolean;
+}
+
+export interface ConfirmMainButton {
+  action: 'saveIssue' | 'submitConfirm' | 'openConfirm';
+  label: { key: CatalogKey; vars?: Record<string, number> };
+  visible: boolean;
+  active: boolean;
+}
+
+/**
+ * The page's main button. The open problem form drives its Save; the
+ * summary sheet drives 确认收货; otherwise it opens that sheet.
+ *
+ * 2026-07-30: when lines are still undecided it SAYS so on the button
+ * instead of showing an inert "确认收货"; the gate used to be invisible
+ * and never actually shut.
+ */
+export function confirmMainButton(s: ConfirmMainButtonState): ConfirmMainButton {
+  const allDecided = s.lineCount > 0 && s.undecided === 0;
+  if (s.issue) {
+    return {
+      action: 'saveIssue',
+      label: { key: s.issue.waitingForPhoto ? 'photo.uploading' : 'confirm.issue.save' },
+      visible: true,
+      active: s.issue.canSave,
+    };
+  }
+  if (s.finalOpen) {
+    return {
+      action: 'submitConfirm',
+      label: { key: s.confirming ? 'confirm.confirmingHint' : 'confirm.final.submit' },
+      visible: true,
+      active: allDecided && !s.storeConfirmed && !s.confirming,
+    };
+  }
+  return {
+    action: 'openConfirm',
+    label: s.storeConfirmed
+      ? { key: 'confirm.confirmStoreFinal' }
+      : s.confirming
+        ? { key: 'confirm.confirmingHint' }
+        : allDecided
+          ? { key: 'confirm.confirmStore' }
+          : { key: 'confirm.confirmStoreBlocked', vars: { n: s.undecided } },
+    visible: s.hasRun && s.lineCount > 0 && !s.storeConfirmed,
+    active: allDecided && !s.confirming && !s.markingAll,
   };
 }
