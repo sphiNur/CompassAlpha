@@ -12,6 +12,7 @@ import {
   Field,
   FieldError,
   Input,
+  NameCell,
   SectionLabel,
   Select,
   Sheet,
@@ -23,7 +24,7 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney } from '../../../lib/format';
-import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
 import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
 import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
@@ -83,6 +84,7 @@ export function DishesSection() {
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
@@ -267,7 +269,9 @@ export function DishesSection() {
         {(rows) => (
           <ul className={rowGroupClass} role="list">
             {rows.map((d) => {
-              const name = productName({ names: d.names as Record<string, string> });
+              const names = d.names as Record<string, string>;
+              // One line for the archive question; two in the row (UI-4).
+              const name = productName({ names });
               const ingCount = (ingredientsByDish.get(d.id) ?? []).length;
               return (
                 <li key={d.id} className={'px-4 py-3 ' + (d.isArchived ? 'opacity-60' : '')}>
@@ -278,7 +282,7 @@ export function DishesSection() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="truncate text-old-body font-semibold">{name}</span>
+                        <NameCell as="span" {...productNameParts({ names })} />
                         {d.code ? (
                           <span className="text-old-label text-[var(--c-fg-muted)]">{d.code}</span>
                         ) : null}

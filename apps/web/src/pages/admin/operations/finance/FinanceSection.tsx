@@ -23,7 +23,12 @@ import { trpc } from '../../../../lib/trpc';
 import { copyText } from '../../../../lib/clipboard';
 import { useAuthStore } from '../../../../stores/authStore';
 import { formatMoney, formatQty, toQtyInput } from '../../../../lib/format';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../../hooks/useI18n';
+import {
+  useDateFormat,
+  useI18n,
+  useProductNameParts,
+  useUnitLabel,
+} from '../../../../hooks/useI18n';
 import { useReportStore } from '../../../../hooks/useReportStore';
 import { financePresetRange } from '../financeDates';
 import { FinanceGroupRow } from './FinanceGroupRow';
@@ -58,7 +63,7 @@ export function FinanceSection() {
   const i18n = useI18n();
   const dates = useDateFormat();
   const toast = useToast();
-  const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const unitLabel = useUnitLabel();
   // D10 (2026-10-31): copying as TSV needs reports.export.
   const canExport = useAuthStore((s) => s.session?.permissions.includes('reports.export') ?? false);
@@ -144,15 +149,18 @@ export function FinanceSection() {
    * splits (`kind: 'expense'`, skuId null, free-text label), so finance
    * shows the same money as History and the finish sheet. One name
    * resolver for both kinds. Review ADM2-15 (2026-11-11): a named expense
-   * says so in words ("Expense: Taxi"), not with a 🧾 (UI-1).
+   * says so in words ("Expense: Taxi"), not with a 🧾 (UI-1). Review
+   * COREWEB2-18 (2026-11-12): a product in the reader's language only.
+   * The second language is for matching what a vendor reads, and the
+   * line had the method, the name and "(second name)" cut off on one line.
    */
   const plainLineName = useCallback(
     (l: (typeof lines)[number]): string => {
       if (l.kind === 'expense' || !l.skuId) return l.label ?? i18n.t('finance.label.expense');
       const sku = skuById.get(l.skuId);
-      return sku ? productName({ names: sku.names }) : i18n.t('common.unknownProduct');
+      return sku ? productNameParts(sku).primary : i18n.t('common.unknownProduct');
     },
-    [skuById, productName, i18n],
+    [skuById, productNameParts, i18n],
   );
   const lineName = useCallback(
     (l: (typeof lines)[number]): string =>

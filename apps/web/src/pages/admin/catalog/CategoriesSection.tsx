@@ -18,7 +18,7 @@ import {
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
-import { useI18n, useProductName } from '../../../hooks/useI18n';
+import { useI18n, useProductNameParts } from '../../../hooks/useI18n';
 import {
   CatalogNameFields,
   CatalogRowActions,
@@ -60,7 +60,7 @@ export function CategoriesSection() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
-  const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<CategoryDraft | null>(null);
 
@@ -120,12 +120,16 @@ export function CategoriesSection() {
             {rows.map((c) => {
               const names = c.names as Record<string, string>;
               // The name in the reader's language; the others show below
-              // it (CatalogRowHeader).
-              const title = productName({ names }) || c.slug;
+              // it (CatalogRowHeader). Review COREWEB2-18: the title was
+              // "primary (secondary)" for a reader of a second language,
+              // and the line below repeated the primary.
+              const name = productNameParts({ names });
+              const title = name.primary || c.slug;
               return (
                 <li key={c.id}>
                   <CatalogRowHeader
                     title={title}
+                    titleLang={name.primary ? name.primaryLang : undefined}
                     names={names}
                     meta={i18n.t('catalog.category.meta', { slug: c.slug, sort: c.sortIndex })}
                     archived={c.isArchived}

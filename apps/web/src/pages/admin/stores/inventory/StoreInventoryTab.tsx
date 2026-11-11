@@ -29,6 +29,7 @@ import {
   Button,
   EmptyState,
   LoadingState,
+  NameCell,
   OfflineState,
   QueryErrorBanner,
   cn,
@@ -38,7 +39,13 @@ import {
 import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
 import { formatQty } from '../../../../lib/format';
-import { useI18n, useProductName, useUnitLabel } from '../../../../hooks/useI18n';
+import {
+  useI18n,
+  useProductName,
+  useProductNameParts,
+  useUnitLabel,
+} from '../../../../hooks/useI18n';
+import { rowName } from '../../../../lib/productName';
 import { skusWithoutLevel, sortLevelRows } from '../inventoryHelpers';
 import {
   InventoryActionSheet,
@@ -53,6 +60,7 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
   // unit while the rest of the app printed the localized label.
   const unitLabel = useUnitLabel();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const levelsQuery = trpc.inventory.levels.useQuery({ storeId });
   // Archived products too: stock of a product archived since still has a
   // level row and showed as an 8-character id. Opening counts offer
@@ -93,14 +101,16 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
       const onHandNum = Number(l.onHand);
       return {
         skuId: l.skuId,
+        // One line for the movements sheet's title; two in the row (UI-4).
         name,
+        nameParts: rowName(productNameParts, sku, i18n.t('common.unknownProduct')),
         unit,
         onHand: l.onHand,
         onHandNum,
         lastMovementAt: l.lastMovementAt,
       };
     });
-  }, [levelsQuery.data, skuById, productName, i18n]);
+  }, [levelsQuery.data, skuById, productName, productNameParts, i18n]);
 
   // 2026-10-21: active SKUs with no ledger row here — opening-stock picks.
   const openingCandidates = useMemo(
@@ -165,7 +175,7 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
                   onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
                 >
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="truncate text-old-body font-semibold">{r.name}</span>
+                    <NameCell as="span" {...r.nameParts} />
                     {negative ? (
                       <Badge tone="danger" className="shrink-0 whitespace-nowrap">
                         {i18n.t('inventory.badge.negative')}

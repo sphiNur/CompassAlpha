@@ -8,6 +8,7 @@ import {
   productName,
   productNameParts,
   productNamePartsOf,
+  rowName,
   vendorLocale,
 } from '../productName';
 
@@ -123,5 +124,28 @@ describe('vendorLocale', () => {
     expect(vendorLocale('zh', 'uz')).toBe('uz');
     expect(vendorLocale('zh', null)).toBe('zh');
     expect(vendorLocale('zh', 'zh')).toBe('zh');
+  });
+});
+
+// Review RUNWEB1-09: a row's name, two lines (UI-4), the same object each
+// time so a memo()'d row holds (RUNWEB1-07). Moved with rowName from the
+// runs page (COREWEB2-18).
+describe('rowName', () => {
+  const UNKNOWN = 'Unknown product';
+
+  test("a known product: its name, the stall's language on a second line", () => {
+    const parts = productNamePartsOf('en', 'ru');
+    const beef = { names: { en: 'Beef', ru: 'Говядина' } };
+    const name = rowName(parts, beef, UNKNOWN);
+    expect(name).toEqual({ primary: 'Beef', secondary: 'Говядина', secondaryLang: 'ru' });
+    expect(rowName(parts, beef, UNKNOWN)).toBe(name);
+  });
+
+  test('a product the catalog has not loaded: "unknown product", the same object each time', () => {
+    // RUNWEB1-38: not the start of its id.
+    const parts = productNamePartsOf('en', 'ru');
+    const name = rowName(parts, undefined, UNKNOWN);
+    expect(name).toEqual({ primary: UNKNOWN, secondary: null });
+    expect(rowName(parts, null, UNKNOWN)).toBe(name);
   });
 });

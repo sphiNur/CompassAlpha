@@ -22,7 +22,7 @@ import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
-import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { useAnnounce } from '../../../hooks/useAnnounce';
 import { CatalogImportSheet } from './CatalogImportSheet';
 import {
@@ -88,6 +88,7 @@ export function SkusSection() {
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<SkuDraft | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -219,12 +220,15 @@ export function SkusSection() {
               ) : null}
               {filtered.map((sk) => {
                 const names = sk.names as Record<string, string>;
-                const primary =
-                  productName({ names }) || sk.code || i18n.t('common.unknownProduct');
+                // The name in the reader's language only; the others list
+                // under it (CategoriesSection, COREWEB2-18).
+                const name = productNameParts({ names });
+                const primary = name.primary || sk.code || i18n.t('common.unknownProduct');
                 return (
                   <li key={sk.id}>
                     <CatalogRowHeader
                       title={primary}
+                      titleLang={name.primary ? name.primaryLang : undefined}
                       names={names}
                       meta={
                         <>

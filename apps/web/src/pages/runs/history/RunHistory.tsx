@@ -44,6 +44,7 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import type { useI18n, useProductNameParts } from '../../../hooks/useI18n';
+import { rowName } from '../../../lib/productName';
 import { splitPaymentMethod } from '../lib/settlement';
 import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
@@ -1033,8 +1034,7 @@ export function RunHistoryDetailSheet({
               {visibleHistoryRows.map((row) => {
                 const it = row.item;
                 const sku = skuById.get(it.skuId);
-                const nm = sku ? productNameParts(sku) : null;
-                const skuName = nm ? nm.primary : i18n.t('common.unknownProduct');
+                const nm = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
                 const lineTotal = row.lineTotal;
                 const perStoreSplits = row.perStoreSplits;
                 const displayedUnitPrice = activeStoreId
@@ -1058,12 +1058,7 @@ export function RunHistoryDetailSheet({
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       {/* UI-4 (review RUNWEB2-06): two lines, not truncated. */}
-                      <NameCell
-                        primary={skuName}
-                        secondary={nm?.secondary}
-                        primaryLang={nm?.primaryLang}
-                        secondaryLang={nm?.secondaryLang}
-                      />
+                      <NameCell {...nm} />
                       {it.status === 'purchased' ? (
                         <span className="text-old-body font-semibold tabular-nums">
                           {lineTotal !== null ? formatMoney(lineTotal) : '—'}
@@ -1150,7 +1145,7 @@ export function RunHistoryDetailSheet({
                         {it.receiptPhotoUrl ? (
                           <ReceiptThumb
                             url={it.receiptPhotoUrl}
-                            label={i18n.t('run.history.receiptOf', { item: skuName })}
+                            label={i18n.t('run.history.receiptOf', { item: nm.primary })}
                             onOpen={setPhotoFor}
                           />
                         ) : null}

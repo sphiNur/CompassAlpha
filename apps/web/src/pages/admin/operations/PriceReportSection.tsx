@@ -3,10 +3,20 @@
  * file per Operations section.
  */
 import { useMemo } from 'react';
-import { Badge, Banner, DataState, EmptyState, LoadingState, cn, rowGroupClass } from '@compass/ui';
+import {
+  Badge,
+  Banner,
+  DataState,
+  EmptyState,
+  LoadingState,
+  NameCell,
+  cn,
+  rowGroupClass,
+} from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { formatMoney } from '../../../lib/format';
-import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
+import { rowName } from '../../../lib/productName';
 
 /**
  * Price report (added 2026-05-05).
@@ -29,7 +39,7 @@ import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
  */
 export function PriceReportSection() {
   const i18n = useI18n();
-  const productName = useProductName();
+  const productNameParts = useProductNameParts();
   // 2026-07-30 (flow review): the "/ unit" suffix printed the raw canonical
   // unit next to a localized product name.
   const unitLabel = useUnitLabel();
@@ -54,7 +64,7 @@ export function PriceReportSection() {
     return stats
       .map((r) => {
         const sku = skuById.get(r.skuId);
-        const name = sku ? productName({ names: sku.names }) : i18n.t('common.unknownProduct');
+        const nameParts = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
         const last = r.lastPrice ? Number(r.lastPrice) : null;
         const avg30 = r.avg30d ? Number(r.avg30d) : null;
         // Delta = (last − avg30) / avg30, signed. Used for the trend
@@ -63,7 +73,7 @@ export function PriceReportSection() {
           last !== null && avg30 && avg30 > 0 ? ((last - avg30) / avg30) * 100 : null;
         return {
           skuId: r.skuId,
-          name,
+          nameParts,
           unit: sku?.unit ?? '',
           last,
           lastObservedAt: r.lastObservedAt,
@@ -74,7 +84,7 @@ export function PriceReportSection() {
         };
       })
       .sort((a, b) => (b.avg30d ?? 0) - (a.avg30d ?? 0));
-  }, [statsQuery.data, skuById, productName, i18n]);
+  }, [statsQuery.data, skuById, productNameParts, i18n]);
 
   return (
     <div className="px-4 py-3">
@@ -127,10 +137,8 @@ export function PriceReportSection() {
             return (
               <li key={r.skuId} className="flex flex-col gap-1 px-4 py-2.5">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
-                    {r.name}
-                  </span>
-                  <span className="text-old-body tabular-nums text-[var(--c-fg)]">
+                  <NameCell {...r.nameParts} />
+                  <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
                     <span className="text-old-label font-normal text-[var(--c-fg-muted)]">
                       / {unitLabel.uncounted(r.unit)}

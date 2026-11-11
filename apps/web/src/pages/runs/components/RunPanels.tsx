@@ -66,7 +66,7 @@ import type {
 } from '../types';
 import { otherStoreSkusOf } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
-import { rowName } from '../lib/rowName';
+import { rowName } from '../../../lib/productName';
 import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,

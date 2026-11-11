@@ -87,6 +87,32 @@ export function productNamePartsOf(
   };
 }
 
+type Named = { names: Names };
+
+const UNKNOWN_NAMES = new Map<string, ProductNameParts>();
+
+/**
+ * The name a row shows (UI-4: the second language on a line of its own),
+ * from `parts` (useProductNameParts), or `unknown` ("unknown product")
+ * while the catalog has not loaded the item. Review RUNWEB1-38: that was
+ * the first eight characters of the id. Both are the same object on every
+ * call, as some rows are memo()'d (RUNWEB1-07). Review COREWEB2-18
+ * (2026-11-12): moved here from the runs page, for every page's rows.
+ */
+export function rowName(
+  parts: (item: Named) => ProductNameParts,
+  item: Named | null | undefined,
+  unknown: string,
+): ProductNameParts {
+  if (item) return parts(item);
+  let name = UNKNOWN_NAMES.get(unknown);
+  if (!name) {
+    name = { primary: unknown, secondary: null };
+    UNKNOWN_NAMES.set(unknown, name);
+  }
+  return name;
+}
+
 /** The language of text for the vendor (copy lists): the second language when the user set one. */
 export function vendorLocale<L extends string>(locale: L, secondaryLocale: L | null): L {
   return secondaryLocale && secondaryLocale !== locale ? secondaryLocale : locale;
