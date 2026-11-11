@@ -64,6 +64,23 @@ export function preloadPage(tab: Tab): void {
 }
 
 /**
+ * The settings sheet (Telegram's gear, or the header in a browser) is not
+ * a page, but loads like one: on its first open, and warmed when the
+ * browser is idle (shell/usePagePrefetch.ts), as everyone has it. It left
+ * the entry chunk when the startup budget ran out (scripts/
+ * check-entry-budget.ts, 2026-11-12).
+ */
+export const importSettingsSheet = () =>
+  import('../components/SettingsSheet').then((m) => ({ default: m.SettingsSheet }));
+
+/** Start downloading the settings sheet; its own import handles a failure. */
+export function preloadSettingsSheet(): void {
+  importSettingsSheet().catch(() => {
+    /* offline or a removed chunk: the sheet's own import handles it */
+  });
+}
+
+/**
  * The tab the app will reopen on, read from storage before React starts:
  * the persisted bottom tab, when someone is signed in. Null when there is
  * no session or nothing usable is stored. The Shell still checks it

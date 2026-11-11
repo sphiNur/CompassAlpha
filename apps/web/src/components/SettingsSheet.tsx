@@ -1,30 +1,32 @@
 /**
- * SettingsSheet (M1.6, 2026-05-06).
+ * SettingsSheet (M1.6, 2026-05-06), opened from Telegram's gear button or
+ * the browser header. The page's own actions come first (M1.12), then the
+ * person's own things: profile, workspace, store, language, the stall's
+ * language and About. Organisation settings stay in Admin, so this stays
+ * "my preferences" (M1.6 #3).
  *
- * Replaces the previous "language picker only" SettingsButton handler
- * with a proper settings hub:
- *
- *   👤 Profile     — display name + Telegram handle (read-only when
- *                    `displayNameLocked` is true; the lock is the
- *                    anti-impersonation guarantee from auth.ts that we
- *                    deliberately preserve here).
- *   🌐 Language    — inline 4-locale picker (same options as the old
- *                    LanguageSheet; persists via `auth.setLocale`).
- *   ℹ️ About       — workspace name, role(s), client build sha + (if
- *                    available) server commit. No actions, just so the
- *                    user can read off what they're running before
- *                    filing a bug.
- *
- * Architectural note (the user asked me to decide for them, M1.6 #3):
- * Settings is intentionally limited to *self-things*. The temptation
- * was to move admin actions out of AdminPage and into Settings to
- * "lighten the admin load" — I refused. Settings = "my preferences."
- * Admin-of-org things stay in Admin so the mental model stays clean.
+ * Review COREWEB1-24 (2026-11-12): the profile and About were grey boxes
+ * of hand-written rows, the read-only name looked like an input, and the
+ * "Create a new workspace" button sat inside the workspace radiogroup.
+ * They are Cards of DetailRows (UI-13), the button follows the choice,
+ * and one workspace is no choice: the section shows when there is a
+ * second one to switch to or a platform admin may create one (UI-10;
+ * About names the workspace). COREWEB1-21: the language choices are
+ * components/LanguagePicker.tsx, shared with the language sheet.
  */
 import { useEffect, useState } from 'react';
-import { Button, Field, PickerGroup, PickerRow, SectionLabel, Sheet, useToast } from '@compass/ui';
-import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
+import {
+  Button,
+  Card,
+  DetailRow,
+  PickerGroup,
+  PickerRow,
+  SectionLabel,
+  Sheet,
+  useToast,
+} from '@compass/ui';
 import { runningBuildId } from '../lib/build';
+import { formatList } from '../lib/listFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { requestTabChange, type Tab } from '../stores/navStore';
@@ -39,29 +41,15 @@ import { requestStoreChange } from '../lib/storeContext';
 import { confirmNative } from '../lib/confirm';
 import { CreateWorkspaceForm } from './CreateWorkspace';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
-
-interface LangOption {
-  code: Locale;
-  label: string;
-  region: string;
-}
-
-const LANGS: LangOption[] = [
-  { code: 'uz', label: LANGUAGE_NATIVE_NAMES.uz, region: 'UZ' },
-  { code: 'ru', label: LANGUAGE_NATIVE_NAMES.ru, region: 'RU' },
-  { code: 'en', label: LANGUAGE_NATIVE_NAMES.en, region: 'EN' },
-  { code: 'zh', label: LANGUAGE_NATIVE_NAMES.zh, region: 'ZH' },
-];
+import { LanguagePicker, SecondaryLanguagePicker } from './LanguagePicker';
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * M1.12: optional contextual section for the currently-active page
-   * (e.g., RunPage's "Undo start purchase" / "Cancel run"). Lives at
-   * the very top of the sheet so frequent users don't have to scroll
-   * past Profile + Language to reach the destructive action they
-   * came in for.
+   * M1.12: the open page's own actions (the run's "Undo start purchase",
+   * "Cancel run"), at the top so whoever came for one does not scroll
+   * past the profile and the languages to reach it.
    */
   pageMenu?: PageMenuRegistration | null;
 }
@@ -88,33 +76,14 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const roleText = useRoleLabels();
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
-  const patchSession = useAuthStore((s) => s.patchSession);
   const toast = useToast();
-  // M1.21: i18n-aware error toast so server-side error keys like
-  // `auth.errors.displayNameTaken` render translated for the user
-  // rather than dumped as the raw key string.
+  // M1.21: server error keys (`auth.errors.displayNameTaken`) in words.
   const errToast = useErrToast();
 
   // The build for the About row, so a bug report can say which one it
   // is (review COREWEB1-12: always "dev" before).
   const buildId = runningBuildId() ?? 'dev';
 
-  const setLocale = trpc.auth.setLocale.useMutation({
-    onSuccess: (next) => {
-      patchSession(next);
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  // M3.45 (2026-05-22): secondary display language. Drives bilingual
-  // product names + vendor-language copy templates. See
-  // useProductNameParts / useVendorI18n in hooks/useI18n.ts for the
-  // rendering side.
-  const setSecondaryLocale = trpc.auth.setSecondaryLocale.useMutation({
-    onSuccess: (next) => {
-      patchSession(next);
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
   const switchOrganization = trpc.auth.switchOrganization.useMutation({
     meta: BLOCKS_NAVIGATION,
     onSuccess: (data) => {
@@ -141,6 +110,12 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   // 2026-10-21 audit (CA-22) so can members assigned to ≥2 stores.
   const canSeeStorePicker = useCanSeeStorePicker();
 
+  const memberships = session?.memberships ?? [];
+  const canCreateWorkspace = session?.isPlatformAdmin ?? false;
+  // AUTH-15 (2026-10-30): role names, once each; they were raw slugs, one
+  // per binding ("super_admin, staff, cashier, staff").
+  const roleNames = [...new Set(session?.roleSlugs ?? [])].map((slug) => roleText.name({ slug }));
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={i18n.t('settings.title')}>
       <div className="flex flex-col gap-4 py-3">
@@ -150,7 +125,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             <SectionLabel as="h3" padded={false} className="mb-2">
               {pageMenu.title}
             </SectionLabel>
-            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+            <div className="flex flex-col gap-2">
               {pageMenu.actions.map((a, i) => (
                 <Button
                   key={`${a.label}-${i}`}
@@ -179,85 +154,92 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <SectionLabel as="h3" padded={false} className="mb-2">
             {i18n.t('settings.profile.title')}
           </SectionLabel>
-          <div className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-            {/* AUTH-22 (2026-10-30): the name is always locked here — anyone
-                whose name is not yet confirmed is held at onboarding before
-                they can open settings — so the edit branch is gone. */}
-            <Field
+          {/* AUTH-22 (2026-10-30): the name is always locked here (anyone
+              whose name is not yet confirmed is held at onboarding before
+              they can open settings), so it reads as text, not a field. */}
+          <Card className="flex flex-col gap-2 px-4 py-3">
+            <DetailRow
               label={i18n.t('settings.profile.displayName')}
-              hint={i18n.t('settings.profile.lockedHint')}
-            >
-              <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
-                {session?.user.displayName ?? '—'}
-              </div>
-            </Field>
+              value={session?.user.displayName ?? '—'}
+            />
             {session?.user.tgUsername ? (
-              <Field label={i18n.t('settings.profile.username')}>
-                <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
-                  @{session.user.tgUsername}
-                </div>
-              </Field>
+              <DetailRow
+                label={i18n.t('settings.profile.username')}
+                value={`@${session.user.tgUsername}`}
+              />
             ) : null}
-          </div>
+            <p className="text-old-label text-[var(--c-fg-muted)]">
+              {i18n.t('settings.profile.lockedHint')}
+            </p>
+          </Card>
         </section>
 
         {/* ── Workspace switcher / new tenant ──────────────── */}
-        <section>
-          <SectionLabel as="h3" padded={false} className="mb-2">
-            {i18n.t('workspace.title')}
-          </SectionLabel>
-          {creatingWorkspace ? (
-            <div className="flex flex-col gap-2">
-              <CreateWorkspaceForm onCreated={() => setCreatingWorkspace(false)} />
-              {/* AUTH-16 (2026-10-30): the form had no way back. */}
-              <Button block variant="ghost" onClick={() => setCreatingWorkspace(false)}>
-                {i18n.t('common.cancel')}
-              </Button>
-            </div>
-          ) : (
-            <PickerGroup label={i18n.t('workspace.title')}>
-              {(session?.memberships ?? []).map((membership) => {
-                const selected = membership.orgId === session?.member.orgId;
-                return (
-                  <PickerRow
-                    key={membership.orgId}
-                    label={membership.orgName}
-                    hint={selected ? i18n.t('workspace.current') : undefined}
-                    selected={selected}
-                    disabled={switchOrganization.isPending}
-                    onClick={() => {
-                      if (selected) return;
-                      void mayLeaveWorkspace({
-                        // COREWEB2-03: writes still waiting to be sent stay
-                        // with this workspace; say so before leaving it.
-                        confirm: async () => {
-                          const waiting = await waitingWriteCount();
-                          return confirmNative(
-                            waiting > 0
-                              ? i18n.t('workspace.switchConfirmPending', {
-                                  name: membership.orgName,
-                                  n: waiting,
-                                })
-                              : i18n.t('workspace.switchConfirm', { name: membership.orgName }),
-                          );
-                        },
-                        requestTabChange,
-                        requestStoreChange,
-                      }).then((ok) => {
-                        if (ok) switchOrganization.mutate({ orgId: membership.orgId });
-                      });
-                    }}
-                  />
-                );
-              })}
-              {session?.isPlatformAdmin ? (
-                <Button block variant="pearl" onClick={() => setCreatingWorkspace(true)}>
-                  {i18n.t('workspace.create.action')}
+        {memberships.length > 1 || canCreateWorkspace ? (
+          <section>
+            <SectionLabel as="h3" padded={false} className="mb-2">
+              {i18n.t('workspace.title')}
+            </SectionLabel>
+            {creatingWorkspace ? (
+              <div className="flex flex-col gap-2">
+                <CreateWorkspaceForm onCreated={() => setCreatingWorkspace(false)} />
+                {/* AUTH-16 (2026-10-30): the form had no way back. */}
+                <Button block variant="ghost" onClick={() => setCreatingWorkspace(false)}>
+                  {i18n.t('common.cancel')}
                 </Button>
-              ) : null}
-            </PickerGroup>
-          )}
-        </section>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {memberships.length > 1 ? (
+                  <PickerGroup label={i18n.t('workspace.title')}>
+                    {memberships.map((membership) => {
+                      const selected = membership.orgId === session?.member.orgId;
+                      return (
+                        <PickerRow
+                          key={membership.orgId}
+                          label={membership.orgName}
+                          hint={selected ? i18n.t('workspace.current') : undefined}
+                          selected={selected}
+                          disabled={switchOrganization.isPending}
+                          onClick={() => {
+                            if (selected) return;
+                            void mayLeaveWorkspace({
+                              // COREWEB2-03: writes still waiting to be sent
+                              // stay with this workspace; say so before
+                              // leaving it.
+                              confirm: async () => {
+                                const waiting = await waitingWriteCount();
+                                return confirmNative(
+                                  waiting > 0
+                                    ? i18n.t('workspace.switchConfirmPending', {
+                                        name: membership.orgName,
+                                        n: waiting,
+                                      })
+                                    : i18n.t('workspace.switchConfirm', {
+                                        name: membership.orgName,
+                                      }),
+                                );
+                              },
+                              requestTabChange,
+                              requestStoreChange,
+                            }).then((ok) => {
+                              if (ok) switchOrganization.mutate({ orgId: membership.orgId });
+                            });
+                          }}
+                        />
+                      );
+                    })}
+                  </PickerGroup>
+                ) : null}
+                {canCreateWorkspace ? (
+                  <Button block variant="pearl" onClick={() => setCreatingWorkspace(true)}>
+                    {i18n.t('workspace.create.action')}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {/* ── Store picker (M3.5, org.admin only) ──────────── */}
         {canSeeStorePicker ? <StorePickerSection onClose={() => onOpenChange(false)} /> : null}
@@ -267,33 +249,10 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <SectionLabel as="h3" padded={false} className="mb-2">
             {i18n.t('settings.language.title')}
           </SectionLabel>
-          <PickerGroup label={i18n.t('settings.language.title')}>
-            {LANGS.map((lang) => {
-              const selected = (session?.user.locale ?? 'en') === lang.code;
-              return (
-                <PickerRow
-                  key={lang.code}
-                  label={lang.label}
-                  lang={lang.code}
-                  hint={lang.region}
-                  selected={selected}
-                  disabled={setLocale.isPending}
-                  onClick={() => {
-                    if (!selected) setLocale.mutate({ locale: lang.code });
-                  }}
-                />
-              );
-            })}
-          </PickerGroup>
+          <LanguagePicker />
         </section>
 
-        {/* ── M3.45: Vendor display language ──────────────── */}
-        {/* "Show product names with parenthetical secondary-locale
-            translation, and use that locale exclusively when copying
-            the per-vendor purchase list" — the workflow gap a Chinese-
-            speaking operator hit when sending Uzbek-speaking vendors
-            their daily prep list. Picker accepts 4 locale codes + an
-            explicit "off" option (null in the DB). */}
+        {/* ── The stall's language (M3.45) ─────────────────── */}
         <section>
           <SectionLabel as="h3" padded={false} className="mb-2">
             {i18n.t('settings.secondaryLanguage.title')}
@@ -301,40 +260,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <div className="mb-2 text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('settings.secondaryLanguage.hint')}
           </div>
-          <PickerGroup label={i18n.t('settings.secondaryLanguage.title')}>
-            {/* "Off" row first — explicit opt-out is clearer than a
-                tiny "clear" button hidden somewhere. */}
-            {(() => {
-              const selected = session?.user.secondaryLocale == null;
-              return (
-                <PickerRow
-                  label={i18n.t('settings.secondaryLanguage.off')}
-                  hint={i18n.t('settings.secondaryLanguage.offHint')}
-                  selected={selected}
-                  disabled={setSecondaryLocale.isPending}
-                  onClick={() => {
-                    if (!selected) setSecondaryLocale.mutate({ secondaryLocale: null });
-                  }}
-                />
-              );
-            })()}
-            {LANGS.filter((l) => l.code !== (session?.user.locale ?? 'en')).map((lang) => {
-              const selected = session?.user.secondaryLocale === lang.code;
-              return (
-                <PickerRow
-                  key={lang.code}
-                  label={lang.label}
-                  lang={lang.code}
-                  hint={lang.region}
-                  selected={selected}
-                  disabled={setSecondaryLocale.isPending}
-                  onClick={() => {
-                    if (!selected) setSecondaryLocale.mutate({ secondaryLocale: lang.code });
-                  }}
-                />
-              );
-            })}
-          </PickerGroup>
+          <SecondaryLanguagePicker />
         </section>
 
         {/* ── About ───────────────────────────────────────── */}
@@ -342,30 +268,23 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <SectionLabel as="h3" padded={false} className="mb-2">
             {i18n.t('settings.about.title')}
           </SectionLabel>
-          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-            <div className="flex items-baseline justify-between text-old-label">
-              <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.workspace')}</span>
-              <span className="font-medium text-[var(--c-fg)]">
-                {session?.member.orgName ?? '—'}
-              </span>
-            </div>
-            {(session?.roleSlugs ?? []).length > 0 ? (
-              <div className="flex items-baseline justify-between text-old-label">
-                <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.role')}</span>
-                <span className="font-medium text-[var(--c-fg)]">
-                  {/* AUTH-15 (2026-10-30): raw slugs, one per binding
-                      ("super_admin, staff, cashier, staff"). */}
-                  {[...new Set(session?.roleSlugs ?? [])]
-                    .map((slug) => roleText.name({ slug }))
-                    .join(', ')}
-                </span>
-              </div>
+          <Card className="flex flex-col gap-2 px-4 py-3">
+            <DetailRow
+              label={i18n.t('settings.about.workspace')}
+              value={session?.member.orgName ?? '—'}
+            />
+            {roleNames.length > 0 ? (
+              <DetailRow
+                label={i18n.t('settings.about.role')}
+                value={formatList(roleNames, i18n.locale)}
+              />
             ) : null}
-            <div className="flex items-baseline justify-between text-old-label">
-              <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.build')}</span>
-              <span className="font-mono text-[var(--c-fg-muted)]">{buildId}</span>
-            </div>
-          </div>
+            {/* UI-14: the build is a code, so monospace. */}
+            <DetailRow
+              label={i18n.t('settings.about.build')}
+              value={<span className="font-mono">{buildId}</span>}
+            />
+          </Card>
         </section>
         {/* Local development in a plain browser: back to the persona picker
             (there is no sign-out in production, where Telegram is the login). */}

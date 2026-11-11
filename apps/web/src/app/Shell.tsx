@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Banner, Button, EmptyState } from '@compass/ui';
 import { PageMenuProvider, usePageMenuRegistration } from '../components/PageMenuContext';
-import { SettingsSheet } from '../components/SettingsSheet';
+import { resilientLazy } from '../components/resilientLazy';
 import { useI18n } from '../hooks/useI18n';
 import { useStoreContext } from '../hooks/useStoreContext';
 import { useTelegramSettingsButton } from '../hooks/useTelegram';
 import { useTelegramChromeInsets } from '../hooks/useTelegramChromeInsets';
 import { setPageTitleBase } from '../lib/pageTitle';
 import { useAuthStore } from '../stores/authStore';
+import { importSettingsSheet } from './pageChunks';
 import { PageErrorBoundary } from './PageErrorBoundary';
 import { BottomNav } from './shell/BottomNav';
 import { LiveAnnouncer } from './shell/LiveAnnouncer';
@@ -19,6 +20,8 @@ import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
 import { TopBar } from './shell/TopBar';
 import { usePagePrefetch } from './shell/usePagePrefetch';
 import { useShellTab } from './shell/useShellTab';
+
+const SettingsSheet = resilientLazy(importSettingsSheet);
 
 /**
  * The app around the page: the top bar, the page in <main> (the one
@@ -72,8 +75,15 @@ function ShellInner() {
   // The settings sheet: profile, language, about, and the page's own menu
   // (M1.6, 2026-05-06). Telegram's gear in the bot's ⋯ menu opens it; in
   // a browser, which has no gear, the header's button with the org name.
+  // It loads on the first open (pageChunks.ts) and then stays mounted, so
+  // it closes with its animation.
   const [settingsOpen, setSettingsOpen] = useState(false);
-  useTelegramSettingsButton(() => setSettingsOpen(true));
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const openSettings = () => {
+    setSettingsLoaded(true);
+    setSettingsOpen(true);
+  };
+  useTelegramSettingsButton(openSettings);
   useTelegramChromeInsets();
 
   return (
@@ -82,8 +92,12 @@ function ShellInner() {
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
       <SkipLinks hasNav={showsNav(visible)} />
-      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
-      <TopBar onOpenSettings={() => setSettingsOpen(true)} />
+      {settingsLoaded ? (
+        <Suspense fallback={null}>
+          <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
+        </Suspense>
+      ) : null}
+      <TopBar onOpenSettings={openSettings} />
       <LiveAnnouncer />
       <main
         ref={mainRef}

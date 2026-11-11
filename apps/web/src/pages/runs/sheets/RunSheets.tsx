@@ -32,6 +32,7 @@ import {
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { formatMoney, formatQty } from '../../../lib/format';
+import { formatList } from '../../../lib/listFormat';
 import { normalizeQuery, rankNameLike } from '../../../lib/searchMatch';
 import { useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
@@ -1009,9 +1010,12 @@ export function AddItemSheet({
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
             <div className="rounded-[var(--r-utility)] bg-[color:color-mix(in_oklch,var(--c-warning)_10%,transparent)] px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
-                stores: [...selectedSkuExisting.storeIds]
-                  .map((id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'))
-                  .join(', '),
+                stores: formatList(
+                  [...selectedSkuExisting.storeIds].map(
+                    (id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'),
+                  ),
+                  i18n.locale,
+                ),
               })}
             </div>
           ) : null}

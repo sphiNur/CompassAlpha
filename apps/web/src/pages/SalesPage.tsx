@@ -13,38 +13,15 @@
  * by the bottom nav and Shell's hidden <h1> (UI-12); the store it showed
  * under the title is the top bar's store chip.
  */
-import { EmptyState } from '@compass/ui';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
-import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
+import { StoreContextEmpty } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
-import { useI18n } from '../hooks/useI18n';
 
 export function SalesPage() {
-  const i18n = useI18n();
   const storeCtx = useStoreContext();
-  const noStoreYet = useNoStoreYet();
 
-  if (storeCtx.kind !== 'specific') {
-    // Same empty states as Order / Confirm: no assignment at all, or an
-    // org admin on the all-stores context who must pick one store.
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {noStoreYet ? (
-          <NoStoreYet />
-        ) : storeCtx.kind === 'none' ? (
-          <EmptyState
-            title={i18n.t('auth.noStore.title')}
-            description={i18n.t('auth.noStore.body')}
-          />
-        ) : (
-          <EmptyState
-            title={i18n.t('storeSwitcher.pickPrompt.title')}
-            description={i18n.t('storeSwitcher.pickPrompt.body')}
-          />
-        )}
-      </div>
-    );
-  }
+  // Sales are one store's: no store, or all of them, says why.
+  if (storeCtx.kind !== 'specific') return <StoreContextEmpty />;
 
   return (
     <div className="flex flex-col px-4 pb-4 pt-3">
