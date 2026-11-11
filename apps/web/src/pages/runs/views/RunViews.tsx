@@ -21,9 +21,9 @@ import {
 } from '../lib/purchaseTelemetry';
 import type { ComponentProps, ReactNode } from 'react';
 import { Button, Card, NameCell, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
-import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
+import { useCurrency } from '../../../hooks/useCurrency';
 import type { ProductNameParts } from '../../../hooks/useI18n';
 import {
   toDisplayPrice,
@@ -124,7 +124,7 @@ export function PerStoreView({
         return (
           <Card key={storeId}>
             <GroupCardHeader
-              title={store?.name ?? storeId.slice(0, 8)}
+              title={store?.name ?? i18n.t('common.unknownStore')}
               meta={i18n.t('run.label.skuCountAndQty', {
                 n: rows.length,
                 qty: formatQty(String(totalQty)),
@@ -200,7 +200,7 @@ export function PerStoreView({
                   return byName !== 0 ? byName : a.skuId.localeCompare(b.skuId);
                 })
                 .map((r) => {
-                  const name = rowName(productNameParts, r.sku, r.skuId);
+                  const name = rowName(productNameParts, r.sku, i18n.t('common.unknownProduct'));
                   const status = r.runItem?.status ?? 'pending';
                   const tone =
                     status === 'purchased'
@@ -452,7 +452,7 @@ export function PerVendorView({
                   return byName !== 0 ? byName : a.skuId.localeCompare(c.skuId);
                 })
                 .map((r) => {
-                  const name = rowName(productNameParts, r.sku, r.skuId);
+                  const name = rowName(productNameParts, r.sku, i18n.t('common.unknownProduct'));
                   // M3.43 (2026-05-22): reuse PurchaseRow inline so the
                   // purchaser can record qty+price+✓ at the stall without
                   // a sheet roundtrip. PurchaseRow handles all three row
@@ -608,7 +608,7 @@ export function RunExtrasCard({
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
-  const resolveStoreName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
+  const resolveStoreName = (id: string) => storeById.get(id)?.name ?? i18n.t('common.unknownStore');
   const storeIds = [
     ...new Set([
       ...Object.keys(sessionExtrasByStore ?? {}),
@@ -808,7 +808,7 @@ export function ExpensesCard({
   onRemove: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
 }) {
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   const list = expenses ?? [];
   // DX-HIS-2: no amount when a price is hidden (not "0"); D1 cents.
   const grandTotal = expensesTotal(list);
@@ -851,7 +851,7 @@ export function ExpensesCard({
           // narrative. Falls back to short id slice if a store row
           // was archived after the expense landed.
           const storeNames = e.storeSplits
-            .map((sp) => storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8))
+            .map((sp) => storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore'))
             .join(' · ');
           const unitPriceDisplay =
             total === null
@@ -1024,7 +1024,9 @@ export function PerCategoryView({
           categoryId === '__uncategorized__'
             ? // 2026-07-26: was a hard-coded Chinese literal.
               i18n.t('run.view.uncategorized')
-            : productName(categoryById.get(categoryId) ?? { names: { zh: categoryId.slice(0, 8) } }),
+            : categoryById.has(categoryId)
+              ? productName(categoryById.get(categoryId)!)
+              : i18n.t('common.unknownCategory'),
         items,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -1057,7 +1059,7 @@ export function PerCategoryView({
           <ul className="flex flex-col" role="list">
             {group.items.map((item) => {
               const sku = skuById.get(item.skuId);
-              const name = rowName(productNameParts, sku, item.skuId);
+              const name = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
               const actualSplits = rowSplitsOf(run.splits, item.skuId);
               return (
                 <PurchaseRow
@@ -1433,7 +1435,7 @@ export const PurchaseRow = memo(function PurchaseRow({
   // suffix shows RUB / KZT / USD for non-UZS tenants. Hardcoded "UZS"
   // pre-M1.21; harmless on the UZS launch tenant but blocked multi-
   // tenant rollout.
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
 
   /**
    * Q7(b): the qty/price editor is closed until the purchaser asks for
@@ -1714,8 +1716,7 @@ export const PurchaseRow = memo(function PurchaseRow({
   const breakdownChips = showBreakdown ? (
     <div className="flex flex-wrap items-center gap-1.5">
       {breakdown.map((d) => {
-        const storeName =
-          storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8);
+        const storeName = storeById.get(d.storeId)?.name ?? i18n.t('common.unknownStore');
         const splitMeta = d as { unitPrice?: string | null; paymentMethod?: string | null };
         const overridePrice =
           splitMeta.unitPrice && splitMeta.unitPrice !== item.unitPrice
@@ -2226,7 +2227,7 @@ export const PurchaseRow = memo(function PurchaseRow({
               split: splitPreview
                 .map(
                   (sp) =>
-                    `${storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8)} ${formatQty(sp.qty)} ${unitFor(sp.qty)}`,
+                    `${storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore')} ${formatQty(sp.qty)} ${unitFor(sp.qty)}`,
                 )
                 .join(' · '),
             })}

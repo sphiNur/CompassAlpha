@@ -300,7 +300,7 @@ export function MaintenanceSection() {
                       <li key={`order-${o.orderDate}-${o.storeName ?? ''}`}>
                         {i18n.t('ops.maint.scopeLinkedOrders', {
                           date: dates.calendarDay(o.orderDate),
-                          store: o.storeName ?? i18n.t('ops.purge.unknownStore'),
+                          store: o.storeName ?? i18n.t('common.unknownStore'),
                           orders: i18n.t('run.label.sessionsCount', { n: o.count }),
                         })}
                       </li>

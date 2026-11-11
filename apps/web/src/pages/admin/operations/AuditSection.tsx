@@ -186,11 +186,12 @@ export function AdminAuditSection() {
                     ? (kindLabel[s.object] ?? categoryLabel.catalog)
                     : categoryLabel[s.category];
                 // Store chip: the resolved name, else the session's store
-                // list, else the id prefix (B2 / M3.17).
+                // list (B2 / M3.17), else "unknown store" (review ADM2-42:
+                // it was the id's first characters).
                 const storeChip = r.scopeStoreId
                   ? (storeNameById.get(r.scopeStoreId) ??
                     r.labels.storeName ??
-                    r.scopeStoreId.slice(0, 8))
+                    i18n.t('common.unknownStore'))
                   : null;
                 // 2026-07-30: `undefined` meant "browser locale".
                 const when = dateFmt.dateTime(r.occurredAt);

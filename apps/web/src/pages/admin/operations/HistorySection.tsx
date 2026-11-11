@@ -78,7 +78,7 @@ export function HistorySection() {
                   >
                     <span className="min-w-0">
                       <span className="block text-old-h2 font-semibold text-[var(--c-fg)]">
-                        {r.storeName ?? r.storeId.slice(0, 8)}
+                        {r.storeName ?? i18n.t('common.unknownStore')}
                       </span>
                       <span className="block text-old-body-sm text-[var(--c-fg-muted)]">
                         {dates.calendarDay(r.orderDate)}
@@ -133,7 +133,7 @@ export function HistorySection() {
                             className="flex items-baseline justify-between text-old-body"
                           >
                             <span className="truncate text-[var(--c-fg)]">
-                              {c.displayName ?? c.memberId.slice(0, 6)}
+                              {c.displayName ?? i18n.t('common.unknownMember')}
                             </span>
                             <span className="tabular-nums text-[var(--c-fg-muted)]">
                               {i18n.t('ops.history.skuCount', { n: c.skuCount })}

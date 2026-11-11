@@ -143,7 +143,7 @@ export function SkusSection() {
   const categoryName = (id: string | null): string => {
     if (!id) return '—';
     const c = categoriesQuery.data?.find((x) => x.id === id);
-    if (!c) return id.slice(0, 6);
+    if (!c) return i18n.t('common.unknownCategory');
     return productName({ names: c.names as Record<string, string> }) || c.slug;
   };
 
@@ -219,7 +219,8 @@ export function SkusSection() {
               ) : null}
               {filtered.map((sk) => {
                 const names = sk.names as Record<string, string>;
-                const primary = productName({ names }) || sk.code || sk.id.slice(0, 6);
+                const primary =
+                  productName({ names }) || sk.code || i18n.t('common.unknownProduct');
                 return (
                   <li key={sk.id}>
                     <CatalogRowHeader

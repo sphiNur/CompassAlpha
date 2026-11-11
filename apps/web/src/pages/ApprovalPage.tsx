@@ -37,6 +37,7 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { useCurrency } from '../hooks/useCurrency';
 import { haptic } from '../hooks/useTelegram';
 import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
@@ -287,10 +288,12 @@ export function ApprovalPage() {
       toast.info(
         r.claimedByMemberId
           ? i18n.t('approval.toast.claimTakenOver', {
-              owner: r.attribDisplayName ?? '',
+              owner: r.attribDisplayName ?? i18n.t('common.unknownMember'),
               who: r.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
             })
-          : i18n.t('approval.toast.claimTimedOut', { owner: r.attribDisplayName ?? '' }),
+          : i18n.t('approval.toast.claimTimedOut', {
+              owner: r.attribDisplayName ?? i18n.t('common.unknownMember'),
+            }),
       );
     }
     myClaims.current = new Set(
@@ -455,8 +458,8 @@ export function ApprovalPage() {
                         */}
                         <CardTitle as="h2">
                           {storeScoped
-                            ? (row.attribDisplayName ?? i18n.t('approval.unknownReviewer'))
-                            : (row.storeName?.trim() ?? row.storeId.slice(0, 8))}
+                            ? (row.attribDisplayName ?? i18n.t('common.unknownMember'))
+                            : row.storeName?.trim() || i18n.t('common.unknownStore')}
                         </CardTitle>
                         <CardMeta>
                           {/* M1.9-fix (2026-05-07): all 3 segments and the
@@ -949,7 +952,7 @@ function SessionItems({
   // M1.21: pull org currency from session for the estimate-total
   // suffix. Hardcoded "UZS" pre-M1.21 blocked the multi-currency
   // foundation from M1.17.
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   const detail = trpc.order.sessionDetail.useQuery({ sessionId });
   // 2026-11-05: the order as submitted, so review edits read against it.
   const submittedQ = trpc.order.submittedVersion.useQuery({ sessionId }, { staleTime: 30_000 });
@@ -1132,7 +1135,7 @@ function SessionItems({
                 .map(([skuId, from]) => {
                   const sku = skuById.get(skuId);
                   return i18n.t('approval.changed.removed', {
-                    item: sku ? productName(sku) : skuId.slice(0, 8),
+                    item: sku ? productName(sku) : i18n.t('common.unknownProduct'),
                     from: formatQty(from),
                     unit: unitLabel(sku?.unit ?? '', from),
                   });
@@ -1272,7 +1275,7 @@ function SessionItems({
             ) : null}
             <div className="flex items-center justify-between gap-2 text-old-body">
               <span className="min-w-0 flex-1 break-words font-semibold text-[var(--c-fg)]">
-                {sku ? productName(sku) : t.skuId.slice(0, 8)}
+                {sku ? productName(sku) : i18n.t('common.unknownProduct')}
               </span>
               {canEdit && isSingleContributor && sku && singleRow ? (
                 <QtyControl
@@ -1399,7 +1402,7 @@ function SessionItems({
                   the name and stepper at full width. */}
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0 flex-1 break-words text-[var(--c-fg-muted)] line-through">
-                  {sku ? productName(sku) : z.skuId.slice(0, 8)}
+                  {sku ? productName(sku) : i18n.t('common.unknownProduct')}
                 </span>
                 {canEdit && sku ? (
                   <QtyControl
@@ -1468,7 +1471,7 @@ function SessionItems({
                   className="flex items-baseline justify-between gap-3 border-b border-[var(--c-divider)] py-1.5 text-old-body last:border-b-0"
                 >
                   <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">
-                    {sku ? productName(sku) : t.skuId.slice(0, 8)}
+                    {sku ? productName(sku) : i18n.t('common.unknownProduct')}
                   </span>
                   <span
                     className={`shrink-0 tabular-nums ${ch ? 'font-semibold text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]'}`}

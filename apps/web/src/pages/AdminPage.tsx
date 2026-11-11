@@ -53,7 +53,7 @@ import {
 import { TAX_RATE_MESSAGE, taxRateProblem, taxRateToSend } from '@compass/contracts/limits';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
-import { formatQty } from '../lib/format';
+import { currencyOf, formatQty } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
@@ -636,7 +636,7 @@ function WorkspaceSection() {
   // Map locale codes to native labels for the read-out.
   const localeLabels: Record<string, string> = LANGUAGE_NATIVE_NAMES;
   const currentLocale = session?.user.locale ?? 'en';
-  const currency = session?.member.currency ?? 'UZS';
+  const currency = currencyOf(session);
   const taxRatePct = session?.member.taxRatePct ?? '0';
   // ADM1-14: the shared number format ("12.50" shows as 12.5%); no rate
   // is shown as none (UI-3), not as "0%" in one place and "—" in another.

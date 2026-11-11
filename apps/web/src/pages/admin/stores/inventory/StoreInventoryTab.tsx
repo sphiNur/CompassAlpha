@@ -88,7 +88,7 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
     const levels = levelsQuery.data ?? [];
     return levels.map((l) => {
       const sku = skuById.get(l.skuId);
-      const name = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+      const name = sku ? productName({ names: sku.names }) : i18n.t('common.unknownProduct');
       const unit = sku?.unit ?? '';
       const onHandNum = Number(l.onHand);
       return {
@@ -100,7 +100,7 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
         lastMovementAt: l.lastMovementAt,
       };
     });
-  }, [levelsQuery.data, skuById, productName]);
+  }, [levelsQuery.data, skuById, productName, i18n]);
 
   // 2026-10-21: active SKUs with no ledger row here — opening-stock picks.
   const openingCandidates = useMemo(

@@ -378,7 +378,7 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
           <ul className={rowGroupClass} role="list">
             {sales.map((sale) => {
               const dish = dishById.get(sale.dishId);
-              const name = dish ? productName({ names: dish.names }) : sale.dishId.slice(0, 8);
+              const name = dish ? productName({ names: dish.names }) : i18n.t('common.unknownDish');
               // 2026-07-30: `undefined` meant "browser locale".
               const time = dateFmt.time(sale.occurredAt);
               const lineTotal =

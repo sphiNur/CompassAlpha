@@ -78,7 +78,9 @@ export function InventoryMovementsSheet({
                   <li key={m.id} className="px-4 py-2.5">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-old-body font-medium">
-                        {known ? i18n.t(MOVEMENT_REASON_LABEL[known]) : m.reason}
+                        {/* Review ADM2-42: a reason this build does not know reads
+                            "other", not its raw code. */}
+                        {i18n.t(known ? MOVEMENT_REASON_LABEL[known] : 'inventory.reason.other')}
                       </span>
                       <span
                         className={

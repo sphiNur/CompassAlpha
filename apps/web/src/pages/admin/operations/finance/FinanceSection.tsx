@@ -150,7 +150,7 @@ export function FinanceSection() {
     (l: (typeof lines)[number]): string => {
       if (l.kind === 'expense' || !l.skuId) return l.label ?? i18n.t('finance.label.expense');
       const sku = skuById.get(l.skuId);
-      return sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+      return sku ? productName({ names: sku.names }) : i18n.t('common.unknownProduct');
     },
     [skuById, productName, i18n],
   );
@@ -182,10 +182,10 @@ export function FinanceSection() {
   const groups = useMemo(() => groupFinanceLines(lines, view), [lines, view]);
   const groupTitle = (key: string): string => {
     if (view === 'daily') return dates.calendarDay(key);
-    if (view === 'byStore') return storeById.get(key) ?? key.slice(0, 8);
+    if (view === 'byStore') return storeById.get(key) ?? i18n.t('common.unknownStore');
     if (key === EXPENSE_GROUP) return i18n.t('finance.label.expenses');
     if (key === NO_SUPPLIER_GROUP) return `— ${i18n.t('finance.label.noSupplier')}`;
-    return supplierById.get(key) ?? key.slice(0, 8);
+    return supplierById.get(key) ?? i18n.t('common.unknownSupplier');
   };
 
   // Which group's lines are open, in whichever view (one at a time).
@@ -214,7 +214,7 @@ export function FinanceSection() {
     const tsv = [
       `# ${i18n.t('finance.tsv.title', { start: startDate, end: endDate })} · ${
         reportStore.storeId
-          ? (storeById.get(reportStore.storeId) ?? reportStore.storeId.slice(0, 8))
+          ? (storeById.get(reportStore.storeId) ?? i18n.t('common.unknownStore'))
           : i18n.t('run.history.allStores')
       }`,
       lineHeader,
@@ -224,8 +224,8 @@ export function FinanceSection() {
           l.runDate,
           `#${l.runIndex + 1}`,
           plainLineName(l),
-          storeById.get(l.storeId) ?? l.storeId.slice(0, 8),
-          l.supplierId ? (supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8)) : '—',
+          storeById.get(l.storeId) ?? i18n.t('common.unknownStore'),
+          l.supplierId ? (supplierById.get(l.supplierId) ?? i18n.t('common.unknownSupplier')) : '—',
           methodLabel(l.paymentMethod),
           toQtyInput(l.qty),
           sku ? unitLabel.uncounted(sku.unit) : '',
@@ -463,7 +463,7 @@ export function FinanceSection() {
                       <span className="text-old-body tabular-nums">{formatMoney(l.lineTotal)}</span>
                     </div>
                     <div className="flex items-baseline gap-2 text-old-label text-[var(--c-fg-muted)]">
-                      <span>{storeById.get(l.storeId) ?? l.storeId.slice(0, 8)}</span>
+                      <span>{storeById.get(l.storeId) ?? i18n.t('common.unknownStore')}</span>
                       <span>· {l.supplierId ? (supplierById.get(l.supplierId) ?? '—') : '—'}</span>
                       <span className="ml-auto tabular-nums">
                         {l.unitPrice !== null

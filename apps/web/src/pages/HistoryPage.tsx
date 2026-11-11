@@ -182,7 +182,7 @@ export function HistoryPage() {
         {/* CMP-HIS-1: always say which stores the list and its total cover. */}
         {filters.storeId ? (
           <FilterChip
-            label={storeById.get(filters.storeId)?.name ?? filters.storeId.slice(0, 8)}
+            label={storeById.get(filters.storeId)?.name ?? i18n.t('common.unknownStore')}
             onRemove={() => reportStore.setStoreId('')}
           />
         ) : (

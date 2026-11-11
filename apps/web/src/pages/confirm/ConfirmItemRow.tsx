@@ -52,7 +52,7 @@ export function ConfirmItemRow({
         {/* Confirm is the "default" (dense) name tier per the 2026-07-05
             two-tier decision. */}
         <NameCell
-          primary={nm ? nm.primary : line.skuId.slice(0, 8)}
+          primary={nm ? nm.primary : i18n.t('common.unknownProduct')}
           secondary={nm?.secondary}
           primaryLang={nm?.primaryLang}
           secondaryLang={nm?.secondaryLang}

@@ -33,7 +33,7 @@ export function PriceReportSection() {
   // 2026-07-30 (flow review): the "/ unit" suffix printed the raw canonical
   // unit next to a localized product name.
   const unitLabel = useUnitLabel();
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   // No skuIds filter → return all SKUs with observations in 30 days.
   const statsQuery = trpc.catalog.skuPriceStats.useQuery();
 
@@ -54,7 +54,7 @@ export function PriceReportSection() {
     return stats
       .map((r) => {
         const sku = skuById.get(r.skuId);
-        const name = sku ? productName({ names: sku.names }) : r.skuId.slice(0, 8);
+        const name = sku ? productName({ names: sku.names }) : i18n.t('common.unknownProduct');
         const last = r.lastPrice ? Number(r.lastPrice) : null;
         const avg30 = r.avg30d ? Number(r.avg30d) : null;
         // Delta = (last − avg30) / avg30, signed. Used for the trend
@@ -74,7 +74,7 @@ export function PriceReportSection() {
         };
       })
       .sort((a, b) => (b.avg30d ?? 0) - (a.avg30d ?? 0));
-  }, [statsQuery.data, skuById, productName]);
+  }, [statsQuery.data, skuById, productName, i18n]);
 
   return (
     <div className="px-4 py-3">
