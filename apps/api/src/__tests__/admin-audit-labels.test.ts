@@ -10,7 +10,7 @@ import {
   auditRowRefs,
   buildAuditLabels,
   type AuditLookups,
-} from '../trpc/routers/admin';
+} from '../services/adminAudit';
 
 const M = '00000000-0000-4000-8000-0000000000a1';
 const U = '00000000-0000-4000-8000-0000000000b1';

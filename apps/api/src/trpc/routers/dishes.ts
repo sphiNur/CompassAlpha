@@ -65,28 +65,12 @@ import {
   DishUpdateInputSchema,
   type DishIngredientInput,
 } from '@compass/contracts';
-import { authedProcedure, router } from '../trpc';
-import { isUniqueViolation } from '../../services/pgErrors';
+import { authedProcedure, router, withUniqueKey } from '../trpc';
 import {
   priceStoreIds,
   pricesVisibleAnywhere,
   pricesVisibleFor,
 } from '../../services/priceRedaction';
-
-/**
- * CLS-12 (2026-10-30): a dish code already used in the org tripped
- * dishes_org_code_unique and came back as a bare 500 / 「出错了」.
- */
-async function codeChecked<T>(op: PromiseLike<T>): Promise<T> {
-  try {
-    return await op;
-  } catch (err) {
-    if (isUniqueViolation(err)) {
-      throw new TRPCError({ code: 'CONFLICT', message: 'dishes.errors.codeTaken', cause: err });
-    }
-    throw err;
-  }
-}
 
 /**
  * 2026-10-21 (CA-55): skuIds that appear more than once in a recipe.
@@ -287,7 +271,7 @@ export const dishesRouter = router({
           .from(s.dishes)
           .where(eq(s.dishes.orgId, orgId));
         const nextSort = (last[0]?.max ?? 0) + 1;
-        const [inserted] = await codeChecked(
+        const [inserted] = await withUniqueKey(
           tx
           .insert(s.dishes)
           .values({
@@ -299,6 +283,7 @@ export const dishesRouter = router({
             sortIndex: nextSort,
           })
           .returning({ id: s.dishes.id }),
+          'dishes.errors.codeTaken',
         );
         const dishId = inserted!.id;
         if (input.ingredients.length > 0) {
@@ -327,12 +312,13 @@ export const dishesRouter = router({
         if (input.description !== undefined) patch.description = input.description;
         if (input.unitPrice !== undefined) patch.unitPrice = input.unitPrice;
         if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
-        const r = await codeChecked(
+        const r = await withUniqueKey(
           tx
             .update(s.dishes)
             .set(patch)
             .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
             .returning({ id: s.dishes.id }),
+          'dishes.errors.codeTaken',
         );
         if (r.length === 0) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
@@ -386,7 +372,7 @@ export const dishesRouter = router({
       };
       let dishId: string;
       if (input.dishId) {
-        const r = await codeChecked(
+        const r = await withUniqueKey(
           tx
             .update(s.dishes)
             .set({ ...fields, updatedAt: new Date() })
@@ -400,6 +386,7 @@ export const dishesRouter = router({
               ),
             )
             .returning({ id: s.dishes.id }),
+          'dishes.errors.codeTaken',
         );
         if (r.length === 0) {
           if (input.expectedUpdatedAt) {
@@ -420,11 +407,12 @@ export const dishesRouter = router({
           .select({ max: sql<number>`coalesce(max(${s.dishes.sortIndex}), 0)::int` })
           .from(s.dishes)
           .where(eq(s.dishes.orgId, orgId));
-        const [inserted] = await codeChecked(
+        const [inserted] = await withUniqueKey(
           tx
             .insert(s.dishes)
             .values({ orgId, ...fields, sortIndex: (last[0]?.max ?? 0) + 1 })
             .returning({ id: s.dishes.id }),
+          'dishes.errors.codeTaken',
         );
         dishId = inserted!.id;
       }

@@ -555,3 +555,20 @@ export function rethrowDomainError(err: unknown): never {
   }
   throw err;
 }
+
+/**
+ * 2026-10-21 audit CA-40 (E-09): turn a unique-index violation (category
+ * slug, SKU / store / dish code — all unique per org) into a specific 409
+ * key instead of a generic 500. The transaction is aborted either way;
+ * this only changes what the caller is told. Review ADM1-11
+ * (2026-11-12): moved here from the admin router, for the dishes router
+ * too.
+ */
+export async function withUniqueKey<T>(op: PromiseLike<T>, message: string): Promise<T> {
+  try {
+    return await op;
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new TRPCError({ code: 'CONFLICT', message, cause: err });
+    throw err;
+  }
+}

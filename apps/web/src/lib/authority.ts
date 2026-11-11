@@ -6,7 +6,7 @@
  * transfer and the permission overrides had the same gap.
  *
  * Each function names the server check it mirrors (apps/api/src/trpc/
- * routers/admin.ts). The server stays the authority: these only decide
+ * routers/admin/). The server stays the authority: these only decide
  * what is shown, and when a rank is unknown (an older server) the action
  * is shown and the server answers as before.
  */

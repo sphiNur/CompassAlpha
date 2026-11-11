@@ -153,7 +153,7 @@
 ### M3 · Q4 2026 — 体验 / 性能 / 工具
 
 - **TanStack Router 真接入**：用 search params 类型安全路由替代 navStore tab 模式。
-- **AdminPage / RunPage / admin.ts 拆分**：✅ AdminPage 已拆（853 行）；RunPage（3098 行）和 admin.ts（7225 行）仍是单文件巨石。
+- **AdminPage / RunPage / admin.ts 拆分**：✅ AdminPage 已拆（853 行）；✅ admin 路由已拆（ADM1-11，2026-11-12：`routers/admin/` 按领域分文件，审计在 `services/adminAudit.ts`，输入 schema 在 contracts）；RunPage（2946 行）仍是单文件巨石。
 - **Apple theme token 集**：当前 ThemeProvider 已支持 `theme=apple`，但 token 文件未分离。
 - **`compass` CLI 补齐**：`migrate`、`logs tail`、`deploy`、`impersonate` 子命令。
 - **Sourcemap → Sentry 上传**：production 不带 sourcemap，但远端解码可用。
@@ -299,7 +299,15 @@ apps/api/src/
 │   │                             (errorLog / mutationRateLimit / idempotency)
 │   ├── context.ts              # createContext: JWT 验签 + loadSession + withOrg
 │   └── routers/
-│       ├── admin.ts            (7225 行, M3 拆分目标)
+│       ├── admin/              (管理台，ADM1-11 按领域拆分；路径仍是 admin.<name>)
+│       │   ├── index.ts        (把各文件的 procedure 展开成一个 router)
+│       │   ├── guards.ts       (requireAdmin / requireOrgAdmin 等权限门)
+│       │   ├── scope.ts        (管理员能管哪些门店、看到哪些成员)
+│       │   ├── grants.ts       (能否转授角色或权限键)
+│       │   ├── notify.ts       (变更后的实时通知)
+│       │   └── overview / members / invites / memberStores / roles /
+│       │       overrides / stores / catalog / expenseTemplates / audit /
+│       │       maintenance.ts
 │       ├── attendance.ts       (考勤：打卡、排班、考勤表)
 │       ├── auth.ts             (telegramLogin / refresh / me / signOut /
 │       │                        setLocale / completeOnboarding)

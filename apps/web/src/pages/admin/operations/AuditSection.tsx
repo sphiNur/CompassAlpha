@@ -22,7 +22,7 @@ import { auditChangeLines, type ChangeFormat } from './auditChangeLines';
  *
  * Renders rows from `domain.policy_decisions`, which now gets a row
  * for every catalog/role/permission mutation an admin runs (see
- * `auditAdmin()` helper in apps/api/src/trpc/routers/admin.ts).
+ * `auditAdmin()` helper in apps/api/src/services/adminAudit.ts).
  *
  * Display goal: a busy chain owner should be able to skim "what
  * happened in the last hour" and answer:

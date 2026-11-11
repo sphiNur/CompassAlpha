@@ -137,7 +137,7 @@ export const BUILTIN_ROLES = [
       'prices.view',
       // 2026-05-07: store managers must be able to invite + assign staff
       // for their own store(s). The cross-store gates in
-      // admin.ts (`getActorAdminStoreIds`) already prevent them from
+      // the admin router (`getActorAdminStoreIds`) already prevent them from
       // touching members of stores they don't manage; this perm just
       // unlocks the entry point.
       'users.manage',

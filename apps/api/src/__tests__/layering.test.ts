@@ -4,7 +4,9 @@
  * nav router took its run-planning scope from the run router, and the
  * attendance router the wage roster from the settlement router, so editing
  * one router could change another. Nothing outside trpc/ imports a router;
- * trpc/router.ts assembles them.
+ * trpc/router.ts assembles them. A router kept as a directory of files
+ * (routers/admin/, review ADM1-11) is one router: its files import each
+ * other.
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -33,11 +35,17 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-/** Each relative import of `file` that lands in trpc/routers, as "file → import". */
+/** The router a path under trpc/routers/ belongs to (`admin` for routers/admin.ts and routers/admin/*), else null. */
+function routerOf(path: string): string | null {
+  return /^trpc\/routers\/([^/.]+)/.exec(path)?.[1] ?? null;
+}
+
+/** Each relative import of `file` that lands in another router, as "file → import". */
 function routerImports(file: string): string[] {
+  const own = routerOf(relative(SRC, file));
   return [...readFileSync(file, 'utf8').matchAll(/from '(\.{1,2}\/[^']+)'/g)]
     .map((m) => relative(SRC, resolve(file, '..', m[1]!)))
-    .filter((target) => target.startsWith('trpc/routers/'))
+    .filter((target) => routerOf(target) !== null && routerOf(target) !== own)
     .map((target) => `${relative(SRC, file)} → ${target}`);
 }
 
