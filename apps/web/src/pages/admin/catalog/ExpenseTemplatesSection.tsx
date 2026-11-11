@@ -235,7 +235,7 @@ export function ExpenseTemplatesSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label={`${i18n.t('admin.field.label')} *`}>
+            <Field label={i18n.t('admin.field.label')} required>
               <Input
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
@@ -253,7 +253,7 @@ export function ExpenseTemplatesSection() {
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label={`${i18n.t('admin.field.defaultQty')} *`}>
+              <Field label={i18n.t('admin.field.defaultQty')} required>
                 <Input
                   // CAT-10: read "1,5" / "20 000" like every number field.
                   type="number"
@@ -263,7 +263,7 @@ export function ExpenseTemplatesSection() {
                   placeholder="1"
                 />
               </Field>
-              <Field label={`${i18n.t('admin.field.defaultUnitPrice')} *`}>
+              <Field label={i18n.t('admin.field.defaultUnitPrice')} required>
                 <Input
                   // CAT-10: read "1,5" / "20 000" like every number field.
                   type="number"

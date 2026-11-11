@@ -1,6 +1,7 @@
 import { forwardRef, type SelectHTMLAttributes } from 'react';
 import { cn } from '../cn';
 import { disabledClass } from './disabled';
+import { joinIds, useFieldControl } from './fieldControl';
 
 /**
  * Select — native dropdown with Concord styling.
@@ -36,6 +37,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   { className, invalid, placeholder, children, ...rest },
   ref,
 ) {
+  // UI-02: a Field around the select shows its error and ties it here.
+  const field = useFieldControl();
+  const marked = !!invalid || !!field?.invalid;
   return (
     <span className="relative inline-flex w-full">
       <select
@@ -48,11 +52,14 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
           'focus-visible:ring-offset-[var(--c-bg)]',
           disabledClass,
-          invalid && 'ring-2 ring-[var(--c-danger)]',
+          marked && 'ring-2 ring-[var(--c-danger)]',
           className,
         )}
-        aria-invalid={invalid || undefined}
         {...rest}
+        // After the spread: what the caller passed adds to the field's own.
+        aria-invalid={marked || rest['aria-invalid'] || undefined}
+        aria-required={field?.required || rest['aria-required'] || undefined}
+        aria-describedby={joinIds(field?.describedBy, rest['aria-describedby'])}
       >
         {placeholder !== undefined ? (
           <option value="" disabled>

@@ -5,7 +5,7 @@ import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { QTY_DECIMALS, isMultipleOfStep, readQtyDraft } from '../qtyDraft';
 import { Input } from './Input';
-import { FieldError } from './FieldError';
+import { Field } from './Rows';
 
 interface QtyControlProps {
   value: number;
@@ -499,19 +499,15 @@ function QtyQuickPickSheet({
         </div>
 
         {/* Custom input — escape hatch for non-preset quantities. */}
-        <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-          {labels.custom}
+        <Field label={labels.custom} error={draftProblem}>
           <Input
             type="number"
-            className="mt-1"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            invalid={!!draftProblem}
-            // The sheet's own line below says what is wrong.
+            // The field's error line says what is wrong, "not a number" too.
             formatError="none"
           />
-        </label>
-        {draftProblem ? <FieldError className="mt-0">{draftProblem}</FieldError> : null}
+        </Field>
       </div>
     </Sheet>
   );

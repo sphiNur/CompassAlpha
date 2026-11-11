@@ -181,7 +181,7 @@ export function SuppliersSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label={`${i18n.t('admin.field.name')} *`}>
+            <Field label={i18n.t('admin.field.name')} required>
               <Input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}

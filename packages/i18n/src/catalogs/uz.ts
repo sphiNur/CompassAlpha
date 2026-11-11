@@ -858,7 +858,7 @@ export const uz = {
   'admin.label.thisStore': 'bu doʻkon',
   'admin.label.loadingRoles': 'Rollar yuklanmoqda…',
   'admin.label.loadingStores': 'Doʻkonlar yuklanmoqda…',
-  'admin.field.tgUserId': 'Telegram foydalanuvchi ID *',
+  'admin.field.tgUserId': 'Telegram foydalanuvchi ID',
   'admin.field.tgUserIdPlaceholder': 'masalan, 123456789',
   'admin.field.displayName': 'Koʻrinadigan ism',
   'admin.field.displayNamePlaceholder':

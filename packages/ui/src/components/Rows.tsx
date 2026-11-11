@@ -1,6 +1,9 @@
-import { useId, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { useUiLabels } from '../labels';
 import { surfaceClass } from './Card';
+import { FieldError } from './FieldError';
+import { FieldControlContext, joinIds, type FieldControl } from './fieldControl';
 import { IconChevronRight } from './NavIcon';
 import { useRovingRadio } from '../rovingRadio';
 
@@ -199,26 +202,76 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
 }
 
 /**
- * Form field: 12px uppercase label + slot for the input. Replaces
- * inline `<label>` blocks in admin sheets, purchase sheets, etc. Pair
- * with `<Input>` (also `type="number"`) / `<select>`.
+ * Form field: the label, the control, then why its value is refused and
+ * a hint. Pair with the kit's `<Input>` (also `type="number"`),
+ * `<Select>` or `<Textarea>`.
+ *
+ * Review UI-02 (2026-11-11): `error` and `required` live here, and the
+ * control is tied to the error and hint lines (aria-describedby,
+ * aria-invalid, aria-required) through FieldControlContext. Pages used
+ * to wire ids by hand or put the error inside the `<label>`, which made
+ * it part of the field's name. Only the label and the control sit in the
+ * `<label>` now. A number field's "not one number" line shows in the
+ * same place as `error`; a page's own `error` wins.
  */
 export interface FieldProps {
   label: ReactNode;
   hint?: ReactNode;
+  /** Why the value is refused, under the control; nothing when empty. */
+  error?: ReactNode;
+  /** Marks the label (a "*" a screen reader skips) and the control. */
+  required?: boolean;
   children: ReactNode;
   className?: string;
 }
 
-export function Field({ label, hint, children, className }: FieldProps) {
+const shown = (node: ReactNode) =>
+  node !== undefined && node !== null && node !== false && node !== '';
+
+export function Field({ label, hint, error, required = false, children, className }: FieldProps) {
+  const labels = useUiLabels();
+  const errorId = useId();
+  const hintId = useId();
+  const [badFormat, setBadFormat] = useState<ReadonlySet<string>>(() => new Set());
+  const reportFormatError = useCallback((controlId: string, isShown: boolean) => {
+    setBadFormat((prev) => {
+      if (prev.has(controlId) === isShown) return prev;
+      const next = new Set(prev);
+      if (isShown) next.add(controlId);
+      else next.delete(controlId);
+      return next;
+    });
+  }, []);
+  const hasError = shown(error);
+  const message = hasError ? error : badFormat.size > 0 ? labels.numberInvalid : null;
+  const hasMessage = message !== null;
+  const hasHint = shown(hint);
+  // Booleans and ids only: `error` and `hint` are new elements on every
+  // render and would redraw each control in the field.
+  const control = useMemo<FieldControl>(
+    () => ({
+      describedBy: joinIds(hasMessage && errorId, hasHint && hintId),
+      invalid: hasError,
+      required,
+      reportFormatError,
+    }),
+    [hasMessage, errorId, hasHint, hintId, hasError, required, reportFormatError],
+  );
   return (
-    <label className={cn('block', className)}>
-      <FieldLabel>{label}</FieldLabel>
-      <div className="mt-1">{children}</div>
-      {hint ? (
-        <span className="mt-1 block text-old-label text-[var(--c-fg-muted)]">{hint}</span>
+    <div className={cn('block', className)}>
+      <label className="block">
+        <FieldLabel required={required}>{label}</FieldLabel>
+        <FieldControlContext.Provider value={control}>
+          <div className="mt-1">{children}</div>
+        </FieldControlContext.Provider>
+      </label>
+      {hasMessage ? <FieldError id={errorId}>{message}</FieldError> : null}
+      {hasHint ? (
+        <span id={hintId} className="mt-1 block text-old-label text-[var(--c-fg-muted)]">
+          {hint}
+        </span>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -232,14 +285,29 @@ export function Field({ label, hint, children, className }: FieldProps) {
  * the member there. A label may not hold another label either. A group is
  * titled, not labelled: use Field for one input, FieldGroup for several.
  */
-export function FieldGroup({ label, hint, children, className }: FieldProps) {
+/** A group has no aria-required; a required choice says so in its label. */
+export type FieldGroupProps = Omit<FieldProps, 'required'>;
+
+export function FieldGroup({ label, hint, error, children, className }: FieldGroupProps) {
   const titleId = useId();
+  const errorId = useId();
+  const hintId = useId();
+  const hasError = shown(error);
+  const hasHint = shown(hint);
   return (
-    <div role="group" aria-labelledby={titleId} className={cn('block', className)}>
+    <div
+      role="group"
+      aria-labelledby={titleId}
+      aria-describedby={joinIds(hasError && errorId, hasHint && hintId)}
+      className={cn('block', className)}
+    >
       <FieldLabel id={titleId}>{label}</FieldLabel>
       <div className="mt-1">{children}</div>
-      {hint ? (
-        <span className="mt-1 block text-old-label text-[var(--c-fg-muted)]">{hint}</span>
+      {hasError ? <FieldError id={errorId}>{error}</FieldError> : null}
+      {hasHint ? (
+        <span id={hintId} className="mt-1 block text-old-label text-[var(--c-fg-muted)]">
+          {hint}
+        </span>
       ) : null}
     </div>
   );
@@ -261,20 +329,31 @@ export function FieldLabel({
   children,
   id,
   htmlFor,
+  required = false,
 }: {
   className?: string;
   children: ReactNode;
   id?: string;
   htmlFor?: string;
+  /** Draws the "*". The control says it is required (aria-required). */
+  required?: boolean;
 }) {
   const look = cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className);
+  const text = required ? (
+    <>
+      {children}
+      <span aria-hidden> *</span>
+    </>
+  ) : (
+    children
+  );
   return htmlFor ? (
     <label id={id} htmlFor={htmlFor} className={look}>
-      {children}
+      {text}
     </label>
   ) : (
     <span id={id} className={look}>
-      {children}
+      {text}
     </span>
   );
 }

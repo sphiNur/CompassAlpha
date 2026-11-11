@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FieldError } from '../components/FieldError';
-import { FieldLabel } from '../components/Rows';
+import { Input } from '../components/Input';
+import { Field, FieldGroup, FieldLabel } from '../components/Rows';
+import { Select } from '../components/Select';
+import { Textarea } from '../components/Textarea';
 
 /** Review CONF-21: one field label and one field error for every form. */
 describe('FieldLabel / FieldError', () => {
@@ -34,5 +37,77 @@ describe('FieldLabel / FieldError', () => {
     const spanClass = /^<span role="alert" class="([^"]*)"/.exec(html)?.[1] ?? '';
     expect(spanClass.split(' ')).toContain('mt-0');
     expect(spanClass.split(' ')).not.toContain('mt-1');
+  });
+});
+
+/** Review UI-02: Field carries the error, the hint and "required", and ties them to its control. */
+describe('Field wiring', () => {
+  const render = (
+    props: Record<string, unknown>,
+    control = createElement(Input, { readOnly: true }),
+  ) => renderToStaticMarkup(createElement(Field, { label: 'Name', ...props, children: control }));
+  const attr = (html: string, tag: string, name: string) =>
+    new RegExp(`<${tag}[^>]* ${name}="([^"]*)"`).exec(html)?.[1];
+  const idOf = (html: string, text: string) =>
+    new RegExp(`id="([^"]+)"[^>]*>(?:<svg[^>]*>.*?</svg>)?(?:<span>)?${text}`).exec(html)?.[1];
+
+  test('the error and the hint sit outside the <label> and describe the control', () => {
+    const html = render({ error: 'Too long', hint: 'At most 40 letters' });
+    const label = /<label[^>]*>.*?<\/label>/.exec(html)?.[0] ?? '';
+    expect(label).not.toContain('Too long');
+    expect(label).not.toContain('At most 40 letters');
+    const errorId = idOf(html, 'Too long');
+    const hintId = idOf(html, 'At most 40 letters');
+    expect(errorId).toBeDefined();
+    expect(hintId).toBeDefined();
+    expect(attr(html, 'input', 'aria-describedby')).toBe(`${errorId} ${hintId}`);
+    expect(attr(html, 'input', 'aria-invalid')).toBe('true');
+    expect(attr(html, 'input', 'class')?.split(' ')).toContain('ring-[var(--c-danger)]');
+  });
+
+  test('without an error the control is not marked, and only the hint describes it', () => {
+    const html = render({ hint: 'Optional', error: null });
+    expect(html).not.toContain('role="alert"');
+    expect(attr(html, 'input', 'aria-invalid')).toBeUndefined();
+    expect(attr(html, 'input', 'aria-describedby')).toBe(idOf(html, 'Optional'));
+  });
+
+  test('required draws a "*" a screen reader skips and marks the control', () => {
+    const html = render({ required: true });
+    expect(html).toContain('Name<span aria-hidden="true"> *</span>');
+    expect(attr(html, 'input', 'aria-required')).toBe('true');
+    expect(attr(render({}), 'input', 'aria-required')).toBeUndefined();
+  });
+
+  test("a caller's own description adds to the field's", () => {
+    const html = render(
+      { error: 'Bad' },
+      createElement(Input, { readOnly: true, 'aria-describedby': 'own-note' }),
+    );
+    expect(attr(html, 'input', 'aria-describedby')).toBe(`${idOf(html, 'Bad')} own-note`);
+  });
+
+  test('a select and a textarea read the field too', () => {
+    const select = render({ error: 'Pick one', required: true }, createElement(Select, {}));
+    expect(attr(select, 'select', 'aria-invalid')).toBe('true');
+    expect(attr(select, 'select', 'aria-required')).toBe('true');
+    expect(attr(select, 'select', 'aria-describedby')).toBe(idOf(select, 'Pick one'));
+    const area = render({ error: 'Write why' }, createElement(Textarea, {}));
+    expect(attr(area, 'textarea', 'aria-invalid')).toBe('true');
+    expect(attr(area, 'textarea', 'aria-describedby')).toBe(idOf(area, 'Write why'));
+  });
+
+  test('a group is described by its error and hint', () => {
+    const html = renderToStaticMarkup(
+      createElement(FieldGroup, {
+        label: 'Stores',
+        error: 'Pick at least one',
+        hint: 'Where they work',
+        children: 'x',
+      }),
+    );
+    expect(attr(html, 'div', 'aria-describedby')).toBe(
+      `${idOf(html, 'Pick at least one')} ${idOf(html, 'Where they work')}`,
+    );
   });
 });

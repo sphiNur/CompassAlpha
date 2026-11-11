@@ -183,13 +183,13 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             {/* AUTH-22 (2026-10-30): the name is always locked here — anyone
                 whose name is not yet confirmed is held at onboarding before
                 they can open settings — so the edit branch is gone. */}
-            <Field label={i18n.t('settings.profile.displayName')}>
+            <Field
+              label={i18n.t('settings.profile.displayName')}
+              hint={i18n.t('settings.profile.lockedHint')}
+            >
               <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
                 {session?.user.displayName ?? '—'}
               </div>
-              <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('settings.profile.lockedHint')}
-              </p>
             </Field>
             {session?.user.tgUsername ? (
               <Field label={i18n.t('settings.profile.username')}>

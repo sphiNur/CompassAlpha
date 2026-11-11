@@ -857,7 +857,7 @@ export const ru = {
   'admin.label.thisStore': 'этот магазин',
   'admin.label.loadingRoles': 'Загрузка ролей…',
   'admin.label.loadingStores': 'Загрузка магазинов…',
-  'admin.field.tgUserId': 'Telegram ID *',
+  'admin.field.tgUserId': 'Telegram ID',
   'admin.field.tgUserIdPlaceholder': 'например, 123456789',
   'admin.field.displayName': 'Отображаемое имя',
   'admin.field.displayNamePlaceholder':

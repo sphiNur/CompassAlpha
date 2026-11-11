@@ -289,7 +289,7 @@ export function StoresHomeSection({
       >
         {createDraft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label={`${i18n.t('admin.field.name')} *`}>
+            <Field label={i18n.t('admin.field.name')} required>
               <Input
                 value={createDraft.name}
                 onChange={(e) =>
@@ -547,7 +547,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
 
   return (
     <div className="flex flex-col gap-4 px-4 py-3">
-      <Field label={`${i18n.t('admin.field.name')} *`}>
+      <Field label={i18n.t('admin.field.name')} required>
         <Input
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -593,7 +593,10 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
           <QueryErrorBanner query={rolesQuery} />
         </FieldGroup>
       ) : (
-        <Field label={i18n.t('admin.field.defaultRole')}>
+        <Field
+          label={i18n.t('admin.field.defaultRole')}
+          hint={i18n.t('admin.store.defaultRoleHint')}
+        >
           {rolesQuery.isLoading ? (
             <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
           ) : (
@@ -612,9 +615,6 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
               ))}
             </Select>
           )}
-          <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('admin.store.defaultRoleHint')}
-          </p>
         </Field>
       )}
       {isOrgAdmin ? (
@@ -803,7 +803,7 @@ function StoreCloneRolesSheet({
     >
       {target ? (
         <div className="flex flex-col gap-3 py-3">
-          <Field label={`${i18n.t('admin.field.sourceStore')} *`}>
+          <Field label={i18n.t('admin.field.sourceStore')} required>
             {sourceCandidates.length === 0 ? (
               <Banner tone="warn" title={i18n.t('admin.clone.noSourceTitle')}>
                 {i18n.t('admin.clone.noSourceBody')}

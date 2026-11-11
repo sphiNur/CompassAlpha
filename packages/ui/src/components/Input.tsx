@@ -1,10 +1,11 @@
-import { forwardRef } from 'react';
+import { forwardRef, useEffect, useId } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '../cn';
 import { useUiLabels } from '../labels';
 import { useDecimalField } from '../useDecimalField';
 import { disabledClass } from './disabled';
 import { FieldError } from './FieldError';
+import { joinIds, useFieldControl } from './fieldControl';
 
 type FieldAttributes = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>;
 
@@ -76,7 +77,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     onBlur: props.onBlur,
   });
   const formatInvalid = numeric && decimal.invalid;
-  const marked = !!invalid || formatInvalid;
+  // UI-02: a Field around the input shows its error and ties it here.
+  const field = useFieldControl();
+  const marked = !!invalid || formatInvalid || !!field?.invalid;
+  const formatLine = formatInvalid && formatError === 'inline';
+  const controlId = useId();
+  const formatErrorId = useId();
+  const reportFormatError = field?.reportFormatError;
+  useEffect(() => {
+    if (!reportFormatError) return;
+    reportFormatError(controlId, formatLine);
+    return () => reportFormatError(controlId, false);
+  }, [reportFormatError, controlId, formatLine]);
   const rest = numeric
     ? {
         ...props,
@@ -111,15 +123,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         className,
       )}
       {...rest}
-      // After the spread: a caller's own aria-invalid adds to this one.
+      // After the spread: what the caller passed adds to the field's own.
       aria-invalid={marked || props['aria-invalid'] || undefined}
+      aria-required={field?.required || props['aria-required'] || undefined}
+      aria-describedby={joinIds(
+        field?.describedBy,
+        props['aria-describedby'],
+        !field && formatLine && formatErrorId,
+      )}
     />
   );
-  if (!formatInvalid || formatError === 'none') return input;
+  // Inside a Field the "not one number" line is the Field's to draw.
+  if (field || !formatLine) return input;
   return (
     <>
       {input}
-      <FieldError>{labels.numberInvalid}</FieldError>
+      <FieldError id={formatErrorId}>{labels.numberInvalid}</FieldError>
     </>
   );
 });
