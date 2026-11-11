@@ -1,6 +1,9 @@
 /**
  * The close's operating expense lines: adding, changing and removing
- * them. Review CONF-06: moved out of SettlementPage.
+ * them. Review CONF-06: moved out of SettlementPage. CONF-22: whoever may
+ * record the close records its expenses (the server's
+ * canRecordOperatingExpenses is always true, kept for older clients), so
+ * the "manager only" state is gone.
  */
 import { Banner, Button, useToast } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
@@ -25,7 +28,6 @@ type Lines = OperatingExpenseDraft[];
 export function ExpenseLines({
   lines,
   update,
-  canRecord,
   total,
   currency,
   confirmRemoval,
@@ -34,8 +36,6 @@ export function ExpenseLines({
   lines: Lines;
   /** Changes the lines, from the draft's latest state. */
   update: (change: (lines: Lines) => Lines) => void;
-  /** The actor may record operating expenses at this store. */
-  canRecord: boolean;
   /** The lines' sum, as money text. */
   total: string;
   currency: string;
@@ -50,19 +50,13 @@ export function ExpenseLines({
   // immutable historical total instead of being retroactively attributed to
   // the person who happens to open the record today.
   const historical = lines.some((line) => line.isHistorical);
-  const editable = canRecord && !historical;
+  const editable = !historical;
   const atLimit = lines.length >= MAX_DETAIL_ITEMS;
 
   const add = () => {
     if (!editable) {
       haptic('warning');
-      toast.error(
-        i18n.t(
-          canRecord
-            ? 'settlement.details.historicalReadOnly'
-            : 'settlement.errors.expensesManagerOnly',
-        ),
-      );
+      toast.error(i18n.t('settlement.details.historicalReadOnly'));
       return;
     }
     if (atLimit) {
@@ -109,10 +103,6 @@ export function ExpenseLines({
       {historical ? (
         <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
           {i18n.t('settlement.details.historicalReadOnlyBody')}
-        </Banner>
-      ) : !canRecord ? (
-        <Banner tone="info" title={i18n.t('settlement.errors.expensesManagerOnly')}>
-          {i18n.t('settlement.expenses.readOnly')}
         </Banner>
       ) : null}
 

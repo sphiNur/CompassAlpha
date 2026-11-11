@@ -14,6 +14,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
+import { RECENT_CLOSES_LIMIT } from './draftModel';
 
 export function RecentCloses({
   storeId,
@@ -25,7 +26,7 @@ export function RecentCloses({
 }) {
   const i18n = useI18n();
   const dates = useDateFormat();
-  const recentQuery = trpc.settlement.recent.useQuery({ storeId, limit: 7 });
+  const recentQuery = trpc.settlement.recent.useQuery({ storeId, limit: RECENT_CLOSES_LIMIT });
   return (
     <section className="flex flex-col gap-2">
       <SectionLabel as="h2">{i18n.t('settlement.recent.title')}</SectionLabel>

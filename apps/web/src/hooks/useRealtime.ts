@@ -289,6 +289,7 @@ export function useRealtime(): void {
           case 'run.changed':
           case 'catalog.changed':
           case 'attendance.changed':
+          case 'settlement.changed':
             for (const key of PUSH_KEYS[msg.type]) debouncedInvalidate([key]);
             break;
           case 'people.changed':

@@ -6,8 +6,14 @@ import { useDecimalField } from '../useDecimalField';
 import { disabledClass } from './disabled';
 import { FieldError } from './FieldError';
 
+/**
+ * Review CONF-22 (2026-11-11): no min / max / step. The field is text (R6),
+ * so the browser checks none of them; passing them read as a range check
+ * that did not happen. A caller says what is wrong itself (formatError,
+ * FieldError).
+ */
 export interface NumberInputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size' | 'min' | 'max' | 'step'> {
   size?: 'sm' | 'md';
   /** Visual width preset. `auto` lets the parent flex/grid drive width. */
   width?: 'auto' | 'narrow' | 'wide';
@@ -23,8 +29,8 @@ export interface NumberInputProps
 
 /**
  * Numeric input with mobile-friendly defaults: `inputMode="decimal"`
- * triggers the iOS numeric keyboard, `step` and `min` are configurable
- * by caller, and visual styling matches our other form inputs.
+ * triggers the iOS numeric keyboard, and visual styling matches our other
+ * form inputs.
  *
  * Replaces the 6+ raw `<input type="number">` instances that were
  * scattered across RunPage / PurchaseSheet / etc. Inline number entry

@@ -21,6 +21,7 @@ import {
 } from '@compass/contracts';
 import { todayInTz } from '@compass/domain';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
+import { hub } from '../../realtime/hub';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
@@ -36,6 +37,7 @@ import {
   rawOperatingExpenseItems,
   rawWageItems,
   resolveItemizedOutflows,
+  revisionChangedFields,
   revisionSnapshot,
   sameRawOperatingExpenseItems,
   sameRawWageItems,
@@ -193,7 +195,7 @@ export const settlementRouter = router({
       return rows.map((row) => ({
         version: row.version,
         createdAt: row.createdAt.toISOString(),
-        changedFields: Array.isArray(row.changedFields) ? (row.changedFields as string[]) : [],
+        changedFields: revisionChangedFields(row.changedFields),
         correctionReason: row.correctionReason,
         actorName: names.get(row.actorMemberId) ?? null,
       }));
@@ -378,6 +380,16 @@ export const settlementRouter = router({
         changedFields,
         correctionReason: revisionReason,
         actorMemberId: ctx.session!.memberId,
+      });
+      // Review CONF-26: a save on another device used to show only as a
+      // version conflict at the next Save. The push refreshes the recent
+      // closes, their history and the nav dot, and the open form then loads
+      // the newer version or says it is there (useSettlementForm). It is
+      // sent after COMMIT; an identical re-save (returned above) sends none.
+      hub.publish(saved.orgId, {
+        type: 'settlement.changed',
+        orgId: saved.orgId,
+        storeId: saved.storeId,
       });
 
       return (await serializeSettlements(tx, [saved]))[0]!;

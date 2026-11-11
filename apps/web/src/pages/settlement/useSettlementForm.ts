@@ -15,6 +15,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useLeaveGuards } from '../../hooks/useLeaveGuards';
 import { useStableCallbacks } from '../../hooks/useStableCallbacks';
 import { confirmNative, confirmThen } from '../../lib/confirm';
+import { conflictKind } from '../../lib/conflict';
 import { showFieldError, withTouched } from '../../lib/fieldErrors';
 import { useErrToast } from '../../lib/errToast';
 import { currencyOf } from '../../lib/format';
@@ -32,6 +33,7 @@ import {
 import {
   BUSINESS_DATE,
   DIRECT_MONEY_FIELDS,
+  RECENT_CLOSES_LIMIT,
   closeChanges,
   closeMoney,
   countFieldsToFix,
@@ -42,9 +44,9 @@ import {
   editedFields,
   emptyDraft,
   isAllZeroClose,
-  isVersionConflict,
   linesEdited,
   newCloseHasInput,
+  newerVersionAction,
   settlementSaveInput,
   settlementSummary,
   type CarriedFields,
@@ -93,11 +95,16 @@ export function useSettlementForm() {
   );
   const businessDate =
     businessDateQuery.data?.storeId === currentStoreId ? businessDateQuery.data : null;
+  // Review CONF-26: true while the form holds unsaved input (set below).
+  // A newer version then waits for the user's Refresh: one coming back
+  // with the network would replace the draft (loadRecord) unasked.
+  const holdRecord = useRef(false);
   const closeQuery = trpc.settlement.get.useQuery(
     { storeId: currentStoreId ?? '', date },
     {
       enabled:
         !!currentStoreId && !!businessDate && BUSINESS_DATE.test(date) && date <= businessDate.date,
+      refetchOnReconnect: () => !holdRecord.current,
     },
   );
 
@@ -206,6 +213,7 @@ export function useSettlementForm() {
   const draftLoaded = draftRecordKey === recordKey;
   const hasUnsavedChanges =
     draftLoaded && (existing !== null ? changes.any : newCloseHasInput(draft));
+  holdRecord.current = hasUnsavedChanges;
   // F18: keep unsaved input on the device while it differs from the record,
   // and drop it once it matches again (saved, or typed back).
   const storedDraftKey = session ? draftKey(session.user.id, recordKey) : null;
@@ -318,7 +326,10 @@ export function useSettlementForm() {
       void utils.nav.counts.invalidate();
     },
     onError: (error) => {
-      if (isVersionConflict(error)) {
+      // Review CONF-12: only a version saved elsewhere is a conflict. "The
+      // previous attempt is still being processed" (a retry that overtook
+      // the first) is said by the toast below; saving again replays it.
+      if (conflictKind(error) === 'stale') {
         setVersionConflict(true);
         haptic('warning');
         return;
@@ -332,6 +343,31 @@ export function useSettlementForm() {
   });
 
   savingRef.current = saveMutation.isPending;
+
+  // Review CONF-26: the recent closes (listed under the form, refreshed by
+  // a `settlement.changed` push) say when the day on screen was saved again
+  // elsewhere. The push leaves `settlement.get` alone, so that a newer
+  // version never replaces unsaved input; the form decides here instead.
+  const recentQuery = trpc.settlement.recent.useQuery(
+    { storeId: currentStoreId ?? '', limit: RECENT_CLOSES_LIMIT },
+    { enabled: !!currentStoreId },
+  );
+  const newerVersion =
+    draftLoaded && !closeQuery.isFetching && !saveMutation.isPending
+      ? newerVersionAction({
+          listedVersion: recentQuery.data?.find(
+            (record) => record.storeId === currentStoreId && record.date === date,
+          )?.version,
+          shownVersion: existing?.version ?? 0,
+          listReadAfterRecord: recentQuery.dataUpdatedAt > closeQuery.dataUpdatedAt,
+          unsavedChanges: hasUnsavedChanges,
+        })
+      : null;
+  const refetchClose = closeQuery.refetch;
+  useEffect(() => {
+    if (newerVersion === 'conflict') setVersionConflict(true);
+    else if (newerVersion === 'reload') void refetchClose();
+  }, [newerVersion, refetchClose]);
 
   const submitSave = () => {
     if (!currentStoreId || !canSave || saveMutation.isPending) return;

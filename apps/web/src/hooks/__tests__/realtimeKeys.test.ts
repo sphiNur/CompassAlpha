@@ -4,6 +4,7 @@ import {
   PUSH_KEYS,
   REOPEN_KEYS,
   RUN_CHANGED_KEYS,
+  SETTLEMENT_CHANGED_KEYS,
   coveringKeys,
 } from '../realtimeKeys';
 
@@ -53,7 +54,34 @@ describe('re-open refresh (COREWEB2-08)', () => {
       coveringKeys([['admin', 'overview'], ['run'], ['admin'], ['run'], ['run', 'x']]),
     ).toEqual([['run'], ['admin']]);
     expect([...REOPEN_KEYS].sort()).toEqual(
-      [['order'], ['run'], ['report'], ['nav'], ['admin'], ['catalog'], ['attendance']].sort(),
+      [
+        ['order'],
+        ['run'],
+        ['report'],
+        ['nav'],
+        ['admin'],
+        ['catalog'],
+        ['attendance'],
+        ['settlement', 'recent'],
+        ['settlement', 'revisions'],
+      ].sort(),
     );
+  });
+});
+
+describe('a daily close saved elsewhere (CONF-26)', () => {
+  test('refreshes the recent closes, their history and the nav dot', () => {
+    expect(SETTLEMENT_CHANGED_KEYS).toContainEqual(['settlement', 'recent']);
+    expect(SETTLEMENT_CHANGED_KEYS).toContainEqual(['settlement', 'revisions']);
+    expect(SETTLEMENT_CHANGED_KEYS).toContainEqual(['nav']);
+  });
+
+  test('never the record under the form, by a push or a reopened socket', () => {
+    for (const keys of [SETTLEMENT_CHANGED_KEYS, REOPEN_KEYS]) {
+      for (const key of keys) {
+        expect(key.length === 1 && key[0] === 'settlement').toBe(false);
+        expect(key[0] === 'settlement' && key[1] === 'get').toBe(false);
+      }
+    }
   });
 });

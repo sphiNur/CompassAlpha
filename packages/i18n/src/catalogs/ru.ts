@@ -2051,8 +2051,6 @@ export const ru = {
   'settlement.details.historicalReadOnlyBody':
     'Это закрытие дня сделано до появления детализации. Историческая сумма сохранена и не может быть разбита на строки или изменена.',
   'settlement.expenses.remove': 'Удалить',
-  'settlement.expenses.readOnly':
-    'Расходы можно просматривать здесь, но добавлять, изменять и удалять их может только управляющий магазином или роль выше.',
   'settlement.expenseCategory.other': 'Другое',
   'settlement.wages.title': 'Детали зарплаты',
   'settlement.wages.totals': 'Выплачено {paid} · Не выплачено {unpaid}',
@@ -2124,8 +2122,6 @@ export const ru = {
   'settlement.errors.fieldsToFix':
     '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
   'settlement.errors.goToFirst': 'Перейти',
-  'settlement.errors.expensesManagerOnly':
-    'Для внесения операционных расходов нужно право вести закрытие дня этого магазина.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',
   'settlement.errors.invalidDetailsBody':
     'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты выберите сотрудника и укажите сумму и смену или причину.',

@@ -43,9 +43,6 @@ export function AmountField({
     <Field label={label}>
       <NumberInput
         value={value}
-        min={signed ? '-999999999999.99' : '0'}
-        max="999999999999.99"
-        step="0.01"
         placeholder="0"
         aria-label={label}
         aria-invalid={shown || undefined}

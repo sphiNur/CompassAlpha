@@ -392,7 +392,6 @@ export function SettlementPage() {
                     <ExpenseLines
                       lines={draft.operatingExpenseItems}
                       update={edit.expenses}
-                      canRecord={businessDate.canRecordOperatingExpenses}
                       total={totals.expenses.value}
                       currency={currency}
                       confirmRemoval={!!existing}

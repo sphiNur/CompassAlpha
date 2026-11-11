@@ -2135,8 +2135,6 @@ export const en = {
   'settlement.details.historicalReadOnlyBody':
     'This daily close predates detailed entries. Its total is preserved and cannot be itemized or edited.',
   'settlement.expenses.remove': 'Remove',
-  'settlement.expenses.readOnly':
-    'Operating expenses can be reviewed here, but only a store manager or higher role can add, edit, or remove them.',
   'settlement.expenseCategory.other': 'Other',
   'settlement.wages.title': 'Wage details',
   'settlement.wages.totals': 'Paid {paid} · Unpaid {unpaid}',
@@ -2206,8 +2204,6 @@ export const en = {
   'settlement.errors.fieldsToFix':
     '{n, plural, one {# field needs correcting} other {# fields need correcting}}',
   'settlement.errors.goToFirst': 'Go to it',
-  'settlement.errors.expensesManagerOnly':
-    "Recording operating expenses requires permission to record this store's daily close.",
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
     'Each operating expense needs a positive amount and a reason; each wage entry needs an employee, an amount, and a shift or reason.',

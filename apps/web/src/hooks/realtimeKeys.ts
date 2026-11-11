@@ -58,12 +58,25 @@ export const PEOPLE_CHANGED_KEYS: QueryKey[] = [['admin']];
 
 export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [['attendance']];
 
+/**
+ * Review CONF-26: a daily close saved elsewhere. Not `settlement.get`: a
+ * newer version would replace the form's unsaved input, so the form reads
+ * the recent closes and decides itself (useSettlementForm). The nav dot
+ * says whether today's close is in.
+ */
+export const SETTLEMENT_CHANGED_KEYS: QueryKey[] = [
+  ['settlement', 'recent'],
+  ['settlement', 'revisions'],
+  ...NAV_KEYS,
+];
+
 export const PUSH_KEYS = {
   'order.changed': ORDER_CHANGED_KEYS,
   'run.changed': RUN_CHANGED_KEYS,
   'catalog.changed': CATALOG_CHANGED_KEYS,
   'people.changed': PEOPLE_CHANGED_KEYS,
   'attendance.changed': ATTENDANCE_CHANGED_KEYS,
+  'settlement.changed': SETTLEMENT_CHANGED_KEYS,
 } satisfies Record<RealtimeChange, QueryKey[]>;
 
 /** Is `prefix` the start of `key` (or the same key)? */

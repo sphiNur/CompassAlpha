@@ -2038,8 +2038,6 @@ export const uz = {
   'settlement.details.historicalReadOnlyBody':
     'Bu kun yakuni tafsilotlar joriy etilishidan oldin yozilgan. Tarixiy jami saqlanadi va uni qismlarga ajratib yoki oʻzgartirib boʻlmaydi.',
   'settlement.expenses.remove': 'Oʻchirish',
-  'settlement.expenses.readOnly':
-    'Kunlik xarajatlarni bu yerda koʻrish mumkin, ammo ularni faqat doʻkon boshqaruvchisi yoki undan yuqori rol qoʻshishi, oʻzgartirishi yoki oʻchirishi mumkin.',
   'settlement.expenseCategory.other': 'Boshqa',
   'settlement.wages.title': 'Ish haqi tafsiloti',
   'settlement.wages.totals': 'Toʻlangan {paid} · Toʻlanmagan {unpaid}',
@@ -2111,8 +2109,6 @@ export const uz = {
   'settlement.errors.fieldsToFix':
     '{n, plural, =1 {1 ta maydonni tuzating} other {{n} ta maydonni tuzating}}',
   'settlement.errors.goToFirst': 'Oʻtish',
-  'settlement.errors.expensesManagerOnly':
-    'Kunlik xarajatlarni kiritish uchun ushbu doʻkonning kun yakunini yuritish ruxsati kerak.',
   'settlement.errors.invalidDetails': 'Har bir xarajat va ish haqi qatorini toʻldiring.',
   'settlement.errors.invalidDetailsBody':
     'Har bir kunlik xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni tanlang, summa va smena yoki sababni kiriting.',

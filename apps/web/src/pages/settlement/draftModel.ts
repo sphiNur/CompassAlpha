@@ -178,6 +178,34 @@ export function linesEdited(draft: SettlementDraft, base: SettlementDraft): bool
   return lines(draft) !== lines(base);
 }
 
+/** The closes the page lists under the form; the form reads the same list. */
+export const RECENT_CLOSES_LIMIT = 7;
+
+/**
+ * Review CONF-26: what the form does when the recent closes, refreshed by
+ * a `settlement.changed` push, give the day on screen a newer version than
+ * the form holds. With nothing typed it loads that version; with unsaved
+ * input it shows the conflict banner now, not after Save. `null`: nothing.
+ * A list read before the form's record says nothing about it.
+ */
+export function newerVersionAction({
+  listedVersion,
+  shownVersion,
+  listReadAfterRecord,
+  unsavedChanges,
+}: {
+  /** The day's version in the recent closes, if it is listed. */
+  listedVersion: number | undefined;
+  /** The version the form holds; 0 when the day has no close yet. */
+  shownVersion: number;
+  listReadAfterRecord: boolean;
+  unsavedChanges: boolean;
+}): 'reload' | 'conflict' | null {
+  if (listedVersion === undefined || !listReadAfterRecord) return null;
+  if (listedVersion <= shownVersion) return null;
+  return unsavedChanges ? 'conflict' : 'reload';
+}
+
 export function moneyNumber(value: string): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -266,11 +294,6 @@ export function comparableWageItems(items: readonly WageItemDraft[] | readonly W
 
 export function sameDetailItems(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export function isVersionConflict(error: unknown): boolean {
-  const candidate = error as { data?: { code?: string }; message?: string };
-  return candidate.data?.code === 'CONFLICT' || candidate.message === 'order.errors.staleSeq';
 }
 
 /** An empty expense line. */

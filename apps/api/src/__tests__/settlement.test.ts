@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { SettlementSaveInput } from '@compass/contracts';
 import { getDb, schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
+import { hub } from '../realtime/hub';
 import { appRouter } from '../trpc/router';
 import type { SessionContext } from '../trpc/context';
 import { loadCatalog } from '@compass/i18n/catalogs';
@@ -1249,5 +1250,59 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     // Not the cursor's own day; the latest close before it.
     const prior = await fx.caller.settlement.recent({ storeId, beforeDate: third, limit: 1 });
     expect(prior.map((row) => row.date)).toEqual([fourth]);
+  });
+
+  test('CONF-26: a save is pushed to the workspace; a no-op or refused one is not', async () => {
+    const fx = fixture!;
+    const date = freshDate();
+    const pushes: unknown[] = [];
+    const unsubscribe = hub.subscribe(fx.orgId, (data) => {
+      const message = JSON.parse(data) as { type?: string };
+      if (message.type === 'settlement.changed') pushes.push(message);
+    });
+    try {
+      const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
+      expect(pushes).toEqual([
+        { type: 'settlement.changed', orgId: fx.orgId, storeId: fx.ownStoreId },
+      ]);
+
+      await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, created.version));
+      const stale = await errorOf(() =>
+        fx.caller.settlement.save(
+          saveInput(fx.ownStoreId, date, 0, {
+            onlineRevenue: '5',
+            correctionReason: 'Edit from an old screen',
+          }),
+        ),
+      );
+      expect(stale?.code).toBe('CONFLICT');
+      expect(pushes).toHaveLength(1);
+
+      await fx.caller.settlement.save(
+        saveInput(fx.ownStoreId, date, created.version, {
+          onlineRevenue: '5',
+          correctionReason: 'Corrected online total',
+        }),
+      );
+      expect(pushes).toHaveLength(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('CONF-26: the history lists each version with the fields it changed', async () => {
+    const fx = fixture!;
+    const date = freshDate();
+    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
+    await fx.caller.settlement.save(
+      saveInput(fx.ownStoreId, date, created.version, {
+        cashOnHand: '7',
+        correctionReason: 'Recounted the till',
+      }),
+    );
+    const history = await fx.caller.settlement.revisions({ settlementId: created.id });
+    expect(history.map((row) => row.version)).toEqual([2, 1]);
+    expect(history[0]!.changedFields).toEqual(['cashOnHand']);
+    expect(history[1]!.changedFields.length).toBeGreaterThan(1);
   });
 });

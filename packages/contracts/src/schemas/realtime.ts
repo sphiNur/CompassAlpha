@@ -18,6 +18,7 @@ export type RealtimeMessage =
   | { type: 'catalog.changed'; orgId: string; entity: CatalogEntity }
   | { type: 'people.changed'; orgId: string }
   | { type: 'attendance.changed'; orgId: string; storeId: string }
+  | { type: 'settlement.changed'; orgId: string; storeId: string }
   | { type: 'ping'; t: number };
 
 /** The pushes that make data stale, as opposed to the keep-alive ping. */

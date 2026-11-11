@@ -2062,7 +2062,6 @@ export const PurchaseRow = memo(function PurchaseRow({
               qty → price → save so a changed price is three actions
               (tap, type, Enter) instead of tap-type-reach-for-✓. */}
             <NumberInput
-              step={step}
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               onFocus={(e) => e.currentTarget.select()}
@@ -2079,13 +2078,6 @@ export const PurchaseRow = memo(function PurchaseRow({
             <span className="shrink-0 text-old-body text-[var(--c-fg-muted)]">×</span>
             <NumberInput
               ref={priceRef}
-              // Without a step, type="number" defaults to 1 — which makes
-              // every fractional value a stepMismatch. In thousands mode
-              // the displayed price IS fractional (147500 → "147.5"), so
-              // the field sat :invalid the whole time it was in use.
-              // "any" is the honest constraint: a market price has no
-              // fixed granularity. qty keeps the SKU's real step.
-              step="any"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               onFocus={(e) => e.currentTarget.select()}
