@@ -1657,7 +1657,6 @@ export const en = {
   'run.toast.startDeliveryUndone': 'Back to purchase',
   'run.toast.runFinished': 'Run finished',
   'run.history.title': 'History',
-  'run.history.subtitle': 'Past runs — tap to see details',
   'run.history.matchedRunsTotal': '(matching runs)',
   'run.history.allStores': 'All stores',
   // M3.9: filter chip toolbar + cancelled-row label dropped — cancelled
@@ -2085,6 +2084,7 @@ export const en = {
   'run.history.tripsHeading': 'Runs',
   'run.history.storeItemsHeading': '{store} purchases that day',
   'run.history.searchPlaceholder': 'Search purchases',
+  'run.history.filtersButton': 'Filters',
   'run.history.filters': 'Filters ({n})',
   'run.history.activeFilters': '{n, plural, one {# active filter} other {# active filters}}',
   'run.history.clearAll': 'Clear all',
@@ -2106,6 +2106,7 @@ export const en = {
   'run.history.sortLabel': 'Sort',
   'run.history.sort.newest': 'Newest first',
   'run.history.sort.oldest': 'Oldest first',
+  'run.history.empty': 'No purchases yet',
   'run.history.noMatches': 'No purchases match these filters.',
   'run.history.previousPage': 'Previous page',
   'run.history.nextPage': 'Next page',

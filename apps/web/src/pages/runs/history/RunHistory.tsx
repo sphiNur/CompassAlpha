@@ -26,8 +26,10 @@ import {
   Card,
   Chip,
   ChipBar,
+  EmptyState,
   Input,
   NameCell,
+  QueryErrorBanner,
   SectionLabel,
   Sheet,
   Spinner,
@@ -249,9 +251,7 @@ export function RunHistoryPage({
           </div>
         ) : null}
         {waitingOffline ? (
-          <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
-            {i18n.t('common.offlineNoData')}
-          </div>
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : loading ? (
           <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
             <Spinner size={28} />
@@ -259,16 +259,18 @@ export function RunHistoryPage({
         ) : failed ? null : runs.length === 0 ? (
           // R2-HIS-2 (2026-10-31): a failed load shows its error banner
           // above; "no runs match — clear all" under it blamed the filters.
-          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-old-body-sm text-[var(--c-fg-muted)]">
-            <span>
-              {i18n.t(hasSearchOrFilters ? 'run.history.noMatches' : 'run.history.subtitle')}
-            </span>
-            {hasSearchOrFilters && onClearSearchOrFilters ? (
-              <Button variant="secondary" size="sm" onClick={onClearSearchOrFilters}>
-                {i18n.t('run.history.clearAll')}
-              </Button>
-            ) : null}
-          </div>
+          // RUNWEB2-21: the kit's empty state; with no runs at all it said
+          // "past runs — tap to see details" over an empty list.
+          <EmptyState
+            title={i18n.t(hasSearchOrFilters ? 'run.history.noMatches' : 'run.history.empty')}
+            action={
+              hasSearchOrFilters && onClearSearchOrFilters ? (
+                <Button variant="secondary" size="sm" onClick={onClearSearchOrFilters}>
+                  {i18n.t('run.history.clearAll')}
+                </Button>
+              ) : undefined
+            }
+          />
         ) : (
           <ul className="flex flex-col" role="list">
             {/* 2026-10-23: one entry per day. A day's second trip (or a run
@@ -635,12 +637,12 @@ function RunHistoryDaySheet({
               {i18n.t('run.history.tripsHeading')}
             </SectionLabel>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
-              {trips.map((run, i) => (
+              {trips.map((run) => (
                 <li key={run.id}>
                   <button type="button" onClick={() => open(run)} className={rowClass}>
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-old-body font-semibold">
-                        {i18n.t('run.history.trip', { n: i + 1 })}
+                        {i18n.t('run.history.trip', { n: run.runIndex + 1 })}
                       </span>
                       <span className="text-old-body font-semibold tabular-nums">
                         {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
@@ -985,22 +987,14 @@ export function RunHistoryDetailSheet({
           </div>
       ) : detail.isError && !breakdown ? (
         // F11 (2026-10-30): a failed load said "no data", so nobody retried.
-        <div className="flex flex-col items-center gap-3 py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.error')}
-          <Button size="sm" variant="secondary" onClick={() => void detail.refetch()}>
-            {i18n.t('common.retry')}
-          </Button>
-        </div>
+        // RUNWEB2-21: the kit's banner, with the translated reason.
+        <QueryErrorBanner query={detail} />
       ) : !breakdown && detail.fetchStatus === 'paused' ? (
         // HIS-18 (2026-10-31): offline, a detail never opened before waits
         // for the network; it is not "no data" and loads once back online.
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.offlineNoData')}
-        </div>
+        <EmptyState title={i18n.t('common.offlineNoData')} />
       ) : !breakdown ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('run.history.noDetail')}
-        </div>
+        <EmptyState title={i18n.t('run.history.noDetail')} />
       ) : (
         <div className="flex flex-col gap-4 py-3">
           {/* Top summary */}

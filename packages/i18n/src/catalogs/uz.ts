@@ -1562,7 +1562,6 @@ export const uz = {
   'run.toast.startDeliveryUndone': 'Xaridga qaytdi',
   'run.toast.runFinished': 'Xarid tugadi',
   'run.history.title': 'Tarix',
-  'run.history.subtitle': 'Oʻtgan xaridlar — batafsil koʻrish uchun bosing',
   'run.history.matchedRunsTotal': '(topilganlar)',
   'run.history.allStores': 'Barcha doʻkonlar',
   // M3.9: bekor qilingan run endi tarixda ko'rinmaydi — 4 kalit olib tashlandi.
@@ -1957,6 +1956,7 @@ export const uz = {
   'run.history.tripsHeading': 'Xaridlar',
   'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
   'run.history.searchPlaceholder': 'Xaridlarni qidirish',
+  'run.history.filtersButton': 'Filtrlar',
   'run.history.filters': 'Filtrlar ({n})',
   'run.history.activeFilters': 'Faol filtrlar: {n}',
   'run.history.clearAll': 'Hammasini tozalash',
@@ -1978,6 +1978,7 @@ export const uz = {
   'run.history.sortLabel': 'Saralash',
   'run.history.sort.newest': 'Avval yangilari',
   'run.history.sort.oldest': 'Avval eskilari',
+  'run.history.empty': 'Hozircha xaridlar yoʻq',
   'run.history.noMatches': 'Bu filtrlarga mos xarid topilmadi.',
   'run.history.previousPage': 'Oldingi sahifa',
   'run.history.nextPage': 'Keyingi sahifa',

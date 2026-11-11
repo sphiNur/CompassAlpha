@@ -5,7 +5,7 @@
  * the page never downloads an org-wide ledger and filters it in the browser.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Banner, Button, Field, Input, SearchInput, Select, Sheet } from '@compass/ui';
+import { Button, Field, Input, QueryErrorBanner, SearchInput, Select, Sheet } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useI18n, useProductNameParts } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
@@ -52,7 +52,6 @@ export function HistoryPage() {
   const [otherFilters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [page, setPage] = useState(1);
   const pageSize = 20;
 
   useEffect(() => {
@@ -72,9 +71,16 @@ export function HistoryPage() {
     setFilters(next);
   };
 
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, filters]);
+  // RUNWEB2-27: a page belongs to one search and filter set. A new set
+  // reads page 1 in the same render, wherever it changed (the sheet, a
+  // chip, the search, the top bar's store), so no request goes out for
+  // page N of the new set. An effect that reset the page ran a render
+  // late and fetched that page first.
+  const pagingKey = JSON.stringify([debouncedSearch, filters]);
+  const [paging, setPaging] = useState({ key: pagingKey, page: 1 });
+  const page = paging.key === pagingKey ? paging.page : 1;
+  const setPage = (next: (current: number) => number) =>
+    setPaging({ key: pagingKey, page: next(page) });
 
   const historyQuery = trpc.run.history.useQuery(
     {
@@ -135,7 +141,6 @@ export function HistoryPage() {
     setDebouncedSearch('');
     applyFilters(EMPTY_FILTERS);
     setDraftFilters(EMPTY_FILTERS);
-    setPage(1);
   };
 
   const data = historyQuery.data;
@@ -160,27 +165,19 @@ export function HistoryPage() {
             setFiltersOpen(true);
           }}
         >
-          {i18n.t('run.history.filters', { n: activeFilterCount })}
+          {activeFilterCount > 0
+            ? i18n.t('run.history.filters', { n: activeFilterCount })
+            : i18n.t('run.history.filtersButton')}
         </Button>
       </div>
 
-      {historyQuery.isError ? (
-        <Banner
-          tone="danger"
-          title={i18n.t('common.error')}
-          action={
-            <Button variant="pearl" size="sm" onClick={() => void historyQuery.refetch()}>
-              {i18n.t('common.retry')}
-            </Button>
-          }
-        />
-      ) : null}
+      {historyQuery.isError ? <QueryErrorBanner query={historyQuery} /> : null}
 
       {/* DX-VIS-6 / DX-VIS-8 (2026-11-01): the chips tap at 44px; 12px
           between wrapped rows keeps one row's tap area off the next. */}
       <div
         className="flex flex-wrap items-center gap-x-1.5 gap-y-3"
-        aria-label={i18n.t('run.history.activeFilters')}
+        aria-label={i18n.t('run.history.activeFilters', { n: activeFilterCount })}
       >
         {/* CMP-HIS-1: always say which stores the list and its total cover. */}
         {filters.storeId ? (
