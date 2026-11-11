@@ -242,9 +242,18 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
       '@types/bun':
         specifier: latest
         version: 1.4.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   apps/bot:
     dependencies:
@@ -255,9 +264,18 @@ importers:
         specifier: ^1.34.0
         version: 1.42.0(supports-color@7.2.0)
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
       '@types/bun':
         specifier: latest
         version: 1.4.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   apps/web:
     dependencies:
@@ -356,9 +374,18 @@ importers:
         specifier: ^1.34.0
         version: 1.42.0(supports-color@7.2.0)
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
       '@types/bun':
         specifier: latest
         version: 1.4.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   packages/cli:
     dependencies:
@@ -378,15 +405,34 @@ importers:
         specifier: ^4.1.5
         version: 4.1.5
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
       '@types/bun':
         specifier: latest
         version: 1.4.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   packages/contracts:
     dependencies:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   packages/db:
     dependencies:
@@ -400,9 +446,18 @@ importers:
         specifier: ^2.3.0
         version: 2.4.0
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   packages/domain:
     dependencies:
@@ -416,17 +471,46 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
       '@types/bun':
         specifier: latest
         version: 1.4.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   packages/i18n:
     dependencies:
       '@formatjs/intl':
         specifier: ^2.10.15
         version: 2.10.15(typescript@5.9.3)
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
-  packages/telemetry: {}
+  packages/telemetry:
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
+      typescript-eslint:
+        specifier: ^8.59.3
+        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
 
   packages/ui:
     dependencies:

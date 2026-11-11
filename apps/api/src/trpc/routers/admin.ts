@@ -244,7 +244,6 @@ async function readCatalogSource(ctx: AdminCtx, sourceOrgId: string): Promise<Ca
  * mid-deploy), we swallow and continue — losing an audit row is
  * preferable to losing the catalog write that already committed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 /**
  * B2 (2026-05-06): derive a store id from action input so the audit
  * row can be indexed by store and the FE can filter by it.
@@ -371,7 +370,7 @@ function auditTouchesStores(storeIds: string[]) {
 }
 
 export async function auditAdmin(
-  tx: any,
+  tx: OrgTx,
   ctx: { session?: { userId: string; orgId: string } | null },
   action: string,
   resourceType: string,
@@ -390,7 +389,7 @@ export async function auditAdmin(
     // aborts the whole transaction, so catching the error here was not
     // "best effort" — the admin action itself then failed. A nested
     // transaction rolls back only this insert.
-    await tx.transaction(async (sp: typeof tx) => {
+    await tx.transaction(async (sp) => {
       const scopeStoreId = deriveScopeStoreId(action, resourceType, inputs);
       // R2-ADM-3 (2026-10-31): the list resolves names when it is read,
       // so a role deleted or a member removed since showed as "(unknown)".

@@ -190,11 +190,12 @@ jobs:
         run: pnpm type-check
 
       - name: Lint
-        # apps/web and packages/ui (the workspaces with a lint script; their
-        # shared rules are in eslint.shared.mjs, OPS-19). The server code is
-        # not linted yet. react-hooks/rules-of-hooks is enforced;
-        # exhaustive-deps is on except for a baseline of older web files —
-        # see apps/web/eslint.config.js.
+        # Every workspace package (OPS-19); the shared rules are in
+        # eslint.shared.mjs. React code: rules-of-hooks, and exhaustive-deps
+        # except for a baseline of older web files (apps/web/eslint.config.js).
+        # The rest reads the types: a promise nobody awaits or catches fails
+        # the build. no-console everywhere but where the console is the
+        # output (worker, bot, command-line tools, tests).
         run: pnpm lint
 
       - name: Startup JavaScript budget
@@ -205,44 +206,6 @@ jobs:
         run: |
           pnpm --filter @compass/web exec vite build --outDir "$RUNNER_TEMP/web-dist" --emptyOutDir --logLevel warn
           bun run scripts/check-entry-budget.ts "$RUNNER_TEMP/web-dist"
-
-      - name: No console.log in user-facing code
-        # M3.18 (launch hardening): a leftover console.log(tsv) in
-        # AdminPage.tsx leaked exported CSV rows to the browser
-        # console. This guard ensures that pattern can't reappear
-        # silently in the SPA or the API request path.
-        #
-        # SCOPE intentionally excludes:
-        #   - apps/bot/src and apps/worker/src — these are independent
-        #     Bun processes whose stdout IS their log output (captured
-        #     by systemd journal). console.log there is the canonical
-        #     way to emit operational lines like '[worker] heartbeat'.
-        #   - __tests__ — test harness output is fine.
-        #   - ErrorBoundary.tsx — last-resort console.error fallback.
-        # console.warn / console.error are NOT flagged (legitimate
-        # warning paths in long-running code).
-        run: |
-          set -e
-          found=$(
-            grep -rEn 'console\.(log|debug|info)\(' \
-              apps/web/src apps/api/src \
-              --include='*.ts' --include='*.tsx' 2>/dev/null \
-              | grep -v '__tests__' \
-              | grep -v 'ErrorBoundary.tsx' \
-              | grep -v 'eslint-disable' \
-              || true
-          )
-          if [ -n "$found" ]; then
-            echo "console.log / console.debug / console.info found in user-facing code:"
-            echo "$found"
-            echo ""
-            echo "Use the structured logger from @compass/telemetry instead,"
-            echo "or wrap in 'if (import.meta.env.DEV) { ... }' for dev-only diagnostics."
-            echo "If this is a legitimate use case, add an // eslint-disable-next-line no-console"
-            echo "comment with rationale on the line above."
-            exit 1
-          fi
-          echo "no stray console.log / debug / info in web/api/packages ✓"
 
       - name: Unit tests (non-PG)
         run: |

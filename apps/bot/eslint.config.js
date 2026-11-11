@@ -1,0 +1,16 @@
+/**
+ * ESLint config for @compass/bot (review OPS-19, 2026-11-10): the rules every
+ * package without React shares (packageConfig in eslint.shared.mjs at the
+ * repository root). CI runs it through `pnpm lint`.
+ */
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import { packageConfig } from '../../eslint.shared.mjs';
+
+export default packageConfig({
+  js,
+  tseslint,
+  dir: import.meta.dirname,
+  // Its output is its log, as for the worker.
+  consoleFiles: ['src/**'],
+});

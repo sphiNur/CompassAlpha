@@ -354,7 +354,7 @@ async function main() {
 
 main().catch((err) => {
   console.error('[seed] FAILED:', err);
-  closeDb().finally(() => process.exit(1));
+  void closeDb().finally(() => process.exit(1));
 });
 
 // Re-export so type-checkers don't complain about the unused import.

@@ -344,7 +344,6 @@ async function sendViaRelay(
  * (M1.22). Same logic as the original; just takes a tx handle instead
  * of using the module-level db.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tx = DB;
 async function deferOutboxTx(
   tx: Tx,

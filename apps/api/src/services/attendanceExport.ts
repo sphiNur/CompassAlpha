@@ -324,6 +324,8 @@ export async function exportFileName(
 ): Promise<string> {
   await Promise.all([loadCatalog(locale), loadCatalog('en')]);
   const safeStore = store
+    // Characters a file name cannot hold, control characters included.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
     .trim()
     .slice(0, 60);

@@ -50,9 +50,7 @@ beforeAll(() => {
   });
   base = `127.0.0.1:${server.port}`;
 });
-afterAll(() => {
-  server.stop(true);
-});
+afterAll(() => server.stop(true));
 
 // The stub above needs to know which token the test sent.
 let lastToken = '';

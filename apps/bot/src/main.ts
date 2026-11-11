@@ -51,8 +51,15 @@ bot.command('id', (ctx) =>
 
 bot.catch((err) => console.error('[bot] error', err));
 
-bot.start({
-  onStart(info) {
-    console.log('[bot] started @' + info.username);
-  },
-});
+// start() settles when polling stops; a rejection (a revoked token, say)
+// ends the process with the reason instead of an unhandled rejection.
+bot
+  .start({
+    onStart(info) {
+      console.log('[bot] started @' + info.username);
+    },
+  })
+  .catch((err) => {
+    console.error('[bot] polling stopped', err);
+    process.exit(1);
+  });

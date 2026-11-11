@@ -7,6 +7,7 @@
     "dev": "bun run --watch src/main.ts",
     "build": "bun build src/main.ts --outdir dist --target bun",
     "start": "bun run dist/main.js",
+    "lint": "eslint . --max-warnings 0",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,6 +15,9 @@
     "grammy": "^1.34.0"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@eslint/js": "^9.39.4",
+    "@types/bun": "latest",
+    "eslint": "^9.39.4",
+    "typescript-eslint": "^8.59.3"
   }
 }

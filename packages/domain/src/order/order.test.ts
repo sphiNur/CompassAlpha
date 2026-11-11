@@ -74,7 +74,7 @@ describe('order.decide (per-contributor lines)', () => {
     // tries to add a line to it and gets bounced.
     const memA = staff(['order.draft'], 'mem-A');
     const memB = staff(['order.draft'], 'mem-B');
-    let state = startedDraft('sess-1', memA);
+    const state = startedDraft('sess-1', memA);
     expect(() =>
       decide(
         state,
