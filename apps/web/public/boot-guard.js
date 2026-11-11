@@ -13,11 +13,12 @@
  *      message in their own language instead of "Failed to start"
  *      English-only (P1-7 fix, 2026-05-16).
  *   2. Catch window errors / unhandled rejections during the boot
- *      window and surface them in the splash error UI.
+ *      window and surface them in the splash error UI, in the person's
+ *      language; the error itself is copied on request (COREWEB1-18).
  *   3. 12-second failsafe: if React hasn't mounted (no .ready class
  *      on <html>) by then, force the error UI so the user can recover.
- *   4. Make the Reload / Reset session and reload buttons work (CSP
- *      forbids inline onclick=).
+ *   4. Make the Reload, Reset session and Copy error details buttons work
+ *      (CSP forbids inline onclick=).
  *   5. Set <html data-theme data-color-scheme> before the first paint,
  *      as ThemeProvider will once React runs (COREWEB1-26).
  *
@@ -47,7 +48,9 @@
   document.documentElement.lang = lang;
 
   // DX-SHL-17 (2026-11-01): `timeout` is shown to staff; it says what to
-  // do, without "JS module" or a timer.
+  // do, without "JS module" or a timer. `reset`, `copy` and `copied` say
+  // what the crash screen says (boot.resetAndReload, boot.copyDetails,
+  // boot.detailsCopied); the test checks they agree.
   var TEXT = {
     en: {
       startingUp: 'Starting up…',
@@ -55,6 +58,8 @@
       timeout: 'The app could not start. Check your connection and reload.',
       reload: 'Reload',
       reset: 'Reset session and reload',
+      copy: 'Copy error details',
+      copied: 'Copied. Send it to your administrator.',
     },
     zh: {
       startingUp: '启动中…',
@@ -62,6 +67,8 @@
       timeout: '应用没能启动。请检查网络后重新加载。',
       reload: '重新加载',
       reset: '清除登录状态并重新加载',
+      copy: '复制错误信息',
+      copied: '已复制，发给管理员即可。',
     },
     ru: {
       startingUp: 'Запуск…',
@@ -69,6 +76,8 @@
       timeout: 'Приложение не запустилось. Проверьте связь и перезагрузите.',
       reload: 'Перезагрузить',
       reset: 'Выйти и перезагрузить',
+      copy: 'Скопировать сведения об ошибке',
+      copied: 'Скопировано. Отправьте администратору.',
     },
     uz: {
       startingUp: 'Ishga tushmoqda…',
@@ -76,6 +85,8 @@
       timeout: 'Ilova ishga tushmadi. Internetni tekshirib, qayta yuklang.',
       reload: 'Qayta yuklash',
       reset: 'Sessiyani tozalab qayta yuklash',
+      copy: 'Xato maʼlumotini nusxalash',
+      copied: 'Nusxalandi. Administratorga yuboring.',
     },
   };
   var t = TEXT[lang];
@@ -93,33 +104,49 @@
     if (reloadBtn) reloadBtn.textContent = t.reload;
     var resetBtn = document.getElementById('boot-reset-btn');
     if (resetBtn) resetBtn.textContent = t.reset;
+    var copyBtn = document.getElementById('boot-copy-btn');
+    if (copyBtn) copyBtn.textContent = copied ? t.copied : t.copy;
   }
 
   // ---- 2. Error capture ------------------------------------------------------
+  // COREWEB1-18 (2026-11-12): the title is this script's own words. The
+  // error's message (English, technical) used to be the title and its stack
+  // was printed under it; now both are copied on request, the way the crash
+  // screen does it (DX-SHL-16), for the administrator.
   var bootShown = false;
-  function showBootError(msg, stack) {
+  var details = '';
+  var copied = false;
+  function errorDetails(message, stack) {
+    var parts = [];
+    if (message) parts.push(String(message));
+    if (stack) parts.push(String(stack).split('\n').slice(0, 8).join('\n'));
+    parts.push('at ' + new Date().toISOString());
+    return parts.join('\n\n');
+  }
+  function showBootError(msg, detail) {
     if (bootShown) return;
     // COREWEB1-01: the failsafe can fire before DOMContentLoaded (that
     // waits for the stuck SDK or app script), so label the buttons now.
     applyLabels();
     bootShown = true;
+    details = detail;
     var el = document.getElementById('boot-error');
     if (!el) return;
     el.classList.add('show');
     var msgEl = el.querySelector('[data-msg]');
-    if (msgEl) msgEl.textContent = msg || t.bootFailed;
-    var pre = el.querySelector('pre');
-    if (pre && stack) pre.textContent = stack;
+    if (msgEl) msgEl.textContent = msg;
+    var copyBtn = document.getElementById('boot-copy-btn');
+    if (copyBtn) copyBtn.hidden = !details;
     var spin = document.getElementById('boot-spinner');
     if (spin) spin.style.display = 'none';
   }
 
   window.addEventListener('error', function (e) {
-    showBootError(e.message || t.bootFailed, (e.error && e.error.stack) || '');
+    showBootError(t.bootFailed, errorDetails(e.message, e.error && e.error.stack));
   });
   window.addEventListener('unhandledrejection', function (e) {
     var r = e.reason || {};
-    showBootError(r.message || t.bootFailed, r.stack || String(r));
+    showBootError(t.bootFailed, errorDetails(r.message, r.stack || String(r)));
   });
 
   // ---- 3. 12-second failsafe -------------------------------------------------
@@ -175,10 +202,33 @@
   // buttons used to be bound on DOMContentLoaded, which waits for the
   // deferred SDK and the app's module script: exactly what is stuck when
   // the failsafe shows them, so they did nothing.
+  function copyDetails(btn) {
+    try {
+      navigator.clipboard.writeText(details).then(
+        function () {
+          copied = true;
+          btn.textContent = t.copied;
+        },
+        function () {
+          /* clipboard refused: nothing to copy to */
+        },
+      );
+    } catch (_) {
+      /* no clipboard here */
+    }
+  }
+
   document.addEventListener('click', function (e) {
     var target = e.target;
-    var btn = target && target.closest ? target.closest('#boot-reload-btn, #boot-reset-btn') : null;
+    var btn =
+      target && target.closest
+        ? target.closest('#boot-reload-btn, #boot-reset-btn, #boot-copy-btn')
+        : null;
     if (!btn) return;
+    if (btn.id === 'boot-copy-btn') {
+      copyDetails(btn);
+      return;
+    }
     // Reset removes the keys apps/web/src/lib/localSession.ts removes: the
     // saved sign-in and the saved tab (COREWEB1-16; the test checks they
     // agree). Session storage stays: it holds the launch's one-time markers,

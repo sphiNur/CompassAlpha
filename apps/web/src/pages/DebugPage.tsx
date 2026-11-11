@@ -1,17 +1,20 @@
 /**
- * DebugPage — admin-only diagnostic console.
+ * The debug console, inside Admin › Operations › Live activity for super
+ * admins (ActivitySection): this device's log as it happens, the logs the
+ * workspace's devices sent (system.recentLogs), and the service status,
+ * with actions to send the log now, copy it, reload, or sign out.
  *
- * Three views:
- *   - Live    : in-memory ring buffer from @compass/telemetry
- *   - Server  : the persisted ops.client_logs (system.recentLogs)
- *   - Health  : API + service status
- *
- * Plus an Actions row (Sign out, Reload, Reset session, Copy as JSON) so
- * operators can recover from edge cases without a developer.
+ * Review COREWEB1-18 / COREWEB1-24 (2026-11-12): every word was English
+ * and times followed the browser's language; the views were filter chips
+ * (UI-16: switching views is Segmented); each log line was a card of its
+ * own (UI-6) and the two lists drew their lines with two copies of one
+ * row; the console's title repeated the button that opens it, as a second
+ * <h1> inside the Operations screen; and the status showed a "projector
+ * lag" the server always reports as 0, not the messages waiting to send.
  */
 import { clearLocalSession } from '../lib/localSession';
 import { reloadApp } from '../lib/reload';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
   Badge,
   Banner,
@@ -23,26 +26,65 @@ import {
   Chip,
   ChipBar,
   DataState,
+  DetailRow,
   EmptyState,
-  SectionHeader,
+  Segmented,
   Skeleton,
+  rowGroupClass,
+  useToast,
 } from '@compass/ui';
+import type { CatalogKey } from '@compass/i18n';
+import { getLogger, type LogEvent, type LogLevel } from '@compass/telemetry';
+import { copyText } from '../lib/clipboard';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { getLogger } from '@compass/telemetry';
-import type { LogEvent } from '@compass/telemetry';
+import { lastUpdatedLabel } from '../hooks/useCachedDataAge';
+import { useDateFormat, useI18n } from '../hooks/useI18n';
 
-type Tab = 'live' | 'server' | 'health';
-type Level = 'all' | 'debug' | 'info' | 'warn' | 'error';
+type View = 'device' | 'all' | 'status';
+const LEVELS = ['all', 'debug', 'info', 'warn', 'error'] as const;
+type Level = (typeof LEVELS)[number];
+
+const LEVEL_KEY: Record<Level, CatalogKey> = {
+  all: 'ops.debug.level.all',
+  debug: 'ops.debug.level.debug',
+  info: 'ops.debug.level.info',
+  warn: 'ops.debug.level.warn',
+  error: 'ops.debug.level.error',
+};
+
+const LEVEL_TONE: Record<LogLevel, ComponentProps<typeof Badge>['tone']> = {
+  error: 'danger',
+  warn: 'warn',
+  info: 'info',
+  debug: 'muted',
+};
+
+function isLogLevel(level: string): level is LogLevel {
+  return level === 'debug' || level === 'info' || level === 'warn' || level === 'error';
+}
+
+/** One line of either list: this device's events or the saved ones. */
+interface LogLine {
+  key: string;
+  at: number;
+  level: string;
+  kind: string;
+  action: string | null;
+  target: string | null;
+  errorMsg: string | null;
+}
 
 export function DebugPage() {
+  const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const signOut = trpc.auth.signOut.useMutation();
-  const [tab, setTab] = useState<Tab>('live');
+  const toast = useToast();
+  const [view, setView] = useState<View>('device');
   const [level, setLevel] = useState<Level>('all');
   const [liveTick, setLiveTick] = useState(0);
 
-  // Live ring buffer subscription (no tRPC).
+  // This device's ring buffer, redrawn as the logger adds to it (no tRPC).
   const ringBuffer = useMemo<LogEvent[]>(() => {
     try {
       return [...getLogger().getRingBuffer()];
@@ -67,287 +109,248 @@ export function DebugPage() {
     try {
       return getLogger().getSessionId();
     } catch {
-      return '(no logger)';
+      return null;
     }
   }, []);
 
   const recent = trpc.system.recentLogs.useQuery(
     { limit: 100, ...(level !== 'all' ? { level } : {}) },
-    { enabled: tab === 'server' },
+    { enabled: view === 'all' },
   );
 
   const health = trpc.system.health.useQuery(undefined, {
-    enabled: tab === 'health',
-    refetchInterval: tab === 'health' ? 2000 : false,
+    enabled: view === 'status',
+    refetchInterval: view === 'status' ? 2000 : false,
   });
 
   if (!session) return null;
-  // SECURITY (2026-05-05): Debug console exposes raw error stacks, server
-  // logs (potentially with org-scoped data), projector lag, and reset
-  // controls. Previously the page was reachable to any signed-in user
-  // who happened to discover it via direct render — gating only happened
-  // at the Shell level (admin tab visibility). A staff member who had a
-  // session before role assignment, or a manager whose `users.manage`
-  // gate had a typo, could see internals. Add a hard server-side-aligned
-  // check here: the user MUST hold `system.logs.view`. Anyone else gets
-  // an "Access not granted" screen instead (English, like the rest of this
-  // operator page).
+  // SECURITY (2026-05-05): the console shows error stacks, the workspace's
+  // logs and reset controls. The Operations screen opens it for super
+  // admins; this checks the permission the server checks as well.
   if (!session.permissions.includes('system.logs.view')) {
     return (
-      <div className="flex flex-col gap-3 px-4 py-8">
+      <div className="px-4 py-8">
         <EmptyState
-          title="Access not granted"
-          description="The debug console is restricted to operators with system-log access."
+          title={i18n.t('ops.debug.noAccess.title')}
+          description={i18n.t('ops.debug.noAccess.body')}
         />
       </div>
     );
   }
 
+  const deviceLines: LogLine[] = ringBuffer
+    .filter((e) => level === 'all' || e.level === level)
+    .map((e, i) => ({
+      key: `${e.clientTs}:${i}`,
+      at: e.clientTs,
+      level: e.level,
+      kind: e.kind,
+      action: e.action ?? null,
+      target: e.target ?? null,
+      errorMsg: e.errorMsg ?? null,
+    }))
+    .reverse();
+
   return (
-    <div className="flex flex-col pb-24">
-      <SectionHeader
-        title="Debug console"
-        subtitle={
-          <span className="font-mono">
-            session: {sessionId.slice(0, 12)}… · user: {session.user.displayName}
-          </span>
-        }
+    <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
+      {sessionId ? (
+        <p className="text-old-label text-[var(--c-fg-muted)]">
+          {i18n.t('ops.debug.logId', { value: sessionId.slice(0, 12) })}
+        </p>
+      ) : null}
+      <Segmented
+        ariaLabel={i18n.t('ops.debug.views')}
+        value={view}
+        onChange={setView}
+        options={[
+          { value: 'device', label: i18n.t('ops.debug.view.device') },
+          { value: 'all', label: i18n.t('ops.debug.view.all') },
+          { value: 'status', label: i18n.t('ops.debug.view.status') },
+        ]}
       />
-      <div className="flex flex-col gap-3 px-4 pb-4">
-        <ChipBar ariaLabel="View">
-          <Chip selected={tab === 'live'} onClick={() => setTab('live')}>
-            Live ({ringBuffer.length})
-          </Chip>
-          <Chip selected={tab === 'server'} onClick={() => setTab('server')}>
-            Server
-          </Chip>
-          <Chip selected={tab === 'health'} onClick={() => setTab('health')}>
-            Health
-          </Chip>
+
+      {view !== 'status' ? (
+        // On the 16 px gutter; the strip itself still scrolls edge to edge.
+        <ChipBar ariaLabel={i18n.t('ops.debug.levels')} className="-mx-4 -my-1.5 px-4 py-1.5">
+          {LEVELS.map((l) => (
+            <Chip key={l} selected={level === l} onClick={() => setLevel(l)}>
+              {i18n.t(LEVEL_KEY[l])}
+            </Chip>
+          ))}
         </ChipBar>
+      ) : null}
 
-        {(tab === 'live' || tab === 'server') && (
-          <ChipBar ariaLabel="Level">
-            {(['all', 'debug', 'info', 'warn', 'error'] as Level[]).map((l) => (
-              <Chip key={l} selected={level === l} onClick={() => setLevel(l)}>
-                {l}
-              </Chip>
-            ))}
-          </ChipBar>
-        )}
-
-        {tab === 'live' && (
-          <LogList
-            events={ringBuffer}
-            level={level}
-            empty="No client events yet. Tap around the app and they'll show up here."
+      {view === 'device' ? (
+        ringBuffer.length === 0 ? (
+          <EmptyState
+            title={i18n.t('ops.debug.device.empty')}
+            description={i18n.t('ops.debug.device.emptyBody')}
           />
-        )}
+        ) : deviceLines.length === 0 ? (
+          <EmptyState title={i18n.t('ops.debug.noMatches')} />
+        ) : (
+          <LogList lines={deviceLines} />
+        )
+      ) : null}
 
-        {tab === 'server' && (
-          <DataState
-            query={recent}
-            emptyWhen={(d) => d.length === 0}
-            empty={<EmptyState title="No server-side logs" />}
-          >
-            {(rows) => (
-              <ul className="flex flex-col gap-1" role="list">
-                {rows.map((r) => (
-                  <li key={r.id}>
-                    <ServerRow row={r} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </DataState>
-        )}
+      {view === 'all' ? (
+        <DataState
+          query={recent}
+          emptyWhen={(rows) => rows.length === 0}
+          empty={
+            <EmptyState
+              title={i18n.t(level === 'all' ? 'ops.debug.all.empty' : 'ops.debug.noMatches')}
+            />
+          }
+        >
+          {(rows) => (
+            <LogList
+              lines={rows.map((r) => ({
+                key: r.id,
+                at: new Date(r.createdAt).getTime(),
+                level: r.level,
+                kind: r.kind,
+                action: r.action,
+                target: r.target,
+                errorMsg: r.errorMsg,
+              }))}
+            />
+          )}
+        </DataState>
+      ) : null}
 
-        {tab === 'health' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>API health</CardTitle>
-              <CardMeta>Refreshed every 2 s</CardMeta>
-            </CardHeader>
-            <div className="px-4 pb-4 pt-2">
-              {health.isLoading ? (
-                <Skeleton className="h-16" />
-              ) : health.isError ? (
-                <Banner tone="danger" title="API unreachable">
-                  {health.error.message}
-                </Banner>
-              ) : health.data ? (
-                <dl className="grid grid-cols-2 gap-2 font-mono text-old-label">
-                  <dt className="text-[var(--c-fg-muted)]">status</dt>
-                  <dd>{health.data.status}</dd>
-                  <dt className="text-[var(--c-fg-muted)]">db</dt>
-                  <dd>{String(health.data.db)}</dd>
-                  <dt className="text-[var(--c-fg-muted)]">projector lag</dt>
-                  <dd>{health.data.projectorLag}</dd>
-                  <dt className="text-[var(--c-fg-muted)]">version</dt>
-                  <dd className="truncate">{health.data.version}</dd>
-                </dl>
-              ) : null}
-            </div>
-          </Card>
-        )}
-
+      {view === 'status' ? (
         <Card>
           <CardHeader>
-            <CardTitle>Actions</CardTitle>
+            <CardTitle>{i18n.t('ops.debug.status.title')}</CardTitle>
+            <CardMeta>{i18n.t('ops.debug.status.refresh')}</CardMeta>
           </CardHeader>
-          <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
-            <Button
-              size="sm"
-              variant="utility"
-              onClick={() => {
-                try {
-                  getLogger().flush();
-                } catch {
-                  /* noop */
-                }
-              }}
-            >
-              Flush logs
-            </Button>
-            <Button
-              size="sm"
-              variant="pearl"
-              onClick={() => {
-                const json = JSON.stringify(ringBuffer, null, 2);
-                navigator.clipboard?.writeText(json);
-              }}
-            >
-              Copy live as JSON
-            </Button>
-            <Button size="sm" variant="pearl" onClick={() => reloadApp('debug-page')}>
-              Reload
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              loading={signOut.isPending}
-              onClick={() => {
-                // 2026-10-21 audit CA-33: a real sign-out — the server revokes
-                // the refresh tokens first. A network failure (or a hang past
-                // 4 s) must not trap the operator, so local state is wiped
-                // regardless, as the crash screen's reset wipes it.
-                const timeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
-                void Promise.race([signOut.mutateAsync().then(() => undefined), timeout])
-                  .catch(() => undefined)
-                  .then(clearLocalSession)
-                  .then(() => reloadApp('debug-page'));
-              }}
-            >
-              Sign out & reset
-            </Button>
+          <div className="flex flex-col gap-2 px-4 pb-4 pt-2">
+            {health.isLoading ? (
+              <Skeleton className="h-16" />
+            ) : health.isError ? (
+              <Banner tone="danger" title={i18n.t('ops.debug.status.failed')} />
+            ) : health.data ? (
+              <>
+                <DetailRow
+                  label={i18n.t('ops.debug.status.state')}
+                  value={i18n.t(
+                    health.data.status === 'ok'
+                      ? 'ops.debug.status.ok'
+                      : 'ops.debug.status.degraded',
+                  )}
+                />
+                <DetailRow
+                  label={i18n.t('ops.debug.status.database')}
+                  value={i18n.t(
+                    health.data.db ? 'ops.debug.status.reachable' : 'ops.debug.status.unreachable',
+                  )}
+                />
+                <DetailRow
+                  label={i18n.t('ops.debug.status.waiting')}
+                  value={health.data.outboxPending}
+                  mono
+                />
+                {/* UI-14: the build is a code, so monospace. */}
+                <DetailRow
+                  label={i18n.t('ops.debug.status.version')}
+                  value={<span className="font-mono">{health.data.version}</span>}
+                />
+              </>
+            ) : null}
           </div>
         </Card>
-      </div>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{i18n.t('ops.debug.actions')}</CardTitle>
+        </CardHeader>
+        <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
+          <Button
+            size="sm"
+            variant="pearl"
+            onClick={() => {
+              try {
+                getLogger().flush();
+              } catch {
+                /* logger not booted: nothing to send */
+              }
+            }}
+          >
+            {i18n.t('ops.debug.sendNow')}
+          </Button>
+          <Button
+            size="sm"
+            variant="pearl"
+            onClick={() => {
+              void copyText(JSON.stringify(ringBuffer, null, 2)).then((ok) => {
+                if (ok) toast.success(i18n.t('ops.debug.copied'));
+              });
+            }}
+          >
+            {i18n.t('ops.debug.copyDevice')}
+          </Button>
+          <Button size="sm" variant="pearl" onClick={() => reloadApp('debug-page')}>
+            {i18n.t('ops.debug.reload')}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={signOut.isPending}
+            onClick={() => {
+              // 2026-10-21 audit CA-33: a real sign-out — the server revokes
+              // the refresh tokens first. A network failure (or a hang past
+              // 4 s) must not trap the operator, so local state is wiped
+              // regardless, as the crash screen's reset wipes it.
+              const timeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
+              void Promise.race([signOut.mutateAsync().then(() => undefined), timeout])
+                .catch(() => undefined)
+                .then(clearLocalSession)
+                .then(() => reloadApp('debug-page'));
+            }}
+          >
+            {i18n.t('ops.debug.signOut')}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
 
-function LogList({
-  events,
-  level,
-  empty,
-}: {
-  events: LogEvent[];
-  level: Level;
-  empty: string;
-}) {
-  const filtered = useMemo(() => {
-    const filteredByLevel = level === 'all' ? events : events.filter((e) => e.level === level);
-    return [...filteredByLevel].reverse();
-  }, [events, level]);
-  if (filtered.length === 0) {
-    return <EmptyState title="No matches" description={empty} />;
-  }
+/** Log lines as rows of one card (UI-6), newest first. */
+function LogList({ lines }: { lines: LogLine[] }) {
+  const i18n = useI18n();
+  const dateFmt = useDateFormat();
+  // Today's lines by the second; an older one says its day too.
+  const time = (at: number) =>
+    lastUpdatedLabel(at, { time: dateFmt.timeSeconds, calendarDay: dateFmt.calendarDay });
   return (
-    <ul className="flex flex-col gap-1" role="list">
-      {filtered.map((e, i) => (
-        <li
-          key={`${e.clientTs}:${i}`}
-          className="rounded-[var(--r-utility)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
-        >
-          <div className="flex items-baseline gap-2 font-mono text-old-label">
-            <span className="text-[var(--c-fg-muted)]">
-              {new Date(e.clientTs).toLocaleTimeString()}
-            </span>
-            <Badge
-              tone={
-                e.level === 'error'
-                  ? 'danger'
-                  : e.level === 'warn'
-                    ? 'warn'
-                    : e.level === 'debug'
-                      ? 'muted'
-                      : 'info'
-              }
-            >
-              {e.level}
-            </Badge>
-            <span className="font-semibold">{e.kind}</span>
-            {e.action ? <span className="text-[var(--c-fg-muted)]">{e.action}</span> : null}
+    <ul className={rowGroupClass} role="list">
+      {lines.map((line) => (
+        <li key={line.key} className="px-3 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-old-label">
+            <span className="tabular-nums text-[var(--c-fg-muted)]">{time(line.at)}</span>
+            {isLogLevel(line.level) ? (
+              <Badge tone={LEVEL_TONE[line.level]}>{i18n.t(LEVEL_KEY[line.level])}</Badge>
+            ) : (
+              <Badge tone="muted">{line.level}</Badge>
+            )}
+            <span className="font-semibold">{line.kind}</span>
+            {line.action ? <span className="text-[var(--c-fg-muted)]">{line.action}</span> : null}
           </div>
-          {e.target ? (
+          {line.target ? (
             <div className="mt-1 truncate font-mono text-old-label text-[var(--c-fg-subtle)]">
-              {e.target}
+              {line.target}
             </div>
           ) : null}
-          {e.errorMsg ? (
-            <div className="mt-1 font-mono text-old-label text-[var(--c-danger)]">{e.errorMsg}</div>
+          {line.errorMsg ? (
+            <div className="mt-1 break-words font-mono text-old-label text-[var(--c-danger)]">
+              {line.errorMsg}
+            </div>
           ) : null}
         </li>
       ))}
     </ul>
-  );
-}
-
-function ServerRow({
-  row,
-}: {
-  // tRPC superjson-less response keeps Dates as ISO strings; we accept both.
-  row: {
-    id: string;
-    level: string;
-    kind: string;
-    action: string | null;
-    target: string | null;
-    errorMsg: string | null;
-    createdAt: Date | string;
-  };
-}) {
-  return (
-    <div className="rounded-[var(--r-utility)] bg-[var(--c-surface)] px-3 py-2 ring-hairline">
-      <div className="flex items-baseline gap-2 font-mono text-old-label">
-        <span className="text-[var(--c-fg-muted)]">
-          {new Date(row.createdAt).toLocaleTimeString()}
-        </span>
-        <Badge
-          tone={
-            row.level === 'error'
-              ? 'danger'
-              : row.level === 'warn'
-                ? 'warn'
-                : row.level === 'debug'
-                  ? 'muted'
-                  : 'info'
-          }
-        >
-          {row.level}
-        </Badge>
-        <span className="font-semibold">{row.kind}</span>
-        {row.action ? <span className="text-[var(--c-fg-muted)]">{row.action}</span> : null}
-      </div>
-      {row.target ? (
-        <div className="mt-1 truncate font-mono text-old-label text-[var(--c-fg-subtle)]">
-          {row.target}
-        </div>
-      ) : null}
-      {row.errorMsg ? (
-        <div className="mt-1 font-mono text-old-label text-[var(--c-danger)]">{row.errorMsg}</div>
-      ) : null}
-    </div>
   );
 }
