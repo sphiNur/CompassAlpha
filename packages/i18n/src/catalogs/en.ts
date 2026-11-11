@@ -375,7 +375,6 @@ export const en = {
   'ops.purge.kind.runLines': 'Run items',
   'ops.purge.kind.runStoreLines': 'Run items per store',
   'ops.purge.kind.expenses': 'Run expenses',
-  'ops.purge.kind.dailyCloses': 'Daily closes',
   'ops.purge.kind.stockMovements': 'Stock movements',
   'ops.purge.kind.priceHistory': 'Price records',
   'ops.purge.kind.notifications': 'Notifications',

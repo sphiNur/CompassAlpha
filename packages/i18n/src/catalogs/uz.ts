@@ -356,7 +356,6 @@ export const uz = {
   'ops.purge.kind.runLines': 'Xarid qatorlari',
   'ops.purge.kind.runStoreLines': 'Doʻkonlar boʻyicha xarid qatorlari',
   'ops.purge.kind.expenses': 'Xarid xarajatlari',
-  'ops.purge.kind.dailyCloses': 'Kun yakunlari',
   'ops.purge.kind.stockMovements': 'Zaxira harakatlari',
   'ops.purge.kind.priceHistory': 'Narx yozuvlari',
   'ops.purge.kind.notifications': 'Bildirishnomalar',
