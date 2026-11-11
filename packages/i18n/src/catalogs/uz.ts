@@ -1109,6 +1109,7 @@ export const uz = {
   'order.review.needsNetwork': 'Yuborish uchun internet kerak. Oʻzgarishlar telefonda saqlangan.',
   'order.extras.qtyLabel': 'Miqdor',
   'order.extras.unitLabel': 'Birlik',
+  'order.extras.chooseUnit': 'Roʻyxatdan birlikni tanlang.',
   'order.extras.wholeNumber': 'Bu birlik uchun faqat butun son.',
   'order.categories.uncategorized': 'Turkumsiz',
   'order.batches.backToReceipt': 'Bugungi partiyalarga qaytish',

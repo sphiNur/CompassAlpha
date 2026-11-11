@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CANONICAL_UNITS, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '../limits';
 import {
   DateStringSchema,
   DecimalStringSchema,
@@ -7,6 +8,8 @@ import {
   OrderQtySchema,
   UuidSchema,
 } from './common';
+
+export { CANONICAL_UNITS, WHOLE_NUMBER_UNITS, isCanonicalUnit };
 
 export const OrderStatusSchema = z.enum([
   'draft',
@@ -111,19 +114,11 @@ export const SetSessionNoteInputSchema = z.object({
  *
  * R2-COPY-3 (2026-10-31): `box` added — SkuUnitSchema has allowed it since
  * 2026-07-30, so an extra could not name the unit a catalog SKU uses.
+ *
+ * ORD-13 (2026-11-11): the list lives in ../limits (CANONICAL_UNITS),
+ * which the web reads without zod.
  */
-export const CanonicalUnitSchema = z.enum([
-  'kg',
-  'g',
-  'L',
-  'ml',
-  'pcs',
-  'pack',
-  'pair',
-  'bunch',
-  'roll',
-  'box',
-]);
+export const CanonicalUnitSchema = z.enum(CANONICAL_UNITS);
 export type CanonicalUnit = z.infer<typeof CanonicalUnitSchema>;
 
 /**

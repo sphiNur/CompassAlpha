@@ -990,6 +990,7 @@ export const zh = {
   'order.review.needsNetwork': '提交需要联网，改动已经存在手机上。',
   'order.extras.qtyLabel': '数量',
   'order.extras.unitLabel': '单位',
+  'order.extras.chooseUnit': '请从列表中选择单位。',
   'order.extras.wholeNumber': '这个单位只能填整数。',
   'order.categories.uncategorized': '未分类',
   'order.batches.backToReceipt': '返回今日批次',

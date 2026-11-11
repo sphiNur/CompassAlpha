@@ -1107,6 +1107,7 @@ export const ru = {
   'order.review.needsNetwork': 'Для отправки нужен интернет. Изменения сохранены на телефоне.',
   'order.extras.qtyLabel': 'Количество',
   'order.extras.unitLabel': 'Единица',
+  'order.extras.chooseUnit': 'Выберите единицу из списка.',
   'order.extras.wholeNumber': 'Для этой единицы — только целое число.',
   'order.categories.uncategorized': 'Без категории',
   'order.batches.backToReceipt': 'К партиям за сегодня',
