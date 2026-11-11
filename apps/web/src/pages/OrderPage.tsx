@@ -22,12 +22,9 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, useTelegramBackButton, haptic } from '../hooks/useTelegram';
-import {
-  frozenOrderDate,
-  localDateString,
-  staysQueued,
-  useOfflineQueue,
-} from '../hooks/useOfflineQueue';
+import { staysQueued, useOfflineQueue } from '../hooks/useOfflineQueue';
+import { orgToday } from '../lib/calendarDate';
+import { frozenOrderDate } from './order/orderDate';
 import { outbox } from '../lib/idb';
 import { registerLocalWrites } from '../lib/localWrites';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -113,6 +110,8 @@ export function OrderPage() {
   const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
   const orgCurrency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  // COREWEB2-21: an order is dated on the org's calendar, not the phone's.
+  const orgTimeZone = session?.member.timezone;
   // Language picker — accessible from every page's header so staff
   // who don't have admin access can still switch languages (added
   // 2026-05-05). State lives at OrderPage level since this is the
@@ -379,12 +378,15 @@ export function OrderPage() {
           'order.adjustItem',
           {
             ...payload,
-            date: frozenOrderDate(utils.order.todaySession.getData({ storeId: payload.storeId })),
+            date: frozenOrderDate(
+              utils.order.todaySession.getData({ storeId: payload.storeId }),
+              orgTimeZone,
+            ),
           },
           () => adjustAsync(payload),
         ),
       ),
-    [adjustAsync, sendQueued, serializeOnStore, utils.order.todaySession],
+    [adjustAsync, orgTimeZone, sendQueued, serializeOnStore, utils.order.todaySession],
   );
 
   /**
@@ -504,11 +506,12 @@ export function OrderPage() {
             storeId,
             initiatedByMemberId: myMember,
             submittedByMemberId: null,
-            // Review ORD-03 (2026-11-09): the device's own date, as
-            // frozenOrderDate uses. The UTC date was yesterday in Tashkent
-            // between 00:00 and 05:00, and once the real id came back it
-            // was frozen into queued offline taps.
-            orderDate: localDateString(new Date()),
+            // Review ORD-03 (2026-11-09): today on the calendar
+            // frozenOrderDate uses, the org's (COREWEB2-21; it was the
+            // phone's). The UTC date was yesterday in Tashkent between
+            // 00:00 and 05:00, and once the real id came back it was
+            // frozen into queued offline taps.
+            orderDate: orgToday(orgTimeZone),
             status: 'draft' as const,
             claimedByMemberId: null,
             claimedByDisplayName: null,
@@ -567,7 +570,7 @@ export function OrderPage() {
       }, DEBOUNCE_MS);
       pendingTimers.current.set(key, timer);
     },
-    [flushOne, session?.member.memberId, utils.order.todaySession],
+    [flushOne, orgTimeZone, session?.member.memberId, utils.order.todaySession],
   );
 
   /**
@@ -831,7 +834,7 @@ export function OrderPage() {
         // addresses the session by store without one.
         const queuedInput =
           'storeId' in input && !input.date
-            ? { ...input, date: frozenOrderDate(cached) }
+            ? { ...input, date: frozenOrderDate(cached, orgTimeZone) }
             : input;
         let res: { sessionId: string | null } | undefined;
         try {
@@ -856,7 +859,7 @@ export function OrderPage() {
         }
       });
     },
-    [currentStoreId, sendQueued, serializeOnStore, setSessionExtras, utils.order],
+    [currentStoreId, orgTimeZone, sendQueued, serializeOnStore, setSessionExtras, utils.order],
   );
 
   // Telegram MainButton — single point of control for the entire submit

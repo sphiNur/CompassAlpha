@@ -9,11 +9,8 @@ import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
 import { saveFile } from '../../lib/fileDownload';
 import { trpc } from '../../lib/trpc';
-
-function thisMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+import { orgMonth } from '../../lib/calendarDate';
+import { useAuthStore } from '../../stores/authStore';
 
 export function shiftMonth(month: string, by: number): string {
   const [y, m] = month.split('-').map(Number) as [number, number];
@@ -25,12 +22,14 @@ export function AttendanceExport({ storeId }: { storeId: string }) {
   const i18n = useI18n();
   const dates = useDateFormat();
   const errToast = useErrToast();
-  const [month, setMonth] = useState(thisMonth);
+  // COREWEB2-21: months of the org's calendar, not the phone's.
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const [month, setMonth] = useState(() => orgMonth(orgTimeZone));
   const [saving, setSaving] = useState(false);
   const link = trpc.attendance.exportLink.useMutation({
     onError: errToast('attendance.export.failed'),
   });
-  const current = thisMonth();
+  const current = orgMonth(orgTimeZone);
 
   const exportMonth = async () => {
     setSaving(true);

@@ -17,9 +17,7 @@ import {
   classifyEntry,
   classifyReplayError,
   countsTowardGiveUp,
-  frozenOrderDate,
   hasReplayHandler,
-  localDateString,
   registerReplayHandlers,
   isOwnEntry,
   isRetryDue,
@@ -199,22 +197,6 @@ describe('isRetryDue', () => {
       if (isRetryDue(retries, now, now + mount * 500)) retries += 1;
     }
     expect(retries).toBe(1);
-  });
-});
-
-describe('frozenOrderDate (CA-25)', () => {
-  const now = new Date(2026, 9, 21, 23, 59); // local 2026-10-21 23:59
-  it("uses the shown session's order date when there is a real session", () => {
-    expect(frozenOrderDate({ id: 'sess-1', orderDate: '2026-10-20' }, now)).toBe('2026-10-20');
-  });
-  it('falls back to the device-local date before a session exists', () => {
-    expect(frozenOrderDate(null, now)).toBe('2026-10-21');
-    expect(frozenOrderDate(undefined, now)).toBe('2026-10-21');
-    // The optimistic placeholder's date is not server truth.
-    expect(frozenOrderDate({ id: 'optimistic', orderDate: '2026-10-22' }, now)).toBe('2026-10-21');
-  });
-  it('formats local dates zero-padded', () => {
-    expect(localDateString(new Date(2026, 0, 5, 0, 1))).toBe('2026-01-05');
   });
 });
 

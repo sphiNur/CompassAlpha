@@ -420,28 +420,6 @@ export function classifyReplayError(
   return 'retry';
 }
 
-/** Device-local calendar date as YYYY-MM-DD. */
-export function localDateString(now: Date): string {
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${m}-${d}`;
-}
-
-/**
- * The business date to FREEZE into an offline-queued order write
- * (2026-10-21 audit CA-25). Without it the server resolved "today" at
- * REPLAY time, so a change made offline last night landed in this
- * morning's order. Prefer the date of the session the page is showing
- * (server truth, org timezone); before any session exists fall back to
- * the device's local date (staff devices run in the org's timezone).
- */
-export function frozenOrderDate(
-  cached: { id: string; orderDate: string } | null | undefined,
-  now: Date = new Date(),
-): string {
-  return cached && cached.id !== 'optimistic' ? cached.orderDate : localDateString(now);
-}
-
 /** Cap on transient retries before an entry is abandoned (mirrors the
  *  server-side outbox worker's MAX_RETRIES). Stops an endlessly-failing
  *  entry from blocking the queue forever. */

@@ -23,15 +23,12 @@ import { useErrToast } from '../../lib/errToast';
 import { GeoMap } from '../../components/geo/GeoMap';
 import type { AttendancePolicyData } from '@compass/api/src/trpc/routers/attendance';
 import { trpc } from '../../lib/trpc';
+import { orgToday } from '../../lib/calendarDate';
+import { useAuthStore } from '../../stores/authStore';
 import { nativeConfirm } from '../admin/shared';
 import { addDays } from './AttendanceManage';
 
 type Policy = AttendancePolicyData;
-
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 export function AttendanceSettings({ storeId }: { storeId: string }) {
   return (
@@ -46,7 +43,9 @@ function PeopleBlock({ storeId }: { storeId: string }) {
   const i18n = useI18n();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
-  const t = today();
+  // COREWEB2-21: the org's today, not the phone's.
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const t = orgToday(orgTimeZone);
   // The sheet's member list carries the switch and the bound phone.
   const sheet = trpc.attendance.sheet.useQuery({ storeId, from: addDays(t, -1), to: t });
   const memberSet = trpc.attendance.memberSet.useMutation({
@@ -121,6 +120,7 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                       memberId={m.memberId}
                       current={m.dailyWage}
                       own={m.own}
+                      today={data.today}
                     />
                   ) : null}
                   {m.enabled ? (
@@ -249,12 +249,16 @@ function WageField({
   memberId,
   current,
   own,
+  today,
 }: {
   storeId: string;
   memberId: string;
   current: string | null;
   /** The manager's own wage: only a super admin sets it (2026-11-07). */
   own: boolean;
+  /** The store's today, as the server counts it: the new wage starts then
+   *  (COREWEB2-21; it was the phone's date). */
+  today: string;
 }) {
   const i18n = useI18n();
   const toast = useToast();
@@ -294,9 +298,7 @@ function WageField({
           variant="secondary"
           disabled={!valid || value === shown}
           loading={save.isPending}
-          onClick={() =>
-            save.mutate({ storeId, memberId, dailyWage: value, effectiveFrom: today() })
-          }
+          onClick={() => save.mutate({ storeId, memberId, dailyWage: value, effectiveFrom: today })}
         >
           {i18n.t('common.save')}
         </Button>
