@@ -1390,7 +1390,9 @@ export const uz = {
   'offline.drop.generic':
     '«{action}» yuborilmadi va bekor qilindi. Shu mahsulotni ochib, kerak boʻlsa qayta kiriting.',
   'confirm.final.title': 'Bu doʻkon uchun qabulni tasdiqlaysizmi?',
-  'confirm.final.summary': 'Yaxshi: {ok} · kam: {short} · notoʻgʻri yoki sifatsiz: {bad}',
+  'confirm.final.part.ok': 'Yaxshi: {n}',
+  'confirm.final.part.short': 'Kam: {n}',
+  'confirm.final.part.bad': 'Notoʻgʻri yoki sifatsiz: {n}',
   'confirm.final.shortWarning':
     '{n} ta mahsulot kam keldi. Omborga qabul qilingan miqdor yoziladi, keyin oʻzgartirib boʻlmaydi.',
   'confirm.final.body': 'Tasdiqlangandan keyin doʻkon hech bir mahsulotni oʻzgartira olmaydi.',
@@ -1723,7 +1725,6 @@ export const uz = {
   'confirm.bulk.hint': 'Har bir mahsulot «Yaxshi» deb yoziladi. Keyin alohida oʻzgartirish mumkin.',
   'confirm.bulk.submit': '{n} ta mahsulotni yaxshi deb belgilash',
   'confirm.confirmStoreBlocked': '{n} ta tekshirilmagan',
-  'confirm.confirmStoreFinal': '✓ Tasdiqlandi',
   'confirm.confirmingHint': 'Tasdiqlanmoqda…',
   'confirm.toast.markedOk': 'Yaxshi deb belgilandi',
   'confirm.toast.allMarkedOk': '{n} ta mahsulot yaxshi deb belgilandi',
@@ -2162,6 +2163,7 @@ export const uz = {
   'confirm.issue.photoOf': '{name}: muammo surati',
   'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
   'confirm.runPicker.option': '#{n} · {date}',
+  'confirm.runPicker.optionConfirmed': '#{n} · {date} · tasdiqlandi',
   'finance.label.expense': 'Xarajat',
   'finance.label.expenseNamed': 'Xarajat: {name}',
   'finance.label.expenses': 'Katalogdan tashqari xarajatlar',

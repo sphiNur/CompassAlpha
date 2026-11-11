@@ -20,6 +20,44 @@ export const DECISION_LABEL = {
   quality: 'confirm.status.quality',
 } as const satisfies Record<ConfirmDecisionStatus, CatalogKey>;
 
+/** The lines' verdicts as the summary sheet counts them (U4). */
+export interface VerdictCounts {
+  ok: number;
+  short: number;
+  /** A wrong product or a quality problem. */
+  bad: number;
+}
+
+export function countVerdicts(
+  lines: ReadonlyArray<{ confirmStatus?: string | null }>,
+): VerdictCounts {
+  const counts: VerdictCounts = { ok: 0, short: 0, bad: 0 };
+  for (const line of lines) {
+    if (line.confirmStatus === 'ok') counts.ok += 1;
+    else if (line.confirmStatus === 'short') counts.short += 1;
+    else if (line.confirmStatus === 'wrong' || line.confirmStatus === 'quality') counts.bad += 1;
+  }
+  return counts;
+}
+
+const VERDICT_PART = {
+  ok: 'confirm.final.part.ok',
+  short: 'confirm.final.part.short',
+  bad: 'confirm.final.part.bad',
+} as const satisfies Record<keyof VerdictCounts, CatalogKey>;
+
+/**
+ * Review CONF-20: the summary names the verdicts that were given, each
+ * with its count. It used to list all three, "short: 0" included.
+ */
+export function verdictSummaryParts(
+  counts: VerdictCounts,
+): Array<{ key: (typeof VERDICT_PART)[keyof VerdictCounts]; n: number }> {
+  return (Object.keys(VERDICT_PART) as Array<keyof VerdictCounts>)
+    .filter((verdict) => counts[verdict] > 0)
+    .map((verdict) => ({ key: VERDICT_PART[verdict], n: counts[verdict] }));
+}
+
 type DeliveringRunRow = {
   id: string;
   status: string;
@@ -397,13 +435,13 @@ export function confirmMainButton(s: ConfirmMainButtonState): ConfirmMainButton 
   }
   return {
     action: 'openConfirm',
-    label: s.storeConfirmed
-      ? { key: 'confirm.confirmStoreFinal' }
-      : s.confirming
-        ? { key: 'confirm.confirmingHint' }
-        : allDecided
-          ? { key: 'confirm.confirmStore' }
-          : { key: 'confirm.confirmStoreBlocked', vars: { n: s.undecided } },
+    label: s.confirming
+      ? { key: 'confirm.confirmingHint' }
+      : allDecided
+        ? { key: 'confirm.confirmStore' }
+        : { key: 'confirm.confirmStoreBlocked', vars: { n: s.undecided } },
+    // Hidden once signed: the page says so (DLV-8). Review CONF-20: the
+    // label it had for that state could never show.
     visible: s.hasRun && s.lineCount > 0 && !s.storeConfirmed,
     active: allDecided && !s.confirming && !s.markingAll,
   };

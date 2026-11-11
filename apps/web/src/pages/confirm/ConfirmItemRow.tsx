@@ -75,7 +75,6 @@ export function ConfirmItemRow({
         {DECISIONS.map((s) => (
           <Chip
             key={s}
-            aria-label={i18n.t(DECISION_LABEL[s])}
             selected={status === s}
             disabled={locked}
             className={locked && status !== s ? 'opacity-40' : undefined}

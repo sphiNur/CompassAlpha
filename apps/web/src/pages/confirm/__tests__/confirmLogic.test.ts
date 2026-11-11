@@ -7,6 +7,7 @@ import { setDecimalLocale } from '@compass/ui';
 import {
   checkReceivedQty,
   confirmMainButton,
+  countVerdicts,
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
@@ -16,6 +17,7 @@ import {
   runsListView,
   sameLine,
   unboughtForStore,
+  verdictSummaryParts,
   withLineVerdict,
   type ConfirmMainButtonState,
   type IssueFormFields,
@@ -417,14 +419,37 @@ describe('confirmMainButton (review CONF-07)', () => {
   });
 
   it('hides once signed, and with no run or nothing delivered', () => {
-    expect(confirmMainButton(state({ storeConfirmed: true }))).toMatchObject({
-      label: { key: 'confirm.confirmStoreFinal' },
-      visible: false,
-    });
+    expect(confirmMainButton(state({ storeConfirmed: true })).visible).toBe(false);
     expect(confirmMainButton(state({ hasRun: false })).visible).toBe(false);
     expect(confirmMainButton(state({ lineCount: 0 }))).toMatchObject({
       visible: false,
       active: false,
     });
+  });
+});
+
+describe('the summary before signing (U4, CONF-20)', () => {
+  it('counts the verdicts, wrong product and quality together, undecided lines not at all', () => {
+    const lines = [
+      { confirmStatus: 'ok' },
+      { confirmStatus: 'ok' },
+      { confirmStatus: 'short' },
+      { confirmStatus: 'wrong' },
+      { confirmStatus: 'quality' },
+      { confirmStatus: null },
+      {},
+    ];
+    expect(countVerdicts(lines)).toEqual({ ok: 2, short: 1, bad: 2 });
+  });
+
+  it('names only the verdicts given, in a fixed order', () => {
+    expect(verdictSummaryParts({ ok: 2, short: 0, bad: 0 })).toEqual([
+      { key: 'confirm.final.part.ok', n: 2 },
+    ]);
+    expect(verdictSummaryParts({ ok: 0, short: 1, bad: 3 })).toEqual([
+      { key: 'confirm.final.part.short', n: 1 },
+      { key: 'confirm.final.part.bad', n: 3 },
+    ]);
+    expect(verdictSummaryParts({ ok: 0, short: 0, bad: 0 })).toEqual([]);
   });
 });
