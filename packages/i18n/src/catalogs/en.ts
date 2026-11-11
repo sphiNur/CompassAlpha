@@ -2768,6 +2768,8 @@ export const en = {
     'Every person and day of the month: shifts, clock-in and clock-out times, late and early minutes, pay and overtime.',
   'attendance.export.button': 'Export to Excel',
   'attendance.export.failed': 'Could not export. Try again.',
+  'attendance.export.linkExpired': 'This download link has expired. Export again from the app.',
+  'attendance.export.noAccess': 'You do not have access to this file.',
   'attendance.export.fileName': 'Attendance-{store}-{month}.xlsx',
   'attendance.export.manualMark': '{time} (manual)',
   'attendance.export.sheetSummary': 'Summary',

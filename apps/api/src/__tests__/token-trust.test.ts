@@ -18,6 +18,7 @@ import { SignJWT } from 'jose';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
+import { AUTH_LIMIT } from '../trpc/routers/auth';
 import { createContext, type RequestContext } from '../trpc/context';
 import { verifyRefresh } from '../infra/jwt';
 import { trustedClientIp, CLIENT_IP_HEADER, PROXY_KEY_HEADER } from '../services/clientIp';
@@ -252,7 +253,7 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     _resetRateBuckets();
     let limited = 0;
     // Bad initData fails after the rate check, so nothing is written.
-    for (let i = 0; i < 5 * UNIDENTIFIED_BUDGET_FACTOR + 2; i += 1) {
+    for (let i = 0; i < AUTH_LIMIT.max * UNIDENTIFIED_BUDGET_FACTOR + 2; i += 1) {
       const caller = await callerWith({ 'x-forwarded-for': `10.0.${i >> 8}.${i & 255}` });
       const err = await errorOf(() => caller.auth.telegramLogin({ initData: 'hash=bad' }));
       if (err?.message === 'auth.errors.rateLimited') limited += 1;
@@ -262,13 +263,19 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     // One address Cloudflare vouches for is limited on its own budget.
     _resetRateBuckets();
     const statuses: string[] = [];
-    for (let i = 0; i < 7; i += 1) {
+    for (let i = 0; i < AUTH_LIMIT.max + 2; i += 1) {
       const caller = await callerWith({ 'cf-connecting-ip': '203.0.113.7' });
       const err = await errorOf(() => caller.auth.telegramLogin({ initData: 'hash=bad' }));
       if (err) statuses.push(err.message);
     }
-    expect(statuses.slice(0, 5).every((m) => m === 'auth.errors.invalidInitData')).toBe(true);
-    expect(statuses.slice(5)).toEqual(['auth.errors.rateLimited', 'auth.errors.rateLimited']);
+    // Review TEST2-16: the budget comes from the router, not a copy of it.
+    expect(statuses.slice(0, AUTH_LIMIT.max)).toEqual(
+      Array(AUTH_LIMIT.max).fill('auth.errors.invalidInitData'),
+    );
+    expect(statuses.slice(AUTH_LIMIT.max)).toEqual([
+      'auth.errors.rateLimited',
+      'auth.errors.rateLimited',
+    ]);
     _resetRateBuckets();
   });
 });

@@ -8,6 +8,25 @@ const refreshSecret = new TextEncoder().encode(env.JWT_REFRESH_SECRET);
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '30d';
 
+/**
+ * The one algorithm the api signs with. Verifying names it, so a token
+ * that names another is refused (review COREAPI-20).
+ */
+export const TOKEN_ALG = 'HS256';
+
+/**
+ * The kind of a login and of a refresh token, in their `typ` header
+ * (review COREAPI-20). Their keys differ too (env.ts refuses one value for
+ * both). Tokens signed before 2026-11-10 have no `typ` and are still
+ * taken: a refresh token lives 30 days.
+ */
+const ACCESS_TYP = 'access+jwt';
+const REFRESH_TYP = 'refresh+jwt';
+
+function assertKind(typ: string | undefined, kind: string): void {
+  if (typ !== undefined && typ !== kind) throw new Error(`wrong token kind: ${typ}`);
+}
+
 export interface AccessClaims {
   sub: string; // user id
   org: string; // current org id
@@ -23,14 +42,17 @@ export interface AccessClaims {
 
 export async function signAccess(claims: AccessClaims): Promise<string> {
   return await new SignJWT(claims as unknown as Record<string, unknown>)
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: TOKEN_ALG, typ: ACCESS_TYP })
     .setIssuedAt()
     .setExpirationTime(ACCESS_TTL)
     .sign(accessSecret);
 }
 
 export async function verifyAccess(token: string): Promise<AccessClaims> {
-  const { payload } = await jwtVerify(token, accessSecret);
+  const { payload, protectedHeader } = await jwtVerify(token, accessSecret, {
+    algorithms: [TOKEN_ALG],
+  });
+  assertKind(protectedHeader.typ, ACCESS_TYP);
   // A login token names no audience. The month-export link and the
   // liveness challenge did, signed with this same secret until 2026-11-07;
   // without this check the export link worked as a 5-minute login.
@@ -75,7 +97,7 @@ export async function signRefresh(
     family,
     jti,
     ...(orgId && memberId ? { org: orgId, mid: memberId } : {}),
-  }).setProtectedHeader({ alg: 'HS256' });
+  }).setProtectedHeader({ alg: TOKEN_ALG, typ: REFRESH_TYP });
   if (times) {
     jwt
       .setIssuedAt(Math.floor(times.issuedAt.getTime() / 1000))
@@ -93,7 +115,10 @@ export async function verifyRefresh(token: string): Promise<{
   org: string | null;
   mid: string | null;
 }> {
-  const { payload } = await jwtVerify(token, refreshSecret);
+  const { payload, protectedHeader } = await jwtVerify(token, refreshSecret, {
+    algorithms: [TOKEN_ALG],
+  });
+  assertKind(protectedHeader.typ, REFRESH_TYP);
   // jti is optional during the migration window — tokens issued
   // before M1.9 lack it. Treated as legacy by the consume helper.
   return {

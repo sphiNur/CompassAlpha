@@ -2658,6 +2658,8 @@ export const ru = {
     'Каждый сотрудник и каждый день месяца: смены, время прихода и ухода, опоздания, ранние уходы, оплата и сверхурочные.',
   'attendance.export.button': 'Выгрузить в Excel',
   'attendance.export.failed': 'Не удалось выгрузить. Попробуйте снова.',
+  'attendance.export.linkExpired': 'Срок действия ссылки истёк. Выгрузите файл снова в приложении.',
+  'attendance.export.noAccess': 'У вас нет доступа к этому файлу.',
   'attendance.export.fileName': 'Учёт-времени-{store}-{month}.xlsx',
   'attendance.export.manualMark': '{time} (вручную)',
   'attendance.export.sheetSummary': 'Итого',

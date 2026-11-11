@@ -80,7 +80,7 @@ import type { RequestContext } from '../context';
  * write (AUTH-6). Callers without one share a bucket with a larger
  * budget instead of escaping the limit.
  */
-const AUTH_LIMIT = { window: 60_000, max: 5 } as const;
+export const AUTH_LIMIT = { window: 60_000, max: 5 } as const;
 /**
  * Refresh is not a guessing surface: it needs a token we signed. It is
  * also called by every client every 15 minutes, and a whole restaurant

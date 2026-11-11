@@ -2648,6 +2648,9 @@ export const uz = {
     'Oyning har bir kuni va har bir xodim: smenalar, kelish va ketish vaqti, kechikish va erta ketish, ish haqi va qoʻshimcha ish.',
   'attendance.export.button': 'Excelga yuklab olish',
   'attendance.export.failed': 'Yuklab boʻlmadi. Qayta urinib koʻring.',
+  'attendance.export.linkExpired':
+    'Yuklab olish havolasining muddati tugagan. Ilovadan qayta yuklab oling.',
+  'attendance.export.noAccess': 'Bu faylga ruxsatingiz yoʻq.',
   'attendance.export.fileName': 'Davomat-{store}-{month}.xlsx',
   'attendance.export.manualMark': '{time} (qoʻlda)',
   'attendance.export.sheetSummary': 'Jami',
