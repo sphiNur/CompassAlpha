@@ -13,7 +13,12 @@
  *                                  FE renders the list lazily; the
  *                                  one-shot payload keeps the editor
  *                                  responsive without per-row N+1
- *                                  fetches.
+ *                                  fetches. Each dish carries its
+ *                                  `ingredientCount`; with
+ *                                  `withIngredients: false` the rows
+ *                                  themselves are left out (the sales
+ *                                  panel only asks whether a dish has
+ *                                  a recipe, review CONF-24).
  *
  *   create({ code?, names, description?, unitPrice?, ingredients[] })
  *                                — single mutation that creates the
@@ -213,6 +218,9 @@ export const dishesRouter = router({
           /** D6: the store the list is shown for (sales panel); decides
            *  whether selling prices are included. */
           storeId: UuidSchema.optional(),
+          /** CONF-24: false leaves the recipe rows out; each dish still
+           *  has its `ingredientCount`. */
+          withIngredients: z.boolean().optional(),
         })
         .optional(),
     )
@@ -239,19 +247,41 @@ export const dishesRouter = router({
         const dishes = showPrices
           ? rawDishes
           : rawDishes.map((dish) => ({ ...dish, unitPrice: null }));
-        if (dishes.length === 0) return { dishes: [], ingredients: [] };
         const ids = dishes.map((d) => d.id);
-        const ingredients = await tx
-          .select({
-            dishId: s.dishIngredients.dishId,
-            skuId: s.dishIngredients.skuId,
-            qtyPerServing: s.dishIngredients.qtyPerServing,
-            note: s.dishIngredients.note,
-          })
-          .from(s.dishIngredients)
-          .where(inArray(s.dishIngredients.dishId, ids))
-          .orderBy(asc(s.dishIngredients.skuId));
-        return { dishes, ingredients };
+        const withRows = input?.withIngredients !== false;
+        const ingredients =
+          withRows && ids.length > 0
+            ? await tx
+                .select({
+                  dishId: s.dishIngredients.dishId,
+                  skuId: s.dishIngredients.skuId,
+                  qtyPerServing: s.dishIngredients.qtyPerServing,
+                  note: s.dishIngredients.note,
+                })
+                .from(s.dishIngredients)
+                .where(inArray(s.dishIngredients.dishId, ids))
+                .orderBy(asc(s.dishIngredients.skuId))
+            : [];
+        const ingredientCount = new Map<string, number>();
+        if (withRows) {
+          for (const row of ingredients) {
+            ingredientCount.set(row.dishId, (ingredientCount.get(row.dishId) ?? 0) + 1);
+          }
+        } else if (ids.length > 0) {
+          const counts = await tx
+            .select({ dishId: s.dishIngredients.dishId, n: sql<number>`count(*)::int` })
+            .from(s.dishIngredients)
+            .where(inArray(s.dishIngredients.dishId, ids))
+            .groupBy(s.dishIngredients.dishId);
+          for (const { dishId, n } of counts) ingredientCount.set(dishId, n);
+        }
+        return {
+          dishes: dishes.map((dish) => ({
+            ...dish,
+            ingredientCount: ingredientCount.get(dish.id) ?? 0,
+          })),
+          ingredients,
+        };
       });
     }),
 

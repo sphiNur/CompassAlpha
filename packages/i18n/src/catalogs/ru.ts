@@ -2447,6 +2447,7 @@ export const ru = {
   'inventory.errors.countTooLarge': 'Слишком много: не больше 99 999 999.',
   'inventory.badge.negative': 'Меньше нуля — пересчитайте',
   'sales.toast.recordedNegative': 'Записано. Остаток «{items}» ушёл в минус — пересчитайте.',
+  'sales.toast.recordedNegativeMore': 'Записано. В минус ушли «{items}» и ещё {n} — пересчитайте.',
   'dishes.errors.archivedIngredient':
     'В рецепте есть товар из архива. Выберите другой товар или удалите эту строку.',
   'dishes.errors.archivedIngredientRow': 'Этот товар в архиве. Выберите другой или удалите строку.',

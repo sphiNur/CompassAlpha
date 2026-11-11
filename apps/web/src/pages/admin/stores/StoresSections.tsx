@@ -401,7 +401,7 @@ export function StoreDetailScreen({
         <StoreInventoryTab storeId={focus.storeId} />
       ) : null}
       {effectiveSub === 'sales' && focus.kind === 'store' ? (
-        <StoreSalesPanel storeId={focus.storeId} />
+        <StoreSalesPanel storeId={focus.storeId} className="px-4 py-3" />
       ) : null}
       {effectiveSub === 'settings' && focus.kind === 'store' ? (
         <StoreSettingsTab storeId={focus.storeId} onLeave={onLeave} />

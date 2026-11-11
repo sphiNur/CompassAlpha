@@ -2165,6 +2165,7 @@ export const zh = {
   'inventory.errors.countTooLarge': '数量太大了，最多 99,999,999。',
   'inventory.badge.negative': '库存为负，需盘点',
   'sales.toast.recordedNegative': '已记录。{items}的库存已低于 0，记得盘点。',
+  'sales.toast.recordedNegativeMore': '已记录。{items}及另外 {n} 种商品的库存已低于 0，记得盘点。',
   'dishes.errors.archivedIngredient': '配方里有已下架的商品。换成别的商品，或删掉那一行。',
   'dishes.errors.archivedIngredientRow': '这个商品已下架。换一个商品，或删掉这一行。',
   'dishes.label.archivedSku': '{name}（已下架）',

@@ -1,69 +1,61 @@
 /**
- * StoreSalesPanel — today's sales + "Record sale" form for one store.
+ * StoreSalesPanel — one store's sales today: the day's totals, the
+ * "Record sale" form and the list of sales, in that order (M2.0c,
+ * 2026-05-08).
  *
- * 2026-10-21 CA-09: extracted verbatim from Admin → Stores → [store] →
- * Sales (StoreSalesTab in StoresSections.tsx) so the Settlement page can
- * render the same surface. Cashiers only get the Settlement tab, so
- * before this they held sales.record but had nowhere to use it.
- * Both call sites render this component; keep behaviour changes here.
+ * 2026-10-21 CA-09: shared by the Sales tab, the daily close page and
+ * Admin → Stores → [store] → Sales; cashiers only get the daily close, so
+ * before this they held sales.record but had nowhere to use it. Keep
+ * behaviour changes here. The caller sets the outer padding (UI-12,
+ * review CONF-24).
+ *
+ * Recording a sale deducts the dish's ingredients from inventory by its
+ * recipe, on the server in the same transaction. A sale is voided with a
+ * reason, never deleted; the server puts the ingredients back with
+ * reversing ledger rows.
+ *
+ * `sales.record` in this store records and voids; anyone who can read the
+ * store sees the list.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
   Card,
   EmptyState,
   Field,
+  FieldError,
   Input,
   LoadingState,
+  NumberInput,
   SectionLabel,
+  Select,
   Sheet,
+  cn,
   isWaitingOffline,
   rowGroupClass,
   useToast,
-  Select,
 } from '@compass/ui';
+import {
+  SALES_LIST_CAP,
+  SALE_QTY_MESSAGE,
+  SALE_VOID_REASON_MAX,
+  saleQtyProblem,
+} from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
 import { useErrToast } from '../../lib/errToast';
-import { formatMoney, formatQty } from '../../lib/format';
+import { currencyOf, formatMoney, formatQty } from '../../lib/format';
 import { useCanSeePrices } from '../../lib/pricesVisible';
+import { useStorePermission } from '../../lib/storePermission';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
 import { normalizeVoidReason, salesListView } from './salesSummary';
 import { moneyLine } from '../../lib/money';
 
-/** Server-side row cap of `sales.list` (apps/api/src/trpc/routers/sales.ts). */
-export const SALES_LIST_CAP = 200;
+/** The most stock items the below-zero warning names (review CONF-24). */
+const NEGATIVE_NAMES_SHOWN = 3;
 
-/**
- * StoreSalesPanel (M2.0c, 2026-05-08; extracted 2026-10-21 CA-09).
- *
- * Sales recording surface for a single store. Closes the ERP loop —
- * each sale auto-deducts ingredient inventory via the dish's recipe
- * BOM (server-side, same transaction). Two zones:
- *
- *   - Today's list (top): every sale recorded today, newest first,
- *     showing time + dish + qty + line revenue if priced.
- *   - "Record sale" entry (bottom): dish picker + qty input. Tap
- *     Save → tRPC roundtrip, list refreshes.
- *
- * Permissions:
- *   - `sales.record` (per-store) for the Save action. Granted by
- *     default to manager, cashier + staff roles.
- *   - Anyone with read access to the store can see the list.
- *   - 2026-10-21: `sales.record` also gates Void (sales.void) — a sale
- *     is voided with a reason, never deleted; the server puts the
- *     ingredients back with reversing ledger rows.
- */
-export function StoreSalesPanel({
-  storeId,
-  className = 'px-4 py-3',
-}: {
-  storeId: string;
-  /** Outer padding. The admin tab pads itself; Settlement nests it in a
-   *  section that already has the page gutter. */
-  className?: string;
-}) {
+export function StoreSalesPanel({ storeId, className }: { storeId: string; className?: string }) {
   const dateFmt = useDateFormat();
   const i18n = useI18n();
   const toast = useToast();
@@ -71,18 +63,23 @@ export function StoreSalesPanel({
   const productName = useProductName();
   const utils = trpc.useUtils();
   const session = useAuthStore((s) => s.session);
-  // 2026-10-21 CA-10/CA-57: mirrors the server's requireSalesRecord,
-  // which no longer accepts users.manage as a fallback (migration 0048
-  // backfilled the built-in grants). A store-level deny still surfaces
-  // as a 403 toast — the flat session set can't see per-store overrides.
-  const canRecord = session?.permissions.includes('sales.record') ?? false;
+  // Mirrors the server's requireSalesRecord (CA-10/CA-57: no users.manage
+  // fallback). Review CONF-14: as it holds in this store, overrides
+  // included; the flat set showed the form to someone denied here.
+  const canRecord = useStorePermission('sales.record', storeId);
 
   // CLS-9 (2026-10-30): archived dishes too, so today's sales of a dish
   // archived since keep its name; the picker offers active ones only.
   // D6 (2026-10-31): selling prices and turnover only with prices.view in
-  // this store; the server leaves them out too.
+  // this store; the server leaves them out too. CONF-24: each dish's
+  // ingredient count, without the recipe rows (only "has a recipe" is
+  // needed here).
   const canSeePrices = useCanSeePrices(storeId);
-  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: true, storeId });
+  const dishesQuery = trpc.dishes.list.useQuery({
+    includeArchived: true,
+    storeId,
+    withIngredients: false,
+  });
   const salesQuery = trpc.sales.list.useQuery({ storeId });
   // CONF-17: the day's totals come from the server, over every sale; the
   // list holds only the newest SALES_LIST_CAP.
@@ -99,16 +96,12 @@ export function StoreSalesPanel({
         isArchived: boolean;
       }
     >();
-    const ingCount = new Map<string, number>();
-    for (const ing of dishesQuery.data?.ingredients ?? []) {
-      ingCount.set(ing.dishId, (ingCount.get(ing.dishId) ?? 0) + 1);
-    }
     for (const d of dishesQuery.data?.dishes ?? []) {
       m.set(d.id, {
         id: d.id,
         names: d.names as Record<string, string>,
         unitPrice: d.unitPrice,
-        ingredientCount: ingCount.get(d.id) ?? 0,
+        ingredientCount: d.ingredientCount,
         isArchived: d.isArchived,
       });
     }
@@ -117,6 +110,14 @@ export function StoreSalesPanel({
 
   const [draftDishId, setDraftDishId] = useState('');
   const [draftQty, setDraftQty] = useState('1');
+  // CLS-11: 1.005 was sent as 1.00 and 0.001 as 0.00, then refused as
+  // 「出错了」. CONF-24: the server's own rule, said under the field once
+  // it was left or a record was tried (DX-VIS-15), not at the first digit.
+  const qtyProblem = saleQtyProblem(draftQty);
+  const [qtyRevealed, setQtyRevealed] = useState(false);
+  const shownQtyProblem = qtyRevealed ? qtyProblem : null;
+  const qtyRef = useRef<HTMLInputElement>(null);
+  const qtyErrorId = useId();
 
   // 2026-10-21 audit CA-21 (D-09): one stable idempotency key per
   // logical sale. Minted whenever the form is (re)armed — any edit of
@@ -143,12 +144,16 @@ export function StoreSalesPanel({
       // zero is said out loud — the toast used to read "stock deducted
       // automatically" for an apple nobody had ever received.
       // (`negativeStock` is absent from an older server's answer.)
-      const negative = data.negativeStock ?? [];
+      // CONF-24: at most NEGATIVE_NAMES_SHOWN names, then "and N more";
+      // a long recipe filled the screen.
+      const negative = (data.negativeStock ?? []).map((n) => productName({ names: n.names }));
       if (negative.length > 0) {
+        const items = negative.slice(0, NEGATIVE_NAMES_SHOWN).join(i18n.t('common.listSeparator'));
+        const more = negative.length - NEGATIVE_NAMES_SHOWN;
         toast.show(
-          i18n.t('sales.toast.recordedNegative', {
-            items: negative.map((n) => productName({ names: n.names })).join(i18n.t('common.listSeparator')),
-          }),
+          more > 0
+            ? i18n.t('sales.toast.recordedNegativeMore', { items, n: more })
+            : i18n.t('sales.toast.recordedNegative', { items }),
           { tone: 'warn', ttlMs: 8000 },
         );
       } else {
@@ -156,8 +161,11 @@ export function StoreSalesPanel({
       }
       setDraftDishId('');
       setDraftQty('1');
+      setQtyRevealed(false);
     },
-    onError: errToast('common.errors.actionFailed'),
+    // sales.record takes an idempotency key (above), so the toast may
+    // say that trying again is safe.
+    onError: errToast('common.errors.actionFailed', { retrySafe: true }),
   });
 
   // 2026-10-21: void flow — the sale being voided + the typed reason.
@@ -179,9 +187,6 @@ export function StoreSalesPanel({
   const normalizedVoidReason = normalizeVoidReason(voidReason);
 
   const sales = salesQuery.data ?? [];
-  // 2026-10-21 FE-01 / F4-03: an errored list must not read as "0 sales" —
-  // hide the summary and lock record/void until the list is back, so a
-  // cashier can't re-enter sales that already exist.
 
   // Today's headline (servings + revenue), counted by the server over the
   // sales that stand (CONF-17). Not shown while it loads or after it
@@ -197,6 +202,7 @@ export function StoreSalesPanel({
   }, [dishById, productName, i18n.locale]);
   // R2-INT-2 (2026-10-31): dishes without a recipe can't be sold; when that
   // is all there is, say so instead of "tap Record for the first sale".
+  // Dishes belong to the organisation, so dishes.manage is not per store.
   const canManageDishes = session?.permissions.includes('dishes.manage') ?? false;
   const hasSellableDish = dishOptions.some((d) => d.ingredientCount > 0);
   const canRecordHere = canRecord && !dishesQuery.isLoading && hasSellableDish;
@@ -208,10 +214,13 @@ export function StoreSalesPanel({
     // The record card shows the no-dishes / no-recipe reason.
     recordingBlocked: canRecord && dishesQuery.data !== undefined && !hasSellableDish,
   });
+  // 2026-10-21 FE-01 / F4-03: an errored list must not read as "0 sales" —
+  // hide the summary and lock record/void until the list is back, so a
+  // cashier can't re-enter sales that already exist.
   const listErrored = listView === 'error' || listView === 'offline';
 
   return (
-    <div className={`flex flex-col gap-3 ${className}`}>
+    <div className={cn('flex flex-col gap-3', className)}>
       {/* 2026-10-21 CA-09: sales.list returns at most SALES_LIST_CAP rows.
           The totals below count every sale (CONF-17); only the list is cut. */}
       {!listErrored && sales.length >= SALES_LIST_CAP ? (
@@ -238,9 +247,7 @@ export function StoreSalesPanel({
               <div className="text-old-h2 font-semibold tabular-nums">
                 {formatMoney(summary.revenue)}
               </div>
-              <div className="text-old-label text-[var(--c-fg-muted)]">
-                {session?.member.currency ?? 'UZS'}
-              </div>
+              <div className="text-old-label text-[var(--c-fg-muted)]">{currencyOf(session)}</div>
             </div>
           ) : null}
         </Card>
@@ -249,8 +256,7 @@ export function StoreSalesPanel({
       {/* Record sale form. */}
       {canRecord ? (
         <Card className="flex flex-col gap-2 p-3">
-          {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-          <SectionLabel className="px-0 py-0">{i18n.t('sales.form.recordTitle')}</SectionLabel>
+          <SectionLabel padded={false}>{i18n.t('sales.form.recordTitle')}</SectionLabel>
           {/* 2026-10-21 F4-12: while dishes load, don't tell the cashier to
               go create dishes in the Catalog. */}
           {dishesQuery.isLoading ? (
@@ -278,6 +284,7 @@ export function StoreSalesPanel({
               <Select
                 value={draftDishId}
                 disabled={listErrored}
+                aria-label={i18n.t('sales.form.pickDish')}
                 onChange={(e) => setDraftDishId(e.target.value)}
               >
                 <option value="">{i18n.t('sales.form.pickDish')}</option>
@@ -296,35 +303,41 @@ export function StoreSalesPanel({
                   );
                 })}
               </Select>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="1"
-                  min="1"
-                  value={draftQty}
-                  onChange={(e) => setDraftQty(e.target.value)}
-                  aria-label={i18n.t('sales.form.qtyLabel')}
-                  className="flex-1"
-                  disabled={listErrored}
-                />
-                <Button
-                  loading={record.isPending}
-                  disabled={listErrored || !draftDishId || Number(draftQty) <= 0}
-                  onClick={() => {
-                    if (listErrored || !draftDishId || Number(draftQty) <= 0) return;
-                    // CLS-11: 1.005 was silently sent as 1.00 and 0.001 as
-                    // 0.00 (then refused as 「出错了」). Say what is allowed.
-                    const qty = draftQty.trim();
-                    if (!/^\d{1,6}(\.\d{1,2})?$/.test(qty)) {
-                      errToast('sales.errors.qtyFormat')(new Error('sales.errors.qtyFormat'));
-                      return;
-                    }
-                    record.mutate({ storeId, dishId: draftDishId, qty });
-                  }}
-                >
-                  {i18n.t('sales.form.recordBtn')}
-                </Button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <NumberInput
+                    ref={qtyRef}
+                    value={draftQty}
+                    aria-label={i18n.t('sales.form.qtyLabel')}
+                    aria-invalid={shownQtyProblem !== null || undefined}
+                    aria-describedby={shownQtyProblem ? qtyErrorId : undefined}
+                    formatError="none"
+                    className={cn('flex-1', shownQtyProblem && 'border-[var(--c-danger)]')}
+                    disabled={listErrored}
+                    onBlur={() => setQtyRevealed(true)}
+                    onChange={(e) => setDraftQty(e.currentTarget.value)}
+                  />
+                  <Button
+                    loading={record.isPending}
+                    disabled={listErrored || !draftDishId}
+                    onClick={() => {
+                      if (listErrored || !draftDishId) return;
+                      if (qtyProblem) {
+                        setQtyRevealed(true);
+                        qtyRef.current?.focus();
+                        return;
+                      }
+                      record.mutate({ storeId, dishId: draftDishId, qty: draftQty.trim() });
+                    }}
+                  >
+                    {i18n.t('sales.form.recordBtn')}
+                  </Button>
+                </div>
+                {shownQtyProblem ? (
+                  <FieldError id={qtyErrorId}>
+                    {i18n.t(SALE_QTY_MESSAGE[shownQtyProblem])}
+                  </FieldError>
+                ) : null}
               </div>
             </>
           )}
@@ -461,7 +474,7 @@ export function StoreSalesPanel({
             <Field label={i18n.t('sales.void.reasonLabel')}>
               <Input
                 value={voidReason}
-                maxLength={300}
+                maxLength={SALE_VOID_REASON_MAX}
                 onChange={(e) => setVoidReason(e.target.value)}
                 placeholder={i18n.t('sales.void.reasonPlaceholder')}
                 autoFocus

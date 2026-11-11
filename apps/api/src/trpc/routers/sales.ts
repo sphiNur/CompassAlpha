@@ -45,20 +45,22 @@
  */
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
-import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import {
-  DateStringSchema,
-  PositiveDecimalStringSchema,
-  UuidSchema,
+  SaleRecordInputSchema,
+  SaleVoidInputSchema,
+  SalesRangeInputSchema,
   milliQtyFixed,
   mulQty,
+  normalizeQty,
   qtyMilli,
   qtyMilliOrZero,
   subQty,
+  sumMoney,
+  type SalesRangeInput,
 } from '@compass/contracts';
+import { SALES_LIST_CAP } from '@compass/contracts/limits';
 import { nextDate, todayInTz, zonedTimeToUtc } from '@compass/domain';
-import { BACKDATE_LIMIT_DAYS, normalizeQty, sumMoney } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
@@ -80,41 +82,6 @@ function requireSalesRecord(perms: ReadonlySet<string>): void {
     });
   }
 }
-
-const RecordInputSchema = z.object({
-  storeId: UuidSchema,
-  dishId: UuidSchema,
-  // CLS-19 (2026-10-30): 1e9 servings overflowed the column as a 500.
-  qty: PositiveDecimalStringSchema.refine((v) => Number(v) < 1_000_000, {
-    message: 'sales.errors.qtyTooLarge',
-  })
-    // RE-CLS-6 (2026-10-31): servings in hundredths, as the web form takes
-    // them. 0.001 of a dish deducted 0.000 of every ingredient — a sale
-    // with turnover and no stock movement.
-    .refine((v) => !/\.\d{3}$/.test(v) && Number(v) >= 0.01, {
-      message: 'sales.errors.qtyPrecision',
-    }),
-  /** Optional ISO timestamp; defaults to NOW(). Lets shift leads
-   *  back-fill the day's sales at close-out. Not in the future (CLS-19;
-   *  a few minutes of clock skew allowed). */
-  occurredAt: z
-    .string()
-    .datetime()
-    .refine((v) => Date.parse(v) <= Date.now() + 10 * 60_000, {
-      message: 'sales.errors.occurredInFuture',
-    })
-    // CLS-19 (2026-10-30, user decision): back-fill at most 90 days.
-    .refine((v) => Date.parse(v) >= Date.now() - BACKDATE_LIMIT_DAYS * 86_400_000, {
-      message: 'sales.errors.occurredTooOld',
-    })
-    .optional(),
-});
-
-const VoidInputSchema = z.object({
-  saleId: UuidSchema,
-  /** Why the sale is being voided — kept on the row for the audit trail. */
-  reason: z.string().trim().min(1).max(300),
-});
 
 /** 2026-10-21: movement source/reason of a sale void's reversal rows. A
  *  distinct source_type keeps the partial UNIQUE index (source_type,
@@ -143,15 +110,6 @@ export function buildSaleReversal(
   }
   return out;
 }
-
-const ListInputSchema = z.object({
-  storeId: UuidSchema,
-  /** Inclusive start, a business date in the store's timezone (falling
-   *  back to the org timezone). Defaults to that timezone's today. */
-  fromDate: DateStringSchema.optional(),
-  /** Inclusive end business date, same timezone. Defaults to today. */
-  toDate: DateStringSchema.optional(),
-});
 
 /**
  * 2026-10-21 audit CA-23 (D-03): sales.list day boundaries in the
@@ -186,7 +144,7 @@ type SalesSession = {
 async function salesRangeFor(
   tx: DB,
   session: SalesSession,
-  input: z.infer<typeof ListInputSchema>,
+  input: SalesRangeInput,
 ): Promise<{ from: Date; toExclusive: Date }> {
   // M3.1 (2026-05-15): store-scope assertion. Without this a staff
   // member assigned only to Store A could pass storeId=<Store B uuid>
@@ -215,7 +173,7 @@ export const salesRouter = router({
   // a STABLE key = double inventory deduction (nothing else dedupes;
   // see the header note, audit CA-21).
   record: idempotentMutation
-    .input(RecordInputSchema)
+    .input(SaleRecordInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireSalesRecord(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
@@ -386,7 +344,7 @@ export const salesRouter = router({
    * sale row is locked so two concurrent voids can't both reverse.
    * Already voided → returns ok without writing anything.
    */
-  void: authedProcedure.input(VoidInputSchema).mutation(async ({ ctx, input }) => {
+  void: authedProcedure.input(SaleVoidInputSchema).mutation(async ({ ctx, input }) => {
     requireSalesRecord(ctx.session!.permissions);
     const orgId = ctx.session!.orgId;
     // CONF-23: finding the sale's store, both checks and the write share
@@ -485,7 +443,7 @@ export const salesRouter = router({
     });
   }),
 
-  list: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
+  list: authedProcedure.input(SalesRangeInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const { from, toExclusive } = await salesRangeFor(tx, ctx.session!, input);
@@ -514,7 +472,7 @@ export const salesRouter = router({
           ),
         )
         .orderBy(desc(s.sales.occurredAt))
-        .limit(200);
+        .limit(SALES_LIST_CAP);
       // D6 (2026-10-31): selling price and turnover only where prices.view
       // holds for this store; counts and servings stay.
       if (pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [input.storeId])) return rows;
@@ -529,7 +487,7 @@ export const salesRouter = router({
    * Revenue is each sale's qty × price rounded to cents, added in cents
    * (D1), and only where prices.view holds for this store (D6).
    */
-  summary: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
+  summary: authedProcedure.input(SalesRangeInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const { from, toExclusive } = await salesRangeFor(tx, ctx.session!, input);
       const standing = sql`${s.sales.voidedAt} IS NULL`;

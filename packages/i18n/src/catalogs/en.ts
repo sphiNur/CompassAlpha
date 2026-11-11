@@ -2523,6 +2523,8 @@ export const en = {
   'inventory.errors.countTooLarge': 'That is too large: at most 99,999,999.',
   'inventory.badge.negative': 'Below zero — count it',
   'sales.toast.recordedNegative': 'Recorded. Stock is now below zero for: {items}. Count it soon.',
+  'sales.toast.recordedNegativeMore':
+    'Recorded. Stock is now below zero for: {items} and {n} more products. Count them soon.',
   'dishes.errors.archivedIngredient':
     'The recipe has an archived product. Pick another product or remove that row.',
   'dishes.errors.archivedIngredientRow':
