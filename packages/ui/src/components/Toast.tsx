@@ -405,7 +405,6 @@ export function useToast(): ToastContextValue {
     // Fallback no-op so a missing provider doesn't crash a page that
     // otherwise renders fine; the warning helps catch the wiring miss.
     if (typeof window !== 'undefined' && !(window as { __toastWarned?: boolean }).__toastWarned) {
-      // eslint-disable-next-line no-console
       console.warn('[ui] useToast() called outside <ToastProvider>; toasts will be no-ops.');
       (window as { __toastWarned?: boolean }).__toastWarned = true;
     }
