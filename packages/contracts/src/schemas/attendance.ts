@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  ATTENDANCE_GRACE_MINUTES,
+  ATTENDANCE_OVERTIME_AFTER_MINUTES,
+  ATTENDANCE_RADIUS_M,
+} from '../limits';
 import { DateStringSchema, LocaleSchema, UuidSchema } from './common';
 import { SettlementMoneySchema } from './settlement';
 
@@ -201,11 +206,20 @@ export const AttendancePolicySaveInputSchema = z
       .object({
         lat: z.number().min(-90).max(90),
         lng: z.number().min(-180).max(180),
-        radiusM: z.number().int().min(20).max(5000),
+        radiusM: z.number().int().min(ATTENDANCE_RADIUS_M.min).max(ATTENDANCE_RADIUS_M.max),
       })
       .nullable(),
-    graceMinutes: z.number().int().min(0).max(120),
-    overtimeAfterMinutes: z.number().int().min(5).max(240).default(30),
+    graceMinutes: z
+      .number()
+      .int()
+      .min(ATTENDANCE_GRACE_MINUTES.min)
+      .max(ATTENDANCE_GRACE_MINUTES.max),
+    overtimeAfterMinutes: z
+      .number()
+      .int()
+      .min(ATTENDANCE_OVERTIME_AFTER_MINUTES.min)
+      .max(ATTENDANCE_OVERTIME_AFTER_MINUTES.max)
+      .default(30),
     /** Face, liveness and the photo are always on (2026-11-06); the place photo is a choice. */
     requireScene: z.boolean().default(false),
   })

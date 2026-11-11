@@ -7,7 +7,10 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
   ATTENDANCE_ACCURACY_SLACK_M,
+  ATTENDANCE_GRACE_MINUTES,
   ATTENDANCE_MAX_ACCURACY_M,
+  ATTENDANCE_OVERTIME_AFTER_MINUTES,
+  ATTENDANCE_RADIUS_M,
   isPurchasePrice,
   locationVerdict,
   ORDER_QTY_MAX,
@@ -18,6 +21,7 @@ import {
   TAX_RATE_MESSAGE,
   taxRateProblem,
   taxRateToSend,
+  wholeNumberIn,
 } from './limits';
 import { OrderQtySchema } from './schemas/common';
 import {
@@ -27,6 +31,7 @@ import {
 } from './schemas/settlement';
 import { SkuStepSchema, SkuUnitSchema } from './schemas/catalog';
 import { PurchasePriceSchema } from './schemas/run';
+import { AttendancePolicySaveInputSchema } from './schemas/attendance';
 import * as barrel from './index';
 
 describe('limits.ts', () => {
@@ -161,5 +166,43 @@ describe('limits.ts', () => {
     // A fix coarser than the cap places no one, even at the centre.
     expect(at(0, ATTENDANCE_MAX_ACCURACY_M)).toBe('inside');
     expect(at(0, ATTENDANCE_MAX_ACCURACY_M + 1)).toBe('inaccurate');
+  });
+
+  it('wholeNumberIn reads only a whole number inside the range (NEW-06)', () => {
+    const range = { min: 0, max: 120 };
+    expect(wholeNumberIn('0', range)).toBe(0);
+    expect(wholeNumberIn('120', range)).toBe(120);
+    expect(wholeNumberIn('007', range)).toBe(7);
+    // An emptied field is not 0, and nothing else Number() accepts is read.
+    for (const text of ['', ' ', '121', '-1', '1.5', '12.', '1e2', '0x10', ' 5', '5 ']) {
+      expect({ text, read: wholeNumberIn(text, range) }).toEqual({ text, read: null });
+    }
+  });
+
+  it('the attendance form and the policy schema share one range per rule (NEW-06)', () => {
+    const policy = (over: Record<string, unknown>) =>
+      AttendancePolicySaveInputSchema.safeParse({
+        storeId: '00000000-0000-4000-8000-000000000001',
+        requireDevice: false,
+        requireGeo: false,
+        geo: null,
+        graceMinutes: 5,
+        overtimeAfterMinutes: 30,
+        ...over,
+      }).success;
+    const geo = (radiusM: number) => ({ geo: { lat: 0, lng: 0, radiusM } });
+    const rules = [
+      [ATTENDANCE_RADIUS_M, geo],
+      [ATTENDANCE_GRACE_MINUTES, (n: number) => ({ graceMinutes: n })],
+      [ATTENDANCE_OVERTIME_AFTER_MINUTES, (n: number) => ({ overtimeAfterMinutes: n })],
+    ] as const;
+    for (const [range, field] of rules) {
+      for (const n of [range.min - 1, range.min, range.max, range.max + 1]) {
+        expect({ n, form: wholeNumberIn(String(n), range) !== null }).toEqual({
+          n,
+          form: policy(field(n)),
+        });
+      }
+    }
   });
 });

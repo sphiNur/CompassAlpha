@@ -336,6 +336,36 @@ export function locationVerdict(fix: {
  */
 export const ATTENDANCE_UNDO_WINDOW_MS = 2 * 60_000;
 
+/** A range of whole numbers, both ends included. */
+export interface WholeNumberRange {
+  min: number;
+  max: number;
+}
+
+/**
+ * A store's clock-in rules, in whole metres and minutes. The policy schema
+ * and the settings form read these; the form had its own copies.
+ */
+export const ATTENDANCE_RADIUS_M = { min: 20, max: 5000 } as const satisfies WholeNumberRange;
+export const ATTENDANCE_GRACE_MINUTES = { min: 0, max: 120 } as const satisfies WholeNumberRange;
+export const ATTENDANCE_OVERTIME_AFTER_MINUTES = {
+  min: 5,
+  max: 240,
+} as const satisfies WholeNumberRange;
+
+/**
+ * The whole number a field holds, when it is one and inside `range`;
+ * otherwise null. `value` is the field's normalised text (a number field
+ * hands that on). Review NEW-06 (2026-11-11): the attendance form read
+ * its fields with `Number()`, so an emptied grace field was 0 minutes and
+ * saved as such, and "1e2" was 100.
+ */
+export function wholeNumberIn(value: string, range: WholeNumberRange): number | null {
+  if (!/^\d{1,9}$/.test(value)) return null;
+  const n = Number(value);
+  return n >= range.min && n <= range.max ? n : null;
+}
+
 /**
  * COREAPI-04 (2026-11-09): one `system.log` call carries at most this many
  * client log events. The server refuses a bigger batch and the web sends

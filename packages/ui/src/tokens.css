@@ -121,9 +121,9 @@
    * `h-[var(--control-h)]` etc. — never re-type a raw px height.
    *
    *   --card-pad       Card body/footer inner padding (== px-4).
-   *   --control-h      Every text field: Input, SearchInput, Select,
-   *                    NumberInput (and raw <input>/<select>), and the
-   *                    md Button that sits next to them.
+   *   --control-h      Every text field: Input (also type="number"),
+   *                    SearchInput, Select (and raw <input>/<select>),
+   *                    and the md Button that sits next to them.
    *   --control-h-sm   Compact non-text controls: Segmented.
    *
    * D18 (2026-10-31, owner decision): text fields are 44px, the touch

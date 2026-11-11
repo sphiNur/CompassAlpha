@@ -177,7 +177,7 @@ describe('D18: text fields are 44px', () => {
   });
 
   test('every text field and the md Button take their height from --control-h', () => {
-    for (const name of ['Input.tsx', 'SearchInput.tsx', 'Select.tsx', 'NumberInput.tsx']) {
+    for (const name of ['Input.tsx', 'SearchInput.tsx', 'Select.tsx']) {
       const src = read(name);
       expect({ name, height: src.includes('h-[var(--control-h)]') }).toEqual({ name, height: true });
       expect({ name, compact: /h-\[var\(--control-h-sm\)\]|'h-8'|\bh-9\b|\bh-10\b/.test(src) }).toEqual({
@@ -297,14 +297,7 @@ describe('UI-11: one disabled look', () => {
   const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
 
   test('the kit controls take the shared disabled classes, not their own opacity', () => {
-    for (const name of [
-      'Input.tsx',
-      'NumberInput.tsx',
-      'Textarea.tsx',
-      'Select.tsx',
-      'Button.tsx',
-      'pill.ts',
-    ]) {
+    for (const name of ['Input.tsx', 'Textarea.tsx', 'Select.tsx', 'Button.tsx', 'pill.ts']) {
       const src = read(name);
       expect({
         name,

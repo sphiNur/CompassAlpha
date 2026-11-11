@@ -69,7 +69,7 @@ export interface UiLabels {
   /** CMP-ORD-1: the typed value is not a multiple of the product's step. */
   qtyNotMultiple: (step: string) => string;
 
-  // --- NumberInput / Input type="number" ---
+  // --- Input type="number" ---
   /** R2-ORD-2: the text in a number field is not one number ("1e3"). */
   numberInvalid: string;
 

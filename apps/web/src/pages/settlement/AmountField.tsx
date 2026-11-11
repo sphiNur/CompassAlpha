@@ -4,7 +4,7 @@
  * SettlementPage.
  */
 import { useId } from 'react';
-import { Field, FieldError, NumberInput } from '@compass/ui';
+import { Field, FieldError, Input } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { isMoney } from './draftModel';
 import { MONEY_PROBLEM_MESSAGE, moneyProblem } from './moneyProblem';
@@ -41,15 +41,15 @@ export function AmountField({
   // under the focus ring while typing).
   return (
     <Field label={label}>
-      <NumberInput
+      <Input
+        type="number"
         value={value}
         placeholder="0"
         aria-label={label}
-        aria-invalid={shown || undefined}
+        invalid={shown}
         aria-describedby={shown ? errorId : undefined}
         // The line below covers "not a number" too; one message, not two.
         formatError="none"
-        className={shown ? 'border-[var(--c-danger)]' : undefined}
         onChange={(event) => onChange(event.target.value)}
         onBlur={onLeave}
       />

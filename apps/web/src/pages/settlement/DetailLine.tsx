@@ -6,15 +6,7 @@
  * inside the card (UI-6 / UI-13); each was a grey card of its own.
  */
 import { useId, type ReactNode } from 'react';
-import {
-  Button,
-  EmptyState,
-  Field,
-  FieldError,
-  NumberInput,
-  Textarea,
-  rowListClass,
-} from '@compass/ui';
+import { Button, EmptyState, Field, FieldError, Input, Textarea, rowListClass } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { ITEM_MONEY_PROBLEM_MESSAGE, moneyProblem, type MoneyProblem } from './moneyProblem';
 
@@ -128,15 +120,15 @@ export function LineAmountField({
   const errorId = useId();
   return (
     <Field label={label}>
-      <NumberInput
+      <Input
+        type="number"
         value={value}
         placeholder="0"
         readOnly={readOnly}
         aria-label={name}
-        aria-invalid={problem !== null || undefined}
+        invalid={problem !== null}
         aria-describedby={problem ? errorId : undefined}
         formatError="none"
-        className={problem ? 'border-[var(--c-danger)]' : undefined}
         onBlur={onLeave}
         onChange={(event) => onChange(event.currentTarget.value)}
       />

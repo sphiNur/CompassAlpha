@@ -124,12 +124,13 @@ export function IssueSheet({
             </FieldLabel>
             <Input
               id="issue-received"
-              type="text"
-              inputMode="decimal"
+              type="number"
+              // The line below says what is wrong, once the field was used.
+              formatError="none"
               value={draft.received}
               onChange={(e) => form.setReceived(e.target.value)}
               onBlur={form.touchReceived}
-              aria-invalid={receivedError ? true : undefined}
+              invalid={!!receivedError}
               aria-describedby={receivedError ? 'issue-received-error' : undefined}
             />
             {/* CONF-21: the kit's field error, as on every other form. */}

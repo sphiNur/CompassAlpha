@@ -6,7 +6,7 @@
  * the line. A value the user did not type is never offered now — the
  * button stays disabled and the sheet says why.
  *
- * Expects the field already normalised by NumberInput ("1,5" → "1.5");
+ * Expects the field already normalised by the number Input ("1,5" → "1.5");
  * text that is not one number arrives as typed and is refused here.
  */
 export type QtyDraft =
