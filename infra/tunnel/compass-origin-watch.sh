@@ -4,6 +4,11 @@
 # Runs every minute from compass-origin-watch.timer. If nothing changed,
 # it exits without a network call.
 #
+# `compass-origin-watch --print-signed` (review OPS-15) prints one signed
+# message for the current hostname and stops: no publish, no state change.
+# scripts/refresh-app-proxy-origin.sh forwards it to the Worker when ntfy
+# is down, so the signing key never leaves this server.
+#
 set -euo pipefail
 umask 077
 
@@ -20,19 +25,54 @@ publish_file="/home/ubuntu/.config/compass-origin.last-publish"
 # (security scan F3, 2026-10-31), so keep this below that window.
 republish_after_seconds=21600
 
+print_signed=false
+if [[ "${1:-}" == "--print-signed" ]]; then
+  print_signed=true
+fi
+
 origin="$(
   grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$tunnel_log" 2>/dev/null |
     tail -1 ||
     true
 )"
 if [[ -z "$origin" ]]; then
-  echo "origin watch: tunnel URL not found yet"
+  echo "origin watch: tunnel URL not found yet" >&2
+  if [[ "$print_signed" == true ]]; then
+    exit 1
+  fi
   exit 0
 fi
 
 signing_key="${ORIGIN_SIGNING_KEY:-}"
 if [[ -z "$signing_key" && -r "$key_file" ]]; then
   signing_key="$(tr -d '\r\n' < "$key_file")"
+fi
+
+# <url>|<unix_ts>|<hex HMAC-SHA256(key, "<url>|<unix_ts>")>. The key is
+# handed over in the environment of this one process, never on a command
+# line where `ps` would show it.
+signed_message() {
+  local signature
+  signature="$(
+    ORIGIN_HMAC_KEY="$signing_key" ORIGIN_HMAC_MSG="${1}|${2}" python3 -I -c '
+import hashlib, hmac, os
+print(hmac.new(os.environb[b"ORIGIN_HMAC_KEY"], os.environb[b"ORIGIN_HMAC_MSG"], hashlib.sha256).hexdigest())
+'
+  )"
+  if [[ ! "$signature" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "origin watch: could not sign the origin update" >&2
+    return 1
+  fi
+  printf '%s|%s|%s\n' "$1" "$2" "$signature"
+}
+
+if [[ "$print_signed" == true ]]; then
+  if [[ -z "$signing_key" ]]; then
+    echo "origin watch: no signing key (${key_file})" >&2
+    exit 1
+  fi
+  signed_message "$origin" "$(date +%s)"
+  exit 0
 fi
 
 # The state records whether the last publish was signed, so adding (or
@@ -59,20 +99,7 @@ fi
 
 payload="$origin"
 if [[ -n "$signing_key" ]]; then
-  # <url>|<unix_ts>|<hex HMAC-SHA256(key, "<url>|<unix_ts>")>. The key
-  # is handed over in the environment of this one process, never on a
-  # command line where `ps` would show it.
-  signature="$(
-    ORIGIN_HMAC_KEY="$signing_key" ORIGIN_HMAC_MSG="${origin}|${now}" python3 -I -c '
-import hashlib, hmac, os
-print(hmac.new(os.environb[b"ORIGIN_HMAC_KEY"], os.environb[b"ORIGIN_HMAC_MSG"], hashlib.sha256).hexdigest())
-'
-  )"
-  if [[ ! "$signature" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "origin watch: could not sign the origin update" >&2
-    exit 1
-  fi
-  payload="${origin}|${now}|${signature}"
+  payload="$(signed_message "$origin" "$now")"
 else
   echo "origin watch: no signing key (${key_file}); publishing unsigned" >&2
 fi

@@ -7,9 +7,10 @@
 
 ```
 Telegram
-  → Cloudflare Worker app-proxy (infra/cloudflare/app-proxy): finds
-    the origin's current tunnel URL in KV, which compass-origin-watch
-    publishes (infra/tunnel)
+  → Cloudflare Worker app-proxy (infra/cloudflare/app-proxy): reads
+    the origin's current tunnel URL from the ntfy topic that
+    compass-origin-watch publishes to (infra/tunnel); KV keeps the
+    newest one
   → cloudflared quick tunnel (compass-app-tunnel.service)
   → nginx on :80 (its config is not in the repo yet: review OPS-23)
   → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
