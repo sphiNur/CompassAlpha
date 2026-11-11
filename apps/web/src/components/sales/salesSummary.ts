@@ -1,34 +1,10 @@
 /**
  * Pure helpers for StoreSalesPanel (2026-10-21, sales.void).
  *
- * Kept out of the component so the "voided sales don't count" rule has a
- * unit test without React.
+ * Kept out of the component so their rules have unit tests without React.
+ * The day's totals are counted by the server now (sales.summary, review
+ * CONF-17): adding up the list missed every sale past its 200 rows.
  */
-
-import { sumMoneyLines } from '../../lib/money';
-
-export interface SaleSummaryRow {
-  qty: string;
-  unitPrice: string | null;
-  voidedAt?: string | Date | null;
-}
-
-/** Today's headline: servings + revenue over sales that still stand. */
-export function summarizeSales(sales: ReadonlyArray<SaleSummaryRow>): {
-  count: number;
-  revenue: number;
-} {
-  let count = 0;
-  const priced: Array<[string, string]> = [];
-  for (const sale of sales) {
-    // 2026-10-21: a voided sale's stock was put back — it isn't revenue.
-    if (sale.voidedAt) continue;
-    count += Number(sale.qty);
-    if (sale.unitPrice) priced.push([sale.qty, sale.unitPrice]);
-  }
-  // DX-PFE-12: each sale rounded to cents, then added in cents (D1).
-  return { count, revenue: sumMoneyLines(priced) };
-}
 
 /** Void reason as the server accepts it (trimmed, 1..300 chars). */
 export function normalizeVoidReason(raw: string): string | null {

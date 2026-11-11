@@ -1624,7 +1624,6 @@ export const zh = {
   'inventory.confirm.wastageNegative':
     '报损后库存会变成 {after}（负数），说明之前的库存记录不准。仍要保存吗？建议之后做一次盘点。',
   'inventory.errors.cannotAdjust': '盘点或报损需要调整库存的权限。需要的话找店长开通。',
-  'inventory.errors.invalidQty': '数量必须为非负数。',
   'inventory.sheet.wastage.needQty': '填写损失数量。',
   'inventory.errors.wastageNeedsNote': '报损必须填写原因。',
 
@@ -1703,7 +1702,7 @@ export const zh = {
   'sales.form.recordBtn': '记录',
   'sales.form.noDishesYet': '尚无菜品。请先在 管理 › 目录 › 菜品 中创建。',
   'sales.list.title': '今日销售',
-  'sales.list.capReached': '仅显示最近 {n} 笔销售，合计可能不完整。',
+  'sales.list.capReached': '列表只显示最近 {n} 笔销售，合计包含全部销售。',
   'sales.empty.title': '今天还没有销售',
   'sales.empty.description': '点击上方「记录」添加第一笔。',
   'sales.toast.recorded': '已记录——库存自动扣减。',

@@ -78,6 +78,7 @@ export const PERSISTED_QUERIES: ReadonlySet<string> = new Set([
   'settlement.recent',
   'settlement.wageRoster',
   'sales.list',
+  'sales.summary',
   'dishes.list',
   'inventory.levels',
   'inventory.recentMovements',
@@ -96,6 +97,7 @@ export const TODAY_QUERIES: ReadonlySet<string> = new Set([
   'order.extrasSuggestions',
   'settlement.businessDate',
   'sales.list',
+  'sales.summary',
 ]);
 
 /** Is a copy of `queryKey` loaded at `loadedAt` still fit to show at `now`? */

@@ -43,13 +43,3 @@ export function moneyLine(qty: Amount, unitPrice: Amount): number | null {
   const cents = lineCentsOf(qty, unitPrice);
   return cents === null ? null : Number(centsToMoney(cents));
 }
-
-/**
- * The total of money lines, each rounded to cents first and added in
- * cents. A line that cannot be worked out (no price yet) adds nothing.
- */
-export function sumMoneyLines(lines: Iterable<readonly [qty: Amount, unitPrice: Amount]>): number {
-  let total = 0n;
-  for (const [qty, unitPrice] of lines) total += lineCentsOf(qty, unitPrice) ?? 0n;
-  return Number(centsToMoney(total));
-}

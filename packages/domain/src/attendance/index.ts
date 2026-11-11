@@ -7,46 +7,13 @@
  * and judges late / early / absent / missing punches against it.
  */
 
+import { nextDate, zonedTimeToUtc } from '../shared/clock';
+
 const MINUTE = 60_000;
 
-/** Offset of `tz` from UTC at `at`, in minutes (Asia/Tashkent → +300). */
-function offsetMinutes(tz: string, at: Date): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(at);
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? '0');
-  const asUtc = Date.UTC(
-    get('year'),
-    get('month') - 1,
-    get('day'),
-    get('hour'),
-    get('minute'),
-    get('second'),
-  );
-  return Math.round((asUtc - at.getTime()) / MINUTE);
-}
-
-const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
-const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/** `YYYY-MM-DD` + `HH:MM` wall-clock time in `tz` → the instant. */
-export function zonedTimeToUtc(date: string, time: string, tz: string): Date {
-  const d = DATE_RE.exec(date);
-  const t = TIME_RE.exec(time);
-  if (!d || !t) throw new Error(`bad local time ${date} ${time}`);
-  const guess = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]));
-  // Two passes settle the offset across a DST change.
-  let at = guess - offsetMinutes(tz, new Date(guess)) * MINUTE;
-  at = guess - offsetMinutes(tz, new Date(at)) * MINUTE;
-  return new Date(at);
-}
+// CONF-16: the zone arithmetic lives in shared/clock; the attendance
+// router keeps reading it from here.
+export { nextDate, zonedTimeToUtc };
 
 /** `HH:MM` of an instant in `tz`. */
 export function localTime(at: Date, tz: string): string {
@@ -56,14 +23,6 @@ export function localTime(at: Date, tz: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(at);
-}
-
-/** The local date one day after `date` (`YYYY-MM-DD`). */
-export function nextDate(date: string, days = 1): string {
-  const d = DATE_RE.exec(date);
-  if (!d) throw new Error(`bad date ${date}`);
-  const at = new Date(Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]) + days));
-  return at.toISOString().slice(0, 10);
 }
 
 /** A planned shift's instants; an end at or before the start ends next day. */

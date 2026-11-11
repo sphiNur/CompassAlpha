@@ -41,7 +41,6 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import {
-  DecimalStringSchema,
   PositiveDecimalStringSchema,
   STOCKTAKE_COUNT_MESSAGE,
   UuidSchema,
@@ -123,6 +122,20 @@ const WastageInputSchema = z.object({
   note: z.string().trim().min(1).max(500),
 });
 
+/** Rows of the raw queries below, checked instead of cast (review CONF-23). */
+const LevelRowsSchema = z.array(
+  z.object({
+    sku_id: z.string(),
+    on_hand: z.string(),
+    // A raw `tx.execute` returns timestamptz as a string under postgres-js
+    // (only Drizzle's typed selects map it to a Date), so calling
+    // .toISOString() on it threw for every store with stock.
+    last_movement_at: z.union([z.date(), z.string()]),
+    movement_count: z.number(),
+  }),
+);
+const OnHandRowsSchema = z.array(z.object({ on_hand: z.string() }));
+
 export const inventoryRouter = router({
   /**
    * Returns the current on-hand for every SKU that's had at least one
@@ -144,7 +157,8 @@ export const inventoryRouter = router({
         ctx.session!.permissions,
       );
       const orgId = ctx.session!.orgId;
-      const rows = (await tx.execute(sql`
+      const rows = LevelRowsSchema.parse(
+        await tx.execute(sql`
         SELECT
           m.sku_id::text   AS sku_id,
           SUM(m.delta)::text  AS on_hand,
@@ -155,15 +169,8 @@ export const inventoryRouter = router({
           AND m.store_id = ${input.storeId}
         GROUP BY m.sku_id
         ORDER BY MAX(m.occurred_at) DESC
-      `)) as unknown as Array<{
-        sku_id: string;
-        on_hand: string;
-        // A raw `db.execute` returns timestamptz as a string under
-        // postgres-js (only Drizzle's typed selects map it to a Date), so
-        // calling .toISOString() on it threw for every store with stock.
-        last_movement_at: Date | string;
-        movement_count: number;
-      }>;
+      `),
+      );
 
       return rows.map((r) => ({
         skuId: r.sku_id,
@@ -234,42 +241,36 @@ export const inventoryRouter = router({
     .input(StocktakeInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
-      // M3.7 (2026-05-15): store-scope assertion. The flat permission
-      // check only says "this user can adjust inventory somewhere".
-      // Without the assertion below, a manager-of-A with
-      // `inventory.adjust` could call stocktake({storeId: <Store B>})
-      // and post a delta to Store B's ledger. The effective-perm
-      // override check below isn't enough — it composes the perm set
-      // with per-store overrides but doesn't enforce store binding.
-      await ctx.withOrg((tx) =>
-        assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        ),
-      );
-      // Per-store override check: an admin may have denied the actor
-      // `inventory.adjust` specifically for this store.
-      const effective = await ctx.withOrg((tx) =>
-        effectivePermissionsForStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        ),
-      );
-      requireInventoryAdjust(effective);
-
+      // The schema's stocktakeCountProblem already refused anything but
+      // a non-negative decimal (CONF-23: a second check here was dead).
       const targetNum = Number(input.target);
-      if (!Number.isFinite(targetNum) || targetNum < 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'inventory.errors.invalidQty',
-        });
-      }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        // M3.7 (2026-05-15): store-scope assertion. The flat permission
+        // check only says "this user can adjust inventory somewhere".
+        // Without the assertion below, a manager-of-A with
+        // `inventory.adjust` could call stocktake({storeId: <Store B>})
+        // and post a delta to Store B's ledger. The effective-perm
+        // override check below isn't enough — it composes the perm set
+        // with per-store overrides but doesn't enforce store binding.
+        // CONF-23: both checks run in the write's own transaction; they
+        // used to take one each.
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+        // Per-store override check: an admin may have denied the actor
+        // `inventory.adjust` specifically for this store.
+        requireInventoryAdjust(
+          await effectivePermissionsForStore(
+            tx,
+            ctx.session!.memberId,
+            input.storeId,
+            ctx.session!.permissions,
+          ),
+        );
         await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
         // 2026-10-21 audit CA-54: serialize stocktakes per (store, sku)
         // for the rest of this tx. Without it two concurrent counts both
@@ -279,13 +280,15 @@ export const inventoryRouter = router({
         );
         // Compute current SUM(delta) so we can write the right delta
         // to make SUM = target. Single round-trip.
-        const cur = (await tx.execute(sql`
+        const cur = OnHandRowsSchema.parse(
+          await tx.execute(sql`
           SELECT COALESCE(SUM(delta), 0)::text AS on_hand
           FROM inventory.movements
           WHERE org_id = ${orgId}
             AND store_id = ${input.storeId}
             AND sku_id = ${input.skuId}
-        `)) as unknown as Array<{ on_hand: string }>;
+        `),
+        );
         const current = Number(cur[0]?.on_hand ?? '0');
         const delta = (targetNum - current).toFixed(3);
         if (Math.abs(Number(delta)) < 0.0005) {
@@ -324,27 +327,23 @@ export const inventoryRouter = router({
     .input(WastageInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
-      // M3.7: same gate as stocktake (above).
-      await ctx.withOrg((tx) =>
-        assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        ),
-      );
-      const effective = await ctx.withOrg((tx) =>
-        effectivePermissionsForStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        ),
-      );
-      requireInventoryAdjust(effective);
-
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        // M3.7: same gate as stocktake (above), in the same transaction.
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+        requireInventoryAdjust(
+          await effectivePermissionsForStore(
+            tx,
+            ctx.session!.memberId,
+            input.storeId,
+            ctx.session!.permissions,
+          ),
+        );
         await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
         const negative = '-' + Number(input.qty).toFixed(3);
         await tx.insert(s.inventoryMovements).values({
@@ -363,5 +362,3 @@ export const inventoryRouter = router({
       });
     }),
 });
-
-void DecimalStringSchema;

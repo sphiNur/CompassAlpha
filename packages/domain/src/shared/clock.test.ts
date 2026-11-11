@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { dateInTz, fixedClock, todayInTz } from './clock';
+import { dateInTz, fixedClock, nextDate, todayInTz, zonedTimeToUtc } from './clock';
 
 /**
  * Review TEST4-07 (2026-11): the business date comes from here, and only
@@ -48,5 +48,30 @@ describe('fixedClock', () => {
     const clock = fixedClock(new Date('2026-11-10T00:00:00Z'));
     clock.now().setUTCFullYear(2000);
     expect(clock.now().toISOString()).toBe('2026-11-10T00:00:00.000Z');
+  });
+});
+
+describe('zonedTimeToUtc / nextDate (CONF-16)', () => {
+  it('reads a wall-clock time in the zone, on both sides of a DST change', () => {
+    expect(zonedTimeToUtc('2026-11-10', '00:00', 'Asia/Tashkent').toISOString()).toBe(
+      '2026-11-09T19:00:00.000Z',
+    );
+    // Berlin moves from UTC+1 to UTC+2 at 02:00 on 2026-03-29.
+    expect(zonedTimeToUtc('2026-03-29', '00:00', 'Europe/Berlin').toISOString()).toBe(
+      '2026-03-28T23:00:00.000Z',
+    );
+    expect(zonedTimeToUtc('2026-03-29', '09:00', 'Europe/Berlin').toISOString()).toBe(
+      '2026-03-29T07:00:00.000Z',
+    );
+    expect(() => zonedTimeToUtc('2026-3-29', '00:00', 'UTC')).toThrow();
+    expect(() => zonedTimeToUtc('2026-03-29', '24:00', 'UTC')).toThrow();
+  });
+
+  it('steps dates across months and years, both ways', () => {
+    expect(nextDate('2026-12-31')).toBe('2027-01-01');
+    expect(nextDate('2026-03-01', -1)).toBe('2026-02-28');
+    expect(nextDate('2028-02-28')).toBe('2028-02-29');
+    expect(nextDate('2026-11-10', 7)).toBe('2026-11-17');
+    expect(() => nextDate('10.11.2026')).toThrow();
   });
 });
