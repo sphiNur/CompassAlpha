@@ -105,6 +105,14 @@ describe('test targets (OPS-16)', () => {
     expect(read('CLAUDE.md')).toContain(`SKIP_PG_TESTS=1 bun test ${UNIT_TEST_DIRS.join(' ')}\n`);
   });
 
+  test('pnpm test runs the shared unit list (OPS-17)', () => {
+    const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> };
+    expect(pkg.scripts.test).toBe('bun run scripts/unit-tests.ts');
+    const script = read('scripts/unit-tests.ts');
+    expect(script).toContain("['test', ...UNIT_TEST_DIRS");
+    expect(script).toContain('env: unitGateEnv(process.env)');
+  });
+
   test('the deploy runs the shared unit list', () => {
     const deploy = read('scripts/deploy.ts');
     expect(deploy).toContain("['test', ...UNIT_TEST_DIRS]");

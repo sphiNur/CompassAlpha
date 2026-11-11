@@ -5,9 +5,10 @@
 -- * A member's attendance stays when the member is removed (owner decision):
 --   punches, shifts, daily wages and overtime no longer go with the member
 --   row. admin.memberRemove refuses someone with attendance and asks to
---   suspend them instead. Removing a whole organisation still removes it
---   all (NO ACTION is checked at the end of the statement, after the
---   organisation's own cascades).
+--   suspend them instead. Removing a whole organisation still removes its
+--   attendance (NO ACTION is checked at the end of the statement, after the
+--   organisation's own cascades). An organisation with a daily close cannot
+--   be removed at all: its settlement revisions refuse DELETE (0037).
 -- * Frame prints for each accepted self punch: a SHA-256 and the SFace
 --   feature of every frame (straight, blink, open mouth, turns). A frame
 --   sent again later, or one of the person's enrollment photos, is refused,

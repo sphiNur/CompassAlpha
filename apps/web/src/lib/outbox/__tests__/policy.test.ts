@@ -217,17 +217,25 @@ describe('isRetryDue', () => {
 describe('registerReplayHandlers (CMP-FE-3)', () => {
   it('registers app-wide handlers and removes only its own on cleanup', async () => {
     const mine = async () => {};
-    const release = registerReplayHandlers({ 'test.one': mine, 'test.two': mine });
-    expect(hasReplayHandler('test.one')).toBe(true);
-    // A later registration of the same procedure wins and survives the
-    // first one's cleanup.
     const other = async () => {};
-    const releaseOther = registerReplayHandlers({ 'test.two': other });
-    release();
-    expect(hasReplayHandler('test.one')).toBe(false);
-    expect(hasReplayHandler('test.two')).toBe(true);
-    releaseOther();
-    expect(hasReplayHandler('test.two')).toBe(false);
+    const release = registerReplayHandlers({ 'test.one': mine, 'test.two': mine });
+    let releaseOther = () => {};
+    try {
+      expect(hasReplayHandler('test.one')).toBe(true);
+      // A later registration of the same procedure wins and survives the
+      // first one's cleanup.
+      releaseOther = registerReplayHandlers({ 'test.two': other });
+      release();
+      expect(hasReplayHandler('test.one')).toBe(false);
+      expect(hasReplayHandler('test.two')).toBe(true);
+      releaseOther();
+      expect(hasReplayHandler('test.two')).toBe(false);
+    } finally {
+      // The handlers are app-wide: a failed assertion must not leave them
+      // for the tests after it (TEST3-07). Releasing twice is a no-op.
+      release();
+      releaseOther();
+    }
   });
 });
 
