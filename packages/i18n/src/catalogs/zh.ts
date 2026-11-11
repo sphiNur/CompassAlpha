@@ -24,6 +24,7 @@ export const zh = {
   'app.update.title': '新版本已就绪',
   'common.cancel': '取消',
   'common.reason': '原因',
+  'common.addNoteOptional': '+ 添加备注（可选）',
   'common.clearSearch': '清除搜索',
   'common.archive': '归档',
   'common.archived': '已归档',
@@ -1364,7 +1365,6 @@ export const zh = {
   'run.confirm.undoStartDelivery.body':
     '把采购单退回到采购阶段。只有在尚未向任何门店送货前才可以。',
   'run.label.reasonForChange': '修改原因',
-  'run.label.addReasonOptional': '+ 添加备注（可选）',
   'run.label.itemsTotal': '商品合计',
   'run.label.reasonPlaceholder': '例如：收据上的单价看错了',
   'run.toast.runPlanned': '采购单已生成',

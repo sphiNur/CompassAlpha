@@ -52,6 +52,7 @@ export const en = {
   'common.cancel': 'Cancel',
   // UI-08: what @compass/ui's ConfirmSheet and SearchInput show by default.
   'common.reason': 'Reason',
+  'common.addNoteOptional': '+ Add note (optional)',
   'common.clearSearch': 'Clear search',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
@@ -1622,7 +1623,6 @@ export const en = {
   'run.confirm.undoStartDelivery.body':
     'Reverts this run to the purchasing step. Only works before any store has been delivered to.',
   'run.label.reasonForChange': 'Reason for change',
-  'run.label.addReasonOptional': '+ Add note (optional)',
   'run.label.itemsTotal': 'Goods total',
   'run.label.reasonPlaceholder': 'e.g. price misread on the receipt',
   'run.toast.runPlanned': 'Run planned',

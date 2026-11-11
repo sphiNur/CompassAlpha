@@ -35,7 +35,7 @@ import {
   Button,
   Chip,
   ChipBar,
-  ConfirmSheet as PriceCheckSheet,
+  ConfirmSheet,
   DataState,
   QueryErrorBanner,
   EmptyState,
@@ -81,7 +81,6 @@ import {
 import {
   PurchaseSheet,
   AddItemSheet,
-  ConfirmSheet,
   type PurchaseDraft,
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
@@ -124,6 +123,20 @@ type ConfirmKind =
   // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
   // confirmation or undo.
   | { kind: 'removeExpense'; expenseId: string; label: string };
+
+/** What the run's confirm sheet asks (ConfirmSheet in @compass/ui). */
+interface RunConfirm {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  danger: boolean;
+  irreversible?: boolean;
+  requireReason: boolean;
+  reasonOptional?: boolean;
+  reasonPlaceholder?: string;
+  isPending: boolean;
+  run: () => void;
+}
 
 export function RunPage() {
   const i18n = useI18n();
@@ -1380,7 +1393,7 @@ export function RunPage() {
 
   /** Returns the current confirmation's i18n payload + the side effect
    *  to fire on Confirm. Returns null when no confirm is open. */
-  const confirmConfig = useMemo(() => {
+  const confirmConfig = useMemo((): RunConfirm | null => {
     if (!confirmAction || !activeRun) return null;
     const runId = activeRun.id;
     if (typeof confirmAction === 'string') {
@@ -2862,7 +2875,7 @@ export function RunPage() {
           revisePurchase.isPending
         }
       />
-      <PriceCheckSheet
+      <ConfirmSheet
         open={!!priceCheck}
         title={i18n.t('run.price.check.title')}
         body={
@@ -2934,11 +2947,23 @@ export function RunPage() {
       {/* Generic confirm sheet for ALL the major transitions. Centralized
           so every "I changed my mind" path looks identical. */}
       <ConfirmSheet
-        config={confirmConfig}
+        open={!!confirmConfig}
+        title={confirmConfig?.title ?? ''}
+        body={confirmConfig?.body}
+        confirmLabel={confirmConfig?.confirmLabel ?? ''}
+        danger={confirmConfig?.danger}
+        irreversible={confirmConfig?.irreversible}
+        requireReason={confirmConfig?.requireReason}
+        reasonOptional={confirmConfig?.reasonOptional}
+        reasonLabel={i18n.t('run.label.reasonForChange')}
+        reasonPlaceholder={
+          confirmConfig?.reasonPlaceholder ?? i18n.t('run.label.reasonPlaceholder')
+        }
+        pending={confirmConfig?.isPending}
         reason={confirmReason}
         onReasonChange={setConfirmReason}
+        onConfirm={() => confirmConfig?.run()}
         onCancel={() => setConfirmAction(null)}
-        i18n={i18n}
       />
 
       {/* Item & store action sheets removed (2026-05-03):
