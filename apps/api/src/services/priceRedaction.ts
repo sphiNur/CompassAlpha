@@ -30,6 +30,11 @@ const PRICE_KEYS = new Set([
   'lastSeenPrice',
   'defaultUnitPrice',
   'lineTotal',
+  // Review ADM2-01 (2026-11-12): the RunFinished / RunRefinalized totals,
+  // which the admin event feed returned as stored.
+  'totalActual',
+  'totalCash',
+  'totalTransfer',
 ]);
 
 /** Maps from an id to a price (or when it was paid): emptied. */

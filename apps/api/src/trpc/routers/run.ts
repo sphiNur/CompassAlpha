@@ -112,6 +112,7 @@ import {
   splitsInheritingItemPayment,
   StoreOutOfScopeError,
 } from '../../services/scopedRunRevision';
+import { readExpenseTemplates } from '../../services/expenseTemplates';
 
 /** run.list / run.get answer without money to members lacking prices.view. */
 const runReadProcedure = authedProcedure.use(async (opts) => {
@@ -145,26 +146,7 @@ export const runRouter = router({
         cause: { missingPermission: 'run.purchase' },
       });
     }
-    return ctx.withOrg(async (tx) =>
-      tx
-        .select({
-          id: s.expenseTemplates.id,
-          label: s.expenseTemplates.label,
-          unitHint: s.expenseTemplates.unitHint,
-          defaultQty: s.expenseTemplates.defaultQty,
-          defaultUnitPrice: s.expenseTemplates.defaultUnitPrice,
-          defaultPaymentMethod: s.expenseTemplates.defaultPaymentMethod,
-          sortIndex: s.expenseTemplates.sortIndex,
-        })
-        .from(s.expenseTemplates)
-        .where(
-          and(
-            eq(s.expenseTemplates.orgId, ctx.session!.orgId),
-            eq(s.expenseTemplates.isArchived, false),
-          ),
-        )
-        .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt),
-    );
+    return ctx.withOrg((tx) => readExpenseTemplates(tx, ctx.session!, false));
   }),
 
   /**

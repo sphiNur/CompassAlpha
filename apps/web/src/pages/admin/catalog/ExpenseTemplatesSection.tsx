@@ -8,6 +8,7 @@ import {
   DataState,
   EmptyState,
   Field,
+  FieldGroup,
   Input,
   Sheet,
   useToast,
@@ -37,16 +38,18 @@ import { moneyLine } from '../../../lib/money';
 // a manual expense form so each business day + store records only the
 // costs that actually happened.
 //
-// CRUD only (no audit timeline, no soft-delete UI niceties — kept
-// simple for v1). Mutations require org.admin; reads are open to
-// users.manage so store-tier admins can audit the configured list.
+// Mutations require org.admin; reads are open to users.manage so
+// store-tier admins can audit the configured list. Archiving hides a
+// template from new runs; it can be restored.
 
 interface ExpenseTemplateDraft {
   templateId?: string;
   label: string;
   unitHint: string;
   defaultQty: string;
-  defaultUnitPrice: string;
+  /** Null when the saved price is hidden from this reader (no prices.view):
+   *  it is not sent, so it stays as saved. */
+  defaultUnitPrice: string | null;
   defaultPaymentMethod: 'cash' | 'transfer';
   sortIndex: number;
   isArchived: boolean;
@@ -142,12 +145,19 @@ export function ExpenseTemplatesSection() {
                         {tpl.unitHint ? `${tpl.unitHint} · ` : ''}
                         {/* Default quantity × unit price = the line, and
                             how it is paid, so the manager can spot the
-                            transfer-only rows at a glance. */}
-                        {formatQty(tpl.defaultQty)} × {formatMoney(tpl.defaultUnitPrice)} {currency}
-                        {' = '}
-                        <span className="font-semibold text-[var(--c-fg)]">
-                          {formatMoney(lineTotal)} {currency}
-                        </span>
+                            transfer-only rows at a glance. Without
+                            prices.view, the quantity alone. */}
+                        {formatQty(tpl.defaultQty)}
+                        {tpl.defaultUnitPrice !== null ? (
+                          <>
+                            {' × '}
+                            {formatMoney(tpl.defaultUnitPrice)} {currency}
+                            {' = '}
+                            <span className="font-semibold text-[var(--c-fg)]">
+                              {formatMoney(lineTotal)} {currency}
+                            </span>
+                          </>
+                        ) : null}
                         {' · '}
                         {tpl.defaultPaymentMethod === 'transfer'
                           ? i18n.t('run.label.paymentTransfer')
@@ -166,7 +176,8 @@ export function ExpenseTemplatesSection() {
                           unitHint: tpl.unitHint ?? '',
                           defaultQty: tpl.defaultQty,
                           defaultUnitPrice: tpl.defaultUnitPrice,
-                          defaultPaymentMethod: tpl.defaultPaymentMethod as 'cash' | 'transfer',
+                          defaultPaymentMethod:
+                            tpl.defaultPaymentMethod === 'transfer' ? 'transfer' : 'cash',
                           sortIndex: tpl.sortIndex,
                           isArchived: tpl.isArchived,
                         })
@@ -201,31 +212,29 @@ export function ExpenseTemplatesSection() {
               !draft?.label.trim() ||
               !draft.defaultQty ||
               Number(draft.defaultQty) <= 0 ||
-              !draft.defaultUnitPrice ||
-              Number(draft.defaultUnitPrice) <= 0
+              (draft.defaultUnitPrice !== null &&
+                (!draft.defaultUnitPrice || Number(draft.defaultUnitPrice) <= 0))
             }
             onClick={() => {
               if (!draft) return;
+              const fields = {
+                label: draft.label.trim(),
+                unitHint: draft.unitHint.trim() || null,
+                defaultQty: draft.defaultQty,
+                defaultPaymentMethod: draft.defaultPaymentMethod,
+                sortIndex: draft.sortIndex,
+              };
+              const price = draft.defaultUnitPrice;
               if (draft.templateId) {
                 update.mutate({
                   templateId: draft.templateId,
-                  label: draft.label.trim(),
-                  unitHint: draft.unitHint.trim() || null,
-                  defaultQty: draft.defaultQty,
-                  defaultUnitPrice: draft.defaultUnitPrice,
-                  defaultPaymentMethod: draft.defaultPaymentMethod,
-                  sortIndex: draft.sortIndex,
+                  ...fields,
+                  ...(price === null ? {} : { defaultUnitPrice: price }),
                   isArchived: draft.isArchived,
                 });
-              } else {
-                create.mutate({
-                  label: draft.label.trim(),
-                  unitHint: draft.unitHint.trim() || null,
-                  defaultQty: draft.defaultQty,
-                  defaultUnitPrice: draft.defaultUnitPrice,
-                  defaultPaymentMethod: draft.defaultPaymentMethod,
-                  sortIndex: draft.sortIndex,
-                });
+              } else if (price !== null) {
+                // A new template's price is typed, never hidden.
+                create.mutate({ ...fields, defaultUnitPrice: price });
               }
             }}
           >
@@ -263,25 +272,29 @@ export function ExpenseTemplatesSection() {
                   placeholder="1"
                 />
               </Field>
-              <Field label={i18n.t('admin.field.defaultUnitPrice')} required>
-                <Input
-                  // CAT-10: read "1,5" / "20 000" like every number field.
-                  type="number"
-                  value={draft.defaultUnitPrice}
-                  onChange={(e) => setDraft({ ...draft, defaultUnitPrice: e.target.value })}
-                  inputMode="decimal"
-                  placeholder="50000"
-                />
-              </Field>
+              {draft.defaultUnitPrice !== null ? (
+                <Field label={i18n.t('admin.field.defaultUnitPrice')} required>
+                  <Input
+                    // CAT-10: read "1,5" / "20 000" like every number field.
+                    type="number"
+                    value={draft.defaultUnitPrice}
+                    onChange={(e) => setDraft({ ...draft, defaultUnitPrice: e.target.value })}
+                    inputMode="decimal"
+                    placeholder="50000"
+                  />
+                </Field>
+              ) : null}
             </div>
-            <Field label={i18n.t('admin.field.defaultPaymentMethod')}>
+            {/* A group, not a Field: inside Field's <label> a tap on the
+                title chose "cash" (UI-01). */}
+            <FieldGroup label={i18n.t('admin.field.defaultPaymentMethod')}>
               {/* DX-VIS-7 (2026-11-01): the shared cash / transfer control
                   (Segmented underneath), not a third hand-rolled copy. */}
               <PaymentMethodChips
-                value={draft.defaultPaymentMethod === 'transfer' ? 'transfer' : 'cash'}
+                value={draft.defaultPaymentMethod}
                 onChange={(m) => setDraft({ ...draft, defaultPaymentMethod: m })}
               />
-            </Field>
+            </FieldGroup>
             <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
                 value={String(draft.sortIndex)}

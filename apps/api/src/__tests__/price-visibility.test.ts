@@ -384,6 +384,56 @@ describe.skipIf(!SHOULD_RUN)('D6: money only with prices.view, per store', () =>
     expect(mixedSees.every((p) => p === null)).toBe(true);
   });
 
+  // Review ADM2-01 (2026-11-12): RunFinished's totals were not on the list
+  // of money fields and went out as stored.
+  test('admin.recentEvents: no run totals for that reader either', async () => {
+    const { owner, mixed, runId } = fix!;
+    const finished = async (caller: Caller) =>
+      (await caller.admin.recentEvents({ limit: 200 })).find(
+        (r) => r.streamId === runId && r.type === 'RunFinished',
+      )?.payload as Record<string, unknown> | undefined;
+    const shown = await finished(owner);
+    // Four kilograms at 12,000, all cash.
+    expect(shown?.totalActual).toBe('48000.00');
+    expect(shown?.totalCash).toBe('48000.00');
+    const hidden = await finished(mixed);
+    expect(hidden).toBeDefined();
+    expect(hidden!.totalActual).toBeNull();
+    expect(hidden!.totalCash).toBeNull();
+    expect(hidden!.totalTransfer).toBeNull();
+  });
+
+  // Review ADM2-01 (2026-11-12): the admin list and the run sheet's
+  // shortcuts gave the default unit price to every reader who could open
+  // them. A template belongs to no store: prices.view anywhere shows it.
+  test('expense templates: the default price needs prices.view somewhere', async () => {
+    const { db, orgId, owner, mixed, person, storeA } = fix!;
+    const [clerkRole] = await db
+      .insert(s.roles)
+      .values({ orgId, slug: 'clerk', name: 'Clerk', rank: 30, isBuiltIn: false })
+      .returning();
+    // Opens both lists (users.manage, run.purchase), may price nothing.
+    await db.insert(s.rolePermissions).values([
+      { roleId: clerkRole!.id, permissionKey: 'users.manage' },
+      { roleId: clerkRole!.id, permissionKey: 'run.purchase' },
+    ]);
+    const clerk = await person([[clerkRole!.id, storeA]]);
+    const { id } = await owner.admin.expenseTemplateCreate({
+      label: 'Porter',
+      defaultUnitPrice: '15000',
+    });
+    type Row = { id: string; defaultQty: string; defaultUnitPrice: string | null };
+    const row = (rows: Row[]) => rows.find((r) => r.id === id);
+    for (const caller of [owner, mixed]) {
+      expect(row(await caller.admin.expenseTemplateList())?.defaultUnitPrice).toBe('15000.00');
+      expect(row(await caller.run.expenseTemplates())?.defaultUnitPrice).toBe('15000.00');
+    }
+    const listed = row(await clerk.caller.admin.expenseTemplateList());
+    expect(listed?.defaultQty).toBe('1.000');
+    expect(listed?.defaultUnitPrice).toBeNull();
+    expect(row(await clerk.caller.run.expenseTemplates())?.defaultUnitPrice).toBeNull();
+  });
+
   // Review CONF-04 (2026-11-09): dishes are the whole organisation's. A
   // store-level grant of dishes.manage used to pass the flat permission
   // check and edit every store's recipes and selling prices.
