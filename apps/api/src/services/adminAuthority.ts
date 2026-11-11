@@ -17,12 +17,17 @@
  *   - the person acted on is ranked by every live binding they hold
  *     (getActorMaxRank): the strongest protection.
  */
-import { and, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, gte, isNull, or } from 'drizzle-orm';
 import { ADMIN_RANK } from '@compass/contracts';
 import { schema as s, type DB } from '@compass/db';
 import { hasGlobalOrgAdmin } from './orgAdmin';
 import { isPlatformAdmin } from './platformAdmin';
-import { effectiveGlobalPermissions, effectivePermissionsForStore } from './storeScope';
+import {
+  adminScopeOf,
+  effectiveGlobalPermissions,
+  effectivePermissionsForStore,
+  loadScopedPermissions,
+} from './storeScope';
 
 /** A binding with an expiry in the past grants nothing. */
 export function bindingIsLive() {
@@ -326,6 +331,8 @@ export interface InviterAuthority {
   hasUsersManage: boolean;
   isGlobalAdmin: boolean;
   adminStoreIds: ReadonlySet<string>;
+  /** Stores where overrides take a global admin's authority away (ADM1-03). */
+  deniedStoreIds?: ReadonlySet<string>;
 }
 
 export function inviterCoversInvite(
@@ -333,12 +340,12 @@ export function inviterCoversInvite(
   inviteStoreIds: readonly string[],
 ): boolean {
   if (!authority || !authority.active || !authority.hasUsersManage) return false;
-  if (authority.isGlobalAdmin) return true;
+  if (authority.isGlobalAdmin) {
+    return inviteStoreIds.every((id) => !authority.deniedStoreIds?.has(id));
+  }
   if (inviteStoreIds.length === 0) return false;
   return inviteStoreIds.every((id) => authority.adminStoreIds.has(id));
 }
-
-const INVITER_ADMIN_PERM_KEYS = new Set(['users.manage', 'users.invite', 'users.grant_role']);
 
 async function loadInviterAuthority(
   tx: DB,
@@ -350,82 +357,16 @@ async function loadInviterAuthority(
     where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, inviterUserId)),
   });
   if (!member) return null;
-  const now = new Date();
-  const bindings = await tx
-    .select({
-      roleId: s.memberRoleBindings.roleId,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .where(
-      and(
-        eq(s.memberRoleBindings.memberId, member.id),
-        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
-      ),
-    );
-  const roleIds = [...new Set(bindings.map((b) => b.roleId))];
-  const rolePerms =
-    roleIds.length > 0
-      ? await tx
-          .select({ roleId: s.rolePermissions.roleId, key: s.rolePermissions.permissionKey })
-          .from(s.rolePermissions)
-          .where(inArray(s.rolePermissions.roleId, roleIds))
-      : [];
-  const overrides = (
-    await tx
-      .select({
-        effect: s.memberPermissionOverrides.effect,
-        scopeType: s.memberPermissionOverrides.scopeType,
-        scopeId: s.memberPermissionOverrides.scopeId,
-        permissionKey: s.memberPermissionOverrides.permissionKey,
-        expiresAt: s.memberPermissionOverrides.expiresAt,
-      })
-      .from(s.memberPermissionOverrides)
-      .where(eq(s.memberPermissionOverrides.memberId, member.id))
-  )
-    .filter((o) => !o.expiresAt || o.expiresAt > now)
-    // Allows first, then denies: deny wins, as everywhere else.
-    .sort((a, b) => Number(a.effect === 'deny') - Number(b.effect === 'deny'));
-
-  const keysByRole = new Map<string, Set<string>>();
-  for (const rp of rolePerms) {
-    const set = keysByRole.get(rp.roleId) ?? new Set<string>();
-    set.add(rp.key);
-    keysByRole.set(rp.roleId, set);
-  }
-  let hasUsersManage = false;
-  let isGlobalAdmin = false;
-  const adminStoreIds = new Set<string>();
-  for (const b of bindings) {
-    const keys = keysByRole.get(b.roleId);
-    if (!keys) continue;
-    if (keys.has('users.manage')) hasUsersManage = true;
-    if (![...keys].some((k) => INVITER_ADMIN_PERM_KEYS.has(k))) continue;
-    if (b.scopeType === 'global') isGlobalAdmin = true;
-    else if (b.scopeType === 'store' && b.scopeId) adminStoreIds.add(b.scopeId);
-  }
-  for (const o of overrides) {
-    if (o.permissionKey === 'users.manage') {
-      if (o.effect === 'allow') hasUsersManage = true;
-      else if (o.scopeType === 'global') hasUsersManage = false;
-    }
-    if (!INVITER_ADMIN_PERM_KEYS.has(o.permissionKey)) continue;
-    if (o.effect === 'allow') {
-      if (o.scopeType === 'global') isGlobalAdmin = true;
-      else if (o.scopeType === 'store' && o.scopeId) adminStoreIds.add(o.scopeId);
-    } else if (o.scopeType === 'global') {
-      isGlobalAdmin = false;
-    } else if (o.scopeType === 'store' && o.scopeId) {
-      adminStoreIds.delete(o.scopeId);
-    }
-  }
+  // ADM1-03 (2026-11-10): the rule the session and the admin router use.
+  const { grants, overrides } = await loadScopedPermissions(tx, member.id);
+  const scope = adminScopeOf(grants, overrides);
   return {
     memberId: member.id,
     active: member.status === 'active',
-    hasUsersManage,
-    isGlobalAdmin,
-    adminStoreIds,
+    hasUsersManage: scope.hasUsersManage,
+    isGlobalAdmin: scope.isGlobalAdmin,
+    adminStoreIds: scope.storeIds,
+    deniedStoreIds: scope.deniedStoreIds,
   };
 }
 

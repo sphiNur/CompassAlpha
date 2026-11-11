@@ -180,3 +180,49 @@ describe('canSetOverride', () => {
     expect(canSetOverride(admin, staffA, null)).toBe(true);
   });
 });
+
+/**
+ * COREWEB2-11 / ADM1-16 (2026-11-10): store P is paused. Aziz still
+ * manages it (session.inactiveAdminStoreIds), so they may take people out
+ * of it and act on its members, never add anyone there.
+ */
+describe('paused and archived stores', () => {
+  const pausedManager: Actor = {
+    userId: 'aziz',
+    isOrgAdmin: false,
+    adminStoreIds: ['A'],
+    inactiveAdminStoreIds: ['P'],
+    bindings: [st('manager', 50, 'A'), st('manager', 50, 'P')],
+  };
+  const staffP = { userId: 'dilnoza', bindings: [st('staff', 10, 'P')], storeIds: ['P'] };
+  const staffAP = {
+    userId: 'kamola',
+    bindings: [st('staff', 10, 'A'), st('staff', 10, 'P')],
+    storeIds: ['A', 'P'],
+  };
+
+  test('a role in a paused store can be revoked (the × was missing)', () => {
+    expect(canRevokeRole(pausedManager, 'dilnoza', st('staff', 10, 'P'))).toBe(true);
+    // An older session without the list: the store stays out of reach.
+    const older: Actor = { ...pausedManager, inactiveAdminStoreIds: undefined };
+    expect(canRevokeRole(older, 'dilnoza', st('staff', 10, 'P'))).toBe(false);
+  });
+
+  test('nothing is added there: no grant, no override', () => {
+    expect(canGrantRole(pausedManager, { rank: 10 }, { type: 'store', storeId: 'P' })).toBe(false);
+    expect(canSetOverride(pausedManager, staffP, 'P')).toBe(false);
+  });
+
+  test('its members can be suspended by whoever manages it', () => {
+    expect(canSetStatus(pausedManager, staffP, 'suspended')).toBe(true);
+    expect(canSetStatus(pausedManager, staffAP, 'suspended')).toBe(true);
+    expect(canSetStatus(manager, staffAP, 'suspended')).toBe(false);
+  });
+
+  test('a transfer may leave it, not go into it', () => {
+    const stores = [{ id: 'A' }, { id: 'B' }, { id: 'P' }];
+    const wide: Actor = { ...pausedManager, adminStoreIds: ['A', 'B'] };
+    expect(transferTargets(wide, staffP, 'P', stores).map((s) => s.id)).toEqual(['A', 'B']);
+    expect(transferTargets(wide, staffA, 'A', stores).map((s) => s.id)).toEqual(['B']);
+  });
+});

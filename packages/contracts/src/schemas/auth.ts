@@ -151,15 +151,19 @@ export const SessionSchema = z.object({
    *  roles ranked < 50 when granting INTO Store A. The server
    *  enforces with `getActorMaxRankInStore`. */
   storeRanks: z.record(z.string(), z.number().int().nonnegative()).default({}),
-  /** Stores in which the actor has admin-tier permission (users.manage,
-   *  users.invite, or users.grant_role) — added 2026-05-06 for C2.
+  /** Stores in which the actor has admin-tier permission (users.manage
+   *  or users.grant_role) — added 2026-05-06 for C2.
    *  - global admin → every active store id in the org
    *  - store-scoped admin → only those stores
    *  - non-admin → empty array
+   *  A deny override of the admin keys at a store removes it (ADM1-03).
    *  FE filters the invite store picker, the grant-role store picker,
    *  and the assign/unassign actions against this set. The server
    *  enforces with `getActorAdminStoreIds`. */
   adminStoreIds: z.array(UuidSchema).default([]),
+  /** The archived stores the same rule covers (COREWEB2-11): the server
+   *  allows removing roles and members there, never adding them. */
+  inactiveAdminStoreIds: z.array(UuidSchema).default([]),
   /** SHL-2 / CLS-5 (2026-10-30): effective permission keys per store the
    *  member is in (roles + overrides at that store, plus global ones).
    *  `permissions` remains the flat union. */

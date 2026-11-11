@@ -1483,3 +1483,176 @@ describe('2026-10-21 audit admin gates', () => {
     });
   });
 });
+
+// ---------- ADM1-03 / ADM1-16: one rule for the stores a member manages ----------
+
+describe('ADM1-03 / ADM1-16 managed stores: one rule, inactive stores for removals', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+
+  async function inStores(name: string, roleId: string, storeIds: string[]) {
+    const user = await makeUser(name);
+    const memberId = await makeMember(user.id);
+    for (const storeId of storeIds) {
+      await bindRole(memberId, roleId, { type: 'store', storeId });
+      await maintenance()
+        .insert(s.memberStoreAssignments)
+        .values({ memberId, storeId })
+        .onConflictDoNothing();
+    }
+    return { memberId, userId: user.id };
+  }
+
+  const pause = (storeId: string) =>
+    maintenance().update(s.stores).set({ isActive: false }).where(eq(s.stores.id, storeId));
+
+  const denyEverywhereIn = (memberId: string, storeId: string, keys: string[]) =>
+    maintenance()
+      .insert(s.memberPermissionOverrides)
+      .values(
+        keys.map((permissionKey) => ({
+          memberId,
+          permissionKey,
+          effect: 'deny',
+          scopeType: 'store',
+          scopeId: storeId,
+        })),
+      );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a paused store: its manager may take people out, never add them',
+    async () => {
+      const open = await makeStore(`Open-${Math.random()}`);
+      const paused = await makeStore(`Paused-${Math.random()}`);
+      const mgr = await inStores('Paused-Manager', fixture().managerRoleId, [open.id, paused.id]);
+      const staff = await inStores('Paused-Staff', fixture().staffRoleId, [open.id, paused.id]);
+      const newcomer = await inStores('Paused-Newcomer', fixture().staffRoleId, [open.id]);
+      await pause(paused.id);
+      const caller = callerFor(await sessionFor(mgr.memberId, mgr.userId));
+
+      // The session says which is which (COREWEB2-11): the web offers
+      // removals in the paused store and nothing else.
+      const me = await caller.auth.me();
+      expect(me.adminStoreIds).toEqual([open.id]);
+      expect(me.inactiveAdminStoreIds).toEqual([paused.id]);
+
+      // Adding there is refused, as it already was for a global admin.
+      const archived = { code: 'PRECONDITION_FAILED', message: 'auth.errors.storeArchived' };
+      expect(
+        await errorOf(() =>
+          caller.admin.grantRole({
+            userId: newcomer.userId,
+            roleSlug: 'staff',
+            scopeType: 'store',
+            scopeId: paused.id,
+          }),
+        ),
+      ).toMatchObject(archived);
+      expect(
+        await errorOf(() =>
+          caller.admin.memberAssignStore({ memberId: newcomer.memberId, storeId: paused.id }),
+        ),
+      ).toMatchObject(archived);
+      expect(
+        await errorOf(() =>
+          caller.admin.memberInviteByTgId({
+            tgUserId: String(freshTgId()),
+            storeIds: [paused.id],
+          }),
+        ),
+      ).toMatchObject(archived);
+
+      // The people list names the paused store instead of dropping it.
+      const row = (await caller.admin.memberList()).find((m) => m.memberId === staff.memberId);
+      expect(row?.stores.map((st) => st.id)).toEqual([open.id]);
+      expect(row?.inactiveStores).toEqual([{ id: paused.id, name: paused.name, archived: false }]);
+      expect(row?.statusOutOfReach).toBe(false);
+
+      // Taking out works: the role, then the assignment.
+      const roleThere = row?.roles.find((r) => r.scopeId === paused.id);
+      expect((await caller.admin.revokeRole({ bindingId: roleThere!.bindingId })).revoked).toBe(
+        true,
+      );
+      await caller.admin.memberUnassignStore({ memberId: staff.memberId, storeId: paused.id });
+      const left = await maintenance()
+        .select({ storeId: s.memberStoreAssignments.storeId })
+        .from(s.memberStoreAssignments)
+        .where(eq(s.memberStoreAssignments.memberId, staff.memberId));
+      expect(left.map((r) => r.storeId)).toEqual([open.id]);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'an org admin may move someone out of a paused store, not into one',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const open = await makeStore(`MoveOpen-${Math.random()}`);
+      const paused = await makeStore(`MovePaused-${Math.random()}`);
+      const other = await makeStore(`MoveOther-${Math.random()}`);
+      const staff = await inStores('Move-Staff', fixture().staffRoleId, [paused.id, other.id]);
+      await pause(paused.id);
+
+      expect(
+        await errorOf(() =>
+          admin.admin.memberTransferStore({
+            memberId: staff.memberId,
+            fromStoreId: other.id,
+            toStoreId: paused.id,
+          }),
+        ),
+      ).toMatchObject({ message: 'auth.errors.storeArchived' });
+      await admin.admin.memberTransferStore({
+        memberId: staff.memberId,
+        fromStoreId: paused.id,
+        toStoreId: open.id,
+      });
+      const assigned = await maintenance()
+        .select({ storeId: s.memberStoreAssignments.storeId })
+        .from(s.memberStoreAssignments)
+        .where(eq(s.memberStoreAssignments.memberId, staff.memberId));
+      expect(assigned.map((r) => r.storeId).sort()).toEqual([open.id, other.id].sort());
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a store deny limits an organisation-wide manager there, in the session and on the server',
+    async () => {
+      const kept = await makeStore(`Kept-${Math.random()}`);
+      const denied = await makeStore(`Denied-${Math.random()}`);
+      const user = await makeUser('Global-Manager-Denied');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fixture().managerRoleId, { type: 'global' });
+      await denyEverywhereIn(memberId, denied.id, ['users.manage']);
+      const caller = callerFor(await sessionFor(memberId, user.id));
+
+      const me = await caller.auth.me();
+      expect(me.adminStoreIds).toContain(kept.id);
+      expect(me.adminStoreIds).not.toContain(denied.id);
+
+      const target = await inStores('Denied-Target', fixture().staffRoleId, [kept.id]);
+      expect(
+        await errorOf(() =>
+          caller.admin.memberAssignStore({ memberId: target.memberId, storeId: denied.id }),
+        ),
+      ).toMatchObject({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'an org-tier invite asks for organisation-wide authority, which one denied store keeps',
+    async () => {
+      const denied = await makeStore(`InviteDenied-${Math.random()}`);
+      const owner = await makeSuperAdmin('Super-Admin-Denied-In-One-Store');
+      await denyEverywhereIn(owner.memberId, denied.id, ['users.manage', 'users.grant_role']);
+      const caller = callerFor(await sessionFor(owner.memberId, owner.userId));
+      expect((await caller.auth.me()).adminStoreIds).not.toContain(denied.id);
+      // "Administers every active store" used to stand in for this and
+      // refused them; the global authority itself decides now.
+      const invited = await caller.admin.memberInviteByTgId({
+        tgUserId: String(freshTgId()),
+        roleSlug: 'admin',
+        storeIds: [],
+      });
+      expect(invited.memberId).toBeTruthy();
+    },
+  );
+});

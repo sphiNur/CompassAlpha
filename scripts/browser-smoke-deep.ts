@@ -302,6 +302,7 @@ async function run() {
       lastSeenAt: new Date().toISOString(),
       roles: [],
       stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE' }],
+      inactiveStores: [],
       statusOutOfReach: false,
     },
   ]);

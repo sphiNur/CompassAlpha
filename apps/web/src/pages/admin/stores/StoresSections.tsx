@@ -156,15 +156,17 @@ export function StoresHomeSection({
     onError: errToast('common.errors.actionFailed'),
   });
 
-  // Aggregate member counts per store from the cached memberList.
+  // Aggregate member counts per store from the cached memberList. A
+  // paused store counts its people too; they are not org-level (ADM1-16).
   const memberCounts = useMemo(() => {
     const byStore = new Map<string, number>();
     let orgLevel = 0;
     for (const m of membersQuery.data ?? []) {
-      if (m.stores.length === 0) {
+      const stores = [...m.stores, ...m.inactiveStores];
+      if (stores.length === 0) {
         orgLevel++;
       } else {
-        for (const st of m.stores) {
+        for (const st of stores) {
           byStore.set(st.id, (byStore.get(st.id) ?? 0) + 1);
         }
       }

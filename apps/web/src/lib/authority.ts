@@ -28,6 +28,12 @@ export interface Actor {
   isOrgAdmin: boolean;
   /** Stores where the actor may manage people (session.adminStoreIds). */
   adminStoreIds: readonly string[];
+  /**
+   * Paused and archived stores the same rule covers
+   * (session.inactiveAdminStoreIds): people can be taken out there, never
+   * added (R2-ADM-2). Absent from older sessions.
+   */
+  inactiveAdminStoreIds?: readonly string[];
   /** The actor's own role bindings (their row in the member list). */
   bindings: readonly Binding[];
 }
@@ -35,7 +41,8 @@ export interface Actor {
 export interface TargetMember {
   userId: string;
   bindings: readonly Binding[];
-  /** Every store the member is in (assignments and store bindings). */
+  /** Every store the member is in (assignments and store bindings),
+   *  paused and archived ones included. */
   storeIds: readonly string[];
 }
 
@@ -80,8 +87,18 @@ function outranks(actorRank: number, targetRank: number): boolean {
   return targetRank < actorRank;
 }
 
+/** Adding people to the store: active stores only. */
 function administers(actor: Actor, storeId: string): boolean {
   return actor.adminStoreIds.includes(storeId);
+}
+
+/**
+ * Taking people out of the store or acting on its members: paused and
+ * archived stores count too (COREWEB2-11; the server passes
+ * `includeInactive` there).
+ */
+function governs(actor: Actor, storeId: string): boolean {
+  return administers(actor, storeId) || (actor.inactiveAdminStoreIds?.includes(storeId) ?? false);
 }
 
 /**
@@ -94,7 +111,7 @@ export function canRevokeRole(actor: Actor, targetUserId: string, binding: Bindi
     return false;
   }
   const storeId = binding.scopeType === 'store' ? binding.scopeId : null;
-  if (storeId ? !administers(actor, storeId) : !actor.isOrgAdmin) return false;
+  if (storeId ? !governs(actor, storeId) : !actor.isOrgAdmin) return false;
   if (binding.rank === undefined) return true;
   return outranks(
     storeId ? rankIn(actor.bindings, storeId) : orgRankOf(actor.bindings),
@@ -119,8 +136,7 @@ export function canSetStatus(
   }
   if (target.storeIds.length === 0) return false;
   return target.storeIds.every(
-    (id) =>
-      administers(actor, id) && outranks(rankIn(actor.bindings, id), rankIn(target.bindings, id)),
+    (id) => governs(actor, id) && outranks(rankIn(actor.bindings, id), rankIn(target.bindings, id)),
   );
 }
 
@@ -166,9 +182,10 @@ export function rolePassesOn(
 
 /**
  * memberTransferStore: the actor manages both stores and outranks the
- * member in the one they leave. Destinations are stores the member is
- * not in already (CMP-ADM-18: "transfer" to a store they were in did
- * nothing useful).
+ * member in the one they leave, which may be paused or archived (a
+ * removal); the destination may not (ADM1-16). Destinations are stores
+ * the member is not in already (CMP-ADM-18: "transfer" to a store they
+ * were in did nothing useful).
  */
 export function transferTargets<S extends { id: string }>(
   actor: Actor,
@@ -176,7 +193,7 @@ export function transferTargets<S extends { id: string }>(
   fromStoreId: string,
   stores: readonly S[],
 ): S[] {
-  if (!administers(actor, fromStoreId)) return [];
+  if (!governs(actor, fromStoreId)) return [];
   if (!outranks(rankIn(actor.bindings, fromStoreId), rankIn(target.bindings, fromStoreId))) {
     return [];
   }

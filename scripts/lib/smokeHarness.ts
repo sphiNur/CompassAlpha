@@ -166,6 +166,7 @@ export const fakeSession = {
   myMaxRank: 100,
   storeRanks: {},
   adminStoreIds: ['store-1'],
+  inactiveAdminStoreIds: [],
   needsOnboarding: false,
 } satisfies RouterOutputs['auth']['me'];
 

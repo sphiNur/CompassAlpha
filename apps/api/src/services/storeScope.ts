@@ -452,6 +452,21 @@ export function flatEffectivePermissions(
   grants: readonly ScopedPermission[],
   overrides: readonly (ScopedPermission & { effect: string })[],
 ): Set<string> {
+  const { stores, resolve } = scopeResolver(grants, overrides);
+  const flat = resolve(null);
+  for (const storeId of stores) for (const key of resolve(storeId)) flat.add(key);
+  return flat;
+}
+
+/**
+ * The stores the rows name, and the effective keys of one scope: the
+ * organisation (`null`, global rows only) or one store (global rows plus
+ * that store's). Grants, then allows, then denies, so deny wins.
+ */
+function scopeResolver(
+  grants: readonly ScopedPermission[],
+  overrides: readonly (ScopedPermission & { effect: string })[],
+): { stores: ReadonlySet<string>; resolve: (storeId: string | null) => Set<string> } {
   const stores = new Set<string>();
   for (const row of [...grants, ...overrides]) {
     if (row.scopeType === 'store' && row.scopeId) stores.add(row.scopeId);
@@ -471,9 +486,115 @@ export function flatEffectivePermissions(
     }
     return effective;
   };
-  const flat = resolve(null);
-  for (const storeId of stores) for (const key of resolve(storeId)) flat.add(key);
-  return flat;
+  return { stores, resolve };
+}
+
+/**
+ * The keys that give authority over people. `users.invite`, listed with
+ * them in the three old copies, was never a key of the catalog.
+ */
+export const ADMIN_TIER_KEYS: ReadonlySet<string> = new Set(['users.manage', 'users.grant_role']);
+
+/** Where a member has authority over people (adminScopeOf). */
+export interface AdminScope {
+  /** users.manage is effective in some scope (what requireAdmin asks). */
+  hasUsersManage: boolean;
+  /** An admin-tier key holds organisation-wide: every store but `deniedStoreIds`. */
+  isGlobalAdmin: boolean;
+  /** Stores a row names where an admin-tier key holds. */
+  storeIds: ReadonlySet<string>;
+  /** Stores a row names where none holds; they limit a global admin. */
+  deniedStoreIds: ReadonlySet<string>;
+}
+
+/**
+ * Review ADM1-03 / COREAPI-08 (2026-11-10): one rule for "which stores may
+ * this member manage people in", used by the session payload, the admin
+ * router and invite acceptance. There were three copies. Two walked the
+ * overrides in database order, so an allow and a deny for the same store
+ * gave either answer, and all three dropped a store (or global authority)
+ * when ANY admin-tier key was denied, even with another one still held.
+ * Each scope now resolves like `effectivePermissionsForStore` and counts
+ * when an admin-tier key survives; a store deny also limits a global
+ * admin, as it does for every per-store check.
+ */
+export function adminScopeOf(
+  grants: readonly ScopedPermission[],
+  overrides: readonly (ScopedPermission & { effect: string })[],
+): AdminScope {
+  const { stores, resolve } = scopeResolver(grants, overrides);
+  const holdsAdminKey = (keys: ReadonlySet<string>) =>
+    [...ADMIN_TIER_KEYS].some((key) => keys.has(key));
+  const storeIds = new Set<string>();
+  const deniedStoreIds = new Set<string>();
+  for (const storeId of stores) {
+    (holdsAdminKey(resolve(storeId)) ? storeIds : deniedStoreIds).add(storeId);
+  }
+  return {
+    hasUsersManage: flatEffectivePermissions(grants, overrides).has('users.manage'),
+    isGlobalAdmin: holdsAdminKey(resolve(null)),
+    storeIds,
+    deniedStoreIds,
+  };
+}
+
+/**
+ * Which of `candidates` (stores of the organisation, e.g. the active ones)
+ * `scope` manages people in: a global admin all but the denied ones,
+ * anyone else those in `scope.storeIds`.
+ */
+export function adminStoresOf(scope: AdminScope, candidates: readonly string[]): string[] {
+  return candidates.filter((id) =>
+    scope.isGlobalAdmin ? !scope.deniedStoreIds.has(id) : scope.storeIds.has(id),
+  );
+}
+
+/**
+ * The live role grants and overrides of one member, as adminScopeOf and
+ * flatEffectivePermissions take them.
+ */
+export async function loadScopedPermissions(
+  db: DB,
+  memberId: string,
+): Promise<{
+  grants: ScopedPermission[];
+  overrides: (ScopedPermission & { effect: string })[];
+}> {
+  const now = new Date();
+  const [grants, overrides] = await Promise.all([
+    db
+      .select({
+        key: s.rolePermissions.permissionKey,
+        scopeType: s.memberRoleBindings.scopeType,
+        scopeId: s.memberRoleBindings.scopeId,
+      })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, memberId),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+        ),
+      ),
+    db
+      .select({
+        key: s.memberPermissionOverrides.permissionKey,
+        effect: s.memberPermissionOverrides.effect,
+        scopeType: s.memberPermissionOverrides.scopeType,
+        scopeId: s.memberPermissionOverrides.scopeId,
+      })
+      .from(s.memberPermissionOverrides)
+      .where(
+        and(
+          eq(s.memberPermissionOverrides.memberId, memberId),
+          or(
+            isNull(s.memberPermissionOverrides.expiresAt),
+            gt(s.memberPermissionOverrides.expiresAt, now),
+          ),
+        ),
+      ),
+  ]);
+  return { grants, overrides };
 }
 
 /**
