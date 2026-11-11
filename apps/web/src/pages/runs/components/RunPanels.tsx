@@ -2087,10 +2087,17 @@ export function PreviewSummaryCard({
               the bazaar. Hidden when there's nothing to copy (no rows
               with qty > 0 in any bucket). */}
           {bySupplier.length > 0 ? (
-            <div className="mb-2 flex justify-end">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              {/* RUNWEB1-11 (2026-11-11): a product name opens the stall
+                  picker; that was only in each name's tooltip, which
+                  touch never shows. */}
+              <p className="min-w-0 text-old-label text-[var(--c-fg-muted)]">
+                {i18n.t('run.previewSupplier.tapHint')}
+              </p>
               <Button
                 variant="pearl"
                 size="sm"
+                className="shrink-0"
                 onClick={() => void shareOrCopyText(buildAllVendorsText())}
               >
                 {i18n.t('run.previewShare.sendAll')}

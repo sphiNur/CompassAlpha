@@ -1385,6 +1385,8 @@ export const en = {
   'run.purchase.pricingPerStore': 'Per-store price / payment',
   // Manual supplier assignment from preview (M1.6 #1).
   'run.previewSupplier.changeVendor': 'Change stall',
+  'run.previewSupplier.tapHint': 'Tap a product to change its stall.',
+  'run.extras.tapHint': 'Tap an item to change its mark: Bought, Not available, Not yet bought, in turn.',
   'run.previewSupplier.pickVendorTitle': 'Pick a stall',
   'run.previewSupplier.pickVendorHint':
     "Sets this item's preferred stall. Sticks across runs until you change it again.",

@@ -1149,6 +1149,8 @@ export const zh = {
   'run.purchase.pricingUniform': '统一价格/付款',
   'run.purchase.pricingPerStore': '按门店单独价格/付款',
   'run.previewSupplier.changeVendor': '更换摊位',
+  'run.previewSupplier.tapHint': '点商品名可以更换摊位。',
+  'run.extras.tapHint': '点一下切换状态：已购买、没买到、未购买，依次循环。',
   'run.previewSupplier.pickVendorTitle': '选择摊位',
   'run.previewSupplier.pickVendorHint': '设置此商品的固定摊位，会延续到以后的采购，直到再次更改。',
   'run.previewSupplier.clearVendor': '——无固定摊位——',
