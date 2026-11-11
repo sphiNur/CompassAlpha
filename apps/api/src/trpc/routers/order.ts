@@ -588,10 +588,19 @@ export const orderRouter = router({
         // Resolve current + previous claimer display info so the detail
         // view can mirror pendingList's "Under review by X" (and
         // "previously by Y" after a takeover handoff) banners.
-        const claimerIds = [session.claimedByMemberId, session.previousClaimerMemberId].filter(
-          Boolean,
-        ) as string[];
-        const claimerRows = claimerIds.length
+        // ORD-09 (2026-11-11): and who added each line. The approval card
+        // read names from admin.memberList, which needs users.manage;
+        // without it a line showed the first six characters of an id.
+        const memberIds = [
+          ...new Set(
+            [
+              session.claimedByMemberId,
+              session.previousClaimerMemberId,
+              ...items.map((i) => i.contributorMemberId),
+            ].filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        const memberRows = memberIds.length
           ? await tx
               .select({
                 memberId: s.members.id,
@@ -600,14 +609,14 @@ export const orderRouter = router({
               })
               .from(s.members)
               .innerJoin(s.users, eq(s.users.id, s.members.userId))
-              .where(inArray(s.members.id, claimerIds))
+              .where(inArray(s.members.id, memberIds))
           : [];
-        const claimerById = new Map(claimerRows.map((r) => [r.memberId, r]));
+        const memberById = new Map(memberRows.map((r) => [r.memberId, r]));
         const claimer = session.claimedByMemberId
-          ? claimerById.get(session.claimedByMemberId) ?? null
+          ? (memberById.get(session.claimedByMemberId) ?? null)
           : null;
         const prevClaimer = session.previousClaimerMemberId
-          ? claimerById.get(session.previousClaimerMemberId) ?? null
+          ? (memberById.get(session.previousClaimerMemberId) ?? null)
           : null;
         // Same shape as todaySession: per-(sku, contributor) rows + sku totals.
         const totalBySku = new Map<string, number>();
@@ -659,6 +668,7 @@ export const orderRouter = router({
           items: items.map((i) => ({
             skuId: i.skuId,
             contributorMemberId: i.contributorMemberId,
+            contributorName: memberById.get(i.contributorMemberId)?.displayName ?? null,
             qty: i.qty,
             note: i.note,
             updatedByMemberId: i.updatedByMemberId,

@@ -131,4 +131,12 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
     expect(await errorOf(() => fix!.staffA.order.sessionDetail({ sessionId: fix!.submittedSessionId }))).toBeNull();
     expect(await errorOf(() => fix!.mixed.order.sessionDetail({ sessionId: fix!.submittedSessionId }))).toBeNull();
   });
+
+  test('ORD-09: each line names who added it, for every reader of the order', async () => {
+    // The approval card took names from admin.memberList (users.manage only).
+    for (const reader of [fix!.mixed, fix!.staffA]) {
+      const detail = await reader.order.sessionDetail({ sessionId: fix!.submittedSessionId });
+      expect(detail.items.map((i) => i.contributorName)).toEqual(['Scoped 2']);
+    }
+  });
 });
