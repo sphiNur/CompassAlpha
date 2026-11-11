@@ -4,7 +4,7 @@
  * Review CONF-06: moved out of SettlementPage.
  */
 import { useEffect } from 'react';
-import { registerStoreChangeGuard } from '../components/StoreSwitcher';
+import { registerStoreChangeGuard } from '../lib/storeContext';
 import { registerTabChangeGuard, type Tab } from '../stores/navStore';
 import { useStableCallbacks } from './useStableCallbacks';
 

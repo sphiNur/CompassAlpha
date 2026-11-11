@@ -32,7 +32,7 @@ import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contr
 import type { CatalogKey } from '@compass/i18n';
 import { haptic } from '../lib/telegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../hooks/useStoreContext';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { useOnline } from '../hooks/useOnline';
 import { attendanceDeviceId } from '../lib/attendanceDevice';

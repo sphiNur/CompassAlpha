@@ -3,7 +3,7 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { cacheOwner } from '../lib/queryPersist';
 import { hintStorage, readRunHint } from '../lib/runHint';
-import { savedTab } from '../app/pageChunks';
+import { savedTab } from './pageChunks';
 
 /**
  * DX-PFE-3 (2026-11-01): a purchaser who reopens the app on the purchase
@@ -14,7 +14,9 @@ import { savedTab } from '../app/pageChunks';
  * nothing is fetched twice. `run.get` needs the run's id before
  * `run.list` has answered, which lib/runHint remembers from last time.
  *
- * Only for the purchase tab, and only once per start.
+ * Only for the purchase tab, and only once per start. Review NEW-08: an
+ * app start-up step, so it lives in app/ (it was a hook in hooks/ that
+ * imported app/pageChunks).
  */
 export function useWarmRunQueries(): void {
   const utils = trpc.useUtils();

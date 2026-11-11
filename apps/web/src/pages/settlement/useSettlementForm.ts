@@ -9,7 +9,7 @@ import { flushSync } from 'react-dom';
 import { useToast } from '@compass/ui';
 import { BACKDATE_LIMIT_DAYS, isoDateDaysBefore } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
-import { useStoreContext } from '../../components/StoreSwitcher';
+import { useStoreContext } from '../../hooks/useStoreContext';
 import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 import { useLeaveGuards } from '../../hooks/useLeaveGuards';

@@ -416,6 +416,8 @@ tRPC `errorFormatter` 把 `DomainError.i18nKey` 透传到客户端，客户端 `
 
 ### 5.1 工程结构
 
+依赖只能向下：lib/、stores/ < hooks/ < components/ < pages/ < app/。上层可以引用下层，下层不引用上层；`apps/web/eslint.config.js` 的 4d 规则检查（测试除外）。
+
 ```
 apps/web/src/
 ├── main.tsx                # Vite 入口；语言探测 + preload catalog + React mount
@@ -425,7 +427,7 @@ apps/web/src/
 │   ├── AuthGate.tsx        # Telegram login + onboarding + 无 store 兜底
 │   ├── Shell.tsx           # 底部 tab nav + Telegram SettingsButton 接入
 │   ├── ErrorBoundary.tsx
-│   └── PageMenuContext.tsx
+│   └── useWarmRunQueries.ts # 启动时预取采购页的数据
 ├── pages/
 │   ├── OrderPage.tsx       (1403 行) — 下单
 │   ├── ApprovalPage.tsx    (650 行)  — 审批
@@ -436,8 +438,9 @@ apps/web/src/
 ├── components/
 │   ├── LanguageSheet.tsx
 │   ├── SettingsSheet.tsx
+│   ├── PageMenuContext.tsx # 页面登记放进设置面板的操作
 │   ├── resilientLazy.tsx   # 页面分块加载失败时的重试占位
-│   └── StoreSwitcher.tsx
+│   └── StoreSwitcher.tsx   # 门店胶囊与门店选择
 ├── config/timings.ts
 ├── hooks/
 │   ├── useI18n.ts          # 订阅式 catalog 切换 + format
@@ -447,6 +450,7 @@ apps/web/src/
 │   ├── useOfflineQueue.ts  # 页面读写 outbox 的 hook
 │   ├── useOutboxReplay.ts  # 应用级重放：注册处理函数、触发 flush
 │   ├── useErrToast.ts      # mutation 失败的 toast
+│   ├── useStoreContext.ts  # 当前门店、能否切换门店
 │   ├── usePhotoUploader.ts # <input type="file"> 上传，非 getUserMedia
 │   ├── useTapGuard.ts      # 抑制滚动中误触
 │   └── useVersionCheck.ts  # 检测 build-id 变化 → 提示刷新
@@ -455,6 +459,7 @@ apps/web/src/
 │   ├── idb.ts              # outbox 持久化
 │   ├── outbox/             # 离线 outbox：engine.ts（flush、write-ahead）、policy.ts（纯规则）、replayHandlers.ts
 │   ├── telegram.ts         # WebApp SDK：getTg / isInTelegram / haptic
+│   ├── storeContext.ts     # 能否切换门店、切换前的未保存守卫
 │   ├── format.ts           # money / qty 格式
 │   ├── errorText.ts        # 错误信息 → catalog key
 │   ├── networkError.ts

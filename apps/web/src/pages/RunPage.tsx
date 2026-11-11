@@ -56,7 +56,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
 // through other paths if needed.
-import { usePageMenu } from '../app/PageMenuContext';
+import { usePageMenu } from '../components/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { useQueueOnNetworkError, useStableIdempotencyKey } from '../hooks/useOfflineWrite';
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
@@ -705,7 +705,7 @@ export function RunPage() {
   );
   const runListState = runListGate(runsQuery);
   // DX-PFE-3: remember the run on screen so the next start can ask for it
-  // without waiting for run.list (hooks/useWarmRunQueries).
+  // without waiting for run.list (app/useWarmRunQueries).
   const runHintOwner = cacheOwner(session);
   const activeRunId = activeRun?.id ?? null;
   const runListAnswered = runsQuery.isSuccess;

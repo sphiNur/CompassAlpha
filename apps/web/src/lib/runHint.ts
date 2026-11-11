@@ -8,7 +8,7 @@
  *
  * The screen remembers the run it showed last, here, for its owner (user
  * + organisation, as the query cache) — a plain id, nothing else. On the
- * next start useWarmRunQueries asks for both queries at once. A stale id
+ * next start app/useWarmRunQueries asks for both queries at once. A stale id
  * (the run finished meanwhile) costs one unused request and nothing more:
  * the page still reads the active run from `run.list`.
  */

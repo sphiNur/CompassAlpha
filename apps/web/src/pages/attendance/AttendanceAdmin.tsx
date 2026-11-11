@@ -5,7 +5,7 @@
  */
 import { useMemo, useState } from 'react';
 import { EmptyState, Segmented, Select } from '@compass/ui';
-import { useStoreContext } from '../../components/StoreSwitcher';
+import { useStoreContext } from '../../hooks/useStoreContext';
 import { useI18n } from '../../hooks/useI18n';
 import { useAuthStore } from '../../stores/authStore';
 import { AttendanceRoster, AttendanceSheet } from './AttendanceManage';
