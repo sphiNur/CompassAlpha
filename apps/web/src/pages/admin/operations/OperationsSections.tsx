@@ -447,14 +447,16 @@ function TargetedPurgeBrowser() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      {/* Review ADM2-13 (2026-11-11): wraps. At 320px the tabs left the date
+          field «11/11» in Uzbek; 9rem holds the whole date and its icon. */}
+      <div className="flex flex-wrap items-center gap-2">
         <input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
           aria-label={i18n.t('ops.purge.dateLabel')}
-          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field min-w-0 appearance-none"
+          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field min-w-[9rem] appearance-none"
         />
         {/* DX-VIS-7 (2026-11-01): was two hand-rolled pills whose state
             was colour only; Segmented says which is selected. */}
@@ -1523,20 +1525,27 @@ export function FinanceSection() {
           ))}
         </ChipBar>
         {preset === 'custom' ? (
-          <div className="flex items-center gap-2">
+          // ADM2-13: at 320px both dates lost their year («11/01/202»). Each
+          // keeps 9rem; when the row is narrower the end date goes to a
+          // second line, with its dash.
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               aria-label={i18n.t('finance.range.start')}
+              className="min-w-[9rem] flex-1"
             />
-            <span className="text-old-body text-[var(--c-fg-muted)]">—</span>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              aria-label={i18n.t('finance.range.end')}
-            />
+            <div className="flex flex-1 items-center gap-2">
+              <span className="text-old-body text-[var(--c-fg-muted)]">—</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                aria-label={i18n.t('finance.range.end')}
+                className="min-w-[9rem]"
+              />
+            </div>
           </div>
         ) : (
           <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">

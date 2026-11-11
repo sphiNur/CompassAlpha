@@ -862,7 +862,9 @@ export function SuppliersSection() {
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      <div className="mb-3 flex items-center gap-2">
+      {/* Review ADM2-13 (2026-11-11): wraps, like the products bar (WALK-04).
+          At 320px the switch's label squeezed the button to «+ Новый постав…». */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {canWrite ? (
           <Button
             size="sm"
@@ -1091,7 +1093,8 @@ export function ExpenseTemplatesSection() {
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      <div className="mb-3 flex items-center gap-2">
+      {/* ADM2-13: wraps; at 320px in Uzbek the button read «+ Yangi sha…». */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {canWrite ? (
           <Button
             size="sm"
@@ -1571,8 +1574,9 @@ export function DishesSection() {
 
   return (
     <div className="px-4 py-3">
-      {/* Top bar: archive toggle + new dish. */}
-      <div className="mb-3 flex items-center gap-2">
+      {/* Top bar: archive toggle + new dish. Wraps like the other catalog
+          bars (ADM2-13). */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* M2.1: archive toggle now uses Button (was raw <button>).
             Sat awkwardly next to the proper Button below — same size,
             same shape, but different DOM. Unified to one primitive. */}
