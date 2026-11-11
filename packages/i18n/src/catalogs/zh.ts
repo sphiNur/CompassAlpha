@@ -1141,6 +1141,8 @@ export const zh = {
   'run.preview.coverage': '已知价格 {known}/{total} 项 · 至少 {money}',
   'run.preview.noSupplierCount': '{n} 项未定摊位',
   'run.preview.filterMatch': '匹配 {n} / 共 {total} 项',
+  'run.share.line': '{name}：{qty}',
+  'run.share.heading': '{label}：',
   'run.price.fillIn': '填价格',
   'run.offline.needNetworkToDeliver': '需要网络才能开始配送',
   'run.offline.waitForSync': '等 {n} 项离线记录发送完，再开始配送',

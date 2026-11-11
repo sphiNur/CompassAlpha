@@ -30,6 +30,10 @@ export type ShareTextDeps = {
   extrasLabel: string;
   /** i18n.t('order.notes.label') */
   notesLabel: string;
+  /** i18n.t('run.share.line', …): "Tomato: 2 kg", 「西红柿：2 公斤」. */
+  line: (name: string, qty: string) => string;
+  /** i18n.t('run.share.heading', …): "Notes:", 「备注：」. */
+  heading: (label: string) => string;
 };
 
 /** Localized `{name, unit}` for a line, falling back to the line's own. */
@@ -39,7 +43,7 @@ function displayOf(line: PreviewLine, deps: ShareTextDeps): { name: string; unit
 }
 
 /**
- * One line of STORE-facing text: `[其他物品 · ]Name: 2 kg[\n  note]`.
+ * One line of STORE-facing text: `[其他物品 · ]西红柿：2 公斤[\n  note]`.
  * Store managers get the extras marker because "off-catalog" is a
  * meaningful distinction on their side of the transaction.
  */
@@ -48,7 +52,7 @@ export function formatLineForText(line: PreviewLine, deps: ShareTextDeps): strin
   const qtyUnit = `${formatQty(line.qty)} ${unit}`.trim();
   const prefix = line.kind === 'extra' ? `${deps.extrasLabel} · ` : '';
   const note = line.note ? `\n  ${line.note}` : '';
-  return `${prefix}${name}: ${qtyUnit}${note}`;
+  return `${prefix}${deps.line(name, qtyUnit)}${note}`;
 }
 
 /**
@@ -59,7 +63,7 @@ export function buildStoreText(group: PreviewStoreGroup, deps: ShareTextDeps): s
   const lines = [group.storeName, ''];
   for (const line of group.items) lines.push(formatLineForText(line, deps));
   if (group.legacyNote) {
-    lines.push('', `${deps.notesLabel}:`, group.legacyNote);
+    lines.push('', deps.heading(deps.notesLabel), group.legacyNote);
   }
   return lines.join('\n').trim();
 }
@@ -104,7 +108,7 @@ export function buildSupplierText(group: PreviewSupplierGroup, deps: ShareTextDe
     lines.push(store.storeName);
     for (const line of store.items) lines.push(formatLineForText(line, deps));
     if (store.legacyNote) {
-      lines.push(`${deps.notesLabel}:`, store.legacyNote);
+      lines.push(deps.heading(deps.notesLabel), store.legacyNote);
     }
     lines.push('');
   }

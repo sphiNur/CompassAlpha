@@ -415,8 +415,9 @@ export function ActiveRunPanel({
       extraHaystackOf: (it) => Object.values(skuById.get(it.skuId)?.names ?? {}),
       statusOf: (it) => it.status,
       idOf: (it) => it.skuId,
+      locale: i18n.locale,
     }),
-    [skuById, productName, run.supplierBySku],
+    [skuById, productName, run.supplierBySku, i18n.locale],
   );
   const visibleRunItems = useMemo(
     () => visibleItems(run.items, itemListView, { tokens: itemTokens, filter: itemFilter }),
@@ -1644,6 +1645,8 @@ export function PreviewSummaryCard({
     },
     extrasLabel: i18n.t('order.extras.label'),
     notesLabel: i18n.t('order.notes.label'),
+    line: (name, qty) => i18n.t('run.share.line', { name, qty }),
+    heading: (label) => i18n.t('run.share.heading', { label }),
   };
 
   const buildStoreText = (group: PreviewStoreGroup): string =>
@@ -2033,6 +2036,7 @@ export function PreviewSummaryCard({
                 {groupStoreBySupplier(
                   g,
                   i18n.t('run.previewSupplier.unassigned'),
+                  i18n.locale,
                 ).map((supplier) => (
                   <section key={supplier.supplierId ?? '__unassigned__'}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">

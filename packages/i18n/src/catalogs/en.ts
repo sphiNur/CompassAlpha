@@ -1374,6 +1374,10 @@ export const en = {
   'run.preview.coverage': 'Priced {known}/{total} · at least {money}',
   'run.preview.noSupplierCount': 'No stall: {n}',
   'run.preview.filterMatch': '{n} of {total} shown',
+  // The text a purchaser pastes into a chat (runs/lib/shareText.ts); its
+  // punctuation follows the language (RUNWEB2-17).
+  'run.share.line': '{name}: {qty}',
+  'run.share.heading': '{label}:',
   'run.price.fillIn': 'Enter price',
   'run.offline.needNetworkToDeliver': 'Network needed to start delivery',
   'run.offline.waitForSync':

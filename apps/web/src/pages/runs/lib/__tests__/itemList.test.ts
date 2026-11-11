@@ -215,3 +215,15 @@ describe('countByStatus', () => {
     });
   });
 });
+
+describe('collation (RUNWEB2-30)', () => {
+  it('orders names in the UI language, not the device one', () => {
+    const items = [row('1', '土豆'), row('2', '洋葱'), row('3', '胡萝卜')];
+    // By pinyin: hu, tu, yang. Code-point order would put 胡萝卜 last.
+    expect(names(visibleItems(items, { ...view, locale: 'zh' }))).toEqual([
+      '胡萝卜',
+      '土豆',
+      '洋葱',
+    ]);
+  });
+});

@@ -42,6 +42,8 @@ export interface ItemView<T> {
   statusOf: (item: T) => string;
   /** Stable final tiebreak so equal names never swap between renders. */
   idOf: (item: T) => string;
+  /** The UI language names are compared in (RUNWEB2-30). */
+  locale?: string;
 }
 
 export function matchesFilter(status: string, filter: ItemFilter): boolean {
@@ -58,11 +60,11 @@ export function matchesFilter(status: string, filter: ItemFilter): boolean {
  * rather than under an empty name, where they would interleave with
  * real stalls whose names begin with a space or a digit.
  *
- * `localeCompare` without a locale argument: the catalogue is
- * bilingual per tenant and the display name has already been resolved
- * to the active language by the caller, so the runtime's collation is
- * the right one. It is stable enough for our purposes and the id
- * tiebreak makes the result total regardless.
+ * Names are compared in the UI language (`view.locale`), the language
+ * the caller resolved them to. Without a locale, localeCompare uses the
+ * device's language, which is often not the one picked in the app: a
+ * Chinese UI on an English phone ordered hanzi by code point instead of
+ * by pinyin (RUNWEB2-30). The id tiebreak makes the result total.
  */
 export function compareItems<T>(a: T, b: T, view: ItemView<T>): number {
   const as = view.supplierNameOf?.(a) ?? null;
@@ -70,10 +72,10 @@ export function compareItems<T>(a: T, b: T, view: ItemView<T>): number {
   if (as && !bs) return -1;
   if (!as && bs) return 1;
   if (as && bs) {
-    const c = as.localeCompare(bs);
+    const c = as.localeCompare(bs, view.locale);
     if (c !== 0) return c;
   }
-  const n = view.nameOf(a).localeCompare(view.nameOf(b));
+  const n = view.nameOf(a).localeCompare(view.nameOf(b), view.locale);
   if (n !== 0) return n;
   return view.idOf(a).localeCompare(view.idOf(b));
 }

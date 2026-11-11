@@ -1290,6 +1290,8 @@ export const uz = {
   'run.preview.coverage': 'Narxi bor {known}/{total} · kamida {money}',
   'run.preview.noSupplierCount': 'Rastasiz: {n}',
   'run.preview.filterMatch': '{total} tadan {n} ta',
+  'run.share.line': '{name}: {qty}',
+  'run.share.heading': '{label}:',
   'run.price.fillIn': 'Narx kiriting',
   'run.offline.needNetworkToDeliver': 'Yetkazishni boshlash uchun tarmoq kerak',
   'run.offline.waitForSync': '{n} ta saqlangan oʻzgarish yuborilgach, yetkazishni boshlang',
