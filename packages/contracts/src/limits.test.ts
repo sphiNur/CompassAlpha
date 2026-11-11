@@ -15,6 +15,9 @@ import {
   SKU_UNITS,
   settlementMoneyProblem,
   stocktakeCountProblem,
+  TAX_RATE_MESSAGE,
+  taxRateProblem,
+  taxRateToSend,
 } from './limits';
 import { OrderQtySchema } from './schemas/common';
 import {
@@ -67,6 +70,35 @@ describe('limits.ts', () => {
       expect(stocktakeCountProblem(ok)).toBeNull();
     }
     expect(barrel.stocktakeCountProblem).toBe(stocktakeCountProblem);
+  });
+
+  it('taxRateProblem: the finance sheet and orgFinanceUpdate ask one rule (ADM1-14)', () => {
+    for (const ok of ['0', '0.00', '7', '12.5', '12.50', '50', '50.00']) {
+      expect(taxRateProblem(ok)).toBeNull();
+    }
+    for (const bad of ['', '12,5', '-1', '7.125', '1e1', '.5', '12.', 'abc', '1000']) {
+      expect(taxRateProblem(bad)).toBe('format');
+    }
+    for (const high of ['50.01', '51', '100', '999.99']) {
+      expect(taxRateProblem(high)).toBe('range');
+    }
+    expect(TAX_RATE_MESSAGE).toEqual({
+      format: 'admin.errors.taxRateFormat',
+      range: 'admin.errors.taxRateOutOfRange',
+    });
+  });
+
+  it('taxRateToSend sends a number still being typed as the server takes it', () => {
+    expect(taxRateToSend('12.')).toBe('12');
+    expect(taxRateToSend('.5')).toBe('0.5');
+    expect(taxRateToSend('12.50')).toBe('12.5');
+    expect(taxRateToSend('007')).toBe('7');
+    // Not a reading of the field: left for taxRateProblem to name.
+    expect(taxRateToSend('')).toBe('');
+    expect(taxRateToSend('12,5')).toBe('12,5');
+    for (const typed of ['12.', '.5', '12.50', '0', '49.99']) {
+      expect(taxRateProblem(taxRateToSend(typed))).toBeNull();
+    }
   });
 
   it('settlementMoneyProblem keeps the daily close rule the schemas had (CONF-08)', () => {

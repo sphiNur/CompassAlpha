@@ -88,6 +88,10 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
     expect(await keyOf(() => owner!.admin.orgFinanceUpdate({ ...finance, taxRatePct: '7.125' }))).toBe(
       'admin.errors.taxRateFormat',
     );
+    // ADM1-14: the range comes from the same rule the finance sheet asks.
+    expect(
+      await keyOf(() => owner!.admin.orgFinanceUpdate({ ...finance, taxRatePct: '50.01' })),
+    ).toBe('admin.errors.taxRateOutOfRange');
     expect(await keyOf(() => owner!.admin.storeCreate({ name: 'Mars', timezone: 'Mars/Base' }))).toBe(
       'admin.errors.timeZoneUnknown',
     );
