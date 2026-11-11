@@ -50,6 +50,7 @@
  * that test file until review TEST4-13 (2026-11-10).
  */
 import { CJK, placeholders, splitPlurals, visibleTexts } from './icu';
+import { chinesePunctuationErrors, uzbekApostropheErrors } from './text';
 import { LANGS, type Catalogs, type Lang } from './langs';
 import {
   BANNED_TERMS,
@@ -90,13 +91,7 @@ export function uzbekApostrophes(cats: Catalogs): string[] {
   const found: string[] = [];
   for (const [key, value] of Object.entries(cats.uz)) {
     for (const text of visibleTexts(value)) {
-      for (const m of text.matchAll(/['‘’`ʻʼ]/g)) {
-        const want = /[oOgG]/.test(text[m.index! - 1] ?? '') ? 'ʻ' : 'ʼ';
-        if (m[0] !== want) {
-          const at = text.slice(Math.max(0, m.index! - 8), m.index! + 6);
-          found.push(`uz ${key}: "${at}" uses ${JSON.stringify(m[0])}, want ${want}`);
-        }
-      }
+      for (const problem of uzbekApostropheErrors(text)) found.push(`uz ${key}: ${problem}`);
     }
   }
   return found;
@@ -217,31 +212,8 @@ export function chinesePunctuation(cats: Catalogs): string[] {
     const text = visibleTexts(value)
       .join('\n')
       .replace(/\{\w+\}/g, '中');
-    if (!CJK.test(text)) continue;
-    for (const m of text.matchAll(/[,:;!?]/g)) {
-      const prev = text.slice(0, m.index!).trimEnd().slice(-1);
-      const next = text
-        .slice(m.index! + 1)
-        .trimStart()
-        .slice(0, 1);
-      if (CJK.test(prev) || CJK.test(next) || /[」）]/.test(prev)) {
-        found.push(`zh ${key}: half-width "${m[0]}" in "${value}"`);
-      }
-    }
-    for (const m of text.matchAll(/\(([^()]*)\)/g)) {
-      if (CJK.test(m[1]!)) found.push(`zh ${key}: half-width parentheses in "${value}"`);
-    }
-    if (/["“”]/.test(text)) found.push(`zh ${key}: use 「」 instead of "" / “” in "${value}"`);
-    // TEST4-10 (2026-11-10): a full stop, an ellipsis and a single quote
-    // written the English way. A dot before a letter or digit is a file
-    // name or a number ({month}.xlsx, 1.5), and three are the ellipsis.
-    if (/[\u3400-\u9fff]\.(?![A-Za-z0-9.])/u.test(text)) {
-      found.push(`zh ${key}: half-width "." in "${value}"`);
-    }
-    if (/\.{3}/.test(text)) found.push(`zh ${key}: use … instead of ... in "${value}"`);
-    if (/'/.test(text)) found.push(`zh ${key}: use 「」 instead of ' in "${value}"`);
-    if (/—/.test(text.replace(/——/g, ''))) {
-      found.push(`zh ${key}: use —— instead of a single dash in "${value}"`);
+    for (const problem of chinesePunctuationErrors(text)) {
+      found.push(`zh ${key}: ${problem} in "${value}"`);
     }
   }
   return found;

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./catalogs": "./src/catalogs/index.ts"
+    "./catalogs": "./src/catalogs/index.ts",
+    "./lint/text": "./src/lint/text.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
