@@ -2863,6 +2863,7 @@ export const ru = {
   'attendance.enroll.problem.notTurned': 'голова повёрнута недостаточно',
   'attendance.enroll.problem.otherPerson': 'не похоже на того же человека',
   'attendance.enroll.problem.spoof': 'не похоже на живое лицо',
+  'attendance.enroll.problem.unknown': 'не подошло',
   'attendance.enroll.cannotBody':
     'Камера или отслеживание лица на этом телефоне не работают. Зарегистрируйтесь на другом телефоне со своим аккаунтом Telegram.',
   'attendance.enroll.status.approved': 'Лицо зарегистрировано',

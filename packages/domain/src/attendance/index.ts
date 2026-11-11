@@ -148,12 +148,16 @@ export function summarize(input: {
     (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
   );
 
-  for (const p of [...input.punches].sort((a, b) => a.at.getTime() - b.at.getTime())) {
-    const t = p.at.getTime();
+  /**
+   * The shift a punch made at `t` counts toward: the member's nearest
+   * shift whose window (BEFORE_START before it to AFTER_END after it)
+   * holds `t`, or null.
+   */
+  const shiftFor = (memberId: string, t: number): ShiftInput | null => {
     let best: ShiftInput | null = null;
     let bestGap = Infinity;
     for (const s of sortedShifts) {
-      if (s.memberId !== p.memberId) continue;
+      if (s.memberId !== memberId) continue;
       const from = s.startsAt.getTime() - BEFORE_START;
       const to = s.endsAt.getTime() + AFTER_END;
       if (t < from || t > to) continue;
@@ -168,6 +172,11 @@ export function summarize(input: {
         bestGap = gap;
       }
     }
+    return best;
+  };
+
+  for (const p of [...input.punches].sort((a, b) => a.at.getTime() - b.at.getTime())) {
+    const best = shiftFor(p.memberId, p.at.getTime());
     if (best) {
       const list = byShift.get(best.id) ?? [];
       list.push(p);
@@ -228,7 +237,10 @@ export function summarize(input: {
       flag(r, 'late');
     }
     if (worked.openSince) {
-      if (now <= end) {
+      // Review ATT-21: past the end, a clock-out made now still counts for
+      // this shift, so the person may be working on. The clock-out is
+      // missing only once it no longer would.
+      if (now <= end || shiftFor(s.memberId, now) === s) {
         flag(r, 'onDuty');
         r.workedMinutes += Math.max(0, Math.round((now - worked.openSince.getTime()) / MINUTE));
       } else flag(r, 'missingOut');

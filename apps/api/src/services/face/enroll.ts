@@ -12,26 +12,19 @@
  * Punches are matched against all the features (the best one counts), so
  * a punch with the head a little turned or tilted still matches well.
  */
+import {
+  ENROLL_POSES,
+  REQUIRED_ENROLL_POSES,
+  type EnrollPose,
+  type EnrollProblem,
+} from '@compass/contracts/schemas/faceEnroll';
 import { cosine } from './index';
 import { LIVENESS } from './liveness';
 import type { FaceResult } from './pipeline';
 
-/** Every pose, in the order they are shown: around the ring, then straight again. */
-export const ENROLL_POSES = [
-  'front',
-  'right',
-  'upright',
-  'up',
-  'upleft',
-  'left',
-  'downleft',
-  'down',
-  'downright',
-  'front2',
-] as const;
-export type EnrollPose = (typeof ENROLL_POSES)[number];
-/** Without these an enrollment is refused. */
-export const REQUIRED_POSES = ['front', 'left', 'right', 'front2'] as const;
+// Review ATT-27: the phone reads the same poses and reasons, so they live
+// in contracts; the router keeps importing them from here.
+export { ENROLL_POSES, type EnrollPose, type EnrollProblem };
 
 export const ENROLL_LINES = {
   /** The face's width as a share of the photo's. */
@@ -48,18 +41,6 @@ export const ENROLL_LINES = {
   /** Mean real-face probability over all photos. */
   realMin: 0.5,
 } as const;
-
-export type EnrollProblem =
-  | 'noFace'
-  | 'manyFaces'
-  | 'small'
-  | 'dark'
-  | 'bright'
-  | 'blurry'
-  | 'notFacing'
-  | 'notTurned'
-  | 'otherPerson'
-  | 'spoof';
 
 export interface EnrollVerdict {
   ok: boolean;
@@ -80,7 +61,8 @@ export interface EnrollVerdict {
 
 type Found = Extract<FaceResult, { found: true }>;
 
-const isRequired = (pose: EnrollPose) => (REQUIRED_POSES as readonly string[]).includes(pose);
+const isRequired = (pose: EnrollPose) =>
+  (REQUIRED_ENROLL_POSES as readonly string[]).includes(pose);
 
 /** The photos' face results → whether they make a good reference, and which to keep. */
 export function evaluateEnrollment(

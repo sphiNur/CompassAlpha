@@ -2545,6 +2545,7 @@ export const zh = {
   'attendance.enroll.problem.notTurned': '头转得不够',
   'attendance.enroll.problem.otherPerson': '看起来不是同一个人',
   'attendance.enroll.problem.spoof': '看起来不像真人',
+  'attendance.enroll.problem.unknown': '无法使用',
   'attendance.enroll.cannotBody':
     '这台手机的摄像头或人脸跟踪用不了。请换一台手机，登录你自己的 Telegram 账号录入。',
   'attendance.enroll.status.approved': '人脸已录入',

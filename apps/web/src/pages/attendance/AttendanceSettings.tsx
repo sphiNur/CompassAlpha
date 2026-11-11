@@ -7,6 +7,7 @@
  * enrollment shows here, and a manager can ask for it again.
  */
 import { useState } from 'react';
+import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
 import {
   Button,
   DataState,
@@ -209,20 +210,7 @@ export function EnrollPhotos({
   photos,
   name,
 }: {
-  photos: {
-    pose:
-      | 'front'
-      | 'front2'
-      | 'left'
-      | 'right'
-      | 'up'
-      | 'down'
-      | 'upleft'
-      | 'upright'
-      | 'downleft'
-      | 'downright';
-    src: string;
-  }[];
+  photos: { pose: EnrollPose; src: string }[];
   name: string;
 }) {
   const i18n = useI18n();

@@ -2974,6 +2974,7 @@ export const en = {
   'attendance.enroll.problem.notTurned': 'head not turned enough',
   'attendance.enroll.problem.otherPerson': 'does not look like the same person',
   'attendance.enroll.problem.spoof': 'does not look like a real face',
+  'attendance.enroll.problem.unknown': 'could not be used',
   'attendance.enroll.cannotBody':
     'The camera or face tracking does not work on this phone. Enroll on another phone with your own Telegram account.',
   'attendance.enroll.status.approved': 'Face enrolled',
