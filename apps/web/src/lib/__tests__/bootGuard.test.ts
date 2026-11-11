@@ -28,8 +28,16 @@ describe('index.html script order', () => {
 
 type Listener = (event?: unknown) => void;
 
+/** What the page starts with: the launch URL's hash, storage, the phone's scheme. */
+interface Start {
+  hash?: string;
+  session?: Record<string, string>;
+  local?: Record<string, string>;
+  phoneDark?: boolean;
+}
+
 /** Just enough DOM to run boot-guard.js. */
-function runGuard(language = 'en-US') {
+function runGuard(language = 'en-US', start: Start = {}) {
   const el = (id = '') => {
     const classes: string[] = [];
     return {
@@ -55,7 +63,11 @@ function runGuard(language = 'en-US') {
   const tgScript = { addEventListener: (type: string, fn: Listener) => void (tgListeners[type] = fn) };
   let parsed = false;
   const timers: Array<{ fn: Listener; ms: number; cleared: boolean }> = [];
-  const documentElement = { lang: '', classList: { contains: () => false } };
+  const documentElement = {
+    lang: '',
+    classList: { contains: () => false },
+    dataset: {} as Record<string, string>,
+  };
   const document = {
     documentElement,
     readyState: 'loading',
@@ -64,7 +76,12 @@ function runGuard(language = 'en-US') {
     getElementById: (id: string) => (parsed ? (nodes[id] ?? null) : null),
     addEventListener: (type: string, fn: Listener) => void (docListeners[type] = fn),
   };
-  const window: Record<string, unknown> = { addEventListener() {} };
+  const window: Record<string, unknown> = {
+    addEventListener() {},
+    matchMedia: (query: string) => ({
+      matches: query === '(prefers-color-scheme: dark)' && start.phoneDark === true,
+    }),
+  };
   const setTimeout = (fn: Listener, ms: number) => timers.push({ fn, ms, cleared: false }) - 1;
   const clearTimeout = (id: number) => {
     if (timers[id]) timers[id].cleared = true;
@@ -81,7 +98,9 @@ function runGuard(language = 'en-US') {
   };
   const localStorage = storage();
   const sessionStorage = storage();
-  const location = { reloads: 0, reload: () => void location.reloads++ };
+  for (const [k, v] of Object.entries(start.local ?? {})) localStorage.setItem(k, v);
+  for (const [k, v] of Object.entries(start.session ?? {})) sessionStorage.setItem(k, v);
+  const location = { hash: start.hash ?? '', reloads: 0, reload: () => void location.reloads++ };
   new Function(
     'window',
     'document',
@@ -210,5 +229,53 @@ describe('boot timeout text (DX-SHL-17)', () => {
     for (const text of lines) {
       expect(text).not.toMatch(/JS|module|модул|modul|12/i);
     }
+  });
+});
+
+// COREWEB1-26 (2026-11-11): the app's colours follow <html data-theme
+// data-color-scheme>, which used to wait for React, so every start was
+// light, also in a dark Telegram.
+describe('boot-guard colour scheme before the first paint (COREWEB1-26)', () => {
+  const theme = (params: Record<string, string>) =>
+    `tgWebAppData=x&tgWebAppThemeParams=${encodeURIComponent(JSON.stringify(params))}&tgWebAppVersion=9.1`;
+
+  it('takes a dark Telegram’s scheme from the launch URL, before the SDK has run', () => {
+    const g = runGuard('en-US', {
+      hash: `#${theme({ bg_color: '#17212b', text_color: '#f5f5f5' })}`,
+    });
+    expect(g.documentElement.dataset).toEqual({ theme: 'native', colorScheme: 'dark' });
+  });
+
+  it('a light Telegram stays light on a dark phone', () => {
+    const g = runGuard('en-US', { hash: `#${theme({ bg_color: '#ffffff' })}`, phoneDark: true });
+    expect(g.documentElement.dataset.colorScheme).toBe('light');
+  });
+
+  it('after a reload, the SDK’s own copy wins over the URL, as in the SDK', () => {
+    const g = runGuard('en-US', {
+      hash: `#${theme({ bg_color: '#ffffff' })}`,
+      session: { __telegram__themeParams: JSON.stringify({ bg_color: '#1c1c1d' }) },
+    });
+    expect(g.documentElement.dataset.colorScheme).toBe('dark');
+  });
+
+  it('outside Telegram, or with launch parameters it cannot read, the phone decides', () => {
+    expect(runGuard('en-US', { phoneDark: true }).documentElement.dataset.colorScheme).toBe('dark');
+    expect(runGuard('en-US').documentElement.dataset.colorScheme).toBe('light');
+    const garbled = runGuard('en-US', {
+      hash: '#tgWebAppThemeParams=%7Bnot-json',
+      phoneDark: true,
+    });
+    expect(garbled.documentElement.dataset.colorScheme).toBe('dark');
+    const odd = runGuard('en-US', { hash: `#${theme({ bg_color: 'red' })}` });
+    expect(odd.documentElement.dataset.colorScheme).toBe('light');
+  });
+
+  it('keeps a theme saved in the app, as ThemeProvider does', () => {
+    const g = runGuard('en-US', { local: { 'compass.theme': 'dark' } });
+    expect(g.documentElement.dataset.theme).toBe('dark');
+    expect(
+      runGuard('en-US', { local: { 'compass.theme': 'x' } }).documentElement.dataset.theme,
+    ).toBe('native');
   });
 });
