@@ -35,9 +35,10 @@ export const NAV_STORAGE_KEY = 'compass.nav.v1';
 
 /**
  * Every bottom tab, in the order the nav shows them. Review COREWEB1-11
- * (2026-11-11): the one list. The Shell's tab table and its pages are
- * keyed by `Tab`, so neither can leave a tab out, and the deep links and
- * the restore below accept exactly these.
+ * (2026-11-11): the one list. The Shell's tab table and its pages
+ * (app/shell/tabs.ts, app/shell/pages.tsx) are keyed by `Tab`, so
+ * neither can leave a tab out, and the deep links and the restore below
+ * accept exactly these.
  *
  * 2026-10-21: 'sales' is the staff-only sales entry tab (SalesPage.tsx).
  */

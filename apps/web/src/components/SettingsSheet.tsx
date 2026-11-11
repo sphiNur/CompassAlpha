@@ -22,8 +22,7 @@
  * Admin-of-org things stay in Admin so the mental model stays clean.
  */
 import { useEffect, useState } from 'react';
-import { Sheet, Button, Field, SectionLabel, PickerGroup, PickerRow } from '@compass/ui';
-import { useToast } from '@compass/ui';
+import { Button, Field, PickerGroup, PickerRow, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { runningBuildId } from '../lib/build';
 import { trpc } from '../lib/trpc';
@@ -102,7 +101,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
   const setLocale = trpc.auth.setLocale.useMutation({
     onSuccess: (next) => {
-      patchSession(next as never);
+      patchSession(next);
     },
     onError: errToast('common.errors.actionFailed'),
   });
@@ -112,7 +111,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   // rendering side.
   const setSecondaryLocale = trpc.auth.setSecondaryLocale.useMutation({
     onSuccess: (next) => {
-      patchSession(next as never);
+      patchSession(next);
     },
     onError: errToast('common.errors.actionFailed'),
   });
