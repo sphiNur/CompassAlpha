@@ -663,7 +663,8 @@ export function PeopleSection({
           }
           const storeSections = [...byStore.entries()].sort(
             (a, b) =>
-              Number(a[1].inactive) - Number(b[1].inactive) || a[1].name.localeCompare(b[1].name),
+              Number(a[1].inactive) - Number(b[1].inactive) ||
+              a[1].name.localeCompare(b[1].name, i18n.locale),
           );
           if (rows.length === 0) return noMatch;
           return (

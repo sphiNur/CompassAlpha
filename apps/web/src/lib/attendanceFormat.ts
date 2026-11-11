@@ -25,3 +25,15 @@ export function punchKindText(
   if (punch.date === rowDate) return kind;
   return i18n.t('attendance.sheet.madeOn', { label: kind, date: dates.calendarDay(punch.date) });
 }
+
+/**
+ * The order the attendance screens list a sheet's people in: those with
+ * attendance switched on first, then by name in the UI language. The
+ * server sorts in its own collation, which put Chinese names in code-point
+ * order instead of pinyin.
+ */
+export function sheetMemberOrder(
+  locale: string,
+): (a: { enabled: boolean; name: string }, b: { enabled: boolean; name: string }) => number {
+  return (a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name, locale);
+}

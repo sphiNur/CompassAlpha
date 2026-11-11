@@ -109,10 +109,10 @@ export function PerStoreView({
     ids.sort((a, b) => {
       const an = storeById.get(a)?.name ?? a;
       const bn = storeById.get(b)?.name ?? b;
-      return an.localeCompare(bn);
+      return an.localeCompare(bn, i18n.locale);
     });
     return ids;
-  }, [skusByStore, storeById]);
+  }, [skusByStore, storeById, i18n.locale]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -196,7 +196,7 @@ export function PerStoreView({
                   if (ai !== bi) return ai - bi;
                   const an = a.sku ? productName(a.sku) : a.skuId;
                   const bn = b.sku ? productName(b.sku) : b.skuId;
-                  const byName = an.localeCompare(bn);
+                  const byName = an.localeCompare(bn, i18n.locale);
                   return byName !== 0 ? byName : a.skuId.localeCompare(b.skuId);
                 })
                 .map((r) => {
@@ -402,7 +402,7 @@ export function PerVendorView({
     return [...m.values()].sort((a, b) => {
       if (a.supplierId && !b.supplierId) return -1;
       if (!a.supplierId && b.supplierId) return 1;
-      return a.supplierName.localeCompare(b.supplierName);
+      return a.supplierName.localeCompare(b.supplierName, i18n.locale);
     });
   }, [run.items, run.supplierBySku, i18n]);
 
@@ -447,7 +447,7 @@ export function PerVendorView({
                   if (ai !== bi) return ai - bi;
                   const an = a.sku ? productName(a.sku) : a.skuId;
                   const bn = c.sku ? productName(c.sku) : c.skuId;
-                  const byName = an.localeCompare(bn);
+                  const byName = an.localeCompare(bn, i18n.locale);
                   // Total order — equal names must not swap on re-render.
                   return byName !== 0 ? byName : a.skuId.localeCompare(c.skuId);
                 })
@@ -1029,7 +1029,7 @@ export function PerCategoryView({
               : i18n.t('common.unknownCategory'),
         items,
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name, i18n.locale));
   }, [categoryById, i18n, productName, run.items, skuById]);
 
   return (
