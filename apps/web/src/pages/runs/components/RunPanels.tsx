@@ -36,6 +36,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
+import { pickName } from '../../../lib/productName';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
 import {
@@ -1285,18 +1286,8 @@ export function PreviewSummaryCard({
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
   const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
   const currentSkuName = useCallback(
-    (item: { names: Record<string, string> | null | undefined }): string => {
-      const names = item.names ?? {};
-      return (
-        names[i18n.locale] ??
-        names.en ??
-        names.ru ??
-        names.zh ??
-        names.uz ??
-        Object.values(names)[0] ??
-        '—'
-      );
-    },
+    (item: { names: Record<string, string> | null | undefined }): string =>
+      pickName(item.names, i18n.locale),
     [i18n.locale],
   );
   /**
