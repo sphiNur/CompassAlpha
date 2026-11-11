@@ -6,18 +6,15 @@
  *     ExpenseTemplatesSection / DishesSection — the five list-editor
  *     surfaces (New button + DataState + card list + create/edit Sheet).
  *
- * Draft interfaces and helpers (snapStepToCanonical, EMPTY_DISH) are
- * internal. The audit's ListEditor/NameFieldsML consolidation happens
- * on top of this split as its own pass.
+ * Review ADM2-11 (2026-11-11): the parts they repeated are shared:
+ * CatalogParts.tsx (the bar over a list, a row's header and buttons, the
+ * name fields), catalogNames.ts and useEditorSheet.
  */
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Badge,
   Banner,
   Button,
-  CardHeader,
-  CardMeta,
-  CardTitle,
   DataState,
   EmptyState,
   Field,
@@ -26,14 +23,12 @@ import {
   SectionLabel,
   Select,
   Sheet,
-  Switch,
   useToast,
   rowGroupClass,
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { CATALOG_TEXT_MAX, SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
-import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { snapStepToCanonical } from './skuStep';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -44,106 +39,41 @@ import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { useAnnounce } from '../../../hooks/useAnnounce';
 import { nativeConfirm } from '../shared';
 import { CatalogImportSheet } from './CatalogImportSheet';
+import {
+  CatalogNameFields,
+  CatalogRowActions,
+  CatalogRowHeader,
+  CatalogToolbar,
+  ReadOnlyHint,
+  useIsOrgAdmin,
+} from './CatalogParts';
+import {
+  EMPTY_NAMES,
+  cleanNames,
+  hasAnyName,
+  namesForEdit,
+  type CatalogNames,
+} from './catalogNames';
+import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { moneyLine } from '../../../lib/money';
-
-/**
- * A11Y-3 (2026-10-31): the "Mol go'shti · Говядина · Beef" line under a
- * catalog name. Each name carries its own `lang`, so a screen reader
- * reads the Russian one in Russian instead of in the interface's voice.
- */
-function OtherLangNames({ names, langs }: { names: Record<string, string>; langs: string[] }) {
-  return (
-    <>
-      {langs.map((l, i) => (
-        <Fragment key={l}>
-          {i > 0 ? ' · ' : null}
-          <span lang={l}>{names[l]}</span>
-        </Fragment>
-      ))}
-    </>
-  );
-}
-
-/**
- * 2026-10-21 audit CA-16: every catalog write below (categories, SKUs,
- * suppliers, expense templates) is `requireOrgAdmin` on the server, but
- * the controls rendered for anyone who could open Admin (`users.manage`),
- * so a store manager got a FORBIDDEN on save. Without `org.admin` the
- * sections are now a read-only list.
- */
-function useIsOrgAdmin(): boolean {
-  return useAuthStore((s) => s.session?.permissions.includes('org.admin') ?? false);
-}
-
-/** Shown in place of the "+ New" row when the catalog is read-only. */
-function ReadOnlyHint() {
-  const i18n = useI18n();
-  return (
-    <p className="mb-3 text-old-label text-[var(--c-fg-muted)]">{i18n.t('catalog.readOnlyHint')}</p>
-  );
-}
-
-/**
- * 2026-10-21 CA-40: names need at least one locale, not all four (same rule
- * as dishes). Empty locales are omitted rather than sent as '' so
- * `pickName`'s `??` fallback chain shows another language instead of a blank.
- */
-interface NameDraft {
-  nameUz: string;
-  nameRu: string;
-  nameEn: string;
-  nameZh: string;
-}
-
-function namesFromDraft(d: NameDraft): Record<string, string> {
-  const out: Record<string, string> = {};
-  const pairs: Array<[string, string]> = [
-    ['uz', d.nameUz],
-    ['ru', d.nameRu],
-    ['en', d.nameEn],
-    ['zh', d.nameZh],
-  ];
-  for (const [k, v] of pairs) if (v.trim()) out[k] = v.trim();
-  return out;
-}
-
-function hasAnyName(d: NameDraft | null | undefined): boolean {
-  return !!d && Object.keys(namesFromDraft(d)).length > 0;
-}
 
 interface CategoryDraft {
   categoryId?: string;
   slug: string;
-  // 4-language draft (2026-05-05). Server enforces all 4 non-empty.
-  nameUz: string;
-  nameRu: string;
-  nameEn: string;
-  nameZh: string;
+  names: CatalogNames;
   sortIndex: number;
 }
 
 /** Category slugs: what CreateCategoryInput accepts. */
 const SLUG_RE = /^[a-z0-9-]+$/;
 
-/**
- * Closing a catalog editor by Esc, a backdrop tap or Telegram's back button
- * used to drop whatever was typed, and could close mid-save (atlas CAT-18).
- * While saving the sheet stays open; with unsaved edits it asks first.
- */
-function useEditorClose<T>(draft: T | null, setDraft: (d: null) => void, busy: boolean) {
-  const i18n = useI18n();
-  const opened = useRef<string | null>(null);
-  if (draft === null) opened.current = null;
-  else if (opened.current === null) opened.current = JSON.stringify(draft);
-  return (open: boolean) => {
-    if (open || busy) return;
-    if (draft !== null && JSON.stringify(draft) !== opened.current) {
-      nativeConfirm(i18n.t('catalog.confirm.discardEdits'), () => setDraft(null));
-      return;
-    }
-    setDraft(null);
-  };
-}
+/** Example names, each in its own field's language. */
+const CATEGORY_EXAMPLES: CatalogNames = {
+  uz: 'Sabzavotlar',
+  ru: 'Овощи', // i18n-exempt: an example word in the Russian name field
+  en: 'Vegetables',
+  zh: '蔬菜', // i18n-exempt: an example word in the Chinese name field
+};
 
 export function CategoriesSection() {
   const categoriesQuery = trpc.admin.categoryList.useQuery();
@@ -179,28 +109,20 @@ export function CategoriesSection() {
     onError: errToast('common.errors.actionFailed'),
   });
 
-  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
+  const editor = useEditorSheet(
+    draft,
+    setDraft,
+    (d) => d.categoryId ?? 'new',
+    create.isPending || update.isPending,
+  );
 
   return (
     <div className="px-4 py-3">
       {canWrite ? (
-        <div className="mb-3">
-          <Button
-            size="sm"
-            onClick={() =>
-              setDraft({
-                slug: '',
-                nameUz: '',
-                nameRu: '',
-                nameEn: '',
-                nameZh: '',
-                sortIndex: 100,
-              })
-            }
-          >
-            + {i18n.t('catalog.category.newButton')}
-          </Button>
-        </div>
+        <CatalogToolbar
+          newLabel={i18n.t('catalog.category.newButton')}
+          onNew={() => setDraft({ slug: '', names: { ...EMPTY_NAMES }, sortIndex: 100 })}
+        />
       ) : (
         <ReadOnlyHint />
       )}
@@ -218,78 +140,33 @@ export function CategoriesSection() {
           <ul className={rowGroupClass} role="list">
             {rows.map((c) => {
               const names = c.names as Record<string, string>;
-              // Title shows the name in the user's preferred locale,
-              // with the other 3 langs in a 12px row below so admins
-              // can verify the catalog is fully translated at a glance.
-              const otherLangs = ['uz', 'ru', 'en', 'zh'].filter(
-                (l) => names[l] && names[l] !== productName({ names }),
-              );
+              // The name in the reader's language; the others show below
+              // it (CatalogRowHeader).
+              const title = productName({ names }) || c.slug;
               return (
                 <li key={c.id}>
-                  <CardHeader>
-                    <div className="min-w-0">
-                      <CardTitle as="h2">{productName({ names }) || c.slug}</CardTitle>
-                      {otherLangs.length > 0 ? (
-                        <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
-                          <OtherLangNames names={names} langs={otherLangs} />
-                        </div>
-                      ) : null}
-                      <CardMeta>
-                        {i18n.t('catalog.category.meta', { slug: c.slug, sort: c.sortIndex })}
-                      </CardMeta>
-                    </div>
-                    {c.isArchived ? (
-                      <Badge tone="muted">{i18n.t('common.archived')}</Badge>
-                    ) : null}
-                  </CardHeader>
+                  <CatalogRowHeader
+                    title={title}
+                    names={names}
+                    meta={i18n.t('catalog.category.meta', { slug: c.slug, sort: c.sortIndex })}
+                    archived={c.isArchived}
+                  />
                   {canWrite ? (
-                    <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        onClick={() =>
-                          setDraft({
-                            categoryId: c.id,
-                            slug: c.slug,
-                            nameUz: names.uz ?? '',
-                            nameRu: names.ru ?? '',
-                            nameEn: names.en ?? '',
-                            nameZh: names.zh ?? '',
-                            sortIndex: c.sortIndex,
-                          })
-                        }
-                      >
-                        {i18n.t('common.edit')}
-                      </Button>
-                      {!c.isArchived ? (
-                        <Button
-                          size="sm"
-                          variant="danger-ghost"
-                          onClick={() =>
-                            nativeConfirm(
-                              i18n.t('catalog.category.confirmArchive', {
-                                name: productName({ names }) || c.slug,
-                              }),
-                              () => remove.mutate({ categoryId: c.id }),
-                            )
-                          }
-                        >
-                          {i18n.t('common.archive')}
-                        </Button>
-                      ) : (
-                        // 2026-10-21 audit CA-40 / E-16: categoryUpdate has
-                        // always accepted isArchived, but there was no way
-                        // back from an archive in the UI.
-                        <Button
-                          size="sm"
-                          variant="pearl"
-                          loading={update.isPending && update.variables?.categoryId === c.id}
-                          onClick={() => update.mutate({ categoryId: c.id, isArchived: false })}
-                        >
-                          {i18n.t('common.unarchive')}
-                        </Button>
-                      )}
-                    </div>
+                    <CatalogRowActions
+                      archived={c.isArchived}
+                      onEdit={() =>
+                        setDraft({
+                          categoryId: c.id,
+                          slug: c.slug,
+                          names: namesForEdit(names),
+                          sortIndex: c.sortIndex,
+                        })
+                      }
+                      confirmArchive={i18n.t('catalog.category.confirmArchive', { name: title })}
+                      onArchive={() => remove.mutate({ categoryId: c.id })}
+                      onUnarchive={() => update.mutate({ categoryId: c.id, isArchived: false })}
+                      unarchiving={update.isPending && update.variables?.categoryId === c.id}
+                    />
                   ) : null}
                 </li>
               );
@@ -299,19 +176,16 @@ export function CategoriesSection() {
       </DataState>
 
       <Sheet
-        open={!!draft}
-        onOpenChange={closeEditor}
+        {...editor}
         title={i18n.t(draft?.categoryId ? 'catalog.category.edit' : 'catalog.category.new')}
         footer={
           <Button
             block
             loading={create.isPending || update.isPending}
-            disabled={
-              !draft?.slug.trim() || !SLUG_RE.test(draft.slug) || !hasAnyName(draft)
-            }
+            disabled={!draft?.slug.trim() || !SLUG_RE.test(draft.slug) || !hasAnyName(draft.names)}
             onClick={() => {
               if (!draft) return;
-              const names = namesFromDraft(draft);
+              const names = cleanNames(draft.names);
               if (draft.categoryId) {
                 update.mutate({
                   categoryId: draft.categoryId,
@@ -348,43 +222,11 @@ export function CategoriesSection() {
                 placeholder={i18n.t('catalog.category.slugPlaceholder')}
               />
             </Field>
-            {/* CAT-10: one name in any language is enough (the server's rule);
-                the four fields used to be starred as if all were required. */}
-            <p className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('catalog.names.atLeastOne')}
-            </p>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.uz })}`}>
-              <Input
-                value={draft.nameUz}
-                onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="Sabzavotlar" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.ru })}`}>
-              <Input
-                value={draft.nameRu}
-                onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="Овощи" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.en })}`}>
-              <Input
-                value={draft.nameEn}
-                onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="Vegetables" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.zh })}`}>
-              <Input
-                value={draft.nameZh}
-                onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="蔬菜" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
+            <CatalogNameFields
+              names={draft.names}
+              onChange={(names) => setDraft({ ...draft, names })}
+              examples={CATEGORY_EXAMPLES}
+            />
             <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
                 type="number"
@@ -403,17 +245,21 @@ interface SkuDraft {
   skuId?: string;
   categoryId: string | null;
   code: string;
-  // 4-language draft (2026-05-05). Server enforces all 4 non-empty.
-  nameUz: string;
-  nameRu: string;
-  nameEn: string;
-  nameZh: string;
+  names: CatalogNames;
   /** 2026-07-30: fixed vocabulary — see SkuUnitSchema in @compass/contracts. */
   unit: SkuUnit;
   /** M3.14 + 2026-07-30: only the canonical grid — see SkuStepSchema. */
   step: SkuStep;
   sortIndex: number;
 }
+
+/** Example names, each in its own field's language. */
+const SKU_EXAMPLES: CatalogNames = {
+  uz: 'Pomidor',
+  ru: 'Помидор', // i18n-exempt: an example word in the Russian name field
+  en: 'Tomato',
+  zh: '西红柿', // i18n-exempt: an example word in the Chinese name field
+};
 
 /**
  * Snap a legacy unit string onto the fixed SkuUnitSchema vocabulary.
@@ -500,47 +346,37 @@ export function SkusSection() {
     return productName({ names: c.names as Record<string, string> }) || c.slug;
   };
 
-  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
+  const editor = useEditorSheet(
+    draft,
+    setDraft,
+    (d) => d.skuId ?? 'new',
+    create.isPending || update.isPending,
+  );
 
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      {/* Review WALK-04 (2026-11-09): wraps. At 320px in Russian the two
-          buttons shrank to "+ Новый …" and "Имп…" beside the switch. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {canWrite ? (
-          <Button
-            size="sm"
-            onClick={() =>
-              setDraft({
-                categoryId: null,
-                code: '',
-                nameUz: '',
-                nameRu: '',
-                nameEn: '',
-                nameZh: '',
-                unit: 'pcs',
-                step: '1',
-                sortIndex: 100,
-              })
-            }
-          >
-            + {i18n.t('catalog.sku.new')}
-          </Button>
-        ) : null}
+      <CatalogToolbar
+        newLabel={canWrite ? i18n.t('catalog.sku.new') : undefined}
+        onNew={() =>
+          setDraft({
+            categoryId: null,
+            code: '',
+            names: { ...EMPTY_NAMES },
+            unit: 'pcs',
+            step: '1',
+            sortIndex: 100,
+          })
+        }
+        showArchived={includeArchived}
+        onShowArchivedChange={setIncludeArchived}
+      >
         {canWrite ? (
           <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
             {i18n.t('catalog.import.button')}
           </Button>
         ) : null}
-        <div className="ml-auto">
-          <Switch
-            label={i18n.t('admin.label.showArchived')}
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
-        </div>
-      </div>
+      </CatalogToolbar>
       <div className="mb-3">
         <SearchInput
           value={searchQuery}
@@ -578,79 +414,42 @@ export function SkusSection() {
             {filtered.map((sk) => {
               const names = sk.names as Record<string, string>;
               const primary = productName({ names }) || sk.code || sk.id.slice(0, 6);
-              const otherLangs = ['uz', 'ru', 'en', 'zh'].filter(
-                (l) => names[l] && names[l] !== primary,
-              );
               return (
                 <li key={sk.id}>
-                  <CardHeader>
-                    <div className="min-w-0">
-                      <CardTitle as="h2">{primary}</CardTitle>
-                      {otherLangs.length > 0 ? (
-                        <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
-                          <OtherLangNames names={names} langs={otherLangs} />
-                        </div>
-                      ) : null}
-                      <CardMeta>
+                  <CatalogRowHeader
+                    title={primary}
+                    names={names}
+                    meta={
+                      <>
                         {categoryName(sk.categoryId)} · {unitLabel.uncounted(sk.unit)} ·{' '}
                         {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
                         {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
                         {sk.code ? ` · ${sk.code}` : ''}
-                      </CardMeta>
-                    </div>
-                    {sk.isArchived ? (
-                      <Badge tone="muted">{i18n.t('common.archived')}</Badge>
-                    ) : null}
-                  </CardHeader>
+                      </>
+                    }
+                    archived={sk.isArchived}
+                  />
                   {canWrite ? (
-                    <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        onClick={() =>
-                          setDraft({
-                            skuId: sk.id,
-                            categoryId: sk.categoryId,
-                            code: sk.code ?? '',
-                            nameUz: names.uz ?? '',
-                            nameRu: names.ru ?? '',
-                            nameEn: names.en ?? '',
-                            nameZh: names.zh ?? '',
-                            // Snap legacy values onto the contract enums so
-                            // both Selects have a valid initial selection.
-                            unit: snapUnitToCanonical(sk.unit),
-                            step: snapStepToCanonical(sk.step),
-                            sortIndex: sk.sortIndex,
-                          })
-                        }
-                      >
-                        {i18n.t('common.edit')}
-                      </Button>
-                      {!sk.isArchived ? (
-                        <Button
-                          size="sm"
-                          variant="danger-ghost"
-                          onClick={() =>
-                            nativeConfirm(
-                              i18n.t('catalog.sku.confirmArchive', { name: primary }),
-                              () =>
-                              remove.mutate({ skuId: sk.id }),
-                            )
-                          }
-                        >
-                          {i18n.t('common.archive')}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="pearl"
-                          loading={update.isPending && update.variables?.skuId === sk.id}
-                          onClick={() => update.mutate({ skuId: sk.id, isArchived: false })}
-                        >
-                          {i18n.t('common.unarchive')}
-                        </Button>
-                      )}
-                    </div>
+                    <CatalogRowActions
+                      archived={sk.isArchived}
+                      onEdit={() =>
+                        setDraft({
+                          skuId: sk.id,
+                          categoryId: sk.categoryId,
+                          code: sk.code ?? '',
+                          names: namesForEdit(names),
+                          // Snap legacy values onto the contract enums so
+                          // both Selects have a valid initial selection.
+                          unit: snapUnitToCanonical(sk.unit),
+                          step: snapStepToCanonical(sk.step),
+                          sortIndex: sk.sortIndex,
+                        })
+                      }
+                      confirmArchive={i18n.t('catalog.sku.confirmArchive', { name: primary })}
+                      onArchive={() => remove.mutate({ skuId: sk.id })}
+                      onUnarchive={() => update.mutate({ skuId: sk.id, isArchived: false })}
+                      unarchiving={update.isPending && update.variables?.skuId === sk.id}
+                    />
                   ) : null}
                 </li>
               );
@@ -663,19 +462,16 @@ export function SkusSection() {
       <CatalogImportSheet open={importOpen} onOpenChange={setImportOpen} />
 
       <Sheet
-        open={!!draft}
-        onOpenChange={closeEditor}
+        {...editor}
         title={i18n.t(draft?.skuId ? 'catalog.sku.edit' : 'catalog.sku.new')}
         footer={
           <Button
             block
             loading={create.isPending || update.isPending}
-            disabled={
-              !hasAnyName(draft) || !draft?.unit.trim()
-            }
+            disabled={!draft || !hasAnyName(draft.names) || !draft.unit.trim()}
             onClick={() => {
               if (!draft) return;
-              const names = namesFromDraft(draft);
+              const names = cleanNames(draft.names);
               if (draft.skuId) {
                 update.mutate({
                   skuId: draft.skuId,
@@ -704,45 +500,12 @@ export function SkusSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            {/* 4-language inputs (2026-05-05). Order is uz/ru/en/zh — uz
-                first because that's the working language in this market.
-                CAT-10: one of them is enough. */}
-            <p className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('catalog.names.atLeastOne')}
-            </p>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.uz })}`}>
-              <Input
-                value={draft.nameUz}
-                onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="Pomidor" /* i18n-exempt: example word FOR that specific language field */
-                autoFocus
-              />
-            </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.ru })}`}>
-              <Input
-                value={draft.nameRu}
-                onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="Помидор" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.en })}`}>
-              <Input
-                value={draft.nameEn}
-                onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="Tomato" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.zh })}`}>
-              <Input
-                value={draft.nameZh}
-                onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.name}
-                placeholder="西红柿" /* i18n-exempt: example word FOR that specific language field */
-              />
-            </Field>
+            <CatalogNameFields
+              names={draft.names}
+              onChange={(names) => setDraft({ ...draft, names })}
+              examples={SKU_EXAMPLES}
+              autoFocus
+            />
             <Field label={i18n.t('admin.field.category')}>
               <Select
                 value={draft.categoryId ?? ''}
@@ -862,39 +625,31 @@ export function SuppliersSection() {
     onError: errToast('common.errors.actionFailed'),
   });
 
-  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
+  const editor = useEditorSheet(
+    draft,
+    setDraft,
+    (d) => d.supplierId ?? 'new',
+    create.isPending || update.isPending,
+  );
 
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      {/* Review ADM2-13 (2026-11-11): wraps, like the products bar (WALK-04).
-          At 320px the switch's label squeezed the button to «+ Новый постав…». */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {canWrite ? (
-          <Button
-            size="sm"
-            onClick={() =>
-              setDraft({
-                name: '',
-                contactPhone: '',
-                contactTg: '',
-                address: '',
-                notes: '',
-                isArchived: false,
-              })
-            }
-          >
-            + {i18n.t('catalog.supplier.newButton')}
-          </Button>
-        ) : null}
-        <div className="ml-auto">
-          <Switch
-            label={i18n.t('admin.label.showArchived')}
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
-        </div>
-      </div>
+      <CatalogToolbar
+        newLabel={canWrite ? i18n.t('catalog.supplier.newButton') : undefined}
+        onNew={() =>
+          setDraft({
+            name: '',
+            contactPhone: '',
+            contactTg: '',
+            address: '',
+            notes: '',
+            isArchived: false,
+          })
+        }
+        showArchived={includeArchived}
+        onShowArchivedChange={setIncludeArchived}
+      />
       <DataState
         query={suppliersQuery}
         emptyWhen={(d) => d.length === 0}
@@ -909,63 +664,34 @@ export function SuppliersSection() {
           <ul className={rowGroupClass} role="list">
             {rows.map((sp) => (
               <li key={sp.id}>
-                <CardHeader>
-                  <div className="min-w-0">
-                    <CardTitle as="h2">{sp.name}</CardTitle>
-                    <CardMeta>
-                      {sp.contactPhone ? sp.contactPhone : ''}
-                      {sp.contactTg ? ` · @${sp.contactTg}` : ''}
-                      {sp.address ? ` · ${sp.address}` : ''}
-                    </CardMeta>
-                  </div>
-                  {sp.isArchived ? (
-                    <Badge tone="muted">{i18n.t('common.archived')}</Badge>
-                  ) : null}
-                </CardHeader>
+                <CatalogRowHeader
+                  title={sp.name}
+                  // ADM2-11: joined, so a supplier with no phone does not
+                  // start with " · ".
+                  meta={[sp.contactPhone, sp.contactTg ? `@${sp.contactTg}` : null, sp.address]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  archived={sp.isArchived}
+                />
                 {canWrite ? (
-                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setDraft({
-                          supplierId: sp.id,
-                          name: sp.name,
-                          contactPhone: sp.contactPhone ?? '',
-                          contactTg: sp.contactTg ?? '',
-                          address: sp.address ?? '',
-                          notes: sp.notes ?? '',
-                          isArchived: sp.isArchived,
-                        })
-                      }
-                    >
-                      {i18n.t('common.edit')}
-                    </Button>
-                    {!sp.isArchived ? (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        onClick={() =>
-                          nativeConfirm(
-                            i18n.t('catalog.supplier.confirmArchive', { name: sp.name }),
-                            () =>
-                            remove.mutate({ supplierId: sp.id }),
-                          )
-                        }
-                      >
-                        {i18n.t('common.archive')}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        loading={update.isPending && update.variables?.supplierId === sp.id}
-                        onClick={() => update.mutate({ supplierId: sp.id, isArchived: false })}
-                      >
-                        {i18n.t('common.unarchive')}
-                      </Button>
-                    )}
-                  </div>
+                  <CatalogRowActions
+                    archived={sp.isArchived}
+                    onEdit={() =>
+                      setDraft({
+                        supplierId: sp.id,
+                        name: sp.name,
+                        contactPhone: sp.contactPhone ?? '',
+                        contactTg: sp.contactTg ?? '',
+                        address: sp.address ?? '',
+                        notes: sp.notes ?? '',
+                        isArchived: sp.isArchived,
+                      })
+                    }
+                    confirmArchive={i18n.t('catalog.supplier.confirmArchive', { name: sp.name })}
+                    onArchive={() => remove.mutate({ supplierId: sp.id })}
+                    onUnarchive={() => update.mutate({ supplierId: sp.id, isArchived: false })}
+                    unarchiving={update.isPending && update.variables?.supplierId === sp.id}
+                  />
                 ) : null}
               </li>
             ))}
@@ -974,8 +700,7 @@ export function SuppliersSection() {
       </DataState>
 
       <Sheet
-        open={!!draft}
-        onOpenChange={closeEditor}
+        {...editor}
         title={i18n.t(draft?.supplierId ? 'catalog.supplier.edit' : 'catalog.supplier.new')}
         footer={
           <Button
@@ -1118,39 +843,32 @@ export function ExpenseTemplatesSection() {
 
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
 
-  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
+  const editor = useEditorSheet(
+    draft,
+    setDraft,
+    (d) => d.templateId ?? 'new',
+    create.isPending || update.isPending,
+  );
 
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      {/* ADM2-13: wraps; at 320px in Uzbek the button read «+ Yangi sha…». */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {canWrite ? (
-          <Button
-            size="sm"
-            onClick={() =>
-              setDraft({
-                label: '',
-                unitHint: '',
-                defaultQty: '1',
-                defaultUnitPrice: '',
-                defaultPaymentMethod: 'cash',
-                sortIndex: 0,
-                isArchived: false,
-              })
-            }
-          >
-            {i18n.t('admin.action.newExpenseTemplate')}
-          </Button>
-        ) : null}
-        <div className="ml-auto">
-          <Switch
-            label={i18n.t('admin.label.showArchived')}
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
-        </div>
-      </div>
+      <CatalogToolbar
+        newLabel={canWrite ? i18n.t('admin.action.newExpenseTemplate') : undefined}
+        onNew={() =>
+          setDraft({
+            label: '',
+            unitHint: '',
+            defaultQty: '1',
+            defaultUnitPrice: '',
+            defaultPaymentMethod: 'cash',
+            sortIndex: 0,
+            isArchived: false,
+          })
+        }
+        showArchived={includeArchived}
+        onShowArchivedChange={setIncludeArchived}
+      />
       <p className="mb-3 text-old-label text-[var(--c-fg-muted)]">
         {i18n.t('admin.expenseTemplates.intro')}
       </p>
@@ -1170,17 +888,15 @@ export function ExpenseTemplatesSection() {
               const lineTotal = moneyLine(tpl.defaultQty, tpl.defaultUnitPrice) ?? 0;
               return (
                 <li key={tpl.id}>
-                  <CardHeader>
-                    <div className="min-w-0">
-                      <CardTitle as="h2">{tpl.label}</CardTitle>
-                      <CardMeta>
+                  <CatalogRowHeader
+                    title={tpl.label}
+                    meta={
+                      <>
                         {tpl.unitHint ? `${tpl.unitHint} · ` : ''}
-                        {/* default qty × unit price, with the
-                           payment-method emoji so the manager can
-                           scan the list and spot the transfer-only
-                           rows at a glance. */}
-                        {formatQty(tpl.defaultQty)}{' '}
-                        × {formatMoney(tpl.defaultUnitPrice)} {currency}
+                        {/* Default quantity × unit price = the line, and
+                            how it is paid, so the manager can spot the
+                            transfer-only rows at a glance. */}
+                        {formatQty(tpl.defaultQty)} × {formatMoney(tpl.defaultUnitPrice)} {currency}
                         {' = '}
                         <span className="font-semibold text-[var(--c-fg)]">
                           {formatMoney(lineTotal)} {currency}
@@ -1189,64 +905,32 @@ export function ExpenseTemplatesSection() {
                         {tpl.defaultPaymentMethod === 'transfer'
                           ? i18n.t('run.label.paymentTransfer')
                           : i18n.t('run.label.paymentCash')}
-                      </CardMeta>
-                    </div>
-                    {tpl.isArchived ? (
-                      <Badge tone="muted">{i18n.t('common.archived')}</Badge>
-                    ) : null}
-                  </CardHeader>
+                      </>
+                    }
+                    archived={tpl.isArchived}
+                  />
                   {canWrite ? (
-                    <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        onClick={() =>
-                          setDraft({
-                            templateId: tpl.id,
-                            label: tpl.label,
-                            unitHint: tpl.unitHint ?? '',
-                            defaultQty: tpl.defaultQty,
-                            defaultUnitPrice: tpl.defaultUnitPrice,
-                            defaultPaymentMethod: tpl.defaultPaymentMethod as
-                              | 'cash'
-                              | 'transfer',
-                            sortIndex: tpl.sortIndex,
-                            isArchived: tpl.isArchived,
-                          })
-                        }
-                      >
-                        {i18n.t('admin.action.edit')}
-                      </Button>
-                      {!tpl.isArchived ? (
-                        <Button
-                          size="sm"
-                          variant="danger-ghost"
-                          onClick={() =>
-                            nativeConfirm(
-                              i18n.t('admin.confirm.archiveExpenseTemplate', {
-                                label: tpl.label,
-                              }),
-                              () => remove.mutate({ templateId: tpl.id }),
-                            )
-                          }
-                        >
-                          {i18n.t('admin.action.archive')}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="pearl"
-                          onClick={() =>
-                            update.mutate({
-                              templateId: tpl.id,
-                              isArchived: false,
-                            })
-                          }
-                        >
-                          {i18n.t('admin.action.unarchive')}
-                        </Button>
-                      )}
-                    </div>
+                    <CatalogRowActions
+                      archived={tpl.isArchived}
+                      onEdit={() =>
+                        setDraft({
+                          templateId: tpl.id,
+                          label: tpl.label,
+                          unitHint: tpl.unitHint ?? '',
+                          defaultQty: tpl.defaultQty,
+                          defaultUnitPrice: tpl.defaultUnitPrice,
+                          defaultPaymentMethod: tpl.defaultPaymentMethod as 'cash' | 'transfer',
+                          sortIndex: tpl.sortIndex,
+                          isArchived: tpl.isArchived,
+                        })
+                      }
+                      confirmArchive={i18n.t('admin.confirm.archiveExpenseTemplate', {
+                        label: tpl.label,
+                      })}
+                      onArchive={() => remove.mutate({ templateId: tpl.id })}
+                      onUnarchive={() => update.mutate({ templateId: tpl.id, isArchived: false })}
+                      unarchiving={update.isPending && update.variables?.templateId === tpl.id}
+                    />
                   ) : null}
                 </li>
               );
@@ -1256,8 +940,7 @@ export function ExpenseTemplatesSection() {
       </DataState>
 
       <Sheet
-        open={!!draft}
-        onOpenChange={closeEditor}
+        {...editor}
         title={
           draft?.templateId
             ? i18n.t('admin.sheet.editExpenseTemplate')
@@ -1401,7 +1084,7 @@ interface DishDraft {
   /** CLS-25: the version the editor opened, sent back on save. */
   expectedUpdatedAt?: string;
   code: string;
-  names: Record<string, string>;
+  names: CatalogNames;
   description: Record<string, string>;
   unitPrice: string;
   ingredients: Array<{
@@ -1423,7 +1106,7 @@ const newIngredientKey = () => `ing-${++ingredientKeySeq}`;
 
 const EMPTY_DISH: DishDraft = {
   code: '',
-  names: {},
+  names: EMPTY_NAMES,
   description: {},
   unitPrice: '',
   ingredients: [],
@@ -1531,7 +1214,7 @@ export function DishesSection() {
       dishId,
       expectedUpdatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
       code: d.code ?? '',
-      names: d.names as Record<string, string>,
+      names: namesForEdit(d.names as Record<string, string>),
       description: d.description as Record<string, string>,
       unitPrice: d.unitPrice ?? '',
       ingredients: ing.map((i) => ({
@@ -1545,14 +1228,9 @@ export function DishesSection() {
 
   const handleSave = () => {
     if (!draft) return;
-    // Strip empty-name locales before sending; an empty string is
-    // worse than absence (it would override a fallback later).
-    const cleanNames: Record<string, string> = {};
-    for (const [k, v] of Object.entries(draft.names)) {
-      const t = (v ?? '').trim();
-      if (t) cleanNames[k] = t;
-    }
-    if (Object.keys(cleanNames).length === 0) {
+    // Empty languages are left out (cleanNames), not sent as ''.
+    const names = cleanNames(draft.names);
+    if (Object.keys(names).length === 0) {
       errToast('common.errors.actionFailed')(new Error('dishes.errors.namesRequired'));
       return;
     }
@@ -1595,7 +1273,7 @@ export function DishesSection() {
       ...(draft.dishId ? { dishId: draft.dishId } : {}),
       ...(draft.expectedUpdatedAt ? { expectedUpdatedAt: draft.expectedUpdatedAt } : {}),
       code: draft.code.trim() || null,
-      names: cleanNames,
+      names,
       description: draft.description,
       unitPrice: price || null,
       ingredients: cleanIngredients,
@@ -1614,7 +1292,7 @@ export function DishesSection() {
     });
   };
 
-  const closeEditor = useEditorClose(draft, setDraft, save.isPending);
+  const editor = useEditorSheet(draft, setDraft, (d) => d.dishId ?? 'new', save.isPending);
 
   return (
     <div className="px-4 py-3">
@@ -1622,20 +1300,12 @@ export function DishesSection() {
           bars (ADM2-13). Review ADM2-33 (2026-11-11): the archive toggle is
           the Switch the product, supplier and expense lists use, in the
           same place (it was a button that changed its own words). */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {canManage ? (
-          <Button size="sm" onClick={() => setDraft({ ...EMPTY_DISH })}>
-            {i18n.t('dishes.action.new')}
-          </Button>
-        ) : null}
-        <div className="ml-auto">
-          <Switch
-            label={i18n.t('admin.label.showArchived')}
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
-        </div>
-      </div>
+      <CatalogToolbar
+        newLabel={canManage ? i18n.t('dishes.action.new') : undefined}
+        onNew={() => setDraft({ ...EMPTY_DISH })}
+        showArchived={includeArchived}
+        onShowArchivedChange={setIncludeArchived}
+      />
 
       {/* 2026-10-21 FE-01 / F6-04: a failed dishes.list rendered as "no
           dishes yet". DataState gives loading / error (+Retry) / empty.
@@ -1736,8 +1406,7 @@ export function DishesSection() {
 
       {/* Editor sheet. */}
       <Sheet
-        open={draft !== null}
-        onOpenChange={closeEditor}
+        {...editor}
         title={
           draft?.dishId
             ? i18n.t('dishes.sheet.editTitle')
@@ -1774,26 +1443,12 @@ export function DishesSection() {
         {draft ? (
           <fieldset disabled={!canManage} className="flex min-w-0 flex-col gap-3 border-0 p-0 py-3">
             {!canManage ? <Banner tone="info" title={i18n.t('dishes.readOnly')} /> : null}
-            {/* Names — 4 locales. Walkthrough F16 (2026-11-05): same order
-                and labels as the category and product forms; the English
-                "e.g. Beef plov" example showed in every language's UI. */}
-            {(['uz', 'ru', 'en', 'zh'] as const).map((loc) => (
-              <Field
-                key={loc}
-                label={i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES[loc] })}
-              >
-                <Input
-                  value={draft.names[loc] ?? ''}
-                  maxLength={CATALOG_TEXT_MAX.name}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      names: { ...draft.names, [loc]: e.target.value },
-                    })
-                  }
-                />
-              </Field>
-            ))}
+            {/* Walkthrough F16 (2026-11-05): the same name fields as the
+                category and product forms. ADM2-11: the same component. */}
+            <CatalogNameFields
+              names={draft.names}
+              onChange={(names) => setDraft({ ...draft, names })}
+            />
             <Field label={i18n.t('dishes.field.code')} hint={i18n.t('dishes.field.codeHint')}>
               <Input
                 value={draft.code}

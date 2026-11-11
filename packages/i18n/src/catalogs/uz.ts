@@ -836,8 +836,6 @@ export const uz = {
   'admin.subsection.categoriesHint': 'Mahsulotlarni guruhlash',
   'admin.subsection.skusHint': 'Mahsulotlar katalogi',
   'admin.subsection.suppliersHint': 'Kimdan sotib olamiz',
-  'admin.action.edit': 'Tahrirlash',
-  'admin.action.archive': 'Arxivga',
   'admin.action.cloneRoles': 'Rollarni nusxalash…',
   'admin.action.transfer': 'Oʻtkazish…',
   'admin.action.removeFromStore': 'Doʻkondan olib tashlash',
@@ -1859,8 +1857,7 @@ export const uz = {
   'admin.subsection.dishes': 'Taomlar',
   'admin.subsection.expenseTemplates': 'Xarajat shablonlari',
   'admin.subsection.expenseTemplatesHint': 'Kunlik doʻkon xarajatlari uchun tezkor shablonlar',
-  'admin.action.newExpenseTemplate': '+ Yangi shablon',
-  'admin.action.unarchive': 'Arxivdan chiqarish',
+  'admin.action.newExpenseTemplate': 'Yangi shablon',
   'admin.expenseTemplates.intro':
     'Shablonlar faqat xarid sahifasidagi xarajat formasini tez toʻldiradi. Xaridor har bir haqiqiy kunlik xarajat uchun sana, doʻkon, summa, chek va sababni baribir tanlaydi.',
   'admin.expenseTemplates.empty.title': 'Hali shablon yoʻq',
@@ -1886,7 +1883,7 @@ export const uz = {
   'dishes.empty.title': 'Hozircha taomlar yoʻq',
   'dishes.empty.description':
     'Menyu taomlarini qoʻshing; retsept har bir taomni ingredient mahsulotlar bilan bogʻlaydi.',
-  'dishes.action.new': '+ Yangi taom',
+  'dishes.action.new': 'Yangi taom',
   'dishes.action.addIngredient': '+ Ingredient qoʻshish',
   'dishes.label.noIngredients': 'Retsept yoʻq',
   'dishes.label.noIngredientsHint':
