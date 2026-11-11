@@ -9,12 +9,6 @@
 
 const T_ME = 'https://t.me';
 
-/** Direct link to a bot's start page. Pass the username WITHOUT the @. */
-export function botLink(botUsername: string | null | undefined): string {
-  if (!botUsername) return `${T_ME}/`;
-  return `${T_ME}/${botUsername.replace(/^@/, '')}`;
-}
-
 /**
  * Deep link that opens the bot's Mini App with the invite token as
  * `start_param`. The bot never sees the token, so copying or sharing
@@ -35,12 +29,6 @@ export function shareLink(args: { url: string; text: string }): string {
     `${T_ME}/share/url?url=${encodeURIComponent(args.url)}` +
     `&text=${encodeURIComponent(args.text)}`
   );
-}
-
-/** Direct link to a user by username (without @). */
-export function userLink(username: string | null | undefined): string {
-  if (!username) return `${T_ME}/`;
-  return `${T_ME}/${username.replace(/^@/, '')}`;
 }
 
 /**

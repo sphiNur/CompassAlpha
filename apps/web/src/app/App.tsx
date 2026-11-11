@@ -5,6 +5,7 @@ import { ThemeProvider, ToastProvider } from '@compass/ui';
 import { initLogger, getLogger } from '@compass/telemetry';
 import { CLIENT_LOG_BATCH_MAX, CLIENT_LOG_BATCH_MAX_BYTES } from '@compass/contracts/limits';
 import { trpc, buildTrpcClient, sendClientLogs } from '../lib/trpc';
+import { runningBuildId } from '../lib/build';
 import { reportLastReload } from '../lib/reload';
 import {
   cacheOwner,
@@ -34,7 +35,7 @@ interface CompassWindow extends Window { __compassLoggerBooted?: boolean }
 const compassWindow = isBrowser ? (window as CompassWindow) : null;
 if (compassWindow && !compassWindow.__compassLoggerBooted) {
   const logger = initLogger({
-    appVersion: import.meta.env.VITE_BUILD_SHA ?? 'dev',
+    appVersion: runningBuildId() ?? 'dev',
     maxBatchEvents: CLIENT_LOG_BATCH_MAX,
     maxBatchBytes: CLIENT_LOG_BATCH_MAX_BYTES,
   });

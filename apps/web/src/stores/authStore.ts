@@ -3,6 +3,14 @@ import { persist } from 'zustand/middleware';
 import { resetNavStore } from './navStore';
 import { clearPersistedQueries } from '../lib/queryPersist';
 
+/**
+ * localStorage key of the saved session. Read before React starts
+ * (lib/bootLocale.ts, app/pageChunks.ts) and removed by the reset
+ * (lib/localSession.ts); public/boot-guard.js, which runs without the
+ * bundle, spells it out, and its test checks the two agree.
+ */
+export const AUTH_STORAGE_KEY = 'compass.auth';
+
 export interface AuthSession {
   user: {
     id: string;
@@ -242,7 +250,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'compass.auth',
+      name: AUTH_STORAGE_KEY,
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,

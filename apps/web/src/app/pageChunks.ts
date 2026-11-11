@@ -7,6 +7,7 @@
  * The order page stays in the entry chunk: nearly every signed-in person
  * has the Order tab, and it is the default first tab.
  */
+import { AUTH_STORAGE_KEY } from '../stores/authStore';
 import { isTab, NAV_STORAGE_KEY, type Tab } from '../stores/navStore';
 
 export const importAdminPage = () =>
@@ -70,7 +71,7 @@ export function preloadPage(tab: Tab): void {
  */
 export function savedTab(storage: Pick<Storage, 'getItem'>): Tab | null {
   try {
-    const auth = JSON.parse(storage.getItem('compass.auth') ?? 'null') as {
+    const auth = JSON.parse(storage.getItem(AUTH_STORAGE_KEY) ?? 'null') as {
       state?: { session?: unknown };
     } | null;
     if (!auth?.state?.session) return null;

@@ -15,3 +15,4 @@ export * from './schemas/report';
 export * from './money';
 export * from './quantity';
 export * from './schemas/attendance';
+export * from './schemas/upload';

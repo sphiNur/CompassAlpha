@@ -41,7 +41,7 @@ import {
   type OutboxOwner,
   type PendingWrite,
 } from './policy';
-import type { ReplayedProcedure } from './replayHandlers';
+import type { ReplayedInput, ReplayedProcedure } from './replayHandlers';
 
 /** Sends one queued entry; rejects with the server's or the network's error. */
 export type ReplayFn = (entry: OutboxEntry) => Promise<void>;
@@ -229,9 +229,9 @@ export async function sendWriteAhead<P, R>(
  * over, the queue is re-read, and a write left queued is tried again as
  * enqueueWrite would.
  */
-export function sendQueuedWrite<P, R>(
-  procedure: ReplayedProcedure,
-  input: P,
+export function sendQueuedWrite<P extends ReplayedProcedure, R>(
+  procedure: P,
+  input: ReplayedInput<P>,
   send: () => Promise<R>,
   idempotencyKey?: string,
 ): Promise<R> {
@@ -387,9 +387,9 @@ export async function readPendingWrites(): Promise<PendingWrite[]> {
  * (2026-11-10): only a procedure with a replay handler
  * (replayHandlers.ts) may be queued.
  */
-export async function enqueueWrite<P>(
-  procedure: ReplayedProcedure,
-  input: P,
+export async function enqueueWrite<P extends ReplayedProcedure>(
+  procedure: P,
+  input: ReplayedInput<P>,
   idempotencyKey?: string,
 ): Promise<number> {
   const clientSeq = await nextSeq();

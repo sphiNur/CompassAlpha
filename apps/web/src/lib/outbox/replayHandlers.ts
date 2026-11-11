@@ -12,6 +12,7 @@
  * held the app-level hook.
  */
 import type { trpc } from '../trpc';
+import type { ClientProcedure } from '../trpcPaths';
 import type { ReplayFn } from './engine';
 
 /** Every procedure a page may put in the outbox. */
@@ -30,6 +31,20 @@ export const REPLAYED_PROCEDURES = [
 export type ReplayedProcedure = (typeof REPLAYED_PROCEDURES)[number];
 
 type Utils = ReturnType<typeof trpc.useUtils>;
+
+/**
+ * The input a replayed procedure's mutation takes, from the API's own
+ * types (review COREWEB2-29, 2026-11-12): enqueue and the write-ahead send
+ * used to take any input under any string, so a renamed procedure or a
+ * changed input showed up only when a replay was refused. A name in the
+ * list above that is not a mutation of the API gives `never`, which no
+ * input matches (lib/outbox/__tests__/replayHandlers.test.ts checks).
+ */
+export type ReplayedInput<P extends ReplayedProcedure> = [ClientProcedure<P>] extends [never]
+  ? never
+  : ClientProcedure<P> extends { mutate: (input: infer I, ...rest: never[]) => unknown }
+    ? I
+    : never;
 
 /**
  * One replay: send the queued input — with the idempotency key the first

@@ -12,9 +12,10 @@
 import { useMemo } from 'react';
 import { STALE } from '../config/timings';
 import { trpc } from '../lib/trpc';
+import type { PhotoKind } from '@compass/contracts';
 import type { PhotoUploader, PresignedUpload } from '@compass/ui';
 
-export function usePhotoUploader(kind: 'receipt' | 'issue' | 'avatar' | 'sku'): PhotoUploader | undefined {
+export function usePhotoUploader(kind: PhotoKind): PhotoUploader | undefined {
   const cfgQuery = trpc.upload.config.useQuery(undefined, {
     staleTime: STALE.medium,
     refetchOnWindowFocus: false,

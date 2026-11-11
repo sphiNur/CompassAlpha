@@ -19,19 +19,12 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getSheetCount, useToast } from '@compass/ui';
 import { useI18n } from './useI18n';
-import { outbox } from '../lib/idb';
+import { runningBuildId } from '../lib/build';
+import { waitingWriteCount } from '../lib/outbox/engine';
 import { reloadApp } from '../lib/reload';
 import { versionCheck } from '../lib/versionCheck';
 
 const POLL_MS = 30_000;
-
-function getRunningBuildId(): string | null {
-  if (typeof document === 'undefined') return null;
-  const meta = document.querySelector('meta[name="compass-build"]') as HTMLMetaElement | null;
-  const v = meta?.content;
-  if (!v || v === '%VITE_BUILD_SHA%') return null;
-  return v;
-}
 
 export function useVersionCheck(): void {
   const toast = useToast();
@@ -43,7 +36,7 @@ export function useVersionCheck(): void {
   latest.current = { toast, i18n, queryClient };
 
   useEffect(() => {
-    const running = getRunningBuildId();
+    const running = runningBuildId();
     if (!running) return;
 
     const versions = versionCheck({
@@ -56,7 +49,10 @@ export function useVersionCheck(): void {
       },
       now: () => Date.now(),
       hidden: () => document.visibilityState === 'hidden',
-      queuedWrites: () => outbox.size(),
+      // Review COREWEB2-22: this session's own waiting writes. The whole
+      // outbox also holds other people's (kept for their own session for
+      // up to a week), which held the background update back as long.
+      queuedWrites: waitingWriteCount,
       openSheets: () => getSheetCount(),
       mutationsInFlight: () => latest.current.queryClient.isMutating(),
       prompt(reload) {

@@ -6,8 +6,8 @@
  * (if the client logger is initialized) ship the error to `system.log`.
  */
 import { Component } from 'react';
+import { clearLocalSession } from '../lib/localSession';
 import { reloadApp } from '../lib/reload';
-import { NAV_STORAGE_KEY } from '../stores/navStore';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createI18n, ensureCatalog, isLoaded, type Locale } from '@compass/i18n';
 import { startLocale } from '../lib/startLocale';
@@ -153,15 +153,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <button
             type="button"
             onClick={() => {
-              try {
-                window.localStorage.removeItem('compass.auth');
-                // 2026-10-21 audit CA-33: a crash caused by a bad persisted
-                // tab / drill-down must not survive the reset.
-                window.localStorage.removeItem(NAV_STORAGE_KEY);
-              } catch {
-                /* ignore */
-              }
-              reloadApp('error-boundary');
+              void clearLocalSession().then(() => reloadApp('error-boundary'));
             }}
             style={{
               padding: '10px 20px',
