@@ -22,6 +22,18 @@ import { describe, expect, test, beforeAll } from 'bun:test';
 import { createI18n, loadCatalog, format } from '../index';
 import type { CatalogKey } from '../index';
 
+/** Runs `fn` as the app runs outside a test run, where a slip renders rather than throws. */
+function asInProduction<T>(fn: () => T): T {
+  const before = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    return fn();
+  } finally {
+    if (before === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = before;
+  }
+}
+
 beforeAll(async () => {
   await Promise.all([
     loadCatalog('en'),
@@ -153,16 +165,54 @@ describe('plural parser edge cases', () => {
   });
 
   test('an unmatched brace does not hang or throw', () => {
-    // The walker bails and emits the remainder verbatim.
-    expect(() => fmt('{n, plural, one {x} other {y}', { n: 1 })).not.toThrow();
+    // The walker bails and emits the remainder verbatim. (In a test run the
+    // `{x}` it leaves is a missing variable, which throws on purpose.)
+    expect(() =>
+      asInProduction(() => fmt('{n, plural, one {x} other {y}', { n: 1 })),
+    ).not.toThrow();
   });
 
   test('a plain placeholder is untouched by the plural pass', () => {
     expect(fmt('hello {name}', { name: 'world' })).toBe('hello world');
   });
 
-  test('a missing count variable is treated as 0', () => {
-    expect(fmt('{n, plural, =0 {none} other {# x}}', {})).toBe('none');
+  test('a missing count variable is treated as 0 on a screen, and throws in a test run', () => {
+    expect(asInProduction(() => fmt('{n, plural, =0 {none} other {# x}}', {}))).toBe('none');
+    expect(() => fmt('{n, plural, =0 {none} other {# x}}', {})).toThrow('needs {n}');
+  });
+});
+
+// Review I18N1-24: `#` printed the bare count, and a formatted string count
+// ("1,000") became NaN.
+describe('the count in `#`', () => {
+  const fmt = (tpl: string, vars: Record<string, string | number>, locale: 'en' | 'ru' = 'en') =>
+    format(tpl as CatalogKey, locale, vars);
+  const items = '{n, plural, one {# item} other {# items}}';
+
+  test('has comma thousands and up to three decimals, as every number on screen', () => {
+    expect(fmt(items, { n: 1500 })).toBe('1,500 items');
+    expect(fmt(items, { n: 1234567.5 })).toBe('1,234,567.5 items');
+    expect(fmt(items, { n: 0.125 })).toBe('0.125 items');
+    expect(
+      fmt(
+        '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
+        { n: 1500 },
+        'ru',
+      ),
+    ).toBe('1,500 товаров');
+  });
+
+  test('a count already written as text is read as a number', () => {
+    expect(fmt(items, { n: '1,000' })).toBe('1,000 items');
+    expect(fmt(items, { n: '1' })).toBe('1 item');
+    expect(fmt('{n, plural, =1000 {a thousand} other {# items}}', { n: '1,000' })).toBe(
+      'a thousand',
+    );
+  });
+
+  test('text that is no number shows as given under `other`, and throws in a test run', () => {
+    expect(asInProduction(() => fmt(items, { n: 'several' }))).toBe('several items');
+    expect(() => fmt(items, { n: 'several' })).toThrow('is not a number');
   });
 });
 
