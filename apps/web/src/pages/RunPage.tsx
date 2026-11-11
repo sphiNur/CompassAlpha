@@ -2,7 +2,7 @@
  * RunPage — purchaser cockpit.
  *
  * Stages and reversibility (designed 2026-05-03):
- *   - planned     : show preview, "Start purchase" via Telegram MainButton.
+ *   - planned     : show preview, "Start purchase" via the main button.
  *                   Header ⋯ menu lets you cancel the entire run.
  *   - purchasing  : per-item Buy / N/A; multi-store split sheet on Buy.
  *                   Already-purchased rows: ⋯ menu → Edit (RevisePurchase).
@@ -14,7 +14,7 @@
  *                   ⋯ menu → Recall delivery.
  *                   Header ⋯ menu: Cancel run · Back to purchase (only when
  *                   no store has been delivered to yet).
- *                   Finish via MainButton when all confirmed (with summary
+ *                   Finish via the main button when all confirmed (with summary
  *                   confirm sheet).
  *   - finished / cancelled : terminal.
  *
@@ -68,7 +68,6 @@ import { otherStoreSkusOf } from './runs/types';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
-import { purchaseDraftCheck } from './runs/lib/purchaseForm';
 import {
   allItemsHandled as allItemsHandledOf,
   pendingItemCount as pendingItemCountOf,
@@ -316,8 +315,9 @@ export function RunPage() {
   // A committed-but-lost response (the iOS "Load failed" case) therefore
   // recorded the off-catalog purchase or the expense TWICE. Same shape as
   // purchaseIdemCtx below; safe to share one ref per mutation because the
-  // add-item sheet's submit is gated on isPending (see the MainButton
-  // guard), so two concurrent calls of the same mutation can't interleave.
+  // add-item sheet's submit button carries `loading` (disabled while the
+  // mutation runs, and a repeat tap is dropped), so two concurrent calls
+  // of the same mutation can't interleave.
   const addItemIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const addExpenseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
 
@@ -1003,12 +1003,6 @@ export function RunPage() {
   }, [runDetailQuery.data]);
 
   /**
-   * Submit-purchase logic factored out of PurchaseSheet so the page-level
-   * MainButton can drive it. The sheet's in-footer button (rendered only
-   * outside Telegram) calls the same function. Keeping the math in one
-   * place avoids the "two save buttons disagree" bug.
-   */
-  /**
    * 2026-10-11: a price 5× away from the last one paid is asked about
    * once before it is saved. Not a block — the purchaser is the one who
    * knows — but the two figures are put side by side, which is all it
@@ -1045,6 +1039,10 @@ export function RunPage() {
     [runDetailQuery.data?.lastPriceBySku, skuById, productName],
   );
 
+  /**
+   * The purchase sheet's save: a top-up or an edit is a revision, anything
+   * else a purchase; each after the price check.
+   */
   const submitPurchaseDraft = useCallback(
     (d: PurchaseDraft) => {
       // DX-BUY-2: a top-up is its own batch on the row (lib/topUp.ts).
@@ -1100,18 +1098,6 @@ export function RunPage() {
       );
     },
     [purchaseItem, revisePurchase, withPriceCheck],
-  );
-
-  /**
-   * The purchase sheet's own rule (runs/lib/purchaseForm.ts), for
-   * sheetPrimary below. RUNWEB2-04: this was a copy that took a price
-   * the sheet and the server refuse. Since M3.49 an open sheet covers
-   * the page's main button, so sheetPrimary is not seen (review
-   * RUNWEB1-05).
-   */
-  const purchaseFormState = useMemo(
-    () => (purchaseDraft ? purchaseDraftCheck(purchaseDraft) : null),
-    [purchaseDraft],
   );
 
   // ---- MainButton -----------------------------------------------------
@@ -1384,93 +1370,6 @@ export function RunPage() {
     previewToday,
     create,
   ]);
-
-  /**
-   * MainButton dispatch: when a sheet with a single primary action is
-   * open, the Telegram MainButton TAKES OVER as that sheet's submit
-   * button. This avoids the "two duplicate buttons" UX the user
-   * reported (sheet's blue button + MainButton showing through
-   * underneath the sheet — looks awkward and confusing).
-   *
-   *   - createOpen / purchaseDraft / unavailableFor / confirmAction
-   *     → MainButton becomes the sheet's primary; the sheet's footer
-   *       hides its own primary (only renders it outside Telegram).
-   *   - itemActionFor / storeActionFor / headerMenuOpen / historyDetailFor
-   *     → these are MULTI-option menus; MainButton hides entirely so
-   *       the user only sees the menu options.
-   *
-   * The dispatch is computed below (`sheetPrimary` / `multiOptionSheetOpen`),
-   * then a single `usePageMainButton` call binds whichever applies.
-   */
-  const sheetPrimary = useMemo<{
-    text: string;
-    onClick: () => void;
-    active: boolean;
-  } | null>(() => {
-    // Generic confirm sheet (start/finish/deliver/recall/cancel/etc).
-    if (confirmAction) {
-      // Re-resolve the same i18n payload that ConfirmSheet uses below.
-      // We can't reference confirmConfig here because it's defined later
-      // in the file order; build the minimum dispatcher inline.
-      // (Cheaper than restructuring the file.)
-      return null; // filled in below right after confirmConfig is defined
-    }
-    if (purchaseDraft && purchaseFormState) {
-      const submitting = purchaseItem.isPending || revisePurchase.isPending;
-      const text = !purchaseFormState.splitMatches
-        ? i18n.t('run.label.splitsMismatch', {
-            sum: formatQty(purchaseFormState.splitTotal),
-            target: formatQty(purchaseDraft.actualQty || '0'),
-          })
-        : !purchaseFormState.reasonOk
-          ? i18n.t('run.errors.reviseReasonRequired')
-          : purchaseDraft.isEdit
-            ? i18n.t('run.action.editPurchase')
-            : i18n.t('run.action.savePurchase');
-      return {
-        text,
-        onClick: () => {
-          if (!purchaseFormState.canSubmit || submitting) return;
-          submitPurchaseDraft(purchaseDraft);
-        },
-        active: purchaseFormState.canSubmit && !submitting,
-      };
-    }
-    if (unavailableFor) {
-      const reasonOk = unavailableNote.trim().length > 0;
-      return {
-        text: i18n.t('run.action.markNa'),
-        onClick: () => {
-          if (!reasonOk || markUnavailable.isPending) return;
-          markUnavailable.mutate({
-            runId: unavailableFor.runId,
-            skuId: unavailableFor.skuId,
-            note: unavailableNote.trim(),
-          });
-        },
-        active: reasonOk && !markUnavailable.isPending,
-      };
-    }
-    // Q7(a): the create sheet is gone, so it no longer takes over the
-    // MainButton. Starting a run is the page-level button itself.
-    return null;
-  }, [
-    confirmAction,
-    purchaseDraft,
-    purchaseFormState,
-    purchaseItem.isPending,
-    revisePurchase.isPending,
-    submitPurchaseDraft,
-    unavailableFor,
-    unavailableNote,
-    markUnavailable,
-    i18n,
-  ]);
-
-  /* The "multi-option sheet" branch is gone with the history drill
-     (2026-07-30). Its only member was `historyDetailFor`; the history
-     detail sheet lives on the 历史 tab now, so on this page there is
-     no longer any sheet that hides MainButton outright. */
 
   // ---- Confirm-sheet wiring --------------------------------------------
   // Resets the reason input whenever the confirm switches kind (or
@@ -1937,40 +1836,12 @@ export function RunPage() {
     removeExpense,
   ]);
 
-  // ---- Unified MainButton dispatcher --------------------------------
-  // Single bind point. Source of truth for which action MainButton
-  // currently fires:
-  //   1. confirmConfig (generic confirm sheet) — highest priority,
-  //      because it can stack on top of other sheets in theory.
-  //   2. sheetPrimary (purchase/unavailable/create) — a sheet with a
-  //      single primary action, no body-level controls beyond the form.
-  //   3. multi-option sheet open → MainButton hidden.
-  //   4. Page-level mainButton (Start purchase / Start delivery /
-  //      Finish run) when no sheet is open.
-  let mainBtnText = mainButton.text;
-  let mainBtnClick = mainButton.onClick;
-  let mainBtnVisible = mainButton.visible;
-  let mainBtnActive = mainButton.active;
-
-  if (confirmConfig) {
-    const reasonOk = !confirmConfig.requireReason || confirmReason.trim().length > 0;
-    mainBtnText = confirmConfig.confirmLabel;
-    mainBtnClick = () => {
-      if (!reasonOk || confirmConfig.isPending) return;
-      confirmConfig.run();
-    };
-    mainBtnVisible = true;
-    mainBtnActive = reasonOk && !confirmConfig.isPending;
-  } else if (sheetPrimary) {
-    mainBtnText = sheetPrimary.text;
-    mainBtnClick = sheetPrimary.onClick;
-    mainBtnVisible = true;
-    mainBtnActive = sheetPrimary.active;
-  }
-
-  usePageMainButton(mainBtnText, mainBtnClick, {
-    visible: mainBtnVisible,
-    active: mainBtnActive,
+  // The page's own action. An open sheet covers the button (M3.49: it is
+  // part of the page, under the sheet's scrim) and carries its own submit,
+  // so nothing here changes while one is open (review RUNWEB1-05).
+  usePageMainButton(mainButton.text, mainButton.onClick, {
+    visible: mainButton.visible,
+    active: mainButton.active,
   });
 
   // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.
@@ -3024,15 +2895,14 @@ export function RunPage() {
         onCancel={() => setPriceCheck(null)}
       />
 
-      {/* Mark-unavailable sheet — primary action handled by MainButton
-          inside Telegram. Footer button only outside Telegram. */}
+      {/* Mark-unavailable sheet. */}
       <Sheet
         open={!!unavailableFor}
         onOpenChange={(open) => !open && setUnavailableFor(null)}
         title={i18n.t('run.action.markUnavailable')}
         description={i18n.t('run.action.markUnavailableDesc')}
         footer={
-          // M3.49: see RunPage's plan-run sheet for the rationale.
+          // M3.49: the sheet carries its own submit (Shell's PageMainButton).
           <Button
             block
             variant="danger"
