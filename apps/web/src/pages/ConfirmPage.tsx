@@ -5,10 +5,12 @@
  * the receiver mark each item ok / short / wrong / quality. When all are
  * decided, a Confirm Store button finalizes the store side.
  *
- * For M1 the photo capture stub is a text URL; full S3 upload + image picker
- * lands in M1 follow-ups (PhotoCapture component).
+ * A problem carries a note, the quantity that arrived and an optional
+ * photo (PhotoCapture, uploaded through usePhotoUploader). The page holds
+ * the queries and the three writes; the rules are in confirm/confirmLogic.ts
+ * and the parts in confirm/ (review CONF-07).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
@@ -18,55 +20,47 @@ import {
   ConfirmSheet,
   DataState,
   EmptyState,
-  FieldError,
-  FieldLabel,
   LoadingState,
-  NameCell,
   OfflineState,
-  PhotoCapture,
-  SectionLabel,
   Sheet,
   StickyPageBar,
-  Input,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic } from '../hooks/useTelegram';
-import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
+import { haptic } from '../hooks/useTelegram';
+import { useDateFormat, useI18n, useProductNameParts } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { useQueueOnNetworkError } from '../hooks/useOfflineWrite';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
 import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
-import { isLikelyNetworkError } from '../lib/networkError';
-import { useErrToast } from '../lib/errToast';
-import { formatQty } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import {
-  checkReceivedQty,
   defaultDeliveringRunId,
   deliveringRunsForStore,
-  initialReceivedQty,
-  issueSaveState,
+  issueFormCheck,
   receivingWait,
   runsListView,
   unboughtForStore,
+  withLineVerdict,
   type ConfirmDecisionStatus,
+  type ItemVerdict,
   type ReceivingWait,
 } from './confirm/confirmLogic';
-
-type DecisionStatus = ConfirmDecisionStatus;
+import { ConfirmItemRow, type ConfirmLine } from './confirm/ConfirmItemRow';
+import { IssueSheet } from './confirm/IssueSheet';
+import { ReceivingWaitState } from './confirm/ReceivingWaitState';
+import { UnboughtCard } from './confirm/UnboughtCard';
+import { useConfirmMainButton } from './confirm/useConfirmMainButton';
+import { useIssueForm, type ReportedLine } from './confirm/useIssueForm';
 
 export function ConfirmPage() {
   const i18n = useI18n();
   const dates = useDateFormat();
   const productNameParts = useProductNameParts();
-  // 2026-07-30 (flow review): the receiving list printed the raw canonical
-  // unit ("kg") while Run — the screen the goods just came from — printed
-  // "公斤". Same goods, same locale, two spellings.
-  const unitLabel = useUnitLabel();
   const session = useAuthStore((s) => s.session);
   // ConfirmPage needs a SPECIFIC store — staff confirm receipt at THEIR
   // store. Reading via the context helper coerces 'all' to null so the
@@ -75,64 +69,12 @@ export function ConfirmPage() {
   const noStoreYet = useNoStoreYet();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
-  const errToast = useErrToast();
-  const [issueOpen, setIssueOpen] = useState<{
-    runId: string;
-    skuId: string;
-    storeId: string;
-    status: DecisionStatus;
-    /** 2026-10-21 CA-06: this store's split qty — the received-qty ceiling. */
-    splitQty: string;
-    unit: string | undefined;
-  } | null>(null);
-  const [issueNote, setIssueNote] = useState('');
-  // 2026-10-21 CA-06: how much of the split actually arrived. Empty for
-  // 'short' (must be typed); the delivered qty for 'wrong' / 'quality'
-  // (2026-11-05 owner, see initialReceivedQty).
-  const [issueReceived, setIssueReceived] = useState('');
-  // DX-DLV-07 (2026-11-01): errors show once the field was typed into or
-  // left, or Save was tried — not the moment the form opens.
-  const [issueReceivedTouched, setIssueReceivedTouched] = useState(false);
-  const [issueSaveTried, setIssueSaveTried] = useState(false);
-  const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
-  // The open issue form, for answers that arrive after a re-render.
-  const issueOpenRef = useRef(issueOpen);
-  issueOpenRef.current = issueOpen;
-  /**
-   * Close and clear the issue form, if the answer is for it.
-   *
-   * CONF-01 (2026-11-09): one mutation serves the quick "OK" and the issue
-   * form. A quick OK answered while another product's issue form was being
-   * filled closed it and cleared the note, photo and received quantity.
-   */
-  const closeIssueFormFor = (sent: {
-    runId: string;
-    skuId: string;
-    storeId: string;
-    status: DecisionStatus;
-  }) => {
-    const form = issueOpenRef.current;
-    if (
-      !form ||
-      form.runId !== sent.runId ||
-      form.skuId !== sent.skuId ||
-      form.storeId !== sent.storeId ||
-      form.status !== sent.status
-    ) {
-      return;
-    }
-    setIssueOpen(null);
-    setIssueNote('');
-    setIssuePhoto(null);
-    setIssueReceived('');
-  };
+  const issueForm = useIssueForm();
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
   // summary sheet instead of submitting on one tap.
   const [finalConfirmOpen, setFinalConfirmOpen] = useState(false);
   const photoUploader = usePhotoUploader('issue');
-  // CMP-DLV-6: Save waits for a photo that is still uploading.
-  const [photoUploading, setPhotoUploading] = useState(false);
 
   const runsQuery = trpc.run.list.useQuery();
   // 2026-10-21 FE-01 / F4-02: loading / failed run.list must not render as
@@ -211,51 +153,21 @@ export function ConfirmPage() {
     return m;
   }, [skusQuery.data]);
 
-  /**
-   * Optimistic cache writer: paint the chip selection BEFORE the
-   * server roundtrip. The user reported the previous version:
-   *
-   *   tap "ok" → no visible change for ~400ms (CN ↔ Tashkent RTT)
-   *           → tap "ok" again, and again, and again
-   *           → server appended FOUR identical StoreItemConfirmed events
-   *
-   * Now: chip flips selected immediately on tap; if the server later
-   * rejects, we invalidate to snap back to truth.
-   */
-  const writeOptimisticItemConfirm = (
-    runId: string,
-    skuId: string,
-    storeId: string,
-    status: DecisionStatus,
-    note: string | null,
-    photoUrl: string | null,
-    receivedQty: string | null = null,
-  ) => {
-    utils.run.get.setData({ runId }, (old) => {
-      if (!old) return old;
-      const splits = old.splits.map((sp) =>
-        sp.runId === runId && sp.skuId === skuId && sp.storeId === storeId
-          ? {
-              ...sp,
-              confirmStatus: status,
-              confirmNote: note,
-              confirmPhotoUrl: photoUrl,
-              confirmReceivedQty: receivedQty,
-            }
-          : sp,
-      );
-      return { ...old, splits };
-    });
+  /** Show a verdict before the server answers (withLineVerdict). */
+  const paintVerdict = (verdict: ItemVerdict) => {
+    utils.run.get.setData({ runId: verdict.runId }, (old) =>
+      old ? { ...old, splits: withLineVerdict(old.splits, verdict) } : old,
+    );
   };
+  const queueOnNetworkError = useQueueOnNetworkError();
 
   const confirmItem = trpc.run.confirmStoreItem.useMutation({
     onSuccess: (_data, vars) => {
       void utils.run.get.invalidate();
-      closeIssueFormFor(vars);
+      issueForm.closeFor(vars);
       // Bug fix: previously this said "Issue noted" for EVERY confirm,
       // including the most common "ok" case — confusing. The toast now
       // matches what actually happened.
-      //
       if (vars.status === 'ok') {
         haptic('success');
         toast.success(i18n.t('confirm.toast.markedOk'));
@@ -264,23 +176,18 @@ export function ConfirmPage() {
         toast.info(i18n.t('confirm.toast.issueNoted'));
       }
     },
-    onError: (err, vars) => {
-      if (isLikelyNetworkError(err)) {
-        // COREWEB2-04: "saved offline" only once it is; the form keeps
-        // what was typed when the device could not store it either.
-        void offline.enqueue('run.confirmStoreItem', vars).then(
-          () => {
-            closeIssueFormFor(vars);
-            toast.info(i18n.t('confirm.toast.savedOffline'));
-          },
-          () => errToast('common.errors.actionFailed')(err),
-        );
-      } else {
-        // Roll back the optimistic write since the server refused it.
-        void utils.run.get.invalidate();
-        errToast('common.errors.actionFailed')(err);
-      }
-    },
+    onError: (err, vars) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.confirmStoreItem',
+        input: vars,
+        failedKey: 'common.errors.actionFailed',
+        queuedKey: 'confirm.toast.savedOffline',
+        // COREWEB2-04: the form keeps what was typed when the device
+        // could not store it either.
+        onQueued: () => issueForm.closeFor(vars),
+        // Take back the verdict shown ahead of the answer.
+        onNotSaved: () => void utils.run.get.invalidate(),
+      }),
   });
   const confirmStore = trpc.run.confirmStore.useMutation({
     onSuccess: () => {
@@ -289,19 +196,14 @@ export function ConfirmPage() {
       haptic('success');
       toast.success(i18n.t('confirm.toast.storeConfirmed'));
     },
-    onError: (err, vars) => {
-      if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.confirmStore', vars).then(
-          () => {
-            setFinalConfirmOpen(false);
-            toast.info(i18n.t('confirm.toast.savedOffline'));
-          },
-          () => errToast('common.errors.actionFailed')(err),
-        );
-      } else {
-        errToast('common.errors.actionFailed')(err);
-      }
-    },
+    onError: (err, vars) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.confirmStore',
+        input: vars,
+        failedKey: 'common.errors.actionFailed',
+        queuedKey: 'confirm.toast.savedOffline',
+        onQueued: () => setFinalConfirmOpen(false),
+      }),
   });
   const bulkMarkOk = trpc.run.markStoreItemsOk.useMutation({
     onSuccess: (data) => {
@@ -314,25 +216,15 @@ export function ConfirmPage() {
         toast.info(i18n.t('confirm.toast.nothingToMark'));
       }
     },
-    onError: (err, vars) => {
-      if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.markStoreItemsOk', vars).then(
-          () => {
-            setBulkConfirmOpen(false);
-            toast.info(i18n.t('confirm.toast.savedOffline'));
-          },
-          () => errToast('common.errors.actionFailed')(err),
-        );
-      } else {
-        errToast('common.errors.actionFailed')(err);
-      }
-    },
+    onError: (err, vars) =>
+      queueOnNetworkError(err, {
+        procedure: 'run.markStoreItemsOk',
+        input: vars,
+        failedKey: 'common.errors.actionFailed',
+        queuedKey: 'confirm.toast.savedOffline',
+        onQueued: () => setBulkConfirmOpen(false),
+      }),
   });
-
-  useEffect(() => {
-    setIssueReceivedTouched(false);
-    setIssueSaveTried(false);
-  }, [issueOpen]);
 
   const myAllItems = (detailQuery.data?.splits ?? []).filter((sp) => sp.storeId === currentStoreId);
   // DX-DLV-13 (2026-11-01): products the purchaser did not find for this
@@ -417,114 +309,96 @@ export function ConfirmPage() {
     });
   };
 
-  // MainButton dispatch — when the issue sheet is open it takes over
-  // and drives Save. Otherwise it acts as Confirm Store.
-  const issueReceivedCheck = issueOpen
-    ? checkReceivedQty(issueOpen.status, issueReceived, issueOpen.splitQty)
+  /** A chip on a line: 'ok' is sent at once, a problem opens its form. */
+  const decide = (
+    line: ConfirmLine & ReportedLine,
+    sku: { unit: string } | undefined,
+    status: ConfirmDecisionStatus,
+  ) => {
+    if (status !== 'ok') {
+      issueForm.open(
+        {
+          runId: line.runId,
+          skuId: line.skuId,
+          storeId: line.storeId,
+          status,
+          splitQty: line.qty,
+          unit: sku?.unit,
+        },
+        line,
+      );
+      return;
+    }
+    // Optimistic: paint the selection immediately so the user sees their
+    // tap registered, then fire the mutation. A refusal refetches to roll
+    // it back.
+    const verdict = {
+      runId: line.runId,
+      skuId: line.skuId,
+      storeId: line.storeId,
+      status: 'ok' as const,
+      note: null,
+      photoUrl: null,
+    };
+    paintVerdict(verdict);
+    confirmItem.mutate(verdict);
+  };
+
+  const issueCheck = issueForm.draft
+    ? issueFormCheck(issueForm.draft, {
+        photoUploading: issueForm.photoUploading,
+        saving: confirmItem.isPending,
+      })
     : null;
-  const issueReasonOk =
-    !!issueOpen && issueNote.trim().length > 0 && issueReceivedCheck?.ok === true;
-  const issueSave = issueSaveState({
-    reasonOk: issueReasonOk,
-    photoUploading,
-    saving: confirmItem.isPending,
-  });
-  const receivedShown = issueReceivedTouched || issueSaveTried;
-  const receivedError =
-    issueOpen && issueReceivedCheck && !issueReceivedCheck.ok && receivedShown
-      ? issueReceivedCheck.reason === 'required'
-        ? i18n.t('confirm.issue.receivedQtyRequired')
-        : issueReceivedCheck.reason === 'notShort'
-          ? i18n.t('confirm.issue.receivedQtyNotShort', { max: formatQty(issueOpen.splitQty) })
-          : issueReceivedCheck.reason === 'invalid'
-            ? i18n.t('confirm.issue.receivedQtyNotNumber')
-            : issueReceivedCheck.reason === 'tooPrecise'
-              ? i18n.t('confirm.issue.receivedQtyTooPrecise')
-              : i18n.t('confirm.issue.receivedQtyRange', { max: formatQty(issueOpen.splitQty) })
-      : null;
-  const noteMissing = !!issueOpen && issueNote.trim().length === 0;
-  const noteMissingShown = noteMissing && issueSaveTried;
-  // DX-DLV-07: say why Save is grey instead of leaving a dead button.
-  const issueSaveReason = issueSave.waitingForPhoto
-    ? i18n.t('confirm.issue.photoUploading')
-    : noteMissing
-      ? i18n.t('confirm.issue.noteRequired')
-      : null;
   /** One submit path for the sheet footer and the Telegram MainButton. */
   const submitIssue = () => {
-    if (issueOpen) setIssueSaveTried(true);
-    if (!issueOpen || !issueSave.canSave) return;
-    const receivedQty = issueReceivedCheck?.ok ? issueReceivedCheck.value : null;
-    writeOptimisticItemConfirm(
-      issueOpen.runId,
-      issueOpen.skuId,
-      issueOpen.storeId,
-      issueOpen.status,
-      issueNote.trim(),
-      issuePhoto,
-      receivedQty,
-    );
-    confirmItem.mutate({
-      runId: issueOpen.runId,
-      skuId: issueOpen.skuId,
-      storeId: issueOpen.storeId,
-      status: issueOpen.status,
-      note: issueNote.trim(),
-      photoUrl: issuePhoto,
-      receivedQty,
-    });
+    const draft = issueForm.draft;
+    if (!draft || !issueCheck) return;
+    issueForm.triedSave();
+    if (!issueCheck.canSave) return;
+    const verdict = {
+      runId: draft.runId,
+      skuId: draft.skuId,
+      storeId: draft.storeId,
+      status: draft.status,
+      note: draft.note.trim(),
+      photoUrl: draft.photo,
+      receivedQty: issueCheck.received.ok ? issueCheck.received.value : null,
+    };
+    paintVerdict(verdict);
+    confirmItem.mutate(verdict);
   };
-  let mainBtnText: string;
-  let mainBtnVisible = false;
-  let mainBtnActive = false;
-  let mainBtnClick = () => {};
   const submitConfirmStore = () => {
     if (!activeRun || !currentStoreId) return;
     if (storeConfirmed || confirmStore.isPending || !allDecided) return;
     confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
   };
-  if (issueOpen) {
-    mainBtnText = issueSave.waitingForPhoto
-      ? i18n.t('photo.uploading')
-      : i18n.t('confirm.issue.save');
-    mainBtnVisible = true;
-    mainBtnActive = issueSave.canSave;
-    mainBtnClick = submitIssue;
-  } else if (finalConfirmOpen) {
-    // U4: the summary sheet's primary, as the issue sheet does above.
-    mainBtnText = confirmStore.isPending
-      ? i18n.t('confirm.confirmingHint')
-      : i18n.t('confirm.final.submit');
-    mainBtnVisible = true;
-    mainBtnActive = allDecided && !storeConfirmed && !confirmStore.isPending;
-    mainBtnClick = submitConfirmStore;
-  } else {
-    // 2026-07-30: when the gate is closed, SAY so on the button instead of
-    // showing an inert "确认收货". The comment where the gating banner used
-    // to live claimed a "Decided X/Y" counter, a card-meta hint and a
-    // disabled MainButton already conveyed this — all three had since been
-    // deleted or broken, so the gate was invisible AND never actually shut.
-    mainBtnText = storeConfirmed
-      ? i18n.t('confirm.confirmStoreFinal')
-      : confirmStore.isPending
-        ? i18n.t('confirm.confirmingHint')
-        : allDecided
-          ? i18n.t('confirm.confirmStore')
-          : i18n.t('confirm.confirmStoreBlocked', { n: undecided.length });
-    mainBtnVisible = !!activeRun && myItems.length > 0 && !storeConfirmed;
-    mainBtnActive = allDecided && !confirmStore.isPending && !bulkMarkOk.isPending;
-    mainBtnClick = () => {
-      if (!activeRun || !currentStoreId) return;
-      if (storeConfirmed || confirmStore.isPending) return;
-      if (!allDecided) return;
-      haptic('light');
-      setFinalConfirmOpen(true);
-    };
-  }
-  usePageMainButton(mainBtnText, mainBtnClick, {
-    visible: mainBtnVisible,
-    active: mainBtnActive,
-  });
+  // The open problem form drives its Save; the summary sheet drives
+  // 确认收货; otherwise the button opens that sheet.
+  useConfirmMainButton(
+    {
+      issue: issueCheck,
+      finalOpen: finalConfirmOpen,
+      confirming: confirmStore.isPending,
+      markingAll: bulkMarkOk.isPending,
+      hasRun: !!activeRun,
+      lineCount: myItems.length,
+      undecided: undecided.length,
+      storeConfirmed,
+    },
+    {
+      saveIssue: submitIssue,
+      submitConfirm: submitConfirmStore,
+      openConfirm: () => {
+        if (!activeRun || !currentStoreId) return;
+        if (storeConfirmed || confirmStore.isPending) return;
+        if (!allDecided) return;
+        haptic('light');
+        setFinalConfirmOpen(true);
+      },
+    },
+  );
+  const issueSku = issueForm.draft ? skuById.get(issueForm.draft.skuId) : undefined;
 
   if (!session) return null;
   if (!currentStoreId) {
@@ -599,7 +473,7 @@ export function ConfirmPage() {
                 key={r.id}
                 selected={r.id === activeRun?.id}
                 onClick={() => {
-                  if (issueOpen) return;
+                  if (issueForm.draft) return;
                   haptic('light');
                   setPickedRunId(r.id);
                 }}
@@ -690,159 +564,14 @@ export function ConfirmPage() {
                     <ul className="flex flex-col" role="list">
                       {myItems.map((it) => {
                         const sku = skuById.get(it.skuId);
-                        const nm = sku ? productNameParts(sku) : null;
-                        // 2026-07-30 (flow review): was `it.confirmStatus ?? 'ok'`,
-                        // which pre-selected 正常 on every untouched line. The
-                        // receiver's screen therefore OPENED in the state
-                        // "everything is fine" — the exact claim the step exists
-                        // to obtain from them. null now means null: no chip is
-                        // selected until they choose one.
-                        const effectiveStatus = it.confirmStatus as DecisionStatus | null;
                         return (
-                          <li
+                          <ConfirmItemRow
                             key={`${it.runId}:${it.skuId}`}
-                            className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              {/* Confirm is the "default" (dense) name tier
-                                per the 2026-07-05 two-tier decision. */}
-                              <NameCell
-                                primary={nm ? nm.primary : it.skuId.slice(0, 8)}
-                                secondary={nm?.secondary}
-                                primaryLang={nm?.primaryLang}
-                                secondaryLang={nm?.secondaryLang}
-                                size="default"
-                              />
-                              <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                                {formatQty(it.qty)} {unitLabel(sku?.unit, it.qty)}
-                              </span>
-                            </div>
-                            {/* variant="radio" (2026-07-30): now that an
-                              undecided line selects NOTHING, a tablist
-                              with no selected tab would be invalid ARIA.
-                              A radiogroup with nothing checked is exactly
-                              the state we mean. */}
-                            <ChipBar
-                              variant="radio"
-                              // Choosing a status sends it (or opens the
-                              // problem sheet): arrows only move focus.
-                              followFocus={false}
-                              ariaLabel={i18n.t('confirm.status.ariaLabel')}
-                            >
-                              {(['ok', 'short', 'wrong', 'quality'] as DecisionStatus[]).map(
-                                (s) => (
-                                  <Chip
-                                    key={s}
-                                    aria-label={i18n.t(
-                                      ('confirm.status.' + s) as Parameters<typeof i18n.t>[0],
-                                    )}
-                                    selected={effectiveStatus === s}
-                                    disabled={storeConfirmed}
-                                    className={storeConfirmed && effectiveStatus !== s ? 'opacity-40' : undefined}
-                                    onClick={() => {
-                                      // Block any further taps once the
-                                      // store side has been finalized.
-                                      // After StoreConfirmed the API
-                                      // rejects confirmStoreItem
-                                      // (storeAlreadyConfirmed, since the
-                                      // 2026-10-21 audit CA-30 guard); we
-                                      // catch it here so the UI doesn't
-                                      // even try.
-                                      if (storeConfirmed) return;
-                                      // Block double-tap on the SAME chip —
-                                      // the domain will return [] but we
-                                      // save the round-trip entirely.
-                                      // DLV-9 (2026-10-30): tapping the
-                                      // problem already chosen reopens it
-                                      // to correct the quantity or note.
-                                      if (effectiveStatus === s && s === 'ok') return;
-                                      haptic('light');
-                                      if (s === 'ok') {
-                                        // Optimistic: paint the selection
-                                        // immediately so the user sees
-                                        // their tap registered, then fire
-                                        // the mutation. onError invalidates
-                                        // to roll back if the server
-                                        // refuses.
-                                        writeOptimisticItemConfirm(
-                                          it.runId,
-                                          it.skuId,
-                                          it.storeId,
-                                          'ok',
-                                          null,
-                                          null,
-                                        );
-                                        confirmItem.mutate({
-                                          runId: it.runId,
-                                          skuId: it.skuId,
-                                          storeId: it.storeId,
-                                          status: 'ok',
-                                          note: null,
-                                          photoUrl: null,
-                                        });
-                                      } else {
-                                        setIssueOpen({
-                                          runId: it.runId,
-                                          skuId: it.skuId,
-                                          storeId: it.storeId,
-                                          status: s,
-                                          splitQty: it.qty,
-                                          unit: sku?.unit,
-                                        });
-                                        setIssueReceived(
-                                          initialReceivedQty(
-                                            s,
-                                            it.confirmStatus === s ? it.confirmReceivedQty : null,
-                                            it.qty,
-                                          ),
-                                        );
-                                        // DLV-9: keep the note and photo of a
-                                        // problem already reported (they were
-                                        // lost when switching problems).
-                                        if (it.confirmStatus && it.confirmStatus !== 'ok') {
-                                          setIssueNote(it.confirmNote ?? '');
-                                          setIssuePhoto(it.confirmPhotoUrl ?? null);
-                                        }
-                                      }
-                                    }}
-                                  >
-                                    {/* M1.9-fix (2026-05-07): chip labels were
-                                    rendering the raw enum values (ok/short/
-                                    wrong/quality) — every non-English user
-                                    saw English on the most-tapped UI on the
-                                    page. Map to i18n keys keyed by enum. */}
-                                    {i18n.t(
-                                      ('confirm.status.' + s) as Parameters<typeof i18n.t>[0],
-                                    )}
-                                  </Chip>
-                                ),
-                              )}
-                            </ChipBar>
-                            {/* 2026-10-21 CA-06: what was booked into stock
-                                for a problem line. */}
-                            {effectiveStatus &&
-                            effectiveStatus !== 'ok' &&
-                            it.confirmReceivedQty != null ? (
-                              <div className="text-old-label font-medium tabular-nums text-[var(--c-warning-fg)]">
-                                {i18n.t(
-                                  ('confirm.status.' + effectiveStatus) as Parameters<
-                                    typeof i18n.t
-                                  >[0],
-                                )}
-                                {' · '}
-                                {i18n.t('confirm.receivedOf', {
-                                  received: formatQty(it.confirmReceivedQty),
-                                  qty: formatQty(it.qty),
-                                  unit: unitLabel(sku?.unit, it.qty),
-                                })}
-                              </div>
-                            ) : null}
-                            {it.confirmNote ? (
-                              <div className="text-old-label text-[var(--c-fg-muted)]">
-                                {it.confirmNote}
-                              </div>
-                            ) : null}
-                          </li>
+                            line={it}
+                            sku={sku}
+                            locked={storeConfirmed}
+                            onDecide={(status) => decide(it, sku, status)}
+                          />
                         );
                       })}
                     </ul>
@@ -853,60 +582,17 @@ export function ConfirmPage() {
                   </Card>
                 )}
                 {unbought.length > 0 ? (
-                  <Card data-testid="confirm-unbought">
-                    <SectionLabel as="h2" meta={String(unbought.length)}>
-                      {i18n.t('confirm.unbought.title')}
-                    </SectionLabel>
-                    {myItems.length > 0 || awaitingDelivery ? (
-                      <p className="px-4 pb-2 text-old-label text-[var(--c-fg-muted)]">
-                        {i18n.t('confirm.unbought.hint')}
-                      </p>
-                    ) : null}
-                    <ul className="flex flex-col" role="list">
-                      {unbought.map((it) => {
-                        const sku = skuById.get(it.skuId);
-                        const nm = sku ? productNameParts(sku) : null;
-                        return (
-                          <li
-                            key={it.skuId}
-                            className="flex flex-col gap-1 border-t border-[var(--c-divider)] px-4 py-2 text-[var(--c-fg-muted)]"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <NameCell
-                                primary={nm ? nm.primary : it.skuId.slice(0, 8)}
-                                secondary={nm?.secondary}
-                                primaryLang={nm?.primaryLang}
-                                secondaryLang={nm?.secondaryLang}
-                                size="default"
-                              />
-                              <span className="shrink-0 text-old-label tabular-nums">
-                                {i18n.t('confirm.unbought.ordered', {
-                                  qty: formatQty(it.orderedQty),
-                                  unit: unitLabel(sku?.unit, it.orderedQty),
-                                })}
-                              </span>
-                            </div>
-                            {it.unavailableNote ? (
-                              <div className="text-old-label">
-                                {i18n.t('confirm.unbought.reason', { reason: it.unavailableNote })}
-                              </div>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </Card>
+                  <UnboughtCard
+                    items={unbought}
+                    skuById={skuById}
+                    showHint={myItems.length > 0 || awaitingDelivery}
+                  />
                 ) : null}
               </>
             )}
           </DataState>
         )}
       </div>
-
-      {/* Banner removed — the "Decided X/Y" counter at the top + the
-          card meta "Tap a status for each item" + the disabled
-          MainButton already convey the same gating. The redundant
-          banner was visual clutter. */}
 
       <ConfirmSheet
         open={finalConfirmOpen && !storeConfirmed}
@@ -964,155 +650,14 @@ export function ConfirmPage() {
         </div>
       </Sheet>
 
-      <Sheet
-        open={!!issueOpen}
-        onOpenChange={(open) => {
-          // M3.10: pin the sheet open while a confirm mutation is in
-          // flight. The receiver may have typed an issue note + attached
-          // a photo; if the network is slow and they swipe-down, the
-          // local state (issueOpen / issueNote / issuePhoto) clears and
-          // a subsequent failure produces an error toast with all that
-          // work lost. Mutation success closes the sheet naturally via
-          // confirmItem.onSuccess (closeIssueFormFor).
-          if (!open && confirmItem.isPending) return;
-          // 2026-10-21 audit C-20: drop the draft on cancel too — it used
-          // to be cleared only on success, so a cancelled note/photo
-          // reappeared on the next item's issue sheet.
-          if (!open) {
-            setIssueOpen(null);
-            setIssueNote('');
-            setIssuePhoto(null);
-            setIssueReceived('');
-          }
-        }}
-        // DLV-10 (2026-10-30): the title named the verdict but not the item.
-        title={(() => {
-          const status = issueOpen
-            ? i18n.t(('confirm.status.' + issueOpen.status) as Parameters<typeof i18n.t>[0])
-            : '';
-          const sku = issueOpen ? skuById.get(issueOpen.skuId) : undefined;
-          return sku
-            ? i18n.t('confirm.issue.markItemAs', { item: productNameParts(sku).primary, status })
-            : i18n.t('confirm.issue.markAs', { status });
-        })()}
-        description={i18n.t('confirm.issue.describe')}
-        // M1.9-fix (2026-05-07): autofocusing the issue note input
-        // popped the iOS keyboard mid-slideUp, pushing the
-        // PhotoCapture row below the fold. Receiver who wants to
-        // attach a photo first now sees both inputs.
-        // DX-DLV-08 (2026-11-01): focus still moves into the form — to
-        // its title, which pops no keyboard — instead of staying on the
-        // chip behind the scrim.
-        focusTitleOnOpen
-        footer={
-          // M3.49 (2026-05-23): dropped !getTg() — the in-page
-          // PageMainButton sits behind any open sheet, so we
-          // ALWAYS render the sheet's own footer button now.
-          <div className="flex flex-col gap-2">
-            {issueSaveReason ? (
-              <p
-                id="issue-save-reason"
-                role="status"
-                className="text-center text-old-label text-[var(--c-fg-muted)]"
-              >
-                {issueSaveReason}
-              </p>
-            ) : null}
-            <Button
-              block
-              disabled={!issueSave.canSave}
-              aria-describedby={issueSaveReason ? 'issue-save-reason' : undefined}
-              loading={confirmItem.isPending}
-              onClick={submitIssue}
-            >
-              {i18n.t('confirm.issue.save')}
-            </Button>
-          </div>
-        }
-      >
-        <div className="flex flex-col gap-3 py-3">
-          {/* 2026-10-21 CA-06: inventory books what actually arrived.
-              Required for a short line; for a wrong or spoiled item it
-              starts at the delivered qty (2026-11-05 owner) and is
-              lowered to what is usable. */}
-          {issueOpen ? (
-            <div className="flex flex-col gap-1">
-              {/* DLV-10: once typed into, the field had no visible label.
-                  DX-DLV-07: the label is the field's name (no placeholder
-                  or aria-label repeating it), and the error waits until
-                  the field was used or Save was tried. */}
-              <FieldLabel htmlFor="issue-received">
-                {i18n.t('confirm.issue.receivedQty', {
-                  max: formatQty(issueOpen.splitQty),
-                  unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
-                })}
-              </FieldLabel>
-              <Input
-                id="issue-received"
-                type="text"
-                inputMode="decimal"
-                value={issueReceived}
-                onChange={(e) => {
-                  setIssueReceived(e.target.value);
-                  setIssueReceivedTouched(true);
-                }}
-                onBlur={() => setIssueReceivedTouched(true)}
-                aria-invalid={receivedError ? true : undefined}
-                aria-describedby={receivedError ? 'issue-received-error' : undefined}
-              />
-              {/* CONF-21: the kit's field error, as on every other form. */}
-              {receivedError ? (
-                <FieldError id="issue-received-error" className="mt-0">
-                  {receivedError}
-                </FieldError>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="flex flex-col gap-1">
-            <FieldLabel htmlFor="issue-note">{i18n.t('confirm.issue.noteLabel')}</FieldLabel>
-            <Input
-              id="issue-note"
-              value={issueNote}
-              onChange={(e) => setIssueNote(e.target.value)}
-              placeholder={i18n.t('confirm.issue.placeholder')}
-              maxLength={500}
-              required
-              aria-required
-              aria-invalid={noteMissingShown ? true : undefined}
-              aria-describedby={noteMissingShown ? 'issue-note-error' : undefined}
-            />
-            {noteMissingShown ? (
-              <FieldError id="issue-note-error" className="mt-0">
-                {i18n.t('confirm.issue.noteRequired')}
-              </FieldError>
-            ) : null}
-          </div>
-          <PhotoCapture
-            label={i18n.t('confirm.issue.photoOptional')}
-            value={issuePhoto}
-            onCapture={(url) => setIssuePhoto(url)}
-            onClear={() => setIssuePhoto(null)}
-            uploader={photoUploader}
-            onBusyChange={setPhotoUploading}
-          />
-        </div>
-      </Sheet>
-    </div>
-  );
-}
-
-/** DX-DLV-13 (2026-11-01): why the receiving page has nothing to check. */
-function ReceivingWaitState({ wait }: { wait: ReceivingWait }) {
-  const i18n = useI18n();
-  const copy: Record<ReceivingWait, { title: Parameters<typeof i18n.t>[0]; body: Parameters<typeof i18n.t>[0] }> = {
-    recalled: { title: 'confirm.wait.recalled.title', body: 'confirm.wait.recalled.body' },
-    onTheWay: { title: 'confirm.wait.onTheWay.title', body: 'confirm.wait.onTheWay.body' },
-    buying: { title: 'confirm.wait.buying.title', body: 'confirm.wait.buying.body' },
-    nothing: { title: 'confirm.empty.nothingToConfirm', body: 'confirm.wait.nothing.body' },
-  };
-  return (
-    <div data-testid={`confirm-wait-${wait}`}>
-      <EmptyState title={i18n.t(copy[wait].title)} description={i18n.t(copy[wait].body)} />
+      <IssueSheet
+        form={issueForm}
+        check={issueCheck}
+        saving={confirmItem.isPending}
+        itemName={issueSku ? productNameParts(issueSku).primary : undefined}
+        photoUploader={photoUploader}
+        onSave={submitIssue}
+      />
     </div>
   );
 }

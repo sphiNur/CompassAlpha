@@ -18,11 +18,12 @@
  * still-unmounted page can replay it on a later flush) and only discard
  * entries old enough to be from a retired bundle (STALE_TTL_MS).
  *
- * KNOWN GAP (H2 follow-up): replayed mutations still mint a fresh
- * idempotency key per attempt (see lib/trpc.ts), so a replay of a request
- * the server already committed (lost-response case) can double-apply.
- * Deriving a stable key from `clientSeq` is tracked separately — do NOT
- * rely on this path being duplicate-safe for money mutations yet.
+ * Idempotency (H2): a write queued with the key its first attempt sent
+ * (hooks/useOfflineWrite.ts) is replayed with that key
+ * (lib/outboxReplay.ts), so a request the server already committed before
+ * its answer was lost dedupes instead of applying twice. A write queued
+ * without a key is sent with a fresh one, so only writes that are safe to
+ * repeat may be queued that way.
  *
  * CMP-FE-3 (2026-10-31): the registry is now filled once, at app level,
  * with every procedure (lib/outboxReplay.ts), and the flushes run there
@@ -497,6 +498,33 @@ export function samePendingWrites(
   return a.length === b.length && a.every((e, i) => e.clientSeq === b[i]?.clientSeq);
 }
 
+/**
+ * Put a write in the outbox and try to send it at once (a no-op while
+ * offline). Rejects when the device could not store it (IndexedDB
+ * unavailable): nothing is queued then (COREWEB2-04). Review TEST3-06
+ * (2026-11-10): only a procedure with a replay handler
+ * (lib/outboxReplay.ts) may be queued.
+ */
+export async function enqueueWrite<P>(
+  procedure: ReplayedProcedure,
+  input: P,
+  idempotencyKey?: string,
+): Promise<number> {
+  const clientSeq = await nextSeq();
+  await outbox.add({
+    clientSeq,
+    procedure,
+    input,
+    enqueuedAt: Date.now(),
+    retries: 0,
+    idempotencyKey,
+    ...ownerStamp(),
+  });
+  notifyOutboxChanged();
+  void flushOutbox();
+  return clientSeq;
+}
+
 interface UseOfflineQueueResult {
   /** A write has been waiting more than SLOW_WRITE_MS for its answer. */
   savingSlow: boolean;
@@ -511,7 +539,7 @@ interface UseOfflineQueueResult {
    * like order.adjustItem, without doubling it.
    */
   sendQueued<P, R>(
-    procedure: string,
+    procedure: ReplayedProcedure,
     input: P,
     send: () => Promise<R>,
     idempotencyKey?: string,
@@ -523,7 +551,7 @@ interface UseOfflineQueueResult {
    *  Rejects when the device could not store the write (IndexedDB
    *  unavailable): nothing is queued, so tell the person it was not saved
    *  and keep what they typed (COREWEB2-04). */
-  enqueue<P>(procedure: string, input: P, idempotencyKey?: string): Promise<number>;
+  enqueue<P>(procedure: ReplayedProcedure, input: P, idempotencyKey?: string): Promise<number>;
   flush(): Promise<void>;
   online: boolean;
 }
@@ -564,29 +592,7 @@ export function useOfflineQueue(): UseOfflineQueueResult {
   }, []);
 
   const flush = flushOutbox;
-
-  // Review TEST3-06 (2026-11-10): only a procedure with a replay handler
-  // (lib/outboxReplay.ts) may be queued. A test used to look for the
-  // queued names in the page sources.
-  const enqueue = useCallback(
-    async <P>(procedure: ReplayedProcedure, input: P, idempotencyKey?: string): Promise<number> => {
-      const clientSeq = await nextSeq();
-      await outbox.add({
-        clientSeq,
-        procedure,
-        input,
-        enqueuedAt: Date.now(),
-        retries: 0,
-        idempotencyKey,
-        ...ownerStamp(),
-      });
-      notifyOutboxChanged();
-      // Try immediately if we're online — if we're offline this will no-op.
-      void flushOutbox();
-      return clientSeq;
-    },
-    [],
-  );
+  const enqueue = enqueueWrite;
 
   const sendQueued = useCallback(
     <P, R>(

@@ -577,10 +577,11 @@ export function OrderPage() {
    *      tap target is obvious; on a domain error, close it.
    */
   // 2026-10-21 audit CA-26: one stable X-Idempotency-Key per LOGICAL
-  // submit of a given session (same pattern as RunPage's purchaseIdemCtx),
-  // so a retry after a lost response dedupes server-side instead of
-  // minting a fresh key. Scoped to the session id because the server's
-  // cache is keyed on (key, route, user) only, not the input.
+  // submit of a given session (sent in the trpc context, as RunPage's
+  // writes do through hooks/useOfflineWrite.ts), so a retry after a lost
+  // response dedupes server-side instead of minting a fresh key. Scoped
+  // to the session id because the server's cache is keyed on (key,
+  // route, user) only, not the input.
   const submitIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const submitIdemRef = useRef<{ sessionId: string; key: string } | null>(null);
   /** Guards handleSubmit across its async flush phase (double taps). */
