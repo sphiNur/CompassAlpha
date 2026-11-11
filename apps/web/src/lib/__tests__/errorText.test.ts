@@ -87,22 +87,31 @@ describe('errorTextOf: placeholders from the server', () => {
   };
 
   test('every server error key with a placeholder gets its value', () => {
-    expect(say(domainError('order.errors.qtyNotMultipleOfStep', { step: '0.500' }))).toBe(
-      '数量必须是 0.5 的倍数',
-    );
+    // TEST3-09: compared with the catalog sentence filled with the value as
+    // it should read (`0.500` → `0.5`), not with a copy of the sentence.
+    const sentence = (
+      key: string,
+      vars: Record<string, string | number>,
+      locale: 'zh' | 'en' | 'ru' | 'uz' = 'zh',
+    ) => createI18n(locale).t(key as Parameters<ReturnType<typeof createI18n>['t']>[0], vars);
+    const step = say(domainError('order.errors.qtyNotMultipleOfStep', { step: '0.500' }));
+    expect(step).toBe(sentence('order.errors.qtyNotMultipleOfStep', { step: '0.5' }));
+    expect(step).not.toContain('0.500');
     expect(say(domainError('run.errors.storeItemsUnchecked', { n: 3 }))).toBe(
-      '还有 3 项待核对，核对完才能确认收货',
+      sentence('run.errors.storeItemsUnchecked', { n: 3 }),
     );
-    expect(say(domainError('run.errors.receivedQtyExceedsSplit', { max: '12.000' }))).toBe(
-      '实收数量不能超过 12',
-    );
+    const max = say(domainError('run.errors.receivedQtyExceedsSplit', { max: '12.000' }));
+    expect(max).toBe(sentence('run.errors.receivedQtyExceedsSplit', { max: '12' }));
+    expect(max).not.toContain('12.000');
     expect(say(domainError('run.errors.receivedQtyNotShort', { max: '2.5' }))).toContain('2.5');
-    expect(say(domainError('settlement.errors.dateTooOld', { days: 90 }), 'en')).toContain(
-      'at most 90 days back',
-    );
+    expect(say(domainError('settlement.errors.dateTooOld', { days: 90 }), 'en')).toContain('90');
     expect(say(domainError('order.errors.qtyNotMultipleOfStep', { step: '0.25' }), 'ru')).toBe(
-      'Количество должно быть кратно 0.25',
+      sentence('order.errors.qtyNotMultipleOfStep', { step: '0.25' }, 'ru'),
     );
+    // No placeholder is left unfilled.
+    for (const l of ['zh', 'en', 'ru', 'uz'] as const) {
+      expect(say(domainError('run.errors.storeItemsUnchecked', { n: 3 }), l)).not.toMatch(/[{}]/);
+    }
   });
 
   test('data.i18nKey names the sentence when the message is something else', () => {

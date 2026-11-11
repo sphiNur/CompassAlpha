@@ -12,7 +12,7 @@ import { BUILTIN_ROLE_DEFAULTS, roleLabeller } from '../roleLabels';
 import { withoutFinalStop } from '../errorText';
 import { formatMoneyThousands } from '../format';
 import { punchKindText } from '../attendanceFormat';
-import { BUILTIN_ROLES, PERMISSIONS } from '../../../../../packages/db/src/seed-data';
+import { BUILTIN_ROLES, PERMISSIONS } from '@compass/db/seed-data';
 
 beforeAll(async () => {
   await Promise.all(['en', 'zh', 'ru', 'uz'].map((l) => loadCatalog(l as 'en' | 'zh' | 'ru' | 'uz')));
@@ -24,8 +24,16 @@ describe('D16: business dates follow the UI language', () => {
   test('this year: day and month only, no ISO', () => {
     expect(makeDateFormatters('en', now).calendarDay('2026-10-31')).toBe('Oct 31');
     expect(makeDateFormatters('zh', now).calendarDay('2026-10-31')).toBe('10月31日');
-    expect(makeDateFormatters('ru', now).calendarDay('2026-10-31')).toMatch(/^31 окт/);
-    expect(makeDateFormatters('uz', now).calendarDay('2026-10-31')).toMatch(/31.*okt/i);
+    // TEST3-09: ru and uz month names come from the runtime's ICU data (or,
+    // for uz, the hand-made fallback), so only their shape is pinned: the
+    // day, a month word in the language's script, no year, no ISO.
+    const ru = makeDateFormatters('ru', now).calendarDay('2026-10-31');
+    expect(ru).toMatch(/\b31\b/);
+    expect(ru).toMatch(/[а-яё]/i);
+    const uz = makeDateFormatters('uz', now).calendarDay('2026-10-31');
+    expect(uz).toMatch(/\b31\b/);
+    expect(uz).toMatch(/okt/i);
+    for (const day of [ru, uz]) expect(day).not.toMatch(/2026|\d{4}-\d{2}/);
   });
 
   test('another year keeps the year', () => {
@@ -98,14 +106,20 @@ describe('ADM-17 / RE-AUTH-2: built-in roles and permissions', () => {
   });
 
   test('a seeded role reads in the UI language; a renamed one keeps its name', () => {
-    const zh = roleLabeller(createI18n('zh').t);
+    // TEST3-09: compared with the catalog's own text, so rewording a role
+    // in the catalog does not break this test.
+    const { t } = createI18n('zh');
+    const zh = roleLabeller(t);
     expect(zh.name({ slug: 'super_admin' })).not.toContain('super_admin');
-    expect(zh.name({ slug: 'manager', name: 'Store Manager' })).toBe('店长');
+    expect(zh.name({ slug: 'manager', name: 'Store Manager' })).toBe(
+      t('settings.about.roleName.manager'),
+    );
+    expect(zh.name({ slug: 'manager', name: 'Store Manager' })).not.toBe('Store Manager');
     expect(zh.name({ slug: 'manager', name: '厨房主管' })).toBe('厨房主管');
     expect(zh.name({ slug: 'shift-lead', name: 'Shift lead' })).toBe('Shift lead');
-    expect(
-      zh.description({ slug: 'staff', description: BUILTIN_ROLE_DEFAULTS.staff!.description }),
-    ).toBe('填写并提交每日订单；确认收货；记录门店销售');
+    const staff = BUILTIN_ROLE_DEFAULTS.staff!.description;
+    expect(zh.description({ slug: 'staff', description: staff })).toBe(t('role.description.staff'));
+    expect(zh.description({ slug: 'staff', description: staff })).not.toBe(staff);
   });
 
   test('every seeded permission and its group has a catalog name', () => {
@@ -148,8 +162,9 @@ describe('a clock-in made on another day than its row (2026-11-10)', () => {
       'Out (Nov 10)',
     );
     // Full-width brackets, no space before them.
-    expect(punchKindText(createI18n('zh'), makeDateFormatters('zh', now), out, row)).toBe(
-      '下班（11月10日）',
-    );
+    const zh = createI18n('zh');
+    const text = punchKindText(zh, makeDateFormatters('zh', now), out, row);
+    expect(text).toBe(`${zh.t('attendance.kind.out')}（11月10日）`);
+    expect(text).not.toContain(' （');
   });
 });
