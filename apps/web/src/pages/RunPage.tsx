@@ -93,12 +93,13 @@ import { closedFor } from './runs/lib/draftClose';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
-import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
+import { daysOld, selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { topUpPrefill, topUpRevision } from './runs/lib/topUp';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 import { moneyLine as moneyLineAmount } from '../lib/money';
+import { orgToday } from '../lib/calendarDate';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -2022,20 +2023,14 @@ export function RunPage() {
   /**
    * Whole days between the run's date and today; 0 for today's run.
    *
-   * `runDate` is YYYY-MM-DD in the ORG's timezone while "today" here comes
-   * from the device. On a device set to a wildly different timezone the
-   * count can be off by one around midnight — acceptable, because this
-   * drives a "this is old" hint, not a gate. Both sides are pinned to UTC
-   * midnight so the subtraction itself can't drift.
+   * RUNWEB1-33 (2026-11-11): both are days of the org's calendar. Today is
+   * the server's (`previewToday`), or the org's from the session until it
+   * answers; it was the phone's, a day off around midnight on a phone set
+   * to another zone.
    */
-  const runAgeDays = (() => {
-    if (!activeRun) return 0;
-    const runMs = Date.parse(`${activeRun.runDate}T00:00:00Z`);
-    if (Number.isNaN(runMs)) return 0;
-    const now = new Date();
-    const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    return Math.max(0, Math.round((todayMs - runMs) / 86_400_000));
-  })();
+  const runAgeDays = activeRun
+    ? daysOld(activeRun.runDate, previewToday ?? orgToday(session.member.timezone))
+    : 0;
 
   // 2026-07-30: drop the year for runs in the current year. The bar has to
   // fit `+ 新增`, this line and the staleness badge inside ~223 px once
