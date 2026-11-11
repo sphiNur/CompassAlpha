@@ -23,6 +23,36 @@ export const UNIT_TEST_DIRS = [
   'scripts',
 ] as const;
 
+/**
+ * The environment the deploy's unit gate runs `bun test` in, built from the
+ * deploy's own.
+ *
+ * NODE_ENV: `bun run` loads the root `.env` into the deploy, and on a
+ * developer machine that says NODE_ENV=development; `bun test` keeps a
+ * NODE_ENV it is handed, so the gate ran as development, with the checks
+ * that hold only in a test run switched off (an i18n call missing a
+ * variable throws there, and only a database named for tests is used).
+ * Three i18n tests failed in the gate and passed in CI (2026-11-11). CI has
+ * no `.env`, and `bun test` sets NODE_ENV=test itself; the gate now says so.
+ *
+ * apps/api validates its env at import time, so, like CI, placeholders fill
+ * what the shell has none of: the database URL points at an unreachable
+ * local port and SKIP_PG_TESTS keeps every PG-backed test skipped, so
+ * nothing in the gate can touch a real database.
+ */
+export function unitGateEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  return {
+    ...env,
+    NODE_ENV: 'test',
+    SKIP_PG_TESTS: '1',
+    DATABASE_URL: env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
+    JWT_SECRET: env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
+    JWT_REFRESH_SECRET: env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
+  };
+}
+
 /** CI's integration job, against a migrated Postgres. */
 export const INTEGRATION_TEST_DIRS = [
   'apps/api/src/__tests__',

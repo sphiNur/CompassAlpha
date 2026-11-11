@@ -14,6 +14,7 @@ import {
   UNIT_TEST_DIRS,
   ciTestDirs,
   isUnder,
+  unitGateEnv,
 } from '../lib/testTargets';
 
 const ROOT = join(import.meta.dir, '..', '..');
@@ -63,6 +64,35 @@ describe('ciTestDirs', () => {
   });
 });
 
+describe('unitGateEnv', () => {
+  test('the gate is a test run, even when the deploy loaded a development .env', () => {
+    // 2026-11-11: NODE_ENV=development reached `bun test`, and three i18n
+    // tests that hold only in a test run failed in the gate alone.
+    const env = unitGateEnv({ NODE_ENV: 'development', PATH: '/usr/bin' });
+    expect(env.NODE_ENV).toBe('test');
+    expect(env.SKIP_PG_TESTS).toBe('1');
+    expect(env.PATH).toBe('/usr/bin');
+  });
+
+  test("keeps the shell's settings, and fills placeholders for the ones it lacks", () => {
+    const given = unitGateEnv({
+      DATABASE_URL: 'postgres://a@localhost/compass_test_a',
+      JWT_SECRET: 'shell-access',
+      JWT_REFRESH_SECRET: 'shell-refresh',
+    });
+    expect(given.DATABASE_URL).toBe('postgres://a@localhost/compass_test_a');
+    expect(given.JWT_SECRET).toBe('shell-access');
+    expect(given.JWT_REFRESH_SECRET).toBe('shell-refresh');
+
+    const filled = unitGateEnv({});
+    // Port 1: nothing listens there, so a test that forgot the gate fails
+    // to connect instead of writing somewhere.
+    expect(filled.DATABASE_URL).toBe('postgres://unit:unit@127.0.0.1:1/unit_tests');
+    expect(filled.JWT_SECRET!.length).toBeGreaterThanOrEqual(32);
+    expect(filled.JWT_REFRESH_SECRET!.length).toBeGreaterThanOrEqual(32);
+  });
+});
+
 describe('test targets (OPS-16)', () => {
   const ci = read('.github/workflows/ci.yml');
 
@@ -79,6 +109,7 @@ describe('test targets (OPS-16)', () => {
     const deploy = read('scripts/deploy.ts');
     expect(deploy).toContain("['test', ...UNIT_TEST_DIRS]");
     expect(deploy).toContain("from './lib/testTargets'");
+    expect(deploy).toContain('env: unitGateEnv(process.env)');
   });
 
   const files = trackedTests();

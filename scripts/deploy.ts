@@ -125,7 +125,7 @@ import {
   toolchainProblems,
   toolchainScript,
 } from './lib/deployRemote';
-import { UNIT_TEST_DIRS } from './lib/testTargets';
+import { UNIT_TEST_DIRS, unitGateEnv } from './lib/testTargets';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname); // .../CompassAlpha
@@ -546,22 +546,13 @@ if (!ROLLBACK) {
   // 2026-10-21: paths are RELATIVE to ROOT (bun 1.1.x treats an absolute
   // directory argument as an entry point and fails with ModuleNotFound).
   // OPS-16 (2026-11-10): the list is CI's unit job, from lib/testTargets.
-  // apps/api validates its env at import time, so — like CI — fill
-  // placeholders when the shell has none: the database URL points at an
-  // unreachable local port and SKIP_PG_TESTS keeps every PG-backed test
-  // skipped, so nothing here can touch a real database.
+  // The environment (NODE_ENV=test, as in CI, and placeholders for what
+  // apps/api reads at import time) is unitGateEnv's, beside the list.
   const tt = spawnSync('bun', ['test', ...UNIT_TEST_DIRS], {
     stdio: 'inherit',
     cwd: ROOT,
     timeout: LIMIT.step,
-    env: {
-      ...process.env,
-      SKIP_PG_TESTS: '1',
-      DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
-      JWT_SECRET: process.env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
-      JWT_REFRESH_SECRET:
-        process.env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
-    },
+    env: unitGateEnv(process.env),
   });
   if (tt.status !== 0) {
     console.error(
