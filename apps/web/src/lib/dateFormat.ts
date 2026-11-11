@@ -29,6 +29,7 @@ function uzFallback(opts: Intl.DateTimeFormatOptions): (d: Date) => string {
       (opts.year ? `, ${d.getFullYear()}` : '') +
       (opts.hour ? `, ${hhmm(d)}` : '');
   }
+  if (opts.second) return (d) => `${hhmm(d)}:${String(d.getSeconds()).padStart(2, '0')}`;
   return hhmm;
 }
 
@@ -103,6 +104,8 @@ export function makeDateFormatters(locale: Locale, now: () => Date = () => new D
     }),
     /** HH:MM only. */
     time: fmt({ hour: '2-digit', minute: '2-digit' }),
+    /** HH:MM:SS: the debug console's log lines, which come seconds apart. */
+    timeSeconds: fmt({ hour: '2-digit', minute: '2-digit', second: '2-digit' }),
   };
 }
 

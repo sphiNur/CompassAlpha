@@ -6,7 +6,8 @@ import { initialDevBrowserTgUserId } from './launch';
 /**
  * Sign in outside Telegram with a Telegram ID and an access code (test and
  * staging servers; production turns this login off).
- * Review COREWEB1-09 (2026-11-12): out of AuthGate.tsx.
+ * Review COREWEB1-09 (2026-11-12): out of AuthGate.tsx. COREWEB1-18: the
+ * Telegram ID label was English in every language.
  */
 export function BrowserLoginForm({
   pending,
@@ -34,7 +35,7 @@ export function BrowserLoginForm({
           {i18n.t('dev.browserLogin.body')}
         </p>
       </div>
-      <Field label="Telegram ID">
+      <Field label={i18n.t('dev.browserLogin.tgId')}>
         <Input
           inputMode="numeric"
           autoComplete="username"

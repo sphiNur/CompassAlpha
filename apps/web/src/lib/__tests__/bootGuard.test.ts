@@ -59,6 +59,7 @@ function runGuard(language = 'en-US', start: Start = {}) {
     'boot-error': el('boot-error'),
     'boot-reload-btn': el('boot-reload-btn'),
     'boot-reset-btn': el('boot-reset-btn'),
+    'boot-copy-btn': el('boot-copy-btn'),
   };
   const docListeners: Record<string, Listener> = {};
   const tgListeners: Record<string, Listener> = {};
@@ -78,8 +79,9 @@ function runGuard(language = 'en-US', start: Start = {}) {
     getElementById: (id: string) => (parsed ? (nodes[id] ?? null) : null),
     addEventListener: (type: string, fn: Listener) => void (docListeners[type] = fn),
   };
+  const winListeners: Record<string, Listener> = {};
   const window: Record<string, unknown> = {
-    addEventListener() {},
+    addEventListener: (type: string, fn: Listener) => void (winListeners[type] = fn),
     matchMedia: (query: string) => ({
       matches: query === '(prefers-color-scheme: dark)' && start.phoneDark === true,
     }),
@@ -103,6 +105,10 @@ function runGuard(language = 'en-US', start: Start = {}) {
   for (const [k, v] of Object.entries(start.local ?? {})) localStorage.setItem(k, v);
   for (const [k, v] of Object.entries(start.session ?? {})) sessionStorage.setItem(k, v);
   const location = { hash: start.hash ?? '', reloads: 0, reload: () => void location.reloads++ };
+  const clipboard = {
+    text: null as string | null,
+    writeText: async (text: string) => void (clipboard.text = text),
+  };
   new Function(
     'window',
     'document',
@@ -116,7 +122,7 @@ function runGuard(language = 'en-US', start: Start = {}) {
   )(
     window,
     document,
-    { language },
+    { language, clipboard },
     setTimeout,
     clearTimeout,
     location,
@@ -149,6 +155,12 @@ function runGuard(language = 'en-US', start: Start = {}) {
     sdkFailed() {
       parsed = true;
       tgListeners.error?.();
+    },
+    clipboard,
+    /** A script throws while the app starts. */
+    throws(message: string, stack: string) {
+      parsed = true;
+      winListeners.error?.({ message, error: { stack } });
     },
   };
 }
@@ -241,6 +253,49 @@ describe('boot-guard buttons (COREWEB1-01)', () => {
     const g = timedOut();
     g.click('[data-boot-starting]');
     expect(g.location.reloads).toBe(0);
+  });
+});
+
+describe('boot-guard error screen (COREWEB1-18)', () => {
+  it('names the failure in the person’s language and keeps the error for copying', async () => {
+    const g = runGuard('ru-RU');
+    g.throws('Failed to fetch dynamically imported module', 'TypeError: x\n    at main.tsx:1');
+    expect(g.nodes['#boot-error [data-msg]']!.textContent).toBe('Ошибка запуска');
+    const copy = g.nodes['boot-copy-btn'] as unknown as { hidden: boolean; textContent: string };
+    expect(copy.hidden).toBe(false);
+    g.click('boot-copy-btn');
+    await Promise.resolve();
+    expect(g.clipboard.text).toContain('Failed to fetch dynamically imported module');
+    expect(g.clipboard.text).toContain('at main.tsx:1');
+    expect(copy.textContent).toBe('Скопировано. Отправьте администратору.');
+    // Copying is not a reload.
+    expect(g.location.reloads).toBe(0);
+  });
+
+  it('a start that only timed out has nothing to copy', () => {
+    const g = runGuard();
+    g.parsed();
+    g.timers.find((t) => t.ms === 12000 && !t.cleared)!.fn();
+    expect((g.nodes['boot-copy-btn'] as unknown as { hidden: boolean }).hidden).toBe(true);
+  });
+
+  it('says what the crash screen says about copying, in each language', async () => {
+    const locales: Array<[Locale, string]> = [
+      ['en', 'en-US'],
+      ['zh', 'zh-CN'],
+      ['ru', 'ru-RU'],
+      ['uz', 'uz-UZ'],
+    ];
+    for (const [locale, language] of locales) {
+      await ensureCatalog(locale);
+      const g = runGuard(language);
+      g.throws('boom', '');
+      const copy = g.nodes['boot-copy-btn']!;
+      expect(copy.textContent).toBe(lookup('boot.copyDetails', locale)!);
+      g.click('boot-copy-btn');
+      await Promise.resolve();
+      expect(copy.textContent).toBe(lookup('boot.detailsCopied', locale)!);
+    }
   });
 });
 

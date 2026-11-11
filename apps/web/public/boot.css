@@ -96,14 +96,6 @@ body {
 #boot-error.show {
   display: block;
 }
-#boot-error pre {
-  margin: 8px 0 0;
-  font-size: 11px;
-  max-height: 30vh;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 .boot-actions {
   margin-top: 12px;
   display: flex;
@@ -125,4 +117,14 @@ body {
   background: transparent;
   color: inherit;
   border: 1px solid currentColor;
+}
+/* COREWEB1-18: the error's details are copied, not shown. */
+.boot-btn-link {
+  background: transparent;
+  color: inherit;
+  padding: 10px 4px;
+  text-decoration: underline;
+}
+.boot-btn[hidden] {
+  display: none;
 }
