@@ -10,13 +10,10 @@ describe('purgeCountsByKind (CMP-OPS-6)', () => {
         'read_model.order_sessions_v': 7,
         'read_model.market_runs_v': 3,
         'sync.outbox': 0,
-        'inventory.store_daily_settlements': 1,
-        'inventory.store_daily_settlement_revisions': 1,
       }),
     ).toEqual([
       { kind: 'orders', n: 7 },
       { kind: 'runs', n: 3 },
-      { kind: 'dailyCloses', n: 2 },
       { kind: 'history', n: 120 },
     ]);
   });

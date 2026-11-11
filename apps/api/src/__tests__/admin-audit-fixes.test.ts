@@ -1,6 +1,7 @@
 /**
  * Regression tests for the 2026-10-21 audit fixes in the admin / platform
- * routers (CA-18, CA-28, CA-39, CA-40, A-23).
+ * routers (CA-18, CA-39, CA-40, A-23). CA-28's purge predicates moved
+ * with the purges to services/purgePlans.ts, and are tested beside it.
  *
  * The first block is pure (no database). The second is PG-gated and
  * skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1; each of its
@@ -12,14 +13,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { GrantRoleInputSchema } from '@compass/contracts';
-import {
-  inviteWithinScope,
-  outboxOfOrg,
-  outboxOfStreams,
-  runMovements,
-  runTouchesStores,
-  withUniqueKey,
-} from '../trpc/routers/admin';
+import { inviteWithinScope, runTouchesStores, withUniqueKey } from '../trpc/routers/admin';
 import { inviterCoversInvite } from '../services/adminAuthority';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor, gateCaller } from './helpers/ctx';
@@ -28,8 +22,6 @@ import { tenantSuite } from './helpers/tenants';
 import { codeOf, errorOf } from './helpers/errors';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
-const RUN = '00000000-0000-4000-8000-0000000000aa';
-const SESSION = '00000000-0000-4000-8000-0000000000bb';
 
 describe('grantRole.expiresAt contract (A-23)', () => {
   const base = { userId: ORG, roleSlug: 'staff', scopeType: 'store' as const, scopeId: ORG };
@@ -84,37 +76,6 @@ describe('withUniqueKey (CA-40)', () => {
       other,
     );
     expect(await withUniqueKey(Promise.resolve(42), 'admin.errors.codeTaken')).toBe(42);
-  });
-});
-
-describe('purge predicates (CA-28)', () => {
-  const dialect = new PgDialect();
-  const render = (q: Parameters<PgDialect['sqlToQuery']>[0]) => dialect.sqlToQuery(q);
-
-  test('org outbox match includes notification rows keyed by payload orgId', () => {
-    const q = render(outboxOfOrg(ORG));
-    expect(q.sql).toContain("aggregate = 'notification'");
-    expect(q.sql).toContain("payload->>'orgId'");
-    expect(q.params).toEqual([ORG, ORG]);
-  });
-
-  test('stream outbox match covers payload.extra sessionId / runId', () => {
-    const q = render(outboxOfStreams(ORG, [RUN, SESSION]));
-    expect(q.sql).toContain("payload->'extra'->>'sessionId'");
-    expect(q.sql).toContain("payload->'extra'->>'runId'");
-    expect(q.params).toContain(RUN);
-    expect(q.params).toContain(SESSION);
-  });
-
-  test('run movements predicate is org + run scoped', () => {
-    const q = render(runMovements(ORG, [RUN]));
-    expect(q.sql).toContain("source_type IN ('run', 'run_amend')");
-    expect(q.params).toEqual([ORG, RUN]);
-  });
-
-  test('empty id lists match nothing', () => {
-    expect(render(outboxOfStreams(ORG, [])).sql).toBe('false');
-    expect(render(runMovements(ORG, [])).sql).toBe('false');
   });
 });
 

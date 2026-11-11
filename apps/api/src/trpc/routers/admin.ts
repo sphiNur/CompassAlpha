@@ -12,7 +12,7 @@ import { TRPCError } from '@trpc/server';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { allowEventPurge, inSystem, schema as s, withOrgContext } from '@compass/db';
+import { inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
   ADMIN_RANK,
   SUPER_ADMIN_RANK,
@@ -82,7 +82,15 @@ import {
   sessionDeleteRefusal,
 } from '../../services/purgeGuards';
 import { recentEventContext } from '../../services/eventContext';
-import { inTexts, inUuids } from '../../services/sqlIn';
+import {
+  applyPurge,
+  countPurge,
+  datePurge,
+  refuseIfSettled,
+  runPurge,
+  sessionPurge,
+  workspacePurge,
+} from '../../services/purgePlans';
 import { env } from '../../env';
 import {
   applyCatalogCopy,
@@ -893,12 +901,14 @@ const MemberTransferStoreInputSchema = z.object({
 });
 
 /**
- * Purge ALL transactional data for the caller's org. Wipes events,
- * snapshots, read-model projections, price history, notifications,
- * outbox, idempotency keys, projector cursors. Does NOT touch:
+ * Purge ALL transactional data for the caller's org: its orders, runs and
+ * events and what hangs off them (workspacePurge in
+ * services/purgePlans.ts lists the tables). Does NOT touch:
  *   - org / user / member / role rows (the workspace stays alive)
  *   - stores / categories / skus / suppliers (the catalog stays)
- *   - audit log (kept for forensics)
+ *   - the admin audit (kept for forensics; CAT-5)
+ *   - sync.idempotency_keys and domain.projector_cursors (system-level)
+ * A workspace with a daily close is refused (CAT-2).
  *
  * Two-phase by design:
  *   - dryRun=true (default) returns row counts WITHOUT deleting.
@@ -5097,24 +5107,10 @@ export const adminRouter = router({
   /**
    * Wipe ALL transactional data for the caller's org. Catalog and member
    * rows survive; only what you'd accumulate while testing gets cleared.
-   *
-   * Tables that have org_id directly — simple WHERE org_id:
-   *   ops.notifications, ops.client_logs, inventory.price_history,
-   *   inventory.store_daily_settlements and their revisions,
-   *   read_model.market_runs_v, read_model.order_sessions_v,
-   *   domain.events
-   * (domain.policy_decisions, the admin audit, is kept — CAT-5.)
-   *
-   * Tables scoped via FK — must use sub-select against a parent that
-   * still has its rows when this delete runs (so order matters):
-   *   read_model.run_item_stores_v  (run_id → market_runs_v.id)
-   *   read_model.run_items_v        (run_id → market_runs_v.id)
-   *   read_model.order_items_v      (session_id → order_sessions_v.id)
-   *   sync.outbox                   (event_id → events.id)
-   *   domain.snapshots              (stream_id → events.stream_id)
-   *
-   * Skipped (system-level, not org data):
-   *   sync.idempotency_keys, domain.projector_cursors
+   * The tables, and the order they go in, are workspacePurge
+   * (services/purgePlans.ts); the preview counts that same list. The
+   * admin audit (domain.policy_decisions) is kept (CAT-5), and a
+   * workspace with a daily close is refused (CAT-2).
    */
   purgeAllTestData: authedProcedure
     .input(PurgeAllTestDataInputSchema)
@@ -5138,189 +5134,12 @@ export const adminRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.orgNotFound' });
         }
 
-        // Helper: count rows. Each call is its own SELECT; sequential
-        // rather than parallel because we run inside a single tx.
-        const counts: Record<string, number> = {};
-        const tally = async (label: string, n: number) => {
-          counts[label] = n;
-        };
-        const cnt = async (q: Promise<Array<{ n: number }>>): Promise<number> => {
-          const [r] = await q;
-          return r?.n ?? 0;
-        };
-
-        // Direct org_id counts.
-        await tally(
-          'domain.events',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.events)
-              .where(eq(s.events.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'read_model.order_sessions_v',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.orderSessionsV)
-              .where(eq(s.orderSessionsV.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'read_model.market_runs_v',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.marketRunsV)
-              .where(eq(s.marketRunsV.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'ops.notifications',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.notifications)
-              .where(eq(s.notifications.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'ops.client_logs',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.clientLogs)
-              .where(eq(s.clientLogs.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'inventory.price_history',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.priceHistory)
-              .where(eq(s.priceHistory.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'inventory.store_daily_settlement_revisions',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.storeDailySettlementRevisions)
-              .where(eq(s.storeDailySettlementRevisions.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'inventory.store_daily_settlements',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.storeDailySettlements)
-              .where(eq(s.storeDailySettlements.orgId, orgId)),
-          ),
-        );
-
-        // Sub-query counts (FK-scoped).
-        await tally(
-          'read_model.order_items_v',
-          await cnt(
-            tx
-              .execute(
-                sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-                WHERE session_id IN (
-                  SELECT id FROM read_model.order_sessions_v WHERE org_id = ${orgId}
-                )`,
-              )
-              .then((rows) => rows as unknown as Array<{ n: number }>),
-          ),
-        );
-        await tally(
-          'read_model.run_items_v',
-          await cnt(
-            tx
-              .execute(
-                sql`SELECT count(*)::int AS n FROM read_model.run_items_v
-                WHERE run_id IN (
-                  SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}
-                )`,
-              )
-              .then((rows) => rows as unknown as Array<{ n: number }>),
-          ),
-        );
-        await tally(
-          'read_model.run_item_stores_v',
-          await cnt(
-            tx
-              .execute(
-                sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
-                WHERE run_id IN (
-                  SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}
-                )`,
-              )
-              .then((rows) => rows as unknown as Array<{ n: number }>),
-          ),
-        );
-        // RE-CAT-4: run expenses are deleted with the runs (FK cascade).
-        await tally(
-          'read_model.run_expenses_v',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.runExpensesV)
-              .where(eq(s.runExpensesV.orgId, orgId)),
-          ),
-        );
-        // 2026-10-21 audit CA-28 (F-05): notification outbox rows carry
-        // event_id = orgId (notify.ts), never a domain.events id, so the
-        // event_id sub-select alone matched nothing. Match them by the
-        // orgId in their payload as well.
-        await tally(
-          'sync.outbox',
-          await cnt(
-            tx
-              .execute(
-                sql`SELECT count(*)::int AS n FROM sync.outbox
-                WHERE ${outboxOfOrg(orgId)}`,
-              )
-              .then((rows) => rows as unknown as Array<{ n: number }>),
-          ),
-        );
-        // 2026-10-21 audit CA-28 (D-08): delivery receipts write stock
-        // movements keyed by run; they must go with the runs.
-        await tally(
-          'inventory.movements',
-          await cnt(
-            tx
-              .execute(
-                sql`SELECT count(*)::int AS n FROM inventory.movements
-                WHERE org_id = ${orgId} AND source_type IN ('run', 'run_amend')
-                  AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
-              )
-              .then((rows) => rows as unknown as Array<{ n: number }>),
-          ),
-        );
-        await tally(
-          'domain.snapshots',
-          await cnt(
-            tx
-              .execute(
-                sql`SELECT count(*)::int AS n FROM domain.snapshots
-                WHERE stream_id IN (
-                  SELECT DISTINCT stream_id FROM domain.events WHERE org_id = ${orgId}
-                )`,
-              )
-              .then((rows) => rows as unknown as Array<{ n: number }>),
-          ),
-        );
-
-        // CAT-2 (2026-10-30): settlement revisions are append-only (a
-        // trigger refuses DELETE), so the purge could only ever fail with
-        // a bare "something went wrong". Say why up front instead.
-        refuseIfSettlementRevisions(counts);
-
+        // CAT-2 (2026-10-30): a workspace with a daily close is refused,
+        // its preview too.
+        await refuseIfSettled(tx, orgId);
+        // ADM2-04: the preview counts and the purge deletes the same list.
+        const steps = workspacePurge(orgId);
+        const counts = await countPurge(tx, steps);
         const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
         if (input.dryRun) {
@@ -5338,40 +5157,7 @@ export const adminRouter = router({
           });
         }
 
-        // Order: dependents first, then parents.
-        const stockKept = await keepCountedStock(tx, allRunMovements(orgId), ctx.session!.memberId);
-        await tx.execute(sql`DELETE FROM inventory.movements WHERE ${allRunMovements(orgId)}`);
-        await tx.execute(
-          sql`DELETE FROM read_model.run_item_stores_v
-              WHERE run_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
-        );
-        await tx.execute(
-          sql`DELETE FROM read_model.run_items_v
-              WHERE run_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
-        );
-        await tx.delete(s.marketRunsV).where(eq(s.marketRunsV.orgId, orgId));
-
-        await tx.execute(
-          sql`DELETE FROM read_model.order_items_v
-              WHERE session_id IN (SELECT id FROM read_model.order_sessions_v WHERE org_id = ${orgId})`,
-        );
-        await tx.delete(s.orderSessionsV).where(eq(s.orderSessionsV.orgId, orgId));
-
-        await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfOrg(orgId)}`);
-        await tx.execute(
-          sql`DELETE FROM domain.snapshots
-              WHERE stream_id IN (SELECT DISTINCT stream_id FROM domain.events WHERE org_id = ${orgId})`,
-        );
-        await allowEventPurge(tx);
-        await tx.delete(s.events).where(eq(s.events.orgId, orgId));
-
-        await tx
-          .delete(s.storeDailySettlementRevisions)
-          .where(eq(s.storeDailySettlementRevisions.orgId, orgId));
-        await tx.delete(s.storeDailySettlements).where(eq(s.storeDailySettlements.orgId, orgId));
-        await tx.delete(s.priceHistory).where(eq(s.priceHistory.orgId, orgId));
-        await tx.delete(s.notifications).where(eq(s.notifications.orgId, orgId));
-        await tx.delete(s.clientLogs).where(eq(s.clientLogs.orgId, orgId));
+        const stockKept = await applyPurge(tx, steps, ctx.session!.memberId);
         // CAT-5 (2026-10-30): the admin audit (domain.policy_decisions)
         // stays, as this procedure's contract says; it used to be wiped
         // with everything else. The purge itself is recorded in it.
@@ -5391,22 +5177,15 @@ export const adminRouter = router({
     }),
 
   /**
-   * Wipe one day's full order → run → delivery flow for this org.
+   * Wipe one day's full order → run → delivery flow for this org: the
+   * orders whose order_date and the runs whose run_date is $date, each
+   * with the run or the orders it is linked to on other dates (CAT-4),
+   * and their items, events, snapshots, outbox rows, notifications, price
+   * history and run stock movements (datePurge in services/purgePlans.ts).
+   * A date with a daily close is refused (CAT-2).
    *
-   * Cascade strategy:
-   *   1. Sessions whose orderDate = $date → events with those streamIds.
-   *   2. Runs whose runDate    = $date → events with those streamIds.
-   *   3. Run-item-stores + run-items belonging to those runs.
-   *   4. Order-items belonging to those sessions.
-   *   5. Snapshots for those streamIds.
-   *   6. Outbox rows whose eventId is in the doomed event set.
-   *   7. Notifications with payload.sessionId / payload.runId in the
-   *      doomed sets — uses JSONB ->> for the lookup.
-   *   8. Price history rows with the same runId set.
-   *   9. Store daily settlements and their revision history for the date.
-   *
-   * Two passes: first pass is read-only and counts rows for the dry-run
-   * preview; second pass actually deletes. Wrapped in a single tx, so a
+   * Two passes over the same list: the first only counts rows, for the
+   * dry-run preview; the second deletes. Wrapped in a single tx, so a
    * partial failure rolls back the whole thing.
    */
   purgeByDate: authedProcedure.input(PurgeByDateInputSchema).mutation(async ({ ctx, input }) => {
@@ -5422,6 +5201,9 @@ export const adminRouter = router({
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const date = input.date;
+      // CAT-2 (2026-10-30): a date with a daily close is refused, its
+      // preview too.
+      await refuseIfSettled(tx, orgId, date);
 
       // Resolve the affected stream id sets up-front. We use these
       // in both the count and the delete passes so the numbers are
@@ -5460,187 +5242,16 @@ export const adminRouter = router({
         { orders: ownSessions.size, runs: ownRuns.size },
       );
 
-      const allStreamIds = [...sessionIds, ...runIds];
-
-      const counts: Record<string, number> = {
-        'read_model.order_sessions_v': 0,
-        'read_model.order_items_v': 0,
-        'read_model.market_runs_v': 0,
-        'read_model.run_items_v': 0,
-        'read_model.run_item_stores_v': 0,
-        'domain.events': 0,
-        'domain.snapshots': 0,
-        'sync.outbox': 0,
-        'ops.notifications': 0,
-        'inventory.price_history': 0,
-        'inventory.movements': 0,
-        'inventory.store_daily_settlement_revisions': 0,
-        'inventory.store_daily_settlements': 0,
-      };
-
-      // Counts.
-      counts['read_model.order_sessions_v'] = sessionIds.length;
-      counts['read_model.market_runs_v'] = runIds.length;
-      const [revisionCount] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(s.storeDailySettlementRevisions)
-        .where(
-          and(
-            eq(s.storeDailySettlementRevisions.orgId, orgId),
-            eq(s.storeDailySettlementRevisions.settlementDate, date),
-          ),
-        );
-      counts['inventory.store_daily_settlement_revisions'] = revisionCount?.n ?? 0;
-      const [settlementCount] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(s.storeDailySettlements)
-        .where(
-          and(
-            eq(s.storeDailySettlements.orgId, orgId),
-            eq(s.storeDailySettlements.settlementDate, date),
-          ),
-        );
-      counts['inventory.store_daily_settlements'] = settlementCount?.n ?? 0;
-      refuseIfSettlementRevisions(counts);
-
-      if (sessionIds.length > 0) {
-        const r = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-                WHERE session_id IN ${inUuids(sessionIds)}`,
-        );
-        counts['read_model.order_items_v'] = (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-      }
-      if (runIds.length > 0) {
-        const r1 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM read_model.run_items_v
-                WHERE run_id IN ${inUuids(runIds)}`,
-        );
-        counts['read_model.run_items_v'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        const r2 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
-                WHERE run_id IN ${inUuids(runIds)}`,
-        );
-        counts['read_model.run_item_stores_v'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        const r3 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM inventory.price_history
-                WHERE org_id = ${orgId}
-                  AND run_id IN ${inUuids(runIds)}`,
-        );
-        counts['inventory.price_history'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        const r4 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM inventory.movements
-                WHERE ${runMovements(orgId, runIds)}`,
-        );
-        counts['inventory.movements'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        // RE-CAT-4: expenses go with their runs (FK cascade); count them so
-        // the preview matches what is deleted.
-        const r5 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM read_model.run_expenses_v
-                WHERE run_id IN ${inUuids(runIds)}`,
-        );
-        counts['read_model.run_expenses_v'] = (r5 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-      }
-      if (allStreamIds.length > 0) {
-        const r1 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM domain.events
-                WHERE org_id = ${orgId}
-                  AND stream_id IN ${inUuids(allStreamIds)}`,
-        );
-        counts['domain.events'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        const r2 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM domain.snapshots
-                WHERE stream_id IN ${inUuids(allStreamIds)}`,
-        );
-        counts['domain.snapshots'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        const r3 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM sync.outbox
-                WHERE ${outboxOfStreams(orgId, allStreamIds)}`,
-        );
-        counts['sync.outbox'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        // Notifications stash sessionId/runId in payload jsonb.
-        const r4 = await tx.execute(
-          sql`SELECT count(*)::int AS n FROM ops.notifications
-                WHERE org_id = ${orgId}
-                  AND (
-                    payload->>'sessionId' IN ${inTexts(allStreamIds)}
-                    OR payload->>'runId' IN ${inTexts(allStreamIds)}
-                  )`,
-        );
-        counts['ops.notifications'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-      }
-
+      // ADM2-04: the preview counts and the purge deletes the same list.
+      const steps = datePurge(orgId, sessionIds, runIds);
+      const counts = await countPurge(tx, steps);
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
       if (input.dryRun) {
         return { dryRun: true, total, byTable: counts, date, scope };
       }
 
-      // Commit pass — same id sets, dependency-safe order.
-      let stockKept = 0;
-      if (runIds.length > 0) {
-        const inRuns = inUuids(runIds);
-        await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`);
-        await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id IN ${inRuns}`);
-        await tx.execute(
-          sql`DELETE FROM inventory.price_history
-                WHERE org_id = ${orgId} AND run_id IN ${inRuns}`,
-        );
-        stockKept = await keepCountedStock(tx, runMovements(orgId, runIds), ctx.session!.memberId);
-        await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, runIds)}`);
-        await tx.execute(
-          sql`DELETE FROM read_model.market_runs_v
-                WHERE org_id = ${orgId} AND id IN ${inRuns}`,
-        );
-      }
-      if (sessionIds.length > 0) {
-        const inSessions = inUuids(sessionIds);
-        await tx.execute(
-          sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`,
-        );
-        await tx.execute(
-          sql`DELETE FROM read_model.order_sessions_v
-                WHERE org_id = ${orgId} AND id IN ${inSessions}`,
-        );
-      }
-      if (allStreamIds.length > 0) {
-        const inStreams = inUuids(allStreamIds);
-        const inStreamTexts = inTexts(allStreamIds);
-        // Notifications first (cheap; doesn't depend on events).
-        await tx.execute(
-          sql`DELETE FROM ops.notifications
-                WHERE org_id = ${orgId}
-                  AND (
-                    payload->>'sessionId' IN ${inStreamTexts}
-                    OR payload->>'runId' IN ${inStreamTexts}
-                  )`,
-        );
-        // Outbox before events (event_id FK).
-        await tx.execute(
-          sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreamIds)}`,
-        );
-        await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
-        await allowEventPurge(tx);
-        await tx.execute(
-          sql`DELETE FROM domain.events
-                WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-        );
-      }
-      await tx
-        .delete(s.storeDailySettlementRevisions)
-        .where(
-          and(
-            eq(s.storeDailySettlementRevisions.orgId, orgId),
-            eq(s.storeDailySettlementRevisions.settlementDate, date),
-          ),
-        );
-      await tx
-        .delete(s.storeDailySettlements)
-        .where(
-          and(
-            eq(s.storeDailySettlements.orgId, orgId),
-            eq(s.storeDailySettlements.settlementDate, date),
-          ),
-        );
+      const stockKept = await applyPurge(tx, steps, ctx.session!.memberId);
 
       await auditAdmin(
         tx,
@@ -6117,7 +5728,9 @@ export const adminRouter = router({
       ).get(session.id);
       if (block) throw sessionDeleteRefusal(block);
 
-      const counts = await countSessionCascade(tx, orgId, input.sessionId);
+      // ADM2-04: the preview counts and the purge deletes the same list.
+      const steps = sessionPurge(orgId, input.sessionId);
+      const counts = await countPurge(tx, steps);
       if (input.dryRun) {
         return {
           dryRun: true,
@@ -6126,7 +5739,7 @@ export const adminRouter = router({
           sessionId: input.sessionId,
         };
       }
-      await deleteSessionCascade(tx, orgId, input.sessionId);
+      await applyPurge(tx, steps, ctx.session!.memberId);
       // ADM2-05 (2026-11-09): what went, while it can still be read — the
       // store (which also shows the row to that store's admins), the day,
       // the status and whose order it was. Ids alone named nothing once
@@ -6182,7 +5795,9 @@ export const adminRouter = router({
       ).get(run.id);
       if (block) throw runDeleteRefusal(block);
 
-      const counts = await countRunCascade(tx, orgId, input.runId, sessionIds);
+      // ADM2-04: the preview counts and the purge deletes the same list.
+      const steps = runPurge(orgId, input.runId, sessionIds);
+      const counts = await countPurge(tx, steps);
       if (input.dryRun) {
         return {
           dryRun: true,
@@ -6203,13 +5818,7 @@ export const adminRouter = router({
                 and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
               )
           : [];
-      const stockKept = await deleteRunCascade(
-        tx,
-        orgId,
-        input.runId,
-        sessionIds,
-        ctx.session!.memberId,
-      );
+      const stockKept = await applyPurge(tx, steps, ctx.session!.memberId);
       await auditAdmin(
         tx,
         ctx,
@@ -6304,83 +5913,6 @@ function refuseGuardWaiverInProduction(requireOnlyTestSessions: boolean): void {
       message: 'admin.errors.purgeGuardWaiverDisabledInProduction',
     });
   }
-}
-
-/**
- * 2026-10-21 audit CA-28 (F-05): which sync.outbox rows belong to an org.
- * Notification rows (the only producer today, notify.ts) store
- * event_id = orgId and carry `orgId` in the payload; anything keyed to a
- * real domain event is matched through domain.events as before.
- */
-export function outboxOfOrg(orgId: string): ReturnType<typeof sql> {
-  return sql`(event_id IN (SELECT id FROM domain.events WHERE org_id = ${orgId})
-    OR (aggregate = 'notification' AND payload->>'orgId' = ${orgId}))`;
-}
-
-/**
- * Outbox rows for a set of session / run streams: event-keyed rows via
- * domain.events, notification rows via the sessionId / runId the
- * notification payload (`payload.extra`) carries — the same keys the
- * ops.notifications purge matches on.
- */
-export function outboxOfStreams(orgId: string, streamIds: string[]): ReturnType<typeof sql> {
-  if (streamIds.length === 0) return sql`false`;
-  const texts = inTexts(streamIds);
-  return sql`(event_id IN (
-      SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inUuids(streamIds)}
-    )
-    OR (aggregate = 'notification' AND payload->>'orgId' = ${orgId}
-      AND (payload->'extra'->>'sessionId' IN ${texts}
-        OR payload->'extra'->>'runId' IN ${texts})))`;
-}
-
-/** 2026-10-21 audit CA-28 (D-08): stock movements written for these runs. */
-export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof sql> {
-  if (runIds.length === 0) return sql`false`;
-  // DLV-3: corrections of a finished run book 'run_amend' rows too.
-  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN ${inUuids(runIds)})`;
-}
-
-/** The stock movements of every run in the organisation (purgeAllTestData). */
-function allRunMovements(orgId: string): ReturnType<typeof sql> {
-  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend')
-    AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}))`;
-}
-
-/**
- * Review ADM2-02 (2026-11-10): call before deleting the run movements that
- * `which` selects (its columns are those of inventory.movements).
- *
- * Stock on hand is the sum of the ledger, and a stocktake writes the delta
- * that brings the sum to what was counted, so it has already absorbed every
- * receipt booked before it. Deleting such a receipt with its run took it
- * out a second time: the store then showed less than it had counted, or a
- * negative stock. For each store, product and run, the receipts that a
- * later stocktake absorbed are booked back as one 'adjustment' (source
- * 'purge', the run's id), so on hand stays what was counted. Receipts after
- * the last stocktake are not booked back: the goods of a test run never
- * arrived. Returns how many adjustments were written.
- */
-async function keepCountedStock(
-  tx: Tx,
-  which: ReturnType<typeof sql>,
-  actorMemberId: string,
-): Promise<number> {
-  const rows = (await tx.execute(sql`
-    INSERT INTO inventory.movements
-      (org_id, store_id, sku_id, delta, reason, source_type, source_id, actor_member_id)
-    SELECT m.org_id, m.store_id, m.sku_id, SUM(m.delta), 'adjustment', 'purge', m.source_id,
-           ${actorMemberId}
-      FROM inventory.movements m
-     WHERE ${which}
-       AND EXISTS (
-         SELECT 1 FROM inventory.movements st
-          WHERE st.org_id = m.org_id AND st.store_id = m.store_id AND st.sku_id = m.sku_id
-            AND st.reason = 'stocktake' AND st.occurred_at > m.occurred_at)
-     GROUP BY m.org_id, m.store_id, m.sku_id, m.source_id
-    HAVING SUM(m.delta) <> 0
-    RETURNING id`)) as unknown as Array<{ id: string }>;
-  return rows.length;
 }
 
 // ---------- session/run cascade helpers ----------
@@ -6624,180 +6156,4 @@ async function adminRankRoleIds(tx: OrgTx, orgId: string): Promise<Set<string>> 
     .from(s.roles)
     .where(and(eq(s.roles.orgId, orgId), gte(s.roles.rank, ADMIN_RANK_THRESHOLD)));
   return new Set(rows.map((r) => r.id));
-}
-
-function refuseIfSettlementRevisions(counts: Record<string, number>): void {
-  if ((counts['inventory.store_daily_settlement_revisions'] ?? 0) > 0) {
-    throw new TRPCError({
-      code: 'PRECONDITION_FAILED',
-      message: 'admin.errors.purgeHasSettlements',
-    });
-  }
-}
-
-// Drizzle's transactional type is annoying to import here; the helpers
-// only call `.execute(sql\`...\`)` so a structural type is enough.
-type Tx = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
-
-async function countSessionCascade(
-  tx: Tx,
-  orgId: string,
-  sessionId: string,
-): Promise<Record<string, number>> {
-  const sId = sessionId;
-  const c: Record<string, number> = {};
-  const exec = async (label: string, q: ReturnType<typeof sql>) => {
-    const rows = (await tx.execute(q)) as unknown as Array<{ n: number }>;
-    c[label] = rows[0]?.n ?? 0;
-  };
-  c['read_model.order_sessions_v'] = 1;
-  await exec(
-    'read_model.order_items_v',
-    sql`SELECT count(*)::int AS n FROM read_model.order_items_v WHERE session_id = ${sId}`,
-  );
-  await exec(
-    'domain.events',
-    sql`SELECT count(*)::int AS n FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId}`,
-  );
-  await exec(
-    'domain.snapshots',
-    sql`SELECT count(*)::int AS n FROM domain.snapshots WHERE stream_id = ${sId}`,
-  );
-  await exec(
-    'sync.outbox',
-    sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, [sId])}`,
-  );
-  await exec(
-    'ops.notifications',
-    sql`SELECT count(*)::int AS n FROM ops.notifications
-        WHERE org_id = ${orgId} AND payload->>'sessionId' = ${sId}`,
-  );
-  return c;
-}
-
-async function deleteSessionCascade(tx: Tx, orgId: string, sessionId: string): Promise<void> {
-  const sId = sessionId;
-  // Notifications first (no FK).
-  await tx.execute(
-    sql`DELETE FROM ops.notifications
-        WHERE org_id = ${orgId} AND payload->>'sessionId' = ${sId}`,
-  );
-  // Outbox before events (event_id FK).
-  await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, [sId])}`);
-  await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id = ${sId}`);
-  await allowEventPurge(tx);
-  await tx.execute(sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId}`);
-  await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id = ${sId}`);
-  await tx.execute(
-    sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id = ${sId}`,
-  );
-}
-
-async function countRunCascade(
-  tx: Tx,
-  orgId: string,
-  runId: string,
-  sessionIds: string[],
-): Promise<Record<string, number>> {
-  const c: Record<string, number> = {};
-  const exec = async (label: string, q: ReturnType<typeof sql>) => {
-    const rows = (await tx.execute(q)) as unknown as Array<{ n: number }>;
-    c[label] = rows[0]?.n ?? 0;
-  };
-  c['read_model.market_runs_v'] = 1;
-  c['read_model.order_sessions_v'] = sessionIds.length;
-  await exec(
-    'read_model.run_items_v',
-    sql`SELECT count(*)::int AS n FROM read_model.run_items_v WHERE run_id = ${runId}`,
-  );
-  await exec(
-    'read_model.run_item_stores_v',
-    sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v WHERE run_id = ${runId}`,
-  );
-  await exec(
-    'inventory.price_history',
-    sql`SELECT count(*)::int AS n FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
-  );
-  await exec(
-    'inventory.movements',
-    sql`SELECT count(*)::int AS n FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`,
-  );
-  // CAT-14 (2026-10-30): expenses go with the run (FK cascade) but were
-  // missing from the preview.
-  await exec(
-    'read_model.run_expenses_v',
-    sql`SELECT count(*)::int AS n FROM read_model.run_expenses_v WHERE run_id = ${runId}`,
-  );
-  // All streams = run + all attached sessions.
-  const allStreams = [runId, ...sessionIds];
-  const inStreams = inUuids(allStreams);
-  const inStreamTexts = inTexts(allStreams);
-  await exec(
-    'domain.events',
-    sql`SELECT count(*)::int AS n FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-  );
-  await exec(
-    'domain.snapshots',
-    sql`SELECT count(*)::int AS n FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
-  );
-  await exec(
-    'sync.outbox',
-    sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`,
-  );
-  await exec(
-    'ops.notifications',
-    sql`SELECT count(*)::int AS n FROM ops.notifications
-        WHERE org_id = ${orgId}
-          AND (payload->>'sessionId' IN ${inStreamTexts} OR payload->>'runId' IN ${inStreamTexts})`,
-  );
-  await exec(
-    'read_model.order_items_v',
-    sql`SELECT count(*)::int AS n FROM read_model.order_items_v
-        WHERE session_id IN ${inUuids(sessionIds)}`,
-  );
-  return c;
-}
-
-async function deleteRunCascade(
-  tx: Tx,
-  orgId: string,
-  runId: string,
-  sessionIds: string[],
-  actorMemberId: string,
-): Promise<number> {
-  const allStreams = [runId, ...sessionIds];
-  // Notifications first.
-  const inStreams = inUuids(allStreams);
-  const inStreamTexts = inTexts(allStreams);
-  await tx.execute(
-    sql`DELETE FROM ops.notifications
-        WHERE org_id = ${orgId}
-          AND (payload->>'sessionId' IN ${inStreamTexts} OR payload->>'runId' IN ${inStreamTexts})`,
-  );
-  await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
-  await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
-  await allowEventPurge(tx);
-  await tx.execute(
-    sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-  );
-  // Run-side projections.
-  await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id = ${runId}`);
-  await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id = ${runId}`);
-  await tx.execute(
-    sql`DELETE FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
-  );
-  const stockKept = await keepCountedStock(tx, runMovements(orgId, [runId]), actorMemberId);
-  await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`);
-  await tx.execute(
-    sql`DELETE FROM read_model.market_runs_v WHERE org_id = ${orgId} AND id = ${runId}`,
-  );
-  // Session-side projections (attached sessions).
-  if (sessionIds.length > 0) {
-    const inSessions = inUuids(sessionIds);
-    await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`);
-    await tx.execute(
-      sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id IN ${inSessions}`,
-    );
-  }
-  return stockKept;
 }

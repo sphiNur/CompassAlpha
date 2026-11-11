@@ -324,7 +324,6 @@ export const zh = {
   'ops.purge.kind.runLines': '采购单商品行',
   'ops.purge.kind.runStoreLines': '按门店分配的采购行',
   'ops.purge.kind.expenses': '采购开销',
-  'ops.purge.kind.dailyCloses': '日结',
   'ops.purge.kind.stockMovements': '库存流水',
   'ops.purge.kind.priceHistory': '价格记录',
   'ops.purge.kind.notifications': '通知',

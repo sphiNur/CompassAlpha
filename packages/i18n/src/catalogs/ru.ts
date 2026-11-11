@@ -348,7 +348,6 @@ export const ru = {
   'ops.purge.kind.runLines': 'Позиции закупок',
   'ops.purge.kind.runStoreLines': 'Позиции закупок по магазинам',
   'ops.purge.kind.expenses': 'Расходы закупок',
-  'ops.purge.kind.dailyCloses': 'Закрытия дня',
   'ops.purge.kind.stockMovements': 'Движения запасов',
   'ops.purge.kind.priceHistory': 'Записи цен',
   'ops.purge.kind.notifications': 'Уведомления',

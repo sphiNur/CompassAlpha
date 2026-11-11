@@ -24,6 +24,7 @@ import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedRoles, seedMember } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+import { purgeKey } from '../services/purgePlans';
 
 cleanUpAfterAll();
 
@@ -34,6 +35,7 @@ interface Fixture {
   storeId: string;
   skuId: string;
   memberId: string;
+  userId: string;
   admin: Caller;
   staff: Caller;
 }
@@ -81,7 +83,16 @@ async function purgeWorkspace(name: string): Promise<Fixture> {
   const staffSession = await loadSession(db, b.userId, orgId, b.memberId);
   if (!staffSession) throw new Error('session failed to load');
   const staff = callerFor(staffSession);
-  return { db, orgId, storeId: store!.id, skuId: sku!.id, memberId: a.memberId, admin, staff };
+  return {
+    db,
+    orgId,
+    storeId: store!.id,
+    skuId: sku!.id,
+    memberId: a.memberId,
+    userId: a.userId,
+    admin,
+    staff,
+  };
 }
 
 beforeAll(async () => {
@@ -386,6 +397,15 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     expect(err?.code).toBe('PRECONDITION_FAILED');
     expect(err?.message).toBe('admin.errors.purgeHasSettlements');
     expect(await errorOf(() => admin.admin.purgeByDate({ date: '2026-06-11', dryRun: false }))).toBeNull();
+    const all = await errorOf(() => admin.admin.purgeAllTestData({ dryRun: true }));
+    expect(all?.message).toBe('admin.errors.purgeHasSettlements');
+    // ADM2-04: the guard asks the closes as well as their revisions, so a
+    // close is never left half-deleted, even one without a revision.
+    await db
+      .insert(s.storeDailySettlements)
+      .values({ orgId, storeId, settlementDate: '2026-06-12' });
+    const bare = await errorOf(() => admin.admin.purgeByDate({ date: '2026-06-12', dryRun: true }));
+    expect(bare?.message).toBe('admin.errors.purgeHasSettlements');
   });
 
   test('D1: on production the workspace-wide purges refuse; per-item deletes still work', async () => {
@@ -836,5 +856,243 @@ describe.skipIf(!SHOULD_RUN)('ADM2-02: purging a run keeps on hand at what was c
       where: (m, o) => o.eq(m.storeId, w.storeId),
     });
     expect(rows).toEqual([]);
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('ADM2-04: each preview counts what its purge deletes', () => {
+  /** Every table a purge reaches, by the key its preview uses. */
+  const TABLES = new Map(
+    [
+      s.events,
+      s.snapshots,
+      s.outbox,
+      s.notifications,
+      s.clientLogs,
+      s.priceHistory,
+      s.inventoryMovements,
+      s.marketRunsV,
+      s.runItemsV,
+      s.runItemStoresV,
+      s.runExpensesV,
+      s.orderSessionsV,
+      s.orderItemsV,
+    ].map((table) => [purgeKey(table), table] as const),
+  );
+
+  /** Rows in each table, all organisations together. */
+  async function rowsIn(db: Fixture['db'], keys: string[]): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const key of keys) {
+      const table = TABLES.get(key);
+      if (!table) throw new Error(`the test does not know ${key}`);
+      const [row] = (await db.execute(
+        sql`SELECT count(*)::int AS n FROM ${table}`,
+      )) as unknown as Array<{ n: number }>;
+      out[key] = row!.n;
+    }
+    return out;
+  }
+
+  /**
+   * Previews, then purges, and compares: the rows that went from each table
+   * are the preview's number for it. The preview must also find something
+   * in each of `seeded`, or the comparison proves little.
+   */
+  async function previewIsWhatGoes(
+    db: Fixture['db'],
+    seeded: string[],
+    purge: (dryRun: boolean) => Promise<{ byTable: Record<string, number> }>,
+  ) {
+    const preview = await purge(true);
+    for (const key of seeded) {
+      expect({ [key]: preview.byTable[key] ?? 0 }).not.toEqual({ [key]: 0 });
+    }
+    const keys = Object.keys(preview.byTable);
+    const before = await rowsIn(db, keys);
+    const done = await purge(false);
+    const after = await rowsIn(db, keys);
+    const gone = Object.fromEntries(keys.map((key) => [key, before[key]! - after[key]!]));
+    expect(gone).toEqual(preview.byTable);
+    expect(done.byTable).toEqual(preview.byTable);
+  }
+
+  /** An order of `date` with its lines, events, snapshot, outbox rows and notification. */
+  async function seedOrder(w: Fixture, date: string, status: 'draft' | 'in_run', runId?: string) {
+    const { db, orgId, storeId, skuId, memberId, userId } = w;
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId,
+      storeId,
+      orderDate: date,
+      status,
+      runId: runId ?? null,
+      initiatedByMemberId: memberId,
+    });
+    await db
+      .insert(s.orderItemsV)
+      .values({ sessionId, skuId, contributorMemberId: memberId, qty: '2' });
+    await seedStream(w, 'order', sessionId);
+    await db.insert(s.notifications).values({
+      orgId,
+      recipientUserId: userId,
+      channel: 'inapp',
+      template: 'order.submitted',
+      title: 'Order',
+      payload: { sessionId },
+    });
+    return sessionId;
+  }
+
+  /** A finished run of `date` holding `sessionIds`, with a row in every table a run reaches. */
+  async function seedRun(w: Fixture, date: string, sessionIds: string[], runId = randomUUID()) {
+    const { db, orgId, storeId, skuId, memberId } = w;
+    await db.insert(s.marketRunsV).values({
+      id: runId,
+      orgId,
+      runDate: date,
+      status: 'finished',
+      sessionIdsJson: sessionIds,
+      purchaserMemberId: memberId,
+    });
+    await db.insert(s.runItemsV).values({ runId, skuId, plannedQty: '2' });
+    await db.insert(s.runItemStoresV).values({ runId, skuId, storeId, qty: '2' });
+    await db.insert(s.runExpensesV).values({
+      id: randomUUID(),
+      runId,
+      orgId,
+      label: 'Taxi',
+      unitPrice: '10000',
+      storeSplitsJson: [],
+      reason: 'test',
+      addedByMemberId: memberId,
+      addedAt: new Date(),
+    });
+    await db.insert(s.priceHistory).values({
+      orgId,
+      skuId,
+      storeId,
+      runId,
+      unitPrice: '1.50',
+      qty: '2',
+      observedAt: new Date(`${date}T09:00:00Z`),
+    });
+    await db.insert(s.inventoryMovements).values({
+      orgId,
+      storeId,
+      skuId,
+      delta: '2',
+      reason: 'delivery_received',
+      sourceType: 'run',
+      sourceId: runId,
+      actorMemberId: memberId,
+      occurredAt: new Date(`${date}T10:00:00Z`),
+    });
+    await seedStream(w, 'run', runId);
+    return runId;
+  }
+
+  /** An event of the stream, a snapshot, and an outbox row of each kind. */
+  async function seedStream(w: Fixture, streamType: 'order' | 'run', streamId: string) {
+    const { db, orgId } = w;
+    const [event] = await db
+      .insert(s.events)
+      .values({
+        orgId,
+        streamType,
+        streamId,
+        seq: 1,
+        type: streamType === 'order' ? 'DraftStarted' : 'RunPlanned',
+        payload: {},
+      })
+      .returning({ id: s.events.id });
+    await db.insert(s.snapshots).values({ streamId, seq: 1, state: {} });
+    const key = streamType === 'order' ? 'sessionId' : 'runId';
+    await db.insert(s.outbox).values([
+      {
+        aggregate: streamType,
+        aggregateId: streamId,
+        eventId: event!.id,
+        channel: 'realtime',
+        payload: {},
+      },
+      {
+        aggregate: 'notification',
+        aggregateId: orgId,
+        eventId: orgId,
+        channel: 'bot',
+        payload: { orgId, extra: { [key]: streamId } },
+      },
+    ]);
+  }
+
+  const ORDER_TABLES = [
+    'read_model.order_sessions_v',
+    'read_model.order_items_v',
+    'domain.events',
+    'domain.snapshots',
+    'sync.outbox',
+    'ops.notifications',
+  ];
+  const RUN_TABLES = [
+    ...ORDER_TABLES,
+    'read_model.market_runs_v',
+    'read_model.run_items_v',
+    'read_model.run_item_stores_v',
+    'read_model.run_expenses_v',
+    'inventory.price_history',
+    'inventory.movements',
+  ];
+
+  test('one order', async () => {
+    const w = await purgeWorkspace('Purge counts order');
+    const sessionId = await seedOrder(w, '2026-07-10', 'draft');
+    // Another order stays (one draft per person and day).
+    await seedOrder(w, '2026-07-09', 'draft');
+    await previewIsWhatGoes(w.db, ORDER_TABLES, (dryRun) =>
+      w.admin.admin.purgeSession({ sessionId, dryRun }),
+    );
+  });
+
+  test('one run, with its order', async () => {
+    const w = await purgeWorkspace('Purge counts run');
+    const runId = randomUUID();
+    const sessionId = await seedOrder(w, '2026-07-11', 'in_run', runId);
+    await seedRun(w, '2026-07-11', [sessionId], runId);
+    // Another run stays (one run per day and number).
+    await seedRun(w, '2026-07-10', []);
+    await previewIsWhatGoes(w.db, RUN_TABLES, (dryRun) =>
+      w.admin.admin.purgeRun({ runId, dryRun }),
+    );
+  });
+
+  test('a date, with the run of its order from the day before', async () => {
+    const w = await purgeWorkspace('Purge counts date');
+    const runId = randomUUID();
+    const sessionId = await seedOrder(w, '2026-07-13', 'in_run', runId);
+    await seedRun(w, '2026-07-12', [sessionId], runId);
+    // Another day stays.
+    await seedRun(w, '2026-07-14', []);
+    await previewIsWhatGoes(w.db, RUN_TABLES, (dryRun) =>
+      w.admin.admin.purgeByDate({ date: '2026-07-13', dryRun }),
+    );
+  });
+
+  test('the whole workspace', async () => {
+    const w = await purgeWorkspace('Purge counts all');
+    const runId = randomUUID();
+    const sessionId = await seedOrder(w, '2026-07-15', 'in_run', runId);
+    await seedRun(w, '2026-07-15', [sessionId], runId);
+    await seedOrder(w, '2026-07-16', 'draft');
+    await w.db.insert(s.clientLogs).values({
+      orgId: w.orgId,
+      userId: w.userId,
+      sessionId: 'purge-counts',
+      level: 'info',
+      kind: 'test',
+    });
+    await previewIsWhatGoes(w.db, [...RUN_TABLES, 'ops.client_logs'], (dryRun) =>
+      w.admin.admin.purgeAllTestData({ dryRun, confirmText: 'Purge counts all' }),
+    );
   });
 });
