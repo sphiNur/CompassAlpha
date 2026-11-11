@@ -38,7 +38,13 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import {
+  useDateFormat,
+  useI18n,
+  useProductName,
+  useRoleLabels,
+  useUnitLabel,
+} from '../../../hooks/useI18n';
 import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
@@ -796,6 +802,7 @@ export function AdminAuditSection() {
   const i18n = useI18n();
   const dateFmt = useDateFormat();
   const productName = useProductName();
+  const roleLabels = useRoleLabels();
   const unitLabel = useUnitLabel();
   // ADM2-06: how the before / after values of an edit read.
   const changeFormat: ChangeFormat = {
@@ -927,6 +934,8 @@ export function AdminAuditSection() {
                 // instead of raw verb/object words and id prefixes.
                 const s = describeAuditRow(r, {
                   unknown: i18n.t('ops.audit.unknown'),
+                  system: i18n.t('ops.activity.system'),
+                  roleName: (role) => roleLabels.name(role),
                   localName: (names) => productName({ names }),
                   day: (d) => dateFmt.calendarDay(d),
                 });

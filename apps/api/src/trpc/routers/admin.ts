@@ -1141,6 +1141,8 @@ export interface AuditRowRefs {
 export interface AuditRowLabels {
   memberName: string | null;
   roleName: string | null;
+  /** Lets the client show a built-in role's name in the UI language. */
+  roleSlug: string | null;
   storeName: string | null;
   toStoreName: string | null;
   /** Supplier / expense-template label (single string). */
@@ -1154,6 +1156,7 @@ export interface AuditLookups {
   userNameById: Map<string, string>;
   roleNameBySlug: Map<string, string>;
   roleNameById: Map<string, string>;
+  roleSlugById: Map<string, string>;
   storeNameById: Map<string, string>;
   catalogNameById: Map<string, string>;
   catalogNamesById: Map<string, Record<string, string>>;
@@ -1193,7 +1196,9 @@ export function auditRowRefs(row: {
     memberId,
     userId: str(o, 'userId'),
     roleSlug: str(o, 'roleSlug'),
-    roleId: rt === 'role' && rid ? rid : null,
+    // A grant from the command line (`compass user grant`) names its
+    // role by id only.
+    roleId: rt === 'role' && rid ? rid : str(o, 'roleId'),
     storeId,
     toStoreId: str(o, 'toStoreId') ?? (rt === 'store' ? null : str(o, 'targetStoreId')),
     catalog:
@@ -1229,6 +1234,7 @@ export function buildAuditLabels(
       get(l.roleNameBySlug, refs.roleSlug) ??
       get(l.roleNameById, refs.roleId) ??
       text(atWrite.roleName),
+    roleSlug: refs.roleSlug ?? get(l.roleSlugById, refs.roleId) ?? text(atWrite.roleSlug),
     storeName: get(l.storeNameById, refs.storeId) ?? text(atWrite.storeName),
     toStoreName: get(l.storeNameById, refs.toStoreId) ?? text(atWrite.toStoreName),
     targetName:
@@ -1287,7 +1293,7 @@ async function loadAuditLookups(
         : [],
       roleIds.length
         ? tx
-            .select({ id: s.roles.id, name: s.roles.name })
+            .select({ id: s.roles.id, name: s.roles.name, slug: s.roles.slug })
             .from(s.roles)
             .where(and(eq(s.roles.orgId, orgId), inArray(s.roles.id, roleIds)))
         : [],
@@ -1335,6 +1341,7 @@ async function loadAuditLookups(
       (rolesBySlug as { slug: string; name: string }[]).map((r) => [r.slug, r.name]),
     ),
     roleNameById: byId(rolesById),
+    roleSlugById: new Map((rolesById as { id: string; slug: string }[]).map((r) => [r.id, r.slug])),
     storeNameById: byId(stores),
     catalogNameById: byId([...suppliers, ...templates]),
     catalogNamesById: new Map(
@@ -5220,6 +5227,9 @@ export const adminRouter = router({
           resourceType: r.resourceType,
           resourceId: r.resourceId,
           actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
+          /** No person acted: `compass user grant` writes its rows
+           *  without an actor. A missing user is not this. */
+          bySystem: r.actorId === null,
           occurredAt: r.occurredAt.toISOString(),
           inputs: r.inputs as unknown,
           scopeStoreId: r.scopeStoreId,

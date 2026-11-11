@@ -260,3 +260,42 @@ describe.skipIf(!SHOULD_RUN)('copying a store’s roles audits each grant (ADM2-
     ).toBe(true);
   });
 });
+
+describe.skipIf(!SHOULD_RUN)('a grant from the command line', () => {
+  test('names its role and comes back as made by the system', async () => {
+    const { db, orgId, owner, staffA } = fix!;
+    const [role] = await db
+      .select({ id: s.roles.id, name: s.roles.name })
+      .from(s.roles)
+      .where(and(eq(s.roles.orgId, orgId), eq(s.roles.slug, 'manager')));
+    const bindingId = randomUUID();
+    // The row `compass user grant` writes (packages/cli/src/commands/user.ts).
+    await db.insert(s.policyDecisions).values({
+      orgId,
+      actorId: null,
+      action: 'admin.role.grant',
+      resourceType: 'member',
+      resourceId: staffA.memberId,
+      decision: 'allow',
+      reason: 'cli',
+      inputs: {
+        memberId: staffA.memberId,
+        roleId: role!.id,
+        scopeType: 'global',
+        scopeId: null,
+        bindingId,
+        roleRank: 50,
+      },
+      scopeStoreId: null,
+    });
+    const seen = await owner.as.admin.adminAuditList({ limit: 200 });
+    const cli = seen.find((r) => (r.inputs as { bindingId?: string }).bindingId === bindingId);
+    expect(cli).toMatchObject({ actor: null, bySystem: true });
+    expect(cli?.labels).toMatchObject({
+      memberName: staffA.name,
+      roleName: role!.name,
+      roleSlug: 'manager',
+    });
+    expect(seen.find((r) => r.actor !== null)?.bySystem).toBe(false);
+  });
+});
