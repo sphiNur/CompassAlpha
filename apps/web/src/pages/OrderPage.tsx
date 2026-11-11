@@ -9,7 +9,6 @@ import {
   EmptyState,
   Input,
   NameCell,
-  NumberInput,
   QtyControl,
   SearchInput,
   SectionLabel,
@@ -2697,7 +2696,8 @@ function ExtraRowEditor({
         <RemoveExtraButton label={i18n.t('order.extras.remove')} onClick={onRemove} />
       </div>
       <div className="mt-2 flex items-center gap-2">
-        <NumberInput
+        <Input
+          type="number"
           value={row.qty}
           // M3.34 (2026-05-19): inputMode tracks the unit so a pcs/bunch
           // row gives an integer keypad while a kg/L row allows decimals.
@@ -2705,7 +2705,7 @@ function ExtraRowEditor({
           // doesn't make sense). ORD-13: no step or min, which this text
           // field ignored.
           inputMode={WHOLE_NUMBER_UNITS.has(row.unit) ? 'numeric' : 'decimal'}
-          aria-invalid={(invalid && badExtraQty(row)) || undefined}
+          invalid={invalid && badExtraQty(row)}
           aria-label={i18n.t('order.extras.qtyLabel')}
           className="w-24 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}

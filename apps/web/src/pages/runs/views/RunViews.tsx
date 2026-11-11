@@ -20,7 +20,7 @@ import {
   logPurchaseUnavailable,
 } from '../lib/purchaseTelemetry';
 import type { ComponentProps, ReactNode } from 'react';
-import { Button, Card, NameCell, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
+import { Button, Card, Input, NameCell, SectionLabel, focusAfter } from '@compass/ui';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
@@ -2062,7 +2062,8 @@ export const PurchaseRow = memo(function PurchaseRow({
               common failure — hence select-on-focus. Enter chains
               qty → price → save so a changed price is three actions
               (tap, type, Enter) instead of tap-type-reach-for-✓. */}
-            <NumberInput
+            <Input
+              type="number"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               onFocus={(e) => e.currentTarget.select()}
@@ -2074,17 +2075,19 @@ export const PurchaseRow = memo(function PurchaseRow({
                 priceRef.current?.focus();
               }}
               aria-label={i18n.t('run.action.actualQtyAriaLabel')}
-              className="w-[4.5rem] shrink-0"
+              // A dense row: the narrow field keeps room for five digits.
+              className="w-[4.5rem] shrink-0 px-3"
             />
             <span className="shrink-0 text-old-body text-[var(--c-fg-muted)]">×</span>
-            <NumberInput
+            <Input
+              type="number"
               ref={priceRef}
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               onFocus={(e) => e.currentTarget.select()}
               // The row has no room for a message; line 3 says it.
               formatError="none"
-              aria-invalid={priceProblem || undefined}
+              invalid={priceProblem}
               enterKeyHint="done"
               onKeyDown={(e) => {
                 if (e.key !== 'Enter') return;

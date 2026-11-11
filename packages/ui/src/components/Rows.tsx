@@ -201,7 +201,7 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
 /**
  * Form field: 12px uppercase label + slot for the input. Replaces
  * inline `<label>` blocks in admin sheets, purchase sheets, etc. Pair
- * with `<Input>` / `<NumberInput>` / `<select>`.
+ * with `<Input>` (also `type="number"`) / `<select>`.
  */
 export interface FieldProps {
   label: ReactNode;

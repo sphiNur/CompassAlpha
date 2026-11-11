@@ -14,6 +14,7 @@ export {
 } from './components/Card';
 export { pillButtonClass } from './components/pill';
 export { Input } from './components/Input';
+export type { InputProps } from './components/Input';
 export { SearchInput } from './components/SearchInput';
 export type { SearchInputProps } from './components/SearchInput';
 export { Textarea } from './components/Textarea';
@@ -60,10 +61,8 @@ export { Tabs, Tab } from './components/Tabs';
 export { Segmented } from './components/Segmented';
 export type { SegmentedProps, SegmentedOption } from './components/Segmented';
 export { Avatar } from './components/Avatar';
-export { NumberInput } from './components/NumberInput';
 export { normalizeDecimalInput, readDecimalText, setDecimalLocale } from './decimalText';
 export type { DecimalRead } from './decimalText';
-export type { NumberInputProps } from './components/NumberInput';
 export { PageHeader } from './components/PageHeader';
 export type { PageHeaderProps } from './components/PageHeader';
 export { StickyPageBar } from './components/StickyPageBar';

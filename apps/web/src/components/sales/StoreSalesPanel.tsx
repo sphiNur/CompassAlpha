@@ -27,7 +27,6 @@ import {
   FieldError,
   Input,
   LoadingState,
-  NumberInput,
   SectionLabel,
   Select,
   Sheet,
@@ -305,14 +304,15 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
               </Select>
               <div>
                 <div className="flex items-center gap-2">
-                  <NumberInput
+                  <Input
+                    type="number"
                     ref={qtyRef}
                     value={draftQty}
                     aria-label={i18n.t('sales.form.qtyLabel')}
-                    aria-invalid={shownQtyProblem !== null || undefined}
+                    invalid={shownQtyProblem !== null}
                     aria-describedby={shownQtyProblem ? qtyErrorId : undefined}
                     formatError="none"
-                    className={cn('flex-1', shownQtyProblem && 'border-[var(--c-danger)]')}
+                    className="flex-1"
                     disabled={listErrored}
                     onBlur={() => setQtyRevealed(true)}
                     onChange={(e) => setDraftQty(e.currentTarget.value)}

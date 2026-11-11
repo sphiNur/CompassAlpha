@@ -8,16 +8,14 @@
  */
 import { useState } from 'react';
 import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
-import { settlementMoneyProblem } from '@compass/contracts/limits';
 import {
-  Button,
-  DataState,
-  Field,
-  Input,
-  Switch,
-  normalizeDecimalInput,
-  useToast,
-} from '@compass/ui';
+  ATTENDANCE_GRACE_MINUTES,
+  ATTENDANCE_OVERTIME_AFTER_MINUTES,
+  ATTENDANCE_RADIUS_M,
+  settlementMoneyProblem,
+  wholeNumberIn,
+} from '@compass/contracts/limits';
+import { Button, DataState, Field, Input, Switch, useToast } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
@@ -254,10 +252,10 @@ function WageField({
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const shown = current ? String(Number(current)) : '';
+  // The number field hands on its normalised reading ("1 500,5" → "1500.5").
   const [text, setText] = useState(shown);
-  const value = normalizeDecimalInput(text);
   // Review CONF-10: the server's rule for a daily wage (SettlementMoneySchema).
-  const valid = settlementMoneyProblem(value) === null;
+  const valid = settlementMoneyProblem(text) === null;
   const save = trpc.attendance.payRateSet.useMutation({
     onSuccess: () => {
       haptic('success');
@@ -274,7 +272,11 @@ function WageField({
         className="min-w-0 flex-1"
       >
         <Input
-          inputMode="decimal"
+          type="number"
+          // The save button sits beside the field; the red edge marks a
+          // wage the server would refuse, a line under it would push the
+          // button down.
+          formatError="none"
           value={text}
           disabled={own}
           invalid={text !== '' && !valid}
@@ -286,9 +288,9 @@ function WageField({
         <Button
           size="sm"
           variant="secondary"
-          disabled={!valid || value === shown}
+          disabled={!valid || text === shown}
           loading={save.isPending}
-          onClick={() => save.mutate({ storeId, memberId, dailyWage: value, effectiveFrom: today })}
+          onClick={() => save.mutate({ storeId, memberId, dailyWage: text, effectiveFrom: today })}
         >
           {i18n.t('common.save')}
         </Button>
@@ -329,12 +331,12 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
     onError: errToast('attendance.errors.saveFailed'),
   });
 
-  const radiusNum = Number(radius);
-  const graceNum = Number(grace);
-  const radiusOk = Number.isInteger(radiusNum) && radiusNum >= 20 && radiusNum <= 5000;
-  const graceOk = Number.isInteger(graceNum) && graceNum >= 0 && graceNum <= 120;
-  const overtimeNum = Number(overtimeAfter);
-  const overtimeOk = Number.isInteger(overtimeNum) && overtimeNum >= 5 && overtimeNum <= 240;
+  const radiusNum = wholeNumberIn(radius, ATTENDANCE_RADIUS_M);
+  const graceNum = wholeNumberIn(grace, ATTENDANCE_GRACE_MINUTES);
+  const overtimeNum = wholeNumberIn(overtimeAfter, ATTENDANCE_OVERTIME_AFTER_MINUTES);
+  const radiusOk = radiusNum !== null;
+  const graceOk = graceNum !== null;
+  const overtimeOk = overtimeNum !== null;
   // A saved location always goes with a valid radius, whether or not the
   // rule is on: a bad radius used to save the location away (review
   // 2026-11-07).
@@ -345,7 +347,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
     setLocating(true);
     try {
       const fix = await currentLocation();
-      setGeo({ lat: fix.lat, lng: fix.lng, radiusM: radiusOk ? radiusNum : 100 });
+      setGeo({ lat: fix.lat, lng: fix.lng, radiusM: radiusNum ?? 100 });
       if (fix.accuracy > 100)
         toast.info(i18n.t('attendance.settings.geoCoarse', { m: Math.round(fix.accuracy) }));
     } catch (e) {
@@ -409,7 +411,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             {geo ? (
               <>
                 <GeoMap
-                  area={radiusOk ? { ...geo, radiusM: radiusNum } : geo}
+                  area={radiusNum === null ? geo : { ...geo, radiusM: radiusNum }}
                   onAreaMove={(lat, lng) => setGeo({ ...geo, lat, lng })}
                   label={i18n.t('attendance.map.label')}
                 />
@@ -423,15 +425,14 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
               hint={i18n.t('attendance.settings.radiusHint')}
             >
               <Input
+                type="number"
                 inputMode="numeric"
                 value={radius}
                 invalid={!radiusOk}
                 onChange={(e) => {
                   setRadius(e.target.value);
-                  const n = Number(e.target.value);
-                  if (geo && Number.isInteger(n) && n >= 20 && n <= 5000) {
-                    setGeo({ ...geo, radiusM: n });
-                  }
+                  const n = wholeNumberIn(e.target.value, ATTENDANCE_RADIUS_M);
+                  if (geo && n !== null) setGeo({ ...geo, radiusM: n });
                 }}
               />
             </Field>
@@ -445,6 +446,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
           hint={i18n.t('attendance.settings.graceHint')}
         >
           <Input
+            type="number"
             inputMode="numeric"
             value={grace}
             invalid={!graceOk}
@@ -457,6 +459,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
           className="mt-3"
         >
           <Input
+            type="number"
             inputMode="numeric"
             value={overtimeAfter}
             invalid={!overtimeOk}
@@ -469,17 +472,18 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
         block
         disabled={!canSave}
         loading={save.isPending}
-        onClick={() =>
+        onClick={() => {
+          if (graceNum === null || overtimeNum === null) return;
           save.mutate({
             storeId,
             requireDevice,
             requireGeo,
             requireScene: false,
-            geo: geo ? { ...geo, radiusM: radiusNum } : null,
+            geo: geo ? { ...geo, radiusM: radiusNum ?? geo.radiusM } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,
-          })
-        }
+          });
+        }}
       >
         {i18n.t('common.save')}
       </Button>

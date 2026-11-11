@@ -5,16 +5,7 @@
  * movements sheet.
  */
 import { useEffect, useRef, useState } from 'react';
-import {
-  Button,
-  Field,
-  Input,
-  NumberInput,
-  Select,
-  Sheet,
-  readDecimalText,
-  useToast,
-} from '@compass/ui';
+import { Button, Field, Input, Select, Sheet, readDecimalText, useToast } from '@compass/ui';
 import {
   INVENTORY_NOTE_MAX,
   STOCKTAKE_COUNT_MESSAGE,
@@ -272,18 +263,14 @@ export function InventoryActionSheet({
               >
                 {/* DX-INV-1: the reason a count can't be saved sits under
                       the field and is tied to it, as in the daily close. */}
-                <NumberInput
+                <Input
+                  type="number"
                   formatError="none"
                   aria-label={i18n.t('inventory.sheet.stocktake.targetLabel')}
                   value={draftTarget}
-                  aria-invalid={(countProblem !== null && countProblem !== 'empty') || undefined}
+                  invalid={countProblem !== null && countProblem !== 'empty'}
                   aria-describedby={
                     countProblem && countProblem !== 'empty' ? 'stocktake-error' : undefined
-                  }
-                  className={
-                    countProblem && countProblem !== 'empty'
-                      ? 'border-[var(--c-danger)]'
-                      : undefined
                   }
                   onChange={(e) => setDraftTarget(e.target.value)}
                   autoFocus

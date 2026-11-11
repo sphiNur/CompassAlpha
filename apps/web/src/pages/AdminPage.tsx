@@ -40,8 +40,8 @@ import {
   IconPeople,
   IconShield,
   IconWorkspace,
+  Input,
   ListRow,
-  NumberInput,
   SectionRow,
   Sheet,
   Switch,
@@ -796,14 +796,14 @@ function WorkspaceSection() {
               label={i18n.t('admin.workspace.taxRate')}
               hint={i18n.t('admin.workspace.taxRateHint')}
             >
-              <NumberInput
+              <Input
+                type="number"
                 formatError="none"
                 value={draftTax}
                 onChange={(e) => setDraftTax(e.target.value)}
                 placeholder="0"
-                aria-invalid={taxError ? true : undefined}
+                invalid={!!taxError}
                 aria-describedby={taxError ? taxErrorId : undefined}
-                className={taxError ? 'border-[var(--c-danger)]' : undefined}
               />
             </Field>
             {/* Outside the Field's <label>, so the reason is tied to the

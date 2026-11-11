@@ -6,12 +6,56 @@ import { useDecimalField } from '../useDecimalField';
 import { disabledClass } from './disabled';
 import { FieldError } from './FieldError';
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+type FieldAttributes = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>;
+
+/**
+ * A number field. Review CONF-22 (2026-11-11): no min / max / step. The
+ * field is text (R6), so the browser checks none of them; passing them
+ * read as a range check that did not happen. A caller says what is wrong
+ * itself (`invalid` and its own FieldError).
+ */
+interface NumberFieldProps extends Omit<FieldAttributes, 'min' | 'max' | 'step'> {
+  type: 'number';
+  min?: never;
+  max?: never;
+  step?: never;
+  /** Draws the red ring and sets aria-invalid. */
   invalid?: boolean;
+  /**
+   * R2-ORD-2: text that is not one number ("1e3", "1.2.3") is kept and
+   * marked invalid, and by default a line under the field says so.
+   * `none` for a caller that shows its own message.
+   */
+  formatError?: 'inline' | 'none';
 }
 
+interface TextFieldProps extends FieldAttributes {
+  type?:
+    | 'text'
+    | 'search'
+    | 'password'
+    | 'email'
+    | 'tel'
+    | 'url'
+    | 'date'
+    | 'time'
+    | 'datetime-local'
+    | 'month';
+  /** Draws the red ring and sets aria-invalid. */
+  invalid?: boolean;
+  formatError?: never;
+}
+
+export type InputProps = NumberFieldProps | TextFieldProps;
+
+/**
+ * The kit's text field. Review UI-12 (2026-11): it is also the number
+ * field (type="number"); a second component with its own border, focus
+ * edge and error look made one quantity look different in a run row and
+ * in its edit sheet.
+ */
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className, invalid, ...props },
+  { className, invalid, formatError = 'inline', ...props },
   ref,
 ) {
   // R6: a "number" field is a text field with the decimal keypad, so a
@@ -32,6 +76,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     onBlur: props.onBlur,
   });
   const formatInvalid = numeric && decimal.invalid;
+  const marked = !!invalid || formatInvalid;
   const rest = numeric
     ? {
         ...props,
@@ -60,14 +105,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         // takes the width it is given and reads left-aligned like the others.
         dateLike &&
           'block appearance-none text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:min-h-[1.25em] [&::-webkit-datetime-edit]:p-0',
-        (invalid || formatInvalid) && 'ring-2 ring-[var(--c-danger)]',
+        // Digits of a number line up with the numbers around them.
+        numeric && 'tabular-nums',
+        marked && 'ring-2 ring-[var(--c-danger)]',
         className,
       )}
-      aria-invalid={invalid || formatInvalid || undefined}
       {...rest}
+      // After the spread: a caller's own aria-invalid adds to this one.
+      aria-invalid={marked || props['aria-invalid'] || undefined}
     />
   );
-  if (!formatInvalid) return input;
+  if (!formatInvalid || formatError === 'none') return input;
   return (
     <>
       {input}
