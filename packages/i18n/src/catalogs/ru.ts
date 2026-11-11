@@ -1317,6 +1317,8 @@ export const ru = {
   'run.purchase.pricingUniform': 'Единая цена / оплата',
   'run.purchase.pricingPerStore': 'Цена / оплата по магазинам',
   'run.previewSupplier.changeVendor': 'Сменить поставщика',
+  'run.previewSupplier.tapHint': 'Нажмите на товар, чтобы сменить поставщика.',
+  'run.extras.tapHint': 'Нажмите на позицию, чтобы сменить отметку: «Куплено», «Не нашли», «Ещё не куплено» — по кругу.',
   'run.previewSupplier.pickVendorTitle': 'Выберите поставщика',
   'run.previewSupplier.pickVendorHint':
     'Назначает поставщика для этой позиции — действует и в следующих закупках, пока вы не смените снова.',

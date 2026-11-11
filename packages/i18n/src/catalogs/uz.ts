@@ -1103,6 +1103,8 @@ export const uz = {
 
   // M3.16-C: structured extras editor
   'order.extras.label': 'Boshqa narsalar',
+  'run.previewSupplier.tapHint': 'Sotuvchini almashtirish uchun mahsulotni bosing.',
+  'run.extras.tapHint': 'Belgini almashtirish uchun bosing: «Olindi», «Topilmadi», «Hali olinmagan» — navbat bilan.',
   // M3.37 (2026-05-19, Wave2 #5): xaridor "boshqa narsa" qatori
   // statusini bosish orqali o'zgartiradi.
   'run.extras.status.pending': 'Hali olinmagan',

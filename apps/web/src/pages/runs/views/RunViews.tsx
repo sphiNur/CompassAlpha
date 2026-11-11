@@ -639,10 +639,25 @@ export function RunExtrasCard({
     s: 'pending' | 'bought' | 'unavailable',
   ): 'pending' | 'bought' | 'unavailable' =>
     s === 'pending' ? 'bought' : s === 'bought' ? 'unavailable' : 'pending';
+  const anyTappable =
+    editable &&
+    !!onMarkExtraStatus &&
+    storeIds.some((id) =>
+      (sessionExtrasByStore?.[id] ?? []).some(
+        (e) => typeof e.sessionId === 'string' && typeof e.idx === 'number',
+      ),
+    );
 
   return (
     <Card>
       <SectionLabel meta="">{i18n.t('order.extras.label')}</SectionLabel>
+      {/* RUNWEB1-11 (2026-11-11): what a tap does, said once. It was only
+          each line's tooltip, which touch never shows. */}
+      {anyTappable ? (
+        <p className="px-4 pb-1 text-old-label text-[var(--c-fg-muted)]">
+          {i18n.t('run.extras.tapHint')}
+        </p>
+      ) : null}
       <div className="flex flex-col gap-3 px-4 pb-3">
         {storeIds.map((storeId) => {
           const extras = sessionExtrasByStore?.[storeId] ?? [];
@@ -1133,6 +1148,9 @@ const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
 const RUN_ROW_NAME_BASE =
   'min-w-0 line-clamp-2 break-words hyphens-auto text-old-body font-semibold';
 const RUN_ROW_NAME = `${RUN_ROW_NAME_BASE} text-[var(--c-fg)]`;
+/* RUNWEB1-11 (2026-11-11): the whole name, for a row that opens nothing.
+ * A clamped name is read by opening its row; touch has no tooltip. */
+const RUN_ROW_NAME_FULL = 'min-w-0 break-words hyphens-auto text-old-body font-semibold';
 
 /* self-stretch (V4, 2026-10-30): the body fills the 52px row, so it
  * taps across the row's height instead of only its 18px text line. */
@@ -1759,8 +1777,8 @@ export function PurchaseRow({
       ? thousands(i18n, lastPrice)
       : formatMoney(lastPrice)
     : '';
-  /* In thousands mode the visible figure is scaled, so long-press has to
-   * be able to recover the real one. */
+  /* In thousands mode the visible figure is scaled; the `title` gives a
+   * mouse the unscaled one (touch has no tooltip, RUNWEB1-11). */
   const rawPriceTitle = (raw: string | null | undefined) =>
     priceInThousands && raw ? `${formatMoney(raw)} ${currency}` : undefined;
 
@@ -1839,12 +1857,12 @@ export function PurchaseRow({
             />
 
             {/* The ONLY element on this row permitted to lose
-                characters — and it carries a `title`, because Cyrillic
-                and Uzbek catalogue names disambiguate at the END
-                ("...рафинированное" vs "...нерафинированное",
-                "охлаждённое" vs "замороженное") and CSS ellipsis eats
-                exactly that suffix. Long-press is the recovery; opening
-                the row is the other.
+                characters. Cyrillic and Uzbek catalogue names
+                disambiguate at the END ("...рафинированное" vs
+                "...нерафинированное", "охлаждённое" vs "замороженное")
+                and CSS ellipsis eats exactly that suffix, so opening the
+                row shows the whole name. The `title` helps a mouse only:
+                touch has no tooltip (RUNWEB1-11).
                 Review WALK-02 (2026-11-09): two lines before the
                 ellipsis. At 320px in Russian the payment label, the
                 quantity and the money took their floors and left the
@@ -1872,7 +1890,8 @@ export function PurchaseRow({
                 the 68px floor and takes ~60px from the name on every
                 unpriced row. It pairs with "~" as one three-mark
                 notation — nothing / ~ / ? — and the localized phrase
-                still reaches a screen reader and a long-press. */}
+                still reaches a screen reader through the state cell's
+                label. */}
             <span
               className={`shrink-0 whitespace-nowrap text-right text-old-label font-semibold tabular-nums ${moneyInk}`}
               title={carried ? rawPriceTitle(lastPrice) : i18n.t('run.price.fillIn')}
@@ -1948,8 +1967,8 @@ export function PurchaseRow({
                 {/* M3.36: in thousands mode the lastPrice hint is shown
                    as the same scale the user is typing — so a row that
                    says "K·UZS" with input "147.5" lines up with a hint
-                   "147.5K" rather than "147,500". Tooltip preserves the
-                   raw UZS for a long-press inspection. */}
+                   "147.5K" rather than "147,500". The tooltip gives a
+                   mouse the unscaled figure. */}
                 <span
                   className="tabular-nums"
                   title={priceInThousands ? `${formatMoney(lastPrice)} ${currency}` : undefined}
@@ -2356,10 +2375,7 @@ export function PurchaseRow({
               greyscale without spending --c-danger on the eye. Muted,
               not subtle: --c-fg-subtle is 3.22:1 and the purchaser still
               has to find this row by name when the vendor restocks. */}
-          <span
-            className={`${RUN_ROW_NAME_BASE} text-[var(--c-fg-muted)] line-through`}
-            title={skuName}
-          >
+          <span className={`${RUN_ROW_NAME_FULL} text-[var(--c-fg-muted)] line-through`}>
             {skuName}
           </span>
 
@@ -2405,12 +2421,11 @@ export function PurchaseRow({
       {/* The note is prose, so it cannot live in a number track. Second
           line, indented to the name's left edge, only when there is one.
           It used to sit in the flex-1 meta span, where it was the first
-          thing a long name deleted. */}
+          thing a long name deleted. RUNWEB1-11: it wraps; it was cut to
+          one line with the rest in a tooltip touch never shows, and this
+          row opens nothing. */}
       {item.unavailableNote ? (
-        <p
-          className={`${SUBLINE} truncate text-old-label text-[var(--c-fg-muted)]`}
-          title={item.unavailableNote}
-        >
+        <p className={`${SUBLINE} break-words text-old-label text-[var(--c-fg-muted)]`}>
           {item.unavailableNote}
         </p>
       ) : null}
