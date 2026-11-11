@@ -25,7 +25,7 @@ import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 
 interface LangOption {
   code: Locale;

@@ -1,24 +1,18 @@
 /**
- * CMP-FE-3 (2026-10-31): replay of the offline outbox, for the whole app.
+ * The replay handler for every procedure a page may put in the offline
+ * outbox (CMP-FE-3, 2026-10-31). hooks/useOutboxReplay.ts registers them
+ * once, at app level; engine.ts calls them when it flushes.
  *
  * Each page used to register replay handlers for its own procedures when
  * it mounted (OrderPage, RunPage, ConfirmPage). After a reload on the
  * order tab, a purchase queued offline therefore waited — however long
  * the network had been back — until someone opened the purchase tab.
- * Mounted once in App, this registers a handler for every procedure any
- * page queues, says when a queued write is dropped, and runs the flushes
- * (start, reconnect, return from background, sign-in, a slow timer).
- * Pages only enqueue (useOfflineQueue).
+ *
+ * Review COREWEB2-14 (2026-11-11): was lib/outboxReplay.ts, which also
+ * held the app-level hook.
  */
-import { useEffect, useRef } from 'react';
-import { trpc } from './trpc';
-import {
-  registerReplayHandlers,
-  setOfflineDropHandler,
-  useOutboxFlushTriggers,
-} from '../hooks/useOfflineQueue';
-import type { OutboxEntry } from './idb';
-import { useOfflineDropToast } from './offlineDrop';
+import type { trpc } from '../trpc';
+import type { ReplayFn } from './engine';
 
 /** Every procedure a page may put in the outbox. */
 export const REPLAYED_PROCEDURES = [
@@ -35,7 +29,6 @@ export const REPLAYED_PROCEDURES = [
 ] as const;
 export type ReplayedProcedure = (typeof REPLAYED_PROCEDURES)[number];
 
-type ReplayFn = (entry: OutboxEntry) => Promise<void>;
 type Utils = ReturnType<typeof trpc.useUtils>;
 
 /**
@@ -81,17 +74,4 @@ export function replayHandlers(utils: Utils): Record<ReplayedProcedure, ReplayFn
     'run.confirmStore': replay(utils.client.run.confirmStore.mutate, run),
     'run.markStoreItemsOk': replay(utils.client.run.markStoreItemsOk.mutate, run),
   };
-}
-
-export function useOutboxReplay(): void {
-  const utils = trpc.useUtils();
-  const dropToast = useOfflineDropToast();
-  const dropToastRef = useRef(dropToast);
-  dropToastRef.current = dropToast;
-  useEffect(() => registerReplayHandlers(replayHandlers(utils)), [utils]);
-  useEffect(() => {
-    setOfflineDropHandler((info) => dropToastRef.current(info));
-    return () => setOfflineDropHandler(null);
-  }, []);
-  useOutboxFlushTriggers();
 }

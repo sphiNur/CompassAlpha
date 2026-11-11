@@ -19,7 +19,7 @@ import { CATALOG_TEXT_MAX, SKU_STEPS, SKU_UNITS } from '@compass/contracts/limit
 import type { SkuStep, SkuUnit } from '@compass/contracts';
 import { snapStepToCanonical } from './skuStep';
 import { trpc } from '../../../lib/trpc';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';

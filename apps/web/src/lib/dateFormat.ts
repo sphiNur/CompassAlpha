@@ -106,6 +106,9 @@ export function makeDateFormatters(locale: Locale, now: () => Date = () => new D
   };
 }
 
+/** The formatters for one locale (makeDateFormatters; useDateFormat in a component). */
+export type DateFormatters = ReturnType<typeof makeDateFormatters>;
+
 /**
  * A time zone's name in the UI language ("Uzbekistan Standard Time",
  * 「乌兹别克斯坦标准时间」), or its IANA id where the runtime cannot name it.

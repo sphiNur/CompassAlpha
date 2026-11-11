@@ -15,7 +15,7 @@ import {
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { planName } from '../../../lib/planName';
 import { useI18n } from '../../../hooks/useI18n';
 import { localDateValue } from '../operations/financeDates';

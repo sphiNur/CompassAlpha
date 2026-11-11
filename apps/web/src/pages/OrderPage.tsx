@@ -30,8 +30,11 @@ import {
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, useTelegramBackButton, haptic } from '../hooks/useTelegram';
-import { staysQueued, useOfflineQueue } from '../hooks/useOfflineQueue';
+import { usePageMainButton } from '../hooks/usePageMainButton';
+import { useTelegramBackButton } from '../hooks/useTelegram';
+import { haptic } from '../lib/telegram';
+import { staysQueued } from '../lib/outbox/policy';
+import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { orgToday } from '../lib/calendarDate';
 import { frozenOrderDate } from './order/orderDate';
 import { outbox } from '../lib/idb';
@@ -57,7 +60,7 @@ import {
   type ExtraDraft,
   type ExtraLine,
 } from './order/extraRows';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 import { normalizeQuery, rankNameLike } from '../lib/searchMatch';
 import {
   useDateFormat,
@@ -216,7 +219,7 @@ export function OrderPage() {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   // The offline outbox. Its replay (and the "did not sync" toast) lives at
-  // app level now (CMP-FE-3, lib/outboxReplay.ts).
+  // app level now (CMP-FE-3, hooks/useOutboxReplay.ts).
   const offline = useOfflineQueue();
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //

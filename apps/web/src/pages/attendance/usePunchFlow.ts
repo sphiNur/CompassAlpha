@@ -4,9 +4,9 @@
  */
 import { useRef, useState, useSyncExternalStore } from 'react';
 import type { CatalogKey } from '@compass/i18n';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { devicePlatform } from '../../lib/attendanceDevice';
-import { useErrToast } from '../../lib/errToast';
+import { useErrToast } from '../../hooks/useErrToast';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { punchFlow } from './punchFlow';
 

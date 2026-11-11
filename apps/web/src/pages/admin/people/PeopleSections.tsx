@@ -45,10 +45,10 @@ import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { copyText } from '../../../lib/clipboard';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
-import { getTg } from '../../../hooks/useTelegram';
+import { getTg } from '../../../lib/telegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import {
   inviteLink as makeInviteLink,

@@ -38,10 +38,10 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { useCurrency } from '../hooks/useCurrency';
-import { haptic } from '../hooks/useTelegram';
+import { haptic } from '../lib/telegram';
 import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 import { extrasChanged, submittedDiff } from './order/submittedDiff';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
@@ -128,9 +128,9 @@ export function ApprovalPage() {
   // Manager taps Approve, network fails, they feel a buzz and assume "done"
   // since the toast they're used to never appears. Bad. Now every error
   // path surfaces a toast — domain errors get the i18n'd code translated;
-  // unknown errors get a generic "something went wrong". M1.9 (2026-05-07):
-  // hoisted the regex + handler shape into `lib/errToast.ts` so the same
-  // logic lives in one place and we can't drift across pages.
+  // unknown errors get the action's own failure sentence (DX-COPY-8).
+  // M1.9 (2026-05-07): the regex and handler shape live in one place
+  // (hooks/useErrToast.ts), so pages cannot drift apart.
   const errToast = useErrToast();
   const claim = trpc.order.claim.useMutation({
     onSuccess: () => {

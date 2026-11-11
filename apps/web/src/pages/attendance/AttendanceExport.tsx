@@ -5,8 +5,8 @@
 import { useState } from 'react';
 import { Button } from '@compass/ui';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
-import { haptic } from '../../hooks/useTelegram';
-import { useErrToast } from '../../lib/errToast';
+import { haptic } from '../../lib/telegram';
+import { useErrToast } from '../../hooks/useErrToast';
 import { saveFile } from '../../lib/fileDownload';
 import { trpc } from '../../lib/trpc';
 import { orgMonth } from '../../lib/calendarDate';

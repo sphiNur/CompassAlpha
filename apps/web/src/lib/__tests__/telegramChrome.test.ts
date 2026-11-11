@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { onColorChange } from '../useTelegram';
+import { onColorChange } from '../telegram';
 
 describe('onColorChange (review COREWEB2-26)', () => {
   it('paints a colour once, and again only when it changes', () => {

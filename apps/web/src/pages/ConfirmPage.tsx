@@ -28,7 +28,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { haptic } from '../hooks/useTelegram';
+import { haptic } from '../lib/telegram';
 import { useDateFormat, useI18n, useProductNameParts } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';

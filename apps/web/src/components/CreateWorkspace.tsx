@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button, Field, Input, SectionLabel, useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { trpc } from '../lib/trpc';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 import { useAuthStore } from '../stores/authStore';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 

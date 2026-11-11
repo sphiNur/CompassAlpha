@@ -37,11 +37,7 @@ export function reloadApp(reason: ReloadReason, fromBuild: string | null = null)
   window.location.reload();
 }
 
-/**
- * Report why the previous page load ended, once. A load with no record is
- * a cold start or a reload the app did not ask for (the user, the
- * WebView, the OS reclaiming memory), which is worth knowing too.
- */
+/** When the page last reloaded for a missing chunk (reloadForStaleChunk). */
 const STALE_CHUNK_KEY = 'compass.staleChunkReloadAt';
 
 /**
@@ -67,6 +63,11 @@ export function reloadForStaleChunk(withinMs: number): boolean {
   return true;
 }
 
+/**
+ * Report why the previous page load ended, once. A load with no record is
+ * a cold start or a reload the app did not ask for (the user, the
+ * WebView, the OS reclaiming memory), which is worth knowing too.
+ */
 export function reportLastReload(): void {
   let record: ReloadRecord | null = null;
   try {

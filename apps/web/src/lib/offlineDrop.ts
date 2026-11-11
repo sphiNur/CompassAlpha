@@ -5,12 +5,9 @@
  * change didn't sync, please review", which left people guessing which of
  * their taps was lost.
  */
-import { useToast } from '@compass/ui';
-import { useI18n } from '../hooks/useI18n';
-import type { OfflineDropInfo } from '../hooks/useOfflineQueue';
+import type { CatalogKey as Key } from '@compass/i18n';
+import type { OfflineDropInfo } from './outbox/engine';
 import { I18N_KEY_RE, withoutFinalStop } from './errorText';
-
-type Key = Parameters<ReturnType<typeof useI18n>['t']>[0];
 
 /** The action label for each run / receiving procedure (order changes use the generic text). */
 const ACTION_KEYS: Record<string, Key> = {
@@ -50,7 +47,8 @@ export function offlineDropText(
  * DX-DLV-06 (2026-11-01): a write that was saved offline and then refused
  * is lost; a 3.5-second toast went by before people read it, and the
  * page then said "nothing to receive" as if nothing had happened. The
- * toast now stays until it is dismissed with 知道了.
+ * toast now stays until it is dismissed with 知道了. The app shows it
+ * from hooks/useOutboxReplay.ts.
  */
 export function offlineDropToastOptions(gotIt: string): {
   tone: 'danger';
@@ -58,11 +56,4 @@ export function offlineDropToastOptions(gotIt: string): {
   actions: Array<{ label: string }>;
 } {
   return { tone: 'danger', ttlMs: 0, actions: [{ label: gotIt }] };
-}
-
-export function useOfflineDropToast(): (info: OfflineDropInfo) => void {
-  const i18n = useI18n();
-  const toast = useToast();
-  return (info) =>
-    toast.show(offlineDropText(i18n.t, info), offlineDropToastOptions(i18n.t('common.gotIt')));
 }

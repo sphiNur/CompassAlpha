@@ -30,7 +30,7 @@ import { useEffect, useState } from 'react';
 import { Banner, Button, ConfirmSheet, DataState, EmptyState } from '@compass/ui';
 import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
-import { haptic } from '../hooks/useTelegram';
+import { haptic } from '../lib/telegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
@@ -45,7 +45,7 @@ import {
   type LocationFailure,
 } from '../lib/attendanceLocation';
 import { GeoMap, type GeoArea } from '../components/geo/GeoMap';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 import { trpc } from '../lib/trpc';
 import { loadFaceTracker } from '../lib/faceTracker';
 import { FaceConsentSheet } from './attendance/FaceConsentSheet';

@@ -23,7 +23,7 @@ import {
 } from '@compass/contracts/schemas/realtime';
 import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
-import { useRefreshSession } from '../lib/refreshSession';
+import { useRefreshSession } from './useRefreshSession';
 import { PUSH_KEYS, REOPEN_KEYS } from './realtimeKeys';
 import { hasLocalWrites } from '../lib/localWrites';
 

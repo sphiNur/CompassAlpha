@@ -47,7 +47,8 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { usePageMainButton } from '../hooks/usePageMainButton';
+import { haptic } from '../lib/telegram';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { confirmThen } from '../lib/confirm';
 import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
@@ -61,9 +62,9 @@ import { useQueueOnNetworkError, useStableIdempotencyKey } from '../hooks/useOff
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
-import { useErrToast } from '../lib/errToast';
+import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty, formatMoney } from '../lib/format';
-import { useCanSeePrices } from '../lib/pricesVisible';
+import { useCanSeePrices } from '../hooks/useStorePermission';
 import { itemProgressCounts, pendingExtrasOf } from './runs/lib/runProgress';
 import { otherStoreSkusOf } from './runs/types';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
@@ -246,11 +247,11 @@ export function RunPage() {
     [utils],
   );
   // Purchases queue offline; their replay (with the first attempt's
-  // idempotency key) is app-level now (CMP-FE-3, lib/outboxReplay.ts).
+  // idempotency key) is app-level now (CMP-FE-3, hooks/useOutboxReplay.ts).
   const offline = useOfflineQueue();
 
   // ---- Mutations ------------------------------------------------------
-  // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
+  // M1.9 (2026-05-07): hoisted into `hooks/useErrToast.ts` so the same
   // translation logic doesn't live in 3 different pages with subtly
   // different shapes. Server-side TRPCError uses i18n keys like
   // `run.errors.runFrozen` as `message`; the helper translates them

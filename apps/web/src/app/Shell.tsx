@@ -60,7 +60,7 @@ const ApprovalPage = resilientLazy(importApprovalPage);
 const ConfirmPage = resilientLazy(importConfirmPage);
 // 2026-11-05: clock in / out, only for members switched on for it.
 const AttendancePage = resilientLazy(importAttendancePage);
-import { resilientLazy } from '../lib/resilientLazy';
+import { resilientLazy } from '../components/resilientLazy';
 import { useAuthStore } from '../stores/authStore';
 import {
   isTabVisible,
@@ -83,12 +83,9 @@ import { setPageTitleBase } from '../lib/pageTitle';
 import { createTabScrollMemory, restoreScroll } from '../lib/tabScroll';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
-import {
-  getTg,
-  isInTelegram,
-  useTelegramSettingsButton,
-  usePageMainButtonState,
-} from '../hooks/useTelegram';
+import { getTg, isInTelegram } from '../lib/telegram';
+import { useTelegramSettingsButton } from '../hooks/useTelegram';
+import { usePageMainButtonState } from '../hooks/usePageMainButton';
 import { useAppMutating, useNavigationBlocked } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { StoreChip, useStoreContext } from '../components/StoreSwitcher';

@@ -19,7 +19,7 @@
  *   popup still decides;
  * - an old client gets the browser's `confirm()`.
  */
-import { getTg, isInTelegram } from '../hooks/useTelegram';
+import { getTg, isInTelegram } from './telegram';
 
 /** The longest message Telegram's popup takes, counted after trimming. */
 export const TELEGRAM_POPUP_MAX = 256;

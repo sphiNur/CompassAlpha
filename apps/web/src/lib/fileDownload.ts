@@ -6,7 +6,7 @@
  * browser; a plain browser follows the link.
  */
 import { API_URL } from './trpc';
-import { getTg, isInTelegram } from '../hooks/useTelegram';
+import { getTg, isInTelegram } from './telegram';
 
 export function absoluteUrl(path: string): string {
   return new URL(`${API_URL}${path}`, window.location.origin).href;

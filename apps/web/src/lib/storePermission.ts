@@ -1,4 +1,4 @@
-import { useAuthStore, type AuthSession } from '../stores/authStore';
+import type { AuthSession } from '../stores/authStore';
 
 /**
  * Whether `key` holds for the actor in `storeId`: the session's per-store
@@ -16,9 +16,4 @@ export function hasStorePermission(
   if (!session) return false;
   const storePerms = storeId ? session.storePermissions?.[storeId] : undefined;
   return (storePerms ?? session.permissions).includes(key);
-}
-
-export function useStorePermission(key: string, storeId: string | null | undefined): boolean {
-  const session = useAuthStore((s) => s.session);
-  return hasStorePermission(session, storeId, key);
 }

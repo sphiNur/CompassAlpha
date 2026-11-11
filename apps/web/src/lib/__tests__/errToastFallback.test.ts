@@ -13,7 +13,7 @@
  * written by hand.
  */
 import { describe, expect, it } from 'bun:test';
-import type { WriteFallbackKey } from '../errToast';
+import type { WriteFallbackKey } from '../errorText';
 
 describe('error toasts', () => {
   it('never fall back to the bare "Something went wrong"', () => {

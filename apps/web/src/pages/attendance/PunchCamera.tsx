@@ -25,7 +25,7 @@ import { useRef, useState } from 'react';
 import { Banner, Button } from '@compass/ui';
 import type { CatalogKey } from '@compass/i18n';
 import { useI18n } from '../../hooks/useI18n';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { createActWatcher, type Act } from './faceActs';
 import { useAutoCapture, useCamera, useFrameLoop, useTracker } from './faceCapture';
 import { basicGuide, type Guide } from './faceGuide';

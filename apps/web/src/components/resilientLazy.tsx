@@ -6,12 +6,15 @@
  * small placeholder instead, which imports again when the connection
  * returns or on Retry and renders the real page — or, as browsers also
  * cache a failed import, reloads once the network is back.
+ *
+ * Review COREWEB2-14 (2026-11-11): moved here from lib/; it draws a
+ * component, with the i18n hook.
  */
 import { lazy, useCallback, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { Button, EmptyState } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
-import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from './reload';
+import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from '../lib/reload';
 
 type PageModule<P> = { default: ComponentType<P> };
 

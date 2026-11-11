@@ -15,7 +15,7 @@ import {
 } from '@compass/ui';
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { useI18n } from '../../../hooks/useI18n';
 import {
   CatalogRowActions,

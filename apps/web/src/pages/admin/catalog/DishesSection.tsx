@@ -21,14 +21,14 @@ import {
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
-import { useErrToast } from '../../../lib/errToast';
+import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney } from '../../../lib/format';
 import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
 import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
 import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
 import { checkDishDraft, type DishIngredientDraft } from './dishDraft';
-import { haptic } from '../../../hooks/useTelegram';
+import { haptic } from '../../../lib/telegram';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 
 // ============ Dishes (M2.0b) ============

@@ -7,10 +7,10 @@ import { useId, useState } from 'react';
 import { Banner, Button, Field, FieldError, IconChevronRight, Select, useToast } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
 import { trpc } from '../../lib/trpc';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 import { confirmThen } from '../../lib/confirm';
-import { useErrToast } from '../../lib/errToast';
+import { useErrToast } from '../../hooks/useErrToast';
 import { formatMoney } from '../../lib/format';
 import { newDetailId, newWageItem, type WageItemDraft } from './draftModel';
 import {

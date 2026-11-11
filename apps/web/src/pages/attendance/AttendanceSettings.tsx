@@ -17,9 +17,9 @@ import {
 } from '@compass/contracts/limits';
 import { Button, DataState, Field, Input, Switch, useToast } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
-import { useErrToast } from '../../lib/errToast';
+import { useErrToast } from '../../hooks/useErrToast';
 import { GeoMap } from '../../components/geo/GeoMap';
 import type { AttendancePolicyData } from '@compass/api/src/trpc/routers/attendance';
 import { trpc } from '../../lib/trpc';

@@ -12,7 +12,7 @@ import {
   stocktakeCountProblem,
 } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../../../lib/trpc';
-import { useErrToast } from '../../../../lib/errToast';
+import { useErrToast } from '../../../../hooks/useErrToast';
 import { formatQty } from '../../../../lib/format';
 import { useI18n, useProductName, useUnitLabel } from '../../../../hooks/useI18n';
 import { nativeConfirm } from '../../shared';

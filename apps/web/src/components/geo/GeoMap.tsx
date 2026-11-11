@@ -3,7 +3,7 @@
  * only download where a map is on screen.
  */
 import { Suspense } from 'react';
-import { resilientLazy } from '../../lib/resilientLazy';
+import { resilientLazy } from '../resilientLazy';
 import type { GeoMapViewProps } from './GeoMapView';
 
 export type { GeoArea, GeoPoint } from './GeoMapView';

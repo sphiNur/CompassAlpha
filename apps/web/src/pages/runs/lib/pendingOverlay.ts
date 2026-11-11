@@ -12,7 +12,7 @@
  * and once the queue replays (or drops) the entry the server copy is
  * simply shown again.
  */
-import type { PendingWrite } from '../../../hooks/useOfflineQueue';
+import type { PendingWrite } from '../../../lib/outbox/policy';
 
 type Split = {
   runId: string;

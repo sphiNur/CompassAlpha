@@ -4,7 +4,7 @@
  * out of ConfirmPage.
  */
 import { Chip, ChipBar, NameCell } from '@compass/ui';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../hooks/useI18n';
 import { formatQty } from '../../lib/format';
 import { DECISION_LABEL, DECISIONS, type ConfirmDecisionStatus } from './confirmLogic';

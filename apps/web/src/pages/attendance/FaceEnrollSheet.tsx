@@ -20,7 +20,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
 import { Banner, Button, Sheet } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
-import { haptic } from '../../hooks/useTelegram';
+import { haptic } from '../../lib/telegram';
 import { errorTextOf, serverErrorKey, type ErrorVars } from '../../lib/errorText';
 import { trpc } from '../../lib/trpc';
 import { readRefusals, type Refusal } from './enrollRefusals';

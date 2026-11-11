@@ -6,7 +6,7 @@ import {
   withData,
   type OverlayRun,
 } from '../pendingOverlay';
-import type { PendingWrite } from '../../../../hooks/useOfflineQueue';
+import type { PendingWrite } from '../../../../lib/outbox/policy';
 
 const run: OverlayRun = {
   id: 'run-1',

@@ -28,7 +28,7 @@ import {
 } from '@compass/ui';
 import { BACKDATE_LIMIT_DAYS } from '@compass/contracts/limits';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
-import { usePageMainButton } from '../hooks/useTelegram';
+import { usePageMainButton } from '../hooks/usePageMainButton';
 import { useI18n } from '../hooks/useI18n';
 import { zoneName } from '../lib/dateFormat';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
