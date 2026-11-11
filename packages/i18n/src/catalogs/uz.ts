@@ -1755,7 +1755,7 @@ export const uz = {
   'finance.preset.custom': 'Maxsus',
   'finance.range.start': 'Boshlanish sanasi',
   'finance.range.end': 'Tugash sanasi',
-  'finance.range.invalid':
+  'finance.errors.invalidRange':
     'Boshlanish va tugash sanasini tanlang; boshlanish tugashdan keyin boʻlmasin.',
   'finance.view.daily': 'Kunlik',
   'finance.view.bySupplier': 'Yetkazib beruvchi boʻyicha',
@@ -1991,7 +1991,7 @@ export const uz = {
   'run.history.lastDays': 'Oxirgi {n} kun',
   'run.history.dateFrom': 'Boshlanishi',
   'run.history.dateTo': 'Tugashi',
-  'run.history.invalidDateRange': 'Tugash sanasi boshlanish sanasidan oldin boʻlmasligi kerak.',
+  'run.errors.invalidDateRange': 'Tugash sanasi boshlanish sanasidan oldin boʻlmasligi kerak.',
   'run.history.paymentFilter': 'Toʻlov usuli',
   'run.history.payment.all': 'Barcha toʻlovlar',
   'run.history.payment.cash': 'Naqd pul',

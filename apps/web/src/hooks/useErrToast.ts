@@ -71,7 +71,7 @@ export function useErrToast(): (
       online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
       retrySafe: options?.retrySafe ?? false,
     });
-    toast.error(i18n.t(key as Parameters<typeof i18n.t>[0], vars));
+    toast.error(i18n.t(key, vars));
   };
 }
 
@@ -85,7 +85,7 @@ export function useTranslateError(): (err: unknown, defaultKey: WriteFallbackKey
   const i18n = useI18n();
   return (err, defaultKey) => {
     const key = serverErrorKey(err);
-    if (key) return i18n.t(key as Parameters<typeof i18n.t>[0], errorVars(err));
+    if (key) return i18n.t(key, errorVars(err));
     return i18n.t(defaultKey);
   };
 }

@@ -15,10 +15,9 @@
  *     description for a key the catalog does not know yet;
  *   - permission groups show `permission.group.<prefix>`.
  */
-import type { I18n } from '@compass/i18n';
+import { isCatalogKey, type I18n } from '@compass/i18n';
 
 type T = I18n['t'];
-type Key = Parameters<T>[0];
 
 /**
  * The seeded English values (packages/db/src/seed-data.ts BUILTIN_ROLES).
@@ -44,8 +43,7 @@ export const BUILTIN_ROLE_DEFAULTS: Record<string, { name: string; description: 
 
 /** `t(key)` when the catalog has the key, else `fallback`. */
 function known(t: T, key: string, fallback: string): string {
-  const v = t(key as Key);
-  return v === key ? fallback : v;
+  return isCatalogKey(key) ? t(key) : fallback;
 }
 
 export function roleLabeller(t: T) {

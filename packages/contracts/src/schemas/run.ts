@@ -39,7 +39,7 @@ export const RunHistoryInputSchema = z
         code: z.ZodIssueCode.custom,
         path: ['dateTo'],
         // RUNAPI-19: a catalog key the client can show (was English).
-        message: 'run.history.invalidDateRange',
+        message: 'run.errors.invalidDateRange',
       });
     }
   });

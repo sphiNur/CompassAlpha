@@ -1,4 +1,4 @@
-import type { I18n } from '@compass/i18n';
+import { isCatalogKey, type I18n } from '@compass/i18n';
 
 /**
  * A unit's label. R2-COPY-4 (2026-10-31): the counted units are ICU
@@ -29,13 +29,12 @@ export function unitLabeller(t: I18n['t']): UnitLabel {
   ): string => {
     if (!unit) return '';
     const canonical = unit.toLowerCase();
-    // i18n.t falls back to the key itself when missing; we want to
-    // fall back to the original unit string (with original case)
-    // so SKU-level lowercase fix doesn't hide non-canonical units.
-    const key = ('unit.' + canonical) as Parameters<typeof t>[0];
+    // A unit the catalog has no word for reads as typed (original case),
+    // so the SKU-level lowercase fix doesn't hide non-canonical units.
+    const key = `unit.${canonical}`;
+    if (!isCatalogKey(key)) return unit;
     const n = qty === null || qty === undefined || qty === '' ? 1 : Number(qty);
-    const localized = t(key, { n: Number.isFinite(n) ? n : 1 });
-    return localized === key ? unit : localized;
+    return t(key, { n: Number.isFinite(n) ? n : 1 });
   };
   return Object.assign(label, {
     uncounted: (unit: string | null | undefined) => label(unit, undefined),

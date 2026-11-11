@@ -18,6 +18,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
+import type { CatalogKey } from '@compass/i18n';
 import { Banner, Button, Sheet } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
@@ -56,9 +57,11 @@ export function FaceEnrollSheet({
   const [guide, setGuide] = useState<RingGuide | null>(null);
   const [slow, setSlow] = useState(false);
   const [problems, setProblems] = useState<Refusal[]>([]);
-  const [failure, setFailure] = useState<{ key: string; vars: ErrorVars; code: string } | null>(
-    null,
-  );
+  const [failure, setFailure] = useState<{
+    key: CatalogKey;
+    vars: ErrorVars;
+    code: string;
+  } | null>(null);
   const [round, setRound] = useState(0);
   // Kept out of state: the frame loop writes them.
   const shots = useRef<Partial<Record<EnrollPose, string>>>({});
@@ -226,7 +229,7 @@ export function FaceEnrollSheet({
           failure ? (
             <Banner tone="danger" title={i18n.t('attendance.errors.enrollFailed')}>
               {failure.key !== 'attendance.errors.enrollFailed' ? (
-                <p>{i18n.t(failure.key as Parameters<typeof i18n.t>[0], failure.vars)}</p>
+                <p>{i18n.t(failure.key, failure.vars)}</p>
               ) : null}
               {failure.code ? (
                 <p className="mt-1 break-all text-old-label text-[var(--c-fg-muted)]">

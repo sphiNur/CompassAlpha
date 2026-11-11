@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { isCatalogKey } from '@compass/i18n';
 import { Button, Banner, Field, FieldLabel, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
@@ -7,7 +8,7 @@ import { getTg, haptic } from '../lib/telegram';
 import { I18nGate, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { STALE } from '../config/timings';
 import { useTranslateError } from '../hooks/useErrToast';
-import { errorTextKey, withoutFinalStop } from '../lib/errorText';
+import { errorTextKey, isErrorKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useRefreshSession } from '../hooks/useRefreshSession';
 import { inviteSettled, markInviteSettled } from '../lib/launchInvite';
@@ -299,7 +300,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
       // was shown. Never show a raw message: a server key is translated,
       // a rejected token reads as an invalid link, the rest is generic.
       const code = (err as { data?: { code?: string } }).data?.code;
-      const key = /^[a-z]+\.errors?\./.test(err.message)
+      const key = isErrorKey(err.message)
         ? err.message
         : code === 'BAD_REQUEST'
           ? 'auth.errors.inviteNotFound'
@@ -680,8 +681,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
  * a hard-coded Chinese switch. Anything else is shown as the server sent it.
  */
 function nonTelegramErrorMessage(i18n: ReturnType<typeof useI18n>, message: string): string {
-  // An unknown message is not a key: format() hands it back unchanged.
-  return i18n.t(message as Parameters<typeof i18n.t>[0]);
+  return isCatalogKey(message) ? i18n.t(message) : message;
 }
 
 interface LoginModeDiagnostics {

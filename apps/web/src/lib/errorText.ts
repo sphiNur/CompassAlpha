@@ -4,12 +4,27 @@
  * Kept free of React / @compass/ui so it can be unit-tested and shared by
  * useErrToast (mutation toasts) and UiLabelsBridge (DataState's error banner).
  */
-import type { CatalogKey } from '@compass/i18n';
+import { isCatalogKey, type CatalogKey } from '@compass/i18n';
 import { isLikelyNetworkError } from './networkError';
 import { toQtyInput } from './format';
 
-/** Regex matching server-emitted i18n keys (e.g. `order.errors.cannotApprove`). */
-export const I18N_KEY_RE = /^[a-z]+\.errors?\./;
+/**
+ * The shape of the keys the server sends as errors (e.g.
+ * `order.errors.cannotApprove`). The server keeps to it
+ * (apps/api/src/__tests__/thrown-error-keys.test.ts); `common.error`, the
+ * server's placeholder for an internal error, deliberately does not match
+ * (DX-COPY-8: the caller's own failure sentence says more).
+ */
+const I18N_KEY_RE = /^[a-z]+\.errors\./;
+
+/**
+ * A server message that names a sentence: the shape above, and a key this
+ * build's catalog has. Review COREWEB2-19 (2026-11-12): a key from a newer
+ * server used to be shown as the key itself.
+ */
+export function isErrorKey(value: unknown): value is CatalogKey {
+  return typeof value === 'string' && I18N_KEY_RE.test(value) && isCatalogKey(value);
+}
 
 /**
  * - a server i18n key → that key
@@ -17,8 +32,8 @@ export const I18N_KEY_RE = /^[a-z]+\.errors?\./;
  * - anything else (framework text, stack-ish strings) → `fallbackKey`,
  *   never the raw message.
  */
-export function errorTextKey(message: string | undefined, fallbackKey: string): string {
-  if (typeof message === 'string' && I18N_KEY_RE.test(message)) return message;
+export function errorTextKey(message: string | undefined, fallbackKey: CatalogKey): CatalogKey {
+  if (isErrorKey(message)) return message;
   const fromZod = zodIssueKey(message);
   if (fromZod) return fromZod;
   if (isServerSideFailure(message)) return 'common.errors.internal';
@@ -58,18 +73,14 @@ export function errorVars(err: unknown): ErrorVars {
  * ("check the highlighted fields") is skipped: the caller's own fallback
  * says more than that, as before.
  */
-export function serverErrorKey(err: unknown): string | null {
+export function serverErrorKey(err: unknown): CatalogKey | null {
   const raw = (err as { message?: unknown } | null)?.message;
   const message = typeof raw === 'string' ? raw : undefined;
-  if (message && I18N_KEY_RE.test(message)) return message;
+  if (isErrorKey(message)) return message;
   const fromZod = zodIssueKey(message);
   if (fromZod) return fromZod;
   const dataKey = (err as { data?: { i18nKey?: unknown } } | null)?.data?.i18nKey;
-  return typeof dataKey === 'string' &&
-    I18N_KEY_RE.test(dataKey) &&
-    dataKey !== 'common.errors.validation'
-    ? dataKey
-    : null;
+  return isErrorKey(dataKey) && dataKey !== 'common.errors.validation' ? dataKey : null;
 }
 
 /**
@@ -78,8 +89,8 @@ export function serverErrorKey(err: unknown): string | null {
  */
 export function errorTextOf(
   err: unknown,
-  fallbackKey: string,
-): { key: string; vars: ErrorVars } {
+  fallbackKey: CatalogKey,
+): { key: CatalogKey; vars: ErrorVars } {
   const key = serverErrorKey(err);
   if (key) return { key, vars: errorVars(err) };
   const raw = (err as { message?: unknown } | null)?.message;
@@ -105,9 +116,9 @@ export type WriteFallbackKey = Exclude<CatalogKey, 'common.error'>;
  */
 export function writeErrorTextOf(
   err: unknown,
-  fallbackKey: string,
+  fallbackKey: CatalogKey,
   write: { online: boolean; retrySafe: boolean },
-): { key: string; vars: ErrorVars } {
+): { key: CatalogKey; vars: ErrorVars } {
   const key = serverErrorKey(err);
   if (key) return { key, vars: errorVars(err) };
   if (!isLikelyNetworkError(err)) return { key: fallbackKey, vars: {} };
@@ -138,15 +149,13 @@ export function isServerSideFailure(message: string | undefined): boolean {
  * issue carries a catalog key ("dishes.errors.codeTaken"), use it rather
  * than the generic fallback.
  */
-export function zodIssueKey(message: string | undefined): string | null {
+export function zodIssueKey(message: string | undefined): CatalogKey | null {
   if (typeof message !== 'string' || !message.trimStart().startsWith('[')) return null;
   try {
     const issues = JSON.parse(message) as Array<{ message?: unknown }>;
     if (!Array.isArray(issues)) return null;
     for (const issue of issues) {
-      if (typeof issue?.message === 'string' && I18N_KEY_RE.test(issue.message)) {
-        return issue.message;
-      }
+      if (isErrorKey(issue?.message)) return issue.message;
     }
   } catch {
     /* not JSON */

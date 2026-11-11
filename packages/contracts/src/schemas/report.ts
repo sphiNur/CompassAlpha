@@ -17,7 +17,7 @@ export function dateRangeInOrder(
   ctx: z.RefinementCtx,
 ): void {
   if (value.startDate > value.endDate) {
-    ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'finance.range.invalid' });
+    ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'finance.errors.invalidRange' });
   }
 }
 

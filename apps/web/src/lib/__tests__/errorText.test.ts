@@ -9,12 +9,29 @@ import {
   writeErrorTextOf,
 } from '../errorText';
 
+// A server key counts only when the catalog has it (COREWEB2-19).
+beforeAll(async () => {
+  await loadCatalog('en');
+});
+
 describe('errorTextKey', () => {
   test('server i18n keys pass through', () => {
     expect(errorTextKey('order.errors.cannotApprove', 'common.errorUnknown')).toBe(
       'order.errors.cannotApprove',
     );
-    expect(errorTextKey('auth.error.x', 'common.errorUnknown')).toBe('auth.error.x');
+  });
+
+  // Review COREWEB2-19 (2026-11-12).
+  test('a key this build does not know reads as the fallback, never as itself', () => {
+    expect(errorTextKey('order.errors.fromANewerServer', 'common.errorUnknown')).toBe(
+      'common.errorUnknown',
+    );
+  });
+
+  test('the internal-error placeholder gets the caller’s own sentence (DX-COPY-8)', () => {
+    expect(errorTextKey('common.error', 'order.toast.adjustFailed')).toBe(
+      'order.toast.adjustFailed',
+    );
   });
 
   test('transport failures map to the network message', () => {
@@ -38,6 +55,13 @@ describe('errorTextKey', () => {
     expect(errorTextKey(zod, 'common.errorUnknown')).toBe('dishes.errors.priceTooLarge');
     const plain = JSON.stringify([{ code: 'invalid_string', message: 'invalid decimal' }]);
     expect(errorTextKey(plain, 'common.errorUnknown')).toBe('common.errorUnknown');
+  });
+
+  test('the finance range refusal is read as its key (COREWEB2-19: was finance.range.invalid)', () => {
+    const zod = JSON.stringify([
+      { code: 'custom', message: 'finance.errors.invalidRange', path: ['endDate'] },
+    ]);
+    expect(errorTextKey(zod, 'common.errorUnknown')).toBe('finance.errors.invalidRange');
   });
 });
 
@@ -84,7 +108,7 @@ describe('errorTextOf: placeholders from the server', () => {
   });
   const say = (err: unknown, locale: 'zh' | 'en' | 'ru' | 'uz' = 'zh') => {
     const { key, vars } = errorTextOf(err, 'common.errorUnknown');
-    return createI18n(locale).t(key as Parameters<ReturnType<typeof createI18n>['t']>[0], vars);
+    return createI18n(locale).t(key, vars);
   };
 
   test('every server error key with a placeholder gets its value', () => {

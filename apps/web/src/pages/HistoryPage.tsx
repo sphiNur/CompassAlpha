@@ -275,7 +275,7 @@ export function HistoryPage() {
 
           <FieldGroup
             label={i18n.t('run.history.dateRange')}
-            error={invalidDateRange ? i18n.t('run.history.invalidDateRange') : null}
+            error={invalidDateRange ? i18n.t('run.errors.invalidDateRange') : null}
           >
             <div className="mb-2 flex flex-wrap gap-2">
               {[7, 30, 90].map((days) => (

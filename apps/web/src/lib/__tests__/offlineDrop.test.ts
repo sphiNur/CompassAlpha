@@ -1,5 +1,11 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { loadCatalog } from '@compass/i18n';
 import { offlineDropText, offlineDropToastOptions } from '../offlineDrop';
+
+// A reason is shown only when this build's catalog has its key (COREWEB2-19).
+beforeAll(async () => {
+  await loadCatalog('en');
+});
 
 const catalog: Record<string, string> = {
   'run.toast.syncFailed': 'A saved change did not sync',

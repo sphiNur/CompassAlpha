@@ -1,15 +1,19 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { createI18n, loadCatalog } from '@compass/i18n';
 import { accessBlock, authErrorText } from '../authAccess';
+
+beforeAll(async () => {
+  await Promise.all([loadCatalog('en'), loadCatalog('zh')]);
+});
 
 describe('authErrorText (CMP-SHL-2)', () => {
   test('translates the key with the catalog current at render time', () => {
     const error = { key: 'auth.errors.invalidInitData' };
-    // Before the zh catalog has loaded the lookup falls back to English…
-    expect(authErrorText({ t: () => 'Telegram session is invalid' }, error)).toBe(
-      'Telegram session is invalid',
-    );
-    // …and the same stored error reads in Chinese once it has.
-    expect(authErrorText({ t: () => 'Telegram 会话无效' }, error)).toBe('Telegram 会话无效');
+    // The same stored error reads in each language it is shown in.
+    for (const i18n of [createI18n('en'), createI18n('zh')]) {
+      expect(authErrorText(i18n, error)).toBe(i18n.t('auth.errors.invalidInitData'));
+      expect(authErrorText(i18n, error)).not.toBe(i18n.t('auth.errors.signInFailed'));
+    }
   });
 
   test('a development message without a key is shown as is', () => {
@@ -36,6 +40,8 @@ describe('accessBlock (CMP-SHL-1)', () => {
 });
 
 test('a key this build does not know reads as the generic failure (CMP-SHL-2)', () => {
-  const t = (k: string) => (k === 'auth.errors.signInFailed' ? 'Sign in failed' : k);
-  expect(authErrorText({ t }, { key: 'auth.errors.somethingNew' })).toBe('Sign in failed');
+  const en = createI18n('en');
+  expect(authErrorText(en, { key: 'auth.errors.somethingNew' })).toBe(
+    en.t('auth.errors.signInFailed'),
+  );
 });

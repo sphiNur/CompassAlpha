@@ -1097,7 +1097,7 @@ export function OrderPage() {
               "Failed to fetch (session refresh did not complete)". */}
           {(() => {
             const said = errorTextOf(sessionQuery.error, 'common.errorUnknown');
-            return i18n.t(said.key as Parameters<typeof i18n.t>[0], said.vars);
+            return i18n.t(said.key, said.vars);
           })()}
         </Banner>
       </div>

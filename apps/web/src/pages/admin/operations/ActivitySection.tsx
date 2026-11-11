@@ -5,6 +5,7 @@
  * shared one 2,260-line file.
  */
 import { useState } from 'react';
+import { isCatalogKey } from '@compass/i18n';
 import { DataState, EmptyState, SectionLabel, Tile, cn, rowGroupClass } from '@compass/ui';
 import { PAGE_SIZE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
@@ -20,9 +21,8 @@ export function ActivitySection() {
   const productName = useProductName();
   const unitLabel = useUnitLabel();
   const eventLabel = (streamType: string, type: string): string => {
-    const key = `ops.event.${type}` as Parameters<typeof i18n.t>[0];
-    const label = i18n.t(key);
-    return label === key ? `${streamType}.${type}` : label;
+    const key = `ops.event.${type}`;
+    return isCatalogKey(key) ? i18n.t(key) : `${streamType}.${type}`;
   };
   const overview = trpc.admin.overview.useQuery();
   const eventsQuery = trpc.admin.recentEvents.useQuery({ limit: PAGE_SIZE.feed });

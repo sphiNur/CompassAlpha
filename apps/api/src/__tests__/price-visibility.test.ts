@@ -455,7 +455,7 @@ describe.skipIf(!SHOULD_RUN)('inputs', () => {
     const bad = { startDate: '2026-10-30', endDate: '2026-10-01' };
     const totals = await errorOf(() => owner.report.totals(bad));
     expect(totals?.code).toBe('BAD_REQUEST');
-    expect(totals?.message).toContain('finance.range.invalid');
+    expect(totals?.message).toContain('finance.errors.invalidRange');
     const lines = await errorOf(() => owner.report.purchaseLines(bad));
     expect(lines?.code).toBe('BAD_REQUEST');
   });
