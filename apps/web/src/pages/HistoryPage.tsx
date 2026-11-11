@@ -13,7 +13,7 @@ import { RunHistoryPage } from './runs/history/RunHistory';
 // calendar date helper instead of two copies).
 import { useAuthStore } from '../stores/authStore';
 import { useReportStore } from '../hooks/useReportStore';
-import { localDateValue } from './admin/operations/financeDates';
+import { localDateValue } from '../lib/calendarDate';
 
 type PaymentFilter = 'all' | 'cash' | 'transfer' | 'mixed';
 type SortOrder = 'newest' | 'oldest';
