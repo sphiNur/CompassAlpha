@@ -15,8 +15,7 @@
  *
  * Pure functions; tests in __tests__/sessionSelection.test.ts.
  */
-import { addMoney } from '@compass/contracts/money';
-import { moneyLine } from '../../../lib/money';
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 
 export type SelectableSession = {
   id: string;
@@ -126,14 +125,7 @@ export type PreviewShape = {
   plannedItems: ReadonlyArray<{ skuId: string; qty: string }>;
   perStoreDemand: ReadonlyArray<{ storeId: string; storeName: string; skuId: string; qty: string }>;
   perSessionDemand?: ReadonlyArray<{ sessionId: string; skuId: string; qty: string }>;
-  supplierBySku: Record<string, { estimatedUnitPrice?: string | null } | null>;
-  lastPurchasePriceBySku?: Record<string, string>;
-  perStoreBudgets?: ReadonlyArray<{
-    storeId: string;
-    storeName: string;
-    estimatedTotal: string;
-    unknownPriceCount: number;
-  }>;
+  perStoreBudgets?: ReadonlyArray<unknown>;
   sessionNotesByStore?: Record<string, string>;
   sessionExtrasByStore?: Record<string, ReadonlyArray<{ sessionId?: string }>>;
 };
@@ -141,8 +133,15 @@ export type PreviewShape = {
 /**
  * Re-aggregate the server preview over the ticked sessions only, keeping
  * its shape so PreviewSummaryCard renders exactly what will be planned.
- * Mirrors run.previewCreatable's aggregation (qty sums, budget =
- * Σ qty × (last purchase price ?? supplier estimate), unknown-price count).
+ * Quantities are summed exactly, in thousandths, as run.previewCreatable
+ * sums them (RUNAPI-05): two orders of 0.1 and 0.2 kg are 0.3 kg, not
+ * 0.30000000000000004.
+ *
+ * Budgets are not re-aggregated, and the selection carries none rather
+ * than the whole day's: no screen reads them (the card prices its own
+ * lines, see previewStats). Review RUNWEB2-12 (2026-11-11): this kept a
+ * copy of the server's budget rule, up to date by hand, which had drifted
+ * from it and was read by nobody.
  *
  * An old server without `perSessionDemand` cannot be re-aggregated; the
  * preview is returned unchanged (as before CA-03).
@@ -159,16 +158,16 @@ export function selectPreview<P extends PreviewShape>(
   for (const d of preview.perStoreDemand) storeNameById.set(d.storeId, d.storeName);
   for (const s of sessions) if (s.storeName) storeNameById.set(s.storeId, s.storeName);
 
-  const aggregated = new Map<string, number>();
-  const perStore = new Map<string, Map<string, number>>();
+  const aggregated = new Map<string, bigint>();
+  const perStore = new Map<string, Map<string, bigint>>();
   for (const d of preview.perSessionDemand) {
     const storeId = storeBySession.get(d.sessionId);
     if (!storeId) continue;
-    const qty = Number(d.qty);
-    if (!(qty > 0)) continue;
-    aggregated.set(d.skuId, (aggregated.get(d.skuId) ?? 0) + qty);
-    const inner = perStore.get(storeId) ?? new Map<string, number>();
-    inner.set(d.skuId, (inner.get(d.skuId) ?? 0) + qty);
+    const qty = qtyMilliOrZero(d.qty);
+    if (qty <= 0n) continue;
+    aggregated.set(d.skuId, (aggregated.get(d.skuId) ?? 0n) + qty);
+    const inner = perStore.get(storeId) ?? new Map<string, bigint>();
+    inner.set(d.skuId, (inner.get(d.skuId) ?? 0n) + qty);
     perStore.set(storeId, inner);
   }
 
@@ -180,34 +179,10 @@ export function selectPreview<P extends PreviewShape>(
         storeId,
         storeName: storeNameById.get(storeId) ?? '—',
         skuId,
-        qty: qty.toString(),
+        qty: milliQty(qty),
       });
     }
   }
-
-  const involvedStoreIds = [...new Set([...perStore.keys(), ...sessions.map((s) => s.storeId)])];
-  const perStoreBudgets = involvedStoreIds.map((storeId) => {
-    let estimatedTotal = 0;
-    let unknownPriceCount = 0;
-    for (const [skuId, qty] of perStore.get(storeId) ?? []) {
-      const price =
-        preview.lastPurchasePriceBySku?.[skuId] ??
-        preview.supplierBySku[skuId]?.estimatedUnitPrice ??
-        null;
-      if (!price) {
-        unknownPriceCount += 1;
-        continue;
-      }
-      // DX-PFE-12: half-up cents per line, added in cents (D1).
-      estimatedTotal = addMoney(estimatedTotal, moneyLine(qty, price));
-    }
-    return {
-      storeId,
-      storeName: storeNameById.get(storeId) ?? '—',
-      estimatedTotal: estimatedTotal.toFixed(2),
-      unknownPriceCount,
-    };
-  });
 
   const selectedStores = new Set(sessions.map((s) => s.storeId));
   const sessionNotesByStore: Record<string, string> = {};
@@ -228,9 +203,9 @@ export function selectPreview<P extends PreviewShape>(
   return {
     ...preview,
     sessions,
-    plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({ skuId, qty: qty.toString() })),
+    plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({ skuId, qty: milliQty(qty) })),
     perStoreDemand,
-    perStoreBudgets,
+    perStoreBudgets: [],
     sessionNotesByStore,
     sessionExtrasByStore,
   } as P;

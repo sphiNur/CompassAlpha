@@ -13,6 +13,7 @@ import {
   isUnusualPrice,
   readDisplayPrice,
   shownPrice,
+  switchPriceUnit,
 } from '../priceMath';
 
 describe('toDisplayPrice', () => {
@@ -155,5 +156,31 @@ describe('shownPrice (review RUNWEB2-01, 2026-11-09)', () => {
     expect(shownPrice('15000', '12.', true)).toBe('15');
     expect(shownPrice('12000', '12.', true)).toBe('12.');
     expect(shownPrice('12000', undefined, true)).toBe('12');
+  });
+});
+
+describe('switchPriceUnit (review RUNWEB1-15, 2026-11-11)', () => {
+  it('keeps the same raw price across the switch, exactly', () => {
+    expect(1.005 * 1000).not.toBe(1005); // the float the row used to print
+    expect(switchPriceUnit('1.005', true, false)).toBe('1005');
+    expect(switchPriceUnit('1005', false, true)).toBe('1.005');
+    expect(switchPriceUnit('147.5', true, false)).toBe('147500');
+    expect(switchPriceUnit('92000.5', false, true)).toBe('92.0005');
+  });
+
+  it('round-trips every price with up to three decimals in thousands', () => {
+    for (let milli = 1; milli <= 200_000; milli += 7) {
+      const shown = String(milli / 1000);
+      const raw = switchPriceUnit(shown, true, false);
+      expect(readDisplayPrice(raw, false)).toBe(raw);
+      expect(switchPriceUnit(raw, false, true)).toBe(shown);
+    }
+  });
+
+  it('leaves text that is not a price yet, and an unchanged unit, as typed', () => {
+    expect(switchPriceUnit('', true, false)).toBe('');
+    expect(switchPriceUnit('12,', true, false)).toBe('12,');
+    expect(switchPriceUnit('1.5', true, true)).toBe('1.5');
+    expect(switchPriceUnit('12.', false, true)).toBe('0.012');
   });
 });

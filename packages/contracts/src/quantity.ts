@@ -62,3 +62,29 @@ export function mulQty(a: string | number, b: string | number): string {
   const y = toUnits(typeof b === 'number' ? numberText(b) : b);
   return milliQty(roundShift(x.units * y.units, x.scale + y.scale - 3));
 }
+
+/**
+ * Thousandths of a quantity that may be missing or unreadable, which count
+ * as 0: never throws. For quantities already stored, which a replay must
+ * never fail on (an event written before 2026-11 can hold float noise,
+ * "0.30000000000000004", which rounds to 3 decimals here), and for a field
+ * that is still being typed. Text that is not a plain decimal goes through
+ * Number, as the code this replaced did ("1e3" is 1000). Moved here from
+ * the domain package (review RUNWEB2-14, 2026-11-11), so that the web and
+ * the API read quantities the same way instead of each keeping a copy.
+ */
+export function qtyMilliOrZero(value: string | number | null | undefined): bigint {
+  if (value === null || value === undefined || value === '') return 0n;
+  try {
+    return qtyMilli(value);
+  } catch {
+    // Not a plain decimal: fall back to Number below.
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0n;
+  try {
+    return qtyMilli(n);
+  } catch {
+    return 0n;
+  }
+}

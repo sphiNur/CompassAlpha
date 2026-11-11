@@ -24,7 +24,12 @@ import { Button, Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
-import { toDisplayPrice, fromDisplayPrice, readDisplayPrice } from '../lib/priceMath';
+import {
+  toDisplayPrice,
+  fromDisplayPrice,
+  readDisplayPrice,
+  switchPriceUnit,
+} from '../lib/priceMath';
 import {
   priceRowState,
   priceAgeDays,
@@ -1487,13 +1492,10 @@ export const PurchaseRow = memo(function PurchaseRow({
   /** Enter on qty jumps here; Enter here saves. See the input grid below. */
   const priceRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (prevThousandsRef.current === priceInThousands) return;
-    setPrice((p) => {
-      if (!p) return p;
-      const n = Number(p);
-      if (!Number.isFinite(n)) return p;
-      return priceInThousands ? String(n / 1000) : String(n * 1000);
-    });
+    const wasInThousands = prevThousandsRef.current;
+    if (wasInThousands === priceInThousands) return;
+    // RUNWEB1-15: exact, as the purchase sheet does (see switchPriceUnit).
+    setPrice((p) => switchPriceUnit(p, wasInThousands, priceInThousands));
     prevThousandsRef.current = priceInThousands;
   }, [priceInThousands]);
 

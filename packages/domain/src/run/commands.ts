@@ -3,7 +3,7 @@ import { centsToMoney, lineCents, lineWithinCap, MAX_LINE_AMOUNT } from '@compas
 import { conflict, forbidden, preconditionFailed, validation } from '../shared/errors';
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
-import { milliQty, storedQtyMilli } from '../shared/quantity';
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 import type { RunEvent } from './events';
 import type { RunState } from './state';
 
@@ -1232,7 +1232,7 @@ export function decideRun(
         }
         const planned = num(existing.plannedQty, 'run.errors.invalidQty');
         // RUNAPI-05: in whole thousandths, not floats.
-        const remaining = storedQtyMilli(existing.plannedQty) - storedQtyMilli(removed.qty);
+        const remaining = qtyMilliOrZero(existing.plannedQty) - qtyMilliOrZero(removed.qty);
         if (remaining < 0n) {
           throw preconditionFailed('run.errors.ejectQtyExceedsPlan', {
             skuId: removed.skuId,

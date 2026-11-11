@@ -62,7 +62,7 @@ describe('session selection (CA-03)', () => {
     expect(daysOld('2026-10-19', null)).toBe(0);
   });
 
-  test('selectPreview re-aggregates demand, budgets, notes and extras over the ticked sessions', () => {
+  test('selectPreview re-aggregates demand, notes and extras over the ticked sessions', () => {
     const preview = {
       date: null,
       sessions,
@@ -93,10 +93,26 @@ describe('session selection (CA-03)', () => {
       { skuId: 'k2', qty: '4' },
     ]);
     expect(out.perStoreDemand.find((d) => d.storeId === 'A')?.qty).toBe('2');
-    const budgetB = out.perStoreBudgets?.find((b) => b.storeId === 'B');
-    expect(budgetB).toMatchObject({ estimatedTotal: '100.00', unknownPriceCount: 1 });
+    // RUNWEB2-12: no budgets for a selection; nothing reads them.
+    expect(out.perStoreBudgets).toEqual([]);
     expect(out.sessionNotesByStore).toEqual({ B: 'beta note' });
     expect(out.sessionExtrasByStore?.A?.map((e) => e.sessionId)).toEqual(['s-a']);
+  });
+
+  test('selectPreview sums quantities exactly (RUNWEB2-12)', () => {
+    const preview = {
+      sessions,
+      plannedItems: [],
+      perStoreDemand: [],
+      perSessionDemand: [
+        { sessionId: 's-a', skuId: 'k1', qty: '0.1' },
+        { sessionId: 's-a', skuId: 'k1', qty: '0.2' },
+        { sessionId: 's-a', skuId: 'k2', qty: 'not a number' },
+      ],
+    };
+    const out = selectPreview<PreviewShape>(preview, ['s-a']);
+    expect(out.plannedItems).toEqual([{ skuId: 'k1', qty: '0.3' }]);
+    expect(out.perStoreDemand.map((d) => d.qty)).toEqual(['0.3']);
   });
 
   test('an old server without perSessionDemand gets the preview back unchanged', () => {

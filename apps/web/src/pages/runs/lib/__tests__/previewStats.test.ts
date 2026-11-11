@@ -27,6 +27,14 @@ describe('computePreviewStats', () => {
     expect(s.knownTotal).toBe(1100);
   });
 
+  it('adds the rows in whole cents (RUNWEB2-13)', () => {
+    const byStore = [
+      store('a', [line({ id: '1', skuId: 'x', total: 0.1 })]),
+      store('b', [line({ id: '2', skuId: 'y', total: 0.2 })]),
+    ];
+    expect(computePreviewStats(byStore, allAssigned).knownTotal).toBe(0.3);
+  });
+
   it('counts distinct SKUs separately', () => {
     const byStore = [
       store('a', [
