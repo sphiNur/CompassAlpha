@@ -73,7 +73,13 @@ DECLARE
     'ops.notifications',
     'ops.audit_log',
     'ops.feature_flags',
-    'ops.daily_metrics'
+    'ops.daily_metrics',
+    -- Review DB-03 (2026-11-10): other people's error stacks and free-form
+    -- data, read per organisation (system.recentLogs). Rows written before
+    -- sign-in have no org_id and are visible to the system context only.
+    -- Written in the 'telemetry' context, deleted by the worker's retention.
+    'ops.client_logs',
+    'ops.log_review_cursor'
   ];
   t text;
 BEGIN
@@ -251,7 +257,7 @@ CREATE POLICY org_isolation ON domain.snapshots
   );
 
 -- User-scoped tables (auth.users, auth.refresh_tokens, ops.web_push_subscriptions,
--- ops.client_logs, ops.log_review_cursor, sync.outbox, sync.idempotency_keys)
--- intentionally do NOT have RLS; the API enforces user_id = ctx.userId.
+-- sync.outbox, sync.idempotency_keys) intentionally do NOT have RLS; the API
+-- enforces user_id = ctx.userId.
 -- domain.projector_cursors is a singleton-per-worker (keyed by name),
 -- with no org dimension — RLS would mean nothing here.

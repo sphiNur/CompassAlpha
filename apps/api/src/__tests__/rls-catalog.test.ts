@@ -52,8 +52,6 @@ const WITHOUT_RLS: Record<string, string> = {
   'auth.users': 'one Telegram user across workspaces; the API checks user_id',
   'auth.refresh_tokens': 'per user; the API checks user_id',
   'domain.projector_cursors': 'one row per projector, no tenant',
-  'ops.client_logs': 'per user and session; the API checks user_id',
-  'ops.log_review_cursor': 'per reviewer; the API checks user_id',
   'ops.web_push_subscriptions': 'per user; the API checks user_id',
   'sync.idempotency_keys': 'request plumbing, worker and API only',
   'sync.outbox': 'request plumbing, worker and API only',
