@@ -897,7 +897,11 @@ export const authRouter = router({
           .set({
             tgUsername: tg.username ?? known.tgUsername,
             avatarUrl: tg.photo_url ?? known.avatarUrl,
-            locale: detectLocale(input.locale ?? known.locale ?? tg.language_code),
+            // Review COREWEB1-28 (2026-11-12): the language the user has
+            // already (set in Settings, or at their first sign-in) wins
+            // over the device's, which the web sends with the invite. A
+            // row an administrator made has none yet and takes it.
+            locale: detectLocale(known.locale ?? input.locale ?? tg.language_code),
             lastSeenAt: new Date(),
             ...(known.displayName.startsWith('tg:')
               ? {

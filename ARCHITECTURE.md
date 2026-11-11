@@ -424,7 +424,8 @@ apps/web/src/
 ├── app/
 │   ├── App.tsx             # ErrorBoundary > ThemeProvider > ToastProvider
 │   │                          > trpc.Provider > QueryClientProvider > AuthGate > Shell
-│   ├── AuthGate.tsx        # Telegram login + onboarding + 无 store 兜底
+│   ├── AuthGate.tsx        # 登录后才画 app；之前是登录页 / 改名引导 / 无门店、无权限页
+│   ├── auth/               # 登录状态机 useSignIn、启动参数 launch、两个“忙”判断 signInPhase 和这些页面
 │   ├── Shell.tsx           # 外壳：把顶栏、<main>、主按钮和底部导航组合起来
 │   ├── shell/              # 外壳的各部分：tab 表、页面表、底部导航、顶栏、深链、离线横幅、主按钮
 │   ├── ErrorBoundary.tsx

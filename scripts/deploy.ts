@@ -609,7 +609,7 @@ if (!DRY && !ROLLBACK) {
  */
 if (!DRY) {
   step('0.7. verify no dev auth bypass in any server .env (P0-3 defense in depth)');
-  // The vite.config.ts + AuthGate.tsx already prevent the mock initData
+  // vite.config.ts and apps/web/src/app/auth/launch.ts already keep the mock initData
   // from reaching production code paths, but we belt-and-braces here:
   // refuse to deploy if any server-side .env file (root, apps/web, etc.)
   // carries the dev override. M3.25 (2026-05-18 incident #2) extended
