@@ -67,9 +67,12 @@ import {
   inviterStillAuthorized,
   missingRoleKey as missingRoleKeyOf,
   passesOnAnyKey,
+  recipientRefusal,
   roleTier,
   type Granter,
   type GrantRefusal,
+  type GrantScope,
+  type RecipientRefusal,
 } from '../../services/adminAuthority';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
@@ -2026,6 +2029,14 @@ export const adminRouter = router({
               await assertCanInviteIntoStore(tx, ctx, role, storeId);
             }
           }
+          // ADM1-08: "inviting" someone already here (or oneself) is a
+          // grant like grantRole's, to them as they are now.
+          if (!created) {
+            const scopes: GrantScope[] = globalGrant
+              ? [{ type: 'global' }]
+              : input.storeIds.map((storeId) => ({ type: 'store', storeId }));
+            for (const scope of scopes) await assertCanGrantTo(tx, ctx, member.userId, scope);
+          }
           // grantBinding is idempotent and renews a lapsed binding
           // (ADM1-04: one of those used to count as already held).
           if (role.rank >= ADMIN_RANK) {
@@ -2092,6 +2103,13 @@ export const adminRouter = router({
               if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
               const scope = { type: 'store', storeId: store.id } as const;
               if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
+              // ADM1-08: nor to someone already here the actor does not outrank.
+              if (
+                !created &&
+                (await recipientRefusal(ctx.db, tx, granterOf(ctx), member.userId, scope))
+              ) {
+                continue;
+              }
               await grantBinding(tx, {
                 memberId: member.id,
                 roleId: role.id,
@@ -2637,6 +2655,12 @@ export const adminRouter = router({
           });
         }
         if (input.mirrorRoles && fromBindings.length > 0) {
+          // ADM1-08: mirroring gives the member roles in the destination,
+          // where they may already stand as high as the actor.
+          await assertCanGrantTo(tx, ctx, member.userId, {
+            type: 'store',
+            storeId: input.toStoreId,
+          });
           const toActorRank = await getActorMaxRankInStore(
             tx,
             orgId,
@@ -3622,6 +3646,14 @@ export const adminRouter = router({
       if (!member) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
       }
+      // ADM1-08: as the invite path does (ADM-19), a suspended member is
+      // reactivated before they are given anything.
+      if (member.status !== 'active') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.memberInactiveReactivateFirst',
+        });
+      }
       const role = await tx.query.roles.findFirst({
         where: (r, { eq: eq2, and: and2 }) =>
           and2(eq2(r.orgId, orgId), eq2(r.slug, input.roleSlug)),
@@ -3743,6 +3775,15 @@ export const adminRouter = router({
           message: 'auth.errors.cannotGrantEqualOrHigher',
         });
       }
+      // ADM1-08: to someone below the actor there, never to themself.
+      await assertCanGrantTo(
+        tx,
+        ctx,
+        member.userId,
+        input.scopeType === 'store' && input.scopeId
+          ? { type: 'store', storeId: input.scopeId }
+          : { type: 'global' },
+      );
       // D8: and only a role whose keys the actor holds there.
       await assertCanPassOnRole(
         tx,
@@ -4257,6 +4298,7 @@ export const adminRouter = router({
           const sourceBindings = await tx
             .select({
               memberId: s.memberRoleBindings.memberId,
+              userId: s.members.userId,
               roleId: s.memberRoleBindings.roleId,
               roleSlug: s.roles.slug,
               roleRank: s.roles.rank,
@@ -4276,8 +4318,22 @@ export const adminRouter = router({
           // D8: a role whose keys the actor lacks in the target is skipped
           // like one above their rank.
           const missingByRole = new Map<string, string | null>();
+          // ADM1-08: so is a role for the actor themself, or for someone
+          // who already stands as high as the actor in the target.
+          const refusedByMember = new Map<string, boolean>();
+          const scope = { type: 'store', storeId: input.targetStoreId } as const;
           for (const b of sourceBindings) {
             if (b.roleRank >= targetActorRank) {
+              skippedRank++;
+              continue;
+            }
+            if (!refusedByMember.has(b.memberId)) {
+              refusedByMember.set(
+                b.memberId,
+                !!(await recipientRefusal(ctx.db, tx, granterOf(ctx), b.userId, scope)),
+              );
+            }
+            if (refusedByMember.get(b.memberId)) {
               skippedRank++;
               continue;
             }
@@ -4294,7 +4350,7 @@ export const adminRouter = router({
             const { outcome, bindingId } = await grantBinding(tx, {
               memberId: b.memberId,
               roleId: b.roleId,
-              scope: { type: 'store', storeId: input.targetStoreId },
+              scope,
               grantedBy: ctx.session!.userId,
               expiresAt: b.expiresAt,
             });
@@ -6027,15 +6083,29 @@ function missingRoleKey(
   return missingRoleKeyOf(ctx.db, tx, granterOf(ctx), roleId, storeId);
 }
 
-function throwRefusal(refusal: GrantRefusal | null): void {
+function throwRefusal(refusal: GrantRefusal | RecipientRefusal | null): void {
   if (!refusal) return;
   throw new TRPCError({
     code: refusal.code,
     message: refusal.message,
-    ...(refusal.missingPermission
+    ...('missingPermission' in refusal && refusal.missingPermission
       ? { cause: { missingPermission: refusal.missingPermission } }
       : {}),
   });
+}
+
+/**
+ * ADM1-08 for the signed-in actor: the person receives a role in `scope`
+ * only if the actor outranks them there, and is not the actor
+ * (recipientRefusal).
+ */
+async function assertCanGrantTo(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  recipientUserId: string,
+  scope: GrantScope,
+): Promise<void> {
+  throwRefusal(await recipientRefusal(ctx.db, tx, granterOf(ctx), recipientUserId, scope));
 }
 
 /**

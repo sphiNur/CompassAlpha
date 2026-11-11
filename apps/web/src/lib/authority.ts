@@ -36,6 +36,12 @@ export interface Actor {
   inactiveAdminStoreIds?: readonly string[];
   /** The actor's own role bindings (their row in the member list). */
   bindings: readonly Binding[];
+  /**
+   * The workspace's super admin (a global super_admin binding) or a
+   * platform administrator: exempt from the recipient rule (ADM1-08) and
+   * the key rule (passesOnAnyKey). Absent counts as no.
+   */
+  passesOnAnyKey?: boolean;
 }
 
 export interface TargetMember {
@@ -210,6 +216,39 @@ export function canGrantRole(
   }
   if (role.rank >= ADMIN_RANK || !administers(actor, scope.storeId)) return false;
   return outranks(rankIn(actor.bindings, scope.storeId), role.rank);
+}
+
+/**
+ * recipientRefusal (ADM1-08), the other half of grantRole: a role goes to
+ * someone the actor outranks where it applies, never to the actor
+ * themself, unless the actor is exempt (super admin, platform admin).
+ */
+export function canGrantTo(
+  actor: Actor,
+  target: Pick<TargetMember, 'userId' | 'bindings'>,
+  scope: { type: 'global' } | { type: 'store'; storeId: string },
+): boolean {
+  if (actor.passesOnAnyKey) return true;
+  if (target.userId === actor.userId) return false;
+  return scope.type === 'global'
+    ? outranks(orgRankOf(actor.bindings), rankIn(target.bindings, null))
+    : outranks(rankIn(actor.bindings, scope.storeId), rankIn(target.bindings, scope.storeId));
+}
+
+/**
+ * Whether the member's card offers "Grant role": they are active (grantRole
+ * refuses a suspended member) and some scope the actor may grant in takes
+ * them (canGrantTo).
+ */
+export function canGrantToMember(
+  actor: Actor,
+  target: Pick<TargetMember, 'userId' | 'bindings'> & { active: boolean },
+): boolean {
+  if (!target.active) return false;
+  if (actor.isOrgAdmin && canGrantTo(actor, target, { type: 'global' })) return true;
+  return actor.adminStoreIds.some((storeId) =>
+    canGrantTo(actor, target, { type: 'store', storeId }),
+  );
 }
 
 /** Where the actor may hand a role on as far as its keys go (roleList `passOn`). */

@@ -46,6 +46,7 @@ import {
   grantBinding,
   inviterStillAuthorized,
   liveInviteGrants,
+  recipientRefusal,
 } from '../../services/adminAuthority';
 import {
   adminScopeOf,
@@ -961,6 +962,13 @@ export const authRouter = router({
           message: 'auth.errors.inviteInviterNoLongerAuthorized',
         });
       }
+      // ADM1-08 (2026-11-11): the link hands roles on with its inviter's
+      // authority, so grantRole's rule on who may receive them applies
+      // (recipientRefusal). An inviter opening their own link used to get
+      // its roles, and kept the person it was meant for out.
+      if (invite.invitedBy === user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.inviteOwnLink' });
+      }
 
       assertWriteAccess(await readSubscriptionState(tx, invite.orgId));
       let member = await tx.query.members.findFirst({
@@ -976,6 +984,16 @@ export const authRouter = router({
       // AUTH-28 (2026-10-30): an existing member opening an invite got its
       // stores and roles added with no word; the page now says which.
       const alreadyMember = member?.status === 'active';
+      // Someone already in the workspace may hold roles the inviter does
+      // not outrank (ADM1-08, below).
+      const inviterMember =
+        member && invite.invitedBy
+          ? await tx.query.members.findFirst({
+              where: (m, { eq: eq2, and: and2 }) =>
+                and2(eq2(m.orgId, invite.orgId), eq2(m.userId, invite.invitedBy!)),
+              columns: { id: true },
+            })
+          : undefined;
       if (!member) {
         await assertCanAddMember(tx, invite.orgId);
         const [createdMember] = await tx
@@ -1037,15 +1055,34 @@ export const authRouter = router({
         if (grant.scopeType === 'store' && (!grant.scopeId || !validStoreIds.has(grant.scopeId))) {
           continue;
         }
+        const scope =
+          grant.scopeType === 'store' && grant.scopeId
+            ? ({ type: 'store', storeId: grant.scopeId } as const)
+            : ({ type: 'global' } as const);
+        // ADM1-08: a peer of the inviter, or someone above them, opening
+        // the link got its roles too. Refused before anything is kept, so
+        // the link still works for the person it was meant for.
+        if (
+          inviterMember &&
+          (await recipientRefusal(
+            ctx.db,
+            tx,
+            { orgId: invite.orgId, memberId: inviterMember.id, userId: invite.invitedBy! },
+            user.id,
+            scope,
+          ))
+        ) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'auth.errors.inviteSenderCannotGrantYou',
+          });
+        }
         // ADM1-04: a lapsed binding of the same role is renewed; it used
         // to count as held and the invite granted nothing.
         await grantBinding(tx, {
           memberId: member.id,
           roleId: role.id,
-          scope:
-            grant.scopeType === 'store' && grant.scopeId
-              ? { type: 'store', storeId: grant.scopeId }
-              : { type: 'global' },
+          scope,
           grantedBy: invite.invitedBy,
         });
       }

@@ -335,6 +335,55 @@ export async function grantRefusal(
     : null;
 }
 
+/** Why a role may not go to this person, as the routers throw it (an i18n key). */
+export interface RecipientRefusal {
+  code: 'FORBIDDEN';
+  message: 'auth.errors.cannotGrantSelf' | 'auth.errors.cannotGrantToPeer';
+}
+
+/**
+ * Review ADM1-08 (2026-11-11): whether `granter` may give a role to this
+ * person in `scope`. grantRefusal weighs the role alone, so a store
+ * manager could give themself the built-in purchaser role and with it the
+ * run keys their own role leaves out, and anyone could add roles to a
+ * peer that they could not take away again (memberDetachFromStore and the
+ * overrides need a strictly higher rank). Giving now asks what taking
+ * away does: never to oneself, and only to someone the granter outranks
+ * where the role applies (in a store: global bindings plus that store's;
+ * for a global role: every binding the person holds).
+ *
+ * The workspace's super admin and platform administrators are exempt, as
+ * from the key rule (passesOnAnyKey): they are who everyone else is told
+ * to ask.
+ */
+export async function recipientRefusal(
+  db: DB,
+  tx: DB,
+  granter: Granter,
+  recipientUserId: string,
+  scope: GrantScope,
+): Promise<RecipientRefusal | null> {
+  const self = recipientUserId === granter.userId;
+  if (!self) {
+    const [granterRank, recipientRank] =
+      scope.type === 'store'
+        ? await Promise.all([
+            getActorMaxRankInStore(tx, granter.orgId, granter.userId, scope.storeId),
+            getActorMaxRankInStore(tx, granter.orgId, recipientUserId, scope.storeId),
+          ])
+        : await Promise.all([
+            getActorMaxGlobalRank(tx, granter.orgId, granter.userId),
+            getActorMaxRank(tx, granter.orgId, recipientUserId),
+          ]);
+    if (recipientRank < granterRank) return null;
+  }
+  if (await passesOnAnyKey(db, tx, granter)) return null;
+  return {
+    code: 'FORBIDDEN',
+    message: self ? 'auth.errors.cannotGrantSelf' : 'auth.errors.cannotGrantToPeer',
+  };
+}
+
 // ---------- Invites --------------------------------------------------------
 
 /** A role grant as an invite snapshots it (auth.member_invites.grants). */

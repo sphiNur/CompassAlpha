@@ -965,6 +965,8 @@ export const en = {
   'auth.errors.cannotGrantMissingPermission':
     'This role includes permissions you do not have yourself, so you cannot grant it.',
   'auth.errors.cannotRevokeEqualOrHigher': 'You cannot revoke a role at or above your own level.',
+  'auth.errors.cannotGrantSelf': 'You cannot grant yourself a role. Ask an admin above you.',
+  'auth.errors.cannotGrantToPeer': 'You can only grant roles to people below your own level.',
   'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again.',
   'system.errors.logRateLimited': 'Too many messages from this device — wait a moment.',
 
@@ -2310,6 +2312,10 @@ export const en = {
     'This invitation link was revoked. Ask your store manager for a new one.',
   'auth.errors.inviteInviterNoLongerAuthorized':
     'This invitation is no longer valid: the person who sent it can no longer add members. Ask your store manager for a new link.',
+  'auth.errors.inviteOwnLink':
+    'This is your own invitation link. Send it to the person you are inviting.',
+  'auth.errors.inviteSenderCannotGrantYou':
+    'This invitation cannot give you its roles: the person who sent it is not above you. Ask an admin above you.',
   'admin.errors.inviteNotFound':
     'This invitation is gone — it may have just been revoked. Refresh to check.',
   'admin.errors.inviteNotPending':

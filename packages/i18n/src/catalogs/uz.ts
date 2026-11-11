@@ -919,6 +919,10 @@ export const uz = {
     'Bu rolda sizning oʻzingizda yoʻq ruxsatlar bor, shuning uchun uni bera olmaysiz.',
   'auth.errors.cannotRevokeEqualOrHigher':
     'Oʻz darajangizdagi yoki undan yuqori rolni qaytarib ololmaysiz.',
+  'auth.errors.cannotGrantSelf':
+    'Oʻzingizga rol bera olmaysiz. Sizdan yuqori darajadagi administratorga murojaat qiling.',
+  'auth.errors.cannotGrantToPeer':
+    'Rolni faqat darajasi sizdan past boʻlgan kishilarga bera olasiz.',
   'auth.errors.rateLimited': 'Juda koʻp urinish — bir daqiqadan keyin qayta urining.',
   'system.errors.logRateLimited': 'Bu qurilmadan juda koʻp xabar — biroz kuting.',
 
@@ -2217,6 +2221,10 @@ export const uz = {
     'Bu taklif havolasi qaytarib olingan. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
   'auth.errors.inviteInviterNoLongerAuthorized':
     'Taklif endi amal qilmaydi: uni yuborgan kishi endi aʼzo qoʻsha olmaydi. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
+  'auth.errors.inviteOwnLink':
+    'Bu sizning oʻz taklif havolangiz. Uni taklif qilayotgan odamga yuboring.',
+  'auth.errors.inviteSenderCannotGrantYou':
+    'Bu taklif sizga rol bera olmaydi: uni yuborgan kishining darajasi sizdan yuqori emas. Sizdan yuqori darajadagi administratorga murojaat qiling.',
   'admin.errors.inviteNotFound':
     'Taklif topilmadi — hozirgina qaytarib olingan boʻlishi mumkin. Sahifani yangilang.',
   'admin.errors.inviteNotPending':

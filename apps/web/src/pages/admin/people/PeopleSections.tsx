@@ -67,6 +67,8 @@ import {
 import {
   canDetachFromStore,
   canGrantRole,
+  canGrantTo,
+  canGrantToMember,
   canRemoveFromOrg,
   canRename,
   canRevokeRole,
@@ -99,6 +101,9 @@ function useActor(
       adminStoreIds: session?.adminStoreIds ?? [],
       inactiveAdminStoreIds: session?.inactiveAdminStoreIds ?? [],
       bindings: self ? self.roles : [{ slug: '', scopeType: 'global', scopeId: null }],
+      passesOnAnyKey:
+        !!session?.isPlatformAdmin ||
+        !!self?.roles.some((r) => r.slug === 'super_admin' && r.scopeType === 'global'),
     };
   }, [members, session]);
 }
@@ -189,6 +194,7 @@ export function PeopleSection({
     userId: string;
     displayName: string;
     defaultStoreId?: string | null;
+    member: TargetMember;
   } | null>(null);
   const [manageFor, setManageFor] = useState<{
     memberId: string;
@@ -504,23 +510,35 @@ export function PeopleSection({
                   >
                     {i18n.t('admin.action.manage')}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="pearl"
-                    onClick={() =>
-                      setGrantFor({
-                        userId: m.userId,
-                        displayName: m.displayName,
-                        // When the StoreSwitcher is on a specific store, pre-
-                        // select that store in the grant sheet (A1, 2026-05-06).
-                        // 'all' / 'none' kinds leave the picker empty so the
-                        // operator picks consciously.
-                        defaultStoreId: storeCtx.kind === 'specific' ? storeCtx.storeId : null,
-                      })
-                    }
-                  >
-                    {i18n.t('admin.action.grantRole')}
-                  </Button>
+                  {/* ADM1-08: not on one's own card, nor on a suspended
+                      member's or a peer's (canGrantToMember). */}
+                  {canGrantToMember(actor, { ...targetOf(m), active: m.status === 'active' }) ? (
+                    <Button
+                      size="sm"
+                      variant="pearl"
+                      onClick={() =>
+                        setGrantFor({
+                          userId: m.userId,
+                          displayName: m.displayName,
+                          // When the StoreSwitcher is on a specific store, pre-
+                          // select that store in the grant sheet (A1, 2026-05-06).
+                          // 'all' / 'none' kinds leave the picker empty so the
+                          // operator picks consciously.
+                          defaultStoreId:
+                            storeCtx.kind === 'specific' &&
+                            canGrantTo(actor, targetOf(m), {
+                              type: 'store',
+                              storeId: storeCtx.storeId,
+                            })
+                              ? storeCtx.storeId
+                              : null,
+                          member: targetOf(m),
+                        })
+                      }
+                    >
+                      {i18n.t('admin.action.grantRole')}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="pearl"
@@ -2893,7 +2911,12 @@ function GrantRoleSheet({
   onClose,
 }: {
   actor: Actor;
-  target: { userId: string; displayName: string; defaultStoreId?: string | null } | null;
+  target: {
+    userId: string;
+    displayName: string;
+    defaultStoreId?: string | null;
+    member: Pick<TargetMember, 'userId' | 'bindings'>;
+  } | null;
   onClose: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -2930,10 +2953,17 @@ function GrantRoleSheet({
   }, [target, adminStoreIds]);
 
   // C2: stores the actor can administer, intersected with the org's
-  // store list (so we always render fresh names).
+  // store list (so we always render fresh names). ADM1-08: only those
+  // where the actor outranks the member.
   const eligibleStores = useMemo(
-    () => sessionStores.filter((s) => adminStoreIds.has(s.id)),
-    [sessionStores, adminStoreIds],
+    () =>
+      sessionStores.filter(
+        (s) =>
+          adminStoreIds.has(s.id) &&
+          !!target &&
+          canGrantTo(actor, target.member, { type: 'store', storeId: s.id }),
+      ),
+    [sessionStores, adminStoreIds, actor, target],
   );
 
   // Whether the actor can grant a 'global' (org-tier) binding.
@@ -2957,13 +2987,16 @@ function GrantRoleSheet({
   /**
    * Roles the server would grant in every chosen scope (lib/authority
    * canGrantRole: org-tier roles only globally, store roles only in the
-   * actor's stores, always below the actor's rank there).
+   * actor's stores, always below the actor's rank there). The chosen
+   * stores already take the member (eligibleStores); globally, the actor
+   * must outrank them organisation-wide (canGrantTo).
    */
   const grantableRoles = useMemo(() => {
+    const globalTakes = !!target && canGrantTo(actor, target.member, { type: 'global' });
     return [...(rolesQuery.data ?? [])]
       .filter((r) =>
         scopeMode === 'global'
-          ? canGrantRole(actor, r, { type: 'global' })
+          ? globalTakes && canGrantRole(actor, r, { type: 'global' })
           : [...selectedStoreIds].every((storeId) =>
               canGrantRole(actor, r, { type: 'store', storeId }),
             ),
@@ -2980,7 +3013,7 @@ function GrantRoleSheet({
               ),
       }))
       .sort((a, b) => Number(a.keysMissing) - Number(b.keysMissing) || b.rank - a.rank);
-  }, [rolesQuery.data, actor, scopeMode, selectedStoreIds]);
+  }, [rolesQuery.data, actor, target, scopeMode, selectedStoreIds]);
 
   // DX-IX-10: the scope and stores picked so far are the sheet's input;
   // closing by Esc / backdrop / Back asks before dropping them.
