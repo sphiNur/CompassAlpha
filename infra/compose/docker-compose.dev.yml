@@ -1,13 +1,26 @@
+# Local development services (review OPS-36, 2026-11).
+#
+#   docker compose -f infra/compose/docker-compose.dev.yml up -d                     # Postgres + Redis
+#   docker compose -f infra/compose/docker-compose.dev.yml --profile storage up -d   # + MinIO, for photo uploads
+#   docker compose -f infra/compose/docker-compose.dev.yml --profile tools up -d     # + Adminer
+#
+# Postgres and Redis run the production server's exact versions; bump them
+# together with CLAUDE.md and CI. The images are Alpine: its libc (musl)
+# sorts text differently from production's glibc, so an ORDER BY on Russian
+# or Uzbek names can come out in another order here. CI runs the Debian
+# image, which uses glibc like production.
+#
+# Every port listens on this machine only: the passwords are the defaults.
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     container_name: compass-postgres
     environment:
       POSTGRES_USER: compass
       POSTGRES_PASSWORD: compass
       POSTGRES_DB: compass
     ports:
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - compass_pgdata:/var/lib/postgresql
     healthcheck:
@@ -17,39 +30,46 @@ services:
       retries: 5
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.10.3-alpine
     container_name: compass-redis
     ports:
-      - '6380:6379'
+      - '127.0.0.1:6380:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
       retries: 5
 
+  # Only with --profile storage: without S3 settings the app works and
+  # refuses uploads (upload.errors.notConfigured). The image may no longer
+  # pull from Docker Hub; behind a profile that cannot stop the services
+  # above from starting.
   minio:
     image: minio/minio:latest
+    profiles: ['storage']
     container_name: compass-minio
     command: server /data --console-address ':9001'
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio12345
     volumes:
       - compass_minio:/data
     healthcheck:
-      test: ['CMD', 'curl', '-fS', 'http://localhost:9000/minio/health/live']
+      # The image has no curl; mc comes with it.
+      test: ['CMD', 'mc', 'ready', 'local']
       interval: 5s
       timeout: 3s
       retries: 5
 
   adminer:
     image: adminer:latest
+    profiles: ['tools']
     container_name: compass-adminer
     ports:
-      - '8080:8080'
+      - '127.0.0.1:8080:8080'
     depends_on:
       postgres:
         condition: service_healthy
