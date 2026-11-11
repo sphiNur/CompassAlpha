@@ -37,6 +37,8 @@ import { loadRepoEnv } from './repoEnv';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsRoot = join(__dirname, '..', 'migrations');
+/** A statement that waited out a lock is tried again, and says so. */
+const PRINT_RETRIES = { log: (line: string) => console.log(line) };
 const rawSqlDir = join(migrationsRoot, 'sql');
 const journalPath = join(migrationsRoot, 'meta', '_journal.json');
 
@@ -56,7 +58,7 @@ async function runRawSql(
     const sqlText = await readFile(join(rawSqlDir, file), 'utf8');
     console.log(`  · ${file}`);
     // One implicit transaction per file, safe to run again (DB-08).
-    await retryOnLockTimeout(file, () => client.unsafe(sqlText));
+    await retryOnLockTimeout(file, () => client.unsafe(sqlText), PRINT_RETRIES);
   }
 }
 
@@ -250,8 +252,10 @@ async function main() {
 
   console.log('[migrate] Drizzle migrations...');
   // The pending batch is one transaction: a failed try leaves nothing.
-  await retryOnLockTimeout('drizzle migrations', () =>
-    migrate(db, { migrationsFolder: migrationsRoot }),
+  await retryOnLockTimeout(
+    'drizzle migrations',
+    () => migrate(db, { migrationsFolder: migrationsRoot }),
+    PRINT_RETRIES,
   );
 
   console.log('[migrate] POST SQL (RLS policies, triggers)...');

@@ -48,12 +48,14 @@ export async function retryOnLockTimeout<T>(
   opts: {
     pausesMs?: readonly number[];
     sleep?: (ms: number) => Promise<void>;
-    log?: (line: string) => void;
-  } = {},
+    /** Where each retry is reported. The migrate command prints it; this
+     *  module is library code and prints nothing itself (OPS-19 lint). */
+    log: (line: string) => void;
+  },
 ): Promise<T> {
   const pauses = opts.pausesMs ?? LOCK_RETRY_PAUSES_MS;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const log = opts.log ?? ((line: string) => console.log(line));
+  const { log } = opts;
   for (let attempt = 0; ; attempt++) {
     try {
       return await step();
