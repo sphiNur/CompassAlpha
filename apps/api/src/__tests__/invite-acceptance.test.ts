@@ -593,6 +593,49 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     expect((await peerRoleIds()).sort()).toEqual([managerRoleId, staffRoleId].sort());
   });
 
+  // Review COREWEB1-28 (2026-11-12): the web sends the device's language
+  // with the invite, and it replaced the one the user had chosen.
+  test('COREWEB1-28 an invite keeps the language a user has; a new row takes the device’s', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const staff = await db.query.roles.findFirst({
+      where: (r, { eq: eq2 }) => eq2(r.id, staffRoleId),
+    });
+    const knownTg = freshTgId();
+    const [known] = await db
+      .insert(s.users)
+      .values({ tgUserId: knownTg, displayName: 'Known', displayNameLocked: true, locale: 'ru' })
+      .returning();
+    noteUser(known!.id);
+    const first = await callerFor(adminSession()).admin.memberInviteCreate({
+      roleSlug: staff!.slug,
+      storeIds: [storeId],
+    });
+    const accepted = await callerFor(null).auth.acceptInvite({
+      token: first.token,
+      initData: signInitData(knownTg),
+      locale: 'en',
+    });
+    expect(accepted.session.user.locale).toBe('ru');
+
+    // An administrator's placeholder row has no language yet.
+    const placeholderTg = freshTgId();
+    const [placeholder] = await db
+      .insert(s.users)
+      .values({ tgUserId: placeholderTg, displayName: `tg:${placeholderTg}` })
+      .returning();
+    noteUser(placeholder!.id);
+    const second = await callerFor(adminSession()).admin.memberInviteCreate({
+      roleSlug: staff!.slug,
+      storeIds: [storeId],
+    });
+    const joined = await callerFor(null).auth.acceptInvite({
+      token: second.token,
+      initData: signInitData(placeholderTg),
+      locale: 'uz',
+    });
+    expect(joined.session.user.locale).toBe('uz');
+  });
+
   test('an unknown token creates nothing', async () => {
     const tgUserId = freshTgId();
     await expect(

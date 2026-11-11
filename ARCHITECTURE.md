@@ -424,7 +424,8 @@ apps/web/src/
 ├── app/
 │   ├── App.tsx             # ErrorBoundary > ThemeProvider > ToastProvider
 │   │                          > trpc.Provider > QueryClientProvider > AuthGate > Shell
-│   ├── AuthGate.tsx        # Telegram login + onboarding + 无 store 兜底
+│   ├── AuthGate.tsx        # 登录后才画 app；之前是登录页 / 改名引导 / 无门店、无权限页
+│   ├── auth/               # 登录状态机 useSignIn、启动参数 launch、两个“忙”判断 signInPhase 和这些页面
 │   ├── Shell.tsx           # 底部 tab nav + Telegram SettingsButton 接入
 │   ├── ErrorBoundary.tsx
 │   └── useWarmRunQueries.ts # 启动时预取采购页的数据
