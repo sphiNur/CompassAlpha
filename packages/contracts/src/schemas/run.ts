@@ -11,6 +11,7 @@ export const RunStatusSchema = z.enum([
   'amending',
   'cancelled',
 ]);
+export type RunStatus = z.infer<typeof RunStatusSchema>;
 
 /**
  * M1.14 (2026-05-08): payment method per recorded purchase. Same run

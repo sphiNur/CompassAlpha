@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, withSystemContext } from '@compass/db';
-import { isCalendarDate, UuidSchema } from '@compass/contracts';
+import { isCalendarDate, SubscriptionStatusSchema, UuidSchema } from '@compass/contracts';
 import { attendance } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { isPlatformAdmin } from '../../services/platformAdmin';
@@ -12,7 +12,7 @@ import { hub } from '../../realtime/hub';
 const SubscriptionUpdateInputSchema = z.object({
   orgId: UuidSchema,
   planCode: z.string().min(1).max(32),
-  status: z.enum(['trialing', 'active', 'past_due', 'suspended', 'canceled']),
+  status: SubscriptionStatusSchema,
   trialEndsAt: z.string().nullable().optional(),
   currentPeriodStart: z.string().nullable().optional(),
   currentPeriodEnd: z.string().nullable().optional(),

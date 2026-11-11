@@ -83,6 +83,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
   );
 }
 import { formatQty, formatMoney } from '../lib/format';
+import { orderStatusLabel } from '../lib/statusLabels/order';
 import { StoreContextEmpty } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
 import {
@@ -1964,13 +1965,9 @@ function BatchStrip({
                   {i18n.t('order.batches.batchLabel', { n: b.batchNumber })}
                 </span>{' '}
                 <span className="text-[var(--c-fg-muted)]">
-                  {/* ORD-18 (2026-10-30): the rejected label is "Rejected — {reason}"
-                      and the strip has no reason, so it read "Rejected —". */}
-                  {b.status === 'rejected'
-                    ? i18n.t('approval.tab.rejected')
-                    : i18n.t(('order.status.' + b.status) as Parameters<typeof i18n.t>[0], {
-                        reason: '',
-                      })}
+                  {/* ORD-18 (2026-10-30): a rejected batch reads "Rejected"
+                      alone; the strip has no reason to follow it. */}
+                  {orderStatusLabel(i18n, b.status)}
                 </span>
                 {isCurrent ? (
                   <span className="text-[var(--c-action)]">

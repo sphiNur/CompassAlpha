@@ -35,6 +35,7 @@ import {
   isWaitingOffline,
   useToast,
 } from '@compass/ui';
+import type { CatalogKey } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -73,6 +74,17 @@ import { estimateOrder } from '@compass/contracts/money';
 const NEXT_CARD = '[data-approval-list] > li h2';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
+
+/**
+ * Each tab's name, for the tab and for its empty state. Review ADM2-16 /
+ * UI-2 (2026-11-12): the empty state composed the key from the tab and
+ * cast it.
+ */
+const TAB_LABEL_KEYS: Record<ApprovalTab, CatalogKey> = {
+  pending: 'approval.tab.pending',
+  approved: 'approval.tab.approved',
+  rejected: 'approval.tab.rejected',
+};
 
 const confirmAction = confirmThen;
 
@@ -384,9 +396,9 @@ export function ApprovalPage() {
           onChange={(v) => setTab(v as ApprovalTab)}
           ariaLabel={i18n.t('approval.tabsAriaLabel')}
         >
-          <Tab value="pending">{i18n.t('approval.tab.pending')}</Tab>
-          <Tab value="approved">{i18n.t('approval.tab.approved')}</Tab>
-          <Tab value="rejected">{i18n.t('approval.tab.rejected')}</Tab>
+          <Tab value="pending">{i18n.t(TAB_LABEL_KEYS.pending)}</Tab>
+          <Tab value="approved">{i18n.t(TAB_LABEL_KEYS.approved)}</Tab>
+          <Tab value="rejected">{i18n.t(TAB_LABEL_KEYS.rejected)}</Tab>
         </Tabs>
       </StickyPageBar>
 
@@ -417,7 +429,7 @@ export function ApprovalPage() {
           ) : (
             <EmptyState
               title={i18n.t('approval.empty.tab', {
-                tab: i18n.t(`approval.tab.${tab}` as Parameters<typeof i18n.t>[0]),
+                tab: i18n.t(TAB_LABEL_KEYS[tab]),
               })}
             />
           )

@@ -3,6 +3,7 @@ import { QTY_TEXT_RE } from '../limits';
 import { PhotoUrlSchema, UuidSchema } from './common';
 
 export const ConfirmStatusSchema = z.enum(['ok', 'short', 'wrong', 'quality']);
+export type ConfirmStatus = z.infer<typeof ConfirmStatusSchema>;
 
 export const DispatchInputSchema = z.object({
   runId: UuidSchema,
