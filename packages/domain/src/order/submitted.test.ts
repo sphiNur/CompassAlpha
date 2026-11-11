@@ -42,8 +42,8 @@ describe('submittedSnapshot', () => {
     );
     expect(snap?.seq).toBe(6);
     expect([...snap!.totals]).toEqual([
-      ['apple', 5],
-      ['pear', 1],
+      ['apple', '5'],
+      ['pear', '1'],
     ]);
     expect(snap?.extras).toEqual([{ name: 'Ice', qty: '1', unit: 'pcs' }]);
   });
@@ -60,7 +60,7 @@ describe('submittedSnapshot', () => {
         ['Submitted', { itemCount: 1, byMemberId: 'a' }],
       ),
     );
-    expect(snap?.totals.get('apple')).toBe(2);
+    expect(snap?.totals.get('apple')).toBe('2');
   });
 
   test('null for a draft, or a stream with a gap', () => {

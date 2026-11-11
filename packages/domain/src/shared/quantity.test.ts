@@ -4,10 +4,12 @@ import { describe, expect, it } from 'bun:test';
 import {
   addQty,
   milliQty,
+  milliQtyFixed,
   mulQty,
   normalizeQty,
   qtyMilli,
   qtyMilliOrZero,
+  qtyTotalsBySku,
   subQty,
   sumQty,
 } from '@compass/contracts';
@@ -60,6 +62,32 @@ describe('quantity arithmetic (RUNAPI-05)', () => {
     for (const value of [null, undefined, '', 'abc', '1,5', 'NaN', Infinity]) {
       expect(qtyMilliOrZero(value)).toBe(0n);
     }
+  });
+
+  it('prints all three decimals when asked (QTY-03)', () => {
+    expect(milliQtyFixed(1500n)).toBe('1.500');
+    expect(milliQtyFixed(-250n)).toBe('-0.250');
+    expect(milliQtyFixed(0n)).toBe('0.000');
+    expect(milliQtyFixed(7n)).toBe('0.007');
+    expect(milliQtyFixed(123456789n)).toBe('123456.789');
+    expect(milliQty(1500n)).toBe('1.5');
+  });
+
+  it('totals each product over its lines, exactly (QTY-01)', () => {
+    const totals = qtyTotalsBySku([
+      { skuId: 'apple', qty: '0.1' },
+      { skuId: 'pear', qty: '0' },
+      { skuId: 'apple', qty: '0.2' },
+      { skuId: 'plum', qty: '1.5' },
+      { skuId: 'pear', qty: null },
+      { skuId: 'plum', qty: '0.30000000000000004' },
+    ]);
+    // 0.1 + 0.2 is 0.3 exactly; pear has no line above 0; first-line order.
+    expect([...totals]).toEqual([
+      ['apple', 300n],
+      ['plum', 1800n],
+    ]);
+    expect(qtyTotalsBySku([]).size).toBe(0);
   });
 
   it('multiplies exactly and rounds once, half away from zero (CONF-15)', () => {

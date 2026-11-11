@@ -27,6 +27,7 @@
  * goes into the audit log.
  */
 import { addMoney } from '@compass/contracts/money';
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cacheOwner } from '../lib/queryPersist';
 import { hintStorage, saveRunHint } from '../lib/runHint';
@@ -1592,10 +1593,11 @@ export function RunPage() {
           );
           const missingValue = receiptIssues.reduce((sum, sp) => {
             const price = sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0;
-            const missing = Number(sp.qty) - Number(sp.confirmReceivedQty ?? 0);
-            // DX-PFE-12: half-up cents per line (D1); toFixed(3) drops the
-            // float noise of the subtraction (quantities have 3 decimals).
-            return missing > 0 ? addMoney(sum, moneyLineAmount(missing.toFixed(3), price)) : sum;
+            // DX-PFE-12: half-up cents per line (D1). Review QTY-05
+            // (2026-11-11): the shortfall is exact, not a float difference
+            // trimmed with toFixed(3).
+            const missing = qtyMilliOrZero(sp.qty) - qtyMilliOrZero(sp.confirmReceivedQty);
+            return missing > 0n ? addMoney(sum, moneyLineAmount(milliQty(missing), price)) : sum;
           }, 0);
           const receiptLine =
             receiptIssues.length > 0

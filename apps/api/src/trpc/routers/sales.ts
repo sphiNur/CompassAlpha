@@ -51,7 +51,10 @@ import {
   DateStringSchema,
   PositiveDecimalStringSchema,
   UuidSchema,
+  milliQtyFixed,
   mulQty,
+  qtyMilli,
+  qtyMilliOrZero,
   subQty,
 } from '@compass/contracts';
 import { nextDate, todayInTz, zonedTimeToUtc } from '@compass/domain';
@@ -128,15 +131,15 @@ export function buildSaleReversal(
   consumption: ReadonlyArray<{ skuId: string; delta: string }>,
 ): Array<{ skuId: string; delta: string }> {
   // Sum in thousandths so 3-decimal deltas don't pick up float drift.
-  const bySku = new Map<string, number>();
+  // Review QTY-04 (2026-11-11): the contracts' thousandths, not a copy.
+  const bySku = new Map<string, bigint>();
   for (const row of consumption) {
-    const milli = Math.round(Number(row.delta) * 1000);
-    bySku.set(row.skuId, (bySku.get(row.skuId) ?? 0) + milli);
+    bySku.set(row.skuId, (bySku.get(row.skuId) ?? 0n) + qtyMilliOrZero(row.delta));
   }
   const out: Array<{ skuId: string; delta: string }> = [];
   for (const [skuId, milli] of bySku) {
-    if (milli === 0) continue;
-    out.push({ skuId, delta: (-milli / 1000).toFixed(3) });
+    if (milli === 0n) continue;
+    out.push({ skuId, delta: milliQtyFixed(-milli) });
   }
   return out;
 }
@@ -317,15 +320,12 @@ export const salesRouter = router({
         // 5. Auto-deduct ingredient inventory.
         // CONF-15: exact decimals, rounded once to 3 places like every
         // other quantity (float × and toFixed rounded some halves down).
-        // The response keeps toFixed(3)'s form ("0.500").
-        const fixed3 = (qty: string) => {
-          const [whole, fraction = ''] = qty.split('.');
-          return `${whole}.${fraction.padEnd(3, '0')}`;
-        };
+        // The response keeps toFixed(3)'s form ("0.500"), now from the
+        // contracts (review QTY-04: this file had its own copy).
         const deductions = recipe.map((r) => {
           const qty = mulQty(r.qtyPerServing, input.qty);
           // Negative delta — that's a consumption.
-          return { skuId: r.skuId, qty: fixed3(qty), delta: subQty(0, qty) };
+          return { skuId: r.skuId, qty: milliQtyFixed(qtyMilli(qty)), delta: subQty(0, qty) };
         });
 
         await tx

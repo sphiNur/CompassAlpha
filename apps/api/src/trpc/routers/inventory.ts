@@ -44,6 +44,9 @@ import {
   PositiveDecimalStringSchema,
   STOCKTAKE_COUNT_MESSAGE,
   UuidSchema,
+  milliQtyFixed,
+  qtyMilli,
+  qtyMilliOrZero,
   stocktakeCountProblem,
 } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
@@ -242,8 +245,9 @@ export const inventoryRouter = router({
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
       // The schema's stocktakeCountProblem already refused anything but
-      // a non-negative decimal (CONF-23: a second check here was dead).
-      const targetNum = Number(input.target);
+      // a non-negative decimal (CONF-23: a second check here was dead); it
+      // read the text trimmed. Review QTY-03 (2026-11-11): in thousandths.
+      const target = qtyMilli(input.target.trim());
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         // M3.7 (2026-05-15): store-scope assertion. The flat permission
@@ -289,12 +293,12 @@ export const inventoryRouter = router({
             AND sku_id = ${input.skuId}
         `),
         );
-        const current = Number(cur[0]?.on_hand ?? '0');
-        const delta = (targetNum - current).toFixed(3);
-        if (Math.abs(Number(delta)) < 0.0005) {
+        const current = qtyMilliOrZero(cur[0]?.on_hand);
+        const delta = milliQtyFixed(target - current);
+        if (target === current) {
           // No-op stocktake; counted exactly what we thought. Don't
           // bloat the ledger with empty rows.
-          return { skipped: true as const, currentOnHand: current.toFixed(3) };
+          return { skipped: true as const, currentOnHand: milliQtyFixed(current) };
         }
         await tx.insert(s.inventoryMovements).values({
           orgId,
@@ -311,7 +315,7 @@ export const inventoryRouter = router({
         return {
           skipped: false as const,
           appliedDelta: delta,
-          newOnHand: targetNum.toFixed(3),
+          newOnHand: milliQtyFixed(target),
         };
       });
     }),
@@ -345,7 +349,8 @@ export const inventoryRouter = router({
           ),
         );
         await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
-        const negative = '-' + Number(input.qty).toFixed(3);
+        // QTY-03: exact; the schema allows 3 decimals at most.
+        const negative = milliQtyFixed(-qtyMilli(input.qty));
         await tx.insert(s.inventoryMovements).values({
           orgId,
           storeId: input.storeId,

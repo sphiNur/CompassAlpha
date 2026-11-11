@@ -6,6 +6,7 @@
  * with optimistic seq enforcement: if `(streamId, seq+N)` collides with a
  * concurrent writer, postgres unique violation → retry with fresh state.
  */
+import { milliQty, qtyMilli, qtyMilliOrZero, qtyTotalsBySku } from '@compass/contracts/quantity';
 import { conflict, forbidden, preconditionFailed, validation } from '../shared/errors';
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
@@ -91,8 +92,6 @@ export interface DecideOptions {
   clock?: Clock;
 }
 
-const STEP_TOLERANCE = 1e-6;
-
 export function decide(
   state: OrderState,
   command: OrderCommand,
@@ -159,27 +158,27 @@ export function decide(
           });
         }
       }
-      const qty = parseDecimal(command.qty, 'order.errors.invalidQty');
-      if (qty < 0) throw validation('order.errors.qtyNegative');
+      const qty = readQty(command.qty, 'order.errors.invalidQty');
+      if (qty < 0n) throw validation('order.errors.qtyNegative');
       // ORD-10 (2026-10-30): a product archived while it sat in a draft
       // could not be taken out again — zero is still allowed, more is not.
-      if (command.sku.isArchived && qty > 0) {
+      if (command.sku.isArchived && qty > 0n) {
         throw validation('order.errors.skuArchived', { skuId: command.skuId });
       }
-      const step = parseDecimal(command.sku.step, 'order.errors.invalidStep');
-      if (step > 0 && !isMultipleOf(qty, step)) {
+      const step = readQty(command.sku.step, 'order.errors.invalidStep');
+      if (step > 0n && qty % step !== 0n) {
         throw validation('order.errors.qtyNotMultipleOfStep', { step: command.sku.step });
       }
       const prev = state.items.get(itemKey(command.skuId, target))?.qty ?? '0';
       // Idempotent merge: same qty → no event.
-      if (sameDecimal(prev, command.qty)) return [];
+      if (qtyMilliOrZero(prev) === qty) return [];
       return [
         {
           ...baseFor(1, 'ItemAdjusted'),
           type: 'ItemAdjusted',
           payload: {
             skuId: command.skuId,
-            qty: normalizeDecimal(command.qty),
+            qty: milliQty(qty),
             prevQty: prev,
             byMemberId: command.actor.memberId,
             forMemberId: target,
@@ -260,7 +259,7 @@ export function decide(
         const qty = (raw.qty ?? '').trim();
         if (!name || name.length > 200) throw validation('order.errors.invalidExtraName');
         if (!unit || unit.length > 16) throw validation('order.errors.invalidExtraUnit');
-        if (!/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0) {
+        if (!/^\d+(\.\d{1,3})?$/.test(qty) || qtyMilli(qty) <= 0n) {
           throw validation('order.errors.invalidExtraQty');
         }
         const note = raw.note?.trim() || undefined;
@@ -600,7 +599,7 @@ export function decide(
       const emptyDraft =
         command.reason === 'empty_draft' &&
         state.status === 'draft' &&
-        [...state.items.values()].every((item) => !(Number(item.qty) > 0)) &&
+        [...state.items.values()].every((item) => qtyMilliOrZero(item.qty) <= 0n) &&
         state.extras.length === 0;
       if (state.status !== 'in_run' && state.status !== 'approved' && !emptyDraft) {
         throw preconditionFailed('order.errors.cannotArchive', {
@@ -688,42 +687,20 @@ function assertCanEditSession(state: OrderState, actor: ActorCtx): void {
  * with total qty 2. Single staff with 0 → counts as 0.
  */
 function countNonZero(state: OrderState): number {
-  const sums = new Map<string, number>();
-  for (const item of state.items.values()) {
-    const v = parseDecimal(item.qty, 'order.errors.invalidQty');
-    sums.set(item.skuId, (sums.get(item.skuId) ?? 0) + v);
+  return qtyTotalsBySku(state.items.values()).size;
+}
+
+// ---------- quantities: exact, in thousandths ----------
+// Review QTY-02 (2026-11-11): these were "string-based, no float drift" in
+// name only; they compared Numbers within 1e-6 and printed via toFixed(3).
+
+/** A command's quantity in thousandths; text that is not a decimal is refused. */
+function readQty(s: string, errorKey: string): bigint {
+  try {
+    return qtyMilli(s);
+  } catch {
+    throw validation(errorKey, { value: s });
   }
-  let n = 0;
-  for (const total of sums.values()) {
-    if (total > 0) n++;
-  }
-  return n;
-}
-
-// ---------- decimal helpers (string-based, no float drift) ----------
-
-function parseDecimal(s: string, errorKey: string): number {
-  const v = Number(s);
-  if (!Number.isFinite(v)) throw validation(errorKey, { value: s });
-  return v;
-}
-
-function normalizeDecimal(s: string): string {
-  // Trim trailing zeros after decimal point, preserve at least 0.
-  const v = Number(s);
-  if (!Number.isFinite(v)) return s;
-  // Up to 3 fractional digits to match DB precision.
-  return Number(v.toFixed(3)).toString();
-}
-
-function sameDecimal(a: string, b: string): boolean {
-  return Math.abs(Number(a) - Number(b)) < STEP_TOLERANCE;
-}
-
-function isMultipleOf(value: number, step: number): boolean {
-  if (step <= 0) return true;
-  const ratio = value / step;
-  return Math.abs(ratio - Math.round(ratio)) < STEP_TOLERANCE;
 }
 
 /**
@@ -738,7 +715,7 @@ function extrasEqual(a: SessionExtraItem[], b: SessionExtraItem[]): boolean {
     const bi = b[i]!;
     if (ai.name !== bi.name) return false;
     if (ai.unit !== bi.unit) return false;
-    if (!sameDecimal(ai.qty, bi.qty)) return false;
+    if (qtyMilliOrZero(ai.qty) !== qtyMilliOrZero(bi.qty)) return false;
     if ((ai.note ?? '') !== (bi.note ?? '')) return false;
   }
   return true;

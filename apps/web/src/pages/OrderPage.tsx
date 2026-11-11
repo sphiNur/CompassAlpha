@@ -79,6 +79,7 @@ import {
   isCanonicalUnit,
 } from '@compass/contracts/limits';
 import { estimateOrder } from '@compass/contracts/money';
+import { milliQty, qtyTotalsBySku } from '@compass/contracts/quantity';
 import type { UnitLabel } from '../lib/unitLabel';
 
 /** Order writes still waiting in the offline outbox for this store (an
@@ -451,21 +452,13 @@ export function OrderPage() {
 
   /**
    * Recompute aggregate totals[] from items[]. Used by the optimistic
-   * cache writer.
+   * cache writer. Review QTY-01 (2026-11-11): the same exact sum as the
+   * server's (contracts), not floats trimmed with toFixed(3).
    */
   const recomputeTotals = (
     items: Array<{ skuId: string; qty: string }>,
-  ): Array<{ skuId: string; qty: string }> => {
-    const sums = new Map<string, number>();
-    for (const it of items) {
-      const v = Number(it.qty);
-      if (v > 0) sums.set(it.skuId, (sums.get(it.skuId) ?? 0) + v);
-    }
-    return [...sums.entries()].map(([skuId, q]) => ({
-      skuId,
-      qty: q.toFixed(3).replace(/\.?0+$/, ''),
-    }));
-  };
+  ): Array<{ skuId: string; qty: string }> =>
+    [...qtyTotalsBySku(items)].map(([skuId, milli]) => ({ skuId, qty: milliQty(milli) }));
 
   /**
    * Tap handler. Always update the cache immediately, then schedule
