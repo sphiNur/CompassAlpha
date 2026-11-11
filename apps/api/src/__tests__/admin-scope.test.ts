@@ -1824,3 +1824,40 @@ describe('ADM1-04 a lapsed role binding holds nothing, anywhere', () => {
     expect(left).toEqual([]);
   });
 });
+
+// ---------- ADM1-05: a member's permissions per scope ----------
+
+describe('ADM1-05 the permissions screen reads each scope on its own', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'a manager of A who is staff in B: keys per store, a store deny stays in its store',
+    async () => {
+      const fx = fixture();
+      const admin = appRouter.createCaller(fx.superAdminCtx);
+      const storeA = await makeStore(`PermA-${Math.random()}`);
+      const storeB = await makeStore(`PermB-${Math.random()}`);
+      const user = await makeUser('Manager-A-Staff-B-Perms');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(memberId, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      await admin.admin.memberPermissionSet({
+        memberId,
+        permissionKey: 'order.draft',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: storeA.id,
+      });
+
+      const perms = await admin.admin.memberPermissionsList({ memberId });
+      const atA = perms.byScope.stores[storeA.id]!;
+      const atB = perms.byScope.stores[storeB.id]!;
+      // "From role" on B's tab used to include A's manager keys.
+      expect(atA.roleKeys).toContain('order.approve');
+      expect(atB.roleKeys).not.toContain('order.approve');
+      expect(perms.byScope.global.roleKeys).toEqual([]);
+      // The deny in A used to remove order.draft everywhere.
+      expect(atA.effective).not.toContain('order.draft');
+      expect(atB.effective).toContain('order.draft');
+      expect(perms.effective).toContain('order.draft');
+    },
+  );
+});

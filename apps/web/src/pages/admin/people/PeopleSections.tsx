@@ -2603,7 +2603,14 @@ function MemberPermissionsSheet({
   const currentScopeKey = scope.kind === 'global' ? 'global' : `store:${scope.storeId}`;
   const overrideByKey = overrideByScopeKey.get(currentScopeKey) ?? new Map();
 
-  const roleKeys = useMemo(() => new Set(detail.data?.roleKeys ?? []), [detail.data]);
+  // ADM1-05: the tab's own keys. A store no row names is as the
+  // organisation (global roles apply in every store).
+  const scopeKeys = detail.data
+    ? scope.kind === 'global'
+      ? detail.data.byScope.global
+      : (detail.data.byScope.stores[scope.storeId] ?? detail.data.byScope.global)
+    : null;
+  const roleKeys = useMemo(() => new Set(scopeKeys?.roleKeys ?? []), [scopeKeys]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, Array<{ key: string; description: string | null }>>();
@@ -2651,10 +2658,10 @@ function MemberPermissionsSheet({
           : i18n.t('people.permissionsTitle')
       }
       description={
-        detail.data
+        scopeKeys
           ? i18n.t('people.effectiveOverridesLine', {
-              eff: detail.data.effective.length,
-              ov: detail.data.overrides.length,
+              eff: scopeKeys.effective.length,
+              ov: overrideByKey.size,
             })
           : undefined
       }
