@@ -1,16 +1,17 @@
 # CompassAlpha CI (M1.9, 2026-05-07; expanded M1.9-extra 2026-05-07)
 #
-# Three jobs in one file:
+# Jobs:
 #
 #   1. unit
-#        Migration journal consistency, i18n catalog parity, workspace
-#        type-check, all unit tests EXCEPT the PG-gated integration suite.
+#        Migration journal consistency, workspace type-check (a key
+#        missing from a catalog fails here), the i18n and UI guards, all
+#        unit tests EXCEPT the PG-gated integration suite.
 #        Runs on every push + PR; ~45-90s warm.
 #
 #   2. integration
-#        Spins up a real Postgres 16 service, applies migrations,
-#        runs the PG-gated tests (full-lifecycle, store-scoped-admin,
-#        refreshTokens service, cancel-run-cascade, rls-isolation).
+#        Spins up a real Postgres 18 service, applies migrations, runs
+#        every PG-gated test in apps/api and apps/worker as a role that
+#        owns nothing and is subject to RLS.
 #        Runs on every push + PR; ~2-3min cold.
 #
 # Why two jobs:
@@ -108,61 +109,15 @@ jobs:
             console.log('migration journal consistent:', sqls.length, 'files');
           "
 
-      - name: i18n catalog parity
-        # Each catalog must have the same key count as en.ts. The
-        # CatalogKey type already enforces "no extra keys", but a
-        # missing key in ru/uz/zh would silently fall back to the
-        # English literal at runtime. Cheap grep-based check.
-        run: |
-          en=$(grep -cE "^  '[a-z]" packages/i18n/src/catalogs/en.ts)
-          for lang in zh ru uz; do
-            count=$(grep -cE "^  '[a-z]" packages/i18n/src/catalogs/$lang.ts)
-            if [ "$count" != "$en" ]; then
-              echo "i18n DRIFT: en has $en keys, $lang has $count"
-              exit 1
-            fi
-          done
-          echo "i18n parity: $en keys × 4 langs"
-
-      - name: ICU plural sanity
-        # 2026-07-30. Two failure modes, both of which shipped and neither of
-        # which any existing check could see:
-        #
-        #   1. `format()` used to DISCARD plural blocks, replacing
-        #      `{n, plural, one {# role} other {# roles}}` with the bare count.
-        #      24 keys in en / 20 in ru / 8 in uz were authored in ICU form
-        #      anyway, so English and Russian silently rendered "3" where they
-        #      meant "3 contributors". zh has no plural blocks at all (Chinese
-        #      doesn't inflect for number) — which is exactly why the primary
-        #      locale looked perfect the whole time.
-        #
-        #   2. A CLDR *category* case whose body hardcodes a digit:
-        #      `one {1 role}`. Russian's `one` covers 1, 21, 31, 101 …, so
-        #      n=21 rendered "1 role". 8 ru keys + 1 en key had this.
-        #
-        # The engine is fixed and unit-tested (packages/i18n plural.test.ts).
-        # This grep is the cheap guard against (2) creeping back in a new key:
-        # inside a category case the count must come from `#` or `{n}`.
-        run: |
-          bad=$(grep -nE "\b(one|few|many|other) \{[^#{]*[0-9]" \
-            packages/i18n/src/catalogs/*.ts || true)
-          if [ -n "$bad" ]; then
-            echo "ICU plural: category case hardcodes a digit instead of # / {n}:"
-            echo "$bad"
-            echo
-            echo "In ru, 'one' also matches 21/31/101 — a literal 1 renders wrong."
-            exit 1
-          fi
-          echo "ICU plural: category cases all reference the count ✓"
-
       - name: Untranslated-literal guard
-        # 2026-07-30. The parity check above is blind to the failure mode
-        # that actually shipped: strings that never became KEYS. The
-        # 2026-07-30 flow walkthrough found 124 English literals rendering
-        # inside an otherwise-Chinese UI — `Edit` / `Archive` / `+ New SKU`
-        # buttons, `Archive SKU "x"?` confirms, and every string
-        # @compass/ui renders itself (QtyControl's quick-pick sheet was
-        # entirely English, and that's the app's most-used interaction).
+        # 2026-07-30. The catalog checks (type-check, catalog lint) are
+        # blind to the failure mode that actually shipped: strings that
+        # never became KEYS. The 2026-07-30 flow walkthrough found 124
+        # English literals rendering inside an otherwise-Chinese UI —
+        # `Edit` / `Archive` / `+ New SKU` buttons, `Archive SKU "x"?`
+        # confirms, and every string @compass/ui renders itself
+        # (QtyControl's quick-pick sheet was entirely English, and that's
+        # the app's most-used interaction).
         #
         # Started as a ratchet (baseline 124) so CI wasn't red from day one.
         # The backlog was cleared in three passes and the count reached 0, so
