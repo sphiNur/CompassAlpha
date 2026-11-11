@@ -6,7 +6,7 @@ import { todayInTz } from '@compass/domain';
 import { appRouter } from '../trpc/router';
 import type { SessionContext } from '../trpc/context';
 import { loadCatalog } from '@compass/i18n/catalogs';
-import { normalizeSettlementMoney, SETTLEMENT_REASON_KEYS } from '../trpc/routers/settlement';
+import { normalizeSettlementMoney, SETTLEMENT_REASON_KEYS } from '../services/settlement';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';

@@ -9,6 +9,7 @@ import type { RequestContext } from './context';
 import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
 import { isUniqueViolation } from '../services/pgErrors';
+import { stableJson } from '../services/stableJson';
 
 /**
  * Placeholders a non-domain refusal names for its sentence, thrown as
@@ -281,18 +282,6 @@ const IDEMPOTENCY_WAIT_MS = 8 * 1000;
  * tRPC internals — decoupled and self-healing across restarts.
  */
 let capturedMiddlewareMarker: unknown;
-
-/** JSON with object keys sorted, so the same input always hashes alike. */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object' && !(value instanceof Date)) {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 
 /**
  * BUY-16 (2026-10-31): what the key was first used for. The cache used to

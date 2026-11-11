@@ -9,6 +9,8 @@
  *
  * Pure; tests in __tests__/auditChanges.test.ts.
  */
+import { stableJson } from './stableJson';
+
 export type AuditChanges = Record<string, [unknown, unknown]>;
 
 /**
@@ -49,17 +51,4 @@ function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
   return stableJson(a) === stableJson(b);
-}
-
-/** JSON with object keys sorted, so `{ru, en}` equals `{en, ru}`. */
-function stableJson(value: unknown): string {
-  return JSON.stringify(value, (_key, v: unknown) =>
-    v && typeof v === 'object' && !Array.isArray(v)
-      ? Object.fromEntries(
-          Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
-            a < b ? -1 : a > b ? 1 : 0,
-          ),
-        )
-      : v,
-  );
 }

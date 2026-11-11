@@ -20,9 +20,9 @@ import {
   effectivePermissionsForStore,
   getActorStoreIds,
   getActorStoreIdsForPermission,
+  resolveRunCreateStoreScope,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
-import { resolveRunCreateStoreScope } from './run';
 
 const NavCountsInputSchema = z.object({
   /** The store chosen in the header; omitted for 「全部门店」. */
@@ -99,7 +99,7 @@ export const navRouter = router({
       // offers to start a run with (run.previewCreatable's scope). The tab
       // is cross-store, so this ignores the header store.
       if (session.permissions.has('run.purchase')) {
-        const storeIds = await resolveRunCreateStoreScope(tx, ctx);
+        const storeIds = await resolveRunCreateStoreScope(tx, session);
         const [row] = await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(s.orderSessionsV)
