@@ -409,6 +409,10 @@ export const en = {
   'people.perm.fromRole': 'From role',
   'people.perm.allow': 'Allow',
   'people.perm.deny': 'Deny',
+  'people.perm.allowOnlyOwn': 'You can choose "Allow" only for permissions you have here yourself.',
+  'people.perm.allowAdminTier': 'Only someone above the admin level can give this permission.',
+  'people.perm.roleNeedsOwn':
+    'You do not have this permission across the workspace, so it cannot go into a role.',
   'people.grantInStores': 'In specific stores',
   'stores.codeLabel': 'code {code}',
   'stores.noCode': 'no code',

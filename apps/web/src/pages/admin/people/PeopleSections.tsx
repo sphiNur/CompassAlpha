@@ -73,15 +73,19 @@ import {
   canRename,
   canRevokeRole,
   canSetOverride,
+  canPutKeyInRole,
   canSetStatus,
   orgRankOf,
+  overrideEffects,
   rankIn,
   rolePassesOn,
   transferTargets,
   type Actor,
   type Binding,
+  type PassOn,
   type TargetMember,
 } from '../../../lib/authority';
+import { groupPermissions } from './permissionGroups';
 
 /**
  * CMP-ADM-1: the signed-in person as lib/authority needs them — their own
@@ -1099,16 +1103,11 @@ function RoleCreateSheet({
     rankText !== String(defaultRank) ||
     picked.size > 0;
 
-  const grouped = useMemo(() => {
-    const m = new Map<string, Array<{ key: string; description: string | null }>>();
-    for (const p of permsQuery.data ?? []) {
-      const ns = p.key.split('.')[0] ?? 'misc';
-      const arr = m.get(ns) ?? [];
-      arr.push({ key: p.key, description: p.description });
-      m.set(ns, arr);
-    }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [permsQuery.data]);
+  const grouped = useMemo(
+    () =>
+      groupPermissions(permsQuery.data ?? [], (ns) => roleText.permissionGroup(ns), i18n.locale),
+    [permsQuery.data, roleText, i18n.locale],
+  );
 
   const create = trpc.admin.roleCreate.useMutation({
     onSuccess: (data) => {
@@ -1221,22 +1220,12 @@ function RoleCreateSheet({
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
-                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label active:opacity-80">
-                          <input
-                            type="checkbox"
-                            checked={picked.has(p.key)}
-                            onChange={() => togglePerm(p.key)}
-                            className="mt-0.5 h-4 w-4"
-                          />
-                          <div className="min-w-0 flex-1">
-                            {/* Walkthrough F13 (2026-11-05): the plain-language name first, as on
-                                the role page; the code under it, small. */}
-                            <div className="text-old-label text-[var(--c-fg)]">
-                              {roleText.permission(p.key, p.description)}
-                            </div>
-                            <div className="mt-0.5 font-mono text-old-tiny text-[var(--c-fg-muted)]">{p.key}</div>
-                          </div>
-                        </label>
+                        <PermissionKeyOption
+                          perm={p}
+                          checked={picked.has(p.key)}
+                          blocked={canPutKeyInRole(p) ? null : i18n.t('people.perm.roleNeedsOwn')}
+                          onToggle={() => togglePerm(p.key)}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -1247,6 +1236,43 @@ function RoleCreateSheet({
         </div>
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * One permission in a role's key list (create and edit). Walkthrough F13
+ * (2026-11-05): the plain-language name first, as on the role page; the
+ * key under it, small. ADM1-07: a key the actor may not put in the role
+ * is disabled, with the reason under it. The kit's Checkbox (ADM1-13: two
+ * hand-written copies of this row).
+ */
+function PermissionKeyOption({
+  perm,
+  checked,
+  blocked,
+  onToggle,
+}: {
+  perm: { key: string; description: string | null };
+  checked: boolean;
+  /** Why it cannot be ticked, or null. */
+  blocked: string | null;
+  onToggle: () => void;
+}) {
+  const roleText = useRoleLabels();
+  return (
+    <Checkbox
+      checked={checked}
+      disabled={blocked !== null}
+      onChange={onToggle}
+      className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3"
+      label={roleText.permission(perm.key, perm.description)}
+      hint={
+        <>
+          <span className="block font-mono text-old-tiny">{perm.key}</span>
+          {blocked ? <span className="block">{blocked}</span> : null}
+        </>
+      }
+    />
   );
 }
 
@@ -1387,18 +1413,14 @@ function RolePermissionsSheet({
   // Edit-mode source: full permission catalog. Read-mode source: only
   // the permissions the role currently has. Group both by namespace.
   const grouped = useMemo(() => {
-    const source: Array<{ key: string; description: string | null }> = editing
-      ? (permsQuery.data ?? []).map((p) => ({ key: p.key, description: p.description }))
-      : (detail.data?.permissions ?? []).map((k) => ({ key: k, description: null }));
-    const m = new Map<string, Array<{ key: string; description: string | null }>>();
-    for (const p of source) {
-      const ns = p.key.split('.')[0] ?? 'misc';
-      const arr = m.get(ns) ?? [];
-      arr.push(p);
-      m.set(ns, arr);
-    }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [editing, detail.data, permsQuery.data]);
+    const source: ReadonlyArray<{ key: string; description: string | null; passOn?: PassOn }> =
+      editing
+        ? (permsQuery.data ?? [])
+        : (detail.data?.permissions ?? []).map((k) => ({ key: k, description: null }));
+    return groupPermissions(source, (ns) => roleText.permissionGroup(ns), i18n.locale);
+  }, [editing, detail.data, permsQuery.data, roleText, i18n.locale]);
+  // ADM1-07: keys the role has may stay (roleUpdate gates only additions).
+  const inRole = useMemo(() => new Set(detail.data?.permissions ?? []), [detail.data]);
 
   return (
     <Sheet
@@ -1534,24 +1556,15 @@ function RolePermissionsSheet({
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => {
                       if (editing) {
+                        const blocked = !inRole.has(p.key) && !canPutKeyInRole(p);
                         return (
                           <li key={p.key}>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label active:opacity-80">
-                              <input
-                                type="checkbox"
-                                checked={picked.has(p.key)}
-                                onChange={() => togglePerm(p.key)}
-                                className="mt-0.5 h-4 w-4"
-                              />
-                              <div className="min-w-0 flex-1">
-                                {/* Walkthrough F13 (2026-11-05): the plain-language name first, as on
-                                    the role page; the code under it, small. */}
-                                <div className="text-old-label text-[var(--c-fg)]">
-                                  {roleText.permission(p.key, p.description)}
-                                </div>
-                                <div className="mt-0.5 font-mono text-old-tiny text-[var(--c-fg-muted)]">{p.key}</div>
-                              </div>
-                            </label>
+                            <PermissionKeyOption
+                              perm={p}
+                              checked={picked.has(p.key)}
+                              blocked={blocked ? i18n.t('people.perm.roleNeedsOwn') : null}
+                              onToggle={() => togglePerm(p.key)}
+                            />
                           </li>
                         );
                       }
@@ -2647,19 +2660,33 @@ function MemberPermissionsSheet({
     : null;
   const roleKeys = useMemo(() => new Set(scopeKeys?.roleKeys ?? []), [scopeKeys]);
 
-  const grouped = useMemo(() => {
-    const m = new Map<string, Array<{ key: string; description: string | null }>>();
-    for (const p of allPerms.data ?? []) {
-      const ns = p.key.split('.')[0] ?? 'misc';
-      const arr = m.get(ns) ?? [];
-      arr.push({ key: p.key, description: p.description });
-      m.set(ns, arr);
-    }
-    return [...m.entries()].sort((a, b) =>
-      roleText.permissionGroup(a[0]).localeCompare(roleText.permissionGroup(b[0])),
+  const grouped = useMemo(
+    () => groupPermissions(allPerms.data ?? [], (ns) => roleText.permissionGroup(ns), i18n.locale),
+    [allPerms.data, roleText, i18n.locale],
+  );
+  const scopeStoreId = scope.kind === 'global' ? null : scope.storeId;
+  const scopeEditable = canEditScope(scopeStoreId);
+  // ADM1-07: what may be set for each key here (lib/authority
+  // overrideEffects). A key nothing can be set for, an organisation-wide
+  // one in a store, is listed only while an override of it is there to
+  // remove.
+  const rows = grouped
+    .map(
+      ([ns, keys]) =>
+        [
+          ns,
+          keys
+            .map((p) => ({ p, effects: overrideEffects(actor, p, scopeStoreId) }))
+            .filter(({ p, effects }) => effects.allow || effects.deny || overrideByKey.has(p.key)),
+        ] as const,
+    )
+    .filter(([, keys]) => keys.length > 0);
+  // Said once above the list: a store manager lacks most keys.
+  const allowOnlyOwn =
+    scopeEditable &&
+    rows.some(([, keys]) =>
+      keys.some(({ effects }) => effects.reason === 'people.perm.allowOnlyOwn'),
     );
-  }, [allPerms.data, roleText]);
-  const scopeEditable = canEditScope(scope.kind === 'global' ? null : scope.storeId);
 
   const handleSet = (key: string, mode: 'role' | 'allow' | 'deny') => {
     if (!target || !scopeEditable) return;
@@ -2754,16 +2781,26 @@ function MemberPermissionsSheet({
               ? i18n.t('people.overridesHowGlobal')
               : i18n.t('people.overridesHowStore', { store: scope.storeName })}
           </Banner>
-          {grouped.map(([ns, keys]) => (
+          {allowOnlyOwn ? (
+            <p className="text-old-label text-[var(--c-fg-muted)]">
+              {i18n.t('people.perm.allowOnlyOwn')}
+            </p>
+          ) : null}
+          {rows.map(([ns, keys]) => (
             <div key={ns}>
               {/* CMP-ADM-2: localised group, name and description, not the
                   English seed text and raw keys. */}
               <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
               <ul className="mt-1 flex flex-col gap-1">
-                {keys.map((p) => {
+                {keys.map(({ p, effects }) => {
                   const override = overrideByKey.get(p.key) ?? null;
                   const fromRole = roleKeys.has(p.key);
                   const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
+                  // The rarer reasons are said on the row itself.
+                  const rowReason =
+                    scopeEditable && effects.reason !== 'people.perm.allowOnlyOwn'
+                      ? effects.reason
+                      : null;
                   return (
                     <li
                       key={p.key}
@@ -2789,17 +2826,24 @@ function MemberPermissionsSheet({
                             value: 'allow',
                             label: i18n.t('people.perm.allow'),
                             activeBg: 'bg-[var(--c-success)]',
+                            disabled: !effects.allow,
                           },
                           {
                             value: 'deny',
                             label: i18n.t('people.perm.deny'),
                             activeBg: 'bg-[var(--c-danger)]',
+                            disabled: !effects.deny,
                           },
                         ]}
                         onChange={(next) => handleSet(p.key, next)}
                         disabled={!scopeEditable || set.isPending || revoke.isPending}
                         ariaLabel={roleText.permission(p.key, p.description)}
                       />
+                      {rowReason ? (
+                        <p className="text-old-label text-[var(--c-fg-muted)]">
+                          {i18n.t(rowReason)}
+                        </p>
+                      ) : null}
                     </li>
                   );
                 })}

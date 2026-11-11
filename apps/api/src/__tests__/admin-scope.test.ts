@@ -2031,3 +2031,40 @@ describe('ADM1-08 a role goes only to someone below the granter, never to themse
     },
   );
 });
+
+describe('ADM1-07 permissionList says where the actor may pass each key on', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'a store manager: the keys of their role in their store, none organisation-wide',
+    async () => {
+      const fx = fixture();
+      const store = await makeStore(`Keys-${Math.random()}`);
+      const user = await makeUser('Keys Manager');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fx.managerRoleId, { type: 'store', storeId: store.id });
+      const caller = callerFor(await sessionFor(memberId, user.id));
+      const passOn = new Map((await caller.admin.permissionList()).map((p) => [p.key, p.passOn]));
+      expect(passOn.get('order.approve')).toEqual({ global: false, storeIds: [store.id] });
+      // The manager role leaves the run keys out on purpose.
+      expect(passOn.get('run.purchase')).toEqual({ global: false, storeIds: [] });
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'an org admin: their keys organisation-wide, not those only the super admin has; the super admin: all',
+    async () => {
+      const fx = fixture();
+      const user = await makeUser('Keys Admin');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fx.adminRoleId, { type: 'global' });
+      const caller = callerFor(await sessionFor(memberId, user.id));
+      const passOn = new Map((await caller.admin.permissionList()).map((p) => [p.key, p.passOn]));
+      expect(passOn.get('order.approve')?.global).toBe(true);
+      expect(passOn.get('run.amend')?.global).toBe(false);
+
+      const owner = appRouter.createCaller(fx.superAdminCtx);
+      const all = await owner.admin.permissionList();
+      expect(all.length).toBeGreaterThan(0);
+      expect(all.filter((p) => !p.passOn.global)).toEqual([]);
+    },
+  );
+});

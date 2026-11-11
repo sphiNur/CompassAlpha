@@ -10,6 +10,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import { ORG_WIDE_PERMISSION_KEYS } from '@compass/contracts';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from './orgAdmin';
 
 /**
@@ -242,23 +243,6 @@ async function loadAssignedStoreIds(db: DB, memberId: string): Promise<string[]>
   }
   return [...storeIds];
 }
-
-/**
- * Keys that mean authority over the whole organisation. Only a global role
- * binding or a global override yields them; the same key granted in one
- * store counts nowhere.
- *
- * - `org.admin`: the organisation-admin marker.
- * - `dishes.manage` (review CONF-04, 2026-11-09): dishes and recipes are
- *   shared by every store, and each store's sales deduct stock by the same
- *   recipe. A store-level grant let one store change the menu, the recipes
- *   and the selling prices of all of them, which M3.2 took away from store
- *   managers on purpose.
- */
-export const ORG_WIDE_PERMISSION_KEYS: ReadonlySet<string> = new Set([
-  'org.admin',
-  'dishes.manage',
-]);
 
 /** Whether a grant of `key` at this scope counts at all. */
 export function grantCounts(key: string, scopeType: string): boolean {
