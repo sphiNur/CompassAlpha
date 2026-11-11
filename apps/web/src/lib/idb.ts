@@ -118,6 +118,13 @@ export interface OutboxEntry<P = unknown> {
    * entries queued before this field existed.
    */
   ownerUserId?: string;
+  /**
+   * The organisation the write was made in (COREWEB2-03). One person can
+   * belong to several, and a replay runs under the session's current one,
+   * where the write's ids do not exist. Absent on entries queued before
+   * this field existed.
+   */
+  ownerOrgId?: string;
   /** When the last failed replay that counted toward the retry cap ran. */
   lastAttemptAt?: number;
 }

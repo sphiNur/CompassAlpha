@@ -1,11 +1,9 @@
 import { useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { Button, Field, Input, SectionLabel, useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
-import { resetNavStore } from '../stores/navStore';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
 /**
@@ -16,7 +14,6 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
   const toast = useToast();
   const errToast = useErrToast();
   const setSession = useAuthStore((s) => s.setSession);
-  const queryClient = useQueryClient();
   const [name, setName] = useState('');
   // AUTH-1: `isPending` only disables the button after a re-render, so a
   // fast double tap created two workspaces with the same name. Lock in
@@ -26,16 +23,13 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
   const create = trpc.auth.createOrganization.useMutation({
     meta: BLOCKS_NAVIGATION,
     onSuccess(data) {
+      // The new session drops the previous workspace's cached data and
+      // navigation (App's useQueryCachePersistence, COREWEB1-04).
       setSession({
         accessToken: data.tokens.accessToken,
         refreshToken: data.tokens.refreshToken,
         session: data.session,
       });
-      // Cached queries are keyed by route, not by tenant. Drop them so
-      // no row from the previous workspace can flash after the switch.
-      queryClient.clear();
-      // 2026-10-21 audit CA-33: same for persisted navigation.
-      resetNavStore();
       toast.success(i18n.t('workspace.create.created'));
       setName('');
       onCreated?.();
