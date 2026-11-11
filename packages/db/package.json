@@ -25,6 +25,7 @@
     "ulid": "^2.3.0"
   },
   "devDependencies": {
+    "@compass/i18n": "workspace:*",
     "@eslint/js": "^9.39.4",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9.39.4",

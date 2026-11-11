@@ -62,7 +62,8 @@ import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
 import { SubscriptionSummary } from '../components/SubscriptionSummary';
-// Operations sections — extracted to admin/operations (Phase 5 step 1).
+// Operations sections — extracted to admin/operations (Phase 5 step 1),
+// one file each since review ADM2-10.
 import {
   ActivitySection,
   HistorySection,
@@ -70,7 +71,7 @@ import {
   PriceReportSection,
   FinanceSection,
   MaintenanceSection,
-} from './admin/operations/OperationsSections';
+} from './admin/operations';
 // Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2),
 // one file each since review ADM2-11.
 import {
