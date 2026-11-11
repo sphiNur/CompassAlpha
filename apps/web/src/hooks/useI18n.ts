@@ -15,11 +15,6 @@ import {
   type ProductNameParts,
 } from '../lib/productName';
 
-const VALID_LOCALES = ['en', 'zh', 'ru', 'uz'] as const;
-function asLocale(v: string | null | undefined): Locale | null {
-  return v && (VALID_LOCALES as readonly string[]).includes(v) ? (v as Locale) : null;
-}
-
 /**
  * Module-level "loaded locales" version counter. Incremented every
  * time a dynamic catalog import resolves. useI18n subscribes via a
@@ -70,8 +65,9 @@ function useEnsureLocale(locale: Locale): void {
 
 export function useI18n() {
   const locale = useAuthStore((s) => s.session?.user.locale ?? null);
-  // Read as the first screen was (bootLocale): a session from before the
-  // server kept only the four still carries Telegram's raw code.
+  // No session yet: the platform's language, as the first screen
+  // (bootLocale) chose it. A saved session's language was checked when it
+  // was restored (authStore withKnownLocales).
   const resolved = accountLocale(locale, platformLanguage());
   useEnsureLocale(resolved);
   // boot-guard.js sets <html lang> from the Telegram / browser language;
@@ -227,7 +223,7 @@ export type { ProductNameParts };
  */
 export function useVendorI18n() {
   const i18n = useI18n();
-  const secondaryLocale = asLocale(useAuthStore((s) => s.session?.user.secondaryLocale ?? null));
+  const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
   const locale: Locale = vendorLocale(i18n.locale, secondaryLocale);
   useEnsureLocale(locale);
   return useMemo(() => (locale === i18n.locale ? i18n : createI18n(locale)), [i18n, locale]);

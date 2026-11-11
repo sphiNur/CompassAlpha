@@ -14,13 +14,19 @@
  * a page that misses it still catches up on its next refetch.
  */
 import { sql, type SQL } from 'drizzle-orm';
+import type { RealtimeMessage } from '@compass/contracts/schemas/realtime';
 
 export const REALTIME_CHANNEL = 'compass_realtime';
 
-/** The messages the worker sends; the same shape as the hub's. */
-export type DbRealtimeMessage =
-  | { type: 'order.changed'; orgId: string; sessionId: string; lastSeq: number }
-  | { type: 'run.changed'; orgId: string; runId: string; lastSeq: number };
+/**
+ * The messages the worker sends: the hub's order and run pushes. Review
+ * COREAPI-33 (2026-11-12): taken from the one definition in contracts, so
+ * the two cannot drift apart.
+ */
+export type DbRealtimeMessage = Extract<
+  RealtimeMessage,
+  { type: 'order.changed' } | { type: 'run.changed' }
+>;
 
 /** Announce `message` once the transaction `tx` commits. */
 export async function notifyRealtime(

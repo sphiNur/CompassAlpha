@@ -20,7 +20,7 @@ import {
   TelegramLoginInputSchema,
   RefreshInputSchema,
   CompleteOnboardingInputSchema,
-  type SessionSchema as SessionShape,
+  type Session,
 } from '@compass/contracts';
 import { detectLocale } from '@compass/i18n';
 import { authedProcedure, publicProcedure, router } from '../trpc';
@@ -106,8 +106,6 @@ function enforceRate(scope: string, ip: string | null | undefined): void {
     });
   }
 }
-
-type Session = z.infer<typeof SessionShape>;
 
 type LoginIdentity = {
   userId: string;

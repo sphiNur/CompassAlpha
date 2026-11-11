@@ -43,4 +43,28 @@ describe('restoring the stored session (DX-SHL-16)', () => {
     const out = mergePersistedAuth({ accessToken: 'a', refreshToken: 'r', session, currentStoreId: 'gone' }, current);
     expect(out.currentStoreId).toBe('s1');
   });
+
+  // COREAPI-33: the session type is the server's, whose languages are the
+  // four. Sessions saved by older builds are read as the server reads them.
+  test('a raw Telegram language and a missing second language are read as one of the four', () => {
+    const old = {
+      ...session,
+      user: { ...session.user, locale: 'zh-hans', secondaryLocale: undefined },
+    };
+    const out = mergePersistedAuth(
+      { accessToken: 'a', refreshToken: 'r', session: old, currentStoreId: 's1' },
+      current,
+    );
+    expect(out.session?.user.locale).toBe('zh');
+    expect(out.session?.user.secondaryLocale).toBeNull();
+    const withSecond = {
+      ...session,
+      user: { ...session.user, locale: 'en', secondaryLocale: 'ru-RU' },
+    };
+    const out2 = mergePersistedAuth(
+      { accessToken: 'a', refreshToken: 'r', session: withSecond, currentStoreId: 's1' },
+      current,
+    );
+    expect(out2.session?.user.secondaryLocale).toBe('ru');
+  });
 });
