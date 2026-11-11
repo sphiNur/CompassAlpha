@@ -1190,6 +1190,52 @@ function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
   tallyPreviewLine(group, line);
 }
 
+/**
+ * What a preview group's toggle says: the store or stall, how to reach
+ * the stall, and the group's money line. The name takes up to two lines
+ * and the money line wraps; truncated, at 320 px it read «Total 0 UZS ·
+ * 2 items without a r…».
+ */
+function PreviewGroupTitle({
+  name,
+  contact,
+  meta,
+}: {
+  name: string;
+  contact?: string | null;
+  meta: string;
+}) {
+  return (
+    <span className="block min-w-0 flex-1">
+      <span className="line-clamp-2 break-words text-old-body font-semibold text-[var(--c-fg)]">
+        {name}
+      </span>
+      {contact ? (
+        <span className="block text-old-label text-[var(--c-fg-muted)]">{contact}</span>
+      ) : null}
+      <span className="mt-0.5 block break-words text-old-label tabular-nums text-[var(--c-fg-muted)]">
+        {meta}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A heading inside an open preview group: a stall within a store, or a
+ * store within a stall. When the name and its money line do not fit on
+ * one line, the money line moves under the name. The stall heading used
+ * to truncate instead, and at 320 px «Unassigned stall» next to a long
+ * total read «U.».
+ */
+function PreviewSubheading({ name, meta }: { name: string; meta: string }) {
+  return (
+    <div className="mb-1 flex flex-wrap items-baseline gap-x-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
+      <span className="min-w-0 break-words">{name}</span>
+      <span className="ml-auto text-right font-normal tabular-nums">{meta}</span>
+    </div>
+  );
+}
+
 export function PreviewSummaryCard({
   preview,
   skuById,
@@ -1952,14 +1998,20 @@ export function PreviewSummaryCard({
 
           <div className="flex flex-col gap-1">
             {byStore.map((g) => (
-              <div key={g.storeId} className="flex items-baseline gap-2 text-old-body-sm">
-                <span className="min-w-0 flex-1 truncate">{g.storeName}</span>
+              // At 320 px the price warning left the store name five
+              // letters. The name keeps at least 8rem; what does not fit
+              // beside it moves to a second line.
+              <div
+                key={g.storeId}
+                className="flex flex-wrap items-baseline gap-x-2 text-old-body-sm"
+              >
+                <span className="min-w-[8rem] flex-1 break-words">{g.storeName}</span>
                 {g.unknownCount > 0 ? (
-                  <span className="shrink-0 text-old-label text-[var(--c-warning-fg)]">
+                  <span className="text-old-label text-[var(--c-warning-fg)]">
                     {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}
-                <span className="shrink-0 tabular-nums text-[var(--c-fg)]">
+                <span className="ml-auto shrink-0 tabular-nums text-[var(--c-fg)]">
                   {formatMoney(g.total, currency)}
                 </span>
               </div>
@@ -2019,14 +2071,10 @@ export function PreviewSummaryCard({
                   <span aria-hidden className="shrink-0 font-mono text-old-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
-                  <span className="block min-w-0 flex-1">
-                    <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                      {g.storeName}
-                    </span>
-                    <span className="mt-0.5 block truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                      {groupMoneyMeta(g.total, g.unknownCount)}
-                    </span>
-                  </span>
+                  <PreviewGroupTitle
+                    name={g.storeName}
+                    meta={groupMoneyMeta(g.total, g.unknownCount)}
+                  />
                 </button>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
@@ -2045,12 +2093,10 @@ export function PreviewSummaryCard({
                   i18n.locale,
                 ).map((supplier) => (
                   <section key={supplier.supplierId ?? '__unassigned__'}>
-                    <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                      <span className="min-w-0 flex-1 truncate">{supplier.supplierName}</span>
-                      <span className="shrink-0 font-normal tabular-nums">
-                        {groupMoneyMeta(supplier.total, supplier.unknownCount)}
-                      </span>
-                    </div>
+                    <PreviewSubheading
+                      name={supplier.supplierName}
+                      meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
+                    />
                     <ul className="overflow-hidden rounded-[var(--r-utility)]">
                       {supplier.items.map((line, idx) => renderLine(line, idx))}
                     </ul>
@@ -2130,19 +2176,11 @@ export function PreviewSummaryCard({
                   <span aria-hidden className="shrink-0 font-mono text-old-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
-                  <span className="block min-w-0 flex-1">
-                    <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                      {b.supplierName}
-                    </span>
-                    {b.contactTg ? (
-                      <span className="block text-old-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
-                    ) : b.contactPhone ? (
-                      <span className="block text-old-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
-                    ) : null}
-                    <span className="mt-0.5 block truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                      {groupMoneyMeta(b.total, b.unknownCount)}
-                    </span>
-                  </span>
+                  <PreviewGroupTitle
+                    name={b.supplierName}
+                    contact={b.contactTg ? `@${b.contactTg}` : b.contactPhone}
+                    meta={groupMoneyMeta(b.total, b.unknownCount)}
+                  />
                 </button>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
@@ -2175,12 +2213,10 @@ export function PreviewSummaryCard({
               <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
-                    <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                      <span>{store.storeName}</span>
-                      <span className="ml-auto font-normal tabular-nums">
-                        {groupMoneyMeta(store.total, store.unknownCount)}
-                      </span>
-                    </div>
+                    <PreviewSubheading
+                      name={store.storeName}
+                      meta={groupMoneyMeta(store.total, store.unknownCount)}
+                    />
                     <ul className="overflow-hidden rounded-[var(--r-utility)]">
                       {store.items.map((line, idx) =>
                         renderLine(line, idx, { editableSupplier: true }),
