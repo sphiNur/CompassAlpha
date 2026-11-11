@@ -156,6 +156,31 @@ describe.skipIf(!SHOULD_RUN)('a purge says what it deleted (ADM2-05)', () => {
     }
   });
 
+  test('a date purge lists the stores whose orders went; each store’s admin sees it', async () => {
+    const { db, orgId, storeA, storeB, owner, managerA, managerB } = fix!;
+    const day = '2026-06-22';
+    for (const storeId of [storeA, storeB]) {
+      await db.insert(s.orderSessionsV).values({
+        id: randomUUID(),
+        orgId,
+        storeId,
+        orderDate: day,
+        status: 'submitted',
+        initiatedByMemberId: owner.memberId,
+      });
+    }
+    await owner.as.admin.purgeByDate({ date: day, dryRun: false });
+    const row = await auditRow('admin.purge.date', orgId);
+    expect(row?.inputs).toMatchObject({ date: day });
+    expect(((row?.inputs as { storeIds?: string[] }).storeIds ?? []).sort()).toEqual(
+      [storeA, storeB].sort(),
+    );
+    for (const manager of [managerA, managerB]) {
+      const seen = await manager.as.admin.adminAuditList({ limit: 200 });
+      expect(seen.some((r) => r.action === 'admin.purge.date')).toBe(true);
+    }
+  });
+
   test('a strict audit that cannot be written fails the action with it', async () => {
     const { db, orgId, owner } = fix!;
     const ctx = { session: { userId: owner.userId, orgId } };

@@ -12,9 +12,14 @@ afterEach(() => {
 // R2-ORD-5 (2026-10-31): a write is stored in the outbox BEFORE it is sent.
 // Closing the app while the request hangs must leave it there for the next
 // start; it must not be sent twice by a flush while its own request runs.
+// Each store numbers its entries from a range of its own: the engine's
+// set of entries being sent is module state, so a test that failed with
+// one still out must not make the next test's entry look live.
+let nextRange = 100;
 function fakeStore() {
   const rows = new Map<number, OutboxEntry>();
-  let seq = 100;
+  let seq = nextRange;
+  nextRange += 1000;
   return {
     rows,
     add: async (e: OutboxEntry) => void rows.set(e.clientSeq, e),
@@ -36,12 +41,17 @@ describe('sendWriteAhead', () => {
       store,
     );
     await new Promise((r) => setTimeout(r, 0));
-    // The request is still out: if the app closes now, the entry is there.
     const [entry] = [...store.rows.values()];
-    expect(entry?.procedure).toBe('order.adjustItem');
-    expect(entry?.input).toEqual({ skuId: 's', qty: '2' });
-    expect(isLiveEntry(entry!.clientSeq)).toBe(true);
-    release();
+    try {
+      // The request is still out: if the app closes now, the entry is there.
+      expect(entry?.procedure).toBe('order.adjustItem');
+      expect(entry?.input).toEqual({ skuId: 's', qty: '2' });
+      expect(isLiveEntry(entry!.clientSeq)).toBe(true);
+    } finally {
+      // Settle the request even when an assertion failed, so the entry
+      // leaves the engine's live set (TEST3-07).
+      release();
+    }
     expect(await pending).toBe('ok');
     expect(store.rows.size).toBe(0);
     expect(isLiveEntry(entry!.clientSeq)).toBe(false);

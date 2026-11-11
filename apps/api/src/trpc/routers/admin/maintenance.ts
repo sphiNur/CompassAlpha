@@ -150,6 +150,20 @@ async function closeOverRunLinks(
   }
 }
 
+/**
+ * Review ADM2-05: the stores whose orders a purge deletes, read before
+ * they go. The audit row lists them as `storeIds`, so it also shows to
+ * those stores' admins (auditTouchesStores).
+ */
+async function storesOfSessions(tx: DB, orgId: string, sessionIds: string[]): Promise<string[]> {
+  if (sessionIds.length === 0) return [];
+  const rows = await tx
+    .selectDistinct({ storeId: s.orderSessionsV.storeId })
+    .from(s.orderSessionsV)
+    .where(and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)));
+  return rows.map((r) => r.storeId);
+}
+
 export const maintenanceProcedures = {
   // ============ MAINTENANCE / TEST-DATA PURGE ============
 
@@ -206,6 +220,11 @@ export const maintenanceProcedures = {
           });
         }
 
+        // ADM2-05: every store's records go, so the row names every store
+        // and each store's admins see it.
+        const storeIds = (
+          await tx.select({ id: s.stores.id }).from(s.stores).where(eq(s.stores.orgId, orgId))
+        ).map((r) => r.id);
         const stockKept = await applyPurge(tx, steps, ctx.session!.memberId);
         // CAT-5 (2026-10-30): the admin audit (domain.policy_decisions)
         // stays, as this procedure's contract says; it used to be wiped
@@ -216,7 +235,7 @@ export const maintenanceProcedures = {
           'admin.purge.all',
           'org',
           orgId,
-          { total, byTable: counts, stockKept },
+          { total, byTable: counts, storeIds, stockKept },
           { strict: true },
         );
 
@@ -299,6 +318,7 @@ export const maintenanceProcedures = {
         return { dryRun: true, total, byTable: counts, date, scope };
       }
 
+      const storeIds = await storesOfSessions(tx, orgId, sessionIds);
       const stockKept = await applyPurge(tx, steps, ctx.session!.memberId);
 
       await auditAdmin(
@@ -307,7 +327,7 @@ export const maintenanceProcedures = {
         'admin.purge.date',
         'org',
         orgId,
-        { date, total, byTable: counts, sessionIds, runIds, stockKept },
+        { date, total, byTable: counts, sessionIds, runIds, storeIds, stockKept },
         { strict: true },
       );
       broadcastPurged(orgId, sessionIds, runIds);
@@ -871,15 +891,7 @@ export const maintenanceProcedures = {
       }
       // ADM2-05 (2026-11-09): the run's day and number, its purchaser and
       // the stores whose orders it held, read before they are deleted.
-      const runStores =
-        sessionIds.length > 0
-          ? await tx
-              .selectDistinct({ storeId: s.orderSessionsV.storeId })
-              .from(s.orderSessionsV)
-              .where(
-                and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
-              )
-          : [];
+      const storeIds = await storesOfSessions(tx, orgId, sessionIds);
       const stockKept = await applyPurge(tx, steps, ctx.session!.memberId);
       await auditAdmin(
         tx,
@@ -894,7 +906,7 @@ export const maintenanceProcedures = {
           runDate: run.runDate,
           runIndex: run.runIndex,
           status: run.status,
-          storeIds: runStores.map((r) => r.storeId),
+          storeIds,
           memberId: run.purchaserMemberId,
           stockKept,
         },

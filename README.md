@@ -85,8 +85,8 @@ pnpm dev:api                      # 只跑 API
 pnpm dev:web                      # 只跑 Web
 pnpm build                        # 全部构建
 pnpm type-check                   # tsc --noEmit（CI 跑同一个）
-pnpm test                         # 全部测试
-SKIP_PG_TESTS=1 bun test ...      # 跳过 PG-gated 集成测试（CI 模式）
+pnpm test                         # 单元测试：与 CI、部署前检查同一份目录（PG 集成测试自动跳过）
+pnpm test -t "catalog lint"       # 只跑名字匹配的测试
 pnpm test:e2e                     # Playwright E2E
 pnpm db:migrate                   # drizzle-kit migrate
 pnpm db:studio                    # drizzle-kit studio

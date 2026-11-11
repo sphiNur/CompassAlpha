@@ -20,11 +20,12 @@
  *     visibility test pins this so a future "tighten to fail-closed"
  *     change reveals every code path that depends on it.
  *
- * Tables covered: every entry in the org-isolation lists at
- *   packages/db/migrations/sql/900_rls_policies.sql
- * including the M1.9 additions (member_store_assignments,
- * member_permission_overrides, policy_decisions, snapshots) and the
- * 2026-10-21 CA-36 additions (run_expenses_v, dishes, dish_ingredients).
+ * Tables covered: the ones with a test below, including the M1.9
+ * additions (member_store_assignments, member_permission_overrides,
+ * policy_decisions, snapshots) and the 2026-10-21 CA-36 additions
+ * (run_expenses_v, dishes, dish_ingredients). Not every table of
+ * 900_rls_policies.sql has one: rls-catalog.test.ts checks that every
+ * table has RLS forced and a tenant-only policy (TEST2-01).
  *
  * Writes: a row cannot be inserted into another organisation or with no
  * tenant, a row of another organisation cannot be updated or deleted,
@@ -74,6 +75,10 @@ interface Fixture {
   /** skuId for each org. */
   skuA: string;
   skuB: string;
+  categoryA: string;
+  categoryB: string;
+  supplierA: string;
+  supplierB: string;
   /** snapshotStream id (== events.streamId) per org. */
   snapshotStreamA: string;
   snapshotStreamB: string;
@@ -238,8 +243,6 @@ beforeAll(async () => {
     .insert(s.categories)
     .values({ orgId: orgB!.id, slug: `cat-B-${slug}`, names: { en: 'B' }, sortIndex: 1 })
     .returning();
-  void catA;
-  void catB;
 
   const [skuA] = await db
     .insert(s.skus)
@@ -262,8 +265,14 @@ beforeAll(async () => {
     })
     .returning();
 
-  await db.insert(s.suppliers).values({ orgId: orgA!.id, name: 'sup-A' });
-  await db.insert(s.suppliers).values({ orgId: orgB!.id, name: 'sup-B' });
+  const [supA] = await db
+    .insert(s.suppliers)
+    .values({ orgId: orgA!.id, name: 'sup-A' })
+    .returning();
+  const [supB] = await db
+    .insert(s.suppliers)
+    .values({ orgId: orgB!.id, name: 'sup-B' })
+    .returning();
 
   // --- Member permission overrides ---
   await db.insert(s.memberPermissionOverrides).values({
@@ -438,6 +447,10 @@ beforeAll(async () => {
     runB,
     skuA: skuA!.id,
     skuB: skuB!.id,
+    categoryA: catA!.id,
+    categoryB: catB!.id,
+    supplierA: supA!.id,
+    supplierB: supB!.id,
     snapshotStreamA: sessionA,
     snapshotStreamB: sessionB,
     expenseA,
@@ -656,6 +669,29 @@ describe.skipIf(!RUN_RLS)('RLS cross-org isolation (PG-gated)', () => {
   test('inventory.skus — direct org_id', async () => {
     if (!fix) throw new Error('fixture missing');
     const r = await countUnderEachContext('inventory.skus', `id IN ('${fix.skuA}', '${fix.skuB}')`);
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  // TEST2-01: the categories and suppliers were inserted and never checked.
+  test('inventory.categories — direct org_id', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext(
+      'inventory.categories',
+      `id IN ('${fix.categoryA}', '${fix.categoryB}')`,
+    );
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  test('inventory.suppliers — direct org_id', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext(
+      'inventory.suppliers',
+      `id IN ('${fix.supplierA}', '${fix.supplierB}')`,
+    );
     expect(r.aSeen).toBe(1);
     expect(r.bSeen).toBe(1);
     expect(r.totalSeen).toBe(2);
