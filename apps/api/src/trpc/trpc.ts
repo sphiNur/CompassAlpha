@@ -22,7 +22,18 @@ function causeContext(cause: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-const t = initTRPC.context<RequestContext>().create({
+/**
+ * Procedure metadata. `idempotent` marks the procedures built from
+ * `idempotentMutation`, so a test can list them from the router
+ * (TEST3-06).
+ */
+export interface ProcedureMeta {
+  idempotent?: boolean;
+}
+
+const trpcBuilder = initTRPC.context<RequestContext>().meta<ProcedureMeta>();
+
+const t = trpcBuilder.create({
   errorFormatter({ shape, error }) {
     const cause = error.cause;
     if (cause instanceof DomainError) {
@@ -506,7 +517,9 @@ async function releaseClaim(
  * Anything that ONLY reads, OR that has natural-key dedupe through
  * an event-store unique seq, can stay on plain authedProcedure.
  */
-export const idempotentMutation = authedProcedure.use(idempotencyMiddleware);
+export const idempotentMutation = authedProcedure
+  .use(idempotencyMiddleware)
+  .meta({ idempotent: true });
 
 // Suppress unused-import diagnostics for drizzle helpers brought in
 // only for the idempotency middleware's lookup query.
