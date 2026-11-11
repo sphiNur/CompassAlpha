@@ -186,6 +186,9 @@ export const SessionSchema = z.object({
   needsOnboarding: z.boolean(),
 });
 
+/** The signed-in session as the server sends it (auth.me, the sign-in calls). */
+export type Session = z.infer<typeof SessionSchema>;
+
 export const CompleteOnboardingInputSchema = z.object({
   // AUTH-4: trim first, or "   " passes min(1) and locks an empty name.
   // F10: no control characters (names reach the operator's terminal).

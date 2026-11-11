@@ -617,8 +617,6 @@ function WorkspaceSection() {
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   // M1.17: financial settings sheet (currency + tax + tax-inclusive).
   const [financeSheetOpen, setFinanceSheetOpen] = useState(false);
-  // Map locale codes to native labels for the read-out.
-  const localeLabels: Record<string, string> = LANGUAGE_NATIVE_NAMES;
   const currentLocale = session?.user.locale ?? 'en';
   const currency = currencyOf(session);
   const taxRatePct = session?.member.taxRatePct ?? '0';
@@ -721,7 +719,7 @@ function WorkspaceSection() {
         {/* AUTH-25: this is the viewer's own language, not the org's. */}
         <ListRow
           label={i18n.t('admin.workspace.myLanguage')}
-          hint={localeLabels[currentLocale] ?? currentLocale}
+          hint={LANGUAGE_NATIVE_NAMES[currentLocale]}
           onClick={() => setLangSheetOpen(true)}
         />
         {/* M1.17: financial settings editor (admin-only). */}

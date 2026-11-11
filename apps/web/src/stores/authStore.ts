@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Session } from '@compass/contracts/schemas/auth';
+import { detectLocale } from '@compass/i18n';
 import { resetNavStore } from './navStore';
 import { clearPersistedQueries } from '../lib/queryPersist';
 
@@ -11,91 +13,27 @@ import { clearPersistedQueries } from '../lib/queryPersist';
  */
 export const AUTH_STORAGE_KEY = 'compass.auth';
 
-export interface AuthSession {
-  user: {
-    id: string;
-    displayName: string;
-    /** Once true, only an admin can rename the user. */
-    displayNameLocked: boolean;
-    avatarUrl: string | null;
-    locale: string;
-    /**
-     * M3.45 (2026-05-22): secondary display language for the bilingual
-     * product-name workflow. Null when the user hasn't opted in. When
-     * set, UI shows "Primary (Secondary)" and per-vendor copy
-     * templates use the secondary locale exclusively.
-     */
-    secondaryLocale: string | null;
-    tgUsername: string | null;
-    /** CMP-SHL-1: own Telegram id; absent in sessions from older builds. */
-    tgUserId?: string | null;
-  };
-  member: {
-    memberId: string;
-    orgId: string;
-    orgSlug: string;
-    orgName: string;
-    status: string;
-    /** M1.17: org-level financial settings exposed at login. The FE
-     *  uses these to format money + display tax info without round-
-     *  trip. Operators should treat as set-once per org. */
-    currency?: string;
-    taxRatePct?: string;
-    pricesIncludeTax?: boolean;
-    /** HIS-13: the org's time zone (older sessions lack it). */
-    timezone?: string;
-  };
-  /** Every active organisation this person can enter. */
-  memberships?: Array<{
-    orgId: string;
-    orgSlug: string;
-    orgName: string;
-    memberId: string;
-    status: string;
-    joinedAt: string;
-  }>;
-  /** Cross-tenant operator; only these users may create new workspaces. */
-  isPlatformAdmin?: boolean;
-  /** Current tenant plan and write access snapshot. */
-  subscription?: {
-    planCode: string;
-    planName: string;
-    status: 'trialing' | 'active' | 'past_due' | 'suspended' | 'canceled';
-    writeAccess: boolean;
-    trialEndsAt: string | null;
-    currentPeriodEnd: string | null;
-    graceEndsAt: string | null;
-    cancelAtPeriodEnd: boolean;
-    limits: { stores: number | null; members: number | null };
-    usage: { stores: number; members: number };
-  };
-  /** Only stores this member is assigned to (admins see all org stores). */
-  stores: Array<{ id: string; name: string; code: string | null; isActive: boolean }>;
-  permissions: string[];
-  roleSlugs: string[];
-  /** Highest role rank held by the user — used by FE to filter which
-   *  roles can even APPEAR as grantable in the admin UI. Server still
-   *  enforces the same rule on the mutation; this is purely UX. */
-  myMaxRank: number;
-  /** Per-store max rank from store-scoped role bindings only (added
-   *  2026-05-06 for C1). FE computes effective rank in store as
-   *  `max(myMaxRank, storeRanks[storeId] ?? 0)` — though typically
-   *  myMaxRank already includes this since it's the union. We split
-   *  them so callers can tell store-only ranks apart from global. */
-  storeRanks?: Record<string, number>;
-  /** Stores in which the actor has admin authority (added 2026-05-06
-   *  for C2). Used to filter the invite store-multiselect, the grant-
-   *  role store picker, and the assign/unassign rows. Server enforces
-   *  with `getActorAdminStoreIds`. Empty array = no admin authority. */
-  adminStoreIds?: string[];
-  /** COREWEB2-11: the paused and archived stores the same rule covers
-   *  (removals only). Absent from older servers. */
-  inactiveAdminStoreIds?: string[];
-  /** SHL-2: effective permission keys per store (older sessions lack it). */
-  storePermissions?: Record<string, string[]>;
-  /** True until the user confirms their name in onboarding. */
-  needsOnboarding: boolean;
-}
+/**
+ * Fields the server added over time: a session saved by an older build
+ * can lack them until the next auth.me replaces it, so they stay optional
+ * here and the screens keep their fallbacks.
+ */
+type AddedSince =
+  | 'memberships'
+  | 'isPlatformAdmin'
+  | 'subscription'
+  | 'storeRanks'
+  | 'adminStoreIds'
+  | 'inactiveAdminStoreIds'
+  | 'storePermissions';
+
+/**
+ * The signed-in session: what auth.me and the sign-in calls return
+ * (SessionSchema in @compass/contracts). Review COREAPI-33 (2026-11-12):
+ * the web wrote its own copy of the shape, and the two had drifted (the
+ * language was any string here).
+ */
+export type AuthSession = Omit<Session, AddedSince> & Partial<Pick<Session, AddedSince>>;
 
 /**
  * Store-context selection (extended 2026-05-05).
@@ -169,18 +107,43 @@ export type PersistedAuth = Pick<
   'accessToken' | 'refreshToken' | 'session' | 'currentStoreId'
 >;
 
+/**
+ * A session saved before the server kept only the four languages
+ * (COREWEB2-10) can carry Telegram's raw code ("zh-hans"), and one from
+ * before the second language (M3.45) has none; both are read as the
+ * server reads them on the next sign-in.
+ */
+function withKnownLocales(session: AuthSession): AuthSession {
+  const { locale, secondaryLocale } = session.user as {
+    locale: unknown;
+    secondaryLocale?: unknown;
+  };
+  return {
+    ...session,
+    user: {
+      ...session.user,
+      locale: detectLocale(typeof locale === 'string' ? locale : null),
+      secondaryLocale:
+        typeof secondaryLocale === 'string' && secondaryLocale
+          ? detectLocale(secondaryLocale)
+          : null,
+    },
+  };
+}
+
 /** What a stored payload restores: all of it, or nothing when the session is unusable. */
 export function mergePersistedAuth<T extends PersistedAuth>(persisted: unknown, current: T): T {
   const p = (persisted ?? {}) as Partial<PersistedAuth>;
   if (!isUsableSession(p.session)) return current;
+  const session = withKnownLocales(p.session);
   return {
     ...current,
     accessToken: typeof p.accessToken === 'string' ? p.accessToken : null,
     refreshToken: typeof p.refreshToken === 'string' ? p.refreshToken : null,
-    session: p.session,
+    session,
     currentStoreId: resolveCurrentStore(
       typeof p.currentStoreId === 'string' ? p.currentStoreId : null,
-      p.session,
+      session,
     ),
   };
 }
