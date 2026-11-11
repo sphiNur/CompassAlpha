@@ -82,7 +82,7 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
         error === undefined
           ? { key: errorTextKey(message, 'common.errorUnknown'), vars: {} }
           : errorTextOf(error, 'common.errorUnknown');
-      return i18n.t(said.key as Parameters<typeof i18n.t>[0], said.vars);
+      return i18n.t(said.key, said.vars);
     },
     get retry() {
       return i18n.t('common.retry');

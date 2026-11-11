@@ -2,9 +2,8 @@
  * Pure pieces of the sign-in gate (AuthGate), kept here so they can be
  * tested without rendering it.
  */
+import { isCatalogKey, type I18n } from '@compass/i18n';
 import type { AuthSession } from '../stores/authStore';
-
-type T = (key: never, values?: Record<string, string | number>) => string;
 
 /**
  * CMP-SHL-2 (2026-10-31): a sign-in error is kept as a catalog key and
@@ -22,10 +21,9 @@ export interface AuthError {
  * does not know (a newer server) reads as the generic failure, never as
  * the raw key.
  */
-export function authErrorText(i18n: { t: T }, error: AuthError): string {
+export function authErrorText(i18n: Pick<I18n, 't'>, error: AuthError): string {
   if (error.raw) return error.raw;
-  const text = i18n.t(error.key as never);
-  return text === error.key ? i18n.t('auth.errors.signInFailed' as never) : text;
+  return i18n.t(isCatalogKey(error.key) ? error.key : 'auth.errors.signInFailed');
 }
 
 /**

@@ -20,6 +20,7 @@ export {
   ensureCatalog,
   preloadCatalog,
   isLoaded,
+  isCatalogKey,
   getLoadedCatalog,
 } from './catalogs/index';
 

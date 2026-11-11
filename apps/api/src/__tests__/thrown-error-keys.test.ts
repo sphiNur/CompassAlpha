@@ -48,6 +48,26 @@ describe('thrown error keys', () => {
     expect([...missing].sort()).toEqual([]);
   });
 
+  // Review COREWEB2-19 (2026-11-12): the web reads a server message as a
+  // key only in this shape (apps/web/src/lib/errorText.ts). A key sent in
+  // another one (finance.range.invalid, run.history.invalidDateRange)
+  // showed the caller's generic sentence instead of its own. common.error
+  // is the internal-error placeholder (trpc.ts); the web shows the
+  // caller's sentence for it on purpose.
+  test('every key sent as a message has the shape the web reads as a key', () => {
+    const sent: string[] = [];
+    for (const file of SCANNED.flatMap((dir) => sources(join(ROOT, dir)))) {
+      for (const m of readFileSync(file, 'utf8').matchAll(
+        /message:\s*[`'"]([a-z]+\.[a-zA-Z0-9_.]+)[`'"]/g,
+      )) {
+        sent.push(m[1]!);
+      }
+    }
+    expect(sent.length).toBeGreaterThan(100);
+    const odd = sent.filter((key) => key !== 'common.error' && !/^[a-z]+\.errors\.\w+$/.test(key));
+    expect([...new Set(odd)].sort()).toEqual([]);
+  });
+
   test('the scan reads every root', () => {
     // A renamed folder would leave the test above passing on nothing.
     for (const dir of SCANNED) expect(sources(join(ROOT, dir)).length).toBeGreaterThan(0);

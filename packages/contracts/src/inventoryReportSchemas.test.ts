@@ -87,7 +87,7 @@ describe('finance range (CONF-10)', () => {
   it('a reversed range is refused on the end date', () => {
     const result = range.safeParse({ startDate: '2026-11-02', endDate: '2026-11-01' });
     expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe('finance.range.invalid');
+    expect(result.error?.issues[0]?.message).toBe('finance.errors.invalidRange');
     expect(result.error?.issues[0]?.path).toEqual(['endDate']);
     expect(range.safeParse({ startDate: '2026-11-01', endDate: '2026-11-01' }).success).toBe(true);
   });

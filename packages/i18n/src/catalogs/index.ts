@@ -54,6 +54,17 @@ export function isLoaded(locale: Locale): boolean {
   return loaded.has(locale);
 }
 
+/**
+ * Whether a loaded catalog has `key`. For keys that arrive at run time (a
+ * server's error, a role slug, a unit code), so the caller can show its
+ * own text instead of the key itself. Review COREWEB2-19 (2026-11-12):
+ * five callers compared `t(key)` with the key, each behind its own cast.
+ */
+export function isCatalogKey(key: string): key is CatalogKey {
+  for (const catalog of loaded.values()) if (typeof catalog[key] === 'string') return true;
+  return false;
+}
+
 const LOCALES: readonly string[] = ['en', 'zh', 'ru', 'uz'] satisfies Locale[];
 
 export async function loadCatalog(locale: Locale): Promise<CatalogModule> {

@@ -1832,7 +1832,8 @@ export const en = {
   'finance.preset.custom': 'Custom',
   'finance.range.start': 'Start date',
   'finance.range.end': 'End date',
-  'finance.range.invalid': 'Choose a start and an end date; the start cannot be after the end.',
+  'finance.errors.invalidRange':
+    'Choose a start and an end date; the start cannot be after the end.',
   'finance.view.daily': 'Daily',
   'finance.view.bySupplier': 'By supplier',
   'finance.view.byStore': 'By store',
@@ -2090,7 +2091,7 @@ export const en = {
   'run.history.lastDays': 'Last {n, plural, one {# day} other {# days}}',
   'run.history.dateFrom': 'From',
   'run.history.dateTo': 'To',
-  'run.history.invalidDateRange': 'Choose an end date on or after the start date.',
+  'run.errors.invalidDateRange': 'Choose an end date on or after the start date.',
   'run.history.paymentFilter': 'Payment method',
   'run.history.payment.all': 'All payments',
   'run.history.payment.cash': 'Cash',

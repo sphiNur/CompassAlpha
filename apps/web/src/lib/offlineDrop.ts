@@ -8,7 +8,7 @@
 import type { CatalogKey as Key } from '@compass/i18n';
 import type { OfflineDropInfo } from './outbox/engine';
 import type { ReplayedProcedure } from './outbox/replayHandlers';
-import { I18N_KEY_RE, withoutFinalStop } from './errorText';
+import { isErrorKey, withoutFinalStop } from './errorText';
 
 /** The action label for each run / receiving procedure (order changes use the generic text). */
 const ACTION_KEYS: { readonly [P in ReplayedProcedure]?: Key } = {
@@ -35,13 +35,12 @@ export function offlineDropText(
   const actionKey = actionKeyByName[info.procedure];
   if (!actionKey) return t('run.toast.syncFailed');
   const action = t(actionKey);
-  if (info.reason === 'rejected' && info.message && I18N_KEY_RE.test(info.message)) {
-    const reason = t(info.message as Key);
-    // An unknown key comes back as itself; do not show a raw key. The
-    // template ends the reason's sentence itself (I18N1-20: errors end
-    // with a full stop), so drop the reason's own.
-    if (reason !== info.message)
-      return t('offline.drop.withReason', { action, reason: withoutFinalStop(reason) });
+  // A key this build does not know is not shown (isErrorKey). The
+  // template ends the reason's sentence itself (I18N1-20: errors end with
+  // a full stop), so drop the reason's own.
+  if (info.reason === 'rejected' && isErrorKey(info.message)) {
+    const reason = withoutFinalStop(t(info.message));
+    return t('offline.drop.withReason', { action, reason });
   }
   return t('offline.drop.generic', { action });
 }

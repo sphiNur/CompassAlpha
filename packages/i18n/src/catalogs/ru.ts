@@ -1766,7 +1766,8 @@ export const ru = {
   'finance.preset.custom': 'Произвольный',
   'finance.range.start': 'Начало периода',
   'finance.range.end': 'Конец периода',
-  'finance.range.invalid': 'Выберите начальную и конечную даты; начало не может быть позже конца.',
+  'finance.errors.invalidRange':
+    'Выберите начальную и конечную даты; начало не может быть позже конца.',
   'finance.view.daily': 'По дням',
   'finance.view.bySupplier': 'По поставщикам',
   'finance.view.byStore': 'По магазинам',
@@ -2004,7 +2005,7 @@ export const ru = {
     '{n, plural, one {Последний # день} few {Последние # дня} many {Последние # дней} other {Последние # дня}}',
   'run.history.dateFrom': 'С',
   'run.history.dateTo': 'По',
-  'run.history.invalidDateRange': 'Дата окончания должна быть не раньше даты начала.',
+  'run.errors.invalidDateRange': 'Дата окончания должна быть не раньше даты начала.',
   'run.history.paymentFilter': 'Способ оплаты',
   'run.history.payment.all': 'Все способы',
   'run.history.payment.cash': 'Наличные',

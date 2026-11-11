@@ -428,7 +428,7 @@ export function FinanceSection() {
       </div>
 
       {!rangeOk ? (
-        <Banner tone="warn" title={i18n.t('finance.range.invalid')} />
+        <Banner tone="warn" title={i18n.t('finance.errors.invalidRange')} />
       ) : linesQuery.isLoading ? (
         <LoadingState variant="compact" />
       ) : linesQuery.isError ? (
