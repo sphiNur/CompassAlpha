@@ -75,7 +75,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
     });
     // Always echo to console in case telemetry is dead.
-    // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info);
     // AUTH-27 (2026-10-30): a crash before the language chunk arrived drew
     // the screen in English until a retry. Fetch it now and draw again.

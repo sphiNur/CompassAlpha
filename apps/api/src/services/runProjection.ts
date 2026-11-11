@@ -26,7 +26,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             runIndex: e.payload.runIndex,
             status: 'planned',
             purchaserMemberId: e.payload.purchaserMemberId,
-            sessionIdsJson: e.payload.sessionIds as unknown as Record<string, unknown>,
+            sessionIdsJson: e.payload.sessionIds,
             lastSeq: e.seq,
           })
           // RUNAPI-04 (2026-11-09): only a replay of this same run is
@@ -680,12 +680,12 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .from(s.marketRunsV)
           .where(eq(s.marketRunsV.id, e.streamId))
           .limit(1);
-        const existingIds = (current[0]?.sessionIdsJson as unknown as string[] | null) ?? [];
+        const existingIds = current[0]?.sessionIdsJson ?? [];
         const merged = [...existingIds, ...e.payload.sessionIds];
         await db
           .update(s.marketRunsV)
           .set({
-            sessionIdsJson: merged as unknown as Record<string, unknown>,
+            sessionIdsJson: merged,
             lastSeq: e.seq,
             updatedAt: new Date(),
           })
@@ -723,12 +723,12 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .from(s.marketRunsV)
           .where(eq(s.marketRunsV.id, e.streamId))
           .limit(1);
-        const existingIds = (current[0]?.sessionIdsJson as unknown as string[] | null) ?? [];
+        const existingIds = current[0]?.sessionIdsJson ?? [];
         const remainingIds = existingIds.filter((id) => id !== e.payload.sessionId);
         await db
           .update(s.marketRunsV)
           .set({
-            sessionIdsJson: remainingIds as unknown as Record<string, unknown>,
+            sessionIdsJson: remainingIds,
             lastSeq: e.seq,
             updatedAt: new Date(),
           })

@@ -84,7 +84,7 @@ describe.skipIf(!SHOULD_RUN)('run.list scope (PG-gated)', () => {
       runDate,
       runIndex,
       status,
-      sessionIdsJson: [sessionId] as unknown as Record<string, unknown>,
+      sessionIdsJson: [sessionId],
     });
     const waiting = run('2026-01-01', 0, 'delivering', orderA);
     const doneA = run('2026-01-02', 0, 'finished', orderA);

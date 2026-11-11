@@ -7,17 +7,18 @@
  * and no migration was done. The CI lint step that 2026-05-16's
  * launch-hardening pass added would therefore have been red on day one.
  *
- * CI runs `pnpm lint`. react-hooks/rules-of-hooks is enforced;
- * exhaustive-deps is on except for a baseline of older files (see the
- * note at the rule). The globals and rules for src/ are shared with
- * packages/ui (eslint.shared.mjs at the repository root, OPS-19).
+ * CI runs `pnpm lint`. react-hooks/rules-of-hooks and exhaustive-deps
+ * are enforced in every file (the baseline of older files that had
+ * exhaustive-deps off is gone: review ADM1-29, 2026-11-12). The globals
+ * and rules for src/ are shared with packages/ui (eslint.shared.mjs at
+ * the repository root, OPS-19).
  */
 import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 import { BROWSER_GLOBALS, SOURCE_RULES, TEST_RULES } from '../../eslint.shared.mjs';
 
-/** 4d below: each layer of src and the layers above it, top layer first. */
+/** 4c below: each layer of src and the layers above it, top layer first. */
 const LAYERS = [
   { files: ['src/pages/**/*.{ts,tsx}'], above: ['app'] },
   { files: ['src/components/**/*.{ts,tsx}'], above: ['pages', 'app'] },
@@ -102,31 +103,10 @@ export default [
       globals: BROWSER_GLOBALS,
     },
     plugins: { 'react-hooks': reactHooks },
-    // The baseline files' disable comments for exhaustive-deps are
-    // "unused" while the rule is off there.
-    linterOptions: { reportUnusedDisableDirectives: 'off' },
     rules: SOURCE_RULES,
   },
 
-  // 4b) exhaustive-deps baseline: files that had findings when the rule
-  //     was turned on (DX-PFE-7). Remove a file from this list once its
-  //     findings are fixed; never add one.
-  {
-    files: [
-      'src/components/sales/StoreSalesPanel.tsx',
-      'src/pages/DebugPage.tsx',
-      'src/pages/OrderPage.tsx',
-      'src/pages/RunPage.tsx',
-      'src/pages/admin/people/PeopleSections.tsx',
-      'src/pages/runs/components/RunPanels.tsx',
-      'src/pages/runs/views/RunViews.tsx',
-    ],
-    rules: {
-      'react-hooks/exhaustive-deps': 'off',
-    },
-  },
-
-  // 4c) Review TEST3-06 (2026-11-10): P-5 (2026-10-31) — a value import
+  // 4b) Review TEST3-06 (2026-11-10): P-5 (2026-10-31) — a value import
   //     from the `@compass/contracts` barrel pulls zod and every schema
   //     into the web bundle (the schema modules run `z.object(...)` at
   //     load, so they cannot be tree-shaken). Types are free; values come
@@ -144,7 +124,7 @@ export default [
     },
   },
 
-  // 4d) Layers (review COREWEB2-14 and NEW-08, 2026-11-11). Lowest
+  // 4c) Layers (review COREWEB2-14 and NEW-08, 2026-11-11). Lowest
   //     first: lib/ and stores/ (plain modules, no React hooks or
   //     components), hooks/, components/, pages/, app/. A file may import
   //     its own layer and the ones below, never one above: lib/ used to

@@ -343,8 +343,8 @@ export function buildAuditLabels(
 }
 
 export async function loadAuditLookups(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tx: any,
+  // Reads only: the request's transaction or auditAdmin's savepoint.
+  tx: Pick<DB, 'select'>,
   orgId: string,
   refs: AuditRowRefs[],
 ): Promise<AuditLookups> {
@@ -434,15 +434,13 @@ export async function loadAuditLookups(
   return {
     memberNameById: byId(members),
     userNameById: byId(users),
-    roleNameBySlug: new Map(
-      (rolesBySlug as { slug: string; name: string }[]).map((r) => [r.slug, r.name]),
-    ),
+    roleNameBySlug: new Map(rolesBySlug.map((r) => [r.slug, r.name])),
     roleNameById: byId(rolesById),
-    roleSlugById: new Map((rolesById as { id: string; slug: string }[]).map((r) => [r.id, r.slug])),
+    roleSlugById: new Map(rolesById.map((r) => [r.id, r.slug])),
     storeNameById: byId(stores),
     catalogNameById: byId([...suppliers, ...templates]),
     catalogNamesById: new Map(
-      ([...skus, ...categories] as { id: string; names: unknown }[])
+      [...skus, ...categories]
         .filter((r) => r.names && typeof r.names === 'object')
         .map((r) => [r.id, r.names as Record<string, string>]),
     ),

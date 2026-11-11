@@ -29,7 +29,6 @@ export class PageErrorBoundary extends Component<Props, { failed: boolean }> {
         /* logger not booted */
       }
     });
-    // eslint-disable-next-line no-console
     console.error('[PageErrorBoundary]', error, info);
   }
 

@@ -160,7 +160,9 @@ export const marketRunsV = readModelSchema.table(
     actualCashTotal: decimal('actual_cash_total', { precision: 14, scale: 2 }),
     actualTransferTotal: decimal('actual_transfer_total', { precision: 14, scale: 2 }),
     purchaserMemberId: uuid('purchaser_member_id'),
+    /** The run's order sessions, in the order they were attached. */
     sessionIdsJson: jsonb('session_ids_json')
+      .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),

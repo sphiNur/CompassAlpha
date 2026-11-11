@@ -68,11 +68,10 @@ export const BROWSER_GLOBALS = {
 export const SOURCE_RULES = {
   // Hooks called conditionally break React's hook ordering at runtime.
   'react-hooks/rules-of-hooks': 'error',
-  // DX-PFE-7 (2026-11-01): on for new code. With --max-warnings 0 a
-  // warning fails CI like an error. apps/web lists the files that had
-  // findings when it was turned on in a baseline block of its config;
-  // each fix there changes when an effect or memo re-runs, so they are
-  // migrated one file at a time, not in bulk.
+  // DX-PFE-7 (2026-11-01). With --max-warnings 0 a warning fails CI like
+  // an error. The files that had findings when it was turned on were
+  // fixed one at a time; the last left apps/web's baseline in review
+  // ADM1-29 (2026-11-12).
   'react-hooks/exhaustive-deps': 'warn',
 
   // DX-PFE-12 (2026-11-01): money is qty × price rounded half-up to

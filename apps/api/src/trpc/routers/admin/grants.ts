@@ -116,6 +116,12 @@ export async function assertCanInviteIntoStore(
   throwRefusal(await grantRefusal(ctx.db, tx, granterOf(ctx), role, { type: 'store', storeId }));
 }
 
+/** Where the actor may pass a role or a key on: organisation-wide, and in which stores. */
+export type PassOn = { global: boolean; storeIds: string[] };
+
+/** For a role or key a lookup below did not cover: nowhere (fail closed). */
+export const PASS_ON_NOWHERE: PassOn = { global: false, storeIds: [] };
+
 /**
  * DX-ADM-1 (2026-11-01): where the actor may hand each role on as far as
  * its keys go (D8, `missingRoleKey`): globally, and in which of the stores
@@ -128,13 +134,13 @@ export async function rolePassOnScopes(
   tx: DB,
   ctx: RequestContext,
   roles: readonly { id: string; isBuiltIn: boolean }[],
-): Promise<Map<string, { global: boolean; storeIds: string[] }>> {
+): Promise<Map<string, PassOn>> {
   const session = ctx.session!;
   // Paused stores too: their default role can still be set (storeUpdate).
   const storeIds = await getActorAdminStoreIds(tx, session.orgId, session.userId, {
     includeInactive: true,
   });
-  const out = new Map<string, { global: boolean; storeIds: string[] }>();
+  const out = new Map<string, PassOn>();
   const everywhere = () => ({ global: true, storeIds: [...storeIds] });
   const custom = roles.filter((r) => !r.isBuiltIn);
   const exempt = custom.length === 0 || (await exemptFromKeyCheck(tx, ctx));
@@ -186,7 +192,7 @@ export async function keyPassOnScopes(
   tx: DB,
   ctx: RequestContext,
   keys: readonly string[],
-): Promise<Map<string, { global: boolean; storeIds: string[] }>> {
+): Promise<Map<string, PassOn>> {
   const session = ctx.session!;
   const storeIds = await getActorAdminStoreIds(tx, session.orgId, session.userId, {
     includeInactive: true,

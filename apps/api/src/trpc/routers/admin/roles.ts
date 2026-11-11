@@ -35,6 +35,7 @@ import {
   rolePassOnScopes,
   keyPassOnScopes,
   assertCanPassOnRole,
+  PASS_ON_NOWHERE,
 } from './grants';
 import { auditAdmin } from '../../../services/adminAudit';
 
@@ -71,7 +72,7 @@ export const roleProcedures = {
       return roles.map((r) => ({
         ...r,
         permissionCount: countByRole.get(r.id) ?? 0,
-        passOn: passOn.get(r.id)!,
+        passOn: passOn.get(r.id) ?? PASS_ON_NOWHERE,
       }));
     });
   }),
@@ -202,7 +203,7 @@ export const roleProcedures = {
         ctx,
         rows.map((r) => r.key),
       );
-      return rows.map((r) => ({ ...r, passOn: passOn.get(r.key)! }));
+      return rows.map((r) => ({ ...r, passOn: passOn.get(r.key) ?? PASS_ON_NOWHERE }));
     });
   }),
 

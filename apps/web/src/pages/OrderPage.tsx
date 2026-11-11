@@ -697,8 +697,8 @@ export function OrderPage() {
 
   const allSkus = useMemo(() => skusQuery.data ?? [], [skusQuery.data]);
 
-  const items = sessionQuery.data?.items ?? [];
-  const totals = sessionQuery.data?.totals ?? [];
+  const items = useMemo(() => sessionQuery.data?.items ?? [], [sessionQuery.data]);
+  const totals = useMemo(() => sessionQuery.data?.totals ?? [], [sessionQuery.data]);
   const myMemberId = session?.member.memberId ?? null;
 
   /** Aggregate qty per SKU (sum across all contributors). For the header. */
