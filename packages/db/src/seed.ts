@@ -13,7 +13,7 @@
 import { sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { getDb, closeDb, schema as s } from './index';
-import { PERMISSIONS, BUILTIN_ROLES } from './seed-data';
+import { PERMISSIONS, BUILTIN_ROLES, DEV_CATEGORIES, DEV_SKUS } from './seed-data';
 import { DEFAULT_FEATURE_FLAGS, DEFAULT_ORG_WORKFLOW } from './provision-organization';
 import { provisionSubscription } from './subscription';
 import { PRODUCTION_UNIT_MARKER, productionReason } from './purgeGuard';
@@ -134,51 +134,8 @@ async function main() {
   }
 
   console.log('[seed] Categories + SKUs...');
-  const categories = [
-    { slug: 'meat', names: { en: 'Meat', zh: '肉类', ru: 'Мясо', uz: "Go'sht" } },
-    {
-      slug: 'vegetables',
-      names: {
-        en: 'Vegetables',
-        zh: '蔬菜',
-        ru: 'Овощи',
-        uz: 'Sabzavotlar',
-      },
-    },
-    {
-      slug: 'fruit',
-      names: { en: 'Fruit', zh: '水果', ru: 'Фрукты', uz: 'Mevalar' },
-    },
-    {
-      slug: 'dairy',
-      names: {
-        en: 'Dairy',
-        zh: '乳制品',
-        ru: 'Молочные',
-        uz: 'Sutli',
-      },
-    },
-    {
-      slug: 'kitchen-tools',
-      names: {
-        en: 'Kitchen Tools',
-        zh: '厨房工具',
-        ru: 'Кухня',
-        uz: 'Oshxona',
-      },
-    },
-    {
-      slug: 'linen',
-      names: {
-        en: 'Linen',
-        zh: '布草',
-        ru: 'Льняное',
-        uz: 'Choyshab',
-      },
-    },
-  ];
-  for (let i = 0; i < categories.length; i++) {
-    const c = categories[i]!;
+  for (let i = 0; i < DEV_CATEGORIES.length; i++) {
+    const c = DEV_CATEGORIES[i]!;
     await db
       .insert(s.categories)
       .values({ orgId, slug: c.slug, names: c.names, sortIndex: i * 10 })
@@ -188,144 +145,8 @@ async function main() {
   const cats = await db.query.categories.findMany({ where: (x, { eq }) => eq(x.orgId, orgId) });
   const bySlug = new Map(cats.map((c) => [c.slug, c.id]));
 
-  type SkuSeed = {
-    catSlug: string;
-    code: string;
-    names: Record<string, string>;
-    unit: string;
-    step: string;
-  };
-  const skuRows: SkuSeed[] = [
-    {
-      catSlug: 'meat',
-      code: 'BEEF',
-      names: { en: 'Beef', zh: '牛肉', ru: 'Говядина', uz: "Mol go'shti" },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'meat',
-      code: 'LAMB',
-      names: { en: 'Lamb', zh: '羊肉', ru: 'Баранина', uz: "Qo'y go'shti" },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'meat',
-      code: 'CHICKEN',
-      names: { en: 'Chicken', zh: '鸡肉', ru: 'Курица', uz: 'Tovuq' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'vegetables',
-      code: 'TOMATO',
-      names: { en: 'Tomato', zh: '番茄', ru: 'Помидор', uz: 'Pomidor' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'vegetables',
-      code: 'CUCUMBER',
-      names: { en: 'Cucumber', zh: '黄瓜', ru: 'Огурец', uz: 'Bodring' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'vegetables',
-      code: 'ONION',
-      names: { en: 'Onion', zh: '洋葱', ru: 'Лук', uz: 'Piyoz' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'vegetables',
-      code: 'POTATO',
-      names: { en: 'Potato', zh: '土豆', ru: 'Картофель', uz: 'Kartoshka' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'fruit',
-      code: 'APPLE',
-      names: { en: 'Apple', zh: '苹果', ru: 'Яблоко', uz: 'Olma' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'fruit',
-      code: 'BANANA',
-      names: { en: 'Banana', zh: '香蕉', ru: 'Банан', uz: 'Banan' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'dairy',
-      code: 'MILK',
-      names: { en: 'Milk', zh: '牛奶', ru: 'Молоко', uz: 'Sut' },
-      unit: 'L',
-      step: '0.5',
-    },
-    {
-      catSlug: 'dairy',
-      code: 'YOGURT',
-      names: { en: 'Yogurt', zh: '酸奶', ru: 'Йогурт', uz: 'Qatiq' },
-      unit: 'L',
-      step: '0.5',
-    },
-    {
-      catSlug: 'dairy',
-      code: 'BUTTER',
-      names: { en: 'Butter', zh: '黄油', ru: 'Масло', uz: 'Sariyog' },
-      unit: 'kg',
-      step: '0.5',
-    },
-    {
-      catSlug: 'kitchen-tools',
-      code: 'KNIFE',
-      names: { en: 'Chef Knife', zh: '主厨刀', ru: 'Поварской нож', uz: 'Oshpaz pichoq' },
-      unit: 'pcs',
-      step: '1',
-    },
-    {
-      catSlug: 'kitchen-tools',
-      code: 'BOARD',
-      names: { en: 'Cutting Board', zh: '砸板', ru: 'Доска', uz: 'Taxta' },
-      unit: 'pcs',
-      step: '1',
-    },
-    {
-      catSlug: 'kitchen-tools',
-      code: 'POT',
-      names: { en: 'Stock Pot', zh: '汤锅', ru: 'Кастрюля', uz: 'Qozon' },
-      unit: 'pcs',
-      step: '1',
-    },
-    {
-      catSlug: 'linen',
-      code: 'TOWEL',
-      names: { en: 'Bath Towel', zh: '浴巾', ru: 'Полотенце', uz: 'Sochiq' },
-      unit: 'pcs',
-      step: '1',
-    },
-    {
-      catSlug: 'linen',
-      code: 'SHEET',
-      names: { en: 'Bed Sheet', zh: '床单', ru: 'Простыня', uz: 'Choyshab' },
-      unit: 'pcs',
-      step: '1',
-    },
-    {
-      catSlug: 'linen',
-      code: 'SLIPPER',
-      names: { en: 'Slippers', zh: '拖鞋', ru: 'Тапочки', uz: 'Shippak' },
-      unit: 'pair',
-      step: '1',
-    },
-  ];
-
-  for (let i = 0; i < skuRows.length; i++) {
-    const r = skuRows[i]!;
+  for (let i = 0; i < DEV_SKUS.length; i++) {
+    const r = DEV_SKUS[i]!;
     const categoryId = bySlug.get(r.catSlug);
     if (!categoryId) continue;
     await db

@@ -80,7 +80,7 @@ export const CATEGORIES: CatalogCategory[] = [
   },
   {
     slug: 'meat',
-    names: { zh: '肉类禽类', en: 'Meat & Poultry', ru: 'Мясо и птица', uz: "Go'sht va parranda" },
+    names: { zh: '肉类禽类', en: 'Meat & Poultry', ru: 'Мясо и птица', uz: 'Goʻsht va parranda' },
     icon: 'Beef',
     sortIndex: 10,
   },
@@ -96,7 +96,7 @@ export const CATEGORIES: CatalogCategory[] = [
       zh: '粮油调味干货',
       en: 'Grains, Oils & Seasoning',
       ru: 'Крупы, масла, специи',
-      uz: 'Don, yog‘, ziravor',
+      uz: 'Don, yogʻ, ziravor',
     },
     icon: 'Wheat',
     sortIndex: 30,
@@ -152,7 +152,7 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'produce', code: 'PRD_KOK_PIYOZ',
-    names: { zh: '小葱', en: 'Spring Onion', ru: 'Зелёный лук', uz: "Ko'k piyoz" },
+    names: { zh: '小葱', en: 'Spring Onion', ru: 'Зелёный лук', uz: 'Koʻk piyoz' },
     aliases: { zh: ['青葱', '细香葱'] },
     unit: 'bunch', step: '1',
   }),
@@ -165,7 +165,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'produce', code: 'PRD_SARIQ_SABZI',
     names: { zh: '黄萝卜', en: 'Yellow Carrot', ru: 'Жёлтая морковь', uz: 'Sariq sabzi' },
-    description: { zh: '抓饭专用,比红萝卜甜' },
+    description: { zh: '抓饭专用，比红萝卜甜' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -180,9 +180,9 @@ export const SKUS: CatalogSku[] = [
       zh: '已切黄萝卜丝',
       en: 'Yellow Carrot, Shredded',
       ru: 'Жёлтая морковь, нашинкованная',
-      uz: "To'g'ralgan sariq sabzi",
+      uz: 'Toʻgʻralgan sariq sabzi',
     },
-    description: { zh: '抓饭备料,省切菜时间' },
+    description: { zh: '抓饭备料，省切菜时间' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -191,7 +191,7 @@ export const SKUS: CatalogSku[] = [
       zh: '已切红萝卜丝',
       en: 'Red Carrot, Shredded',
       ru: 'Красная морковь, нашинкованная',
-      uz: "To'g'ralgan qizil sabzi",
+      uz: 'Toʻgʻralgan qizil sabzi',
     },
     unit: 'kg', step: '0.5',
   }),
@@ -238,7 +238,7 @@ export const SKUS: CatalogSku[] = [
       zh: '绿色灯笼椒',
       en: 'Green Bell Pepper',
       ru: 'Зелёный болгарский перец',
-      uz: "Ko'k bolgarskiy",
+      uz: 'Koʻk bolgarskiy',
     },
     aliases: { zh: ['青椒', '绿甜椒'] },
     unit: 'kg', step: '0.5',
@@ -262,7 +262,7 @@ export const SKUS: CatalogSku[] = [
       uz: 'Dunganskiy',
     },
     aliases: { zh: ['尖椒', '东干尖椒'] },
-    description: { zh: '辣度比普通甜椒高,做凉菜或炒菜用' },
+    description: { zh: '辣度比普通甜椒高，做凉菜或炒菜用' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -273,7 +273,7 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'produce', code: 'PRD_QIZIL_KAROM',
-    names: { zh: '紫甘蓝', en: 'Red Cabbage', ru: 'Краснокочанная капуста', uz: 'Qizil karom' },
+    names: { zh: '紫甘蓝', en: 'Red Cabbage', ru: 'Краснокочанная капуста', uz: 'Qizil karam' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -367,7 +367,7 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'produce', code: 'PRD_SHOLGOM',
-    names: { zh: '芜菁', en: 'Turnip', ru: 'Репа', uz: "Sholg'om" },
+    names: { zh: '芜菁', en: 'Turnip', ru: 'Репа', uz: 'Sholgʻom' },
     aliases: { zh: ['大头菜'] },
     unit: 'kg', step: '0.5',
   }),
@@ -464,7 +464,7 @@ export const SKUS: CatalogSku[] = [
   // --- 2. Meat & Poultry ---
   sk({
     catSlug: 'meat', code: 'MEAT_MOL',
-    names: { zh: '牛肉', en: 'Beef', ru: 'Говядина', uz: "Mol go'shti" },
+    names: { zh: '牛肉', en: 'Beef', ru: 'Говядина', uz: 'Mol goʻshti' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -473,7 +473,7 @@ export const SKUS: CatalogSku[] = [
       zh: '牛颈肉',
       en: 'Beef Neck',
       ru: 'Говяжья шея',
-      uz: "Mol bo'yin go'shti",
+      uz: 'Mol boʻyin goʻshti',
     },
     unit: 'kg', step: '0.5',
   }),
@@ -482,18 +482,18 @@ export const SKUS: CatalogSku[] = [
     names: {
       zh: '羊颈肉',
       en: 'Lamb Neck',
-      ru: 'Бараньи шея',
-      uz: "Qo'y bo'yin go'shti",
+      ru: 'Баранья шея',
+      uz: 'Qoʻy boʻyin goʻshti',
     },
     unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_QOY_LENTA',
     names: {
-      zh: '羊排肉(含肉肋条)',
+      zh: '羊排肉（含肉肋条）',
       en: 'Lamb Ribs',
       ru: 'Бараньи рёбра с мясом',
-      uz: "Qo'y lenta",
+      uz: 'Qoʻy lenta',
     },
     description: { zh: '含肉肋条' },
     unit: 'kg', step: '0.5',
@@ -510,7 +510,7 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_OT',
-    names: { zh: '马肉', en: 'Horse Meat', ru: 'Конина', uz: "Ot go'shti" },
+    names: { zh: '马肉', en: 'Horse Meat', ru: 'Конина', uz: 'Ot goʻshti' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -561,14 +561,14 @@ export const SKUS: CatalogSku[] = [
       zh: '羊网油',
       en: 'Lamb Caul Fat',
       ru: 'Бараний сальник',
-      uz: 'Qoy charvi',
+      uz: 'Qoʻy charvi',
     },
-    description: { zh: '内脏脂肪膜,做 dolma/烤包用' },
+    description: { zh: '内脏脂肪膜，做 dolma/烤包用' },
     unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_KOLBASA',
-    names: { zh: '香肠(片装)', en: 'Sausage (Sliced)', ru: 'Колбаса (нарезка)', uz: 'Kolbasa' },
+    names: { zh: '香肠（片装）', en: 'Sausage (Sliced)', ru: 'Колбаса (нарезка)', uz: 'Kolbasa' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -594,18 +594,18 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'meat', code: 'MEAT_SASISKA_PACK',
     names: {
-      zh: '小香肠(按包)',
+      zh: '小香肠（按包）',
       en: 'Small Sausages (per Pack)',
       ru: 'Сосиски (упаковка)',
       uz: 'Sasiska (pochka)',
     },
-    description: { zh: '按整包计算,通常一包 10 支' },
+    description: { zh: '按整包计算，通常一包 10 支' },
     unit: 'pack', step: '1',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_SASISKA_KG',
     names: {
-      zh: '小香肠(称重)',
+      zh: '小香肠（称重）',
       en: 'Small Sausages (by Weight)',
       ru: 'Сосиски (на вес)',
       uz: 'Sasiska (vazn)',
@@ -642,7 +642,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dairy', code: 'DAIRY_QAYMOQ',
     names: {
-      zh: '卡依马克(稀奶油)',
+      zh: '卡依马克（稀奶油）',
       en: 'Qaymoq (Clotted Cream)',
       ru: 'Каймак',
       uz: 'Qaymoq',
@@ -651,7 +651,7 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_SARIYOG',
-    names: { zh: '黄油', en: 'Butter', ru: 'Сливочное масло', uz: "Sariyog'" },
+    names: { zh: '黄油', en: 'Butter', ru: 'Сливочное масло', uz: 'Sariyogʻ' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -704,7 +704,10 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_GURUCH',
     names: { zh: '大米', en: 'Rice', ru: 'Рис', uz: 'Guruch' },
-    description: { zh: '常见品种 Ilxom / Alanga 等。生产建议拆分,价格差异大' },
+    // Owner's note (2026-05-05): prices differ a lot between varieties;
+    // split into one product per variety in production. Review DB-09: it
+    // was part of the description, shown to everyone who buys rice.
+    description: { zh: '常见品种 Ilxom / Alanga 等。' },
     unit: 'kg', step: '1',
   }),
   sk({
@@ -831,17 +834,17 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_YOG',
-    names: { zh: '植物油', en: 'Vegetable Oil', ru: 'Растительное масло', uz: "Yog'" },
+    names: { zh: '植物油', en: 'Vegetable Oil', ru: 'Растительное масло', uz: 'Yogʻ' },
     unit: 'L', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_ZAYTUN_YOGI',
-    names: { zh: '橄榄油', en: 'Olive Oil', ru: 'Оливковое масло', uz: 'Zaytun yogi' },
+    names: { zh: '橄榄油', en: 'Olive Oil', ru: 'Оливковое масло', uz: 'Zaytun yogʻi' },
     unit: 'L', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_ZIGIR_YOGI',
-    names: { zh: '亚麻籽油', en: 'Linseed Oil', ru: 'Льняное масло', uz: "Zig'ir yog'i" },
+    names: { zh: '亚麻籽油', en: 'Linseed Oil', ru: 'Льняное масло', uz: 'Zigʻir yogʻi' },
     unit: 'L', step: '0.5',
   }),
   sk({
@@ -921,7 +924,7 @@ export const SKUS: CatalogSku[] = [
       zh: '香菜籽',
       en: 'Coriander Seeds',
       ru: 'Семена кориандра',
-      uz: "Kashnich urug'i",
+      uz: 'Kashnich urugʻi',
     },
     unit: 'kg', step: '0.5',
   }),
@@ -972,7 +975,7 @@ export const SKUS: CatalogSku[] = [
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_YONGOQ',
-    names: { zh: '核桃', en: 'Walnuts', ru: 'Грецкие орехи', uz: "Yong'oq" },
+    names: { zh: '核桃', en: 'Walnuts', ru: 'Грецкие орехи', uz: 'Yongʻoq' },
     unit: 'kg', step: '0.5',
   }),
   sk({
@@ -988,23 +991,23 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_MAYIZ_REGULAR',
     names: {
-      zh: '葡萄干(平常)',
+      zh: '葡萄干（平常）',
       en: 'Raisins (Regular)',
       ru: 'Изюм (обычный)',
       uz: 'Mayiz',
     },
-    description: { zh: '日常吃,装碟用' },
+    description: { zh: '日常吃，装碟用' },
     unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_OSH_MAGIZI',
     names: {
-      zh: '葡萄干(抓饭专用)',
+      zh: '葡萄干（抓饭专用）',
       en: 'Raisins (for Plov)',
       ru: 'Изюм для плова',
       uz: 'Osh magizi',
     },
-    description: { zh: '抓饭专用,质地不同于平常吃的' },
+    description: { zh: '抓饭专用，质地不同于平常吃的' },
     unit: 'kg', step: '0.5',
   }),
 
@@ -1035,7 +1038,7 @@ export const SKUS: CatalogSku[] = [
       zh: '拉面面团',
       en: 'Lagman Dough',
       ru: 'Тесто для лагмана',
-      uz: "Lag'mon xamr",
+      uz: 'Lagʻmon xamr',
     },
     unit: 'kg', step: '0.5',
   }),
@@ -1132,7 +1135,7 @@ export const SKUS: CatalogSku[] = [
       zh: '汉堡纸',
       en: 'Hamburger Wrap',
       ru: 'Бумага для бургера',
-      uz: "Hamburger qog'oz",
+      uz: 'Hamburger qogʻoz',
     },
     unit: 'pack', step: '1',
   }),
@@ -1142,7 +1145,7 @@ export const SKUS: CatalogSku[] = [
       zh: '拉瓦什卷饼包装纸',
       en: 'Lavash Wrap Paper',
       ru: 'Бумага для лаваша',
-      uz: "Lavash qog'oz",
+      uz: 'Lavash qogʻoz',
     },
     unit: 'pack', step: '1',
   }),
@@ -1219,20 +1222,20 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'packaging', code: 'PKG_CHEK_QOGOZ_KATTA',
     names: {
-      zh: '收银纸(大)',
+      zh: '收银纸（大）',
       en: 'Receipt Paper (Large)',
       ru: 'Чековая лента (большая)',
-      uz: "Chek qog'oz kattasi",
+      uz: 'Chek qogʻoz kattasi',
     },
     unit: 'roll', step: '1',
   }),
   sk({
     catSlug: 'packaging', code: 'PKG_CHEK_QOGOZ_KICHIK',
     names: {
-      zh: '收银纸(小)',
+      zh: '收银纸（小）',
       en: 'Receipt Paper (Small)',
       ru: 'Чековая лента (малая)',
-      uz: "Chek qog'oz kichigi",
+      uz: 'Chek qogʻoz kichigi',
     },
     unit: 'roll', step: '1',
   }),
@@ -1254,7 +1257,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'packaging', code: 'PKG_MUSIR_KATTA',
     names: {
-      zh: '垃圾袋(大)',
+      zh: '垃圾袋（大）',
       en: 'Trash Bag (Large)',
       ru: 'Мусорный пакет (большой)',
       uz: 'Musir paket kattasi',
@@ -1264,7 +1267,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'packaging', code: 'PKG_MUSIR_KICHIK',
     names: {
-      zh: '垃圾袋(小)',
+      zh: '垃圾袋（小）',
       en: 'Trash Bag (Small)',
       ru: 'Мусорный пакет (малый)',
       uz: 'Musir paket kichigi',

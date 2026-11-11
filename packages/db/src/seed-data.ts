@@ -202,3 +202,191 @@ export const BUILTIN_ROLES = [
     ] as readonly string[],
   },
 ] as const;
+
+/** A name in the four interface languages. */
+export type SeedNames = { en: string; zh: string; ru: string; uz: string };
+
+/**
+ * The dev seed's categories and products (`db:seed`, and the end-to-end
+ * run's catalog). Data only, so a test can read it: review DB-09
+ * (2026-11-11) found ASCII apostrophes in its Uzbek and a wrong character
+ * in its Chinese, with nothing to catch them.
+ */
+export const DEV_CATEGORIES: ReadonlyArray<{ slug: string; names: SeedNames }> = [
+  { slug: 'meat', names: { en: 'Meat', zh: '肉类', ru: 'Мясо', uz: 'Goʻsht' } },
+  {
+    slug: 'vegetables',
+    names: {
+      en: 'Vegetables',
+      zh: '蔬菜',
+      ru: 'Овощи',
+      uz: 'Sabzavotlar',
+    },
+  },
+  {
+    slug: 'fruit',
+    names: { en: 'Fruit', zh: '水果', ru: 'Фрукты', uz: 'Mevalar' },
+  },
+  {
+    slug: 'dairy',
+    names: {
+      en: 'Dairy',
+      zh: '乳制品',
+      ru: 'Молочные продукты',
+      uz: 'Sut mahsulotlari',
+    },
+  },
+  {
+    slug: 'kitchen-tools',
+    names: {
+      en: 'Kitchen Tools',
+      zh: '厨房工具',
+      ru: 'Кухня',
+      uz: 'Oshxona',
+    },
+  },
+  {
+    slug: 'linen',
+    names: {
+      en: 'Linen',
+      zh: '布草',
+      ru: 'Текстиль',
+      uz: 'Choyshab',
+    },
+  },
+];
+
+export const DEV_SKUS: ReadonlyArray<{
+  catSlug: string;
+  code: string;
+  names: SeedNames;
+  unit: string;
+  step: string;
+}> = [
+  {
+    catSlug: 'meat',
+    code: 'BEEF',
+    names: { en: 'Beef', zh: '牛肉', ru: 'Говядина', uz: 'Mol goʻshti' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'meat',
+    code: 'LAMB',
+    names: { en: 'Lamb', zh: '羊肉', ru: 'Баранина', uz: 'Qoʻy goʻshti' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'meat',
+    code: 'CHICKEN',
+    names: { en: 'Chicken', zh: '鸡肉', ru: 'Курица', uz: 'Tovuq' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'vegetables',
+    code: 'TOMATO',
+    names: { en: 'Tomato', zh: '番茄', ru: 'Помидор', uz: 'Pomidor' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'vegetables',
+    code: 'CUCUMBER',
+    names: { en: 'Cucumber', zh: '黄瓜', ru: 'Огурец', uz: 'Bodring' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'vegetables',
+    code: 'ONION',
+    names: { en: 'Onion', zh: '洋葱', ru: 'Лук', uz: 'Piyoz' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'vegetables',
+    code: 'POTATO',
+    names: { en: 'Potato', zh: '土豆', ru: 'Картофель', uz: 'Kartoshka' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'fruit',
+    code: 'APPLE',
+    names: { en: 'Apple', zh: '苹果', ru: 'Яблоко', uz: 'Olma' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'fruit',
+    code: 'BANANA',
+    names: { en: 'Banana', zh: '香蕉', ru: 'Банан', uz: 'Banan' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'dairy',
+    code: 'MILK',
+    names: { en: 'Milk', zh: '牛奶', ru: 'Молоко', uz: 'Sut' },
+    unit: 'L',
+    step: '0.5',
+  },
+  {
+    catSlug: 'dairy',
+    code: 'YOGURT',
+    names: { en: 'Yogurt', zh: '酸奶', ru: 'Йогурт', uz: 'Qatiq' },
+    unit: 'L',
+    step: '0.5',
+  },
+  {
+    catSlug: 'dairy',
+    code: 'BUTTER',
+    names: { en: 'Butter', zh: '黄油', ru: 'Масло', uz: 'Sariyogʻ' },
+    unit: 'kg',
+    step: '0.5',
+  },
+  {
+    catSlug: 'kitchen-tools',
+    code: 'KNIFE',
+    names: { en: 'Chef Knife', zh: '主厨刀', ru: 'Поварской нож', uz: 'Oshpaz pichoq' },
+    unit: 'pcs',
+    step: '1',
+  },
+  {
+    catSlug: 'kitchen-tools',
+    code: 'BOARD',
+    names: { en: 'Cutting Board', zh: '砧板', ru: 'Доска', uz: 'Taxta' },
+    unit: 'pcs',
+    step: '1',
+  },
+  {
+    catSlug: 'kitchen-tools',
+    code: 'POT',
+    names: { en: 'Stock Pot', zh: '汤锅', ru: 'Кастрюля', uz: 'Qozon' },
+    unit: 'pcs',
+    step: '1',
+  },
+  {
+    catSlug: 'linen',
+    code: 'TOWEL',
+    names: { en: 'Bath Towel', zh: '浴巾', ru: 'Полотенце', uz: 'Sochiq' },
+    unit: 'pcs',
+    step: '1',
+  },
+  {
+    catSlug: 'linen',
+    code: 'SHEET',
+    names: { en: 'Bed Sheet', zh: '床单', ru: 'Простыня', uz: 'Choyshab' },
+    unit: 'pcs',
+    step: '1',
+  },
+  {
+    catSlug: 'linen',
+    code: 'SLIPPER',
+    names: { en: 'Slippers', zh: '拖鞋', ru: 'Тапочки', uz: 'Shippak' },
+    unit: 'pair',
+    step: '1',
+  },
+];
