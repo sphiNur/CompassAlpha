@@ -64,6 +64,15 @@ function isLogLevel(level: string): level is LogLevel {
   return level === 'debug' || level === 'info' || level === 'warn' || level === 'error';
 }
 
+/** A copy of this device's log buffer; empty before the logger starts (dev). */
+function readRingBuffer(): LogEvent[] {
+  try {
+    return [...getLogger().getRingBuffer()];
+  } catch {
+    return [];
+  }
+}
+
 /** One line of either list: this device's events or the saved ones. */
 interface LogLine {
   key: string;
@@ -82,21 +91,14 @@ export function DebugPage() {
   const toast = useToast();
   const [view, setView] = useState<View>('device');
   const [level, setLevel] = useState<Level>('all');
-  const [liveTick, setLiveTick] = useState(0);
-
-  // This device's ring buffer, redrawn as the logger adds to it (no tRPC).
-  const ringBuffer = useMemo<LogEvent[]>(() => {
-    try {
-      return [...getLogger().getRingBuffer()];
-    } catch {
-      return [];
-    }
-  }, [liveTick]);
+  // This device's ring buffer, copied again each time the logger adds to
+  // it (no tRPC).
+  const [ringBuffer, setRingBuffer] = useState<LogEvent[]>(readRingBuffer);
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
     try {
-      unsub = getLogger().subscribe(() => setLiveTick((x) => x + 1));
+      unsub = getLogger().subscribe(() => setRingBuffer(readRingBuffer()));
     } catch {
       /* logger not yet booted in dev */
     }

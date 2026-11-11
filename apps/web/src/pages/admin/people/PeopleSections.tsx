@@ -1644,10 +1644,10 @@ function RoleAssigneesByStore({
     out.sort(([ka, va], [kb, vb]) => {
       if (ka === orgLevelKey) return -1;
       if (kb === orgLevelKey) return 1;
-      return va.label.localeCompare(vb.label);
+      return va.label.localeCompare(vb.label, i18n.locale);
     });
     return out;
-  }, [assignees]);
+  }, [assignees, i18n]);
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
@@ -2394,7 +2394,7 @@ function TransferStoreSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
-  const sessionStores = session?.stores ?? [];
+  const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   const open = !!target;
 
   const [toStoreId, setToStoreId] = useState<string>('');
@@ -2960,7 +2960,7 @@ function GrantRoleSheet({
     () => new Set(session?.adminStoreIds ?? []),
     [session?.adminStoreIds],
   );
-  const sessionStores = session?.stores ?? [];
+  const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   const i18n = useI18n();
   const roleText = useRoleLabels();
 

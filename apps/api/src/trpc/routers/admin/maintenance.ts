@@ -39,6 +39,7 @@ import { requireAdmin } from './guards';
 import { broadcastPurged } from './notify';
 import { getAdminReadScope, runTouchesStores } from './scope';
 import { auditAdmin } from '../../../services/adminAudit';
+import { executeRows } from '../../../services/sqlRows';
 
 /**
  * DX-CAT-5 (2026-11-01): how many orders and runs belong to the reset
@@ -257,19 +258,18 @@ export const maintenanceProcedures = {
       // in both the count and the delete passes so the numbers are
       // self-consistent (no race between count and delete inside
       // the same tx).
-      const sessionIdsResult = await tx.execute(
-        sql`SELECT id FROM read_model.order_sessions_v
-              WHERE org_id = ${orgId} AND order_date = ${date}`,
-      );
-      const sessionIds: string[] = (sessionIdsResult as unknown as Array<{ id: string }>).map(
-        (r) => r.id,
-      );
-
-      const runIdsResult = await tx.execute(
-        sql`SELECT id FROM read_model.market_runs_v
-              WHERE org_id = ${orgId} AND run_date = ${date}`,
-      );
-      const runIds: string[] = (runIdsResult as unknown as Array<{ id: string }>).map((r) => r.id);
+      const sessionIds = executeRows<{ id: string }>(
+        await tx.execute(
+          sql`SELECT id FROM read_model.order_sessions_v
+                WHERE org_id = ${orgId} AND order_date = ${date}`,
+        ),
+      ).map((r) => r.id);
+      const runIds = executeRows<{ id: string }>(
+        await tx.execute(
+          sql`SELECT id FROM read_model.market_runs_v
+                WHERE org_id = ${orgId} AND run_date = ${date}`,
+        ),
+      ).map((r) => r.id);
 
       // CAT-4 (2026-10-30): orders are picked by order_date and runs by
       // run_date, which differ when a run takes earlier orders. Deleting
@@ -554,16 +554,14 @@ export const maintenanceProcedures = {
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
         // DX-CAT-3 (2026-11-01): why each run can't be deleted here, by
         // the rule purgeRun applies (ADM2-08).
-        const sessionIdsOf = (r: (typeof rows)[number]) =>
-          (r.sessionIdsJson as unknown as string[]) ?? [];
         const deleteBlocks = await runDeleteBlocks(
           tx,
           ctx.session!,
-          rows.map((r) => ({ id: r.id, sessionIds: sessionIdsOf(r) })),
+          rows.map((r) => ({ id: r.id, sessionIds: r.sessionIdsJson })),
           { requireOnlyTestSessions: true },
         );
         return rows.map((r) => {
-          const sessionIds = sessionIdsOf(r);
+          const sessionIds = r.sessionIdsJson;
           const m = r.purchaserMemberId ? memberById.get(r.purchaserMemberId) : null;
           return {
             deleteBlock: deleteBlocks.get(r.id) ?? null,
@@ -633,19 +631,7 @@ export const maintenanceProcedures = {
         // Only sessions that progressed past draft are "submissions".
         // We use a raw query so we can express the date range + status
         // filter cleanly without drizzle hoops.
-        const rawSessions = (await tx.execute(
-          sql`SELECT id, store_id, order_date, status, submitted_at, decided_at,
-                     submitted_by_member_id, decided_by_member_id, reject_reason, run_id
-              FROM read_model.order_sessions_v
-              WHERE org_id = ${orgId}
-                AND status IN ('submitted','approved','rejected','in_run','archived')
-                AND order_date >= ${fromDate}
-                AND order_date <= ${toDate}
-                ${input?.storeId ? sql`AND store_id = ${input.storeId}` : sql``}
-                ${historyStoreFilter}
-              ORDER BY submitted_at DESC NULLS LAST
-              LIMIT ${limit}`,
-        )) as unknown as Array<{
+        const rawSessions = executeRows<{
           id: string;
           store_id: string;
           order_date: string;
@@ -656,7 +642,21 @@ export const maintenanceProcedures = {
           decided_by_member_id: string | null;
           reject_reason: string | null;
           run_id: string | null;
-        }>;
+        }>(
+          await tx.execute(
+            sql`SELECT id, store_id, order_date, status, submitted_at, decided_at,
+                       submitted_by_member_id, decided_by_member_id, reject_reason, run_id
+                FROM read_model.order_sessions_v
+                WHERE org_id = ${orgId}
+                  AND status IN ('submitted','approved','rejected','in_run','archived')
+                  AND order_date >= ${fromDate}
+                  AND order_date <= ${toDate}
+                  ${input?.storeId ? sql`AND store_id = ${input.storeId}` : sql``}
+                  ${historyStoreFilter}
+                ORDER BY submitted_at DESC NULLS LAST
+                LIMIT ${limit}`,
+          ),
+        );
         if (rawSessions.length === 0) return [];
 
         const sessionIds = rawSessions.map((r) => r.id);
@@ -845,7 +845,7 @@ export const maintenanceProcedures = {
       if (!run) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.runNotFound' });
       }
-      const sessionIds = (run.sessionIdsJson as unknown as string[]) ?? [];
+      const sessionIds = run.sessionIdsJson;
 
       // Refuse a run with someone else's orders in it, or one that
       // someone else acted on (or on its orders). The maintenance list

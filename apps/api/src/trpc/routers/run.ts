@@ -876,7 +876,7 @@ export const runRouter = router({
             message: 'run.errors.cannotAttachInStatus',
           });
         }
-        const alreadyIn = new Set((run.sessionIdsJson ?? []) as string[]);
+        const alreadyIn = new Set(run.sessionIdsJson);
         const dedupedNewIds = input.sessionIds.filter((id) => !alreadyIn.has(id));
         if (dedupedNewIds.length === 0) {
           throw new TRPCError({
@@ -1015,9 +1015,7 @@ export const runRouter = router({
       );
       // Resolve every involved storeId in one shot; cheap join on a
       // bounded result set.
-      const allSessionIds = [
-        ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
-      ];
+      const allSessionIds = [...new Set(runs.flatMap((r) => r.sessionIdsJson))];
       const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
       // D6 (2026-10-31): money per run only where prices.view holds in
       // every store of the run the reader sees.
@@ -1116,7 +1114,7 @@ export const runRouter = router({
       const sumCents = (values: bigint[]) => values.reduce((sum, v) => sum + v, 0n);
       const runStoreIds = (run: (typeof visibleRuns)[number]): string[] => {
         const ids = new Set<string>();
-        for (const sessionId of (run.sessionIdsJson as unknown as string[]) ?? []) {
+        for (const sessionId of run.sessionIdsJson) {
           const storeId = sessionStore.get(sessionId);
           if (storeId !== undefined && (!allowedStoreSet || allowedStoreSet.has(storeId))) {
             ids.add(storeId);
@@ -1154,12 +1152,10 @@ export const runRouter = router({
         };
         if (!allowedStoreSet) return { ...run, storeTotals, money };
 
-        const visibleSessionIds = ((run.sessionIdsJson as unknown as string[]) ?? []).filter(
-          (sessionId) => {
-            const storeId = sessionStore.get(sessionId);
-            return storeId !== undefined && allowedStoreSet.has(storeId);
-          },
-        );
+        const visibleSessionIds = run.sessionIdsJson.filter((sessionId) => {
+          const storeId = sessionStore.get(sessionId);
+          return storeId !== undefined && allowedStoreSet.has(storeId);
+        });
         // actual_total keeps its items-only meaning for partial readers too.
         const visibleActualTotal = itemsSum;
         const visibleCashTotal = sumCents(storeTotalRows.map((row) => row.itemsCash));
@@ -1622,7 +1618,7 @@ export const runRouter = router({
         const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
         const { sessions: visibleSessions, items: sessionItems } = await loadRunSessions(
           tx,
-          (run.sessionIdsJson as string[] | null) ?? [],
+          run.sessionIdsJson,
           allowedStoreSet,
         );
         if (allowedStoreSet && visibleSessions.length === 0) {
@@ -1792,7 +1788,7 @@ export const runRouter = router({
         // next to that store's demand and can mark each extra.
         const { sessions: visibleSessions, items: sessionItems } = await loadRunSessions(
           tx,
-          (run.sessionIdsJson ?? []) as string[],
+          run.sessionIdsJson,
           allowedStoreSet,
         );
         const visibleSessionIds = visibleSessions.map((session) => session.id);
@@ -2098,7 +2094,7 @@ export const runRouter = router({
         const otherStoreSkuIds: string[] = [];
         if (purchaseScopeStoreIds !== null) {
           const scope = new Set(purchaseScopeStoreIds);
-          const runSessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
+          const runSessionIds = run.sessionIdsJson;
           const demandRows =
             runSessionIds.length > 0
               ? await tx
@@ -3464,8 +3460,8 @@ async function loadRun(db: DB, orgId: string, runId: string) {
  * sessions as "involved" — eject doesn't revoke the operator's right
  * to see what they previously planned for.
  */
-async function runInvolvedStoreIds(db: DB, run: { sessionIdsJson: unknown }): Promise<string[]> {
-  const sessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
+async function runInvolvedStoreIds(db: DB, run: { sessionIdsJson: string[] }): Promise<string[]> {
+  const sessionIds = run.sessionIdsJson;
   if (sessionIds.length === 0) return [];
   const rows = await db.query.orderSessionsV.findMany({
     where: (sess, { inArray }) => inArray(sess.id, sessionIds),
@@ -3511,7 +3507,7 @@ function assertStoreIdsWithinRunCreateScope(
 async function assertRunCreateScopeForRun(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: unknown },
+  run: { sessionIdsJson: string[] },
 ): Promise<void> {
   const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx.session!);
   if (allowedStoreIds === null) return;
@@ -3531,7 +3527,7 @@ async function assertRunCreateScopeForRun(
 async function canAmendRun(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: unknown },
+  run: { sessionIdsJson: string[] },
 ): Promise<boolean> {
   const globallyGranted = await hasGlobalPermission(db, ctx.session!.memberId, 'run.amend');
   if (!globallyGranted) return false;
@@ -3552,7 +3548,7 @@ async function canAmendRun(
 async function assertCanAmendRun(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: unknown },
+  run: { sessionIdsJson: string[] },
 ): Promise<void> {
   if (await canAmendRun(db, ctx, run)) return;
   throw new TRPCError({
@@ -3572,7 +3568,7 @@ async function assertCanAmendRun(
 async function assertRunPermissionForAllStores(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: unknown },
+  run: { sessionIdsJson: string[] },
   permissionKey: string,
   item?: {
     skuId: string;
@@ -3632,7 +3628,7 @@ async function assertRunPermissionForAllStores(
 async function finishBlockedReasonFor(
   db: DB,
   ctx: RequestContext,
-  run: { status: string; sessionIdsJson: unknown },
+  run: { status: string; sessionIdsJson: string[] },
 ): Promise<string | null> {
   if (run.status === 'amending') {
     return (await canAmendRun(db, ctx, run)) ? null : 'run.errors.cannotAmend';
@@ -3657,10 +3653,10 @@ async function finishBlockedReasonFor(
 /** Stores whose orders in this run ask for `skuId` (BUY-6). */
 async function itemDemandStoreIds(
   db: DB,
-  run: { sessionIdsJson: unknown },
+  run: { sessionIdsJson: string[] },
   skuId: string,
 ): Promise<string[]> {
-  const sessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
+  const sessionIds = run.sessionIdsJson;
   if (sessionIds.length === 0) return [];
   const rows = await db
     .selectDistinct({ storeId: s.orderSessionsV.storeId })

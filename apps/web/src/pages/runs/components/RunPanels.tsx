@@ -1489,19 +1489,20 @@ export function PreviewSummaryCard({
         if (an !== bn) {
           if (an === null) return 1;
           if (bn === null) return -1;
-          const bySupplierName = an.localeCompare(bn);
+          const bySupplierName = an.localeCompare(bn, i18n.locale);
           if (bySupplierName !== 0) return bySupplierName;
         }
-        return a.name.localeCompare(b.name);
+        return a.name.localeCompare(b.name, i18n.locale);
       });
     }
 
     return [...m.values()]
       .filter((g) => g.items.length > 0 || g.legacyNote)
-      .sort((a, b) => a.storeName.localeCompare(b.storeName));
+      .sort((a, b) => a.storeName.localeCompare(b.storeName, i18n.locale));
   }, [
     ensurePreviewStoreGroup,
     currentUnitLabel,
+    i18n,
     estimatedPriceForSku,
     preview.perStoreDemand,
     preview.sessionExtrasByStore,

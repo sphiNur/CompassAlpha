@@ -1822,6 +1822,8 @@ export function RunPage() {
     runDetailQuery.data,
     currency,
     i18n,
+    productName,
+    skuById,
     storeById,
     startPurchase,
     startDelivery,
@@ -2273,9 +2275,7 @@ export function RunPage() {
           <PreviewSummaryCard
             preview={{
               date: runDetailQuery.data.runDate,
-              sessions: ((runDetailQuery.data.sessionIdsJson as string[] | null) ?? []).map(
-                (id) => ({ id, storeId: '' }),
-              ),
+              sessions: runDetailQuery.data.sessionIdsJson.map((id) => ({ id, storeId: '' })),
               plannedItems: runDetailQuery.data.items.map((it) => ({
                 skuId: it.skuId,
                 qty: it.plannedQty,
