@@ -278,7 +278,7 @@ export function PurchaseSheet({
               {i18n.t('run.topUp.sheetBody', {
                 qty: `${formatQty(
                   draft.topUp.base.reduce((sum, b) => sum + Number(b.qty), 0),
-                )} ${sku ? unitLabel(sku.unit) : ''}`.trim(),
+                )} ${sku ? unitLabel.uncounted(sku.unit) : ''}`.trim(),
                 price: `${formatMoney(draft.topUp.item.unitPrice)} ${currency}`,
               })}
             </Banner>
@@ -295,7 +295,7 @@ export function PurchaseSheet({
               {/* R2-BUY-4: the localised unit ("升"), not the code ("L"); no
                   empty brackets when the SKU has none. */}
               {sku?.unit
-                ? i18n.t('run.action.actualQty', { unit: unitLabel(sku.unit) })
+                ? i18n.t('run.action.actualQty', { unit: unitLabel.uncounted(sku.unit) })
                 : i18n.t('run.action.actualQtyPlain')}
               <Input
                 className="mt-1"
@@ -349,7 +349,7 @@ export function PurchaseSheet({
                 typed={priceInput}
                 priceInThousands={priceInThousands}
                 currency={currency}
-                unit={sku?.unit ? unitLabel(sku.unit) : undefined}
+                unit={sku?.unit ? unitLabel.uncounted(sku.unit) : undefined}
               />
             </span>
           </div>
@@ -878,7 +878,7 @@ export function AddItemSheet({
                     secondaryLang={selectedName?.secondaryLang}
                   />
                   <div className="text-old-label text-[var(--c-fg-muted)]">
-                    {unitLabel(selectedSku.unit)}
+                    {unitLabel.uncounted(selectedSku.unit)}
                   </div>
                 </div>
                 <Button
@@ -936,7 +936,7 @@ export function AddItemSheet({
                               secondaryLang={nm.secondaryLang}
                             />
                             <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
-                              {unitLabel(sku.unit)}
+                              {unitLabel.uncounted(sku.unit)}
                             </span>
                           </button>
                         </li>
@@ -1221,7 +1221,7 @@ export function AddItemSheet({
                     // R2-BUY-4: localised unit; no "（）" without one.
                     const unit =
                       draft.mode === 'sku'
-                        ? unitLabel(selectedSku?.unit)
+                        ? unitLabel.uncounted(selectedSku?.unit)
                         : draft.unitHint.trim();
                     return unit
                       ? i18n.t('run.action.actualQty', { unit })

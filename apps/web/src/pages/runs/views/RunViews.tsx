@@ -1354,7 +1354,7 @@ export function PurchaseRow({
   paymentBusy: boolean;
 }) {
   const unitLabel = useUnitLabel();
-  const unit = unitLabel(unitCode);
+  const unit = unitLabel.uncounted(unitCode);
   // R2-COPY-4: a quantity's unit agrees with it («10 пар», "2 packs").
   const unitFor = (qty: string | number | null | undefined) => unitLabel(unitCode, qty);
   // Default qty = planned. Price defaults to the last observed market

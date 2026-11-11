@@ -84,6 +84,7 @@ import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 import { estimateOrder } from '@compass/contracts/money';
+import type { UnitLabel } from '../lib/unitLabel';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -1849,7 +1850,7 @@ const SkuRow = memo(function SkuRow({
   productNameParts: (item: {
     names: Record<string, string> | null | undefined;
   }) => ProductNameParts;
-  unitLabel: (unit: string | null | undefined, qty?: string | number | null) => string;
+  unitLabel: UnitLabel;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
@@ -1911,7 +1912,7 @@ const SkuRow = memo(function SkuRow({
       <QtyControl
         value={myQty}
         step={Number(sku.step)}
-        unit={unitLabel(sku.unit)}
+        unit={unitLabel.uncounted(sku.unit)}
         unitFor={(qty) => unitLabel(sku.unit, qty)}
         disabled={isReadOnly}
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
@@ -2288,7 +2289,7 @@ function ReviewList({
                       <QtyControl
                         value={myQty}
                         step={Number(r.step)}
-                        unit={unitLabel(r.unit)}
+                        unit={unitLabel.uncounted(r.unit)}
                         unitFor={(q) => unitLabel(r.unit, q)}
                         max={r.archived ? myQty : ORDER_QTY_MAX}
                         pickTitle={r.name}
@@ -2809,7 +2810,7 @@ function ExtraRowEditor({
           >
             {CANONICAL_UNITS.map((u) => (
               <option key={u} value={u}>
-                {unitLabel(u)}
+                {unitLabel.uncounted(u)}
               </option>
             ))}
           </Select>

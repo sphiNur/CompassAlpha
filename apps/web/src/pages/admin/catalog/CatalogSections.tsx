@@ -593,7 +593,7 @@ export function SkusSection() {
                         </div>
                       ) : null}
                       <CardMeta>
-                        {categoryName(sk.categoryId)} · {unitLabel(sk.unit)} ·{' '}
+                        {categoryName(sk.categoryId)} · {unitLabel.uncounted(sk.unit)} ·{' '}
                         {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
                         {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
                         {sk.code ? ` · ${sk.code}` : ''}
@@ -778,7 +778,7 @@ export function SkusSection() {
                   {/* R2-COPY-3: the localised unit, not the stored code. */}
                   {SKU_UNITS.map((u) => (
                     <option key={u} value={u}>
-                      {unitLabel(u)}
+                      {unitLabel.uncounted(u)}
                     </option>
                   ))}
                 </Select>
@@ -1850,7 +1850,7 @@ export function DishesSection() {
                             placeholder={i18n.t('dishes.field.qtyPlaceholder')}
                           />
                           <span className="text-old-label text-[var(--c-fg-muted)]">
-                            {sku?.unit ? unitLabel(sku.unit) : '—'}
+                            {sku?.unit ? unitLabel.uncounted(sku.unit) : '—'}
                           </span>
                         </div>
                         {archivedSku ? (
