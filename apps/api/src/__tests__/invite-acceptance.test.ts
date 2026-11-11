@@ -519,6 +519,80 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     expect(self?.displayName).toBe('Admin Renamed Self');
   });
 
+  // ---------- ADM1-08: whom an opened link may give roles ----------------
+
+  const tgIdOf = async (userId: string): Promise<bigint> =>
+    (await getDb(undefined, { system: 'maintenance' }).query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, userId),
+    }))!.tgUserId!;
+
+  test('ADM1-08 an inviter opening their own link gets nothing, and the link still works', async () => {
+    const created = await callerFor(managerSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    await expect(
+      callerFor(null).auth.acceptInvite({
+        token: created.token,
+        initData: signInitData(await tgIdOf(managerUserId)),
+      }),
+    ).rejects.toThrow('auth.errors.inviteOwnLink');
+    const accepted = await callerFor(null).auth.acceptInvite({
+      token: created.token,
+      initData: signInitData(freshTgId()),
+    });
+    expect(accepted.alreadyMember).toBe(false);
+  });
+
+  test('ADM1-08 a peer of the inviter is refused the link’s roles; an admin’s link gives them', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [peerUser] = await db
+      .insert(s.users)
+      .values({ tgUserId: freshTgId(), displayName: 'Peer Manager', displayNameLocked: true })
+      .returning();
+    noteUser(peerUser!.id);
+    const [peer] = await db
+      .insert(s.members)
+      .values({ orgId, userId: peerUser!.id, status: 'active' })
+      .returning();
+    await db.insert(s.memberRoleBindings).values({
+      memberId: peer!.id,
+      roleId: managerRoleId,
+      scopeType: 'store',
+      scopeId: storeId,
+      grantedBy: adminUserId,
+    });
+    const peerRoleIds = async () =>
+      (
+        await db.query.memberRoleBindings.findMany({
+          where: (b, { eq: eq2 }) => eq2(b.memberId, peer!.id),
+        })
+      ).map((b) => b.roleId);
+
+    const fromManager = await callerFor(managerSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    await expect(
+      callerFor(null).auth.acceptInvite({
+        token: fromManager.token,
+        initData: signInitData(peerUser!.tgUserId!),
+      }),
+    ).rejects.toThrow('auth.errors.inviteSenderCannotGrantYou');
+    expect(await peerRoleIds()).toEqual([managerRoleId]);
+
+    const fromAdmin = await callerFor(adminSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    const accepted = await callerFor(null).auth.acceptInvite({
+      token: fromAdmin.token,
+      initData: signInitData(peerUser!.tgUserId!),
+    });
+    expect(accepted.alreadyMember).toBe(true);
+    expect((await peerRoleIds()).sort()).toEqual([managerRoleId, staffRoleId].sort());
+  });
+
   test('an unknown token creates nothing', async () => {
     const tgUserId = freshTgId();
     await expect(

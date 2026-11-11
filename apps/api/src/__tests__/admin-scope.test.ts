@@ -1861,3 +1861,173 @@ describe('ADM1-05 the permissions screen reads each scope on its own', () => {
     },
   );
 });
+
+// ---------- ADM1-08: who may receive a role ------------------------------
+
+describe('ADM1-08 a role goes only to someone below the granter, never to themself', () => {
+  const rolesIn = async (memberId: string, storeId: string): Promise<string[]> =>
+    (
+      await getDb(undefined, { system: 'maintenance' })
+        .select({ slug: s.roles.slug })
+        .from(s.memberRoleBindings)
+        .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+        .where(
+          and(
+            eq(s.memberRoleBindings.memberId, memberId),
+            eq(s.memberRoleBindings.scopeId, storeId),
+          ),
+        )
+    )
+      .map((r) => r.slug)
+      .sort();
+
+  /** A store with two managers and a staff member, and the first manager's caller. */
+  async function managedStore(label: string) {
+    const fx = fixture();
+    const store = await makeStore(`${label}-${Math.random()}`);
+    const person = async (name: string, roleId: string) => {
+      const user = await makeUser(`${label} ${name}`);
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, roleId, { type: 'store', storeId: store.id });
+      return { ...user, memberId };
+    };
+    const manager = await person('Manager', fx.managerRoleId);
+    const peer = await person('Peer', fx.managerRoleId);
+    const staff = await person('Staff', fx.staffRoleId);
+    const caller = callerFor(await sessionFor(manager.memberId, manager.id));
+    return { store, manager, peer, staff, caller };
+  }
+
+  test.skipIf(!SHOULD_RUN)(
+    'grantRole: not to oneself or a peer; someone above may; a suspended member is reactivated first',
+    async () => {
+      const { store, manager, peer, staff, caller } = await managedStore('Grant');
+      const purchaserFor = (userId: string) => ({
+        userId,
+        roleSlug: 'purchaser',
+        scopeType: 'store' as const,
+        scopeId: store.id,
+      });
+      // The manager role leaves the run keys out on purpose; the built-in
+      // purchaser role carries them and sits below the manager's rank.
+      await expect(caller.admin.grantRole(purchaserFor(manager.id))).rejects.toThrow(
+        'auth.errors.cannotGrantSelf',
+      );
+      await expect(caller.admin.grantRole(purchaserFor(peer.id))).rejects.toThrow(
+        'auth.errors.cannotGrantToPeer',
+      );
+      expect(await rolesIn(peer.memberId, store.id)).toEqual(['manager']);
+      expect((await caller.admin.grantRole(purchaserFor(staff.id))).granted).toBe(true);
+
+      // Someone above them may still make a manager a purchaser too, and
+      // the super admin is not held to the rule.
+      const owner = appRouter.createCaller(fixture().superAdminCtx);
+      expect((await owner.admin.grantRole(purchaserFor(manager.id))).granted).toBe(true);
+      const ownGrant = await owner.admin.grantRole(purchaserFor(fixture().superAdminUserId));
+      expect(ownGrant.granted).toBe(true);
+
+      await getDb(undefined, { system: 'maintenance' })
+        .update(s.members)
+        .set({ status: 'suspended' })
+        .where(eq(s.members.id, peer.memberId));
+      await expect(owner.admin.grantRole(purchaserFor(peer.id))).rejects.toThrow(
+        'admin.errors.memberInactiveReactivateFirst',
+      );
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'inviting an existing member by Telegram id, or oneself, follows the same rule',
+    async () => {
+      const { store, manager, peer, staff, caller } = await managedStore('Invite');
+      const invite = (tgUserId: bigint, roleSlug?: string) =>
+        caller.admin.memberInviteByTgId({
+          tgUserId: String(tgUserId),
+          storeIds: [store.id],
+          ...(roleSlug ? { roleSlug } : {}),
+        });
+      await expect(invite(manager.tgUserId, 'purchaser')).rejects.toThrow(
+        'auth.errors.cannotGrantSelf',
+      );
+      await expect(invite(peer.tgUserId, 'purchaser')).rejects.toThrow(
+        'auth.errors.cannotGrantToPeer',
+      );
+      await invite(staff.tgUserId, 'purchaser');
+      expect(await rolesIn(staff.memberId, store.id)).toEqual(['purchaser', 'staff']);
+
+      // The store's default role is skipped for them, as one above the
+      // actor's rank is; the rest of the invite still happens.
+      const owner = appRouter.createCaller(fixture().superAdminCtx);
+      await owner.admin.storeUpdate({ storeId: store.id, defaultRoleSlug: 'purchaser' });
+      await invite(manager.tgUserId);
+      await invite(peer.tgUserId);
+      expect(await rolesIn(manager.memberId, store.id)).toEqual(['manager']);
+      expect(await rolesIn(peer.memberId, store.id)).toEqual(['manager']);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a transfer mirrors roles only into a store where the actor outranks the member',
+    async () => {
+      const fx = fixture();
+      const storeA = await makeStore(`TransferA-${Math.random()}`);
+      const storeB = await makeStore(`TransferB-${Math.random()}`);
+      const actorUser = await makeUser('Transfer Manager');
+      const actor = await makeMember(actorUser.id);
+      await bindRole(actor, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(actor, fx.managerRoleId, { type: 'store', storeId: storeB.id });
+      // Staff in A, but already a manager in B.
+      const user = await makeUser('Transfer Staff-A Manager-B');
+      const member = await makeMember(user.id);
+      await bindRole(member, fx.staffRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(member, fx.managerRoleId, { type: 'store', storeId: storeB.id });
+      const caller = callerFor(await sessionFor(actor, actorUser.id));
+      const move = (mirrorRoles: boolean) =>
+        caller.admin.memberTransferStore({
+          memberId: member,
+          fromStoreId: storeA.id,
+          toStoreId: storeB.id,
+          mirrorRoles,
+        });
+      await expect(move(true)).rejects.toThrow('auth.errors.cannotGrantToPeer');
+      expect(await rolesIn(member, storeA.id)).toEqual(['staff']);
+      // Without mirroring nothing is given in B, so the move goes through.
+      expect((await move(false)).ok).toBe(true);
+      expect(await rolesIn(member, storeB.id)).toEqual(['manager']);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    "copying a store's people gives nothing to the actor or to someone as high as them",
+    async () => {
+      const fx = fixture();
+      const storeA = await makeStore(`CloneA-${Math.random()}`);
+      const storeB = await makeStore(`CloneB-${Math.random()}`);
+      const person = async (name: string) => {
+        const user = await makeUser(`Clone ${name}`);
+        return { userId: user.id, memberId: await makeMember(user.id) };
+      };
+      // Two org admins who also hold a store role in A, and a staff member.
+      const actor = await person('Admin');
+      await bindRole(actor.memberId, fx.adminRoleId, { type: 'global' });
+      await bindRole(actor.memberId, fx.staffRoleId, { type: 'store', storeId: storeA.id });
+      const peer = await person('Peer Admin');
+      await bindRole(peer.memberId, fx.adminRoleId, { type: 'global' });
+      await bindRole(peer.memberId, fx.purchaserRoleId, { type: 'store', storeId: storeA.id });
+      const staff = await person('Staff');
+      await bindRole(staff.memberId, fx.staffRoleId, { type: 'store', storeId: storeA.id });
+
+      const caller = callerFor(await sessionFor(actor.memberId, actor.userId));
+      const result = await caller.admin.storeCloneRoles({
+        sourceStoreId: storeA.id,
+        targetStoreId: storeB.id,
+        includeMembers: true,
+      });
+      expect(result.cloned).toBe(1);
+      expect(result.skippedRank).toBe(2);
+      expect(await rolesIn(staff.memberId, storeB.id)).toEqual(['staff']);
+      expect(await rolesIn(actor.memberId, storeB.id)).toEqual([]);
+      expect(await rolesIn(peer.memberId, storeB.id)).toEqual([]);
+    },
+  );
+});

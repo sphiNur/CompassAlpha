@@ -824,6 +824,8 @@ export const zh = {
   'auth.errors.cannotGrantEqualOrHigher': '不能授予等于或高于自己等级的角色。',
   'auth.errors.cannotGrantMissingPermission': '这个角色里有你自己没有的权限，不能授予别人。',
   'auth.errors.cannotRevokeEqualOrHigher': '不能撤销等于或高于自己等级的角色。',
+  'auth.errors.cannotGrantSelf': '不能给自己授予角色，请找比你等级高的管理员。',
+  'auth.errors.cannotGrantToPeer': '只能给等级比你低的人授予角色。',
   'auth.errors.rateLimited': '尝试次数过多——请稍等一分钟后重试。',
   'system.errors.logRateLimited': '客户端日志事件过多——请减慢速度。',
 
@@ -1968,6 +1970,9 @@ export const zh = {
   'auth.errors.inviteRevoked': '这个邀请链接已被撤销，请店长发一个新链接。',
   'auth.errors.inviteInviterNoLongerAuthorized':
     '这个邀请已失效：发出邀请的人已无权添加成员。请店长发一个新链接。',
+  'auth.errors.inviteOwnLink': '这是你自己发出的邀请链接，请把它发给要邀请的人。',
+  'auth.errors.inviteSenderCannotGrantYou':
+    '这个邀请不能给你授予角色：发出邀请的人等级不比你高。请找比你等级高的管理员。',
   'admin.errors.inviteNotFound': '找不到这个邀请，可能刚被撤销。刷新看看。',
   'admin.errors.inviteNotPending': '这个邀请已经被使用或撤销了。需要的话重新发一个。',
   'admin.toast.inviteRevoked': '邀请已撤销',

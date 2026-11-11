@@ -103,6 +103,27 @@ removes a grant, never touches custom roles, and does not re-apply any other see
 grant an admin may have removed on purpose. Sales entry is available on the Settlement page as well as Admin → Stores →
 Sales, so cashiers can record sales from their only tab.
 
+## Who may grant a role
+
+`admin.grantRole`, and every other path that hands a role on, applies the same three rules. The other paths are:
+
+- an invite by Telegram ID;
+- an invite link;
+- a transfer that mirrors roles;
+- copying a store's people.
+
+The rules live in `apps/api/src/services/adminAuthority.ts`:
+
+- **Rank** (`grantRefusal`). The role sits strictly below the granter's rank where it applies. In a store that rank comes from their global bindings plus that store's. Globally it comes from their global bindings alone.
+- **Keys** (`missingRoleKey`). A custom role carries only keys the granter holds there. Built-in roles are exempt.
+- **Recipient** (`recipientRefusal`, review ADM1-08). The person receiving the role is not the granter. The granter must also stand strictly above them there:
+  - in a store, the person is ranked by their global bindings plus that store's;
+  - for a global role, by every binding they hold.
+
+  Taking a role or a store away already asked this. A store manager therefore cannot make themselves a purchaser, but an admin above them can.
+
+The workspace's super admin and platform administrators are exempt from the key and recipient rules. A suspended member is reactivated before anything is granted to them.
+
 ## How a check is evaluated
 
 1. **RBAC base layer.** Resolve the user's `member_role_bindings` → roles → `role_permissions`.

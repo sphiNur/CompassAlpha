@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   canDetachFromStore,
   canGrantRole,
+  canGrantTo,
+  canGrantToMember,
   canRemoveFromOrg,
   canRename,
   canRevokeRole,
@@ -146,6 +148,52 @@ describe('canGrantRole', () => {
     );
     expect(canGrantRole(admin, { rank: 10 }, { type: 'global' })).toBe(false);
     expect(canGrantRole(manager, { rank: 80 }, { type: 'global' })).toBe(false);
+  });
+});
+
+/**
+ * ADM1-08 (2026-11-11): Alice could give herself the purchaser role, and a
+ * fellow manager roles she could then not take away.
+ */
+describe('canGrantTo (ADM1-08)', () => {
+  const inA = { type: 'store', storeId: 'A' } as const;
+  const bob = { userId: 'bob', bindings: [st('manager', 50, 'A'), st('staff', 10, 'B')] };
+  test('never to oneself, except by the super admin or a platform admin', () => {
+    expect(canGrantTo(manager, { userId: 'alice', bindings: manager.bindings }, inA)).toBe(false);
+    expect(canGrantTo(admin, { userId: 'olga', bindings: admin.bindings }, inA)).toBe(false);
+    const owner: Actor = { ...admin, bindings: [g('super_admin', 100)], passesOnAnyKey: true };
+    expect(canGrantTo(owner, { userId: 'olga', bindings: owner.bindings }, inA)).toBe(true);
+  });
+  test('only to someone the actor outranks where the role applies', () => {
+    expect(canGrantTo(manager, staffA, inA)).toBe(true);
+    expect(canGrantTo(manager, bob, inA)).toBe(false);
+    expect(canGrantTo(admin, bob, inA)).toBe(true);
+    expect(canGrantTo(admin, peerAdmin, inA)).toBe(false);
+    expect(canGrantTo(admin, peerAdmin, { type: 'global' })).toBe(false);
+    // Organisation-wide the member counts every binding they hold.
+    const legacy = { userId: 'lev', bindings: [st('super_admin', 100, 'B')] };
+    expect(canGrantTo(admin, legacy, { type: 'global' })).toBe(false);
+  });
+  test('without a rank the action stays and the server decides', () => {
+    const unranked = { userId: 'u', bindings: [{ slug: 'x', scopeType: 'store', scopeId: 'A' }] };
+    expect(canGrantTo(manager, unranked, inA)).toBe(true);
+  });
+  test('the card offers a grant when one of the actor’s scopes takes the member', () => {
+    expect(canGrantToMember(manager, { ...staffA, active: true })).toBe(true);
+    expect(canGrantToMember(manager, { ...bob, active: true })).toBe(false);
+    const twoStores: Actor = {
+      ...manager,
+      adminStoreIds: ['A', 'B'],
+      bindings: [st('manager', 50, 'A'), st('manager', 50, 'B')],
+    };
+    expect(canGrantToMember(twoStores, { ...bob, active: true })).toBe(true);
+    expect(
+      canGrantToMember(manager, { userId: 'alice', bindings: manager.bindings, active: true }),
+    ).toBe(false);
+  });
+  test('not to a suspended member: they are reactivated first', () => {
+    expect(canGrantToMember(manager, { ...staffA, active: false })).toBe(false);
+    expect(canGrantToMember(admin, { ...staffA, active: false })).toBe(false);
   });
 });
 
