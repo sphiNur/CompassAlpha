@@ -1449,7 +1449,9 @@ export const en = {
   'offline.drop.generic':
     '"{action}" was not sent and was dropped. Open the item and redo it if needed.',
   'confirm.final.title': 'Confirm receipt for this store?',
-  'confirm.final.summary': 'OK: {ok} · short: {short} · wrong or damaged: {bad}',
+  'confirm.final.part.ok': 'OK: {n}',
+  'confirm.final.part.short': 'Short: {n}',
+  'confirm.final.part.bad': 'Wrong or damaged: {n}',
   'confirm.final.shortWarning':
     '{n, plural, one {# item is} other {# items are}} short: stock is booked at the quantity received and cannot be changed later.',
   'confirm.final.body': 'Once confirmed, this store can no longer change any item.',
@@ -1792,7 +1794,6 @@ export const en = {
   'confirm.bulk.hint': 'Each item will be recorded as OK. You can still change an item afterwards.',
   'confirm.bulk.submit': 'Mark {n, plural, one {# item} other {# items}} OK',
   'confirm.confirmStoreBlocked': '{n} still to check',
-  'confirm.confirmStoreFinal': '✓ Confirmed',
   'confirm.confirmingHint': 'Confirming…',
   'confirm.toast.markedOk': 'Marked OK',
   'confirm.toast.allMarkedOk': '{n, plural, one {# item} other {# items}} marked OK',
@@ -2254,6 +2255,7 @@ export const en = {
   'confirm.issue.photoOf': 'Problem photo for {name}',
   'confirm.runPicker.ariaLabel': 'Which delivery to check',
   'confirm.runPicker.option': '#{n} · {date}',
+  'confirm.runPicker.optionConfirmed': '#{n} · {date} · confirmed',
   'finance.label.expense': 'Expense',
   'finance.label.expenseNamed': 'Expense: {name}',
   'finance.label.expenses': 'Off-catalog expenses',

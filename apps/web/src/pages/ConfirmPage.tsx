@@ -39,12 +39,14 @@ import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pend
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import {
+  countVerdicts,
   defaultDeliveringRunId,
   deliveringRunsForStore,
   issueFormCheck,
   receivingWait,
   runsListView,
   unboughtForStore,
+  verdictSummaryParts,
   withLineVerdict,
   type ConfirmDecisionStatus,
   type ItemVerdict,
@@ -272,12 +274,7 @@ export function ConfirmPage() {
   const undecided = myItems.filter((sp) => sp.confirmStatus == null);
   const allDecided = myItems.length > 0 && undecided.length === 0;
   // U4: what the receipt being confirmed says, for the summary sheet.
-  const verdictCounts = {
-    ok: myItems.filter((sp) => sp.confirmStatus === 'ok').length,
-    short: myItems.filter((sp) => sp.confirmStatus === 'short').length,
-    bad: myItems.filter((sp) => sp.confirmStatus === 'wrong' || sp.confirmStatus === 'quality')
-      .length,
-  };
+  const verdictCounts = countVerdicts(myItems);
   /** True once the store-level confirmation has actually landed. The
    *  Confirm Store button must hide AFTER this, otherwise repeated taps
    *  used to fire repeated `confirmStore.mutate` calls — the user
@@ -478,11 +475,14 @@ export function ConfirmPage() {
                   setPickedRunId(r.id);
                 }}
               >
-                {i18n.t('confirm.runPicker.option', {
-                  n: r.runIndex + 1,
-                  date: dates.calendarDay(r.runDate),
-                })}
-                {storeConfirmedByRun.get(r.id) ? ' ✓' : ''}
+                {/* Review CONF-20: a run this store signed for says so in
+                    words; a bare ✓ said nothing to a screen reader. */}
+                {i18n.t(
+                  storeConfirmedByRun.get(r.id)
+                    ? 'confirm.runPicker.optionConfirmed'
+                    : 'confirm.runPicker.option',
+                  { n: r.runIndex + 1, date: dates.calendarDay(r.runDate) },
+                )}
               </Chip>
             ))}
           </ChipBar>
@@ -599,12 +599,15 @@ export function ConfirmPage() {
         title={i18n.t('confirm.final.title')}
         banner={
           <div className="flex flex-col gap-2">
-            <div
+            <ul
               data-testid="confirm-final-summary"
-              className="text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
+              role="list"
+              className="flex flex-wrap gap-x-4 gap-y-1 text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
             >
-              {i18n.t('confirm.final.summary', verdictCounts)}
-            </div>
+              {verdictSummaryParts(verdictCounts).map((part) => (
+                <li key={part.key}>{i18n.t(part.key, { n: part.n })}</li>
+              ))}
+            </ul>
             {verdictCounts.short > 0 ? (
               <Banner
                 tone="warn"

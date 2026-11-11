@@ -291,7 +291,8 @@ test('receive the delivery at the store', async () => {
   await expect(mainButton()).toHaveText('Confirm receipt');
   await mainButton().click();
   // U4: the irreversible confirmation goes through a summary sheet.
-  await expect(sheet()).toContainText('OK: 2 · short: 0 · wrong or damaged: 0');
+  // CONF-20: only the verdicts given.
+  await expect(sheet().getByTestId('confirm-final-summary')).toHaveText('OK: 2');
   await sheet().getByRole('button', { name: 'Confirm receipt' }).click();
   await expect(mainButton()).toBeHidden();
 });

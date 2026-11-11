@@ -1396,7 +1396,9 @@ export const ru = {
   'offline.drop.generic':
     '«{action}» не отправлено и отменено. Откройте эту позицию и при необходимости повторите.',
   'confirm.final.title': 'Подтвердить приёмку в этом магазине?',
-  'confirm.final.summary': 'OK: {ok} · недостача: {short} · не то или брак: {bad}',
+  'confirm.final.part.ok': 'В порядке: {n}',
+  'confirm.final.part.short': 'Недостача: {n}',
+  'confirm.final.part.bad': 'Не то или брак: {n}',
   'confirm.final.shortWarning':
     '{n, plural, one {# позиция пришла с недостачей} few {# позиции пришли с недостачей} many {# позиций пришло с недостачей} other {# позиции пришло с недостачей}}. На склад попадёт принятое количество, изменить потом нельзя.',
   'confirm.final.body': 'После подтверждения магазин больше не сможет изменить ни одну позицию.',
@@ -1733,7 +1735,6 @@ export const ru = {
   'confirm.bulk.submit':
     'Отметить {n, plural, one {# позицию} few {# позиции} many {# позиций} other {# позиции}} как OK',
   'confirm.confirmStoreBlocked': 'Осталось проверить: {n}',
-  'confirm.confirmStoreFinal': '✓ Подтверждено',
   'confirm.confirmingHint': 'Подтверждение…',
   'confirm.toast.markedOk': 'Отмечено: OK',
   'confirm.toast.allMarkedOk':
@@ -2174,6 +2175,7 @@ export const ru = {
   'confirm.issue.photoOf': 'Фото проблемы: {name}',
   'confirm.runPicker.ariaLabel': 'Какую поставку проверить',
   'confirm.runPicker.option': '№{n} · {date}',
+  'confirm.runPicker.optionConfirmed': '№{n} · {date} · подтверждено',
   'finance.label.expense': 'Расход',
   'finance.label.expenseNamed': 'Расход: {name}',
   'finance.label.expenses': 'Расходы вне каталога',
