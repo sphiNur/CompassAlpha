@@ -10,11 +10,14 @@ import {
   parseAuditAction,
   type AuditRowLike,
 } from '../auditSentence';
+import { createI18n, loadCatalog } from '@compass/i18n';
+import { roleLabeller } from '../../../../lib/roleLabels';
 
 const loc = {
   unknown: '?',
   system: 'System',
   roleName: (role: { slug: string; name?: string | null }) => role.name ?? role.slug,
+  permission: (key: string) => `perm(${key})`,
   localName: (names: Record<string, string>) => names.en ?? Object.values(names)[0] ?? '',
   day: (iso: string) => `day(${iso})`,
 };
@@ -199,6 +202,54 @@ describe('describeAuditRow', () => {
     );
     expect(seen).toEqual([{ slug: 'super_admin', name: 'Super Admin' }]);
     expect(s.params.role).toBe('Super administrator');
+  });
+
+  test('a permission override names the permission, not its key', () => {
+    const row = (verb: string, inputs: Record<string, unknown>) =>
+      describeAuditRow(
+        {
+          action: `admin.memberPermission.${verb}`,
+          inputs,
+          actor,
+          labels: labels({ memberName: 'Ali' }),
+        },
+        loc,
+      );
+    expect(row('allow', { memberId: 'm1', permissionKey: 'order.approve' })).toMatchObject({
+      key: 'ops.audit.s.permissionAllow',
+      tone: 'success',
+      params: { actor: 'Aziz', member: 'Ali', permission: 'perm(order.approve)' },
+    });
+    expect(row('deny', { permissionKey: 'prices.view' })).toMatchObject({
+      key: 'ops.audit.s.permissionDeny',
+      params: { permission: 'perm(prices.view)' },
+    });
+    expect(row('revoke', { permissionKey: 'prices.view' })).toMatchObject({
+      key: 'ops.audit.s.permissionRevoke',
+      params: { permission: 'perm(prices.view)' },
+    });
+    expect(row('allow', {}).params.permission).toBe('?');
+  });
+
+  test('in the catalogs the sentence carries the permission name', async () => {
+    await Promise.all([loadCatalog('en'), loadCatalog('zh')]);
+    const want = {
+      en: 'Aziz denied Ali: View price history',
+      zh: 'Aziz 为 Ali 禁止了「查看价格历史」',
+    };
+    for (const lang of ['en', 'zh'] as const) {
+      const { t } = createI18n(lang);
+      const s = describeAuditRow(
+        {
+          action: 'admin.memberPermission.deny',
+          inputs: { permissionKey: 'prices.view' },
+          actor,
+          labels: labels({ memberName: 'Ali' }),
+        },
+        { ...loc, permission: (key) => roleLabeller(t).permission(key, null) },
+      );
+      expect(t(s.key, s.params)).toBe(want[lang]);
+    }
   });
 
   test('rows from an older server (no labels) still render', () => {
