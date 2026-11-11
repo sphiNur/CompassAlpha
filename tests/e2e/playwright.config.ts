@@ -38,11 +38,18 @@ export default defineConfig({
   projects: [
     // Walks the app from a fresh database.
     { name: 'story', testMatch: /main-flow\.spec\.ts$/ },
-    // Measures the screens the story leaves: a run in buying with one
+    // Measure the screens the story leaves: a run in buying with one
     // item bought and one to buy.
-    { name: 'after-story', testMatch: /render-count\.spec\.ts$/, dependencies: ['story'] },
+    {
+      name: 'after-story',
+      testMatch: /(render-count|narrow-screen)\.spec\.ts$/,
+      dependencies: ['story'],
+    },
     // Need no particular state.
-    { name: 'standalone', testIgnore: [/main-flow\.spec\.ts$/, /render-count\.spec\.ts$/] },
+    {
+      name: 'standalone',
+      testIgnore: [/main-flow\.spec\.ts$/, /render-count\.spec\.ts$/, /narrow-screen\.spec\.ts$/],
+    },
   ],
   // Never reuse a server already on the port: it may be connected to
   // another database, and only E2E_DATABASE_URL is reset for the run.

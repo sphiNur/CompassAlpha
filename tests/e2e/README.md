@@ -19,9 +19,10 @@ listening on either port stops the run instead of being reused: it may be
 connected to another database, and only `E2E_DATABASE_URL` is reset.
 
 The files tell one story on one database. `main-flow.spec.ts` walks the
-app from a fresh database, and `render-count.spec.ts` measures the
-screens it leaves behind; its project depends on main-flow's
-(`playwright.config.ts`), so running it alone runs main-flow first. There
+app from a fresh database, and `render-count.spec.ts` and
+`narrow-screen.spec.ts` measure the screens it leaves behind; their
+project depends on main-flow's (`playwright.config.ts`), so running
+either alone runs main-flow first. There
 are no retries: a retry would replay the story on the database the first
 attempt changed.
 
