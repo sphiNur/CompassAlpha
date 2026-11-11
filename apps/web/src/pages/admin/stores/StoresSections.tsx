@@ -20,13 +20,15 @@ import {
   Field,
   FieldGroup,
   Input,
+  LoadingState,
   NumberInput,
+  OfflineState,
   Segmented,
   Select,
   Sheet,
-  Spinner,
   Switch,
   cn,
+  isWaitingOffline,
   rowGroupClass,
   useToast,
   QueryErrorBanner,
@@ -47,7 +49,6 @@ import {
   useRoleLabels,
   useUnitLabel,
 } from '../../../hooks/useI18n';
-import { isWaitingOffline } from '../../../components/PendingSpinner';
 import { nativeConfirm } from '../shared';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people/PeopleSections';
@@ -621,12 +622,10 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         </div>
       ) : null}
       {levelsQuery.isLoading ? (
-        <div className="py-6 text-center">
-          <Spinner size={16} />
-        </div>
+        <LoadingState variant="compact" />
       ) : isWaitingOffline(levelsQuery) ? (
         // R2-ENG-1 (2026-10-31): offline with no saved copy is not "no stock".
-        <EmptyState title={i18n.t('common.offlineNoData')} />
+        <OfflineState />
       ) : levelsQuery.isError ? (
         // CLS-1 (2026-10-30): a failed load used to read "no stock data
         // yet", with the opening-stock button still offered above it.
@@ -956,11 +955,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         {movementsFor ? (
           <div className="py-3">
             {movementsQuery.isLoading ? (
-              <div className="py-6 text-center">
-                <Spinner size={16} />
-              </div>
+              <LoadingState variant="compact" />
             ) : isWaitingOffline(movementsQuery) ? (
-              <EmptyState title={i18n.t('common.offlineNoData')} />
+              <OfflineState />
             ) : movementsQuery.isError ? (
               <QueryErrorBanner query={movementsQuery} />
             ) : (movementsQuery.data ?? []).length === 0 ? (
@@ -1191,9 +1188,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
       ) : (
         <Field label={i18n.t('admin.field.defaultRole')}>
           {rolesQuery.isLoading ? (
-            <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-              <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
-            </div>
+            <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
           ) : (
             <Select
               value={draft.defaultRoleSlug}

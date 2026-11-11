@@ -1811,7 +1811,6 @@ export const uz = {
   'admin.field.roleSlugPlaceholder': 'masalan, shift-lead',
   'admin.field.memberNamePlaceholder': 'Koʻrinadigan ism',
   'admin.label.counting': 'Hisoblanmoqda…',
-  'admin.label.loadingStore': 'Doʻkon yuklanmoqda…',
   'admin.field.sortIndex': 'Tartib',
   'admin.field.unit': 'Birlik',
   'admin.field.step': 'Buyurtma qadami',

@@ -1897,7 +1897,6 @@ export const en = {
   'admin.field.roleSlugPlaceholder': 'e.g. shift-lead',
   'admin.field.memberNamePlaceholder': 'Display name',
   'admin.label.counting': 'Counting…',
-  'admin.label.loadingStore': 'Loading store…',
   'admin.field.sortIndex': 'Sort order',
   'admin.field.unit': 'Unit',
   'admin.field.step': 'Order step',

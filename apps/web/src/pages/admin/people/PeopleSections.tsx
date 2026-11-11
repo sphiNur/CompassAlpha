@@ -30,13 +30,13 @@ import {
   IconShare,
   Input,
   ListRow,
+  LoadingState,
   QueryErrorBanner,
   SearchInput,
   SectionLabel,
   Segmented,
   Select,
   Sheet,
-  Spinner,
   useToast,
   rowGroupClass,
 } from '@compass/ui';
@@ -1211,7 +1211,7 @@ function RoleCreateSheet({
             {i18n.t('people.permissionsHeading', { n: picked.size })}
           </SectionLabel>
           {permsQuery.isLoading ? (
-            <Spinner size={16} />
+            <LoadingState variant="compact" />
           ) : (
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
@@ -1496,13 +1496,12 @@ function RolePermissionsSheet({
       }
     >
       {detail.isLoading ? (
-        <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
-            <Spinner size={28} />
-          </div>
+        <LoadingState />
+      ) : detail.isError && !detail.data ? (
+        // Review UI-13 (2026-11-11): a failed load read "no role".
+        <QueryErrorBanner query={detail} />
       ) : !detail.data ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('people.noRole')}
-        </div>
+        <EmptyState compact title={i18n.t('people.noRole')} />
       ) : (
         <div className="flex flex-col gap-3 py-3">
           {editing ? (
@@ -2025,9 +2024,7 @@ function ManualInviteSheet({
           )}
           <Field label={i18n.t('admin.field.role')}>
             {rolesQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
-              </div>
+              <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
             ) : (
               <Select
                 value={draft.roleSlug}
@@ -2065,9 +2062,7 @@ function ManualInviteSheet({
               }
             >
               {storesQuery.isLoading ? (
-                <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                  <Spinner size={14} /> {i18n.t('admin.label.loadingStores')}
-                </div>
+                <LoadingState variant="inline" label={i18n.t('admin.label.loadingStores')} />
               ) : storesQuery.isError && !storesQuery.data ? (
                 // ADM2-22 (2026-11-11): a failed load read "no stores to
                 // invite into".
@@ -2257,9 +2252,7 @@ function ManageMemberSheet({
 
           <FieldGroup label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                <Spinner size={14} /> {i18n.t('common.loading')}
-              </div>
+              <LoadingState variant="inline" />
             ) : (
               <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
                 {(storesQuery.data ?? []).map((st) => {
@@ -2729,11 +2722,12 @@ function MemberPermissionsSheet({
       }
     >
       {detail.isLoading || allPerms.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          <Spinner size={16} />
-        </div>
+        <LoadingState />
+      ) : (detail.isError && !detail.data) || (allPerms.isError && !allPerms.data) ? (
+        // Review UI-13 (2026-11-11): a failed load showed a lone "—".
+        <QueryErrorBanner query={detail.isError ? detail : allPerms} />
       ) : !detail.data ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">—</div>
+        <EmptyState compact title={i18n.t('common.noData')} />
       ) : (
         <div className="flex flex-col gap-3 py-3">
           {/* Scope tabs (A2, 2026-05-06). 'Global' is always present;
@@ -3207,9 +3201,7 @@ function GrantRoleSheet({
             {i18n.t('people.pickScopeFirst')}
           </p>
         ) : rolesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-            <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
-          </div>
+          <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
         ) : grantableRoles.length === 0 ? (
           <Banner tone="warn" title={i18n.t('people.noGrantableTitle')}>
             {scopeMode === 'global'

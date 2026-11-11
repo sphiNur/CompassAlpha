@@ -62,6 +62,9 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
     get errorUnknown() {
       return i18n.t('common.errorUnknown');
     },
+    get loading() {
+      return i18n.t('common.loading');
+    },
     get emptyNoData() {
       return i18n.t('common.noData');
     },
