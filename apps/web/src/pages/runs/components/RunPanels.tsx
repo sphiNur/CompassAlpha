@@ -46,6 +46,11 @@ import { useErrToast } from '../../../hooks/useErrToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
+import {
+  confirmStatusLabel,
+  deliveryStageLabel,
+  type DeliveryStage,
+} from '../../../lib/statusLabels';
 import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
@@ -785,7 +790,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               const splitsHere = run.splits.filter((sp) => sp.storeId === storeId);
               const allDelivered = splitsHere.every((sp) => !!sp.deliveredAt);
               const allConfirmed = splitsHere.every((sp) => !!sp.confirmedAt);
-              const stage: 'pending' | 'delivered' | 'confirmed' = allConfirmed
+              const stage: DeliveryStage = allConfirmed
                 ? 'confirmed'
                 : allDelivered
                   ? 'delivered'
@@ -802,7 +807,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               const pendingSync = splitsHere.some((sp) => sp.pendingSync);
               const subtitle = dispatchDenied
                 ? i18n.t('run.deliveryStage.dispatchDenied')
-                : i18n.t(('run.deliveryStage.' + stage) as Parameters<typeof i18n.t>[0]) +
+                : deliveryStageLabel(i18n, stage) +
                   (pendingSync ? ' · ' + i18n.t('run.pendingSync.short') : '');
               const tappable = stage !== 'confirmed' && !dispatchDenied && !pendingSync;
               /* UIUX-B1 (2026-07-06): stage Badge deleted — the meta line
@@ -828,9 +833,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                     {issueSplits.map((sp) => {
                       const sku = skuById.get(sp.skuId);
                       const name = sku ? productName(sku) : i18n.t('common.unknownProduct');
-                      const statusLabel = i18n.t(
-                        ('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0],
-                      );
+                      const statusLabel = confirmStatusLabel(i18n, sp.confirmStatus);
                       // Only a web or inline-image URL becomes a link.
                       const photo =
                         sp.confirmPhotoUrl && SAFE_PHOTO_URL.test(sp.confirmPhotoUrl)

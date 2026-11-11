@@ -2,6 +2,7 @@ import { Card, DetailRow } from '@compass/ui';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { planName } from '../lib/planName';
+import { subscriptionStatusLabel } from '../lib/statusLabels';
 
 export function SubscriptionSummary() {
   const session = useAuthStore((s) => s.session);
@@ -26,7 +27,7 @@ export function SubscriptionSummary() {
           />
           <DetailRow
             label={i18n.t('subscription.status')}
-            value={i18n.t(`subscription.status.${sub.status}` as Parameters<typeof i18n.t>[0])}
+            value={subscriptionStatusLabel(i18n, sub.status)}
           />
           {endDate ? (
             <DetailRow

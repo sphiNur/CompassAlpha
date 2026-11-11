@@ -6,6 +6,7 @@
  * the next step (the head turns, an overtime reason), another try with
  * the reason why, or a stop. Kept free of React so it can be tested.
  */
+import type { CatalogKey } from '@compass/i18n';
 import {
   errorTextOf,
   errorVars,
@@ -41,13 +42,13 @@ export type PunchOutcome =
   /** It is recorded already: an answer lost on the way, or a second try. */
   | { next: 'already'; kind: PunchKind; time: string; name: string | null }
   /** The face did not pass. */
-  | { next: 'retry'; key: string }
+  | { next: 'retry'; key: CatalogKey }
   /** The phone's own face, in colleague mode. */
-  | { next: 'forSelf'; key: string }
+  | { next: 'forSelf'; key: CatalogKey }
   /** The request did not get through or got no answer: the same punch again, same key. */
   | { next: 'resend' }
   /** Anything else: why, and close. */
-  | { next: 'stop'; key: string; vars: ErrorVars };
+  | { next: 'stop'; key: CatalogKey; vars: ErrorVars };
 
 /**
  * `attempted`: the kind the phone asked for (null: a colleague, whose
@@ -104,7 +105,7 @@ export function punchOutcome(err: unknown, attempted: PunchKind | null): PunchOu
 }
 
 /** The line under a refused face: what to do about it. */
-export function refusalHint(key: string): string | null {
+export function refusalHint(key: CatalogKey): CatalogKey | null {
   if (key === 'attendance.errors.notRecognized') return 'attendance.punch.notRecognizedHint';
   if (
     key === 'attendance.errors.livenessFailed' ||

@@ -14,34 +14,20 @@ import {
   Sheet,
   useToast,
 } from '@compass/ui';
+import type { RouterOutputs } from '@compass/api/src/trpc/outputs';
+import { SubscriptionStatusSchema, type SubscriptionStatus } from '@compass/contracts/schemas/auth';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { planName } from '../../../lib/planName';
+import { subscriptionStatusLabel } from '../../../lib/statusLabels';
 import { useI18n } from '../../../hooks/useI18n';
 import { localDateValue } from '../operations/financeDates';
 
-type PlatformOrg = {
-  orgId: string;
-  name: string;
-  slug: string;
-  /** The workspace's IANA time zone: its dates are days of this calendar. */
-  timezone: string;
-  note: string | null;
-  subscription: {
-    planCode: string;
-    planName: string;
-    status: string;
-    writeAccess: boolean;
-    trialEndsAt: string | null;
-    currentPeriodEnd: string | null;
-    graceEndsAt: string | null;
-    cancelAtPeriodEnd: boolean;
-    limits: { stores: number | null; members: number | null };
-    usage: { stores: number; members: number };
-  };
-};
-
-const STATUSES = ['trialing', 'active', 'past_due', 'suspended', 'canceled'] as const;
+/**
+ * A workspace as the platform list returns it. Review ADM1-29 (2026-11-12):
+ * read from the router, not written out by hand and cast to.
+ */
+type PlatformOrg = RouterOutputs['platform']['organizations'][number];
 
 /**
  * The day of `value` in the workspace's calendar, for a date field.
@@ -69,7 +55,7 @@ export function PlatformSection() {
       >
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">
-            {(rows as PlatformOrg[]).map((org) => {
+            {rows.map((org) => {
               const sub = org.subscription;
               const stores =
                 sub.limits.stores == null
@@ -90,7 +76,7 @@ export function PlatformSection() {
                       </CardMeta>
                     </div>
                     <Badge tone={sub.writeAccess ? 'info' : 'warn'}>
-                      {i18n.t(`subscription.status.${sub.status}` as Parameters<typeof i18n.t>[0])}
+                      {subscriptionStatusLabel(i18n, sub.status)}
                     </Badge>
                   </CardHeader>
                   <div className="flex justify-end px-4 pb-3">
@@ -122,7 +108,7 @@ function SubscriptionSheet({
   const utils = trpc.useUtils();
   const plans = trpc.platform.plans.useQuery(undefined, { enabled: !!target });
   const [planCode, setPlanCode] = useState('');
-  const [status, setStatus] = useState<(typeof STATUSES)[number]>('active');
+  const [status, setStatus] = useState<SubscriptionStatus>('active');
   const [trialEndsAt, setTrialEndsAt] = useState('');
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState('');
   const [graceEndsAt, setGraceEndsAt] = useState('');
@@ -133,7 +119,7 @@ function SubscriptionSheet({
     if (!target) return;
     const sub = target.subscription;
     setPlanCode(sub.planCode);
-    setStatus(sub.status as (typeof STATUSES)[number]);
+    setStatus(sub.status);
     setTrialEndsAt(dateValue(sub.trialEndsAt, target.timezone));
     setCurrentPeriodEnd(dateValue(sub.currentPeriodEnd, target.timezone));
     setGraceEndsAt(dateValue(sub.graceEndsAt, target.timezone));
@@ -200,11 +186,14 @@ function SubscriptionSheet({
         <Field label={i18n.t('platform.field.status')}>
           <Select
             value={status}
-            onChange={(e) => setStatus(e.target.value as (typeof STATUSES)[number])}
+            onChange={(e) => {
+              const next = SubscriptionStatusSchema.safeParse(e.target.value);
+              if (next.success) setStatus(next.data);
+            }}
           >
-            {STATUSES.map((value) => (
+            {SubscriptionStatusSchema.options.map((value) => (
               <option key={value} value={value}>
-                {i18n.t(`subscription.status.${value}` as Parameters<typeof i18n.t>[0])}
+                {subscriptionStatusLabel(i18n, value)}
               </option>
             ))}
           </Select>

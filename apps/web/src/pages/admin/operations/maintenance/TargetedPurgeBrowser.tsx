@@ -19,6 +19,7 @@ import {
 } from '@compass/ui';
 import { PAGE_SIZE } from '../../../../config/timings';
 import { trpc } from '../../../../lib/trpc';
+import { orderStatusLabel, runStatusLabel } from '../../../../lib/statusLabels';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useDateFormat, useI18n } from '../../../../hooks/useI18n';
@@ -173,12 +174,7 @@ export function TargetedPurgeBrowser() {
                       </div>
                       <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                         {i18n.t('ops.purge.sessionMeta', {
-                          status: i18n.t(
-                            ('order.status.' +
-                              (sess.status === 'rejected'
-                                ? 'rejectedTitle'
-                                : sess.status)) as Parameters<typeof i18n.t>[0],
-                          ),
+                          status: orderStatusLabel(i18n, sess.status),
                           items: i18n.t('run.label.itemsCount', { n: sess.itemCount }),
                           date: dates.calendarDay(sess.orderDate),
                         })}
@@ -244,9 +240,7 @@ export function TargetedPurgeBrowser() {
                       </div>
                       <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                         {i18n.t('ops.purge.runMeta', {
-                          status: i18n.t(
-                            ('run.status.' + r.status) as Parameters<typeof i18n.t>[0],
-                          ),
+                          status: runStatusLabel(i18n, r.status),
                           sessions: i18n.t('run.label.sessionsCount', {
                             n: r.sessionCount,
                           }),

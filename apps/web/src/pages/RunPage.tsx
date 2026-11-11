@@ -64,6 +64,7 @@ import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
 import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty, formatMoney } from '../lib/format';
+import { runStepLabel } from '../lib/statusLabels';
 import { useCanSeePrices } from '../hooks/useStorePermission';
 import { itemProgressCounts, pendingExtrasOf } from './runs/lib/runProgress';
 import { otherStoreSkusOf } from './runs/types';
@@ -1917,18 +1918,7 @@ export function RunPage() {
     ? i18n.t('run.switcher.option', {
         n: activeRun.runIndex + 1,
         date: runDateShort,
-        step:
-          activeRun.status === 'planned'
-            ? i18n.t('run.step.plan')
-            : activeRun.status === 'purchasing'
-              ? i18n.t('run.step.purchase')
-              : activeRun.status === 'delivering'
-                ? i18n.t('run.step.deliver')
-                : activeRun.status === 'finished'
-                  ? i18n.t('run.step.done')
-                  : activeRun.status === 'amending'
-                    ? i18n.t('run.step.amend')
-                    : activeRun.status,
+        step: runStepLabel(i18n, activeRun.status),
       })
     : i18n.t('run.empty.noActive');
 
@@ -2101,14 +2091,7 @@ export function RunPage() {
               {i18n.t('run.switcher.option', {
                 n: r.runIndex + 1,
                 date: dates.calendarDay(r.runDate),
-                step:
-                  r.status === 'planned'
-                    ? i18n.t('run.step.plan')
-                    : r.status === 'purchasing'
-                      ? i18n.t('run.step.purchase')
-                      : r.status === 'delivering'
-                        ? i18n.t('run.step.deliver')
-                        : i18n.t('run.step.amend'),
+                step: runStepLabel(i18n, r.status),
               })}
             </Chip>
           ))}
