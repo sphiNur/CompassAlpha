@@ -8,7 +8,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { schema as s } from '@compass/db';
 import {
-  ADMIN_RANK,
   MemberInviteRevokeInputSchema,
   InviteMemberByTgIdInputSchema,
   CreateMemberInviteInputSchema,
@@ -16,7 +15,6 @@ import {
 import { authedProcedure } from '../../trpc';
 import {
   grantBinding,
-  grantRefusal,
   inviterStillAuthorized,
   recipientRefusal,
   type GrantScope,
@@ -24,31 +22,20 @@ import {
 import { assertCanAddMember } from '../../../services/subscription';
 import { requireAdmin } from './guards';
 import { broadcastPeople } from './notify';
-import {
-  getActorAdminScope,
-  storesAdministeredBy,
-  notAdminOfStore,
-  getAdminReadScope,
-  inviteWithinScope,
-  userInAnotherOrg,
-} from './scope';
-import {
-  granterOf,
-  assertCanGrantTo,
-  assertCanInviteWithRole,
-  assertCanInviteIntoStore,
-  adminRankRoleIds,
-} from './grants';
+import { getAdminReadScope, inviteWithinScope, userInAnotherOrg } from './scope';
+import { granterOf, assertCanGrantTo, adminRankRoleIds } from './grants';
 import { auditAdmin } from '../../../services/adminAudit';
+import { planInvite } from './invitePlan';
 
 export const inviteProcedures = {
   /**
    * Create a shareable invitation link.
    *
-   * Unlike memberInviteByTgId, this does not need the person's
-   * Telegram id up front. The link carries a one-time token; the
-   * role/store grants are validated here and snapshotted on the
-   * invite so acceptance cannot widen them later.
+   * Unlike memberInviteByTgId, this does not need the person's Telegram
+   * id up front. The link carries a one-time token. The stores and role
+   * grants are decided as for an invite by Telegram ID (planInvite,
+   * ADM1-12) and kept on the invite, so opening the link cannot widen
+   * them.
    */
   memberInviteCreate: authedProcedure
     .input(CreateMemberInviteInputSchema)
@@ -57,112 +44,7 @@ export const inviteProcedures = {
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         await assertCanAddMember(tx, orgId);
-        const storeIds = [...new Set(input.storeIds)];
-        const isAdminInvite = input.roleSlug === 'admin' || input.roleSlug === 'super_admin';
-        if (!isAdminInvite && storeIds.length === 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.inviteNeedsStore',
-          });
-        }
-
-        const adminScope = await getActorAdminScope(tx, orgId, ctx.session!.userId);
-        const allowedStores = new Set(await storesAdministeredBy(tx, orgId, adminScope));
-        for (const storeId of storeIds) {
-          if (!allowedStores.has(storeId)) {
-            throw await notAdminOfStore(tx, orgId, [storeId]);
-          }
-        }
-        // ADM1-03: an org-tier invite needs admin authority held
-        // organisation-wide. "Administers every active store" stood in
-        // for it, which a store manager of a one-store org passes and a
-        // global admin with one denied store fails.
-        if (isAdminInvite && !adminScope?.isGlobalAdmin) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
-          });
-        }
-
-        const validStores =
-          storeIds.length > 0
-            ? await tx
-                .select({
-                  id: s.stores.id,
-                  defaultRoleId: s.stores.defaultRoleId,
-                })
-                .from(s.stores)
-                .where(
-                  and(
-                    eq(s.stores.orgId, orgId),
-                    eq(s.stores.isActive, true),
-                    inArray(s.stores.id, storeIds),
-                  ),
-                )
-            : [];
-        if (validStores.length !== storeIds.length) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.storeNotFound',
-          });
-        }
-
-        const grants: Array<{
-          roleId: string;
-          rank: number;
-          scopeType: 'global' | 'store';
-          scopeId: string | null;
-        }> = [];
-        if (input.roleSlug) {
-          const role = await tx.query.roles.findFirst({
-            where: (r, { eq: eq2, and: and2 }) =>
-              and2(eq2(r.orgId, orgId), eq2(r.slug, input.roleSlug!)),
-          });
-          if (!role) {
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: 'admin.errors.roleNotFound',
-            });
-          }
-          if (await assertCanInviteWithRole(tx, ctx, role)) {
-            grants.push({
-              roleId: role.id,
-              rank: role.rank,
-              scopeType: 'global',
-              scopeId: null,
-            });
-          } else {
-            for (const storeId of storeIds) {
-              // An invite with a role is a grant of it (C1, D8).
-              await assertCanInviteIntoStore(tx, ctx, role, storeId);
-              grants.push({
-                roleId: role.id,
-                rank: role.rank,
-                scopeType: 'store',
-                scopeId: storeId,
-              });
-            }
-          }
-        } else {
-          // Same fall-through as memberInviteByTgId: a store's default
-          // role applies only when the operator did not pick one, and
-          // only if they can grant it there.
-          for (const store of validStores) {
-            if (!store.defaultRoleId) continue;
-            const role = await tx.query.roles.findFirst({
-              where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
-            });
-            if (!role || role.rank >= ADMIN_RANK) continue;
-            const scope = { type: 'store', storeId: store.id } as const;
-            if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
-            grants.push({
-              roleId: role.id,
-              rank: role.rank,
-              scopeType: 'store',
-              scopeId: store.id,
-            });
-          }
-        }
+        const { storeIds, grants } = await planInvite(tx, ctx, input);
 
         const token = `inv_${randomBytes(32).toString('base64url')}`;
         const tokenHash = createHash('sha256').update(token).digest('hex');
@@ -347,14 +229,14 @@ export const inviteProcedures = {
     }),
 
   /**
-   * Invite a member by Telegram user ID. Auto-provisions a user row
-   * (display name will be filled in on first /start) and a member row.
-   * Optionally grants a role at the same time so the new member has
-   * working permissions before they ever open the app.
+   * Invite a member by Telegram user ID. A new person gets a user row
+   * (their name is filled in at their first /start) and a membership.
+   * The stores and role grants are decided as for an invite link
+   * (planInvite, ADM1-12), before anyone is created, and given at once:
+   * the member can work before they ever open the app.
    *
-   * Idempotent: re-invoking with the same tgUserId is a no-op (returns
-   * the existing memberId). Role grant is also idempotent — the existing
-   * grantRole helper handles that.
+   * Calling it again for someone already here returns the same memberId
+   * and adds what they lack; what they hold stays as it is.
    */
   memberInviteByTgId: authedProcedure
     .input(InviteMemberByTgIdInputSchema)
@@ -362,48 +244,7 @@ export const inviteProcedures = {
       requireAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        // SECURITY (2026-05-04): non-admin invitees must have at least
-        // one store, otherwise every store-scoped query returns empty
-        // for them and they appear active but locked out. Admins
-        // (super_admin / admin) bypass since they see all stores via
-        // the admin bypass in assertActorAssignedToStore.
-        const isAdminInvite = input.roleSlug === 'super_admin' || input.roleSlug === 'admin';
-        if (!isAdminInvite && input.storeIds.length === 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.inviteNeedsStore',
-          });
-        }
-        // C2 (2026-05-06): a store-scoped admin (e.g. manager-of-A)
-        // can only invite people INTO their own stores. Without this,
-        // a manager-of-A could pass `storeIds: [B.id]` and silently
-        // hire someone for Store B, where they have no authority.
-        //
-        // We allow the special case `isAdminInvite` (super_admin /
-        // admin) only when the actor is themselves a global admin —
-        // otherwise a store-scoped manager could elevate someone to
-        // org-wide admin from inside their store. The grantRole gate
-        // would normally block that via the rank check, but the
-        // invite path inlines its own grant so we mirror the rule
-        // here.
-        const adminScope = await getActorAdminScope(tx, orgId, ctx.session!.userId);
-        if (input.storeIds.length > 0) {
-          const allowed = new Set(await storesAdministeredBy(tx, orgId, adminScope));
-          for (const sid of input.storeIds) {
-            if (!allowed.has(sid)) {
-              throw await notAdminOfStore(tx, orgId, [sid]);
-            }
-          }
-        }
-        // Granting an org-tier role requires admin authority held
-        // organisation-wide (ADM1-03; it used to be inferred from
-        // "administers every active store").
-        if (isAdminInvite && !adminScope?.isGlobalAdmin) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
-          });
-        }
+        const plan = await planInvite(tx, ctx, input);
         // Find or auto-provision the user.
         let user = await tx.query.users.findFirst({
           where: (u, { eq: eq2 }) => eq2(u.tgUserId, input.tgUserId),
@@ -463,128 +304,39 @@ export const inviteProcedures = {
             message: 'admin.errors.memberCreateFailed',
           });
         }
-        // Optional role grant.
-        // SECURITY (2026-05-04): same rank gate as admin.grantRole. Without
-        // this, an admin could invite + grant `admin` (or `super_admin`)
-        // in one call, fully bypassing the round-1 "no equal/higher
-        // grants" rule. The fix mirrors grantRole's check.
-        //
-        // STORE-SCOPING (added 2026-05-05): non-admin roles get fanned out
-        // to one store-scoped binding per storeId, NOT a single global
-        // binding. This mirrors the contract that admin.grantRole now
-        // enforces: rank < 80 must be store-scoped. The earlier global
-        // path could let a `manager` accidentally see every org's
-        // session via the queue. Admin-tier roles still get a single
-        // global binding because they ARE org-tier.
-        if (input.roleSlug) {
-          const role = await tx.query.roles.findFirst({
-            where: (r, { eq: eq2, and: and2 }) =>
-              and2(eq2(r.orgId, orgId), eq2(r.slug, input.roleSlug!)),
-          });
-          if (!role) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
-          }
-          // C1 (2026-05-06): rank gate is per-scope.
-          //   - Org-tier role (≥80) → global org admin, global rank (F8).
-          //   - Sub-admin role → must outrank in EVERY target store.
-          // The "every store" rule prevents a manager-of-A who's also
-          // staff-of-B from inviting a manager-of-B (where A grants
-          // them rank 30 but B only grants rank 10).
-          const globalGrant = await assertCanInviteWithRole(tx, ctx, role);
-          if (!globalGrant) {
-            for (const storeId of input.storeIds) {
-              await assertCanInviteIntoStore(tx, ctx, role, storeId);
-            }
-          }
-          // ADM1-08: "inviting" someone already here (or oneself) is a
-          // grant like grantRole's, to them as they are now.
+        // ADM1-08: "inviting" someone already here (or oneself) is a grant
+        // like grantRole's, to them as they are now. The role the actor
+        // picked is refused; a store's default role is left out.
+        const bindings: Array<{ roleId: string; scope: GrantScope }> = [];
+        for (const grant of plan.grants) {
+          const scope: GrantScope =
+            grant.scopeType === 'store' && grant.scopeId
+              ? { type: 'store', storeId: grant.scopeId }
+              : { type: 'global' };
           if (!created) {
-            const scopes: GrantScope[] = globalGrant
-              ? [{ type: 'global' }]
-              : input.storeIds.map((storeId) => ({ type: 'store', storeId }));
-            for (const scope of scopes) await assertCanGrantTo(tx, ctx, member.userId, scope);
-          }
-          // grantBinding is idempotent and renews a lapsed binding
-          // (ADM1-04: one of those used to count as already held).
-          if (role.rank >= ADMIN_RANK) {
-            // Org-tier role → single global binding.
-            await grantBinding(tx, {
-              memberId: member.id,
-              roleId: role.id,
-              scope: { type: 'global' },
-              grantedBy: ctx.session!.userId,
-            });
-          } else {
-            // Sub-admin role → one binding per assigned store. The
-            // `inviteNeedsStore` guard above already ensured storeIds is
-            // non-empty for non-admin invites, so we can fan out here.
-            for (const storeId of input.storeIds) {
-              await grantBinding(tx, {
-                memberId: member.id,
-                roleId: role.id,
-                scope: { type: 'store', storeId },
-                grantedBy: ctx.session!.userId,
-              });
+            if (plan.picked) {
+              await assertCanGrantTo(tx, ctx, member.userId, scope);
+            } else if (await recipientRefusal(ctx.db, tx, granterOf(ctx), member.userId, scope)) {
+              continue;
             }
           }
+          bindings.push({ roleId: grant.roleId, scope });
         }
-        // Store assignments (new in 0003). Each storeId must belong to
-        // the same org as the member; we filter rather than throw so a
-        // partially-bad input doesn't roll back the rest of the invite.
-        if (input.storeIds.length > 0) {
-          const validStores = await tx.query.stores.findMany({
-            where: (st, { eq: eq2, and: and2, inArray: ia }) =>
-              and2(eq2(st.orgId, orgId), ia(st.id, input.storeIds)),
+        for (const storeId of plan.storeIds) {
+          await tx
+            .insert(s.memberStoreAssignments)
+            .values({ memberId: member.id, storeId, assignedBy: ctx.session!.userId })
+            .onConflictDoNothing();
+        }
+        // grantBinding is idempotent and renews a lapsed binding (ADM1-04:
+        // one of those used to count as already held).
+        for (const { roleId, scope } of bindings) {
+          await grantBinding(tx, {
+            memberId: member.id,
+            roleId,
+            scope,
+            grantedBy: ctx.session!.userId,
           });
-          for (const store of validStores) {
-            await tx
-              .insert(s.memberStoreAssignments)
-              .values({
-                memberId: member.id,
-                storeId: store.id,
-                assignedBy: ctx.session!.userId,
-              })
-              .onConflictDoNothing();
-          }
-          // D3 (2026-05-06): per-store default-role fall-through. If
-          // the operator didn't pick a role explicitly AND a target
-          // store has `default_role_id` set, grant THAT role bound
-          // to that store. Each store decides its own default; if a
-          // store doesn't set one, no fallback for that store.
-          //
-          // We only walk this path when input.roleSlug is empty —
-          // an explicit pick always wins so the operator can override
-          // a default ad-hoc.
-          //
-          // Rank gate still applies: skip + log if the actor doesn't
-          // outrank the default in the target store. We don't throw
-          // on the first one we can't grant — partial assignment is
-          // better than no invite. (The caller can read returned
-          // counts to know what stuck.)
-          if (!input.roleSlug) {
-            for (const store of validStores) {
-              if (!store.defaultRoleId) continue;
-              const role = await tx.query.roles.findFirst({
-                where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
-              });
-              if (!role || role.rank >= ADMIN_RANK) continue;
-              const scope = { type: 'store', storeId: store.id } as const;
-              if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
-              // ADM1-08: nor to someone already here the actor does not outrank.
-              if (
-                !created &&
-                (await recipientRefusal(ctx.db, tx, granterOf(ctx), member.userId, scope))
-              ) {
-                continue;
-              }
-              await grantBinding(tx, {
-                memberId: member.id,
-                roleId: role.id,
-                scope,
-                grantedBy: ctx.session!.userId,
-              });
-            }
-          }
         }
         await auditAdmin(tx, ctx, 'admin.memberInviteByTgId', 'member', member.id, {
           ...input,
