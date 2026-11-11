@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
+import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FieldError } from '../components/FieldError';
 import { Input } from '../components/Input';
@@ -44,7 +44,7 @@ describe('FieldLabel / FieldError', () => {
 describe('Field wiring', () => {
   const render = (
     props: Record<string, unknown>,
-    control = createElement(Input, { readOnly: true }),
+    control: ReactElement = createElement(Input, { readOnly: true }),
   ) => renderToStaticMarkup(createElement(Field, { label: 'Name', ...props, children: control }));
   const attr = (html: string, tag: string, name: string) =>
     new RegExp(`<${tag}[^>]* ${name}="([^"]*)"`).exec(html)?.[1];
