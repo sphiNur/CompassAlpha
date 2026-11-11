@@ -34,6 +34,7 @@ import {
   SHOP,
   TZ,
 } from './helpers/attendance';
+import { noteUser } from './helpers/cleanup';
 
 attendanceSuite();
 
@@ -450,6 +451,7 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
       .insert(s.users)
       .values({ displayName: 'Att Admin', tgUserId: freshTgId() })
       .returning();
+    noteUser(adminUser!.id);
     const [adminMember] = await db
       .insert(s.members)
       .values({ orgId: f.orgId, userId: adminUser!.id, status: 'active' })

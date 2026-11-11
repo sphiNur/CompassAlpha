@@ -10,6 +10,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { codeOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 describe('flatEffectivePermissions', () => {
   const store = (key: string, id: string) => ({ key, scopeType: 'store', scopeId: id });
@@ -75,6 +78,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `ovr-${suffix}`, name: 'Session overrides', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const roleId = (await seedRoles(db, org!.id, ['manager'])).manager!;
   const [store] = await db
     .insert(s.stores)

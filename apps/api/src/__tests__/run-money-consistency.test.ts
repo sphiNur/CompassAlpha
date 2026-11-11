@@ -24,6 +24,9 @@ import { callerFor } from './helpers/ctx';
 import { runStream } from './helpers/streams';
 import { seedOwnedOrg } from './helpers/fixtures';
 import { pgErrorOf } from './helpers/errors';
+import { cleanUpAfterAll } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 describe('receivedDelta (CA-06)', () => {
   test('ok / undecided / legacy lines book the full split', () => {

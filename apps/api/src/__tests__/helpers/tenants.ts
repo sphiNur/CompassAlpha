@@ -8,8 +8,7 @@
  * tenant to its limits. When they shared one, each depended on what the
  * one before had left.
  */
-import { afterAll, beforeAll } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { beforeAll } from 'bun:test';
 import {
   getDb,
   organizationSlugFromName,
@@ -18,6 +17,7 @@ import {
   withSystemContext,
 } from '@compass/db';
 import type { SessionContext } from '../../trpc/context';
+import { cleanUpAfterAll, noteOrg, noteUser } from './cleanup';
 import { SHOULD_RUN } from './pg';
 import { freshTgId } from './telegram';
 
@@ -29,14 +29,13 @@ export interface Tenant {
 
 /**
  * Call inside the suite's `describe`. It registers the `beforeAll` that
- * makes the platform admin and the `afterAll` that removes the tenants,
- * the admin and each user passed to `track`.
+ * makes the platform admin, and the clean-up that removes the tenants,
+ * the admin and each user passed to `track` after the file.
  */
 export function tenantSuite(name: string) {
   let userId = '';
-  const orgIds: string[] = [];
-  const userIds: string[] = [];
   const maintenance = () => getDb(undefined, { system: 'maintenance' });
+  cleanUpAfterAll();
 
   beforeAll(async () => {
     if (!SHOULD_RUN) return;
@@ -45,15 +44,8 @@ export function tenantSuite(name: string) {
       .insert(s.users)
       .values({ tgUserId: freshTgId(), displayName: `${name} owner`, displayNameLocked: true })
       .returning();
-    userId = user!.id;
+    userId = noteUser(user!.id);
     await db.insert(s.platformAdmins).values({ userId, note: name });
-  });
-
-  afterAll(async () => {
-    if (!userId) return;
-    const db = maintenance();
-    for (const id of orgIds) await db.delete(s.organizations).where(eq(s.organizations.id, id));
-    for (const id of [userId, ...userIds]) await db.delete(s.users).where(eq(s.users.id, id));
   });
 
   async function newTenant(): Promise<Tenant> {
@@ -64,7 +56,7 @@ export function tenantSuite(name: string) {
         ownerUserId: userId,
       }),
     );
-    orgIds.push(created.orgId);
+    noteOrg(created.orgId);
     return {
       orgId: created.orgId,
       session: {
@@ -81,7 +73,7 @@ export function tenantSuite(name: string) {
 
   /** A user to remove with the tenants, such as a member seeded into one. */
   function track(id: string): void {
-    userIds.push(id);
+    noteUser(id);
   }
 
   return { newTenant, track };

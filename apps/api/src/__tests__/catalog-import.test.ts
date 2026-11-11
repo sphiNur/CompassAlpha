@@ -8,7 +8,7 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import {
   getDb,
@@ -21,9 +21,9 @@ import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
 
 describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', () => {
-  const cleanupOrgIds: string[] = [];
   let userId = '';
   let orgA = '';
   let orgB = '';
@@ -41,7 +41,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
         displayNameLocked: true,
       })
       .returning();
-    userId = user!.id;
+    userId = noteUser(user!.id);
 
     const suffix = Math.random().toString(36).slice(2, 8);
     const orgs = await withSystemContext(db, 'maintenance', async (tx) => {
@@ -64,7 +64,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
     orgB = orgs.b.orgId;
     orgC = orgs.c.orgId;
     memberB = orgs.b.ownerMemberId!;
-    cleanupOrgIds.push(orgA, orgB, orgC);
+    for (const id of [orgA, orgB, orgC]) noteOrg(id);
 
     await withOrgContext(db, orgA, async (tx) => {
       const [veg] = await tx
@@ -105,13 +105,7 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
     };
   });
 
-  afterAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    for (const id of cleanupOrgIds) {
-      await db.delete(s.organizations).where(eq(s.organizations.id, id));
-    }
-    if (userId) await db.delete(s.users).where(eq(s.users.id, userId));
-  });
+  cleanUpAfterAll();
 
   test('only organisations the caller administers are offered', async () => {
     const sources = await callerFor(session).admin.catalogImportSources();

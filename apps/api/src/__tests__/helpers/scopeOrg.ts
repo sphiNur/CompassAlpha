@@ -10,6 +10,7 @@ import { beforeAll } from 'bun:test';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../../trpc/router';
 import type { RequestContext, SessionContext } from '../../trpc/context';
+import { cleanUpAfterAll } from './cleanup';
 import { testContext } from './ctx';
 import { seedMember, seedOwnedOrg, seedUser, sessionOf } from './fixtures';
 import { SHOULD_RUN } from './pg';
@@ -34,6 +35,8 @@ export type BindingScope = { type: 'global' } | { type: 'store'; storeId: string
 export function scopeOrgSuite(name: string) {
   let org: ScopeOrg | null = null;
   const maintenance = () => getDb(undefined, { system: 'maintenance' });
+  // The organisation and every user seeded here go after the file.
+  cleanUpAfterAll();
 
   beforeAll(async () => {
     if (!SHOULD_RUN) return;

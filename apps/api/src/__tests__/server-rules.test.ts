@@ -25,6 +25,9 @@ import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { planRun, runStream, seedOrder } from './helpers/streams';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -64,6 +67,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `rules-${suffix}`, name: 'Server rules', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleId = (await seedRoles(db, orgId, ['super_admin'])).super_admin!;
   const [store] = await db

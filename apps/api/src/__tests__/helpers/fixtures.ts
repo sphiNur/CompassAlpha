@@ -14,6 +14,7 @@ import {
 } from '@compass/db';
 import { BUILTIN_ROLES, PERMISSIONS } from '@compass/db/seed-data';
 import { loadSession, type SessionContext } from '../../trpc/context';
+import { noteOrg, noteUser } from './cleanup';
 import { freshTgId } from './telegram';
 
 type Db = ReturnType<typeof getDb>;
@@ -81,6 +82,7 @@ export async function seedUser(
   const tgUserId = freshTgId();
   const [user] = await db.insert(s.users).values({ displayName, tgUserId }).returning();
   if (!user) throw new Error('user was not inserted');
+  noteUser(user.id);
   return { id: user.id, tgUserId };
 }
 
@@ -150,6 +152,7 @@ export async function seedOwnedOrg(db: Db, name: string): Promise<OwnedOrg> {
       ownerUserId: user.id,
     }),
   );
+  noteOrg(created.orgId);
   const ownerMemberId = created.ownerMemberId;
   if (!ownerMemberId) throw new Error('owner membership was not made');
   await db

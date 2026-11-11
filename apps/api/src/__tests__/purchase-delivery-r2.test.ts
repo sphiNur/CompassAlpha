@@ -37,6 +37,9 @@ import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember } from './helpers/fixtures';
 import { planRun, runStream, seedOrder } from './helpers/streams';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -81,6 +84,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `pdr2-${suffix}`, name: 'Purchase r2', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'purchaser']);
   const storeIds: string[] = [];

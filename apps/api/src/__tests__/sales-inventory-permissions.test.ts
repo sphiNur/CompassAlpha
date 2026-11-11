@@ -24,6 +24,9 @@ import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -92,6 +95,7 @@ beforeAll(async () => {
       timezone: 'UTC',
     })
     .returning();
+  noteOrg(org!.id);
 
   for (const key of ['users.manage', 'sales.record', 'inventory.adjust']) {
     await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();

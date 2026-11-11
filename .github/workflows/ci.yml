@@ -375,6 +375,34 @@ jobs:
             apps/api/src/services/__tests__ \
             apps/worker/src
 
+      - name: The tests left nothing behind
+        # Review TEST1-07 (2026-11): each PG test removes the organisations
+        # and users it made (apps/api/src/__tests__/helpers/cleanup.ts).
+        # Only an organisation that holds daily-close revisions stays, with
+        # its members: those revisions are kept for good. Anything else
+        # here was made by a test that does not clean up after itself.
+        run: |
+          pnpm --filter @compass/db exec bun - <<'EOF'
+          import postgres from 'postgres';
+
+          const db = postgres(process.env.DATABASE_URL, { max: 1, prepare: false });
+          const kept = db`
+            SELECT DISTINCT org_id FROM inventory.store_daily_settlement_revisions`;
+          const orgs = await db`
+            SELECT slug FROM auth.organizations WHERE id NOT IN (${kept}) ORDER BY slug`;
+          const users = await db`
+            SELECT display_name FROM auth.users u
+            WHERE NOT EXISTS (
+              SELECT 1 FROM auth.members m WHERE m.user_id = u.id AND m.org_id IN (${kept})
+            )
+            ORDER BY display_name`;
+          await db.end({ timeout: 5 });
+          console.log(`left behind: ${orgs.length} organisations, ${users.length} users`);
+          for (const o of orgs.slice(0, 20)) console.log(`  organisation ${o.slug}`);
+          for (const u of users.slice(0, 20)) console.log(`  user ${u.display_name}`);
+          if (orgs.length > 0 || users.length > 0) process.exit(1);
+          EOF
+
   # ============ Job 3: the app in a real browser ============
   e2e:
     name: end-to-end (Playwright)

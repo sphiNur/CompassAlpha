@@ -6,7 +6,7 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
@@ -14,6 +14,7 @@ import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
@@ -41,7 +42,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
         timezone: 'UTC',
       })
       .returning();
-    orgId = org!.id;
+    orgId = noteOrg(org!.id);
 
     await db
       .insert(s.permissions)
@@ -77,7 +78,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId: freshTgId(), displayName: 'Admin', displayNameLocked: true })
       .returning();
-    adminUserId = adminUser!.id;
+    adminUserId = noteUser(adminUser!.id);
     const [adminMember] = await db
       .insert(s.members)
       .values({ orgId, userId: adminUserId, status: 'active' })
@@ -99,7 +100,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
         displayNameLocked: true,
       })
       .returning();
-    managerUserId = managerUser!.id;
+    managerUserId = noteUser(managerUser!.id);
     const [managerMember] = await db
       .insert(s.members)
       .values({ orgId, userId: managerUserId, status: 'active' })
@@ -139,11 +140,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
     });
   });
 
-  afterAll(async () => {
-    if (!orgId) return;
-    const db = getDb(undefined, { system: 'maintenance' });
-    await db.delete(s.organizations).where(eq(s.organizations.id, orgId));
-  });
+  cleanUpAfterAll();
 
   const adminSession = (): SessionContext => ({
     userId: adminUserId,
@@ -365,6 +362,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId: freshTgId(), displayName: 'Owner', displayNameLocked: true })
       .returning();
+    noteUser(user!.id);
     const [member] = await db
       .insert(s.members)
       .values({ orgId, userId: user!.id, status: 'active' })
@@ -493,6 +491,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId: freshTgId(), displayName: 'Peer Admin', displayNameLocked: true })
       .returning();
+    noteUser(peerUser!.id);
     const [peer] = await db
       .insert(s.members)
       .values({ orgId, userId: peerUser!.id, status: 'active' })

@@ -18,7 +18,7 @@
  *
  * The PG half is skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, printable, schema as s, withOrgContext } from '@compass/db';
@@ -31,6 +31,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor, gateCaller } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
 import { seedMember, seedOwnedOrg, seedUser, sessionOf, type MemberSpec } from './helpers/fixtures';
+import { cleanUpAfterAll } from './helpers/cleanup';
 
 // ---------- F5 / D21 ------------------------------------------------------
 
@@ -211,8 +212,6 @@ describe('control characters in names (F10)', () => {
 describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', () => {
   const db = SHOULD_RUN ? getDb(undefined, { system: 'maintenance' }) : (null as never);
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
-  const orgIds: string[] = [];
-  const userIds: string[] = [];
 
   /** Org X (the acting admin's) and org Y (somebody else's). */
   let orgX = '';
@@ -226,11 +225,9 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     return callerFor(await sessionOf(orgId, { userId, memberId }));
   }
 
-  /** A new user, removed after the suite. */
+  /** A new user, removed after the file (helpers/cleanup.ts). */
   async function makeUser(displayName: string) {
-    const user = await seedUser(db, displayName);
-    userIds.push(user.id);
-    return user;
+    return seedUser(db, displayName);
   }
 
   /** `userId` as a member of `orgId`, assigned and bound as `options` say. */
@@ -243,10 +240,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
   }
 
   async function makeOrg(label: string) {
-    const org = await seedOwnedOrg(db, `Scan ${label}`);
-    orgIds.push(org.orgId);
-    userIds.push(org.owner.userId);
-    return org;
+    return seedOwnedOrg(db, `Scan ${label}`);
   }
 
   async function nameOf(userId: string) {
@@ -274,10 +268,7 @@ describe.skipIf(!SHOULD_RUN)('admin guards from the security scan (PG-gated)', (
     Object.assign(roleX, x.roleIds);
   });
 
-  afterAll(async () => {
-    for (const id of orgIds) await db.delete(s.organizations).where(eq(s.organizations.id, id));
-    for (const id of userIds) await db.delete(s.users).where(eq(s.users.id, id));
-  });
+  cleanUpAfterAll();
 
   // ---- F1 / D22
 

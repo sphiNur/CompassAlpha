@@ -15,6 +15,9 @@ import { emptyRunState, type RunEvent, type RunExpense } from '@compass/domain/r
 import { dispatchRunEventNotifications } from '../services/notifyForEvent';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 /** An expense line; only qty and price count here. */
 function expense(qty: string, unitPrice: string): RunExpense {
@@ -45,11 +48,13 @@ async function finishRun(
     .insert(s.organizations)
     .values({ slug: `finished-${suffix}`, name: 'Finished', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const [user] = await db
     .insert(s.users)
     .values({ displayName: 'Purchaser', tgUserId: freshTgId(), locale })
     .returning();
+  noteUser(user!.id);
   const [member] = await db
     .insert(s.members)
     .values({ orgId, userId: user!.id, status: 'active' })

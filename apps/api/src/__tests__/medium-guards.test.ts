@@ -18,6 +18,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor, openConnections } from './helpers/ctx';
 import { seedOwnedOrg, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -41,6 +44,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `medium-${suffix}`, name: 'Medium guards', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'admin', 'staff', 'purchaser']);
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `M-${suffix.slice(-6)}` }).returning();
@@ -206,6 +210,7 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
         timezone: 'UTC',
       })
       .returning();
+    noteOrg(org!.id);
     const orgId = org!.id;
     const roles = await seedRoles(db, orgId, ['super_admin', 'admin']);
     const owner = await seedMember(db, orgId, {

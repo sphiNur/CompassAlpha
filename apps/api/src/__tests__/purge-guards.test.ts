@@ -23,6 +23,9 @@ import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedRoles, seedMember } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -48,6 +51,7 @@ async function purgeWorkspace(name: string): Promise<Fixture> {
     .insert(s.organizations)
     .values({ slug: `purge-${suffix}`, name, localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
   const staffRoleId = (await seedRoles(db, orgId, ['staff'])).staff!;
@@ -117,6 +121,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Real buyer', tgUserId: freshTgId() })
       .returning();
+    noteUser(purchaser!.id);
     const runId = randomUUID();
     await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-06-03', status: 'finished' });
     await db.insert(s.events).values({
@@ -144,6 +149,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Real approver', tgUserId: freshTgId() })
       .returning();
+    noteUser(approver!.id);
     const sessionId = randomUUID();
     await db.insert(s.orderSessionsV).values({
       id: sessionId,
@@ -173,6 +179,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Waiver buyer', tgUserId: freshTgId() })
       .returning();
+    noteUser(buyer!.id);
     const runId = randomUUID();
     await db
       .insert(s.marketRunsV)
@@ -472,6 +479,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
       .insert(s.users)
       .values({ displayName: 'List approver', tgUserId: freshTgId() })
       .returning();
+    noteUser(approver!.id);
     await db.insert(s.events).values({
       orgId,
       streamType: 'order',

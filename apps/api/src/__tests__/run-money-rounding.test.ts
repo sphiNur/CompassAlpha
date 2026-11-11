@@ -20,6 +20,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { runStream } from './helpers/streams';
 import { seedOwnedOrg } from './helpers/fixtures';
+import { cleanUpAfterAll } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 describe('run money rounding (PG, D1)', () => {
   test.skipIf(!SHOULD_RUN)(

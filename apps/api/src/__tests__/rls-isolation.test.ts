@@ -44,6 +44,9 @@ import { closeDb, getDb, schema as s, withOrgContext } from '@compass/db';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { pgErrorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 interface Fixture {
   orgA: { id: string };
@@ -117,20 +120,24 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `${slug}-A`, name: 'RLS Test A', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(orgA!.id);
   const [orgB] = await db
     .insert(s.organizations)
     .values({ slug: `${slug}-B`, name: 'RLS Test B', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(orgB!.id);
 
   // --- Users + members ---
   const [userA] = await db
     .insert(s.users)
     .values({ displayName: 'A', tgUserId: freshTgId() })
     .returning();
+  noteUser(userA!.id);
   const [userB] = await db
     .insert(s.users)
     .values({ displayName: 'B', tgUserId: freshTgId() })
     .returning();
+  noteUser(userB!.id);
   const [memA] = await db
     .insert(s.members)
     .values({ orgId: orgA!.id, userId: userA!.id })
@@ -441,7 +448,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Slugs are timestamped; rows stay for forensics.
   if (SHOULD_RUN) await closeDb();
 });
 

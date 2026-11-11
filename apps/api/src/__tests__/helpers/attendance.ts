@@ -13,6 +13,7 @@ import { signLivenessToken } from '../../services/face/liveness';
 import type { SessionContext } from '../../trpc/context';
 import { SHOULD_RUN } from './pg';
 import { callerFor } from './ctx';
+import { cleanUpAfterAll, noteOrg } from './cleanup';
 import { seedMember } from './fixtures';
 import { errorOf } from './errors';
 
@@ -267,6 +268,7 @@ async function attendanceOrg(): Promise<Fixture> {
       timezone: TZ,
     })
     .returning();
+  noteOrg(org!.id);
   const person = async (name: string) => {
     const who = await seedMember(db, org!.id, { name });
     return { userId: who.userId, memberId: who.memberId };
@@ -342,11 +344,13 @@ async function attendanceOrg(): Promise<Fixture> {
 }
 
 /**
- * Call once at the top of a suite. It stubs the face model for the file
- * and makes a new workspace before each test (fixture()).
+ * Call once at the top of a suite. It stubs the face model for the file,
+ * makes a new workspace before each test (fixture()), and removes the
+ * workspaces after the file.
  */
 export function attendanceSuite(): void {
   afterAll(() => setFaceEngineForTests(null));
+  cleanUpAfterAll();
   beforeAll(() => {
     if (SHOULD_RUN) stubFaces();
   });
