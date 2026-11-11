@@ -1810,8 +1810,6 @@ export const zh = {
   'settlement.details.historicalReadOnlyBody':
     '该日结记录创建时尚无明细功能；历史总额会保留，不能补录明细或修改。',
   'settlement.expenses.remove': '删除',
-  'settlement.expenses.readOnly':
-    '日常支出可在此查看；只有店长或更高权限的人员可以新增、修改或删除。',
   'settlement.expenseCategory.other': '其他',
   'settlement.wages.title': '工资明细',
   'settlement.wages.totals': '已发 {paid} · 未发 {unpaid}',
@@ -1877,7 +1875,6 @@ export const zh = {
   'settlement.errors.invalidMoney': '请输入有效金额，最多保留两位小数。',
   'settlement.errors.fieldsToFix': '有 {n} 栏需要改正',
   'settlement.errors.goToFirst': '去改正',
-  'settlement.errors.expensesManagerOnly': '需要本门店的日结录入权限才能录入日常支出。',
   'settlement.errors.invalidDetails': '请补全每一条支出和工资明细。',
   'settlement.errors.invalidDetailsBody':
     '每条日常支出都要填写正数金额和支出原因；每条工资都要选择员工，并填写金额和班次或原因。',

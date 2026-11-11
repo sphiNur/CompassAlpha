@@ -299,8 +299,6 @@ export function PurchaseSheet({
               <Input
                 className="mt-1"
                 type="number"
-                inputMode="decimal"
-                step={sku?.step ?? '1'}
                 value={draft.actualQty}
                 onChange={(e) => onChange({ ...draft, actualQty: e.target.value })}
                 disabled={draft.qtyLocked}
@@ -463,8 +461,6 @@ export function PurchaseSheet({
                       <span className="min-w-0 flex-1 truncate text-old-body">{store.name}</span>
                       <Input
                         type="number"
-                        inputMode="decimal"
-                        step={sku?.step ?? '1'}
                         value={splitQty}
                         disabled={draft.qtyLocked}
                         // DX-IX-8 (2026-11-01): was read out as "edit text".
@@ -1221,8 +1217,6 @@ export function AddItemSheet({
                   <Input
                     className="mt-1"
                     type="number"
-                    inputMode="decimal"
-                    step={draft.mode === 'sku' ? (selectedSku?.step ?? '1') : '1'}
                     value={draft.actualQty}
                     onChange={(e) => {
                       const qty = e.target.value;

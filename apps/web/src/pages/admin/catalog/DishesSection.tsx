@@ -377,9 +377,6 @@ export function DishesSection() {
             <Field label={i18n.t('dishes.field.unitPrice')}>
               <Input
                 type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
                 value={draft.unitPrice}
                 onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })}
               />
@@ -456,9 +453,6 @@ export function DishesSection() {
                         <div className="flex items-center gap-2">
                           <Input
                             type="number"
-                            inputMode="decimal"
-                            step={sku?.step ?? '0.001'}
-                            min="0"
                             value={ing.qtyPerServing}
                             onChange={(e) => {
                               const next = [...draft.ingredients];

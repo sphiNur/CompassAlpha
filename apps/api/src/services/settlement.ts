@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
 import { eq, inArray } from 'drizzle-orm';
+import { z } from 'zod';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
@@ -560,4 +561,16 @@ export function revisionSnapshot(
     actorDisplayName,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+const ChangedFieldsSchema = z.array(z.string());
+
+/**
+ * A revision's `changed_fields` (jsonb) as the history lists them. Review
+ * CONF-26: the value was cast to string[] unread; anything that is not a
+ * list of field names now reads as none.
+ */
+export function revisionChangedFields(value: unknown): string[] {
+  const parsed = ChangedFieldsSchema.safeParse(value);
+  return parsed.success ? parsed.data : [];
 }

@@ -505,10 +505,6 @@ function QtyQuickPickSheet({
             className="mt-1"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            step={step}
-            min={min}
-            max={max}
-            inputMode="decimal"
             aria-invalid={draftProblem ? true : undefined}
             // The sheet's own line below says what is wrong.
             formatError="none"

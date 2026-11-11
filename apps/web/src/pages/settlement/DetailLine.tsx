@@ -130,9 +130,6 @@ export function LineAmountField({
     <Field label={label}>
       <NumberInput
         value={value}
-        min="0.01"
-        max="999999999999.99"
-        step="0.01"
         placeholder="0"
         readOnly={readOnly}
         aria-label={name}

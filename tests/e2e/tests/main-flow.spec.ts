@@ -347,6 +347,45 @@ test('close the day', async () => {
   await evidence('daily-close-saved');
 });
 
+test('a close corrected on another phone reaches the open form', async ({ browser }) => {
+  // Review CONF-26: the other phone's save is pushed. With nothing typed
+  // here the form follows it; with unsaved input it says the close changed
+  // elsewhere, and Refresh keeps what was typed.
+  const other = await browser.newPage();
+  await other.goto('/');
+  await other.getByTestId('nav-settlement').click();
+  const otherMain = other.getByRole('main');
+  const correctOnOther = async (version: number, invoicedCash: string) => {
+    await expect(otherMain.getByRole('button', { name: `Version ${version}` })).toBeVisible();
+    await otherMain.getByRole('textbox', { name: 'Invoiced cash revenue' }).fill(invoicedCash);
+    await otherMain.getByRole('textbox', { name: /Reason for correction/ }).fill('Recounted');
+    await other.getByTestId('page-main-button').click();
+  };
+  const field = (name: string): Locator => main().getByRole('textbox', { name, exact: true });
+  const changedElsewhere = main().getByText('This daily close was changed elsewhere.');
+
+  await correctOnOther(1, '600000');
+  await expect(main().getByRole('button', { name: /Version 2 · / })).toBeVisible();
+  await expect(field('Invoiced cash revenue')).toHaveValue('600000');
+
+  await field('Online / transfer revenue').fill('260000');
+  await correctOnOther(2, '650000');
+  await expect(changedElsewhere).toBeVisible();
+  await expect(field('Online / transfer revenue')).toHaveValue('260000');
+  await evidence('daily-close-changed-elsewhere');
+  await main().getByRole('button', { name: 'Refresh record' }).click();
+  await expect(page.getByText(/kept the amounts and note you changed/)).toBeVisible();
+  await expect(main().getByRole('button', { name: /Version 3 · / })).toBeVisible();
+  await expect(field('Invoiced cash revenue')).toHaveValue('650000');
+  await expect(field('Online / transfer revenue')).toHaveValue('260000');
+  await expect(changedElsewhere).toHaveCount(0);
+
+  // Typed back, the form has nothing unsaved for the steps after this one.
+  await field('Online / transfer revenue').fill('250000');
+  await expect(main().getByRole('textbox', { name: /Reason for correction/ })).toHaveCount(0);
+  await other.close();
+});
+
 test('the next order shows what it should cost, and how it is usually paid', async () => {
   // Apple was bought in cash and Beef by transfer, so an order for both
   // can now be budgeted by payment method before anyone approves it.

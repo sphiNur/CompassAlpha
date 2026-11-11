@@ -57,6 +57,7 @@ import { QtyDrafts } from './approval/qtyDrafts';
 import { adjustingSessionIds } from './approval/adjustInFlight';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 import { moneyLine } from '../lib/money';
+import { conflictKind } from '../lib/conflict';
 import { estimateOrder } from '@compass/contracts/money';
 
 /** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
@@ -143,10 +144,7 @@ export function ApprovalPage() {
   // Then the card is out of date — reload it and say so, rather than
   // the generic "someone else just edited — retry" (a blind retry would
   // approve the new version unseen, which is the bug).
-  const isOrderChanged = (err: unknown): boolean => {
-    const e = err as { data?: { code?: string }; message?: string } | undefined;
-    return e?.data?.code === 'CONFLICT' && e.message === 'order.errors.staleSeq';
-  };
+  const isOrderChanged = (err: unknown): boolean => conflictKind(err) === 'stale';
   const onOrderChanged = (sessionId: string) => {
     void utils.order.pendingList.invalidate();
     void utils.order.sessionDetail.invalidate({ sessionId });

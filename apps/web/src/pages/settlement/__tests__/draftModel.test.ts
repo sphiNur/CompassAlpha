@@ -11,11 +11,11 @@ import {
   isAllZeroClose,
   isValidOperatingExpense,
   isValidWageItem,
-  isVersionConflict,
   linesEdited,
   newCloseHasInput,
   newOperatingExpense,
   newWageItem,
+  newerVersionAction,
   normalizedMoney,
   settlementSaveInput,
   settlementSummary,
@@ -145,6 +145,34 @@ describe('editedFields and linesEdited (CLS-18)', () => {
       operatingExpenseItems: [{ ...base.operatingExpenseItems[0]!, reason: 'Gas and oil' }],
     };
     expect(linesEdited(changed, base)).toBe(true);
+  });
+});
+
+describe('a newer version saved elsewhere (CONF-26)', () => {
+  const at = (patch: Partial<Parameters<typeof newerVersionAction>[0]> = {}) =>
+    newerVersionAction({
+      listedVersion: 3,
+      shownVersion: 2,
+      listReadAfterRecord: true,
+      unsavedChanges: false,
+      ...patch,
+    });
+
+  test('loads it when nothing is typed, and stops at the banner when something is', () => {
+    expect(at()).toBe('reload');
+    expect(at({ unsavedChanges: true })).toBe('conflict');
+  });
+
+  test('a close made elsewhere for a day the form holds as new counts too', () => {
+    expect(at({ listedVersion: 1, shownVersion: 0 })).toBe('reload');
+    expect(at({ listedVersion: 1, shownVersion: 0, unsavedChanges: true })).toBe('conflict');
+  });
+
+  test('the same or an older version, an unlisted day or an older list change nothing', () => {
+    expect(at({ listedVersion: 2 })).toBeNull();
+    expect(at({ listedVersion: 1 })).toBeNull();
+    expect(at({ listedVersion: undefined })).toBeNull();
+    expect(at({ listReadAfterRecord: false, unsavedChanges: true })).toBeNull();
   });
 });
 
@@ -371,14 +399,5 @@ describe('settlementSaveInput', () => {
     ]);
     expect(input.correctionReason).toBe('Typo');
     expect(input.expectedVersion).toBe(2);
-  });
-});
-
-describe('isVersionConflict', () => {
-  test('a CONFLICT answer or a stale sequence', () => {
-    expect(isVersionConflict({ data: { code: 'CONFLICT' } })).toBe(true);
-    expect(isVersionConflict({ message: 'order.errors.staleSeq' })).toBe(true);
-    expect(isVersionConflict({ data: { code: 'BAD_REQUEST' } })).toBe(false);
-    expect(isVersionConflict(new Error('network'))).toBe(false);
   });
 });
