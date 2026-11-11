@@ -10,12 +10,12 @@ import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
  * present. The user wanted the bottom nav to stay anchored to the
  * screen bottom at ALL times — non-negotiable.
  *
- * Now: usePageMainButton writes to a module-level store, and Shell.tsx
- * renders <PageMainButton /> as an in-DOM sticky bar ABOVE the nav.
- * Telegram's native MainButton stays permanently hidden (one
- * tg.MainButton.hide() in Shell on mount). The nav is now the last
- * flex child in Shell, so it owns the bottom edge regardless of
- * whether a primary action is showing.
+ * Now: usePageMainButton writes to a module-level store, and the Shell
+ * renders <PageMainButton /> (app/shell/PageMainButton.tsx) as an
+ * in-DOM sticky bar ABOVE the nav. Telegram's native MainButton stays
+ * permanently hidden (PageMainButton calls tg.MainButton.hide()). The
+ * nav is now the last flex child in the Shell, so it owns the bottom
+ * edge regardless of whether a primary action is showing.
  *
  * Trade-offs accepted:
  *   - Loses Telegram's native MainButton look. We render a styled
@@ -63,7 +63,7 @@ const pageMainButtonSnapshot = (): PageMainButtonState | null => _pageMainButton
 
 /**
  * Subscribe React to the page-main-button state. Used by the
- * <PageMainButton /> component in Shell.tsx.
+ * <PageMainButton /> component (app/shell/PageMainButton.tsx).
  *
  * Review COREWEB2-28: through useSyncExternalStore, which also catches a
  * change made between the render and the subscription. A page's effect

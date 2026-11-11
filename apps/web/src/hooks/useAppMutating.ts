@@ -3,10 +3,10 @@
  * (M3.50, 2026-05-23).
  *
  * Wraps TanStack Query's `useIsMutating()` so call sites get a clean
- * boolean instead of a count. Used by Shell.tsx to disable the in-page
- * PageMainButton while a mutation is processing — prevents the "I
- * tapped Save and could still tap a different button mid-flight,
- * racing the result" class of bugs the user reported.
+ * boolean instead of a count. Used by app/shell/PageMainButton.tsx to
+ * disable the in-page main button while a mutation is processing —
+ * prevents the "I tapped Save and could still tap a different button
+ * mid-flight, racing the result" class of bugs the user reported.
  *
  * Excluded by design:
  *   - The offline queue's replay path uses `utils.client.*.mutate()`
