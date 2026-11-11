@@ -65,6 +65,28 @@ export function productNameParts(
   };
 }
 
+/**
+ * {@link productNameParts} for one pair of languages, giving the same
+ * object each time it is asked about the same item. Rows that are
+ * memo()'d take the parts as a prop (the run's PurchaseRow, review
+ * RUNWEB1-07); a new object on every render of their list drew each of
+ * them again. Items are catalog rows from queries, never changed in place.
+ */
+export function productNamePartsOf(
+  locale: string,
+  secondaryLocale: string | null,
+): (item: { names: Names }) => ProductNameParts {
+  const made = new WeakMap<object, ProductNameParts>();
+  return (item) => {
+    let parts = made.get(item);
+    if (!parts) {
+      parts = productNameParts(item.names, locale, secondaryLocale);
+      made.set(item, parts);
+    }
+    return parts;
+  };
+}
+
 /** The language of text for the vendor (copy lists): the second language when the user set one. */
 export function vendorLocale<L extends string>(locale: L, secondaryLocale: L | null): L {
   return secondaryLocale && secondaryLocale !== locale ? secondaryLocale : locale;

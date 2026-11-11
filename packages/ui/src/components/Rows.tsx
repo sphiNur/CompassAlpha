@@ -425,6 +425,14 @@ export interface NameCellProps {
    */
   as?: 'div' | 'span';
   className?: string;
+  /**
+   * Extra classes for the primary line, merged over its own: a row's
+   * state (muted when done, struck through when dropped) or one line
+   * only (`line-clamp-1`). RUNWEB1-09: the run's purchase rows.
+   */
+  primaryClassName?: string;
+  /** Tooltip on the primary line, for a name a row clamps (mouse only). */
+  title?: string;
 }
 
 export function NameCell({
@@ -435,6 +443,8 @@ export function NameCell({
   size = 'default',
   as: Tag = 'div',
   className,
+  primaryClassName,
+  title,
 }: NameCellProps) {
   return (
     <Tag className={cn('block min-w-0', className)}>
@@ -447,9 +457,11 @@ export function NameCell({
           cut the name down to nothing, leaving only the qty control. */}
       <Tag
         lang={primaryLang}
+        title={title}
         className={cn(
           'line-clamp-2 break-words font-semibold text-[var(--c-fg)]',
           size === 'prominent' ? 'text-old-h2' : 'text-old-body',
+          primaryClassName,
         )}
       >
         {primary}

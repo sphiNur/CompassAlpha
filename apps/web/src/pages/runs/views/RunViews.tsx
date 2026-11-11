@@ -20,10 +20,11 @@ import {
   logPurchaseUnavailable,
 } from '../lib/purchaseTelemetry';
 import type { ComponentProps, ReactNode } from 'react';
-import { Button, Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
+import { Button, Card, NameCell, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
-import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
+import type { ProductNameParts } from '../../../hooks/useI18n';
 import {
   toDisplayPrice,
   fromDisplayPrice,
@@ -43,6 +44,7 @@ import { expenseLine, expensesTotal } from '../lib/expenseMoney';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
+import { rowName } from '../lib/rowName';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 
 /**
@@ -93,6 +95,7 @@ export function PerStoreView({
   // different ways on two screens. useUnitLabel has existed since
   // M3.34 and falls back to the raw string for exotic free-text units.
   const unitLabel = useUnitLabel();
+  const productNameParts = useProductNameParts();
   // Indexed once. Every row was doing run.items.find(...), which on an
   // 87-item run is ~7,600 comparisons per render, repeated whenever the
   // 6-second poll hands back a new array.
@@ -196,7 +199,7 @@ export function PerStoreView({
                   return byName !== 0 ? byName : a.skuId.localeCompare(b.skuId);
                 })
                 .map((r) => {
-                  const skuName = r.sku ? productName(r.sku) : r.skuId.slice(0, 8);
+                  const name = rowName(productNameParts, r.sku, r.skuId);
                   const status = r.runItem?.status ?? 'pending';
                   const tone =
                     status === 'purchased'
@@ -209,12 +212,12 @@ export function PerStoreView({
                   return (
                     <li
                       key={r.skuId}
-                      className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
+                      className="flex items-start gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                     >
                       <span aria-hidden className={`shrink-0 text-old-body ${tone}`}>
                         {mark}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
+                      <NameCell className="flex-1" {...name} primaryClassName="font-normal" />
                       <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                         {formatQty(r.qty)} {unitLabel(r.sku?.unit, r.qty)}
                       </span>
@@ -335,6 +338,7 @@ export function PerVendorView({
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
+  const productNameParts = useProductNameParts();
   // Indexed once each — every row did run.items.find(...) plus
   // run.splits.filter(...) (now rowSplitsOf), which on an 87-item run with
   // ~260 splits is roughly 30,000 comparisons per render, recomputed
@@ -447,7 +451,7 @@ export function PerVendorView({
                   return byName !== 0 ? byName : a.skuId.localeCompare(c.skuId);
                 })
                 .map((r) => {
-                  const skuName = r.sku ? productName(r.sku) : r.skuId.slice(0, 8);
+                  const name = rowName(productNameParts, r.sku, r.skuId);
                   // M3.43 (2026-05-22): reuse PurchaseRow inline so the
                   // purchaser can record qty+price+✓ at the stall without
                   // a sheet roundtrip. PurchaseRow handles all three row
@@ -464,9 +468,9 @@ export function PerVendorView({
                     return (
                       <li
                         key={r.skuId}
-                        className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
+                        className="flex items-start gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                       >
-                        <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
+                        <NameCell className="flex-1" {...name} primaryClassName="font-normal" />
                         <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(r.plannedQty)} {unitLabel(r.sku?.unit, r.plannedQty)}
                         </span>
@@ -485,7 +489,7 @@ export function PerVendorView({
                       key={r.skuId}
                       item={runItem}
                       servesOtherStores={otherStoreSkusOf(run).has(runItem.skuId)}
-                      skuName={skuName}
+                      name={name}
                       unitCode={r.sku?.unit}
                       step={r.sku?.step ?? '0.1'}
                       demand={demandBySku.get(r.skuId) ?? NO_DEMAND}
@@ -996,6 +1000,7 @@ export function PerCategoryView({
   ) => void;
   paymentBusySkuId: string | null;
 }) {
+  const productNameParts = useProductNameParts();
   const demandStoreIds = useMemo(() => {
     const ids = new Set<string>();
     for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
@@ -1051,14 +1056,14 @@ export function PerCategoryView({
           <ul className="flex flex-col" role="list">
             {group.items.map((item) => {
               const sku = skuById.get(item.skuId);
-              const skuName = sku ? productName(sku) : item.skuId.slice(0, 8);
+              const name = rowName(productNameParts, sku, item.skuId);
               const actualSplits = rowSplitsOf(run.splits, item.skuId);
               return (
                 <PurchaseRow
                   key={item.skuId}
                   item={item}
                   servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
-                  skuName={skuName}
+                  name={name}
                   unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
@@ -1158,15 +1163,13 @@ const ROW_MONEY =
  * not what this redesign buys — see the note on the PurchaseRow doc. */
 const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
 
-/* A row's product name: up to two lines, then an ellipsis (WALK-02).
- * Hyphenated where the page language allows (<html lang> is set), broken
- * anywhere only when a word still does not fit. */
-const RUN_ROW_NAME_BASE =
-  'min-w-0 line-clamp-2 break-words hyphens-auto text-old-body font-semibold';
-const RUN_ROW_NAME = `${RUN_ROW_NAME_BASE} text-[var(--c-fg)]`;
-/* RUNWEB1-11 (2026-11-11): the whole name, for a row that opens nothing.
- * A clamped name is read by opening its row; touch has no tooltip. */
-const RUN_ROW_NAME_FULL = 'min-w-0 break-words hyphens-auto text-old-body font-semibold';
+/* A row's product name is the kit's NameCell (UI-4, RUNWEB1-09): up to
+ * two lines, then an ellipsis (WALK-02), hyphenated where the page
+ * language allows (<html lang> is set) and broken anywhere only when a
+ * word still does not fit; the stall language's name, when one is set,
+ * as a muted line under it. A row that opens nothing shows the whole name
+ * (RUNWEB1-11): a clamped name is read by opening its row, and touch has
+ * no tooltip. */
 
 /* self-stretch (V4, 2026-10-30): the body fills the 52px row, so it
  * taps across the row's height instead of only its 18px text line. */
@@ -1266,7 +1269,7 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
  */
 export const PurchaseRow = memo(function PurchaseRow({
   item,
-  skuName,
+  name,
   unitCode,
   step,
   demand,
@@ -1292,7 +1295,12 @@ export const PurchaseRow = memo(function PurchaseRow({
    *  the row is shown read-only. */
   servesOtherStores?: boolean;
   item: ActiveRun['items'][number];
-  skuName: string;
+  /**
+   * The product's name, the stall language's as a second line (UI-4,
+   * RUNWEB1-09: "primary (secondary)" on one line was clipped to a few
+   * letters at 320 px).
+   */
+  name: ProductNameParts;
   /** The SKU's stored unit (kg / pair / …); the row localises it. */
   unitCode: string | null | undefined;
   step: string;
@@ -1389,6 +1397,8 @@ export const PurchaseRow = memo(function PurchaseRow({
   ) => void;
   paymentBusy: boolean;
 }) {
+  // Labels and tooltips name the product once, in the interface's language.
+  const skuName = name.primary;
   const unitLabel = useUnitLabel();
   const unit = unitLabel.uncounted(unitCode);
   // R2-COPY-4: a quantity's unit agrees with it («10 пар», "2 packs").
@@ -1819,9 +1829,7 @@ export const PurchaseRow = memo(function PurchaseRow({
     return (
       <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
         <div className="flex items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-old-body font-semibold text-[var(--c-fg)]">
-            {skuName}
-          </span>
+          <NameCell as="span" className="flex-1" {...name} />
           <span className="shrink-0 text-old-body-sm tabular-nums text-[var(--c-fg-muted)]">
             {item.status === 'unavailable'
               ? i18n.t('run.extras.status.unavailable')
@@ -1882,9 +1890,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                 quantity and the money took their floors and left the
                 name one to five letters ("Я…" for Яблоко); two 13px
                 lines fit the 52px row. */}
-            <span className={RUN_ROW_NAME} title={skuName}>
-              {skuName}
-            </span>
+            <NameCell as="span" {...name} title={skuName} primaryClassName="hyphens-auto" />
 
             {/* shrink-0 + nowrap: a number never truncates and never
                 wraps. Right-aligned so it lands in a column (under 360px,
@@ -1973,7 +1979,7 @@ export const PurchaseRow = memo(function PurchaseRow({
               Cyrillic names disambiguate at the end and the ellipsis
               eats that. Was `shrink-0 truncate`, i.e. dead CSS that made
               the qty and price the compressible things instead. */}
-          <span className="min-w-0 break-words text-old-body font-semibold">{skuName}</span>
+          <NameCell as="span" {...name} primaryClassName="line-clamp-none" />
           <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
             {formatQty(item.plannedQty)} {unitFor(item.plannedQty)}
             {lastPrice ? (
@@ -2274,12 +2280,12 @@ export const PurchaseRow = memo(function PurchaseRow({
             <span className="flex min-w-0 items-baseline gap-1">
               {/* One ink level down: finished work recedes so the eye
                   finds what is left. */}
-              <span
-                className={`${RUN_ROW_NAME_BASE} text-[var(--c-fg-muted)]`}
+              <NameCell
+                as="span"
+                {...name}
                 title={skuName}
-              >
-                {skuName}
-              </span>
+                primaryClassName="hyphens-auto text-[var(--c-fg-muted)]"
+              />
               {isAdded ? (
                 /* M3.41: marks rows the purchaser added mid-run. Was
                    bg-[--c-warning]/15 + ring-[--c-warning] + warning ink
@@ -2398,9 +2404,11 @@ export const PurchaseRow = memo(function PurchaseRow({
               greyscale without spending --c-danger on the eye. Muted,
               not subtle: --c-fg-subtle is 3.22:1 and the purchaser still
               has to find this row by name when the vendor restocks. */}
-          <span className={`${RUN_ROW_NAME_FULL} text-[var(--c-fg-muted)] line-through`}>
-            {skuName}
-          </span>
+          <NameCell
+            as="span"
+            {...name}
+            primaryClassName="line-clamp-none hyphens-auto text-[var(--c-fg-muted)] line-through"
+          />
 
           {/* The qty stays: what you FAILED to get is a number the
               kitchen needs, and it keeps the column continuous. */}

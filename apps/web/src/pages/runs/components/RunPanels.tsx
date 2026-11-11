@@ -32,6 +32,7 @@ import {
   Chip,
   ChipBar,
   EmptyState,
+  NameCell,
   SectionLabel,
   Sheet,
   useToast,
@@ -46,7 +47,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
-import { useI18n, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
+import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
@@ -65,6 +66,7 @@ import type {
 } from '../types';
 import { otherStoreSkusOf } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
+import { rowName } from '../lib/rowName';
 import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,
@@ -257,6 +259,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   // PurchaseRow, so the same SKU read "bunch" here and "把" on the
   // preview card. Same fix as the three grouped views in RunViews.
   const unitLabel = useUnitLabel();
+  const productNameParts = useProductNameParts();
 
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -454,10 +457,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   // BUY-5 (2026-10-30): items an order asked for more of after they were
   // bought or marked unavailable.
   const topUps = run.items.filter((it) => Number(it.topUpQty ?? 0) > 0);
-  const nameOf = (skuId: string) => {
-    const sku = skuById.get(skuId);
-    return sku ? productName(sku) : skuId.slice(0, 8);
-  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -471,7 +470,10 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                 className="flex flex-wrap items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-old-body font-semibold">{nameOf(it.skuId)}</span>
+                  <NameCell
+                    as="span"
+                    {...rowName(productNameParts, skuById.get(it.skuId), it.skuId)}
+                  />
                   <span className="block text-old-label text-[var(--c-warning-fg)]">
                     {/* R2-BUY-5: for an item shared with other stores the
                         bought figure is this purchaser's share while the
@@ -705,7 +707,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           <ul className="flex flex-col" role="list">
             {visibleRunItems.map((it) => {
               const sku = skuById.get(it.skuId);
-              const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
+              const name = rowName(productNameParts, sku, it.skuId);
               // M3.52: pluck this SKU's recorded splits for the
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
@@ -717,7 +719,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                   onTogglePriceUnit={onTogglePriceUnit}
                   item={it}
                   servesOtherStores={otherStoreSkusOf(run).has(it.skuId)}
-                  skuName={skuName}
+                  name={name}
                   unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(it.skuId) ?? NO_DEMAND}
@@ -897,11 +899,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                     return (
                       <li
                         key={ln.skuId}
-                        className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5"
+                        className="flex items-start gap-2 border-t border-[var(--c-divider)] px-4 py-1.5"
                       >
-                        <span className="min-w-0 flex-1 truncate text-old-body">
-                          {sku ? productName(sku) : ln.skuId.slice(0, 8)}
-                        </span>
+                        <NameCell
+                          className="flex-1"
+                          {...rowName(productNameParts, sku, ln.skuId)}
+                          primaryClassName="font-normal"
+                        />
                         <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(ln.qty)} {unitLabel(sku?.unit, ln.qty)}
                         </span>
@@ -913,11 +917,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                     return (
                       <li
                         key={'na-' + ln.skuId}
-                        className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5 text-[var(--c-fg-muted)]"
+                        className="flex items-start gap-2 border-t border-[var(--c-divider)] px-4 py-1.5 text-[var(--c-fg-muted)]"
                       >
-                        <span className="min-w-0 flex-1 truncate text-old-body line-through">
-                          {sku ? productName(sku) : ln.skuId.slice(0, 8)}
-                        </span>
+                        <NameCell
+                          className="flex-1"
+                          {...rowName(productNameParts, sku, ln.skuId)}
+                          primaryClassName="font-normal text-[var(--c-fg-muted)] line-through"
+                        />
                         <span className="shrink-0 text-old-label">
                           {i18n.t('run.extras.status.unavailable')}
                         </span>
@@ -1022,7 +1028,12 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                           className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
                           onClick={() => onEditPrice(it)}
                         >
-                          <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
+                          <NameCell
+                            as="span"
+                            className="flex-1"
+                            {...rowName(productNameParts, skuById.get(it.skuId), it.skuId)}
+                            primaryClassName="font-normal"
+                          />
                           <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
                             {formatQty(it.purchasedQty ?? '0')} {unitLabel(unit, it.purchasedQty ?? '0')} ×{' '}
                             {it.unitPrice ? formatMoney(Number(it.unitPrice)) : '—'}
@@ -1293,6 +1304,7 @@ export function PreviewSummaryCard({
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
   const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
+  const productNameParts = useProductNameParts();
   // COREWEB2-12: what is sent to a stall is in the stall's language.
   const vendorI18n = useVendorI18n();
   const vendorUnitLabel = useMemo(() => unitLabeller(vendorI18n.t), [vendorI18n]);
@@ -1365,6 +1377,7 @@ export function PreviewSummaryCard({
         kind: 'sku',
         skuId: row.skuId,
         name: sku ? productName(sku) : row.skuId.slice(0, 8),
+        nameParts: rowName(productNameParts, sku, row.skuId),
         qty: row.qty,
         unit: currentUnitLabel(sku?.unit, row.qty),
         unitPrice,
@@ -1435,6 +1448,7 @@ export function PreviewSummaryCard({
     preview.sessionNotesByStore,
     preview.supplierBySku,
     productName,
+    productNameParts,
     skuById,
   ]);
 
@@ -1698,6 +1712,13 @@ export function PreviewSummaryCard({
     const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
       line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]';
+    // UI-4 (RUNWEB1-09): a product's second-language name on its own
+    // muted line; an extra shows what was typed.
+    const nameText = line.nameParts ? (
+      <NameCell as="span" {...line.nameParts} primaryClassName="font-normal" />
+    ) : (
+      line.name
+    );
     const nameNode =
       opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
         <button
@@ -1706,10 +1727,10 @@ export function PreviewSummaryCard({
           className="press min-w-0 max-w-full text-left text-[var(--c-fg)]"
           title={i18n.t('run.previewSupplier.changeVendor')}
         >
-          {line.name}
+          {nameText}
         </button>
       ) : (
-        <span className="min-w-0 max-w-full text-[var(--c-fg)]">{line.name}</span>
+        <span className="min-w-0 max-w-full text-[var(--c-fg)]">{nameText}</span>
       );
     /**
      * Two-line form for the by-store view (2026-07-26). The stall is the
@@ -1733,13 +1754,22 @@ export function PreviewSummaryCard({
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
-            <span
-              className={`min-w-0 flex-1 text-[var(--c-fg)] ${
-                line.kind === 'extra' ? 'break-words' : 'truncate'
-              }`}
-            >
-              {line.name}
-            </span>
+            {line.nameParts ? (
+              <NameCell
+                as="span"
+                className="flex-1"
+                {...line.nameParts}
+                primaryClassName="font-normal line-clamp-1"
+              />
+            ) : (
+              <span
+                className={`min-w-0 flex-1 text-[var(--c-fg)] ${
+                  line.kind === 'extra' ? 'break-words' : 'truncate'
+                }`}
+              >
+                {line.name}
+              </span>
+            )}
             <span
               className={`shrink-0 text-old-label font-semibold tabular-nums ${
                 line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'

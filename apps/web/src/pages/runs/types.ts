@@ -6,6 +6,8 @@
  * Moved verbatim out of RunPage.tsx so runs/views can import it without
  * reaching back into the god-file.
  */
+import type { ProductNameParts } from '../../lib/productName';
+
 /**
  * Preview-shaped rows for the pre-run summary card (整体 / 按店铺 /
  * 按摊位). Moved here from RunPanels.tsx (2026-07-26) so `runs/lib`
@@ -16,7 +18,13 @@ export type PreviewLine = {
   id: string;
   kind: 'sku' | 'extra';
   skuId: string | null;
+  /** The whole name, both languages in one string: what the search matches and the rows sort by. */
   name: string;
+  /**
+   * A catalog product's name in two parts, shown as two lines (UI-4,
+   * RUNWEB1-09). Absent for an extra, which has only what was typed.
+   */
+  nameParts?: ProductNameParts;
   qty: string;
   unit: string;
   unitPrice: string | null;

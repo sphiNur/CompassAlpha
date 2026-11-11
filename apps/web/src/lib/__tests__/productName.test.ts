@@ -3,7 +3,13 @@
  * test; only nameLang, one helper of it, did.
  */
 import { describe, expect, test } from 'bun:test';
-import { pickName, productName, productNameParts, vendorLocale } from '../productName';
+import {
+  pickName,
+  productName,
+  productNameParts,
+  productNamePartsOf,
+  vendorLocale,
+} from '../productName';
 
 const BEEF = { zh: '牛肉', ru: 'Говядина', uz: 'Mol goʻshti', en: 'Beef' };
 
@@ -84,6 +90,31 @@ describe('productNameParts', () => {
       const joined = parts.secondary ? `${parts.primary} (${parts.secondary})` : parts.primary;
       expect(productName(BEEF, 'en', secondary)).toBe(joined);
     }
+  });
+});
+
+describe('productNamePartsOf (RUNWEB1-07/09)', () => {
+  test('the same item gives the same object, so a memo()d row does not draw again', () => {
+    const namer = productNamePartsOf('en', 'ru');
+    const beef = { names: BEEF };
+    const first = namer(beef);
+    expect(first).toEqual({ primary: 'Beef', secondary: 'Говядина', secondaryLang: 'ru' });
+    expect(namer(beef)).toBe(first);
+  });
+
+  test('another item with the same names is named on its own', () => {
+    const namer = productNamePartsOf('en', 'ru');
+    const a = namer({ names: BEEF });
+    const b = namer({ names: BEEF });
+    expect(b).toEqual(a);
+    expect(b).not.toBe(a);
+  });
+
+  test('a namer for other languages names the item in them', () => {
+    const beef = { names: BEEF };
+    expect(productNamePartsOf('en', 'ru')(beef).secondary).toBe('Говядина');
+    expect(productNamePartsOf('en', 'uz')(beef).secondary).toBe('Mol goʻshti');
+    expect(productNamePartsOf('en', null)(beef)).toEqual({ primary: 'Beef', secondary: null });
   });
 });
 

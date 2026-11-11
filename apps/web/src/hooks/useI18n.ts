@@ -10,7 +10,7 @@ import { unitLabeller } from '../lib/unitLabel';
 import { roleLabeller } from '../lib/roleLabels';
 import {
   productName,
-  productNameParts,
+  productNamePartsOf,
   vendorLocale,
   type ProductNameParts,
 } from '../lib/productName';
@@ -189,14 +189,16 @@ export function useProductName() {
   );
 }
 
-/** The two-line form of {@link useProductName}; see productNameParts. */
+/**
+ * The two-line form of {@link useProductName}; see productNameParts. The
+ * same item gives the same object until a language changes
+ * (productNamePartsOf).
+ */
 export function useProductNameParts() {
   const i18n = useI18n();
   const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
   return useMemo(
-    () =>
-      (item: { names: Record<string, string> | null | undefined }): ProductNameParts =>
-        productNameParts(item.names, i18n.locale, secondaryLocale),
+    () => productNamePartsOf(i18n.locale, secondaryLocale),
     [i18n.locale, secondaryLocale],
   );
 }
