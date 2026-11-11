@@ -42,12 +42,12 @@ import {
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { copyText } from '../../../lib/clipboard';
-import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
 import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
+import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
@@ -472,7 +472,11 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                 <span className="min-w-0 flex-1">
                   <NameCell
                     as="span"
-                    {...rowName(productNameParts, skuById.get(it.skuId), it.skuId)}
+                    {...rowName(
+                      productNameParts,
+                      skuById.get(it.skuId),
+                      i18n.t('common.unknownProduct'),
+                    )}
                   />
                   <span className="block text-old-label text-[var(--c-warning-fg)]">
                     {/* R2-BUY-5: for an item shared with other stores the
@@ -705,7 +709,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           <ul className="flex flex-col" role="list">
             {visibleRunItems.map((it) => {
               const sku = skuById.get(it.skuId);
-              const name = rowName(productNameParts, sku, it.skuId);
+              const name = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
               // M3.52: pluck this SKU's recorded splits for the
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
@@ -777,7 +781,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           <ul data-run-stores className="flex flex-col" role="list">
             {involvedStoreIds.map((storeId) => {
               const store = storeById.get(storeId);
-              const storeName = store?.name ?? storeId.slice(0, 8);
+              const storeName = store?.name ?? i18n.t('common.unknownStore');
               const splitsHere = run.splits.filter((sp) => sp.storeId === storeId);
               const allDelivered = splitsHere.every((sp) => !!sp.deliveredAt);
               const allConfirmed = splitsHere.every((sp) => !!sp.confirmedAt);
@@ -823,7 +827,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                   <ul className="flex flex-col gap-0.5 px-4 pb-2" role="list">
                     {issueSplits.map((sp) => {
                       const sku = skuById.get(sp.skuId);
-                      const name = sku ? productName(sku) : sp.skuId.slice(0, 8);
+                      const name = sku ? productName(sku) : i18n.t('common.unknownProduct');
                       const statusLabel = i18n.t(
                         ('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0],
                       );
@@ -901,7 +905,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                       >
                         <NameCell
                           className="flex-1"
-                          {...rowName(productNameParts, sku, ln.skuId)}
+                          {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
                           primaryClassName="font-normal"
                         />
                         <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
@@ -919,7 +923,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                       >
                         <NameCell
                           className="flex-1"
-                          {...rowName(productNameParts, sku, ln.skuId)}
+                          {...rowName(productNameParts, sku, i18n.t('common.unknownProduct'))}
                           primaryClassName="font-normal text-[var(--c-fg-muted)] line-through"
                         />
                         <span className="shrink-0 text-old-label">
@@ -1029,7 +1033,11 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                           <NameCell
                             as="span"
                             className="flex-1"
-                            {...rowName(productNameParts, skuById.get(it.skuId), it.skuId)}
+                            {...rowName(
+                              productNameParts,
+                              skuById.get(it.skuId),
+                              i18n.t('common.unknownProduct'),
+                            )}
                             primaryClassName="font-normal"
                           />
                           <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -1345,7 +1353,7 @@ export function PreviewSummaryCard({
     const delta = anchor.el.getBoundingClientRect().top - anchor.top;
     if (delta !== 0) scroller.scrollTop += delta;
   });
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
   const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
   const productNameParts = useProductNameParts();
@@ -1395,33 +1403,38 @@ export function PreviewSummaryCard({
       if (!cur) {
         cur = {
           storeId,
-          storeName: storeName ?? storeNameById.get(storeId) ?? storeId.slice(0, 8),
+          // Review RUNWEB1-38: "unknown store", not the id's first
+          // characters (which a later row's name used to replace).
+          storeName: storeName ?? storeNameById.get(storeId) ?? i18n.t('common.unknownStore'),
           items: [],
           total: 0,
           unknownCount: 0,
         };
         m.set(storeId, cur);
-      } else if (storeName && cur.storeName === storeId.slice(0, 8)) {
-        cur.storeName = storeName;
       }
       return cur;
     },
-    [storeNameById],
+    [storeNameById, i18n],
   );
 
   const byStore = useMemo(() => {
     const m = new Map<string, PreviewStoreGroup>();
+    // The name the server gives any row of a store, for its whole group.
+    const serverStoreNames = new Map<string, string>();
+    for (const row of preview.perStoreDemand) {
+      if (row.storeName) serverStoreNames.set(row.storeId, row.storeName);
+    }
     for (const row of preview.perStoreDemand) {
       const sku = skuById.get(row.skuId);
       const unitPrice = estimatedPriceForSku(row.skuId);
-      const group = ensurePreviewStoreGroup(m, row.storeId, row.storeName);
+      const group = ensurePreviewStoreGroup(m, row.storeId, serverStoreNames.get(row.storeId));
       const supplier = preview.supplierBySku[row.skuId] ?? null;
       addPreviewLine(group, {
         id: `sku:${row.storeId}:${row.skuId}`,
         kind: 'sku',
         skuId: row.skuId,
-        name: sku ? productName(sku) : row.skuId.slice(0, 8),
-        nameParts: rowName(productNameParts, sku, row.skuId),
+        name: sku ? productName(sku) : i18n.t('common.unknownProduct'),
+        nameParts: rowName(productNameParts, sku, i18n.t('common.unknownProduct')),
         qty: row.qty,
         unit: currentUnitLabel(sku?.unit, row.qty),
         unitPrice,
@@ -2242,7 +2255,7 @@ export function PreviewSummaryCard({
           skuName={
             skuById.get(vendorPickerFor)
               ? productName(skuById.get(vendorPickerFor)!)
-              : vendorPickerFor.slice(0, 8)
+              : i18n.t('common.unknownProduct')
           }
           currentSupplierId={preview.supplierBySku[vendorPickerFor]?.id ?? null}
           onClose={() => setVendorPickerFor(null)}
@@ -2377,7 +2390,7 @@ export function RunSessionsCard({
   for (const s of sessions) storeCounts.set(s.storeId, (storeCounts.get(s.storeId) ?? 0) + 1);
   const storesLine = [...storeCounts.entries()]
     .map(([storeId, n]) => {
-      const name = storeById.get(storeId)?.name ?? storeId.slice(0, 8);
+      const name = storeById.get(storeId)?.name ?? i18n.t('common.unknownStore');
       return n > 1 ? `${name} ×${n}` : name;
     })
     .join(i18n.t('run.sessions.storeJoiner'));
@@ -2405,7 +2418,7 @@ export function RunSessionsCard({
       <ul id="run-sessions-list" className="flex flex-col border-t border-[var(--c-divider)]" role="list">
         {sessions.map((sessionRow) => {
           const storeName =
-            storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+            storeById.get(sessionRow.storeId)?.name ?? i18n.t('common.unknownStore');
           const submitter =
             sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
           return (

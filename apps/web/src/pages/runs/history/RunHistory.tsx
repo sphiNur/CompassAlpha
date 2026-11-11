@@ -42,6 +42,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
+import { useCurrency } from '../../../hooks/useCurrency';
 import type { useI18n, useProductNameParts } from '../../../hooks/useI18n';
 import { splitPaymentMethod } from '../lib/settlement';
 import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
@@ -185,7 +186,7 @@ export function RunHistoryPage({
   const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
   /** 2026-10-23: a day with several trips opens a day summary first. */
   const [dayFor, setDayFor] = useState<HistoryDay | null>(null);
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   const total =
     summaryTotal ?? String(runs.reduce((sum, run) => addMoney(sum, run.actualTotal), 0));
   const count = totalCount ?? runs.length;
@@ -374,7 +375,7 @@ export function RunHistoryPage({
                       <div className="flex flex-col gap-1">
                         {day.storeLines.map((line) => {
                           const storeName =
-                            storeById.get(line.storeId)?.name ?? line.storeId.slice(0, 8);
+                            storeById.get(line.storeId)?.name ?? i18n.t('common.unknownStore');
                           return (
                             <button
                               key={`${line.run.id}:${line.storeId}`}
@@ -519,7 +520,7 @@ function RunHistoryDaySheet({
       status: run.status,
       ...(initialStoreId ? { initialStoreId } : {}),
     });
-  const storeName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
+  const storeName = (id: string) => storeById.get(id)?.name ?? i18n.t('common.unknownStore');
   const rowClass =
     'flex w-full flex-col gap-1 border-b border-[var(--c-divider)] px-4 py-3 text-left last:border-b-0 active:bg-[var(--c-bg)]';
 
@@ -701,7 +702,7 @@ export function RunHistoryDetailSheet({
   const unitLabel = useUnitLabel();
   const dates = useDateFormat();
   // M1.21: org-wide currency for the headline label.
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
   const orgToday = localDateValue(new Date(), orgTimeZone);
   // 2026-07-06: super-admins (run.amend) may reopen a finished run to
@@ -908,7 +909,7 @@ export function RunHistoryDetailSheet({
   const headlineExpenses = activeStoreTotal?.expensesTotal ?? breakdown?.expensesTotal ?? '0';
   const headlineStoreCount = activeStoreId ? 1 : (breakdown?.perStore.size ?? 0);
   const activeStoreName = activeStoreId
-    ? (storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8))
+    ? (storeById.get(activeStoreId)?.name ?? i18n.t('common.unknownStore'))
     : null;
 
   return (
@@ -1021,7 +1022,7 @@ export function RunHistoryDetailSheet({
               </Chip>
               {storeOptions.map((storeTotal) => {
                 const storeName =
-                  storeById.get(storeTotal.storeId)?.name ?? storeTotal.storeId.slice(0, 8);
+                  storeById.get(storeTotal.storeId)?.name ?? i18n.t('common.unknownStore');
                 return (
                   <Chip
                     key={storeTotal.storeId}
@@ -1062,7 +1063,7 @@ export function RunHistoryDetailSheet({
                 const it = row.item;
                 const sku = skuById.get(it.skuId);
                 const nm = sku ? productNameParts(sku) : null;
-                const skuName = nm ? nm.primary : it.skuId.slice(0, 8);
+                const skuName = nm ? nm.primary : i18n.t('common.unknownProduct');
                 const lineTotal = row.lineTotal;
                 const perStoreSplits = row.perStoreSplits;
                 const displayedUnitPrice = activeStoreId
@@ -1142,7 +1143,7 @@ export function RunHistoryDetailSheet({
                         >
                           {activeStoreId
                             ? ''
-                            : `${storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8)} · `}
+                            : `${storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore')} · `}
                           {i18n.t(('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0])}
                           {sp.confirmReceivedQty != null
                             ? ' · ' +
@@ -1204,7 +1205,8 @@ export function RunHistoryDetailSheet({
                             ? i18n.t('run.history.amendAdded', {
                                 qty: formatQty(c.qty),
                                 unit: unitLabel(sku?.unit, c.qty),
-                                store: storeById.get(c.storeId)?.name ?? c.storeId.slice(0, 8),
+                                store:
+                                  storeById.get(c.storeId)?.name ?? i18n.t('common.unknownStore'),
                               })
                             : i18n.t('run.history.priceAfterReceipt', {
                                 from: c.from ? formatMoney(c.from) : '—',
@@ -1218,7 +1220,7 @@ export function RunHistoryDetailSheet({
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         {perStoreSplits.map((sp) => {
                           const storeName =
-                            storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8);
+                            storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore');
                           return (
                             <span
                               key={sp.storeId}
@@ -1268,7 +1270,7 @@ export function RunHistoryDetailSheet({
                         <div className="flex items-baseline justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-old-body font-semibold">
-                              {store?.name ?? ps.storeId.slice(0, 8)}
+                              {store?.name ?? i18n.t('common.unknownStore')}
                             </div>
                             <div className="text-old-label text-[var(--c-fg-muted)]">
                               {/* M3.52 i18n fix: was hardcoded "items"

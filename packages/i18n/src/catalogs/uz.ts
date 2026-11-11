@@ -347,7 +347,6 @@ export const uz = {
   'ops.history.decidedBy': '· {name}',
   'ops.history.skuCount': '{n} ta mahsulot',
   'ops.purge.runLabel': 'Xarid {date} #{n}',
-  'ops.purge.unknownStore': 'Nomaʼlum doʻkon',
   'ops.purge.deleteSessionTitle': 'Buyurtmani oʻchirish',
   'ops.purge.deleting': 'Oʻchirilmoqda…',
   'ops.purge.kind.orders': 'Buyurtmalar',
@@ -1376,6 +1375,12 @@ export const uz = {
   'run.action.finishBlocked.otherStores': 'Yakunlashni barcha doʻkonlar xaridori bajaradi',
   'run.action.finishBlocked.noPermission': 'Xaridni yakunlashga ruxsatingiz yoʻq',
   'common.listSeparator': ', ',
+  'common.unknownStore': 'Nomaʼlum doʻkon',
+  'common.unknownProduct': 'Nomaʼlum mahsulot',
+  'common.unknownSupplier': 'Nomaʼlum yetkazib beruvchi',
+  'common.unknownDish': 'Nomaʼlum taom',
+  'common.unknownCategory': 'Nomaʼlum kategoriya',
+  'common.unknownMember': 'Nomaʼlum aʼzo',
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Xaridni yozish',
   'offline.action.markUnavailable': 'Mavjud emas deb belgilash',
@@ -2218,6 +2223,7 @@ export const uz = {
   'inventory.reason.transfer_in': 'Koʻchirish (kirim)',
   'inventory.reason.transfer_out': 'Koʻchirish (chiqim)',
   'inventory.reason.adjustment': 'Tuzatish',
+  'inventory.reason.other': 'Boshqa',
   'auth.errors.inviteRevoked':
     'Bu taklif havolasi qaytarib olingan. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
   'auth.errors.inviteInviterNoLongerAuthorized':

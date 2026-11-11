@@ -366,7 +366,6 @@ export const en = {
   'ops.history.decidedBy': '· by {name}',
   'ops.history.skuCount': '{n, plural, one {# product} other {# products}}',
   'ops.purge.runLabel': 'Run {date} #{n}',
-  'ops.purge.unknownStore': 'Unknown store',
   'ops.purge.deleteSessionTitle': 'Delete order',
   'ops.purge.deleting': 'Deleting…',
   'ops.purge.kind.orders': 'Orders',
@@ -1435,6 +1434,14 @@ export const en = {
   'run.action.finishBlocked.otherStores': 'Finishing needs someone who buys for all stores',
   'run.action.finishBlocked.noPermission': 'You do not have permission to finish',
   'common.listSeparator': ', ',
+  // A name that is not at hand: its list is still loading, or the thing left
+  // it (review RUNWEB1-38 and others: the id's first characters showed).
+  'common.unknownStore': 'Unknown store',
+  'common.unknownProduct': 'Unknown product',
+  'common.unknownSupplier': 'Unknown supplier',
+  'common.unknownDish': 'Unknown dish',
+  'common.unknownCategory': 'Unknown category',
+  'common.unknownMember': 'Unknown member',
   // Two whole sentences in one message (CONF-18): Chinese puts no space after 。.
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Record purchase',
@@ -2307,6 +2314,7 @@ export const en = {
   'inventory.reason.transfer_in': 'Transfer in',
   'inventory.reason.transfer_out': 'Transfer out',
   'inventory.reason.adjustment': 'Adjustment',
+  'inventory.reason.other': 'Other',
   'auth.errors.inviteRevoked':
     'This invitation link was revoked. Ask your store manager for a new one.',
   'auth.errors.inviteInviterNoLongerAuthorized':

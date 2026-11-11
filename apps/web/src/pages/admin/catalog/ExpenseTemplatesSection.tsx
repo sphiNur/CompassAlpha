@@ -16,10 +16,10 @@ import {
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
-import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useI18n } from '../../../hooks/useI18n';
+import { useCurrency } from '../../../hooks/useCurrency';
 import {
   CatalogRowActions,
   CatalogRowHeader,
@@ -88,7 +88,7 @@ export function ExpenseTemplatesSection() {
     onError: errToast('common.errors.actionFailed'),
   });
 
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
 
   const editor = useEditorSheet(
     draft,

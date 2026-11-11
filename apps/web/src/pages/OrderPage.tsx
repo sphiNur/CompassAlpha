@@ -57,6 +57,7 @@ import {
   useProductNameParts,
   useUnitLabel,
 } from '../hooks/useI18n';
+import { useCurrency } from '../hooks/useCurrency';
 import type { ProductNameParts } from '../hooks/useI18n';
 import { useAnnounce } from '../hooks/useAnnounce';
 
@@ -109,7 +110,7 @@ export function OrderPage() {
   const unitLabel = useUnitLabel();
   const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
-  const orgCurrency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const orgCurrency = useCurrency();
   // COREWEB2-21: an order is dated on the org's calendar, not the phone's.
   const orgTimeZone = session?.member.timezone;
   // Language picker — accessible from every page's header so staff
@@ -2107,7 +2108,7 @@ function ReviewList({
   // last screen before Submit read "0.5 kg" while Approval showed "0.5 公斤".
   const unitLabel = useUnitLabel();
   // M1.21: org-wide currency for the estimate suffix.
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   // Pull price stats for the SKUs being reviewed so we can show an
   // estimated total (added 2026-05-05). The estimate goes by the last
   // price paid (2026-10-11). Stats might be null for new SKUs with no

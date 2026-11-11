@@ -62,7 +62,7 @@ import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
 import { useErrToast } from '../lib/errToast';
-import { formatQty, formatMoney } from '../lib/format';
+import { currencyOf, formatQty, formatMoney } from '../lib/format';
 import { useCanSeePrices } from '../lib/pricesVisible';
 import { itemProgressCounts, pendingExtrasOf } from './runs/lib/runProgress';
 import { otherStoreSkusOf } from './runs/types';
@@ -145,7 +145,7 @@ export function RunPage() {
   const dates = useDateFormat();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
-  const currency = session?.member.currency ?? 'UZS';
+  const currency = currencyOf(session);
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
 
@@ -1302,7 +1302,7 @@ export function RunPage() {
           return {
             text: i18n.t('run.action.waitingStoreConfirm', {
               stores: waiting.unconfirmed
-                .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
+                .map((id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'))
                 .join(i18n.t('common.listSeparator')),
             }),
             onClick: () => {},
@@ -1516,7 +1516,8 @@ export function RunPage() {
                 '\n' +
                 finishSummary.byStore
                   .map((ps) => {
-                    const storeName = storeById.get(ps.storeId)?.name ?? ps.storeId.slice(0, 8);
+                    const storeName =
+                      storeById.get(ps.storeId)?.name ?? i18n.t('common.unknownStore');
                     const mixed = ps.cash > 0 && ps.transfer > 0;
                     const tail = mixed
                       ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
@@ -1561,8 +1562,8 @@ export function RunPage() {
                   .map((sp) => {
                     const sku = skuById.get(sp.skuId);
                     return i18n.t('run.confirm.finish.receiptIssueLine', {
-                      sku: sku ? productName(sku) : sp.skuId.slice(0, 8),
-                      store: storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8),
+                      sku: sku ? productName(sku) : i18n.t('common.unknownProduct'),
+                      store: storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore'),
                       received: formatQty(sp.confirmReceivedQty ?? '0'),
                       qty: formatQty(sp.qty),
                     });
@@ -2263,7 +2264,7 @@ export function RunPage() {
             ejecting={ejectSession.isPending}
             onEject={(sessionRow) => {
               const storeName =
-                storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+                storeById.get(sessionRow.storeId)?.name ?? i18n.t('common.unknownStore');
               setConfirmAction({
                 kind: 'ejectSession',
                 sessionId: sessionRow.id,
@@ -2297,7 +2298,7 @@ export function RunPage() {
               })),
               perStoreDemand: (runDetailQuery.data.perStoreDemand ?? []).map((d) => ({
                 storeId: d.storeId,
-                storeName: storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8),
+                storeName: storeById.get(d.storeId)?.name ?? i18n.t('common.unknownStore'),
                 skuId: d.skuId,
                 qty: d.qty,
               })),
@@ -2439,7 +2440,7 @@ export function RunPage() {
             }
             onTopUpBuy={(item) => {
               const sku = skuById.get(item.skuId);
-              const skuName = sku ? productName(sku) : item.skuId.slice(0, 8);
+              const skuName = sku ? productName(sku) : i18n.t('common.unknownProduct');
               // An unavailable item comes back as pending (with the whole
               // demand) through the existing restore flow.
               if (item.status === 'unavailable') {
@@ -2652,7 +2653,7 @@ export function RunPage() {
                 setConfirmAction({
                   kind: 'undoPurchase',
                   skuId: d.skuId,
-                  skuName: sku ? productName(sku) : d.skuId.slice(0, 8),
+                  skuName: sku ? productName(sku) : i18n.t('common.unknownProduct'),
                   added: !!runDetailQuery.data?.items.find((it) => it.skuId === d.skuId)
                     ?.addedByPurchaser,
                 });
@@ -2726,12 +2727,21 @@ export function RunPage() {
               existingStoreIds.has(sp.storeId),
             );
             if (existingItem && (d.skuCostMode === 'separateExpense' || overlapsExistingStore)) {
-              const sku = skusQuery.data?.find((s) => s.id === d.skuId) ?? null;
+              const sku = skusQuery.data?.find((s) => s.id === d.skuId);
+              // Review RUNWEB1-38: the label is saved with the expense, and
+              // the id's first characters were saved when the product was
+              // not at hand. It was picked from this list, so that does
+              // not happen; if it ever does, nothing is saved.
+              if (!sku) {
+                haptic('error');
+                toast.error(i18n.t('common.errors.actionFailed'));
+                return;
+              }
               addExpense.mutate({
                 runId: d.runId,
                 expenseId: d.expenseId,
-                label: sku ? productName(sku) : d.skuId.slice(0, 8),
-                ...(sku?.unit ? { unitHint: sku.unit } : {}),
+                label: productName(sku),
+                ...(sku.unit ? { unitHint: sku.unit } : {}),
                 qty: d.actualQty,
                 unitPrice: d.unitPrice,
                 storeSplits,

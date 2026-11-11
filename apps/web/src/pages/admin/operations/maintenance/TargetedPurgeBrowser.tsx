@@ -159,7 +159,7 @@ export function TargetedPurgeBrowser() {
                 // can be deleted here; a row that can't says why, and has
                 // no red Delete that only refuses after a tap.
                 const blockText = sessionBlockText(i18n, sess.deleteBlock, attribLabel);
-                const label = `${sess.storeName ?? i18n.t('ops.purge.unknownStore')} · ${attribLabel}`;
+                const label = `${sess.storeName ?? i18n.t('common.unknownStore')} · ${attribLabel}`;
                 return (
                   <li key={sess.sessionId} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">

@@ -28,10 +28,10 @@ import {
   useToast,
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
-import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { normalizeQuery, rankNameLike } from '../../../lib/searchMatch';
 import { useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
+import { useCurrency } from '../../../hooks/useCurrency';
 import type { useI18n } from '../../../hooks/useI18n';
 import {
   toDisplayPrice,
@@ -179,7 +179,7 @@ export function PurchaseSheet({
   onUndo,
 }: PurchaseSheetProps) {
   const toast = useToast();
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   const unitLabel = useUnitLabel();
   const sku = draft ? skuById.get(draft.skuId) : null;
   const candidateStores = useMemo(() => [...storeById.values()], [storeById]);
@@ -640,7 +640,7 @@ export function AddItemSheet({
   onSubmit: (d: AddItemDraft) => void;
   submitting: boolean;
 }) {
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currency = useCurrency();
   // 2026-07-30 (flow review): the SKU picker rows showed the raw canonical
   // unit while every other run surface showed the localized label.
   const unitLabel = useUnitLabel();
@@ -1019,7 +1019,7 @@ export function AddItemSheet({
             <div className="rounded-[var(--r-utility)] bg-[color:color-mix(in_oklch,var(--c-warning)_10%,transparent)] px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
                 stores: [...selectedSkuExisting.storeIds]
-                  .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
+                  .map((id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'))
                   .join(', '),
               })}
             </div>

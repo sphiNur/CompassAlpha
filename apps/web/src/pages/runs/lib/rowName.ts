@@ -6,23 +6,24 @@ import type { ProductNameParts } from '../../../lib/productName';
 
 type Named = { names: Record<string, string> | null | undefined };
 
-const SHORT_ID_NAMES = new Map<string, ProductNameParts>();
+const UNKNOWN_NAMES = new Map<string, ProductNameParts>();
 
 /**
- * The product's name from `parts` (useProductNameParts), or the first
- * eight characters of its id while the catalog has not loaded it. Both
- * are the same object on every call, as PurchaseRow is memo()'d.
+ * The product's name from `parts` (useProductNameParts), or `unknown`
+ * ("unknown product") while the catalog has not loaded it. Review
+ * RUNWEB1-38: that was the first eight characters of the id. Both are the
+ * same object on every call, as PurchaseRow is memo()'d.
  */
 export function rowName(
   parts: (item: Named) => ProductNameParts,
   sku: Named | null | undefined,
-  skuId: string,
+  unknown: string,
 ): ProductNameParts {
   if (sku) return parts(sku);
-  let name = SHORT_ID_NAMES.get(skuId);
+  let name = UNKNOWN_NAMES.get(unknown);
   if (!name) {
-    name = { primary: skuId.slice(0, 8), secondary: null };
-    SHORT_ID_NAMES.set(skuId, name);
+    name = { primary: unknown, secondary: null };
+    UNKNOWN_NAMES.set(unknown, name);
   }
   return name;
 }

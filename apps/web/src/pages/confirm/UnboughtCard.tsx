@@ -41,7 +41,7 @@ export function UnboughtCard({
             >
               <div className="flex items-start justify-between gap-3">
                 <NameCell
-                  primary={nm ? nm.primary : it.skuId.slice(0, 8)}
+                  primary={nm ? nm.primary : i18n.t('common.unknownProduct')}
                   secondary={nm?.secondary}
                   primaryLang={nm?.primaryLang}
                   secondaryLang={nm?.secondaryLang}

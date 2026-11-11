@@ -339,7 +339,6 @@ export const ru = {
   'ops.history.skuCount':
     '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
   'ops.purge.runLabel': 'Закупка {date} №{n}',
-  'ops.purge.unknownStore': 'Неизвестный магазин',
   'ops.purge.deleteSessionTitle': 'Удалить заказ',
   'ops.purge.deleting': 'Удаление…',
   'ops.purge.kind.orders': 'Заказы',
@@ -1382,6 +1381,12 @@ export const ru = {
   'run.action.finishBlocked.otherStores': 'Завершить может только закупщик всех магазинов',
   'run.action.finishBlocked.noPermission': 'У вас нет права завершать закупку',
   'common.listSeparator': ', ',
+  'common.unknownStore': 'Неизвестный магазин',
+  'common.unknownProduct': 'Неизвестный товар',
+  'common.unknownSupplier': 'Неизвестный поставщик',
+  'common.unknownDish': 'Неизвестное блюдо',
+  'common.unknownCategory': 'Неизвестная категория',
+  'common.unknownMember': 'Неизвестный участник',
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Записать покупку',
   'offline.action.markUnavailable': 'Отметить «нет в наличии»',
@@ -2229,6 +2234,7 @@ export const ru = {
   'inventory.reason.transfer_in': 'Перемещение (приход)',
   'inventory.reason.transfer_out': 'Перемещение (расход)',
   'inventory.reason.adjustment': 'Корректировка',
+  'inventory.reason.other': 'Другое',
   'auth.errors.inviteRevoked':
     'Это приглашение отозвано. Попросите у управляющего магазином новую ссылку.',
   'auth.errors.inviteInviterNoLongerAuthorized':
