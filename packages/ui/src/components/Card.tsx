@@ -12,12 +12,18 @@ import { cn } from '../cn';
 export const surfaceClass = 'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline';
 
 /**
+ * Rows divided by hairlines, with no surface of their own: a list that
+ * already sits inside a card (UI-13: no card inside a card). Review
+ * ADM2-12 (2026-11-11).
+ */
+export const rowListClass = 'flex flex-col divide-y divide-[var(--c-divider)]';
+
+/**
  * UI-6 / UI-13 (2026-11-05): a list of rows is ONE card with hairline
  * dividers, not a stack of cards. Put this on the <ul>/<div> that holds
  * `SectionRow` / `ListRow` children (they carry no surface of their own).
  */
-export const rowGroupClass =
-  'flex flex-col overflow-hidden divide-y divide-[var(--c-divider)] ' + surfaceClass;
+export const rowGroupClass = `${rowListClass} overflow-hidden ${surfaceClass}`;
 
 interface CardProps extends HTMLAttributes<HTMLElement> {
   interactive?: boolean;

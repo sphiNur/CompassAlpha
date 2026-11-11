@@ -9,6 +9,7 @@ export {
   CardBody,
   CardFooter,
   surfaceClass,
+  rowListClass,
   rowGroupClass,
 } from './components/Card';
 export { pillButtonClass } from './components/pill';

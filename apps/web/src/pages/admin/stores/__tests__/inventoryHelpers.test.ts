@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { readDecimalText } from '@compass/ui';
 import {
   inventoryDraftChanged,
   knownMovementReason,
   signedDelta,
   skusWithoutLevel,
   sortLevelRows,
+  stockAfterWastage,
+  stocktakeDiff,
   stocktakePrefill,
   wastageMissing,
 } from '../inventoryHelpers';
@@ -54,6 +57,26 @@ describe('wastageMissing (CMP-INV-3)', () => {
   });
   test('a quantity and a reason can be saved', () => {
     expect(wastageMissing('1.5', 'spoiled', read)).toBeNull();
+  });
+});
+
+describe('stockAfterWastage / stocktakeDiff (review ADM2-37)', () => {
+  test('exact to the thousandth: 0.3 − 0.1 is 0.2, not 0.19999999999999998', () => {
+    expect(stockAfterWastage('0.300', '0,1', readDecimalText)).toBe('0.2');
+    expect(stocktakeDiff('0,3', '0.100', readDecimalText)).toBe('0.2');
+  });
+  test('below zero, and back to nothing', () => {
+    expect(stockAfterWastage('1.000', '1,5', readDecimalText)).toBe('-0.5');
+    expect(stocktakeDiff('2', '2.000', readDecimalText)).toBe('0');
+  });
+  test('the amount is read like every number field: grouped thousands too', () => {
+    // "1 000,5" — a space groups thousands, the comma is the decimal mark.
+    expect(stockAfterWastage('2000', '1 000,5', readDecimalText)).toBe('999.5');
+  });
+  test('nothing until the amount reads; a missing stored figure counts as 0', () => {
+    expect(stockAfterWastage('5', '', readDecimalText)).toBeNull();
+    expect(stockAfterWastage('5', 'abc', readDecimalText)).toBeNull();
+    expect(stocktakeDiff('1.5', '', readDecimalText)).toBe('1.5');
   });
 });
 

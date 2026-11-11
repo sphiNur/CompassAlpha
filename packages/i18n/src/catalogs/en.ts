@@ -1977,8 +1977,6 @@ export const en = {
   'dishes.empty.description':
     'Add menu items here. Recipes link each dish to its ingredient products.',
   'dishes.action.new': '+ New dish',
-  'dishes.action.showArchived': 'Show archived',
-  'dishes.action.hideArchived': 'Hide archived',
   'dishes.action.addIngredient': '+ Ingredient',
   'dishes.label.noIngredients': 'No recipe yet',
   'dishes.label.noIngredientsHint':

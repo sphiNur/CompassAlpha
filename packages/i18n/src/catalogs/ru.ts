@@ -1889,8 +1889,6 @@ export const ru = {
   'dishes.empty.description':
     'Добавьте блюда меню; рецепт связывает каждое блюдо с товарами-ингредиентами.',
   'dishes.action.new': '+ Новое блюдо',
-  'dishes.action.showArchived': 'Показать архивные',
-  'dishes.action.hideArchived': 'Скрыть архивные',
   'dishes.action.addIngredient': '+ Ингредиент',
   'dishes.label.noIngredients': 'Нет рецепта',
   'dishes.label.noIngredientsHint':

@@ -14,6 +14,7 @@ import {
   Badge,
   Banner,
   Button,
+  Checkbox,
   DataState,
   EmptyState,
   Field,
@@ -25,6 +26,8 @@ import {
   Sheet,
   Spinner,
   Switch,
+  cn,
+  rowGroupClass,
   useToast,
   QueryErrorBanner,
   readDecimalText,
@@ -55,6 +58,8 @@ import {
   signedDelta,
   skusWithoutLevel,
   sortLevelRows,
+  stockAfterWastage,
+  stocktakeDiff,
   stocktakePrefill,
   wastageMissing,
   type MovementReason,
@@ -201,15 +206,13 @@ export function StoresHomeSection({
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          // Review ADM2-12 (2026-11-11): the stores are rows of one card
+          // (UI-6), each a flat <button>: block elements (<header><h3>)
+          // inside a <button> are invalid HTML.
+          <ul className={rowGroupClass} role="list">
             {/* Org-level pseudo-store (only if there are admin/super-
                 admin members not in any store; otherwise skipped to
                 avoid noise). */}
-            {/* Tiles are flat <button>s rather than <Card> wrappers
-                because nesting block elements (<header><h3>) inside a
-                <button> is invalid HTML — Chrome's parser hoists them
-                out and splits the click target. We replicate the Card
-                visual instead. */}
             {memberCounts.orgLevel > 0 ? (
               <li>
                 {/* M1.21: store list row rhythm — py-3 matches member
@@ -221,7 +224,7 @@ export function StoresHomeSection({
                 <button
                   type="button"
                   onClick={() => onPickStore({ kind: 'org-level' })}
-                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
+                  className="press flex w-full items-start justify-between gap-3 px-4 py-2.5 text-left"
                 >
                   <span className="min-w-0">
                     <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
@@ -260,7 +263,7 @@ export function StoresHomeSection({
                         storeName: st.name,
                       })
                     }
-                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
+                    className="press flex w-full items-start justify-between gap-3 px-4 py-2.5 text-left"
                   >
                     <span className="min-w-0">
                       <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
@@ -595,8 +598,10 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
     () =>
       skusWithoutLevel([...skuById.values()], levelsQuery.data ?? [])
         .map((sku) => ({ id: sku.id, name: productName({ names: sku.names }) }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [skuById, levelsQuery.data, productName],
+        // Review ADM2-37 (2026-11-11): in the interface language, like the
+        // level rows (DX-INV-3); with no locale Chinese sorted by code point.
+        .sort((a, b) => a.name.localeCompare(b.name, i18n.locale)),
+    [skuById, levelsQuery.data, productName, i18n.locale],
   );
 
   return (
@@ -632,77 +637,78 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           description={i18n.t('inventory.empty.description')}
         />
       ) : (
-        <ul className="flex flex-col gap-1" role="list">
+        // Review ADM2-12 (2026-11-11): rows of one card (UI-6), not a card each.
+        <ul className={rowGroupClass} role="list">
           {sortLevelRows(rows, i18n.locale).map((r) => {
-              // DX-INV-3 (2026-11-01): negative stock stands out instead of
-              // fading — the whole row was at 70 % opacity, so the item
-              // that most needed a count was the hardest to see. Zero is
-              // shown plainly; negative gets a red edge and a badge.
-              const negative = r.onHandNum < 0;
-              return (
-                <li
-                  key={r.skuId}
-                  className={
-                    'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline px-3 py-2 ' +
-                    (negative ? 'ring-1 ring-[var(--c-danger)]' : 'ring-hairline')
-                  }
+            // DX-INV-3 (2026-11-01): negative stock stands out instead of
+            // fading — the whole row was at 70 % opacity, so the item
+            // that most needed a count was the hardest to see. Zero is
+            // shown plainly; negative gets a red edge and a badge.
+            const negative = r.onHandNum < 0;
+            return (
+              <li
+                key={r.skuId}
+                className={cn(
+                  'px-4 py-2.5',
+                  negative && 'ring-1 ring-inset ring-[var(--c-danger)]',
+                )}
+              >
+                {/* 2026-10-21: tap → recent movements sheet. */}
+                <button
+                  type="button"
+                  className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+                  onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
                 >
-                  {/* 2026-10-21: tap → recent movements sheet. */}
-                  <button
-                    type="button"
-                    className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
-                    onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="truncate text-old-body font-semibold">{r.name}</span>
+                    {negative ? (
+                      <Badge tone="danger" className="shrink-0 whitespace-nowrap">
+                        {i18n.t('inventory.badge.negative')}
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <span
+                    className={
+                      'shrink-0 text-old-body tabular-nums ' +
+                      (negative ? 'font-semibold text-[var(--c-danger-ink)]' : '')
+                    }
                   >
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="truncate text-old-body font-semibold">{r.name}</span>
-                      {negative ? (
-                        <Badge tone="danger" className="shrink-0 whitespace-nowrap">
-                          {i18n.t('inventory.badge.negative')}
-                        </Badge>
-                      ) : null}
-                    </span>
-                    <span
-                      className={
-                        'shrink-0 text-old-body tabular-nums ' +
-                        (negative ? 'font-semibold text-[var(--c-danger-ink)]' : '')
+                    {formatQty(r.onHand)} {unitLabel(r.unit, r.onHand)}
+                  </span>
+                </button>
+                {/* M3.17 (2026-05-16): inline pill buttons → Button
+                    size="sm" with pearl + danger-ghost variants.
+                    Stocktake is a neutral edit; wastage is a real
+                    reduce-stock action so the danger-ghost tone is
+                    appropriate (red text, no fill — same level as
+                    Archive elsewhere). */}
+                {canAdjust ? (
+                  <div className="mt-1 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="pearl"
+                      onClick={() =>
+                        setAction({
+                          kind: 'stocktake',
+                          skuId: r.skuId,
+                          current: r.onHand,
+                        })
                       }
                     >
-                      {formatQty(r.onHand)} {unitLabel(r.unit, r.onHand)}
-                    </span>
-                  </button>
-                  {/* M3.17 (2026-05-16): inline pill buttons → Button
-                      size="sm" with pearl + danger-ghost variants.
-                      Stocktake is a neutral edit; wastage is a real
-                      reduce-stock action so the danger-ghost tone is
-                      appropriate (red text, no fill — same level as
-                      Archive elsewhere). */}
-                  {canAdjust ? (
-                    <div className="mt-1 flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        onClick={() =>
-                          setAction({
-                            kind: 'stocktake',
-                            skuId: r.skuId,
-                            current: r.onHand,
-                          })
-                        }
-                      >
-                        {i18n.t('inventory.action.stocktake')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        onClick={() => setAction({ kind: 'wastage', skuId: r.skuId })}
-                      >
-                        {i18n.t('inventory.action.wastage')}
-                      </Button>
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
+                      {i18n.t('inventory.action.stocktake')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger-ghost"
+                      onClick={() => setAction({ kind: 'wastage', skuId: r.skuId })}
+                    >
+                      {i18n.t('inventory.action.wastage')}
+                    </Button>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -798,13 +804,12 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     // CLS-8 (2026-10-30, owner decision): allowed, but said out
                     // loud — stock that goes negative means the record was
                     // already off, and a stocktake is the fix.
-                    const onHand = Number(
-                      (levelsQuery.data ?? []).find((l) => l.skuId === action.skuId)?.onHand ?? 0,
-                    );
-                    const after = onHand - Number(draftWasteQty.replace(',', '.'));
-                    if (after < 0) {
+                    const onHand =
+                      (levelsQuery.data ?? []).find((l) => l.skuId === action.skuId)?.onHand ?? '0';
+                    const after = stockAfterWastage(onHand, draftWasteQty, readDecimalText);
+                    if (after !== null && Number(after) < 0) {
                       nativeConfirm(
-                        i18n.t('inventory.confirm.wastageNegative', { after: formatQty(String(after)) }),
+                        i18n.t('inventory.confirm.wastageNegative', { after: formatQty(after) }),
                         save,
                       );
                     } else {
@@ -880,24 +885,21 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                       difference" — now it is shown before saving. */}
                   {countProblem === null && draftTarget.trim() !== ''
                     ? (() => {
-                        const read = readDecimalText(draftTarget);
-                        if (!read.ok || read.value === '') return null;
-                        const milli =
-                          Math.round(Number(read.value) * 1000) -
-                          Math.round(Number(action.current) * 1000);
-                        if (!Number.isFinite(milli)) return null;
+                        const diff = stocktakeDiff(draftTarget, action.current, readDecimalText);
+                        if (diff === null) return null;
                         const unit = skuById.get(action.skuId)?.unit ?? '';
-                        const abs = String(Math.abs(milli) / 1000);
+                        const negative = diff.startsWith('-');
+                        const abs = negative ? diff.slice(1) : diff;
                         return (
                           <span
                             className={`mt-1 block text-old-label tabular-nums ${
-                              milli === 0 ? 'text-[var(--c-fg-muted)]' : 'text-[var(--c-fg)]'
+                              diff === '0' ? 'text-[var(--c-fg-muted)]' : 'text-[var(--c-fg)]'
                             }`}
                           >
-                            {milli === 0
+                            {diff === '0'
                               ? i18n.t('inventory.sheet.stocktake.noDiff')
                               : i18n.t('inventory.sheet.stocktake.diff', {
-                                  diff: `${milli > 0 ? '+' : '−'}${formatQty(abs)} ${unitLabel(unit, abs)}`.trim(),
+                                  diff: `${negative ? '−' : '+'}${formatQty(abs)} ${unitLabel(unit, abs)}`.trim(),
                                 })}
                           </span>
                         );
@@ -964,16 +966,15 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             ) : (movementsQuery.data ?? []).length === 0 ? (
               <EmptyState title={i18n.t('inventory.movements.empty')} />
             ) : (
-              <ul className="flex flex-col gap-1" role="list">
+              // Review ADM2-12 (2026-11-11): rows of one white card, not grey
+              // cards (UI-6, UI-13).
+              <ul className={rowGroupClass} role="list">
                 {(movementsQuery.data ?? []).map((m) => {
                   const known = knownMovementReason(m.reason);
                   const { sign, abs } = signedDelta(m.delta);
                   const unit = skuById.get(movementsFor.skuId)?.unit ?? '';
                   return (
-                    <li
-                      key={m.id}
-                      className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
-                    >
+                    <li key={m.id} className="px-4 py-2.5">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="truncate text-old-body font-medium">
                           {known ? i18n.t(MOVEMENT_REASON_LABEL[known]) : m.reason}
@@ -1324,7 +1325,7 @@ function StoreCloneRolesSheet({
     () => new Set(session?.adminStoreIds ?? []),
     [session?.adminStoreIds],
   );
-  const sessionStores = session?.stores ?? [];
+  const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   const open = !!target;
 
   const [sourceStoreId, setSourceStoreId] = useState('');
@@ -1419,22 +1420,14 @@ function StoreCloneRolesSheet({
               </Select>
             )}
           </Field>
-          <label className="press flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-5 w-5"
-              checked={includeMembers}
-              onChange={(e) => setIncludeMembers(e.target.checked)}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                {i18n.t('admin.clone.alsoMembers')}
-              </div>
-              <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('admin.clone.alsoMembersHint')}
-              </p>
-            </div>
-          </label>
+          {/* Review ADM2-12 / ADM2-33 (2026-11-11): the kit checkbox, not a
+              native box on a grey card. */}
+          <Checkbox
+            checked={includeMembers}
+            onChange={(e) => setIncludeMembers(e.target.checked)}
+            label={i18n.t('admin.clone.alsoMembers')}
+            hint={i18n.t('admin.clone.alsoMembersHint')}
+          />
           <Banner tone="info" title={i18n.t('admin.clone.whatTitle')}>
             {i18n.t('admin.clone.whatBody', { store: target.targetStoreName })}
           </Banner>

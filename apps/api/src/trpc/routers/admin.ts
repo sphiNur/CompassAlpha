@@ -39,6 +39,7 @@ import {
   noControlChars,
 } from '@compass/contracts';
 import { TAX_RATE_MESSAGE, TAX_RATE_RE, taxRateProblem } from '@compass/contracts/limits';
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
@@ -5379,31 +5380,32 @@ export const adminRouter = router({
           requireOnlyTestSessions: true,
         });
 
-        // Per-session: aggregate qty across contributors per SKU.
-        const skuTotalsBySession = new Map<string, Map<string, number>>();
+        // Per-session: aggregate qty across contributors per SKU, in exact
+        // thousandths (review ADM2-30: these were float sums).
+        const skuTotalsBySession = new Map<string, Map<string, bigint>>();
         const sessionsWhereImAuthor = new Set<string>();
         for (const c of contributors) {
-          const v = Number(c.qty);
-          const m = skuTotalsBySession.get(c.sessionId) ?? new Map<string, number>();
-          if (v > 0) {
-            m.set(c.skuId, (m.get(c.skuId) ?? 0) + v);
+          const v = qtyMilliOrZero(c.qty);
+          const m = skuTotalsBySession.get(c.sessionId) ?? new Map<string, bigint>();
+          if (v > 0n) {
+            m.set(c.skuId, (m.get(c.skuId) ?? 0n) + v);
             if (c.contributorMemberId === callerMemberId) {
               sessionsWhereImAuthor.add(c.sessionId);
             }
           }
           skuTotalsBySession.set(c.sessionId, m);
         }
-        const aggregateBySession = new Map<string, { itemCount: number; totalQty: number }>();
+        const aggregateBySession = new Map<string, { itemCount: number; totalMilli: bigint }>();
         for (const [sessionId, skuTotals] of skuTotalsBySession) {
           let count = 0;
-          let total = 0;
+          let total = 0n;
           for (const v of skuTotals.values()) {
-            if (v > 0) {
+            if (v > 0n) {
               count += 1;
               total += v;
             }
           }
-          aggregateBySession.set(sessionId, { itemCount: count, totalQty: total });
+          aggregateBySession.set(sessionId, { itemCount: count, totalMilli: total });
         }
 
         return (
@@ -5411,7 +5413,7 @@ export const adminRouter = router({
             .map((r) => {
               const attribMemberId = r.submittedByMemberId ?? r.initiatedByMemberId;
               const m = attribMemberId ? memberById.get(attribMemberId) : null;
-              const agg = aggregateBySession.get(r.id) ?? { itemCount: 0, totalQty: 0 };
+              const agg = aggregateBySession.get(r.id) ?? { itemCount: 0, totalMilli: 0n };
               return {
                 sessionId: r.id,
                 storeId: r.storeId,
@@ -5426,7 +5428,12 @@ export const adminRouter = router({
                 status: r.status,
                 runId: r.runId,
                 itemCount: agg.itemCount,
-                totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
+                /**
+                 * @deprecated Kilos, litres and pieces added together (walkthrough
+                 * F14): no screen here reads it. Kept, exact, for other clients
+                 * until they are checked (review ADM2-30).
+                 */
+                totalQty: milliQty(agg.totalMilli),
                 updatedAt: r.updatedAt.toISOString(),
                 deleteBlock: deleteBlocks.get(r.id) ?? null,
               };
@@ -5559,7 +5566,7 @@ export const adminRouter = router({
         // the user's local calendar for any UZ-tenant request between
         // 00:00 and 05:00 UTC.
         const tz = ctx.session!.orgTimezone;
-        const sevenDaysOrFrom =
+        const fromDate =
           input?.fromDate ?? dateInTz(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), tz);
         const toDate = input?.toDate ?? todayInTz(tz);
 
@@ -5589,7 +5596,7 @@ export const adminRouter = router({
               FROM read_model.order_sessions_v
               WHERE org_id = ${orgId}
                 AND status IN ('submitted','approved','rejected','in_run','archived')
-                AND order_date >= ${sevenDaysOrFrom}
+                AND order_date >= ${fromDate}
                 AND order_date <= ${toDate}
                 ${input?.storeId ? sql`AND store_id = ${input.storeId}` : sql``}
                 ${historyStoreFilter}
@@ -5641,28 +5648,43 @@ export const adminRouter = router({
         const storeById = new Map(stores.map((st) => [st.id, st]));
         const memberById = new Map(members.map((m) => [m.memberId, m.displayName]));
 
-        // Per-session: contributor → SKUs[] → qty.
-        const skuTotalsBySession = new Map<string, Map<string, number>>();
+        // Per-session: contributor → SKUs[] → qty, in exact thousandths
+        // (review ADM2-30: these were float sums).
+        const skuTotalsBySession = new Map<string, Map<string, bigint>>();
         const contributorsBySession = new Map<
           string,
-          Map<string, Array<{ skuId: string; qty: number }>>
+          Map<string, Array<{ skuId: string; milli: bigint }>>
         >();
         for (const it of items) {
-          const v = Number(it.qty);
-          if (v <= 0) continue;
-          const tot = skuTotalsBySession.get(it.sessionId) ?? new Map<string, number>();
-          tot.set(it.skuId, (tot.get(it.skuId) ?? 0) + v);
+          const v = qtyMilliOrZero(it.qty);
+          if (v <= 0n) continue;
+          const tot = skuTotalsBySession.get(it.sessionId) ?? new Map<string, bigint>();
+          tot.set(it.skuId, (tot.get(it.skuId) ?? 0n) + v);
           skuTotalsBySession.set(it.sessionId, tot);
-          const cmap = contributorsBySession.get(it.sessionId) ?? new Map();
+          const cmap =
+            contributorsBySession.get(it.sessionId) ??
+            new Map<string, Array<{ skuId: string; milli: bigint }>>();
           const arr = cmap.get(it.contributorMemberId) ?? [];
-          arr.push({ skuId: it.skuId, qty: v });
+          arr.push({ skuId: it.skuId, milli: v });
           cmap.set(it.contributorMemberId, arr);
           contributorsBySession.set(it.sessionId, cmap);
         }
+        /**
+         * @deprecated the `totalQty` fields below add kilos, litres and pieces
+         * together (walkthrough F14); no screen here reads them. Kept, exact,
+         * for other clients until they are checked (review ADM2-30).
+         */
+        const crossUnitTotal = (milli: Iterable<bigint>): number => {
+          let sum = 0n;
+          for (const m of milli) sum += m;
+          return Number(milliQty(sum));
+        };
 
         return rawSessions.map((sess) => {
-          const totals = skuTotalsBySession.get(sess.id) ?? new Map();
-          const contribs = contributorsBySession.get(sess.id) ?? new Map();
+          const totals = skuTotalsBySession.get(sess.id) ?? new Map<string, bigint>();
+          const contribs =
+            contributorsBySession.get(sess.id) ??
+            new Map<string, Array<{ skuId: string; milli: bigint }>>();
           const submittedAt = sess.submitted_at ? new Date(sess.submitted_at) : null;
           const decidedAt = sess.decided_at ? new Date(sess.decided_at) : null;
           const reviewMinutes =
@@ -5689,15 +5711,12 @@ export const adminRouter = router({
             runId: sess.run_id,
             reviewMinutes,
             skuCount: totals.size,
-            totalQty: [...totals.values()].reduce((a, b) => a + b, 0),
+            totalQty: crossUnitTotal(totals.values()),
             contributors: [...contribs.entries()].map(([memberId, lines]) => ({
               memberId,
               displayName: memberById.get(memberId) ?? null,
               skuCount: lines.length,
-              totalQty: (lines as Array<{ skuId: string; qty: number }>).reduce(
-                (s2, l) => s2 + l.qty,
-                0,
-              ),
+              totalQty: crossUnitTotal(lines.map((l) => l.milli)),
             })),
           };
         });

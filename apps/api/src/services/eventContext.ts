@@ -20,6 +20,11 @@ export interface RecentEventContext {
   runIndex: number | null;
   /** The product a payload names (skuId), as its names per language. */
   skuNames: Record<string, string> | null;
+  /**
+   * That product's unit, so the quantity reads "Rice 3.5 kg" (review
+   * ADM2-43: it read "Rice 3.5").
+   */
+  skuUnit: string | null;
   /** A payload quantity, as stored. */
   qty: string | null;
 }
@@ -84,7 +89,7 @@ export async function recentEventContext(
     : [];
   const skus = skuIds.size
     ? await tx
-        .select({ id: s.skus.id, names: s.skus.names })
+        .select({ id: s.skus.id, names: s.skus.names, unit: s.skus.unit })
         .from(s.skus)
         .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, [...skuIds])))
     : [];
@@ -92,7 +97,7 @@ export async function recentEventContext(
   const orderById = new Map(orders.map((o) => [o.id, o]));
   const runById = new Map(runs.map((r) => [r.id, r]));
   const storeName = new Map(stores.map((st) => [st.id, st.name]));
-  const skuNames = new Map(skus.map((k) => [k.id, k.names as Record<string, string>]));
+  const skuById = new Map(skus.map((k) => [k.id, k]));
 
   const out = new Map<string, RecentEventContext>();
   for (const r of rows) {
@@ -100,6 +105,7 @@ export async function recentEventContext(
     const run = r.streamType === 'run' ? runById.get(r.streamId) : undefined;
     const payloadStore = payloadString(r.payload, 'storeId');
     const sku = payloadString(r.payload, 'skuId');
+    const skuRow = sku ? skuById.get(sku) : undefined;
     out.set(r.id, {
       storeName:
         (payloadStore ? storeName.get(payloadStore) : undefined) ??
@@ -108,7 +114,8 @@ export async function recentEventContext(
       orderDate: order?.orderDate ?? null,
       runDate: run?.runDate ?? null,
       runIndex: run ? run.runIndex : null,
-      skuNames: sku ? (skuNames.get(sku) ?? null) : null,
+      skuNames: (skuRow?.names as Record<string, string> | undefined) ?? null,
+      skuUnit: skuRow?.unit ?? null,
       qty: payloadString(r.payload, 'qty'),
     });
   }

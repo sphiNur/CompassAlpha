@@ -750,6 +750,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
       runDate: null,
       runIndex: null,
       skuNames: { en: 'Rice' },
+      skuUnit: 'kg',
       qty: '3.500',
     });
   });
