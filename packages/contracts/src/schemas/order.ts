@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CANONICAL_UNITS, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '../limits';
+import { CANONICAL_UNITS, QTY_TEXT_RE, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '../limits';
 import {
   DateStringSchema,
   DecimalStringSchema,
@@ -142,7 +142,7 @@ export const SessionExtraItemSchema = z.object({
   name: z.string().min(1).max(200),
   qty: z
     .string()
-    .regex(/^\d+(\.\d{1,3})?$/, 'common.errors.invalidDecimal')
+    .regex(QTY_TEXT_RE, 'common.errors.invalidDecimal')
     .refine((v) => Number(v) <= ORDER_QTY_MAX, { message: 'order.errors.qtyTooLarge' }),
   // M3.34: tightened from free-text to canonical enum.
   unit: CanonicalUnitSchema,

@@ -1,6 +1,12 @@
 /**
  * Pure helpers for Admin → Stores → Inventory (2026-10-21).
  */
+import type { CatalogKey } from '@compass/i18n';
+import {
+  WASTAGE_QTY_MESSAGE,
+  wastageQtyProblem,
+  type WastageQtyProblem,
+} from '@compass/contracts/limits';
 import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts/quantity';
 import { toQtyInput } from '../../../lib/format';
 
@@ -47,18 +53,33 @@ export function signedDelta(delta: string): { sign: '+' | '-' | ''; abs: string 
   return { sign: n > 0 ? '+' : '-', abs: String(Math.abs(n)) };
 }
 
+/** What a wastage entry still lacks or gets wrong; see wastageMissing. */
+export type WastageGap = 'qty' | WastageQtyProblem | 'note';
+
+/** The line above Save for each gap. */
+export const WASTAGE_GAP_MESSAGE = {
+  qty: 'inventory.sheet.wastage.needQty',
+  note: 'inventory.errors.wastageNeedsNote',
+  ...WASTAGE_QTY_MESSAGE,
+} as const satisfies Record<WastageGap, CatalogKey>;
+
 /**
  * CMP-INV-3 (2026-10-31): what a wastage entry still lacks, or null when
  * it can be saved. Save stayed tappable on an empty form and only then
  * said what was wrong; now it is greyed out and this reason is shown.
+ * Review CONF-10 (2026-11-11): an amount is checked by the server's own
+ * rule (wastageQtyProblem); 0.0001 and 1e9 passed here and were refused
+ * after Save.
  */
 export function wastageMissing(
   qtyText: string,
   note: string,
   read: DecimalReader,
-): 'qty' | 'note' | null {
+): WastageGap | null {
   const qty = read(qtyText);
-  if (!qty.ok || qty.value === '' || !(Number(qty.value) > 0)) return 'qty';
+  if (qty.ok && qty.value === '') return 'qty';
+  const problem = qty.ok ? wastageQtyProblem(qty.value) : 'format';
+  if (problem) return problem;
   if (!note.trim()) return 'note';
   return null;
 }

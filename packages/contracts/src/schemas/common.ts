@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ORDER_QTY_MAX } from '../limits';
+import { ORDER_QTY_MAX, QTY_TEXT_RE } from '../limits';
 
 // Zod-free limits live in ../limits so the web can import them without
 // pulling zod into its main chunk (P-5); re-exported for the barrel.
@@ -125,7 +125,7 @@ export const OrderQtySchema = DecimalStringSchema.refine((v) => Math.abs(Number(
  */
 export const PositiveDecimalStringSchema = z
   .string()
-  .regex(/^\d+(\.\d{1,3})?$/, 'common.errors.positiveDecimal')
+  .regex(QTY_TEXT_RE, 'common.errors.positiveDecimal')
   .refine((s) => Number(s) > 0, { message: 'common.errors.positiveDecimal' });
 
 export const PaginationSchema = z.object({

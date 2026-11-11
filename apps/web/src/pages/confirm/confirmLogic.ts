@@ -5,6 +5,7 @@
  */
 import type { CatalogKey } from '@compass/i18n';
 import { readDecimalText } from '@compass/ui';
+import { QTY_TEXT_RE } from '@compass/contracts/limits';
 
 export type ConfirmDecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
@@ -171,7 +172,7 @@ export function checkReceivedQty(
   // DX-DLV-07 (2026-11-01): "not a number" and "too many decimals" are
   // different mistakes; one sentence ("0 to 10") covered both.
   if (!/^\d+(\.\d+)?$/.test(trimmed)) return { ok: false, reason: 'invalid' };
-  if (!/^\d+(\.\d{1,3})?$/.test(trimmed)) return { ok: false, reason: 'tooPrecise' };
+  if (!QTY_TEXT_RE.test(trimmed)) return { ok: false, reason: 'tooPrecise' };
   if (Number(trimmed) - Number(splitQty) > 1e-6) return { ok: false, reason: 'exceeds' };
   // DLV-12: all of it arrived — that is "ok", not "short".
   if (status === 'short' && Number(splitQty) - Number(trimmed) <= 1e-6) {

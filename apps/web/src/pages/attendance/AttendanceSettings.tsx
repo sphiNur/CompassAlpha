@@ -8,6 +8,7 @@
  */
 import { useState } from 'react';
 import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
+import { settlementMoneyProblem } from '@compass/contracts/limits';
 import {
   Button,
   DataState,
@@ -255,7 +256,8 @@ function WageField({
   const shown = current ? String(Number(current)) : '';
   const [text, setText] = useState(shown);
   const value = normalizeDecimalInput(text);
-  const valid = /^\d{1,12}(\.\d{1,2})?$/.test(value);
+  // Review CONF-10: the server's rule for a daily wage (SettlementMoneySchema).
+  const valid = settlementMoneyProblem(value) === null;
   const save = trpc.attendance.payRateSet.useMutation({
     onSuccess: () => {
       haptic('success');

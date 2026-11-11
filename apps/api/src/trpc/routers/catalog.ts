@@ -1,7 +1,11 @@
 import { asc, eq, and, inArray, isNull } from 'drizzle-orm';
-import { z } from 'zod';
 import { schema as s } from '@compass/db';
-import { SkuListInputSchema } from '@compass/contracts';
+import {
+  CatalogStoresInputSchema,
+  SkuListInputSchema,
+  SkuPriceStatsInputSchema,
+  SupplierListInputSchema,
+} from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import {
   canSeePrices,
@@ -32,17 +36,14 @@ export const catalogRouter = router({
       const rows = await tx
         .select()
         .from(s.skus)
+        // Review CONF-25: one condition list; `and` skips the undefined
+        // ones (no category asked for, archived products wanted).
         .where(
-          input.categoryId
-            ? and(
-                eq(s.skus.orgId, ctx.session!.orgId),
-                eq(s.skus.isArchived, input.includeArchived ? s.skus.isArchived : false),
-                eq(s.skus.categoryId, input.categoryId),
-              )
-            : and(
-                eq(s.skus.orgId, ctx.session!.orgId),
-                eq(s.skus.isArchived, input.includeArchived ? s.skus.isArchived : false),
-              ),
+          and(
+            eq(s.skus.orgId, ctx.session!.orgId),
+            input.categoryId ? eq(s.skus.categoryId, input.categoryId) : undefined,
+            input.includeArchived ? undefined : eq(s.skus.isArchived, false),
+          ),
         )
         // DX-ORD-6 (2026-11-01): the order the admin set, then code — rows
         // came back in whatever order Postgres found them.
@@ -62,95 +63,88 @@ export const catalogRouter = router({
     });
   }),
 
-  stores: authedProcedure
-    .input(
-      z
-        .object({
-          permission: z
-            // 'finance': the stores finance reports cover (HIS-19).
-            .enum(['prices.view', 'run.purchase', 'users.manage', 'settlement.record', 'finance'])
-            .optional(),
-        })
-        .optional(),
-    )
-    .query(async ({ ctx, input }) => {
-      return ctx.withOrg(async (tx) => {
-        // Store names are themselves tenant data. Resolve scope for the
-        // concrete consumer instead of exposing every org store to any signed-
-        // in employee (especially important for the financial History page).
-        let allowedStoreIds: string[] | null;
-        if (input?.permission === 'finance') {
-          allowedStoreIds = await financeStoreIds(tx, ctx.session!);
-        } else if (input?.permission) {
-          allowedStoreIds = await getActorStoreIdsForPermission(
-            tx,
-            ctx.session!.memberId,
-            input.permission,
-            ctx.session!.permissions,
-          );
-        } else {
-          allowedStoreIds = await getActorStoreIds(
-            tx,
-            ctx.session!.memberId,
-            ctx.session!.permissions,
-          );
+  stores: authedProcedure.input(CatalogStoresInputSchema).query(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      // Store names are themselves tenant data. Resolve scope for the
+      // concrete consumer instead of exposing every org store to any signed-
+      // in employee (especially important for the financial History page).
+      let allowedStoreIds: string[] | null;
+      if (input?.permission === 'finance') {
+        allowedStoreIds = await financeStoreIds(tx, ctx.session!);
+      } else if (input?.permission) {
+        allowedStoreIds = await getActorStoreIdsForPermission(
+          tx,
+          ctx.session!.memberId,
+          input.permission,
+          ctx.session!.permissions,
+        );
+      } else {
+        allowedStoreIds = await getActorStoreIds(
+          tx,
+          ctx.session!.memberId,
+          ctx.session!.permissions,
+        );
+      }
+      // Settlement routes require BOTH an effective permission and store
+      // assignment (except the persisted org-admin bypass). Keep this
+      // picker query identical to that write boundary: a custom global
+      // settlement grant must not make unassigned stores appear selectable.
+      if (input?.permission === 'settlement.record') {
+        const assignedStoreIds = await getActorStoreIds(
+          tx,
+          ctx.session!.memberId,
+          ctx.session!.permissions,
+        );
+        if (assignedStoreIds !== null) {
+          const assigned = new Set(assignedStoreIds);
+          allowedStoreIds =
+            allowedStoreIds === null
+              ? assignedStoreIds
+              : allowedStoreIds.filter((storeId) => assigned.has(storeId));
         }
-        // Settlement routes require BOTH an effective permission and store
-        // assignment (except the persisted org-admin bypass). Keep this
-        // picker query identical to that write boundary: a custom global
-        // settlement grant must not make unassigned stores appear selectable.
-        if (input?.permission === 'settlement.record') {
-          const assignedStoreIds = await getActorStoreIds(
-            tx,
-            ctx.session!.memberId,
-            ctx.session!.permissions,
-          );
-          if (assignedStoreIds !== null) {
-            const assigned = new Set(assignedStoreIds);
-            allowedStoreIds =
-              allowedStoreIds === null
-                ? assignedStoreIds
-                : allowedStoreIds.filter((storeId) => assigned.has(storeId));
-          }
-        }
-        if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
-        return tx.query.stores.findMany({
-          where: (st) =>
-            and(
-              eq(st.orgId, ctx.session!.orgId),
-              ...(allowedStoreIds === null ? [] : [inArray(st.id, allowedStoreIds)]),
-              ...(input?.permission === 'settlement.record'
-                ? [eq(st.isActive, true), isNull(st.deletedAt)]
-                : []),
-            ),
-          orderBy: (st, { asc }) => asc(st.sortIndex),
-        });
+      }
+      if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+      return tx.query.stores.findMany({
+        where: (st) =>
+          and(
+            eq(st.orgId, ctx.session!.orgId),
+            ...(allowedStoreIds === null ? [] : [inArray(st.id, allowedStoreIds)]),
+            ...(input?.permission === 'settlement.record'
+              ? [eq(st.isActive, true), isNull(st.deletedAt)]
+              : []),
+          ),
+        orderBy: (st, { asc }) => asc(st.sortIndex),
       });
-    }),
+    });
+  }),
 
   // 2026-10-21 audit CA-05 / CA-40: this is the supplier read for run
   // screens (admin.supplierList needs users.manage, which a purchaser
   // lacks). Archived suppliers are hidden unless asked for, so pickers
   // stop offering them; `includeArchived` lets an edit form still name a
   // supplier that was archived after it was recorded.
-  suppliers: authedProcedure
-    .input(z.object({ includeArchived: z.boolean().default(false) }).optional())
-    .query(async ({ ctx, input }) => {
-      const includeArchived = input?.includeArchived ?? false;
-      return ctx.withOrg(async (tx) => {
-        const rows = await tx.query.suppliers.findMany({
-          where: (sup, { eq: eq2, and: and2 }) =>
-            includeArchived
-              ? eq2(sup.orgId, ctx.session!.orgId)
-              : and2(eq2(sup.orgId, ctx.session!.orgId), eq2(sup.isArchived, false)),
-          orderBy: (sup, { asc }) => asc(sup.name),
-        });
-        // ORD-12 (2026-10-30): staff get names only, not phone / Telegram /
-        // address / notes.
-        if (canSeePrices(ctx.session)) return rows;
-        return rows.map((r) => ({ ...r, contactPhone: null, contactTg: null, address: null, notes: null }));
+  suppliers: authedProcedure.input(SupplierListInputSchema).query(async ({ ctx, input }) => {
+    const includeArchived = input?.includeArchived ?? false;
+    return ctx.withOrg(async (tx) => {
+      const rows = await tx.query.suppliers.findMany({
+        where: (sup, { eq: eq2, and: and2 }) =>
+          includeArchived
+            ? eq2(sup.orgId, ctx.session!.orgId)
+            : and2(eq2(sup.orgId, ctx.session!.orgId), eq2(sup.isArchived, false)),
+        orderBy: (sup, { asc }) => asc(sup.name),
       });
-    }),
+      // ORD-12 (2026-10-30): staff get names only, not phone / Telegram /
+      // address / notes.
+      if (canSeePrices(ctx.session)) return rows;
+      return rows.map((r) => ({
+        ...r,
+        contactPhone: null,
+        contactTg: null,
+        address: null,
+        notes: null,
+      }));
+    });
+  }),
 
   /**
    * Per-SKU price statistics from `inventory.price_history` (added 2026-05-05).
@@ -174,42 +168,32 @@ export const catalogRouter = router({
    * keep the OrderPage review-sheet payload small). Omitted = all SKUs
    * with at least one observation in 30 days.
    */
-  skuPriceStats: authedProcedure
-    .input(
-      z
-        .object({
-          skuIds: z.array(z.string().uuid()).max(500).optional(),
-          /** D6: the store the estimate is shown for (order page). */
-          storeId: z.string().uuid().optional(),
-        })
-        .optional(),
-    )
-    .query(async ({ ctx, input }) => {
-      // HIS-4 / ORD-12 (2026-10-30): no prices for members without
-      // prices.view; an empty list keeps their screens working.
-      if (!canSeePrices(ctx.session)) return [];
-      return ctx.withOrg(async (tx) => {
-        // D6 (2026-10-31): prices.view as it is effective (store roles,
-        // overrides) — in the named store, else in any store.
-        const priceStores = await priceStoreIds(tx, ctx.session!);
-        const visible = input?.storeId
-          ? pricesVisibleFor(priceStores, [input.storeId])
-          : pricesVisibleAnywhere(priceStores);
-        if (!visible) return [];
-        // 2026-07-30: the 30-line last/avg7d/avg30d accumulator that used
-        // to live inline moved to services/priceStats.ts so
-        // order.pendingList can put the SAME figure on approval cards.
-        // Two copies of this arithmetic would drift.
-        const stats = await loadSkuPriceStats(tx, ctx.session!.orgId, input?.skuIds);
-        return [...stats.values()].map((a) => ({
-          skuId: a.skuId,
-          // Already rounded to cents (ORD-01).
-          lastPrice: a.lastPrice,
-          lastObservedAt: a.lastObservedAt ? a.lastObservedAt.toISOString() : null,
-          avg7d: a.avg7d != null ? a.avg7d.toFixed(2) : null,
-          avg30d: a.avg30d != null ? a.avg30d.toFixed(2) : null,
-          observations30d: a.observations30d,
-        }));
-      });
-    }),
+  skuPriceStats: authedProcedure.input(SkuPriceStatsInputSchema).query(async ({ ctx, input }) => {
+    // HIS-4 / ORD-12 (2026-10-30): no prices for members without
+    // prices.view; an empty list keeps their screens working.
+    if (!canSeePrices(ctx.session)) return [];
+    return ctx.withOrg(async (tx) => {
+      // D6 (2026-10-31): prices.view as it is effective (store roles,
+      // overrides) — in the named store, else in any store.
+      const priceStores = await priceStoreIds(tx, ctx.session!);
+      const visible = input?.storeId
+        ? pricesVisibleFor(priceStores, [input.storeId])
+        : pricesVisibleAnywhere(priceStores);
+      if (!visible) return [];
+      // 2026-07-30: the 30-line last/avg7d/avg30d accumulator that used
+      // to live inline moved to services/priceStats.ts so
+      // order.pendingList can put the SAME figure on approval cards.
+      // Two copies of this arithmetic would drift.
+      const stats = await loadSkuPriceStats(tx, ctx.session!.orgId, input?.skuIds);
+      return [...stats.values()].map((a) => ({
+        skuId: a.skuId,
+        // Already rounded to cents (ORD-01).
+        lastPrice: a.lastPrice,
+        lastObservedAt: a.lastObservedAt ? a.lastObservedAt.toISOString() : null,
+        avg7d: a.avg7d != null ? a.avg7d.toFixed(2) : null,
+        avg30d: a.avg30d != null ? a.avg30d.toFixed(2) : null,
+        observations30d: a.observations30d,
+      }));
+    });
+  }),
 });

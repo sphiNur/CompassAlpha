@@ -41,13 +41,13 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import {
-  PositiveDecimalStringSchema,
-  STOCKTAKE_COUNT_MESSAGE,
-  UuidSchema,
+  InventoryMovementsInputSchema,
+  InventoryStoreInputSchema,
+  StocktakeInputSchema,
+  WastageInputSchema,
   milliQtyFixed,
   qtyMilli,
   qtyMilliOrZero,
-  stocktakeCountProblem,
 } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
@@ -96,35 +96,6 @@ async function assertWritableStoreAndSku(
   }
 }
 
-const ListInputSchema = z.object({
-  storeId: UuidSchema,
-});
-
-const StocktakeInputSchema = z.object({
-  storeId: UuidSchema,
-  skuId: UuidSchema,
-  /** Target on-hand qty after the stocktake. Must be ≥ 0. */
-  // CLS-19 (2026-10-30): at most 8 integer digits; 99999999999 was a 500.
-  // DX-INV-1 (2026-11-01): one message per reason — empty, negative,
-  // letters and four decimals all used to say "quantity too large".
-  target: z.string().superRefine((v, ctx) => {
-    const problem = stocktakeCountProblem(v);
-    if (problem) ctx.addIssue({ code: 'custom', message: STOCKTAKE_COUNT_MESSAGE[problem] });
-  }),
-  note: z.string().max(500).optional(),
-});
-
-const WastageInputSchema = z.object({
-  storeId: UuidSchema,
-  skuId: UuidSchema,
-  qty: PositiveDecimalStringSchema.refine((v) => Number(v) < 100_000_000, {
-    message: 'inventory.errors.qtyTooLarge',
-  }),
-  /** Mandatory reason — wastage rows without context are useless. */
-  // CLS-19: a note of only spaces is no note.
-  note: z.string().trim().min(1).max(500),
-});
-
 /** Rows of the raw queries below, checked instead of cast (review CONF-23). */
 const LevelRowsSchema = z.array(
   z.object({
@@ -146,7 +117,7 @@ export const inventoryRouter = router({
    * needs to show "stocked out" rather than hide the row entirely);
    * SKUs that have never been touched on this store are omitted.
    */
-  levels: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
+  levels: authedProcedure.input(InventoryStoreInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       // M3.7 (2026-05-15): store-scope assertion. Pre-fix, this query
       // took input.storeId and returned on-hand for any guessed UUID
@@ -189,7 +160,7 @@ export const inventoryRouter = router({
    * on-hand X?". Newest first, capped at 50 rows.
    */
   recentMovements: authedProcedure
-    .input(z.object({ storeId: UuidSchema, skuId: UuidSchema }))
+    .input(InventoryMovementsInputSchema)
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         // M3.7: same gate as inventory.levels — without it, an actor

@@ -55,14 +55,14 @@
  */
 import { TRPCError } from '@trpc/server';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import {
   DishCreateInputSchema,
+  DishIdInputSchema,
+  DishListInputSchema,
   DishSaveInputSchema,
   DishSetIngredientsInputSchema,
   DishUpdateInputSchema,
-  UuidSchema,
   type DishIngredientInput,
 } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
@@ -210,80 +210,65 @@ function requireDishesManage(perms: ReadonlySet<string>): void {
 }
 
 export const dishesRouter = router({
-  list: authedProcedure
-    .input(
-      z
-        .object({
-          includeArchived: z.boolean().optional(),
-          /** D6: the store the list is shown for (sales panel); decides
-           *  whether selling prices are included. */
-          storeId: UuidSchema.optional(),
-          /** CONF-24: false leaves the recipe rows out; each dish still
-           *  has its `ingredientCount`. */
-          withIngredients: z.boolean().optional(),
-        })
-        .optional(),
-    )
-    .query(async ({ ctx, input }) => {
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const includeArchived = input?.includeArchived ?? false;
-        // D6 (2026-10-31): selling prices are money. Shown to whoever sets
-        // them (dishes.manage) and to members with prices.view — in the
-        // given store, or anywhere when the caller names none.
-        const priceStores = await priceStoreIds(tx, ctx.session!);
-        const showPrices =
-          ctx.session!.permissions.has('dishes.manage') ||
-          (input?.storeId
-            ? pricesVisibleFor(priceStores, [input.storeId])
-            : pricesVisibleAnywhere(priceStores));
-        const rawDishes = await tx.query.dishes.findMany({
-          where: includeArchived
-            ? (d, { eq: eq2 }) => eq2(d.orgId, orgId)
-            : (d, { eq: eq2, and: and2 }) =>
-                and2(eq2(d.orgId, orgId), eq2(d.isArchived, false)),
-          orderBy: (d, { asc: asc2 }) => [asc2(d.sortIndex), asc2(d.id)],
-        });
-        const dishes = showPrices
-          ? rawDishes
-          : rawDishes.map((dish) => ({ ...dish, unitPrice: null }));
-        const ids = dishes.map((d) => d.id);
-        const withRows = input?.withIngredients !== false;
-        const ingredients =
-          withRows && ids.length > 0
-            ? await tx
-                .select({
-                  dishId: s.dishIngredients.dishId,
-                  skuId: s.dishIngredients.skuId,
-                  qtyPerServing: s.dishIngredients.qtyPerServing,
-                  note: s.dishIngredients.note,
-                })
-                .from(s.dishIngredients)
-                .where(inArray(s.dishIngredients.dishId, ids))
-                .orderBy(asc(s.dishIngredients.skuId))
-            : [];
-        const ingredientCount = new Map<string, number>();
-        if (withRows) {
-          for (const row of ingredients) {
-            ingredientCount.set(row.dishId, (ingredientCount.get(row.dishId) ?? 0) + 1);
-          }
-        } else if (ids.length > 0) {
-          const counts = await tx
-            .select({ dishId: s.dishIngredients.dishId, n: sql<number>`count(*)::int` })
-            .from(s.dishIngredients)
-            .where(inArray(s.dishIngredients.dishId, ids))
-            .groupBy(s.dishIngredients.dishId);
-          for (const { dishId, n } of counts) ingredientCount.set(dishId, n);
-        }
-        return {
-          dishes: dishes.map((dish) => ({
-            ...dish,
-            ingredientCount: ingredientCount.get(dish.id) ?? 0,
-          })),
-          ingredients,
-        };
+  list: authedProcedure.input(DishListInputSchema).query(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const includeArchived = input?.includeArchived ?? false;
+      // D6 (2026-10-31): selling prices are money. Shown to whoever sets
+      // them (dishes.manage) and to members with prices.view — in the
+      // given store, or anywhere when the caller names none.
+      const priceStores = await priceStoreIds(tx, ctx.session!);
+      const showPrices =
+        ctx.session!.permissions.has('dishes.manage') ||
+        (input?.storeId
+          ? pricesVisibleFor(priceStores, [input.storeId])
+          : pricesVisibleAnywhere(priceStores));
+      const rawDishes = await tx.query.dishes.findMany({
+        where: includeArchived
+          ? (d, { eq: eq2 }) => eq2(d.orgId, orgId)
+          : (d, { eq: eq2, and: and2 }) => and2(eq2(d.orgId, orgId), eq2(d.isArchived, false)),
+        orderBy: (d, { asc: asc2 }) => [asc2(d.sortIndex), asc2(d.id)],
       });
-    }),
+      const dishes = showPrices
+        ? rawDishes
+        : rawDishes.map((dish) => ({ ...dish, unitPrice: null }));
+      const ids = dishes.map((d) => d.id);
+      const withRows = input?.withIngredients !== false;
+      const ingredients =
+        withRows && ids.length > 0
+          ? await tx
+              .select({
+                dishId: s.dishIngredients.dishId,
+                skuId: s.dishIngredients.skuId,
+                qtyPerServing: s.dishIngredients.qtyPerServing,
+                note: s.dishIngredients.note,
+              })
+              .from(s.dishIngredients)
+              .where(inArray(s.dishIngredients.dishId, ids))
+              .orderBy(asc(s.dishIngredients.skuId))
+          : [];
+      const ingredientCount = new Map<string, number>();
+      if (withRows) {
+        for (const row of ingredients) {
+          ingredientCount.set(row.dishId, (ingredientCount.get(row.dishId) ?? 0) + 1);
+        }
+      } else if (ids.length > 0) {
+        const counts = await tx
+          .select({ dishId: s.dishIngredients.dishId, n: sql<number>`count(*)::int` })
+          .from(s.dishIngredients)
+          .where(inArray(s.dishIngredients.dishId, ids))
+          .groupBy(s.dishIngredients.dishId);
+        for (const { dishId, n } of counts) ingredientCount.set(dishId, n);
+      }
+      return {
+        dishes: dishes.map((dish) => ({
+          ...dish,
+          ingredientCount: ingredientCount.get(dish.id) ?? 0,
+        })),
+        ingredients,
+      };
+    });
+  }),
 
   create: authedProcedure
     .input(DishCreateInputSchema)
@@ -448,39 +433,35 @@ export const dishesRouter = router({
     });
   }),
 
-  archive: authedProcedure
-    .input(z.object({ dishId: UuidSchema }))
-    .mutation(async ({ ctx, input }) => {
-      requireDishesManage(ctx.session!.permissions);
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const r = await tx
-          .update(s.dishes)
-          .set({ isArchived: true, updatedAt: new Date() })
-          .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
-          .returning({ id: s.dishes.id });
-        if (r.length === 0) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
-        }
-        return { ok: true as const };
-      });
-    }),
+  archive: authedProcedure.input(DishIdInputSchema).mutation(async ({ ctx, input }) => {
+    requireDishesManage(ctx.session!.permissions);
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const r = await tx
+        .update(s.dishes)
+        .set({ isArchived: true, updatedAt: new Date() })
+        .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
+        .returning({ id: s.dishes.id });
+      if (r.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
+      }
+      return { ok: true as const };
+    });
+  }),
 
-  unarchive: authedProcedure
-    .input(z.object({ dishId: UuidSchema }))
-    .mutation(async ({ ctx, input }) => {
-      requireDishesManage(ctx.session!.permissions);
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const r = await tx
-          .update(s.dishes)
-          .set({ isArchived: false, updatedAt: new Date() })
-          .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
-          .returning({ id: s.dishes.id });
-        if (r.length === 0) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
-        }
-        return { ok: true as const };
-      });
-    }),
+  unarchive: authedProcedure.input(DishIdInputSchema).mutation(async ({ ctx, input }) => {
+    requireDishesManage(ctx.session!.permissions);
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const r = await tx
+        .update(s.dishes)
+        .set({ isArchived: false, updatedAt: new Date() })
+        .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
+        .returning({ id: s.dishes.id });
+      if (r.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
+      }
+      return { ok: true as const };
+    });
+  }),
 });

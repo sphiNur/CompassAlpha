@@ -15,9 +15,9 @@
  *     the data set per month is small (< few hundred rows) and the
  *     three view modes share the same input.
  *
- *   - Permission gate is `users.manage` for now (same fence as Admin).
- *     A finer-grained `finance.view` permission is a follow-up if/when
- *     the finance team gets separate Telegram accounts.
+ *   - Permission gate: any of FINANCE_KEYS (reports.view, users.manage),
+ *     over the stores where one of them holds (financeStoreIds, HIS-1).
+ *     Review CONF-25 (2026-11-11): this said users.manage alone.
  *
  *   - SCOPE (M3.7, 2026-05-15): TWO modes mirroring run.previewCreatable.
  *     `org.admin` holders (super_admin, admin, future org_chef) see
@@ -37,11 +37,11 @@
  *   (< 5000 rows × ~200 bytes = 1 MB). When that bites, paginate.
  */
 import { sql } from 'drizzle-orm';
-import { z } from 'zod';
-import { DateStringSchema, UuidSchema } from '@compass/contracts';
+import { PurchaseLinesInputSchema, dateRangeInOrder } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { FINANCE_KEYS, financeStoreIds } from '../../services/storeScope';
+import type { DB } from '@compass/db';
 import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
 
@@ -64,37 +64,30 @@ function financeRunsSql(orgId: string, startDate: string, endDate: string) {
   )`;
 }
 
-const PurchaseLinesInputSchema = z.object({
-  /** Inclusive start date (YYYY-MM-DD), matched against market_runs_v.runDate. */
-  startDate: DateStringSchema,
-  /** Inclusive end date (YYYY-MM-DD). */
-  endDate: DateStringSchema,
-  /** Filter to a single destination store. Omit to return all stores. */
-  storeId: UuidSchema.optional(),
-  /** Filter to one payment method. Omit to return both. */
-  paymentMethod: z.enum(['cash', 'transfer']).optional(),
-});
-
-/**
- * RE-HIS-4 (2026-10-31): a reversed range answered 200 with zeros, where
- * run.history refuses it. Same rule here, with the catalog key the web
- * already shows for it.
- */
-function rangeInOrder(value: { startDate: string; endDate: string }, ctx: z.RefinementCtx) {
-  if (value.startDate > value.endDate) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['endDate'],
-      message: 'finance.range.invalid',
-    });
-  }
-}
-
-
 function requireFinanceRead(permissions: ReadonlySet<string> | undefined): void {
   if (!FINANCE_KEYS.some((key) => permissions?.has(key))) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.financeRequiresManage' });
   }
+}
+
+/**
+ * The stores a finance read covers (M3.7): the one asked for, which must
+ * be one whose finance the reader may read (HIS-1: not merely a store they
+ * are assigned to), else all of those; null for an organisation-wide
+ * reader. A store outside the set is refused with notAssignedToStore, as
+ * sales.list does (M3.1). Review CONF-25: both reports wrote this out.
+ */
+async function financeReadStores(
+  tx: DB,
+  session: { memberId: string; permissions: ReadonlySet<string> },
+  storeId: string | undefined,
+): Promise<string[] | null> {
+  const allowed = await financeStoreIds(tx, session);
+  if (storeId === undefined) return allowed;
+  if (allowed !== null && !allowed.includes(storeId)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.notAssignedToStore' });
+  }
+  return [storeId];
 }
 
 export const reportRouter = router({
@@ -114,29 +107,12 @@ export const reportRouter = router({
    * by-day / by-store views carry them; they have no supplier.
    */
   purchaseLines: authedProcedure
-    .input(PurchaseLinesInputSchema.superRefine(rangeInOrder))
+    .input(PurchaseLinesInputSchema.superRefine(dateRangeInOrder))
     .query(async ({ ctx, input }) => {
       requireFinanceRead(ctx.session?.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        // M3.7: store-scope filter. Skip for org.admin holders (they
-        // can see the entire chain's finance). For store-tier users
-        // with `users.manage` (manager-of-A etc.), compute their
-        // bound stores and intersect with the query. If the user
-        // explicitly passed input.storeId AND it's outside their set,
-        // throw notAssignedToStore so they get a clear error
-        // (consistent with sales.list M3.1 behaviour).
-        // HIS-1 (2026-10-30): the stores where finance is actually
-        // readable, not every store the person is assigned to.
-        const allowedStoreIds = await financeStoreIds(tx, ctx.session!);
-        if (allowedStoreIds !== null && input.storeId !== undefined) {
-          if (!allowedStoreIds.includes(input.storeId)) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'auth.errors.notAssignedToStore',
-            });
-          }
-        }
+        const storeIds = await financeReadStores(tx, ctx.session!, input.storeId);
         // 2026-10-21 CA-11: one row per money line from the shared
         // definition (services/runMoney.ts) — SKU splits priced at
         // COALESCE(per-store override, item price) and paid by the
@@ -144,7 +120,6 @@ export const reportRouter = router({
         // `kind: 'expense'` lines. Before this the report ignored
         // per-store price/payment overrides and every expense, so its
         // total never matched History or the finish sheet.
-        const storeIds = input.storeId ? [input.storeId] : allowedStoreIds;
         const rows = (await tx.execute(sql`
           WITH money_lines AS (
             ${runMoneyLinesSql({
@@ -226,28 +201,16 @@ export const reportRouter = router({
    * figures without rendering individual lines.
    */
   totals: authedProcedure
-    .input(PurchaseLinesInputSchema.omit({ paymentMethod: true }).superRefine(rangeInOrder))
+    .input(PurchaseLinesInputSchema.omit({ paymentMethod: true }).superRefine(dateRangeInOrder))
     .query(async ({ ctx, input }) => {
       requireFinanceRead(ctx.session?.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        // M3.7: same store-scope split as purchaseLines (above).
-        // HIS-1 (2026-10-30): the stores where finance is actually
-        // readable, not every store the person is assigned to.
-        const allowedStoreIds = await financeStoreIds(tx, ctx.session!);
-        if (allowedStoreIds !== null && input.storeId !== undefined) {
-          if (!allowedStoreIds.includes(input.storeId)) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'auth.errors.notAssignedToStore',
-            });
-          }
-        }
+        const storeIds = await financeReadStores(tx, ctx.session!, input.storeId);
         // 2026-10-21 CA-11: the same money lines purchaseLines returns,
         // so headline figures equal the sum of the lines and equal the
         // run.history totals for the same runs. items / expenses / total
         // are reported separately.
-        const storeIds = input.storeId ? [input.storeId] : allowedStoreIds;
         const rows = (await tx.execute(sql`
           WITH money_lines AS (
             ${runMoneyLinesSql({

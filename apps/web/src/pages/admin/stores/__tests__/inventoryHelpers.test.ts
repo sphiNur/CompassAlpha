@@ -47,10 +47,14 @@ describe('wastageMissing (CMP-INV-3)', () => {
     /^\d*([.,]\d*)?$/.test(raw.trim())
       ? ({ ok: true, value: raw.trim().replace(',', '.') } as const)
       : ({ ok: false } as const);
-  test('an empty or zero quantity is missing first', () => {
+  test('an empty quantity is missing first', () => {
     expect(wastageMissing('', 'spoiled', read)).toBe('qty');
-    expect(wastageMissing('0', 'spoiled', read)).toBe('qty');
-    expect(wastageMissing('abc', 'spoiled', read)).toBe('qty');
+  });
+  test('a quantity the server refuses says why (CONF-10)', () => {
+    expect(wastageMissing('0', 'spoiled', read)).toBe('format');
+    expect(wastageMissing('abc', 'spoiled', read)).toBe('format');
+    expect(wastageMissing('0.0001', 'spoiled', read)).toBe('format');
+    expect(wastageMissing('100000000', 'spoiled', read)).toBe('tooLarge');
   });
   test('then the reason', () => {
     expect(wastageMissing('1,5', '  ', read)).toBe('note');

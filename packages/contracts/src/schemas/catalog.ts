@@ -10,7 +10,14 @@
  */
 import { z } from 'zod';
 import { CONTROL_CHARS_MESSAGE, UuidSchema, noControlChars } from './common';
-import { CATALOG_TEXT_MAX, PURCHASE_PRICE_RE, SKU_STEPS, SKU_UNITS } from '../limits';
+import {
+  CATALOG_TEXT_MAX,
+  PURCHASE_PRICE_RE,
+  RECIPE_QTY_MESSAGE,
+  SKU_STEPS,
+  SKU_UNITS,
+  recipeQtyProblem,
+} from '../limits';
 
 // The lists live in ../limits (zod-free, P-5) so the web can import them
 // without zod; re-exported here for the barrel.
@@ -49,6 +56,33 @@ export const SkuListInputSchema = z.object({
   search: z.string().max(100).optional(),
   includeArchived: z.boolean().default(false),
 });
+
+/** catalog.stores: the stores the reader may see for one purpose. */
+export const CatalogStoresInputSchema = z
+  .object({
+    permission: z
+      // 'finance': the stores finance reports cover (HIS-19).
+      .enum(['prices.view', 'run.purchase', 'users.manage', 'settlement.record', 'finance'])
+      .optional(),
+  })
+  .optional();
+
+/** catalog.suppliers: archived suppliers only when asked for (CA-05 / CA-40). */
+export const SupplierListInputSchema = z
+  .object({ includeArchived: z.boolean().default(false) })
+  .optional();
+
+/**
+ * catalog.skuPriceStats: price statistics for these products, or for every
+ * product priced in the last 30 days when `skuIds` is absent.
+ */
+export const SkuPriceStatsInputSchema = z
+  .object({
+    skuIds: z.array(UuidSchema).max(500).optional(),
+    /** D6: the store the estimate is shown for (order page). */
+    storeId: UuidSchema.optional(),
+  })
+  .optional();
 
 /**
  * A catalog item's names, one per UI language. Products, categories and
@@ -228,10 +262,10 @@ export const ExpenseTemplateDeleteInputSchema = z.object({
 export const DishIngredientSchema = z.object({
   skuId: UuidSchema,
   /** Decimal string with up to 4 fraction digits, must be > 0. */
-  qtyPerServing: z
-    .string()
-    .regex(/^\d{1,8}(\.\d{1,4})?$/, 'dishes.errors.qtyTooLarge')
-    .refine((v) => Number(v) > 0, { message: 'dishes.errors.ingredientQtyMustBePositive' }),
+  qtyPerServing: z.string().superRefine((value, ctx) => {
+    const problem = recipeQtyProblem(value);
+    if (problem) ctx.addIssue({ code: 'custom', message: RECIPE_QTY_MESSAGE[problem] });
+  }),
   note: z.string().max(500).optional().nullable(),
 });
 export type DishIngredientInput = z.infer<typeof DishIngredientSchema>;
@@ -253,6 +287,21 @@ const DishDescriptionSchema = z.record(z.string(), z.string().max(2000));
 const DishPriceSchema = z.string().regex(PURCHASE_PRICE_RE, 'dishes.errors.priceTooLarge');
 
 const DishIngredientsSchema = z.array(DishIngredientSchema).max(100);
+
+export const DishListInputSchema = z
+  .object({
+    includeArchived: z.boolean().optional(),
+    /** D6: the store the list is shown for (sales panel); decides
+     *  whether selling prices are included. */
+    storeId: UuidSchema.optional(),
+    /** CONF-24: false leaves the recipe rows out; each dish still has
+     *  its `ingredientCount`. */
+    withIngredients: z.boolean().optional(),
+  })
+  .optional();
+
+/** dishes.archive and dishes.unarchive. */
+export const DishIdInputSchema = z.object({ dishId: UuidSchema });
 
 export const DishCreateInputSchema = z.object({
   code: DishCodeSchema.optional().nullable(),
