@@ -43,7 +43,7 @@
 | `packages/ui`        | 约 30 个组件（Radix 原语 + CVA 变体 + Tailwind）+ ThemeProvider            |
 | `packages/i18n`      | 自研轻量 ICU 解析器 + 4 个 catalog (zh/ru/uz/en)，CI 校验对齐              |
 | `packages/telemetry` | 客户端日志 + batch span，发到 api 的 `system.log` 接口                     |
-| `packages/cli`       | `compass user/org/project/test` 子命令                                     |
+| `packages/cli`       | `compass org/user/platform/project` 子命令                                 |
 
 ### 1.3 基础设施
 
