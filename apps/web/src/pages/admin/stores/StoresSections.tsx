@@ -736,8 +736,8 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           // editor. `getTg()` is truthy in any browser (the Telegram SDK
           // is a static script tag), and nothing drives the native
           // MainButton for this sheet, so stocktake / wastage had no
-          // submit button in any environment. See the CatalogSections
-          // dish-editor footer for the full write-up.
+          // submit button in any environment. See the dish editor's
+          // footer (catalog/DishesSection.tsx) for the full write-up.
           action ? (
             <>
               {/* CMP-INV-3: wastage can only be saved once it is complete,

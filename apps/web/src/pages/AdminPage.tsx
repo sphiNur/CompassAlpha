@@ -71,14 +71,15 @@ import {
   FinanceSection,
   MaintenanceSection,
 } from './admin/operations/OperationsSections';
-// Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2).
+// Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2),
+// one file each since review ADM2-11.
 import {
   CategoriesSection,
   SkusSection,
   SuppliersSection,
   ExpenseTemplatesSection,
   DishesSection,
-} from './admin/catalog/CatalogSections';
+} from './admin/catalog';
 // Review COREWEB1-11 (2026-11-11): the drill-down's one definition.
 import type {
   AdminSection,
