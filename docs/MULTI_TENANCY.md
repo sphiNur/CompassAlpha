@@ -90,6 +90,9 @@ for operator-created tenants outside the app.
 Accepting it verifies Telegram identity, creates or reuses the user,
 creates the membership in the invited tenant, applies the snapshotted
 store/role grants, and returns a session for that tenant.
+`admin.memberInviteByTgId` decides the same stores and grants
+(`apps/api/src/trpc/routers/admin/invitePlan.ts`) and applies them at
+once.
 
 ## Deliberate limits
 

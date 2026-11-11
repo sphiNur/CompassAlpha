@@ -14,7 +14,7 @@ import {
   PositiveDecimalStringSchema,
   TimeZoneSchema,
 } from './schemas/common';
-import { InviteMemberByTgIdInputSchema } from './schemas/admin';
+import { CreateMemberInviteInputSchema, InviteMemberByTgIdInputSchema } from './schemas/admin';
 import { AcceptInviteInputSchema, CreateOrganizationInputSchema } from './schemas/auth';
 import { CategoryCreateInputSchema } from './schemas/catalog';
 import { SetSessionExtrasInputSchema } from './schemas/order';
@@ -225,5 +225,22 @@ describe('identifiers and links', () => {
     expect(verdict(SetSessionExtrasInputSchema, { extras: [] })).toBe(generic);
     check(IdempotencyKeySchema, { 'web:1234': 'ok', 'web:123': generic, 'web 1234': generic });
     expect(verdict(CreateOrganizationInputSchema, { name: 'Acme', slug: '-acme' })).toBe(generic);
+  });
+});
+
+// Review ADM1-12 (2026-11-13): one plan decides an invite link and an
+// invite by Telegram ID, and the second took any number of stores.
+describe('invitations', () => {
+  it('a link and an invite by Telegram ID take the same stores: at most 50', () => {
+    const stores = (n: number) =>
+      Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    const kinds = [
+      ['link', CreateMemberInviteInputSchema, {}],
+      ['Telegram ID', InviteMemberByTgIdInputSchema, { tgUserId: '123456789' }],
+    ] as const;
+    for (const [kind, schema, rest] of kinds) {
+      const takes = (n: number) => schema.safeParse({ ...rest, storeIds: stores(n) }).success;
+      expect({ kind, 50: takes(50), 51: takes(51) }).toEqual({ kind, 50: true, 51: false });
+    }
   });
 });

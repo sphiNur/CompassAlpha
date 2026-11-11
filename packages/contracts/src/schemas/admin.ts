@@ -52,9 +52,17 @@ export const MemberRemoveInputSchema = z.object({
 
 // ---------- Invitations ----------
 
+/**
+ * The stores an invitation adds the person to. At least one, unless the
+ * role is admin or super_admin (the server says so: inviteNeedsStore).
+ * Review ADM1-12: one plan decides an invite link and an invite by
+ * Telegram ID, so both take the same list; the second had no limit.
+ */
+const InviteStoreIdsSchema = z.array(UuidSchema).max(50).default([]);
+
 export const CreateMemberInviteInputSchema = z.object({
   roleSlug: z.string().min(1).max(64).nullish(),
-  storeIds: z.array(UuidSchema).max(50).default([]),
+  storeIds: InviteStoreIdsSchema,
   expiresInDays: z.number().int().min(1).max(30).default(7),
 });
 
@@ -65,10 +73,7 @@ export const InviteMemberByTgIdInputSchema = z.object({
     .transform((s) => BigInt(s)),
   displayName: TrimmedNameSchema.optional(),
   roleSlug: z.string().min(1).max(64).optional(),
-  /** Stores to assign at invite time. The new model REQUIRES at least
-   *  one store unless the role is admin/super_admin (which bypass via
-   *  users.manage permission). */
-  storeIds: z.array(UuidSchema).default([]),
+  storeIds: InviteStoreIdsSchema,
 });
 
 /** 2026-10-21 CA-19: withdraw a pending shareable invite link. */
