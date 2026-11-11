@@ -1180,6 +1180,7 @@ export const en = {
     'Submitting needs a connection. Your changes are saved on this phone.',
   'order.extras.qtyLabel': 'Quantity',
   'order.extras.unitLabel': 'Unit',
+  'order.extras.chooseUnit': 'Choose a unit from the list.',
   'order.extras.wholeNumber': 'Use a whole number for this unit.',
   'order.categories.uncategorized': 'Uncategorized',
   'order.batches.backToReceipt': "Back to today's batches",

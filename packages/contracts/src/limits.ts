@@ -32,6 +32,39 @@ export function isoDateDaysBefore(isoDate: string, days: number): string {
 /** SKU units (2026-07-30): the fixed vocabulary; `SkuUnitSchema` is built from it. */
 export const SKU_UNITS = ['kg', 'L', 'pcs', 'pack', 'bunch', 'box', 'roll', 'pair'] as const;
 
+/**
+ * The units an off-catalog order line ("other items") may name (M3.34):
+ * every SKU unit, and g and ml. `CanonicalUnitSchema` is built from it and
+ * the order page lists it (ORD-13, 2026-11-11: the page kept its own copy,
+ * which went without `box` when R2-COPY-3 added it here).
+ */
+export const CANONICAL_UNITS = [
+  'kg',
+  'g',
+  'L',
+  'ml',
+  'pcs',
+  'pack',
+  'pair',
+  'bunch',
+  'roll',
+  'box',
+] as const;
+
+export function isCanonicalUnit(unit: string): unit is (typeof CANONICAL_UNITS)[number] {
+  return (CANONICAL_UNITS as readonly string[]).includes(unit);
+}
+
+/** Units counted in whole numbers: "1.5 pcs" or "1.5 boxes" is a typo. */
+export const WHOLE_NUMBER_UNITS: ReadonlySet<string> = new Set([
+  'pcs',
+  'pack',
+  'pair',
+  'bunch',
+  'roll',
+  'box',
+]);
+
 /** SKU steps (M3.14): the canonical +/- grid; `SkuStepSchema` is built from it. */
 export const SKU_STEPS = ['0.5', '1', '10', '50', '100'] as const;
 
