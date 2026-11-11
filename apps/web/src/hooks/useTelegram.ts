@@ -14,6 +14,9 @@ import {
   paintTelegramChrome,
 } from '../lib/telegram';
 
+/** Below this a measured viewport height is taken for a glitch. */
+const MIN_VIEWPORT_PX = 200;
+
 export function useTelegramInit(): void {
   useEffect(() => {
     const tg = getTg();
@@ -28,7 +31,12 @@ export function useTelegramInit(): void {
         typeof window.visualViewport?.height === 'number'
           ? window.visualViewport.height
           : window.innerHeight;
-      const next = Math.max(320, Math.round(sdkHeight ?? browserHeight));
+      // Review COREWEB2-27 (2026-11-12): the floor only stops a passing
+      // nonsense value from collapsing the layout. At 320 it lifted real
+      // heights: a phone on its side has about 280-310 px under Telegram's
+      // header, and with <html> not scrolling, the bottom nav and main
+      // button were cut off.
+      const next = Math.max(MIN_VIEWPORT_PX, Math.round(sdkHeight ?? browserHeight));
       document.documentElement.style.setProperty('--app-viewport-h', `${next}px`);
     };
 

@@ -113,7 +113,6 @@ export default [
   //     findings are fixed; never add one.
   {
     files: [
-      'src/components/PageMenuContext.tsx',
       'src/components/sales/StoreSalesPanel.tsx',
       'src/pages/DebugPage.tsx',
       'src/pages/OrderPage.tsx',

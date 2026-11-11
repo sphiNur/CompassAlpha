@@ -38,6 +38,17 @@ import { useEffect } from 'react';
  * - Reset on pointercancel so a swipe that the OS classifies as a
  *   gesture (e.g. iOS edge-swipe) doesn't leave us in a stuck state.
  *
+ * - Review COREWEB2-17 (2026-11-12): only the click a guarded touch makes
+ *   is cancelled. Every pointerdown starts over, the mouse's too, so a
+ *   mouse click on a hybrid device is never taken for the end of a
+ *   scroll. A click with no pointerdown of its own (Enter or Space on a
+ *   focused button, a screen reader's activation) is cancelled only when
+ *   a pointer made it (`detail` > 0) and it comes right after a touch
+ *   that scrolled (CLICK_WINDOW_MS). The `moved` of a scroll used to stay
+ *   set until the next click and swallow it, whatever made it. Named
+ *   apart from @compass/ui's useTapGuard, which stops a double tap on one
+ *   button.
+ *
  * - Opt-out: any element with `data-allow-drag` in its ancestor chain
  *   skips the guard. Add this to drag handles, sliders, etc. We don't
  *   have any today, but the hook reserves the attribute so we don't
@@ -47,6 +58,13 @@ import { useEffect } from 'react';
 /** Pixel distance beyond which a touch is treated as a scroll, not a tap. */
 const MOVE_THRESHOLD_PX = 10;
 
+/**
+ * How long after a guarded touch ends its click may still arrive. A new
+ * touch starts over at its pointerdown, so a longer window never touches
+ * a real tap; it only has to outlast a slow phone's click dispatch.
+ */
+export const CLICK_WINDOW_MS = 1_000;
+
 interface GuardState {
   pointerId: number | null;
   startX: number;
@@ -54,25 +72,36 @@ interface GuardState {
   moved: boolean;
   /** True if the pointerdown target opted out (data-allow-drag). */
   bypass: boolean;
+  /** When the guarded touch ended (pointerup or pointercancel), else null. */
+  endedAt: number | null;
 }
 
 function makeState(): GuardState {
-  return { pointerId: null, startX: 0, startY: 0, moved: false, bypass: false };
+  return { pointerId: null, startX: 0, startY: 0, moved: false, bypass: false, endedAt: null };
+}
+
+/** A click as the guard reads it: `detail` (0 when no pointer made it) and when it came. */
+export interface ClickFacts {
+  detail: number;
+  at: number;
 }
 
 /** Internal — exported only so unit tests can drive it deterministically. */
 export function shouldCancel(
-  state: Pick<GuardState, 'moved' | 'bypass'>,
+  state: Pick<GuardState, 'moved' | 'bypass' | 'endedAt'>,
+  click: ClickFacts,
 ): boolean {
-  return state.moved && !state.bypass;
+  return (
+    state.moved &&
+    !state.bypass &&
+    click.detail > 0 &&
+    state.endedAt !== null &&
+    click.at - state.endedAt <= CLICK_WINDOW_MS
+  );
 }
 
 /** Internal — exported only so unit tests can drive it deterministically. */
-export function updateMoved(
-  state: GuardState,
-  clientX: number,
-  clientY: number,
-): boolean {
+export function updateMoved(state: GuardState, clientX: number, clientY: number): boolean {
   if (state.pointerId === null) return state.moved;
   const dx = Math.abs(clientX - state.startX);
   const dy = Math.abs(clientY - state.startY);
@@ -87,13 +116,17 @@ function isOptOut(target: EventTarget | null): boolean {
   return target.closest('[data-allow-drag]') !== null;
 }
 
-export function useTapGuard(): void {
+export function useScrollTapSuppression(): void {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const state: GuardState = makeState();
 
     const onPointerDown = (e: PointerEvent) => {
+      // Every press starts over, the mouse's too (COREWEB2-17).
+      state.moved = false;
+      state.bypass = false;
+      state.endedAt = null;
       // Mouse drags are intentional; only touch/pen need the guard.
       if (e.pointerType === 'mouse') {
         state.pointerId = null;
@@ -102,7 +135,6 @@ export function useTapGuard(): void {
       state.pointerId = e.pointerId;
       state.startX = e.clientX;
       state.startY = e.clientY;
-      state.moved = false;
       state.bypass = isOptOut(e.target);
     };
 
@@ -119,6 +151,7 @@ export function useTapGuard(): void {
       // We keep moved/bypass; release the pointerId so a stray
       // pointermove after up doesn't keep mutating moved.
       state.pointerId = null;
+      state.endedAt = performance.now();
     };
 
     const onPointerCancel = (e: PointerEvent) => {
@@ -127,10 +160,11 @@ export function useTapGuard(): void {
       // there will be no synthetic click, but if there is, kill it.
       state.moved = true;
       state.pointerId = null;
+      state.endedAt = performance.now();
     };
 
     const onClickCapture = (e: MouseEvent) => {
-      if (shouldCancel(state)) {
+      if (shouldCancel(state, { detail: e.detail, at: performance.now() })) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -142,6 +176,7 @@ export function useTapGuard(): void {
       if (state.pointerId === null) {
         state.moved = false;
         state.bypass = false;
+        state.endedAt = null;
       }
     };
 

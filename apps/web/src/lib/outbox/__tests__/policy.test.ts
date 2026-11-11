@@ -3,7 +3,7 @@
  *
  * The engine (engine.ts) wires IndexedDB and connectivity events, which is
  * hard to drive headless. The decisions that carry the risk are pure
- * functions, pinned here (same pattern as useTapGuard):
+ * functions, pinned here (same pattern as useScrollTapSuppression):
  *
  *   - classifyEntry: the C1 data-loss regression guard. A queued financial
  *     write with no replay handler must NOT be deleted on sight; only
