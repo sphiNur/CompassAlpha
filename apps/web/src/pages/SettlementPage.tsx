@@ -1792,6 +1792,15 @@ export function SettlementPage() {
                                       type="button"
                                       variant="secondary"
                                       className="w-full justify-between text-left"
+                                      // 2026-11-11: inside the field's <label>
+                                      // the button was named by the label
+                                      // alone, so a screen reader said
+                                      // "Employee" and never who was chosen.
+                                      aria-label={i18n.t('common.labelValue', {
+                                        label: i18n.t('settlement.wages.employee'),
+                                        value: displayedEmployee,
+                                      })}
+                                      aria-haspopup="dialog"
                                       aria-invalid={employeeMissing || undefined}
                                       aria-describedby={
                                         employeeMissing ? employeeErrorId : undefined
