@@ -35,6 +35,8 @@ import {
   meetsVersionRange,
   pendingMigrationTags,
   pinnedToolchain,
+  productionEnvProblems,
+  productionEnvScript,
   remoteCommand,
   remoteStepError,
   restoreScript,
@@ -263,6 +265,56 @@ describe('migrations pending before a deploy (OPS-10)', () => {
       '0068_attendance_keep_records',
     ]);
     expect(pendingMigrationTags('$ bun run src/migrate.ts --pending\n')).toEqual([]);
+  });
+});
+
+describe('the production switches in the server .env (OPS-22)', () => {
+  function serverEnv(body: string | null) {
+    const app = mkdtempSync(join(tmpdir(), 'deploy-prod-env-'));
+    dirs.push(app);
+    if (body !== null) put(app, '.env', body);
+    return app;
+  }
+  const check = (body: string | null) => {
+    const r = bash(productionEnvScript(serverEnv(body)));
+    expect(r.status).toBe(0);
+    return productionEnvProblems(r.stdout);
+  };
+
+  test('production, or left to the units, passes', () => {
+    expect(check('NODE_ENV=production\nDATABASE_URL=x\n')).toEqual([]);
+    expect(check('NODE_ENV="production"\nCOMPASS_RELEASE_CHANNEL=production\n')).toEqual([]);
+    expect(check('DATABASE_URL=x\n# NODE_ENV=development\n')).toEqual([]);
+    expect(check(null)).toEqual([]);
+  });
+
+  test('an .env copied from .env.example is refused, naming both switches', () => {
+    expect(check('NODE_ENV=development\nCOMPASS_RELEASE_CHANNEL=development\nPORT=3000\n')).toEqual(
+      [
+        'the server .env sets NODE_ENV=development; it must be production or left out',
+        'the server .env sets COMPASS_RELEASE_CHANNEL=development; it must be production or left out',
+      ],
+    );
+    expect(check('COMPASS_RELEASE_CHANNEL=staging\n')).toHaveLength(1);
+    expect(check('NODE_ENV=\n')).toEqual([
+      'the server .env sets NODE_ENV=(empty); it must be production or left out',
+    ]);
+  });
+
+  test('the last line wins, as in systemd', () => {
+    expect(check('NODE_ENV=development\nNODE_ENV=production\n')).toEqual([]);
+    expect(check('NODE_ENV=production\nNODE_ENV=development\n')).toHaveLength(1);
+  });
+
+  test('only the two switches are read', () => {
+    const r = bash(productionEnvScript(serverEnv('JWT_SECRET=hunter2\nNODE_ENV=production\n')));
+    expect(r.stdout).not.toContain('hunter2');
+  });
+
+  test('output that is not a verdict is not a pass', () => {
+    expect(() => productionEnvProblems('')).toThrow('unexpected output');
+    expect(() => productionEnvProblems('NODE_ENV=production\n')).toThrow('unexpected output');
+    expect(() => productionEnvProblems('JWT_SECRET=x\nenv-read\n')).toThrow('unexpected output');
   });
 });
 

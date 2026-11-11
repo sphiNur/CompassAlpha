@@ -262,6 +262,17 @@ with `ssh-keyscan <host> | ssh-keygen -lf -`, and only then replace the
 lines in the file with `ssh-keyscan -H <host>` (hashed), or point
 `COMPASS_DEPLOY_KNOWN_HOSTS` at another file.
 
+### Production switches in the server `.env` (OPS-22)
+The units set `NODE_ENV=production`, but systemd applies the server
+`.env` (`EnvironmentFile=`) over the units' `Environment=` lines. An
+`.env` copied from `.env.example` therefore ran production as a
+development box: `NODE_ENV=development` and
+`COMPASS_RELEASE_CHANNEL=development` switched off every guard that holds
+only in production (the bulk purge switch below, the dev login). Step
+0.75 of the deploy reads those two keys from the server `.env` and
+refuses to deploy unless each is either left out or set to `production`.
+No flag skips it: edit `/home/ubuntu/compass-alpha/.env`, then deploy.
+
 ### Workspace-wide purges are off on production (D1/D5)
 `admin.purgeAllTestData` (清空整个工作区) and `admin.purgeByDate`
 (重置指定日期) refuse with `bulkPurgeDisabledInProduction` when the api

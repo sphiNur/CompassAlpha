@@ -113,6 +113,8 @@ import {
   markIncompleteScript,
   pendingMigrationTags,
   pinnedToolchain,
+  productionEnvProblems,
+  productionEnvScript,
   remoteCommand,
   remoteStepError,
   restoreScript,
@@ -630,6 +632,31 @@ if (!DRY) {
     process.exit(1);
   }
   console.log('  ✓ no server .env file sets VITE_DEV_MOCK_INIT_DATA');
+
+  step('0.75. verify the server .env keeps production on (review OPS-22)');
+  // systemd applies the .env over the units' NODE_ENV=production, so an
+  // .env copied from .env.example switched off every production-only
+  // guard (bulk purge, dev login) without a word. No flag skips this: put
+  // the .env right instead.
+  let envProblems: string[];
+  try {
+    envProblems = productionEnvProblems(ssh(productionEnvScript()));
+  } catch (err) {
+    console.error(
+      "\x1b[31m✖ couldn't read the production switches in the server .env — aborting deploy.\x1b[0m",
+    );
+    console.error('  ' + String((err as Error).message ?? err));
+    process.exit(1);
+  }
+  if (envProblems.length > 0) {
+    console.error(
+      '\x1b[31m✖ The server .env would run production as development — aborting deploy.\x1b[0m',
+    );
+    for (const p of envProblems) console.error(`  ${p}`);
+    console.error(`  Fix ${APP_DIR}/.env on the server (docs/RUNBOOK.md, "Production switches").`);
+    process.exit(1);
+  }
+  console.log('  ✓ the server .env leaves NODE_ENV and COMPASS_RELEASE_CHANNEL at production');
 
   step('0.8. verify PG role "compass" does not BYPASSRLS (defense in depth)');
   // RLS policies are useless if the connecting role bypasses them, and a
