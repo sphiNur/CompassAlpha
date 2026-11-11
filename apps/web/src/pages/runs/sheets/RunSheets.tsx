@@ -863,6 +863,10 @@ export function AddItemSheet({
               { value: 'sku', label: i18n.t('run.action.addItem.modeSku') },
               { value: 'expense', label: i18n.t('run.action.addItem.modeExpense') },
             ]}
+            ariaLabel={i18n.t('run.action.addItem.modeLabel')}
+            // Choosing clears the draft and focuses the new mode's first
+            // field, so arrows only move; Space / Enter chooses.
+            followFocus={false}
           />
 
           {/* 1) Identity section — mode-specific. */}
@@ -1031,39 +1035,27 @@ export function AddItemSheet({
               <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addItem.costModeTitle')}
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  disabled={selectedStoreAlreadyHasSku}
-                  // DX-VIS-6 / DX-VIS-7: one option can be disabled, so these
-                  // stay two buttons; they say which is chosen and tap at 44px.
-                  aria-pressed={!skuRecordsAsExpense}
-                  onClick={() => onChange({ ...draft, skuCostMode: 'merge' })}
-                  className={
-                    'hit-44 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline disabled:opacity-40 ' +
-                    (!skuRecordsAsExpense
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
-                  }
-                >
-                  {i18n.t('run.action.addItem.costModeMerge')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChange({ ...draft, skuCostMode: 'separateExpense' })
-                  }
-                  aria-pressed={skuRecordsAsExpense}
-                  className={
-                    'hit-44 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
-                    (skuRecordsAsExpense
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
-                  }
-                >
-                  {i18n.t('run.action.addItem.costModeSeparate')}
-                </button>
-              </div>
+              {/* Review UI-07 (2026-11-11): the kit's Segmented, now that an
+                  option can be disabled (DX-VIS-6 / DX-VIS-7 kept two
+                  hand-written buttons for that). "Add to existing" is
+                  disabled when the chosen store already has the line, and
+                  the hint below says so. */}
+              <Segmented<'merge' | 'separateExpense'>
+                value={skuRecordsAsExpense ? 'separateExpense' : 'merge'}
+                onChange={(mode) => onChange({ ...draft, skuCostMode: mode })}
+                options={[
+                  {
+                    value: 'merge',
+                    label: i18n.t('run.action.addItem.costModeMerge'),
+                    disabled: selectedStoreAlreadyHasSku,
+                  },
+                  {
+                    value: 'separateExpense',
+                    label: i18n.t('run.action.addItem.costModeSeparate'),
+                  },
+                ]}
+                ariaLabel={i18n.t('run.action.addItem.costModeTitle')}
+              />
               <p className="mt-1 text-old-label leading-snug text-[var(--c-fg-muted)]">
                 {selectedStoreAlreadyHasSku
                   ? i18n.t('run.action.addItem.storeAlreadyHasSkuHint')

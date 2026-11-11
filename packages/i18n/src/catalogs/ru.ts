@@ -138,6 +138,7 @@ export const ru = {
   'ops.history.contributorBreakdown': 'По авторам заказа',
   'ops.purge.tabOrders': 'Заказы',
   'ops.purge.tabRuns': 'Закупки',
+  'ops.purge.listLabel': 'Что удалить',
   'ops.purge.noSessionsTitle': 'Нет заказов',
   'ops.purge.noSessionsBody': '{date} — ничего не отправлялось.',
   'ops.purge.noRunsTitle': 'Нет закупок',
@@ -258,7 +259,6 @@ export const ru = {
   'people.grantRoleTitle': 'Назначить роль',
   'people.grantRoleTo': 'участнику {name}',
   'people.grantGlobally': 'Глобально',
-  'people.grantGloballyLocked': 'Глобально (только админ рабочего пространства)',
   'people.noGrantStoresTitle': 'Нет магазинов для выдачи',
   'people.noGrantStoresBody':
     'Вы пока не администрируете ни один магазин. Попросите администратора добавить вас.',
@@ -1294,6 +1294,7 @@ export const ru = {
   'run.deliveryStage.confirmed': 'Подтверждено',
   'run.previewView.byStore': 'По магазинам',
   'run.previewView.bySupplier': 'По поставщикам',
+  'run.previewView.label': 'Группировка списка',
   'run.previewSupplier.unassigned': 'Поставщик не указан',
   'run.previewSupplier.unassignedHint':
     'Для этих товаров не выбран постоянный поставщик. Откройте карточку товара и укажите его — список будет группироваться автоматически.',
@@ -1475,6 +1476,7 @@ export const ru = {
   // M3.44 (2026-05-22): расходы вне каталога
   'run.action.addItem.modeSku': 'Товар из каталога',
   'run.action.addItem.modeExpense': 'Вне каталога',
+  'run.action.addItem.modeLabel': 'Что добавить',
   'run.action.addExpense.title': 'Добавить позицию вне каталога или расход',
   'run.action.addExpense.subtitle':
     'Грузчик · такси · бонус от поставщика · разовая покупка вне каталога',

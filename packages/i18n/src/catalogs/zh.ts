@@ -130,6 +130,7 @@ export const zh = {
   'ops.history.contributorBreakdown': '按参与人拆分',
   'ops.purge.tabOrders': '订单',
   'ops.purge.tabRuns': '采购单',
+  'ops.purge.listLabel': '要删除的内容',
   'ops.purge.noSessionsTitle': '没有订单',
   'ops.purge.noSessionsBody': '{date} 没有任何提交。',
   'ops.purge.noRunsTitle': '没有采购单',
@@ -241,7 +242,6 @@ export const zh = {
   'people.grantRoleTitle': '授予角色',
   'people.grantRoleTo': '给 {name}',
   'people.grantGlobally': '全局',
-  'people.grantGloballyLocked': '全局（仅工作区管理员）',
   'people.noGrantStoresTitle': '你还没有可授予的门店',
   'people.noGrantStoresBody': '你还没有管理任何门店。请管理员先把你加进一家门店。',
   'people.noGrantableTitle': '没有可授予的角色',
@@ -1140,6 +1140,7 @@ export const zh = {
   'run.deliveryStage.confirmed': '已确认',
   'run.previewView.byStore': '按门店',
   'run.previewView.bySupplier': '按摊位',
+  'run.previewView.label': '分组方式',
   'run.previewSupplier.unassigned': '未指定摊位',
   'run.previewSupplier.unassignedHint':
     '这些商品还没有指定固定摊位。打开商品编辑选一个，采购清单就会自动按摊位分组。',
@@ -1298,6 +1299,7 @@ export const zh = {
   // M3.44 (2026-05-22): 目录外物品 / 开销
   'run.action.addItem.modeSku': '目录商品',
   'run.action.addItem.modeExpense': '目录外 / 开销',
+  'run.action.addItem.modeLabel': '要添加的内容',
   'run.action.addExpense.title': '新增目录外物品或开销',
   'run.action.addExpense.subtitle': '搬运费 · 打车 · 摊主搭赠 · 不在商品目录里的一次性购买',
   'run.action.addExpense.labelInput': '名称',

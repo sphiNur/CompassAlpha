@@ -2837,6 +2837,8 @@ function MemberPermissionsSheet({
                         ]}
                         onChange={(next) => handleSet(p.key, next)}
                         disabled={!scopeEditable || set.isPending || revoke.isPending}
+                        // Each choice is saved at once: arrows only move.
+                        followFocus={false}
                         ariaLabel={roleText.permission(p.key, p.description)}
                       />
                       {rowReason ? (
@@ -3144,9 +3146,11 @@ function GrantRoleSheet({
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Step 1 — scope */}
-        {/* M3.17 (2026-05-16): SegBtn → Segmented. The "Globally" option
-            is greyed-out via the disabled prop when the actor isn't an
-            org-admin; the click handler short-circuits. */}
+        {/* M3.17 (2026-05-16): SegBtn → Segmented. Review UI-07
+            (2026-11-11): "Globally" is disabled when the actor is not an
+            org admin, and the hint below says why. It used to be a
+            choosable option that did nothing, labelled "(workspace admins
+            only)". */}
         <FieldGroup label={i18n.t('admin.field.scope')}>
           <Segmented<'store' | 'global'>
             value={scopeMode}
@@ -3154,15 +3158,11 @@ function GrantRoleSheet({
               { value: 'store', label: i18n.t('people.grantInStores') },
               {
                 value: 'global',
-                label: i18n.t(
-                  canGrantGlobal ? 'people.grantGlobally' : 'people.grantGloballyLocked',
-                ),
+                label: i18n.t('people.grantGlobally'),
+                disabled: !canGrantGlobal,
               },
             ]}
-            onChange={(next) => {
-              if (next === 'global' && !canGrantGlobal) return;
-              setScopeMode(next);
-            }}
+            onChange={setScopeMode}
             ariaLabel={i18n.t('admin.field.scope')}
           />
           {!canGrantGlobal ? (

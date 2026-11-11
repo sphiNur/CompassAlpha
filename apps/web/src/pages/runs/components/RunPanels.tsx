@@ -1928,6 +1928,7 @@ export function PreviewSummaryCard({
         <Segmented
           value={view}
           onChange={chooseView}
+          ariaLabel={i18n.t('run.previewView.label')}
           options={[
             { value: 'byStore', label: i18n.t('run.previewView.byStore') },
             { value: 'bySupplier', label: i18n.t('run.previewView.bySupplier') },
