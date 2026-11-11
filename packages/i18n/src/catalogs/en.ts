@@ -48,7 +48,6 @@ export const en = {
   'common.unarchive': 'Unarchive',
   'common.remove': 'Remove',
   'common.save': 'Save',
-  'common.back': 'Back',
   'common.retry': 'Retry',
   'common.loading': 'Loading…',
   'common.errorUnknown': 'Unknown error',
@@ -1062,7 +1061,6 @@ export const en = {
   'admin.toast.roleUpdated': 'Role updated',
   'admin.toast.roleDeleted': 'Role deleted',
   'admin.toast.linkCopied': 'Invite link copied',
-  'admin.toast.clipboardUnavailable': 'Clipboard unavailable',
   'admin.toast.couldNotCopy': 'Could not copy. Select the text and copy it by hand.',
   'admin.toast.storeCreated': 'Store created',
   'admin.toast.storeUpdated': 'Store updated',
@@ -2107,7 +2105,6 @@ export const en = {
   'run.history.nextPage': 'Next page',
 
   // ── 19. Daily settlement ─────────────────────────────────────────────
-  'settlement.title': 'Daily close',
   'settlement.store.label': 'Store',
   'settlement.date.label': 'Business date',
   'settlement.date.timezone': 'Store time zone: {timezone}',
@@ -2571,7 +2568,6 @@ export const en = {
   'permission.attendance.clock': 'Clock in and out at their stores',
   'permission.attendance.manage': 'Plan shifts, review and correct attendance',
   'permission.group.attendance': 'Attendance',
-  'attendance.page.title': 'Attendance',
   'attendance.notEnabled.title': 'Clocking in is not switched on for you',
   'attendance.notEnabled.body':
     'Ask your store manager to switch it on for you in the attendance settings.',

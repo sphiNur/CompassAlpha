@@ -38,7 +38,6 @@ export const uz = {
   'common.unarchive': 'Arxivdan chiqarish',
   'common.remove': 'Olib tashlash',
   'common.save': 'Saqlash',
-  'common.back': 'Orqaga',
   'common.retry': 'Qayta urinish',
   'common.loading': 'Yuklanmoqda…',
   'common.errorUnknown': 'Nomaʼlum xato',
@@ -1021,7 +1020,6 @@ export const uz = {
   'admin.toast.roleUpdated': 'Rol yangilandi',
   'admin.toast.roleDeleted': 'Rol oʻchirildi',
   'admin.toast.linkCopied': 'Taklif havolasi nusxalandi',
-  'admin.toast.clipboardUnavailable': 'Bufer mavjud emas',
   'admin.toast.couldNotCopy': 'Nusxalab boʻlmadi. Matnni belgilab, qoʻlda nusxalang.',
   'admin.toast.storeCreated': 'Doʻkon yaratildi',
   'admin.toast.storeUpdated': 'Doʻkon yangilandi',
@@ -2008,7 +2006,6 @@ export const uz = {
   'run.history.nextPage': 'Keyingi sahifa',
 
   // ── 19. Kunlik hisob-kitob ──────────────────────────────────────────
-  'settlement.title': 'Kun yakuni',
   'settlement.store.label': 'Doʻkon',
   'settlement.date.label': 'Hisob sanasi',
   'settlement.date.timezone': 'Doʻkon vaqt mintaqasi: {timezone}',
@@ -2480,7 +2477,6 @@ export const uz = {
   'permission.attendance.clock': 'Oʻz doʻkonlarida kelish va ketishni belgilash',
   'permission.attendance.manage': 'Smenalarni tuzish, davomatni koʻrish va tuzatish',
   'permission.group.attendance': 'Davomat',
-  'attendance.page.title': 'Davomat',
   'attendance.notEnabled.title': 'Siz uchun belgilash yoqilmagan',
   'attendance.notEnabled.body':
     'Doʻkon boshqaruvchisidan davomat sozlamalarida yoqib berishini soʻrang.',

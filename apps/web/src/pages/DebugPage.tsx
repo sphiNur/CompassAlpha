@@ -23,6 +23,7 @@ import {
   ChipBar,
   DataState,
   EmptyState,
+  SectionHeader,
   Skeleton,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -104,153 +105,154 @@ export function DebugPage() {
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-4 pb-24">
-      <header>
-        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
-          Debug console
-        </h1>
-        <p className="mt-0.5 font-mono text-old-label text-[var(--c-fg-muted)]">
-          session: {sessionId.slice(0, 12)}… · user: {session.user.displayName}
-        </p>
-      </header>
-
-      <ChipBar ariaLabel="View">
-        <Chip selected={tab === 'live'} onClick={() => setTab('live')}>
-          Live ({ringBuffer.length})
-        </Chip>
-        <Chip selected={tab === 'server'} onClick={() => setTab('server')}>
-          Server
-        </Chip>
-        <Chip selected={tab === 'health'} onClick={() => setTab('health')}>
-          Health
-        </Chip>
-      </ChipBar>
-
-      {(tab === 'live' || tab === 'server') && (
-        <ChipBar ariaLabel="Level">
-          {(['all', 'debug', 'info', 'warn', 'error'] as Level[]).map((l) => (
-            <Chip key={l} selected={level === l} onClick={() => setLevel(l)}>
-              {l}
-            </Chip>
-          ))}
+    <div className="flex flex-col pb-24">
+      <SectionHeader
+        title="Debug console"
+        subtitle={
+          <span className="font-mono">
+            session: {sessionId.slice(0, 12)}… · user: {session.user.displayName}
+          </span>
+        }
+      />
+      <div className="flex flex-col gap-3 px-4 pb-4">
+        <ChipBar ariaLabel="View">
+          <Chip selected={tab === 'live'} onClick={() => setTab('live')}>
+            Live ({ringBuffer.length})
+          </Chip>
+          <Chip selected={tab === 'server'} onClick={() => setTab('server')}>
+            Server
+          </Chip>
+          <Chip selected={tab === 'health'} onClick={() => setTab('health')}>
+            Health
+          </Chip>
         </ChipBar>
-      )}
 
-      {tab === 'live' && (
-        <LogList
-          events={ringBuffer}
-          level={level}
-          empty="No client events yet. Tap around the app and they'll show up here."
-        />
-      )}
+        {(tab === 'live' || tab === 'server') && (
+          <ChipBar ariaLabel="Level">
+            {(['all', 'debug', 'info', 'warn', 'error'] as Level[]).map((l) => (
+              <Chip key={l} selected={level === l} onClick={() => setLevel(l)}>
+                {l}
+              </Chip>
+            ))}
+          </ChipBar>
+        )}
 
-      {tab === 'server' && (
-        <DataState
-          query={recent}
-          emptyWhen={(d) => d.length === 0}
-          empty={<EmptyState title="No server-side logs" />}
-        >
-          {(rows) => (
-            <ul className="flex flex-col gap-1" role="list">
-              {rows.map((r) => (
-                <li key={r.id}>
-                  <ServerRow row={r} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </DataState>
-      )}
+        {tab === 'live' && (
+          <LogList
+            events={ringBuffer}
+            level={level}
+            empty="No client events yet. Tap around the app and they'll show up here."
+          />
+        )}
 
-      {tab === 'health' && (
+        {tab === 'server' && (
+          <DataState
+            query={recent}
+            emptyWhen={(d) => d.length === 0}
+            empty={<EmptyState title="No server-side logs" />}
+          >
+            {(rows) => (
+              <ul className="flex flex-col gap-1" role="list">
+                {rows.map((r) => (
+                  <li key={r.id}>
+                    <ServerRow row={r} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </DataState>
+        )}
+
+        {tab === 'health' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>API health</CardTitle>
+              <CardMeta>Refreshed every 2 s</CardMeta>
+            </CardHeader>
+            <div className="px-4 pb-4 pt-2">
+              {health.isLoading ? (
+                <Skeleton className="h-16" />
+              ) : health.isError ? (
+                <Banner tone="danger" title="API unreachable">
+                  {health.error.message}
+                </Banner>
+              ) : health.data ? (
+                <dl className="grid grid-cols-2 gap-2 font-mono text-old-label">
+                  <dt className="text-[var(--c-fg-muted)]">status</dt>
+                  <dd>{health.data.status}</dd>
+                  <dt className="text-[var(--c-fg-muted)]">db</dt>
+                  <dd>{String(health.data.db)}</dd>
+                  <dt className="text-[var(--c-fg-muted)]">projector lag</dt>
+                  <dd>{health.data.projectorLag}</dd>
+                  <dt className="text-[var(--c-fg-muted)]">version</dt>
+                  <dd className="truncate">{health.data.version}</dd>
+                </dl>
+              ) : null}
+            </div>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
-            <CardTitle>API health</CardTitle>
-            <CardMeta>Refreshed every 2 s</CardMeta>
+            <CardTitle>Actions</CardTitle>
           </CardHeader>
-          <div className="px-4 pb-4 pt-2">
-            {health.isLoading ? (
-              <Skeleton className="h-16" />
-            ) : health.isError ? (
-              <Banner tone="danger" title="API unreachable">
-                {health.error.message}
-              </Banner>
-            ) : health.data ? (
-              <dl className="grid grid-cols-2 gap-2 font-mono text-old-label">
-                <dt className="text-[var(--c-fg-muted)]">status</dt>
-                <dd>{health.data.status}</dd>
-                <dt className="text-[var(--c-fg-muted)]">db</dt>
-                <dd>{String(health.data.db)}</dd>
-                <dt className="text-[var(--c-fg-muted)]">projector lag</dt>
-                <dd>{health.data.projectorLag}</dd>
-                <dt className="text-[var(--c-fg-muted)]">version</dt>
-                <dd className="truncate">{health.data.version}</dd>
-              </dl>
-            ) : null}
+          <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
+            <Button
+              size="sm"
+              variant="utility"
+              onClick={() => {
+                try {
+                  getLogger().flush();
+                } catch {
+                  /* noop */
+                }
+              }}
+            >
+              Flush logs
+            </Button>
+            <Button
+              size="sm"
+              variant="pearl"
+              onClick={() => {
+                const json = JSON.stringify(ringBuffer, null, 2);
+                navigator.clipboard?.writeText(json);
+              }}
+            >
+              Copy live as JSON
+            </Button>
+            <Button size="sm" variant="pearl" onClick={() => reloadApp('debug-page')}>
+              Reload
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              loading={signOut.isPending}
+              onClick={() => {
+                // 2026-10-21 audit CA-33: a real sign-out — the server revokes
+                // the refresh tokens first. A network failure (or a hang past
+                // 4 s) must not trap the operator, so local state is wiped
+                // regardless.
+                const timeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
+                void Promise.race([signOut.mutateAsync().then(() => undefined), timeout])
+                  .catch(() => undefined)
+                  .finally(() => {
+                    clear(); // also resets the persisted nav store
+                    try {
+                      window.localStorage.removeItem('compass.auth');
+                      window.localStorage.removeItem(NAV_STORAGE_KEY);
+                      window.sessionStorage.clear();
+                    } catch {
+                      /* ignore */
+                    }
+                    reloadApp('debug-page');
+                  });
+              }}
+            >
+              Sign out & reset
+            </Button>
           </div>
         </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Actions</CardTitle>
-        </CardHeader>
-        <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
-          <Button
-            size="sm"
-            variant="utility"
-            onClick={() => {
-              try {
-                getLogger().flush();
-              } catch {
-                /* noop */
-              }
-            }}
-          >
-            Flush logs
-          </Button>
-          <Button
-            size="sm"
-            variant="pearl"
-            onClick={() => {
-              const json = JSON.stringify(ringBuffer, null, 2);
-              navigator.clipboard?.writeText(json);
-            }}
-          >
-            Copy live as JSON
-          </Button>
-          <Button size="sm" variant="pearl" onClick={() => reloadApp('debug-page')}>
-            Reload
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            loading={signOut.isPending}
-            onClick={() => {
-              // 2026-10-21 audit CA-33: a real sign-out — the server revokes
-              // the refresh tokens first. A network failure (or a hang past
-              // 4 s) must not trap the operator, so local state is wiped
-              // regardless.
-              const timeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
-              void Promise.race([signOut.mutateAsync().then(() => undefined), timeout])
-                .catch(() => undefined)
-                .finally(() => {
-                  clear(); // also resets the persisted nav store
-                  try {
-                    window.localStorage.removeItem('compass.auth');
-                    window.localStorage.removeItem(NAV_STORAGE_KEY);
-                    window.sessionStorage.clear();
-                  } catch {
-                    /* ignore */
-                  }
-                  reloadApp('debug-page');
-                });
-            }}
-          >
-            Sign out & reset
-          </Button>
-        </div>
-      </Card>
+      </div>
     </div>
   );
 }

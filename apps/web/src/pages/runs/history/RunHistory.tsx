@@ -136,7 +136,6 @@ export function RunHistoryPage({
   skuById,
   productNameParts,
   i18n,
-  onBack,
 }: {
   runs: RunListRow[];
   loading: boolean;
@@ -170,17 +169,6 @@ export function RunHistoryPage({
   >;
   productNameParts: ReturnType<typeof useProductNameParts>;
   i18n: ReturnType<typeof useI18n>;
-  /**
-   * Omit when this renders as a top-level destination.
-   *
-   * 2026-07-30: history became its own bottom-nav tab, so the common
-   * case has nothing to go back TO — a Back button there would either
-   * dead-end or, worse, imply the tab is a drill-down off whatever the
-   * user was looking at before. It stays optional rather than being
-   * deleted because the component is still mounted as a drill page
-   * elsewhere; when a caller passes it, the row renders as before.
-   */
-  onBack?: () => void;
 }) {
   const dates = useDateFormat();
   const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
@@ -201,32 +189,15 @@ export function RunHistoryPage({
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
-      {/* The title row exists to host the Back button. As a tab there is
-          no Back, and a lone <h1> reading "历史记录" directly above a card
-          whose own header reads "历史记录  12 · 1,234,567.8 UZS" is the
-          same word twice with the second one carrying all the
-          information. Drop the row and let the card header BE the page
-          heading (`as="h1"`), which is also how Order / Run already
-          work — the bottom nav names the page, so an in-body title bar
-          is redundant chrome. */}
-      {onBack ? (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="rounded-[var(--r-pill)] px-2 py-1 text-old-label font-semibold text-[var(--c-action)] active:bg-[var(--c-surface-2)]"
-          >
-            {i18n.t('common.back')}
-          </button>
-          <h1 className="text-old-h2 font-semibold text-[var(--c-fg)]">
-            {i18n.t('run.history.title')}
-          </h1>
-        </div>
-      ) : null}
+      {/* A tab page: no title row. A lone <h1> reading "历史记录" above a
+          card whose own header reads "历史记录  12 · 1,234,567.8 UZS" said
+          the same word twice. The card header IS the page heading
+          (`as="h1"`); the bottom nav names the page. Review UI-14: the
+          Back variant of the title row had no caller and is gone. */}
       {toolbar}
       <Card className={fetching && !loading ? 'opacity-70 transition-opacity' : undefined}>
         <SectionLabel
-          as={onBack ? undefined : 'h1'}
+          as="h1"
           // HIS-20 (2026-10-30): with a search, the total is of the whole
           // runs that matched, not of the product searched for.
           // R2-SHL-2: no count or total until there is a list to count.

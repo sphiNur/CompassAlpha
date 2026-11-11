@@ -42,6 +42,7 @@ import {
   IconWorkspace,
   Input,
   ListRow,
+  SectionHeader,
   SectionRow,
   Sheet,
   Switch,
@@ -201,11 +202,7 @@ export function AdminPage() {
     // shows; there is nowhere to go back to, so no back control.
     return (
       <div className="flex flex-col">
-        <div className="px-4 pb-2 pt-3">
-          <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
-            {i18n.t('admin.subsection.finance')}
-          </h1>
-        </div>
+        <SectionHeader title={i18n.t('admin.subsection.finance')} />
         <FinanceSection />
       </div>
     );
@@ -583,31 +580,15 @@ function SectionFrame({
   useEffect(() => setPageTitleSub(title), [title]);
   return (
     <div ref={rootRef} onClickCapture={onClickCapture} className="flex flex-col">
-      {inTg ? null : (
-        <header className="flex items-center gap-2 px-2 pt-3 pb-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="press hit-44 inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-old-body text-[var(--c-action)]"
-            aria-label={i18n.t('admin.aria.back')}
-          >
-            <span aria-hidden className="text-old-h2 leading-none">
-              ‹
-            </span>
-            {/* was the literal "Admin" */}
-            <span>{i18n.t('nav.admin')}</span>
-          </button>
-        </header>
-      )}
-      <div className="px-4 pb-2 pt-3">
-        {/* tabIndex -1: useDrillDownFocus moves focus here on entering. */}
-        <h1
-          tabIndex={-1}
-          className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)] outline-none"
-        >
-          {title}
-        </h1>
-      </div>
+      {/* useDrillDownFocus moves focus to the header's <h1> on entering. */}
+      <SectionHeader
+        title={title}
+        back={
+          inTg
+            ? undefined
+            : { label: i18n.t('nav.admin'), ariaLabel: i18n.t('admin.aria.back'), onBack }
+        }
+      />
       {children}
     </div>
   );
