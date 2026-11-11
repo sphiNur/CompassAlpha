@@ -879,8 +879,6 @@ export const en = {
   'admin.subsection.categoriesHint': 'Grouping for products',
   'admin.subsection.skusHint': 'The catalog of items',
   'admin.subsection.suppliersHint': 'Who you buy from',
-  'admin.action.edit': 'Edit',
-  'admin.action.archive': 'Archive',
   'admin.action.cloneRoles': 'Copy people and roles…',
   'admin.action.transfer': 'Transfer…',
   'admin.action.removeFromStore': 'Remove from store',
@@ -1957,8 +1955,7 @@ export const en = {
   // becomes an expense by itself (catalog-lint CMP-CAT-3).
   'admin.subsection.expenseTemplates': 'Expense templates',
   'admin.subsection.expenseTemplatesHint': 'Manual shortcuts for daily store expenses',
-  'admin.action.newExpenseTemplate': '+ New template',
-  'admin.action.unarchive': 'Unarchive',
+  'admin.action.newExpenseTemplate': 'New template',
   'admin.expenseTemplates.intro':
     'Templates only prefill the purchase page expense form. Purchasers still choose the business date, store, amount, receipt, and reason for each real daily expense.',
   'admin.expenseTemplates.empty.title': 'No templates yet',
@@ -1983,7 +1980,7 @@ export const en = {
   'dishes.empty.title': 'No dishes yet',
   'dishes.empty.description':
     'Add menu items here. Recipes link each dish to its ingredient products.',
-  'dishes.action.new': '+ New dish',
+  'dishes.action.new': 'New dish',
   'dishes.action.addIngredient': '+ Ingredient',
   'dishes.label.noIngredients': 'No recipe yet',
   'dishes.label.noIngredientsHint':

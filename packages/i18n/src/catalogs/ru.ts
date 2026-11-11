@@ -835,8 +835,6 @@ export const ru = {
   'admin.subsection.categoriesHint': 'Группировка товаров',
   'admin.subsection.skusHint': 'Каталог товаров',
   'admin.subsection.suppliersHint': 'У кого закупаемся',
-  'admin.action.edit': 'Изменить',
-  'admin.action.archive': 'Архивировать',
   'admin.action.cloneRoles': 'Клонировать роли…',
   'admin.action.transfer': 'Перевести…',
   'admin.action.removeFromStore': 'Убрать из магазина',
@@ -1870,8 +1868,7 @@ export const ru = {
   'admin.subsection.dishes': 'Блюда',
   'admin.subsection.expenseTemplates': 'Шаблоны расходов',
   'admin.subsection.expenseTemplatesHint': 'Быстрые шаблоны для ежедневных расходов магазинов',
-  'admin.action.newExpenseTemplate': '+ Новый шаблон',
-  'admin.action.unarchive': 'Восстановить',
+  'admin.action.newExpenseTemplate': 'Новый шаблон',
   'admin.expenseTemplates.intro':
     'Шаблоны только заполняют форму расхода на странице закупки. Закупщик всё равно выбирает дату, магазин, сумму, чек и причину для каждого фактического расхода.',
   'admin.expenseTemplates.empty.title': 'Шаблонов пока нет',
@@ -1897,7 +1894,7 @@ export const ru = {
   'dishes.empty.title': 'Пока нет блюд',
   'dishes.empty.description':
     'Добавьте блюда меню; рецепт связывает каждое блюдо с товарами-ингредиентами.',
-  'dishes.action.new': '+ Новое блюдо',
+  'dishes.action.new': 'Новое блюдо',
   'dishes.action.addIngredient': '+ Ингредиент',
   'dishes.label.noIngredients': 'Нет рецепта',
   'dishes.label.noIngredientsHint':

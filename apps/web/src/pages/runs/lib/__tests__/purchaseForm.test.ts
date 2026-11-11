@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { trackDraftChange } from '../../../../hooks/useDraftChanged';
+import { stepDraftChange } from '../../../../hooks/useDraftChanged';
 import {
   addItemDraftEdits,
   purchaseDraftCheck,
@@ -45,9 +45,8 @@ const addItem = (over: Partial<AddItemFormDraft> = {}): AddItemFormDraft => ({
 
 /** useDraftChanged, step by step: the first draft is the sheet as it opened. */
 function sheet<T>(pick: (d: T) => unknown, opened: T) {
-  const ref = { current: null };
-  trackDraftChange(ref, 'row', JSON.stringify(pick(opened)));
-  return (now: T) => trackDraftChange(ref, 'row', JSON.stringify(pick(now)));
+  const first = stepDraftChange(null, 'row', JSON.stringify(pick(opened)));
+  return (now: T) => stepDraftChange(first.opened, 'row', JSON.stringify(pick(now))).changed;
 }
 
 describe('splitsAddUp: the server measure', () => {
