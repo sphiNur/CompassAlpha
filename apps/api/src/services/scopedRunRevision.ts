@@ -23,6 +23,7 @@
  *
  * `scope === null` means unrestricted: the input is returned untouched.
  */
+import { sumQty } from '@compass/contracts/quantity';
 
 export type ScopedSplit = {
   storeId: string;
@@ -50,25 +51,6 @@ export class StoreOutOfScopeError extends Error {
   constructor(readonly storeId: string) {
     super('run.errors.notVisible');
   }
-}
-
-/** Exact decimal addition for non-negative decimal strings. */
-export function addDecimalStrings(values: readonly string[]): string {
-  if (values.length === 0) return '0';
-  const scale = values.reduce((max, value) => {
-    const point = value.indexOf('.');
-    return Math.max(max, point < 0 ? 0 : value.length - point - 1);
-  }, 0);
-  let total = 0n;
-  for (const value of values) {
-    const [whole = '0', fraction = ''] = value.split('.');
-    total += BigInt(`${whole || '0'}${fraction.padEnd(scale, '0')}`);
-  }
-  if (scale === 0) return total.toString();
-  const digits = total.toString().padStart(scale + 1, '0');
-  const fraction = digits.slice(-scale).replace(/0+$/, '');
-  const whole = digits.slice(0, -scale);
-  return fraction ? `${whole}.${fraction}` : whole;
 }
 
 /** Splits of `item` the actor cannot see (empty when unrestricted). */
@@ -105,7 +87,7 @@ export function mergeScopedRevision<T extends ScopedRevisionInput>(
 
   return {
     ...input,
-    actualQty: addDecimalStrings([input.actualQty, ...hidden.map((split) => split.qty)]),
+    actualQty: sumQty([input.actualQty, ...hidden.map((split) => split.qty)]),
     storeSplits: [...input.storeSplits, ...carried],
     // run.get returned these as null to this actor; null here means
     // "not shown", not "clear it".

@@ -601,3 +601,8 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
     }
   }
 }
+
+/** Replay a run's events, in order, into its state. */
+export function replayRun(streamId: string, events: readonly RunEvent[]): RunState {
+  return events.reduce(applyRun, emptyRunState(streamId));
+}
