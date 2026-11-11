@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useUiLabels } from '../labels';
-import { cn } from '../cn.js';
+import { cn } from '../cn';
+import { FieldError } from './FieldError';
+import { FieldLabel } from './Rows';
 
 /**
  * Result of a `requestPresign` mutation that the host wires through to
@@ -69,6 +71,11 @@ export function PhotoCapture({
   // See packages/ui/src/labels.tsx.
   const labels = useUiLabels();
   const effectiveLabel = label ?? labels.photoLabel;
+  // UI-02: the field's label names the take-photo button, and a failed
+  // upload is announced and tied to it.
+  const labelId = useId();
+  const actionId = useId();
+  const errorId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +127,7 @@ export function PhotoCapture({
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">{effectiveLabel}</span>
+      <FieldLabel id={labelId}>{effectiveLabel}</FieldLabel>
       {value ? (
         <div className="relative">
           <img
@@ -144,6 +151,8 @@ export function PhotoCapture({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
+          aria-labelledby={`${labelId} ${actionId}`}
+          aria-describedby={error ? errorId : undefined}
           className={cn(
             'press flex h-32 w-full flex-col items-center justify-center gap-1 rounded-[var(--r-card)]',
             'border-2 border-dashed border-[var(--c-divider)] bg-[var(--c-surface-2)]',
@@ -154,10 +163,16 @@ export function PhotoCapture({
           <span className="text-old-h1" aria-hidden>
             📷
           </span>
-          <span className="text-old-body-sm">{busy ? labels.uploading : labels.photoHint}</span>
+          <span id={actionId} className="text-old-body-sm">
+            {busy ? labels.uploading : labels.photoHint}
+          </span>
         </button>
       )}
-      {error ? <span className="text-old-label text-[var(--c-danger)]">{error}</span> : null}
+      {error ? (
+        <FieldError id={errorId} className="mt-0">
+          {error}
+        </FieldError>
+      ) : null}
       <input
         ref={inputRef}
         type="file"

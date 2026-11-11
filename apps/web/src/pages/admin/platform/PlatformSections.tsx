@@ -212,15 +212,15 @@ function SubscriptionSheet({
         <Field label={i18n.t('platform.field.trialEnds')}>
           <Input type="date" value={trialEndsAt} onChange={(e) => setTrialEndsAt(e.target.value)} />
         </Field>
-        <Field label={i18n.t('platform.field.periodEnds')}>
+        <Field
+          label={i18n.t('platform.field.periodEnds')}
+          hint={i18n.t('platform.field.periodEndsHint')}
+        >
           <Input
             type="date"
             value={currentPeriodEnd}
             onChange={(e) => setCurrentPeriodEnd(e.target.value)}
           />
-          <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('platform.field.periodEndsHint')}
-          </p>
         </Field>
         <Field label={i18n.t('platform.field.graceEnds')}>
           <Input type="date" value={graceEndsAt} onChange={(e) => setGraceEndsAt(e.target.value)} />

@@ -857,7 +857,7 @@ export const ru = {
   'admin.label.thisStore': 'этот магазин',
   'admin.label.loadingRoles': 'Загрузка ролей…',
   'admin.label.loadingStores': 'Загрузка магазинов…',
-  'admin.field.tgUserId': 'Telegram ID *',
+  'admin.field.tgUserId': 'Telegram ID',
   'admin.field.tgUserIdPlaceholder': 'например, 123456789',
   'admin.field.displayName': 'Отображаемое имя',
   'admin.field.displayNamePlaceholder':
@@ -1492,7 +1492,6 @@ export const ru = {
   'run.action.addExpense.targetStores': 'Какие магазины платят?',
   'run.action.addExpense.splitHint': 'выбрано {n} · авто-деление поровну',
   'run.action.addExpense.resplitEvenly': 'Разделить поровну',
-  'run.action.addExpense.receiptOptional': 'Чек (необязательно)',
   'run.action.addExpense.save': 'Сохранить расход',
   'run.action.removeExpense': 'Удалить расход',
   'run.section.expenses': 'Вне каталога и расходы',

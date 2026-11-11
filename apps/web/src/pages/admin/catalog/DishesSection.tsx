@@ -10,6 +10,7 @@ import {
   DataState,
   EmptyState,
   Field,
+  FieldError,
   Input,
   SectionLabel,
   Select,
@@ -466,13 +467,9 @@ export function DishesSection() {
                           </span>
                         </div>
                         {archivedSku ? (
-                          <span
-                            id={archivedNoteId}
-                            className="flex items-start gap-1 text-old-label text-[var(--c-danger)]"
-                          >
-                            <span aria-hidden>⚠</span>
-                            <span>{i18n.t('dishes.errors.archivedIngredientRow')}</span>
-                          </span>
+                          <FieldError id={archivedNoteId} className="mt-0">
+                            {i18n.t('dishes.errors.archivedIngredientRow')}
+                          </FieldError>
                         ) : null}
                       </li>
                     );

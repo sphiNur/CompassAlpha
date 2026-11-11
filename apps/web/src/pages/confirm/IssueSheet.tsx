@@ -2,15 +2,7 @@
  * The problem form: how much arrived, why, and an optional photo.
  * Review CONF-07: moved out of ConfirmPage, which keeps the mutation.
  */
-import {
-  Button,
-  FieldError,
-  FieldLabel,
-  Input,
-  PhotoCapture,
-  Sheet,
-  type PhotoUploader,
-} from '@compass/ui';
+import { Button, Field, Input, PhotoCapture, Sheet, type PhotoUploader } from '@compass/ui';
 import { useI18n, useUnitLabel } from '../../hooks/useI18n';
 import { formatQty } from '../../lib/format';
 import { DECISION_LABEL, RECEIVED_QTY_MESSAGE, type IssueFormCheck } from './confirmLogic';
@@ -111,55 +103,41 @@ export function IssueSheet({
             starts at the delivered qty (2026-11-05 owner) and is
             lowered to what is usable. */}
         {draft ? (
-          <div className="flex flex-col gap-1">
-            {/* DLV-10: once typed into, the field had no visible label.
-                DX-DLV-07: the label is the field's name (no placeholder
-                or aria-label repeating it), and the error waits until
-                the field was used or Save was tried. */}
-            <FieldLabel htmlFor="issue-received">
-              {i18n.t('confirm.issue.receivedQty', {
-                max: formatQty(draft.splitQty),
-                unit: unitLabel(draft.unit, draft.splitQty),
-              })}
-            </FieldLabel>
+          // DLV-10: once typed into, the field had no visible label.
+          // DX-DLV-07: the label is the field's name (no placeholder or
+          // aria-label repeating it), and the error waits until the field
+          // was used or Save was tried.
+          <Field
+            label={i18n.t('confirm.issue.receivedQty', {
+              max: formatQty(draft.splitQty),
+              unit: unitLabel(draft.unit, draft.splitQty),
+            })}
+            error={receivedError}
+          >
             <Input
-              id="issue-received"
               type="number"
-              // The line below says what is wrong, once the field was used.
+              // The field's error says what is wrong, "not a number" too.
               formatError="none"
               value={draft.received}
               onChange={(e) => form.setReceived(e.target.value)}
               onBlur={form.touchReceived}
-              invalid={!!receivedError}
-              aria-describedby={receivedError ? 'issue-received-error' : undefined}
             />
-            {/* CONF-21: the kit's field error, as on every other form. */}
-            {receivedError ? (
-              <FieldError id="issue-received-error" className="mt-0">
-                {receivedError}
-              </FieldError>
-            ) : null}
-          </div>
+          </Field>
         ) : null}
-        <div className="flex flex-col gap-1">
-          <FieldLabel htmlFor="issue-note">{i18n.t('confirm.issue.noteLabel')}</FieldLabel>
+        <Field
+          label={i18n.t('confirm.issue.noteLabel')}
+          error={check?.noteMissingShown ? i18n.t('confirm.issue.noteRequired') : null}
+        >
           <Input
-            id="issue-note"
             value={draft?.note ?? ''}
             onChange={(e) => form.setNote(e.target.value)}
             placeholder={i18n.t('confirm.issue.placeholder')}
             maxLength={500}
             required
+            // The label says "(required)"; no "*" beside it.
             aria-required
-            aria-invalid={check?.noteMissingShown ? true : undefined}
-            aria-describedby={check?.noteMissingShown ? 'issue-note-error' : undefined}
           />
-          {check?.noteMissingShown ? (
-            <FieldError id="issue-note-error" className="mt-0">
-              {i18n.t('confirm.issue.noteRequired')}
-            </FieldError>
-          ) : null}
-        </div>
+        </Field>
         <PhotoCapture
           label={i18n.t('confirm.issue.photoOptional')}
           value={draft?.photo ?? null}

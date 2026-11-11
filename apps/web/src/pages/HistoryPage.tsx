@@ -5,7 +5,16 @@
  * the page never downloads an org-wide ledger and filters it in the browser.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Field, Input, QueryErrorBanner, SearchInput, Select, Sheet } from '@compass/ui';
+import {
+  Button,
+  Field,
+  FieldGroup,
+  Input,
+  QueryErrorBanner,
+  SearchInput,
+  Select,
+  Sheet,
+} from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useI18n, useProductNameParts } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
@@ -264,10 +273,10 @@ export function HistoryPage() {
             </Select>
           </Field>
 
-          <div>
-            <div className="mb-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.history.dateRange')}
-            </div>
+          <FieldGroup
+            label={i18n.t('run.history.dateRange')}
+            error={invalidDateRange ? i18n.t('run.history.invalidDateRange') : null}
+          >
             <div className="mb-2 flex flex-wrap gap-2">
               {[7, 30, 90].map((days) => (
                 <Button
@@ -312,12 +321,7 @@ export function HistoryPage() {
                 />
               </Field>
             </div>
-            {invalidDateRange ? (
-              <div className="mt-1 text-old-label text-[var(--c-danger)]">
-                {i18n.t('run.history.invalidDateRange')}
-              </div>
-            ) : null}
-          </div>
+          </FieldGroup>
 
           <Field label={i18n.t('run.history.paymentFilter')}>
             <Select

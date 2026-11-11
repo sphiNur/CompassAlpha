@@ -11,7 +11,7 @@
  * The audit's PermissionMatrix consolidation (3 hand-rolled matrices)
  * lands on top of this split as its own pass.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -1094,7 +1094,6 @@ function RoleCreateSheet({
   }, [open, myMaxRank]);
   const rankRead = readRank(rankText, maxRank);
   const slugBad = slug.length > 0 && !slugIsValid(slug);
-  const slugErrorId = useId();
   // DX-IX-10: ask before Esc / backdrop / Back throws the typing away.
   const createChanged =
     slug !== '' ||
@@ -1165,30 +1164,29 @@ function RoleCreateSheet({
       }
     >
       <div className="flex flex-col gap-3 py-3">
-        <Field label={`${i18n.t('admin.field.slug')} *`}>
+        {/* DX-ADM-4: say the rule instead of greying the button out. */}
+        <Field
+          label={i18n.t('admin.field.slug')}
+          required
+          hint={slugBad ? null : i18n.t('people.slugRule')}
+          error={
+            slugBad
+              ? i18n.t('people.slugInvalid')
+              : slugTouched && slug === ''
+                ? i18n.t('people.slugRequired')
+                : null
+          }
+        >
           <Input
             value={slug}
             onChange={(e) => setSlug(normaliseSlugInput(e.target.value))}
             onBlur={() => setSlugTouched(true)}
             maxLength={64}
             placeholder={i18n.t('admin.field.roleSlugPlaceholder')}
-            invalid={slugBad}
-            aria-describedby={slugErrorId}
             autoFocus
           />
-          {/* DX-ADM-4: say the rule instead of greying the button out. */}
-          <p
-            id={slugErrorId}
-            aria-live="polite"
-            className={`mt-1 text-old-label ${
-              slugBad ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]'
-            }`}
-          >
-            {i18n.t(slugBad ? 'people.slugInvalid' : 'people.slugRule')}
-            {slugTouched && slug === '' ? ` ${i18n.t('people.slugRequired')}` : ''}
-          </p>
         </Field>
-        <Field label={`${i18n.t('admin.field.name')} *`}>
+        <Field label={i18n.t('admin.field.name')} required>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -1295,25 +1293,22 @@ function RankField({
   hint?: string;
 }) {
   const i18n = useI18n();
-  const errorId = useId();
   const [touched, setTouched] = useState(false);
   const bad = touched && !readRank(text, max, min).ok;
   return (
-    <Field label={`${i18n.t('people.rankField', { min, max })} *`} hint={hint}>
+    <Field
+      label={i18n.t('people.rankField', { min, max })}
+      required
+      hint={hint}
+      error={bad ? i18n.t('people.rankInvalid', { min, max }) : null}
+    >
       <Input
         value={text}
         onChange={(e) => onText(e.target.value)}
         onBlur={() => setTouched(true)}
         inputMode="numeric"
         maxLength={3}
-        invalid={bad}
-        aria-describedby={bad ? errorId : undefined}
       />
-      {bad ? (
-        <p id={errorId} className="mt-1 text-old-label text-[var(--c-danger)]">
-          {i18n.t('people.rankInvalid', { min, max })}
-        </p>
-      ) : null}
     </Field>
   );
 }
@@ -1506,7 +1501,7 @@ function RolePermissionsSheet({
         <div className="flex flex-col gap-3 py-3">
           {editing ? (
             <>
-              <Field label={`${i18n.t('admin.field.name')} *`}>
+              <Field label={i18n.t('admin.field.name')} required>
                 <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
               </Field>
               <Field label={i18n.t('admin.field.description')}>
@@ -1954,7 +1949,6 @@ function ManualInviteSheet({
   useEffect(() => {
     if (!open) setTgTouched(false);
   }, [open]);
-  const tgErrorId = useId();
   const tgShown = tgProblem === 'notDigits' || (tgTouched && tgProblem === 'length');
   const tgIdValid = draft ? draft.tgUserId.trim() !== '' && tgProblem === null : false;
   // Adminish roles bypass the store check at the server side, so we
@@ -1990,7 +1984,12 @@ function ManualInviteSheet({
             </p>
           ) : (
             <>
-              <Field label={i18n.t('admin.field.tgUserId')}>
+              <Field
+                label={i18n.t('admin.field.tgUserId')}
+                required
+                hint={tgShown ? null : i18n.t('admin.invite.tgIdHint')}
+                error={tgShown ? i18n.t('admin.invite.tgIdInvalid') : null}
+              >
                 <Input
                   value={draft.tgUserId}
                   onChange={(e) => setDraft({ ...draft, tgUserId: e.target.value })}
@@ -1998,19 +1997,8 @@ function ManualInviteSheet({
                   inputMode="numeric"
                   maxLength={32}
                   placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
-                  invalid={tgShown}
-                  aria-describedby={tgErrorId}
                   autoFocus
                 />
-                <p
-                  id={tgErrorId}
-                  aria-live="polite"
-                  className={`mt-1 text-old-label ${
-                    tgShown ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]'
-                  }`}
-                >
-                  {tgShown ? i18n.t('admin.invite.tgIdInvalid') : i18n.t('admin.invite.tgIdHint')}
-                </p>
               </Field>
               <Field label={i18n.t('admin.field.displayName')}>
                 <Input
@@ -2022,7 +2010,16 @@ function ManualInviteSheet({
               </Field>
             </>
           )}
-          <Field label={i18n.t('admin.field.role')}>
+          <Field
+            label={i18n.t('admin.field.role')}
+            error={
+              pickedRoleOutranks
+                ? i18n.t('auth.errors.cannotGrantEqualOrHigher')
+                : pickedRoleBlocked
+                  ? i18n.t('people.roleHasKeysYouLack')
+                  : null
+            }
+          >
             {rolesQuery.isLoading ? (
               <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
             ) : (
@@ -2043,15 +2040,6 @@ function ManualInviteSheet({
                 })}
               </Select>
             )}
-            {pickedRoleOutranks ? (
-              <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
-                {i18n.t('auth.errors.cannotGrantEqualOrHigher')}
-              </p>
-            ) : pickedRoleBlocked ? (
-              <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
-                {i18n.t('people.roleHasKeysYouLack')}
-              </p>
-            ) : null}
           </Field>
           {requiresStore ? (
             <FieldGroup
@@ -2222,7 +2210,10 @@ function ManageMemberSheet({
     >
       {target ? (
         <div className="flex flex-col gap-4 py-3">
-          <Field label={i18n.t('admin.field.displayNameOverride')}>
+          <Field
+            label={i18n.t('admin.field.displayNameOverride')}
+            hint={i18n.t('people.nameOverrideHint')}
+          >
             <div className="flex gap-2">
               <Input
                 value={name}
@@ -2245,9 +2236,6 @@ function ManageMemberSheet({
                 {i18n.t('common.save')}
               </Button>
             </div>
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.nameOverrideHint')}
-            </p>
           </Field>
 
           <FieldGroup label={i18n.t('admin.field.assignedStores')}>
@@ -2474,7 +2462,7 @@ function TransferStoreSheet({
               {target.fromStoreName}
             </div>
           </Field>
-          <Field label={`${i18n.t('people.transferTo')} *`}>
+          <Field label={i18n.t('people.transferTo')} required>
             {destinationStores.length === 0 ? (
               <Banner tone="warn" title={i18n.t('people.transferNoDestTitle')}>
                 {i18n.t('people.transferNoDestBody')}

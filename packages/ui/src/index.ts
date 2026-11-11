@@ -87,6 +87,7 @@ export type {
   DetailRowProps,
   TileProps,
   FieldProps,
+  FieldGroupProps,
   PickerRowProps,
   NameCellProps,
 } from './components/Rows';

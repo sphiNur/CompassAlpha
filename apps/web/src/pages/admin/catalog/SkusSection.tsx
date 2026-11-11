@@ -339,7 +339,7 @@ export function SkusSection() {
               {/* 2026-07-30: unit and step are Selects over the contract
                   enums (SkuUnitSchema / SkuStepSchema) — free-text units
                   produced 个 / ta / Pcs / karobka duplicates in prod. */}
-              <Field label={`${i18n.t('admin.field.unit')} *`}>
+              <Field label={i18n.t('admin.field.unit')} required>
                 <Select
                   value={draft.unit}
                   onChange={(e) => setDraft({ ...draft, unit: e.target.value as SkuUnit })}

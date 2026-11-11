@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Banner } from './Banner';
 import { Button } from './Button';
 import { Input } from './Input';
+import { Field } from './Rows';
 import { Sheet } from './Sheet';
 import { useUiLabels } from '../labels';
 import { useTapGuard } from '../useTapGuard';
@@ -202,16 +203,14 @@ export function ConfirmSheet({
           </p>
         ) : null}
         {field.showField ? (
-          <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-            {reasonLabel ?? labels.reason}
+          <Field label={reasonLabel ?? labels.reason}>
             <Input
-              className="mt-1"
               value={reason}
               onChange={(e) => onReasonChange?.(e.target.value)}
               placeholder={reasonPlaceholder}
               autoFocus={field.autoFocus}
             />
-          </label>
+          </Field>
         ) : null}
         {field.showToggle ? (
           <button

@@ -1,4 +1,13 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Banner,
   Button,
@@ -7,6 +16,7 @@ import {
   cn,
   DataState,
   EmptyState,
+  FieldError,
   Input,
   NameCell,
   QtyControl,
@@ -2609,6 +2619,7 @@ function ExtraRowEditor({
 }) {
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
+  const errorId = useId();
   const [focusing, setFocusing] = useState(false);
   // Suggestions query — fetches up to 20 distinct names this store
   // has used in the last 30 days. Enabled only while the name input
@@ -2706,6 +2717,7 @@ function ExtraRowEditor({
           // field ignored.
           inputMode={WHOLE_NUMBER_UNITS.has(row.unit) ? 'numeric' : 'decimal'}
           invalid={invalid && badExtraQty(row)}
+          aria-describedby={invalid && badExtraQty(row) ? errorId : undefined}
           aria-label={i18n.t('order.extras.qtyLabel')}
           className="w-24 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
@@ -2715,6 +2727,7 @@ function ExtraRowEditor({
             value={row.unit}
             aria-label={i18n.t('order.extras.unitLabel')}
             invalid={unlistedUnit(row)}
+            aria-describedby={invalid && unlistedUnit(row) ? errorId : undefined}
             // M3.34: constrained to canonical units (CanonicalUnitSchema).
             // Free-text caused "kg"/"kgs"/"公斤" drift that broke
             // aggregation + i18n. Labels go through useUnitLabel so the
@@ -2734,14 +2747,15 @@ function ExtraRowEditor({
           </Select>
         </div>
       </div>
+      {/* UI-02: the kit's error line, tied to the field it is about. */}
       {invalid ? (
-        <p className="mt-1 px-1 text-old-label text-[var(--c-danger)]">
+        <FieldError id={errorId} className="px-1">
           {unlistedUnit(row)
             ? i18n.t('order.extras.chooseUnit')
             : wholeNumberRequired(row)
               ? i18n.t('order.extras.wholeNumber')
               : i18n.t('order.errors.invalidQty')}
-        </p>
+        </FieldError>
       ) : null}
     </div>
   );

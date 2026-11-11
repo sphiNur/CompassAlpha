@@ -5,8 +5,8 @@
  * all of these twice. CONF-11: the lines are rows divided by hairlines
  * inside the card (UI-6 / UI-13); each was a grey card of its own.
  */
-import { useId, type ReactNode } from 'react';
-import { Button, EmptyState, Field, FieldError, Input, Textarea, rowListClass } from '@compass/ui';
+import type { ReactNode } from 'react';
+import { Button, EmptyState, Field, Input, Textarea, rowListClass } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { ITEM_MONEY_PROBLEM_MESSAGE, moneyProblem, type MoneyProblem } from './moneyProblem';
 
@@ -117,26 +117,21 @@ export function LineAmountField({
   onChange: (value: string) => void;
 }) {
   const i18n = useI18n();
-  const errorId = useId();
   return (
-    <Field label={label}>
+    <Field
+      label={label}
+      error={problem ? i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[problem], { field: name }) : null}
+    >
       <Input
         type="number"
         value={value}
         placeholder="0"
         readOnly={readOnly}
         aria-label={name}
-        invalid={problem !== null}
-        aria-describedby={problem ? errorId : undefined}
         formatError="none"
         onBlur={onLeave}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
-      {problem ? (
-        <FieldError id={errorId}>
-          {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[problem], { field: name })}
-        </FieldError>
-      ) : null}
     </Field>
   );
 }
@@ -167,32 +162,29 @@ export function LineReasonField({
   onChange: (value: string) => void;
 }) {
   const i18n = useI18n();
-  const errorId = useId();
   return (
-    <Field label={label}>
+    <Field
+      label={label}
+      error={
+        !isHistorical && missing
+          ? i18n.t('settlement.errors.itemReasonEmpty', { field: name })
+          : null
+      }
+    >
       {isHistorical ? (
         <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
           {historicalText}
         </p>
       ) : (
-        <>
-          <Textarea
-            value={value}
-            maxLength={500}
-            readOnly={readOnly}
-            aria-label={name}
-            placeholder={placeholder}
-            invalid={missing}
-            aria-describedby={missing ? errorId : undefined}
-            onBlur={onLeave}
-            onChange={(event) => onChange(event.currentTarget.value)}
-          />
-          {missing ? (
-            <FieldError id={errorId}>
-              {i18n.t('settlement.errors.itemReasonEmpty', { field: name })}
-            </FieldError>
-          ) : null}
-        </>
+        <Textarea
+          value={value}
+          maxLength={500}
+          readOnly={readOnly}
+          aria-label={name}
+          placeholder={placeholder}
+          onBlur={onLeave}
+          onChange={(event) => onChange(event.currentTarget.value)}
+        />
       )}
     </Field>
   );

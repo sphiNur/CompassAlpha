@@ -257,34 +257,24 @@ export function InventoryActionSheet({
                   qty: formatQty(action.current),
                 })}
               </div>
+              {/* DX-INV-1: the reason a count can't be saved sits under the
+                    field and is tied to it, as in the daily close. */}
               <Field
                 label={i18n.t('inventory.sheet.stocktake.targetLabel')}
                 hint={i18n.t('inventory.sheet.stocktake.targetHint')}
+                error={
+                  countProblem && countProblem !== 'empty'
+                    ? i18n.t(STOCKTAKE_COUNT_MESSAGE[countProblem])
+                    : null
+                }
               >
-                {/* DX-INV-1: the reason a count can't be saved sits under
-                      the field and is tied to it, as in the daily close. */}
                 <Input
                   type="number"
                   formatError="none"
-                  aria-label={i18n.t('inventory.sheet.stocktake.targetLabel')}
                   value={draftTarget}
-                  invalid={countProblem !== null && countProblem !== 'empty'}
-                  aria-describedby={
-                    countProblem && countProblem !== 'empty' ? 'stocktake-error' : undefined
-                  }
                   onChange={(e) => setDraftTarget(e.target.value)}
                   autoFocus
                 />
-                {countProblem && countProblem !== 'empty' ? (
-                  <span
-                    id="stocktake-error"
-                    role="alert"
-                    className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
-                  >
-                    <span aria-hidden>⚠</span>
-                    <span>{i18n.t(STOCKTAKE_COUNT_MESSAGE[countProblem])}</span>
-                  </span>
-                ) : null}
                 {/* Walkthrough F24 (2026-11-05): "the system works out the
                       difference" — now it is shown before saving. */}
                 {countProblem === null && draftTarget.trim() !== ''

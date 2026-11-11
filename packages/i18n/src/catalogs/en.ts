@@ -905,7 +905,7 @@ export const en = {
   'admin.label.thisStore': 'this store',
   'admin.label.loadingRoles': 'Loading roles…',
   'admin.label.loadingStores': 'Loading stores…',
-  'admin.field.tgUserId': 'Telegram user ID *',
+  'admin.field.tgUserId': 'Telegram user ID',
   'admin.field.tgUserIdPlaceholder': 'e.g. 123456789',
   'admin.field.displayName': 'Display name',
   'admin.field.displayNamePlaceholder': 'optional · the user can confirm/change at first sign-in',
@@ -1545,7 +1545,6 @@ export const en = {
   'run.action.addExpense.targetStores': 'Which stores pay?',
   'run.action.addExpense.splitHint': '{n} selected · auto-split evenly',
   'run.action.addExpense.resplitEvenly': 'Re-split evenly',
-  'run.action.addExpense.receiptOptional': 'Receipt (optional)',
   'run.action.addExpense.save': 'Save expense',
   'run.action.removeExpense': 'Remove expense',
   'run.section.expenses': 'Off-catalog items and expenses',
@@ -1883,9 +1882,9 @@ export const en = {
   // The Admin section had ~40 form labels hardcoded in English JSX
   // (`<Field label="Slug *">`, etc.). This block centralises them so
   // the non-EN catalogs can translate once and every form picks up
-  // the right copy. Most labels leave the `*` of a required field to
-  // the JSX; `admin.field.tgUserId` and `admin.field.storesPickAtLeastOne`
-  // carry it in the text.
+  // the right copy. A required field's `*` is drawn by Field's `required`
+  // (UI-02); `admin.field.storesPickAtLeastOne` titles a group of
+  // checkboxes, which cannot be marked required, so it says so itself.
   'admin.field.slug': 'Short code',
   'admin.field.name': 'Name',
   'admin.field.description': 'Description',

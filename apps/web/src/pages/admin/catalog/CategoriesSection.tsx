@@ -186,18 +186,18 @@ export function CategoriesSection() {
             {/* CAT-10 (2026-10-30): the server takes a-z, 0-9 and "-" only;
                 anything else used to come back as 「出错了」. */}
             <Field
-              label={`${i18n.t('admin.field.slug')} *`}
-              hint={
+              label={i18n.t('admin.field.slug')}
+              required
+              error={
                 draft.slug && !SLUG_RE.test(draft.slug)
                   ? i18n.t('catalog.category.slugInvalid')
-                  : undefined
+                  : null
               }
             >
               <Input
                 value={draft.slug}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
                 maxLength={CATALOG_TEXT_MAX.categorySlug}
-                invalid={!!draft.slug && !SLUG_RE.test(draft.slug)}
                 placeholder={i18n.t('catalog.category.slugPlaceholder')}
               />
             </Field>

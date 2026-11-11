@@ -858,7 +858,7 @@ export const uz = {
   'admin.label.thisStore': 'bu doʻkon',
   'admin.label.loadingRoles': 'Rollar yuklanmoqda…',
   'admin.label.loadingStores': 'Doʻkonlar yuklanmoqda…',
-  'admin.field.tgUserId': 'Telegram foydalanuvchi ID *',
+  'admin.field.tgUserId': 'Telegram foydalanuvchi ID',
   'admin.field.tgUserIdPlaceholder': 'masalan, 123456789',
   'admin.field.displayName': 'Koʻrinadigan ism',
   'admin.field.displayNamePlaceholder':
@@ -1484,7 +1484,6 @@ export const uz = {
   'run.action.addExpense.targetStores': 'Qaysi doʻkonlar toʻlaydi?',
   'run.action.addExpense.splitHint': '{n} ta tanlandi · avtomatik teng taqsimlanadi',
   'run.action.addExpense.resplitEvenly': 'Qayta teng taqsimlash',
-  'run.action.addExpense.receiptOptional': 'Chek (ixtiyoriy)',
   'run.action.addExpense.save': 'Xarajatni saqlash',
   'run.action.removeExpense': 'Xarajatni oʻchirish',
   'run.section.expenses': 'Katalogdan tashqari, xarajat',

@@ -24,7 +24,7 @@
  *
  * Self-protection rules are server-side; the FE just gives the UI.
  */
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -657,7 +657,6 @@ function WorkspaceSection() {
   const taxToSend = taxRateToSend(draftTax);
   const taxProblem = taxRateProblem(taxToSend);
   const taxError = draftTax.trim() === '' ? null : taxProblem;
-  const taxErrorId = useId();
   useEffect(() => {
     if (!financeSheetOpen) return;
     setDraftCurrency(currency);
@@ -791,34 +790,19 @@ function WorkspaceSection() {
               ))}
             </Select>
           </Field>
-          <div>
-            <Field
-              label={i18n.t('admin.workspace.taxRate')}
-              hint={i18n.t('admin.workspace.taxRateHint')}
-            >
-              <Input
-                type="number"
-                formatError="none"
-                value={draftTax}
-                onChange={(e) => setDraftTax(e.target.value)}
-                placeholder="0"
-                invalid={!!taxError}
-                aria-describedby={taxError ? taxErrorId : undefined}
-              />
-            </Field>
-            {/* Outside the Field's <label>, so the reason is tied to the
-                input instead of read as part of its name. */}
-            {taxError ? (
-              <span
-                id={taxErrorId}
-                role="alert"
-                className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
-              >
-                <span aria-hidden>⚠</span>
-                <span>{i18n.t(TAX_RATE_MESSAGE[taxError])}</span>
-              </span>
-            ) : null}
-          </div>
+          <Field
+            label={i18n.t('admin.workspace.taxRate')}
+            hint={i18n.t('admin.workspace.taxRateHint')}
+            error={taxError ? i18n.t(TAX_RATE_MESSAGE[taxError]) : null}
+          >
+            <Input
+              type="number"
+              formatError="none"
+              value={draftTax}
+              onChange={(e) => setDraftTax(e.target.value)}
+              placeholder="0"
+            />
+          </Field>
           <FieldGroup label={i18n.t('admin.workspace.pricesIncludeTax')}>
             <Switch
               checked={draftInclTax}

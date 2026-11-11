@@ -1,6 +1,7 @@
 import { forwardRef, type TextareaHTMLAttributes } from 'react';
 import { cn } from '../cn';
 import { disabledClass } from './disabled';
+import { joinIds, useFieldControl } from './fieldControl';
 
 /**
  * Textarea — multi-line text input. Sibling of `Input` for inputs
@@ -17,9 +18,7 @@ import { disabledClass } from './disabled';
  *     visibly taller), `bg-[var(--c-surface-2)]`, `ring-hairline`,
  *     focus ring tokenized.
  *
- * Doesn't (yet) carry a built-in label / error slot — that's planned
- * as part of the broader Input + Field overhaul. Pair with the
- * existing `<Field label=...>` row helper in `Rows.tsx` for now.
+ * The label, error and hint come from the `<Field>` around it (UI-02).
  */
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   invalid?: boolean;
@@ -29,6 +28,9 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   { className, invalid, rows = 3, ...rest },
   ref,
 ) {
+  // UI-02: a Field around the textarea shows its error and ties it here.
+  const field = useFieldControl();
+  const marked = !!invalid || !!field?.invalid;
   return (
     <textarea
       ref={ref}
@@ -43,11 +45,14 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
         disabledClass,
-        invalid && 'ring-2 ring-[var(--c-danger)]',
+        marked && 'ring-2 ring-[var(--c-danger)]',
         className,
       )}
-      aria-invalid={invalid || undefined}
       {...rest}
+      // After the spread: what the caller passed adds to the field's own.
+      aria-invalid={marked || rest['aria-invalid'] || undefined}
+      aria-required={field?.required || rest['aria-required'] || undefined}
+      aria-describedby={joinIds(field?.describedBy, rest['aria-describedby'])}
     />
   );
 });
