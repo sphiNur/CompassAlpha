@@ -1,11 +1,20 @@
 /**
  * The parts the expense list and the wage list share: the list's header
- * and empty line, the numbered line with its remove button, and the
+ * and empty state, the numbered line with its remove button, and the
  * line's amount and reason fields. Review CONF-06: the two lists wrote
- * all of these twice.
+ * all of these twice. CONF-11: the lines are rows divided by hairlines
+ * inside the card (UI-6 / UI-13); each was a grey card of its own.
  */
 import { useId, type ReactNode } from 'react';
-import { Button, Field, FieldError, NumberInput, Textarea } from '@compass/ui';
+import {
+  Button,
+  EmptyState,
+  Field,
+  FieldError,
+  NumberInput,
+  Textarea,
+  rowListClass,
+} from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { ITEM_MONEY_PROBLEM_MESSAGE, moneyProblem, type MoneyProblem } from './moneyProblem';
 
@@ -60,11 +69,11 @@ export function DetailListHeader({
 }
 
 export function DetailListEmpty({ children }: { children: ReactNode }) {
-  return (
-    <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-      {children}
-    </p>
-  );
+  return <EmptyState compact title={children} />;
+}
+
+export function DetailLineList({ children }: { children: ReactNode }) {
+  return <div className={rowListClass}>{children}</div>;
 }
 
 export function DetailLineFrame({
@@ -80,7 +89,7 @@ export function DetailLineFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+    <div className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0">
       <div className="flex items-center justify-between gap-3">
         <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">{title}</span>
         {onRemove ? (

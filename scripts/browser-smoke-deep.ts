@@ -524,11 +524,12 @@ async function run() {
     // free-text recipient. Exercise its responsibility filter and selection
     // write-back, which is intentionally an on-demand settlement.wageRoster
     // query rather than the admin employee directory.
+    // Review CONF-11: the employees are the kit's picker rows (radios).
     const addWage = page.locator('button', { hasText: '+ Add wage' }).last();
     await addWage.click();
     const wagePicker = page.locator('[role="dialog"]');
     const pickerLoaded = await wagePicker
-      .getByRole('button', { name: /Wage Cashier/ })
+      .getByRole('radio', { name: /Wage Cashier/ })
       .waitFor({ state: 'visible', timeout: 8_000 })
       .then(() => true)
       .catch(() => false);
@@ -547,7 +548,7 @@ async function run() {
 
       await addWage.click();
       pickerReady = await wagePicker
-        .getByRole('button', { name: /Wage Cashier/ })
+        .getByRole('radio', { name: /Wage Cashier/ })
         .waitFor({ state: 'visible', timeout: 8_000 })
         .then(() => true)
         .catch(() => false);
@@ -559,12 +560,12 @@ async function run() {
       const roleFilter = wagePicker.locator('select');
       await roleFilter.selectOption('role-manager');
       const managerVisible = await wagePicker
-        .getByRole('button', { name: /Wage Manager/ })
+        .getByRole('radio', { name: /Wage Manager/ })
         .waitFor({ state: 'visible', timeout: 5_000 })
         .then(() => true)
         .catch(() => false);
       const cashierHidden = await wagePicker
-        .getByRole('button', { name: /Wage Cashier/ })
+        .getByRole('radio', { name: /Wage Cashier/ })
         .waitFor({ state: 'hidden', timeout: 5_000 })
         .then(() => true)
         .catch(() => false);
@@ -579,7 +580,7 @@ async function run() {
       );
 
       await roleFilter.selectOption('role-cashier');
-      await wagePicker.getByRole('button', { name: /Wage Cashier/ }).click();
+      await wagePicker.getByRole('radio', { name: /Wage Cashier/ }).click();
       await wagePicker.waitFor({ state: 'detached', timeout: 5_000 }).catch(() => {
         /* the parent-row assertion below captures a failed close */
       });

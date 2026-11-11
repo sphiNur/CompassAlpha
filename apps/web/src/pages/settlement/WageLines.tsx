@@ -4,7 +4,7 @@
  * CONF-06: moved out of SettlementPage.
  */
 import { useId, useState } from 'react';
-import { Banner, Button, Field, FieldError, Select, useToast } from '@compass/ui';
+import { Banner, Button, Field, FieldError, IconChevronRight, Select, useToast } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
 import { trpc } from '../../lib/trpc';
 import { haptic } from '../../hooks/useTelegram';
@@ -15,6 +15,7 @@ import { formatMoney } from '../../lib/format';
 import { newDetailId, newWageItem, type WageItemDraft } from './draftModel';
 import {
   DetailLineFrame,
+  DetailLineList,
   DetailListEmpty,
   DetailListHeader,
   LineAmountField,
@@ -232,7 +233,7 @@ export function WageLines({
       {lines.length === 0 ? (
         <DetailListEmpty>{i18n.t('settlement.wages.empty')}</DetailListEmpty>
       ) : (
-        <div className="flex flex-col gap-3">
+        <DetailLineList>
           {lines.map((wage, index) => (
             <WageLine
               key={wage.id}
@@ -248,10 +249,16 @@ export function WageLines({
               onRemove={wage.isHistorical ? undefined : () => remove(wage.id)}
             />
           ))}
-        </div>
+        </DetailLineList>
       )}
 
-      <WagePickerSheet storeId={storeId} lineId={pickerFor} onPick={pick} onClose={closePicker} />
+      <WagePickerSheet
+        storeId={storeId}
+        lineId={pickerFor}
+        chosenMemberId={lines.find((line) => line.id === pickerFor)?.memberId ?? null}
+        onPick={pick}
+        onClose={closePicker}
+      />
     </div>
   );
 }
@@ -303,10 +310,12 @@ function WageLine({
             aria-invalid={employeeMissing || undefined}
             aria-describedby={employeeMissing ? employeeErrorId : undefined}
             disabled={wage.isHistorical}
+            // CONF-11: the arrow is the button's trailing icon. Inside the
+            // label's span it sat right after the name, not at the edge.
+            trailingIcon={<IconChevronRight size={16} />}
             onClick={onChoose}
           >
-            <span className="min-w-0 truncate">{displayedEmployee}</span>
-            <span aria-hidden>›</span>
+            {displayedEmployee}
           </Button>
           {!wage.memberId && wage.personName ? (
             <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">

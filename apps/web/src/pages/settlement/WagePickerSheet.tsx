@@ -1,6 +1,8 @@
 /**
  * Choosing the employee a wage line pays. Review CONF-06: moved out of
- * SettlementPage, with the role filter and search it owns.
+ * SettlementPage, with the role filter and search it owns. CONF-11: the
+ * kit's picker rows, the employee already on the line checked; they were
+ * grey buttons drawn here.
  */
 import { useMemo, useState } from 'react';
 import {
@@ -9,6 +11,8 @@ import {
   EmptyState,
   Field,
   PendingState,
+  PickerGroup,
+  PickerRow,
   SearchInput,
   Select,
   Sheet,
@@ -24,12 +28,15 @@ export interface WagePick {
 export function WagePickerSheet({
   storeId,
   lineId,
+  chosenMemberId,
   onPick,
   onClose,
 }: {
   storeId: string;
   /** The wage line being filled in; `null` while the sheet is closed. */
   lineId: string | null;
+  /** The employee the line already pays. */
+  chosenMemberId: string | null;
   onPick: (employee: WagePick) => void;
   onClose: () => void;
 }) {
@@ -45,7 +52,13 @@ export function WagePickerSheet({
       description={i18n.t('settlement.wages.pickerDescription')}
     >
       {/* Keyed by the line: each opening starts with no filter or search. */}
-      <WageRoster key={lineId ?? ''} storeId={storeId} open={lineId !== null} onPick={onPick} />
+      <WageRoster
+        key={lineId ?? ''}
+        storeId={storeId}
+        open={lineId !== null}
+        chosenMemberId={chosenMemberId}
+        onPick={onPick}
+      />
     </Sheet>
   );
 }
@@ -53,10 +66,12 @@ export function WagePickerSheet({
 function WageRoster({
   storeId,
   open,
+  chosenMemberId,
   onPick,
 }: {
   storeId: string;
   open: boolean;
+  chosenMemberId: string | null;
   onPick: (employee: WagePick) => void;
 }) {
   const i18n = useI18n();
@@ -124,43 +139,32 @@ function WageRoster({
       ) : null}
       {loaded && rosterSize === 0 ? (
         <EmptyState
+          compact
           title={i18n.t('settlement.wages.rosterEmptyTitle')}
           description={i18n.t('settlement.wages.rosterEmptyBody')}
         />
       ) : null}
       {loaded && rosterSize > 0 && shown.length === 0 ? (
-        <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-          {i18n.t('settlement.wages.noEmployeeMatch')}
-        </p>
+        <EmptyState compact title={i18n.t('settlement.wages.noEmployeeMatch')} />
       ) : null}
       {loaded && shown.length > 0 ? (
-        <ul className="flex flex-col gap-2" role="list">
+        <PickerGroup label={i18n.t('settlement.wages.pickerTitle')}>
           {shown.map((employee) => (
-            <li key={employee.memberId}>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-3 text-left ring-hairline transition-colors hover:bg-[var(--c-surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]"
-                onClick={() => onPick(employee)}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                    {employee.displayName}
-                  </span>
-                  <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">
-                    {employee.roles.length > 0
-                      ? employee.roles
-                          .map((role) => roleText.name(role))
-                          .join(i18n.t('common.listSeparator'))
-                      : i18n.t('settlement.wages.noRole')}
-                  </span>
-                </span>
-                <span className="shrink-0 text-old-label font-semibold text-[var(--c-action)]">
-                  {i18n.t('settlement.wages.chooseEmployee')}
-                </span>
-              </button>
-            </li>
+            <PickerRow
+              key={employee.memberId}
+              label={employee.displayName}
+              hint={
+                employee.roles.length > 0
+                  ? employee.roles
+                      .map((role) => roleText.name(role))
+                      .join(i18n.t('common.listSeparator'))
+                  : i18n.t('settlement.wages.noRole')
+              }
+              selected={employee.memberId === chosenMemberId}
+              onClick={() => onPick(employee)}
+            />
           ))}
-        </ul>
+        </PickerGroup>
       ) : null}
     </div>
   );

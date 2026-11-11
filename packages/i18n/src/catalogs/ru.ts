@@ -2112,7 +2112,6 @@ export const ru = {
   'settlement.history.created': 'Первая запись',
   'settlement.history.changed': 'Изменено: {fields}',
   'settlement.history.reason': 'Причина: {reason}',
-  'settlement.recent.open': 'Открыть запись',
   'settlement.save.new': 'Сохранить закрытие дня',
   'settlement.save.update': 'Сохранить исправление',
   'settlement.save.saving': 'Сохранение…',

@@ -2099,7 +2099,6 @@ export const uz = {
   'settlement.history.created': 'Birinchi marta yozildi',
   'settlement.history.changed': 'Oʻzgardi: {fields}',
   'settlement.history.reason': 'Sabab: {reason}',
-  'settlement.recent.open': 'Yozuvni ochish',
   'settlement.save.new': 'Kun yakunini saqlash',
   'settlement.save.update': 'Tuzatishni saqlash',
   'settlement.save.saving': 'Saqlanmoqda…',
