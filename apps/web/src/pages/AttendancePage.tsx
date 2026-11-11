@@ -27,7 +27,7 @@
  * minutes (attendance/usePunchFlow.ts, attendance/PunchSheet.tsx).
  */
 import { useEffect, useState } from 'react';
-import { Banner, Button, ConfirmSheet, DataState, EmptyState, PageHeader } from '@compass/ui';
+import { Banner, Button, ConfirmSheet, DataState, EmptyState } from '@compass/ui';
 import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
 import { haptic } from '../hooks/useTelegram';
@@ -47,7 +47,6 @@ import {
 import { GeoMap, type GeoArea } from '../components/geo/GeoMap';
 import { useErrToast } from '../lib/errToast';
 import { trpc } from '../lib/trpc';
-import { useAuthStore } from '../stores/authStore';
 import { loadFaceTracker } from '../lib/faceTracker';
 import { FaceConsentSheet } from './attendance/FaceConsentSheet';
 import { FaceEnrollSheet } from './attendance/FaceEnrollSheet';
@@ -106,9 +105,6 @@ export function AttendancePage() {
   const storeCtx = useStoreContext();
   const noStoreYet = useNoStoreYet();
   const storeId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
-  const storeName = useAuthStore((s) =>
-    storeId ? (s.session?.stores.find((st) => st.id === storeId)?.name ?? null) : null,
-  );
 
   if (!storeId) {
     return (
@@ -131,8 +127,10 @@ export function AttendancePage() {
   }
 
   return (
-    <div className="flex flex-col pb-6">
-      <PageHeader title={i18n.t('attendance.page.title')} subtitle={storeName ?? undefined} />
+    // Review UI-14 / ATT-19: a tab page shows no title (UI-12). The nav
+    // names it, the Shell renders the hidden <h1>, and the store is the
+    // top bar's store chip. The visible title was a second <h1>.
+    <div className="flex flex-col pb-6 pt-3">
       <ClockPanel key={storeId} storeId={storeId} />
     </div>
   );

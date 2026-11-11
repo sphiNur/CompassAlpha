@@ -139,7 +139,7 @@ member to the first store).
 - A bottom-nav tab page has **no visible title**: the nav names it. The Shell
   renders a hidden `<h1>`. No explanatory paragraph under the top bar.
 - A drill-in screen (admin sections) has the back link and a 19 px semibold
-  `<h1>` — the `AdminSection` header is the pattern.
+  `<h1>` — the kit's `SectionHeader`.
 - Content sits on the 16 px gutter (`px-4`), blocks are `gap-3` apart.
 
 #### UI-13 — One surface

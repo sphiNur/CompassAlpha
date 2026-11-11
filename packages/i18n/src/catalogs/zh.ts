@@ -31,7 +31,6 @@ export const zh = {
   'common.unarchive': '取消归档',
   'common.remove': '移除',
   'common.save': '保存',
-  'common.back': '返回',
   'common.retry': '重试',
   'common.loading': '加载中…',
   'common.errorUnknown': '未知错误',
@@ -900,7 +899,6 @@ export const zh = {
   'admin.toast.roleUpdated': '角色已更新',
   'admin.toast.roleDeleted': '角色已删除',
   'admin.toast.linkCopied': '邀请链接已复制',
-  'admin.toast.clipboardUnavailable': '剪贴板不可用',
   'admin.toast.couldNotCopy': '复制没成功，可以选中文字手动复制。',
   'admin.toast.storeCreated': '门店已创建',
   'admin.toast.storeUpdated': '门店已更新',
@@ -1781,7 +1779,6 @@ export const zh = {
   'run.history.nextPage': '下一页',
 
   // ── 19. 每日结算 ────────────────────────────────────────────────
-  'settlement.title': '日结',
   'settlement.store.label': '门店',
   'settlement.date.label': '营业日期',
   'settlement.date.timezone': '门店时区：{timezone}',
@@ -2204,7 +2201,6 @@ export const zh = {
   'permission.attendance.clock': '在所属门店上下班打卡',
   'permission.attendance.manage': '排班、查看和更正考勤',
   'permission.group.attendance': '考勤',
-  'attendance.page.title': '考勤打卡',
   'attendance.notEnabled.title': '你还没有开通打卡',
   'attendance.notEnabled.body': '请店长在考勤设置里为你开通。',
   'attendance.kind.in': '上班',

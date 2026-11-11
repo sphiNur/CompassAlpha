@@ -31,7 +31,6 @@ export const ru = {
   'common.unarchive': 'Восстановить',
   'common.remove': 'Убрать',
   'common.save': 'Сохранить',
-  'common.back': 'Назад',
   'common.retry': 'Повторить',
   'common.loading': 'Загрузка…',
   'common.errorUnknown': 'Неизвестная ошибка',
@@ -1013,7 +1012,6 @@ export const ru = {
   'admin.toast.roleUpdated': 'Роль обновлена',
   'admin.toast.roleDeleted': 'Роль удалена',
   'admin.toast.linkCopied': 'Ссылка-приглашение скопирована',
-  'admin.toast.clipboardUnavailable': 'Буфер обмена недоступен',
   'admin.toast.couldNotCopy': 'Не удалось скопировать. Выделите текст и скопируйте вручную.',
   'admin.toast.storeCreated': 'Магазин создан',
   'admin.toast.storeUpdated': 'Магазин обновлён',
@@ -2021,7 +2019,6 @@ export const ru = {
   'run.history.nextPage': 'Следующая страница',
 
   // ── 19. Ежедневное закрытие ─────────────────────────────────────────
-  'settlement.title': 'Закрытие дня',
   'settlement.store.label': 'Магазин',
   'settlement.date.label': 'Рабочая дата',
   'settlement.date.timezone': 'Часовой пояс магазина: {timezone}',
@@ -2493,7 +2490,6 @@ export const ru = {
   'permission.attendance.clock': 'Отмечать приход и уход в своих магазинах',
   'permission.attendance.manage': 'Составлять смены, проверять и исправлять учёт времени',
   'permission.group.attendance': 'Учёт времени',
-  'attendance.page.title': 'Отметка прихода',
   'attendance.notEnabled.title': 'Отметка для вас не включена',
   'attendance.notEnabled.body':
     'Попросите управляющего включить её для вас в настройках учёта времени.',
