@@ -919,6 +919,7 @@ export const en = {
   'admin.invite.link.hint':
     'The link can be used once, expires in 7 days, and works only inside Telegram.',
   'admin.invite.link.submit': 'Create invite link',
+  'admin.invite.link.copyTitle': 'Invite link',
   'admin.invite.tgIdHint':
     "Don't know their ID? Ask them to open the Mini App: it shows their Telegram ID on screen, and they can send it to you.",
   'admin.invite.noRoleYet': '— no role yet (grant later) —',

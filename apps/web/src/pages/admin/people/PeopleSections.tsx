@@ -43,6 +43,7 @@ import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
+import { copyText } from '../../../lib/clipboard';
 import { useErrToast } from '../../../lib/errToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
@@ -53,6 +54,7 @@ import {
   shareLink as makeShareLink,
 } from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
+import { InviteCopySheet } from './InviteCopySheet';
 import {
   defaultNewRoleRank,
   normaliseSlugInput,
@@ -282,41 +284,50 @@ export function PeopleSection({
     staleTime: STALE.long,
   });
   const createInvite = trpc.admin.memberInviteCreate.useMutation({
-    onSuccess: async (data) => {
-      void utils.admin.memberInviteList.invalidate();
-      const link = makeInviteLink(appConfig.data?.botUsername, data.token);
-      if (!link) {
-        toast.error(i18n.t('people.inviteNoBot'));
-        return;
-      }
-      const message = i18n.t('people.inviteMessage', {
-        org: session?.member.orgName ?? '',
-      });
-      if (linkAction === 'copy') {
-        try {
-          if (!navigator.clipboard) {
-            toast.error(i18n.t('admin.toast.clipboardUnavailable'));
-            return;
-          }
-          await navigator.clipboard.writeText(`${message}\n${link}`);
-          toast.success(i18n.t('admin.toast.linkCopied'));
-        } catch {
-          toast.error(i18n.t('admin.toast.couldNotCopy'));
-          return;
-        }
-      } else {
-        const shareUrl = makeShareLink({ url: link, text: message });
-        const tg = getTg();
-        if (tg) {
-          tg.openTelegramLink(shareUrl);
-        } else if (typeof window !== 'undefined') {
-          window.open(shareUrl, '_blank');
-        }
-      }
-      setLinkDraft(null);
-    },
+    onSuccess: () => void utils.admin.memberInviteList.invalidate(),
     onError: errToast('common.errors.actionFailed'),
   });
+  // ADM1-15: an invite the clipboard refused, shown to copy by hand. The
+  // server keeps no copy of the token, so it can't be fetched again.
+  const [uncopiedInvite, setUncopiedInvite] = useState<string | null>(null);
+  /**
+   * Creates a link invite, then copies or shares it. ADM1-15 (2026-11-11):
+   * the copy is asked for here, inside the tap, and filled in when the
+   * link arrives; WebKit (Telegram on iOS) refused the write that waited
+   * for the server (lib/clipboard).
+   */
+  const sendLinkInvite = (input: { roleSlug?: string; storeIds: string[] }) => {
+    const NO_BOT = 'people.inviteNoBot';
+    const invite = createInvite.mutateAsync(input).then((data) => {
+      const link = makeInviteLink(appConfig.data?.botUsername, data.token);
+      if (!link) throw new Error(NO_BOT);
+      const message = i18n.t('people.inviteMessage', { org: session?.member.orgName ?? '' });
+      return { link, message, text: `${message}\n${link}` };
+    });
+    const failed = (err: unknown) => {
+      // A refused create was already reported by the mutation's onError.
+      if (err instanceof Error && err.message === NO_BOT) toast.error(i18n.t(NO_BOT));
+    };
+    if (linkAction === 'copy') {
+      const text = invite.then((sent) => sent.text);
+      void copyText(text).then((copied) => {
+        setLinkDraft(null);
+        if (copied) toast.success(i18n.t('admin.toast.linkCopied'));
+        else void text.then(setUncopiedInvite);
+      }, failed);
+      return;
+    }
+    void invite.then(({ link, message }) => {
+      const shareUrl = makeShareLink({ url: link, text: message });
+      const tg = getTg();
+      if (tg) {
+        tg.openTelegramLink(shareUrl);
+      } else if (typeof window !== 'undefined') {
+        window.open(shareUrl, '_blank');
+      }
+      setLinkDraft(null);
+    }, failed);
+  };
 
   // M1.10 (2026-05-08): people directory search by name + tg + role.
   const [searchQuery, setSearchQuery] = useState('');
@@ -880,13 +891,14 @@ export function PeopleSection({
         setDraft={setLinkDraft}
         onSubmit={() => {
           if (!linkDraft) return;
-          createInvite.mutate({
+          sendLinkInvite({
             roleSlug: linkDraft.roleSlug || undefined,
             storeIds: linkDraft.storeIds,
           });
         }}
         pending={createInvite.isPending}
       />
+      <InviteCopySheet text={uncopiedInvite} onClose={() => setUncopiedInvite(null)} />
     </div>
   );
 }

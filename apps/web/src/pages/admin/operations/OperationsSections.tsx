@@ -35,6 +35,7 @@ import {
 } from '@compass/ui';
 import { PAGE_SIZE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
+import { copyText } from '../../../lib/clipboard';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
@@ -1456,20 +1457,13 @@ export function FinanceSection() {
         ].join('\t');
       }),
     ].join('\n');
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      // HIS-8 (2026-10-30): the write can be refused (no clipboard
-      // permission); only claim success once it actually happened.
-      navigator.clipboard.writeText(tsv).then(
-        () => toast.success(i18n.t('finance.export.copied')),
-        () => toast.error(i18n.t('finance.export.noClipboard')),
-      );
-    } else {
-      // Fallback for older WebViews — clipboard API unavailable. We
-      // surface a user-facing error toast; the TSV is dropped (the
-      // earlier console.log was deleted as part of the production
-      // hardening pass — privacy + CSP cleanliness).
-      toast.error(i18n.t('finance.export.noClipboard'));
-    }
+    // HIS-8 (2026-10-30): the write can be refused (no clipboard
+    // permission); only claim success once it actually happened.
+    void copyText(tsv).then((copied) =>
+      copied
+        ? toast.success(i18n.t('finance.export.copied'))
+        : toast.error(i18n.t('finance.export.noClipboard')),
+    );
   }, [
     lines,
     plainLineName,
