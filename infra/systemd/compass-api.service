@@ -15,6 +15,8 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/compass-alpha/apps/api
 EnvironmentFile=/home/ubuntu/compass-alpha/.env
 Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:/bin
+# The .env is applied over this, so the deploy refuses an .env that sets
+# NODE_ENV or COMPASS_RELEASE_CHANNEL to anything but production (OPS-22).
 Environment=NODE_ENV=production
 ExecStart=/home/ubuntu/.bun/bin/bun run src/main.ts
 Restart=on-failure

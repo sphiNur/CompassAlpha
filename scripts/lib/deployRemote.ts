@@ -293,6 +293,73 @@ export function devBypassFiles(output: string): string[] {
 }
 
 /**
+ * Review OPS-22 (2026-11-11): shell script for step 0.75. It prints the
+ * NODE_ENV and COMPASS_RELEASE_CHANNEL lines of the server's .env (those
+ * two keys and nothing else), then `env-read`; `no-env` when there is no
+ * .env; exit 2 when grep could not read it.
+ */
+export function productionEnvScript(appDir = APP_DIR): string {
+  return [
+    `f="${appDir}/.env"`,
+    'if [ ! -f "$f" ]; then echo no-env; exit 0; fi',
+    `grep -E '^[[:space:]]*(NODE_ENV|COMPASS_RELEASE_CHANNEL)[[:space:]]*=' "$f"`,
+    'rc=$?',
+    'if [ $rc -gt 1 ]; then echo "grep exited $rc" >&2; exit 2; fi',
+    'echo env-read',
+  ].join('\n');
+}
+
+/** The keys `productionEnvProblems` reads, and what each must be when set. */
+const PRODUCTION_SWITCHES = ['NODE_ENV', 'COMPASS_RELEASE_CHANNEL'] as const;
+
+/**
+ * Review OPS-22 (2026-11-11): what is wrong with the production switches in
+ * the server's .env, from `productionEnvScript`'s output (none when
+ * nothing is).
+ *
+ * systemd applies EnvironmentFile= over Environment=, so an .env copied
+ * from .env.example (NODE_ENV=development, COMPASS_RELEASE_CHANNEL=
+ * development) overrode the units' NODE_ENV=production, and the guards
+ * that hold only in production (the bulk purge switch, the dev login)
+ * took the server for a development box. A key the .env leaves out is
+ * fine: the units set NODE_ENV=production. One it sets must say
+ * `production`; the last line wins, as in systemd. Output that is no
+ * verdict throws: a check that did not run must not read as a pass.
+ */
+export function productionEnvProblems(output: string): string[] {
+  const lines = output
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const verdict = lines.pop();
+  if (verdict === 'no-env' && lines.length === 0) return [];
+  if (verdict !== 'env-read') {
+    throw new Error(`unexpected output from the .env check: ${output.trim() || '(none)'}`);
+  }
+  const values = new Map<string, string>();
+  for (const line of lines) {
+    const eq = line.indexOf('=');
+    const key = line.slice(0, eq).trim();
+    if (!(PRODUCTION_SWITCHES as readonly string[]).includes(key)) {
+      throw new Error(`unexpected output from the .env check: ${line}`);
+    }
+    values.set(
+      key,
+      line
+        .slice(eq + 1)
+        .trim()
+        .replace(/^(["'])(.*)\1$/, '$2'),
+    );
+  }
+  return PRODUCTION_SWITCHES.flatMap((key) => {
+    const value = values.get(key);
+    return value === undefined || value === 'production'
+      ? []
+      : [`the server .env sets ${key}=${value || '(empty)'}; it must be production or left out`];
+  });
+}
+
+/**
  * Review OPS-04 (2026-11): what is wrong with the database role, from
  * step 0.8's `rolbypassrls,rolsuper` line, or null when it is neither.
  * RLS does not apply to a role that bypasses it or to a superuser, so

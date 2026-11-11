@@ -10,6 +10,10 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/compass-alpha/apps/worker
 EnvironmentFile=/home/ubuntu/compass-alpha/.env
 Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:/bin
+# As in compass-api.service. The .env is applied over this, so the deploy
+# refuses an .env that sets NODE_ENV or COMPASS_RELEASE_CHANNEL to anything
+# but production (review OPS-22).
+Environment=NODE_ENV=production
 ExecStart=/home/ubuntu/.bun/bin/bun run src/main.ts
 Restart=on-failure
 RestartSec=3
@@ -17,6 +21,15 @@ LimitNOFILE=65536
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=compass-worker
+
+# Hardening, the same as compass-api.service (review OPS-22): the worker
+# writes no file and starts no process, so nothing here takes anything
+# from it.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/compass-alpha
 
 [Install]
 WantedBy=multi-user.target
