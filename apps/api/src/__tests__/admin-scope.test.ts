@@ -1656,3 +1656,62 @@ describe('ADM1-03 / ADM1-16 managed stores: one rule, inactive stores for remova
     },
   );
 });
+
+// ---------- ADM1-06 / ADM1-20: renaming oneself, holders of a role ----------
+
+describe('ADM1-06 / ADM1-20 the People screen asks only what the server allows', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+
+  test.skipIf(!SHOULD_RUN)('a store manager renames themself', async () => {
+    const store = await makeStore(`Self-${Math.random()}`);
+    const user = await makeUser('Self-Renaming-Manager');
+    const memberId = await makeMember(user.id);
+    await bindRole(memberId, fixture().managerRoleId, { type: 'store', storeId: store.id });
+    const caller = callerFor(await sessionFor(memberId, user.id));
+    // It used to fail the rank check against their own rank.
+    await caller.admin.memberSetDisplayName({ memberId, displayName: 'Renamed Manager' });
+    const row = await maintenance().query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, user.id),
+    });
+    expect(row?.displayName).toBe('Renamed Manager');
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'a role lists its suspended holders and counts every binding that blocks deleting it',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const store = await makeStore(`Holders-${Math.random()}`);
+      const slug = `held-${Math.random().toString(36).slice(2, 8)}`;
+      const { id: roleId } = await admin.admin.roleCreate({ slug, name: 'Held role', rank: 10 });
+      const suspended = await makeUser('Suspended-Holder');
+      const suspendedId = await makeMember(suspended.id);
+      await bindRole(suspendedId, roleId, { type: 'store', storeId: store.id });
+      await admin.admin.memberSetStatus({ memberId: suspendedId, status: 'suspended' });
+      const lapsed = await makeUser('Lapsed-Holder');
+      const lapsedId = await makeMember(lapsed.id);
+      await maintenance()
+        .insert(s.memberRoleBindings)
+        .values({
+          memberId: lapsedId,
+          roleId,
+          scopeType: 'store',
+          scopeId: store.id,
+          expiresAt: new Date(Date.now() - 60_000),
+        });
+
+      const detail = await admin.admin.roleDetail({ roleSlug: slug });
+      expect(detail.bindingCount).toBe(2);
+      expect(detail.assignees.find((a) => a.memberId === suspendedId)?.status).toBe('suspended');
+      expect(await errorOf(() => admin.admin.roleDelete({ roleId }))).toMatchObject({
+        message: 'admin.errors.roleHasBindings',
+      });
+
+      // Store managers see holders in their stores, never the count.
+      const mgrUser = await makeUser('Holders-Manager');
+      const mgr = await makeMember(mgrUser.id);
+      await bindRole(mgr, fixture().managerRoleId, { type: 'store', storeId: store.id });
+      const asManager = callerFor(await sessionFor(mgr, mgrUser.id));
+      expect((await asManager.admin.roleDetail({ roleSlug: slug })).bindingCount).toBeNull();
+    },
+  );
+});

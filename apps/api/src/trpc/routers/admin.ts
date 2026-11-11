@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { allowEventPurge, inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
   ADMIN_RANK,
+  SUPER_ADMIN_RANK,
   GrantRoleInputSchema,
   MemberInviteRevokeInputSchema,
   SkuStepSchema,
@@ -177,21 +178,26 @@ async function catalogSourceMemberships(
  * the caller's own memberships.
  */
 async function userInAnotherOrg(ctx: AdminCtx, userId: string): Promise<boolean> {
+  return (await usersInOtherOrgs(ctx, [userId])).has(userId);
+}
+
+/** userInAnotherOrg for several users at once (memberList, ADM1-06). */
+async function usersInOtherOrgs(ctx: AdminCtx, userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
   const rows = await inSystem(ctx.db, 'auth', (tx) =>
     tx
-      .select({ orgId: s.members.orgId })
+      .selectDistinct({ userId: s.members.userId })
       .from(s.members)
       .innerJoin(s.organizations, eq(s.organizations.id, s.members.orgId))
       .where(
         and(
-          eq(s.members.userId, userId),
+          inArray(s.members.userId, userIds),
           ne(s.members.orgId, ctx.session!.orgId),
           isNull(s.organizations.deletedAt),
         ),
-      )
-      .limit(1),
+      ),
   );
-  return rows.length > 0;
+  return new Set(rows.map((r) => r.userId));
 }
 
 /** Read the source catalog, after checking the caller administers it. */
@@ -668,9 +674,6 @@ export function runTouchesStores(
   );
   return sql`(${runIdExpr} IN (SELECT os.run_id FROM read_model.order_sessions_v os WHERE os.run_id IS NOT NULL AND os.store_id IN (${ids})) OR ${runIdExpr} IN (SELECT ris.run_id FROM read_model.run_item_stores_v ris WHERE ris.store_id IN (${ids})))`;
 }
-
-/** Highest built-in rank; super_admin may rename anyone (2026-10-21). */
-const SUPER_ADMIN_RANK = 100;
 
 /**
  * Gate for suspending / reactivating a member.
@@ -1577,6 +1580,12 @@ export const adminRouter = router({
       }
 
       const storeById = new Map(allStores.map((st) => [st.id, st]));
+      // ADM1-06: whose name only they may change (D22), so the web does
+      // not offer to rename them.
+      const nameShared = await usersInOtherOrgs(
+        ctx,
+        rows.map((r) => r.userId),
+      );
       const storesByMember = new Map<string, Set<string>>();
       for (const a of msa) {
         const set = storesByMember.get(a.memberId) ?? new Set();
@@ -1628,6 +1637,7 @@ export const adminRouter = router({
             .filter((st) => !st.isActive)
             .map((st) => ({ id: st.id, name: st.name, archived: st.archived })),
           statusOutOfReach,
+          nameShared: nameShared.has(r.userId),
         };
       });
     });
@@ -2305,9 +2315,13 @@ export const adminRouter = router({
         // alone let a store manager rename an admin or another store's
         // staff. Org admins may rename anyone; everyone else needs the
         // same reach memberSetStatus demands.
-        if (!(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) {
+        // ADM1-06 (2026-11-10): except over themself. A store manager
+        // renaming themself failed the rank check against their own rank,
+        // and this is the only way to change a name after onboarding.
+        const self = member.id === ctx.session!.memberId;
+        if (!self && !(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) {
           await assertAdministersEveryTargetStore(tx, ctx.session!, member);
-        } else if (member.id !== ctx.session!.memberId) {
+        } else if (!self) {
           // 2026-10-21 rename rank: an org admin used to rename anyone,
           // including a fellow admin or the super_admin. Like status
           // changes, renaming someone else now needs a strictly higher
@@ -3050,6 +3064,7 @@ export const adminRouter = router({
             avatarUrl: s.users.avatarUrl,
             tgUsername: s.users.tgUsername,
             storeName: s.stores.name,
+            status: s.members.status,
           })
           .from(s.memberRoleBindings)
           .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
@@ -3058,13 +3073,10 @@ export const adminRouter = router({
           // want one row per binding (the FE buckets them into
           // "Org-level" when storeName is null).
           .leftJoin(s.stores, eq(s.stores.id, s.memberRoleBindings.scopeId))
-          .where(
-            and(
-              eq(s.memberRoleBindings.roleId, role.id),
-              eq(s.members.orgId, orgId),
-              eq(s.members.status, 'active'),
-            ),
-          );
+          // ADM1-20 (2026-11-10): suspended holders too, marked. They
+          // keep the role and block deleting it, and the list showed
+          // nobody.
+          .where(and(eq(s.memberRoleBindings.roleId, role.id), eq(s.members.orgId, orgId)));
         // 2026-10-21 CA-17: outside org admins, holders are limited to the
         // actor's stores — store bindings there, and global bindings of
         // members who belong to one of those stores.
@@ -3078,6 +3090,16 @@ export const adminRouter = router({
                   : visible.has(b.memberId),
               )
             : bindings;
+        // ADM1-07 / ADM1-20: every binding, the count roleDelete and a
+        // rank move across ADMIN_RANK refuse on (lapsed grants included).
+        // Only for org admins, who alone may do either.
+        const [counted] =
+          scope === null
+            ? await tx
+                .select({ n: sql<number>`count(*)::int` })
+                .from(s.memberRoleBindings)
+                .where(eq(s.memberRoleBindings.roleId, role.id))
+            : [];
         return {
           id: role.id,
           slug: role.slug,
@@ -3086,6 +3108,7 @@ export const adminRouter = router({
           isBuiltIn: role.isBuiltIn,
           rank: role.rank,
           permissions: perms.map((p) => p.key),
+          bindingCount: counted?.n ?? null,
           assignees: shown.map((b) => ({
             bindingId: b.bindingId,
             memberId: b.memberId,
@@ -3095,6 +3118,7 @@ export const adminRouter = router({
             scopeType: b.scopeType as 'global' | 'store',
             scopeId: b.scopeId,
             storeName: b.storeName,
+            status: b.status,
           })),
         };
       });

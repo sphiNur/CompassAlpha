@@ -27,6 +27,9 @@
  */
 export const ADMIN_RANK = 80;
 
+/** Highest built-in rank: super_admin may rename anyone (2026-10-21). */
+export const SUPER_ADMIN_RANK = 100;
+
 /**
  * Store-manager threshold. Roles at or above this rank may record and
  * correct operating-expense details for the concrete store where the role is
