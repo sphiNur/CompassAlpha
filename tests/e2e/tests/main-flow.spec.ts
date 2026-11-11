@@ -236,9 +236,9 @@ test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
-  await main().getByRole('button', { name: 'All arrived fine' }).click();
+  await main().getByRole('button', { name: 'All OK' }).click();
   await sheet()
-    .getByRole('button', { name: /Mark 2 items correct/ })
+    .getByRole('button', { name: /Mark 2 items OK/ })
     .click();
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();

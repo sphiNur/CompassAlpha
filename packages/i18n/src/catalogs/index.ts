@@ -2,8 +2,8 @@
  * Catalog registry (M3.14-D, 2026-05-16): every locale, English included,
  * is loaded on demand via dynamic import.
  *
- * Why: zh.ts / ru.ts / uz.ts are ~30-47 KB each (~120 KB raw, ~30 KB
- * gzip after minification). Most sessions only ever use ONE locale,
+ * Why: each catalog's source is 170–260 KB (much less once minified
+ * and gzipped). Most sessions only ever use ONE locale,
  * so static-importing all four wasted the other three. The dynamic
  * loader runs once per locale per session and is cached at the
  * module level.
