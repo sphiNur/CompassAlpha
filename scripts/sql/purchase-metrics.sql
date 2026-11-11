@@ -3,6 +3,9 @@
 -- an entry is corrected. Used to judge changes to the purchaser screen:
 -- run before and after, per org. Times are wall clock between events, so
 -- a gap includes walking between stalls — compare medians, not means.
+-- Per-trip averages count trips only (started, then delivering), as
+-- `trips` does: a run that never became one, or began before the window,
+-- used to pull them down (review OPS-43, 2026-11-11).
 --
 --   psql "$DATABASE_URL" -v days=60 -f scripts/sql/purchase-metrics.sql
 BEGIN READ ONLY;
@@ -37,7 +40,8 @@ runs AS (
 SELECT
   o.name AS org,
   count(*) FILTER (WHERE started IS NOT NULL AND delivering > started) AS trips,
-  round(avg(bought + unavailable)) AS entries_per_trip,
+  round(avg(bought + unavailable) FILTER (WHERE started IS NOT NULL AND delivering > started))
+    AS entries_per_trip,
   to_char(percentile_cont(0.5) WITHIN GROUP (ORDER BY delivering - started)
           FILTER (WHERE delivering > started), 'HH24:MI') AS median_trip,
   (SELECT round(extract(epoch FROM percentile_cont(0.5) WITHIN GROUP (ORDER BY gap)))
@@ -50,8 +54,10 @@ SELECT
   round(100.0 * sum(unavailable) / nullif(sum(bought + unavailable), 0), 1) AS pct_unavailable,
   round(100.0 * sum(transfer) / nullif(sum(bought), 0), 1) AS pct_transfer,
   sum(price_outliers) AS price_outliers,
-  round(avg(added_on_site), 1) AS added_per_trip,
-  round(avg(expenses), 1) AS expenses_per_trip
+  round(avg(added_on_site) FILTER (WHERE started IS NOT NULL AND delivering > started), 1)
+    AS added_per_trip,
+  round(avg(expenses) FILTER (WHERE started IS NOT NULL AND delivering > started), 1)
+    AS expenses_per_trip
 FROM runs JOIN auth.organizations o ON o.id = runs.org_id
 GROUP BY o.id, o.name
 ORDER BY trips DESC;

@@ -9,12 +9,15 @@ if (!databaseUrl) {
       '  E2E_DATABASE_URL=postgres://compass:compass@localhost:5433/compass_e2e',
   );
 }
-if (!/e2e|test/i.test(new URL(databaseUrl).pathname)) {
-  // global-setup drops every application schema. Refuse anything that
-  // does not look like a throwaway database.
+// global-setup drops every application schema. Refuse anything that does
+// not look like a throwaway database. Review OPS-46 (2026-11-11): "e2e" or
+// "test" as a word of the name (compass_e2e, test-x), so "latest" or
+// "contest" no longer pass.
+const databaseName = new URL(databaseUrl).pathname.slice(1);
+if (!/(^|[_-])(e2e|test)([_-]|$)/i.test(databaseName)) {
   throw new Error(
-    `E2E_DATABASE_URL points at "${new URL(databaseUrl).pathname.slice(1)}". ` +
-      'The database name must contain "e2e" or "test" — this run erases it.',
+    `E2E_DATABASE_URL points at "${databaseName}". ` +
+      'The database name must have "e2e" or "test" as a word (compass_e2e) — this run erases it.',
   );
 }
 

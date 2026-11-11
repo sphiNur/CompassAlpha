@@ -4,9 +4,9 @@ Drives the real app in Chromium: the real api on a real database, the web
 dev server, and the development login. Nothing is stubbed.
 
 ```bash
-# Any Postgres 18 you can afford to lose. The database name must contain
-# "e2e" or "test": every run drops the application schemas and rebuilds
-# them from migrations + seed.
+# Any Postgres 18 you can afford to lose. The database name must have
+# "e2e" or "test" as a word (compass_e2e, test-x): every run drops the
+# application schemas and rebuilds them from migrations + seed.
 export E2E_DATABASE_URL=postgres://compass:compass@localhost:5433/compass_e2e
 
 pnpm --filter @compass/e2e exec playwright install chromium   # once

@@ -109,9 +109,12 @@ export function findUnusedKeys(
 }
 
 if (import.meta.main) {
-  const catalog = readFileSync('packages/i18n/src/catalogs/en.ts', 'utf8');
+  // From the script's own place, so it reads the same files from any
+  // directory (review OPS-42, as check-untranslated.ts).
+  const repoRoot = join(import.meta.dir, '..');
+  const catalog = readFileSync(join(repoRoot, 'packages/i18n/src/catalogs/en.ts'), 'utf8');
   const keys = [...catalog.matchAll(/^ {2}'([a-z][a-zA-Z0-9._]*)':/gm)].map((m) => m[1]!);
-  const sources = ROOTS.flatMap((r) => walk(r)).map((f) => readFileSync(f, 'utf8'));
+  const sources = ROOTS.flatMap((r) => walk(join(repoRoot, r))).map((f) => readFileSync(f, 'utf8'));
   const { unused, dynamicPrefixes } = findUnusedKeys(keys, sources);
 
   console.log(`declared keys:      ${keys.length}`);
