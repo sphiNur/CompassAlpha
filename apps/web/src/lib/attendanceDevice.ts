@@ -56,19 +56,25 @@ function readTg(): Promise<string | null> {
   });
 }
 
+/**
+ * Telegram's copy, else this web view's, else a new id; then both copies
+ * hold it. The app calls attendanceDeviceId, which reads once per page.
+ */
+export async function resolveDeviceId(): Promise<string> {
+  const id = (await readTg()) ?? readLocal() ?? fresh();
+  writeLocal(id);
+  try {
+    tgStorage()?.setItem(KEY, id);
+  } catch {
+    /* older client */
+  }
+  return id;
+}
+
 let cached: Promise<string> | null = null;
 
 export function attendanceDeviceId(): Promise<string> {
-  cached ??= (async () => {
-    const id = (await readTg()) ?? readLocal() ?? fresh();
-    writeLocal(id);
-    try {
-      tgStorage()?.setItem(KEY, id);
-    } catch {
-      /* older client */
-    }
-    return id;
-  })();
+  cached ??= resolveDeviceId();
   return cached;
 }
 
