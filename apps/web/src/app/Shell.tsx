@@ -821,6 +821,10 @@ function ShellInner() {
         style={{
           WebkitOverflowScrolling: 'touch',
           overscrollBehaviorY: 'contain',
+          // COREWEB1-07: a phone on its side puts the notch and rounded
+          // corners over the left and right; pages add their px-4 inside.
+          paddingLeft: 'var(--app-safe-left, 0px)',
+          paddingRight: 'var(--app-safe-right, 0px)',
         }}
       >
         {/* HIS-9 / CLS-6 (2026-10-30): offline, lists kept showing the last
@@ -972,6 +976,9 @@ function BottomNav({
       className="flex shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
         paddingBottom: 'var(--app-safe-bottom)',
+        // COREWEB1-07: keeps the first and last tabs off a side notch.
+        paddingLeft: 'var(--app-safe-left, 0px)',
+        paddingRight: 'var(--app-safe-right, 0px)',
         height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
         // M3.50: block tab switches during in-flight mutations.
         pointerEvents: busy ? 'none' : undefined,

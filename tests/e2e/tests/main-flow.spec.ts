@@ -64,6 +64,51 @@ test('sign in and confirm a display name', async () => {
   await evidence('signed-in');
 });
 
+test('the app keeps clear of the phone bars Telegram reports', async () => {
+  // COREWEB1-07. Android's Telegram WebView answers env(safe-area-inset-*)
+  // with 0, so the app also reads the insets Telegram's SDK writes to
+  // --tg-safe-area-inset-*. Set here the way the SDK sets them.
+  const report = (insets: Record<string, string> | null) =>
+    page.evaluate((i) => {
+      for (const side of ['top', 'right', 'bottom', 'left']) {
+        const name = `--tg-safe-area-inset-${side}`;
+        if (i) document.documentElement.style.setProperty(name, i[side]!);
+        else document.documentElement.style.removeProperty(name);
+      }
+    }, insets);
+  /** The four insets the app pads with: top right bottom left. */
+  const safeArea = () =>
+    page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.padding =
+        'var(--app-safe-top) var(--app-safe-right) var(--app-safe-bottom) var(--app-safe-left)';
+      document.body.append(probe);
+      const s = getComputedStyle(probe);
+      const out = `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`;
+      probe.remove();
+      return out;
+    });
+  const padding = (el: Locator) =>
+    el.evaluate((n) => {
+      const s = getComputedStyle(n);
+      return `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`;
+    });
+  const nav = page.getByTestId('primary-nav');
+
+  // Outside Telegram nothing is reported: env() (0 in this browser) and
+  // the floors.
+  expect(await safeArea()).toBe('16px 0px 8px 0px');
+
+  // Android in fullscreen: the status bar, the three-button navigation
+  // bar and, on its side, a cutout.
+  await report({ top: '32px', right: '20px', bottom: '48px', left: '30px' });
+  expect(await safeArea()).toBe('32px 20px 48px 30px');
+  expect(await padding(nav)).toBe('0px 20px 48px 30px');
+  expect(await padding(main())).toBe('0px 20px 0px 30px');
+  await report(null);
+  expect(await padding(nav)).toBe('0px 0px 8px 0px');
+});
+
 test('place an order', async () => {
   await tab('order').click();
   // Weighed goods step by half a kilo per tap.
