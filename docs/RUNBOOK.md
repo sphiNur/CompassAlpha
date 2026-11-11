@@ -161,6 +161,13 @@ Since 2026-11 (review OPS-10/OPS-12):
 - The web bundle is built into `dist.next` before the migrations and
   swapped in just before the restart. The old api used to run against
   the new schema for the whole build.
+- A migration waits at most 3 s for a table lock (review DB-08), so the
+  live app never waits longer behind it. The step is tried again after
+  2, 5, 10 and 20 s (`↻` lines in the output); each try rolls back
+  whole. If every try fails, the deploy stops: look for the long
+  transaction in `pg_stat_activity` (`state = 'idle in transaction'`,
+  an old `xact_start`, a running `pg_dump`) and deploy again once it
+  ends.
 - `compass-backup.timer` no longer has `Requires=compass-backup.service`.
   Starting the timer (install, boot) no longer starts a backup, so
   `INSTALL_SKIP_FIRST_RUN=1` works, and stopping a stuck backup no longer
