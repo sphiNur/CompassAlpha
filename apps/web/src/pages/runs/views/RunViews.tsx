@@ -1101,15 +1101,15 @@ export function PerCategoryView({
 
 /* ── Row geometry. ONE track set, ALL FOUR states. ───────────────────
  *
- * The width is measured, not assumed. RunPage.tsx:1596 wraps the whole
- * list in `px-4` and the <li> adds its own, so a 375px viewport leaves
- * 311px of row — not the 343 you get by counting one of them:
+ * The width is measured, not assumed. RunPage wraps the whole list in
+ * `px-4` and the <li> adds its own, so a 375px viewport leaves 311px of
+ * row — not the 343 you get by counting one of them:
  *
  *   375 viewport
  *   −32  RunPage px-4   → 343  card
  *   −32  <li> px-4      → 311  row
- *   −36  control (h-11 w-9)
- *   − 6  gap-1.5        → 269  tap target
+ *   −44  control (h-11 min-w-11; wider when its label is)
+ *   − 6  gap-1.5        → 261  tap target
  *
  *    20  state cell   fixed, never text, so it cannot grow with locale
  *     ?  name         minmax(0,1fr) — the ONLY thing that may truncate
@@ -1117,7 +1117,18 @@ export function PerCategoryView({
  *    68  money floor
  *    18  3 × 6px gap
  *   ───
- *   269 − 154 = 115px of name
+ *   261 − 154 = 107px of name
+ *
+ * RUNWEB1-10 (2026-11-11). Below 360px this budget runs out: a 320px
+ * viewport is 256 of row, 206 of tap target and 52px of name, and a
+ * bought row's payment control is as wide as its label (72 for ru
+ * "Наличные"), which left that name 24px — "Яб/л…" even on two lines
+ * (WALK-02). So under 360 the qty track goes: the quantity moves under
+ * the name (ROW_QTY), and the state mark and the money span both lines.
+ * Measured at 320: 106px of name, 78 next to "Наличные". From 360 up
+ * nothing changes. 359.98, not 359, because a viewport can be a
+ * fraction of a pixel wide. The expanded editor wraps instead (see its
+ * qty/price line).
  *
  * Numbers get a FLOOR, not a fixed width, so an outlier grows its own
  * track and pays for it out of the NAME. That is the rule already
@@ -1132,8 +1143,23 @@ export function PerCategoryView({
  * Money floor is honest about the worst case: '1,250,000' is 10 glyphs,
  * ui-monospace advances 0.6em, so at text-old-label (11px) that is 66px and
  * fits in 68. No money string is ever clipped.
+ *
+ * Classes, not an inline style, so the narrow layout can replace them.
+ * Its two lines are packed together in the middle of the row.
  */
-const ROW_TRACKS = '1.25rem minmax(0,1fr) minmax(3rem,auto) minmax(4.25rem,auto)';
+const ROW_TRACKS =
+  'grid-cols-[1.25rem_minmax(0,1fr)_minmax(3rem,auto)_minmax(4.25rem,auto)] ' +
+  'max-[359.98px]:grid-cols-[1.25rem_minmax(0,1fr)_minmax(4.25rem,auto)] ' +
+  'max-[359.98px]:content-center';
+
+/* The quantity and money cells, the same in every state. Under 360px the
+ * quantity leaves its track for the line under the name, and the money
+ * spans both lines like the state mark (see ROW_TRACKS). */
+const ROW_QTY =
+  'shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)] ' +
+  'max-[359.98px]:col-start-2 max-[359.98px]:row-start-2 max-[359.98px]:text-left';
+const ROW_MONEY =
+  'shrink-0 whitespace-nowrap text-right text-old-label tabular-nums max-[359.98px]:row-span-2';
 
 /* 52px, NOT 44. The control is h-11; two 44px controls in a 45px row sit
  * 1px apart, and an off-by-one-row thumb on this list commits money
@@ -1156,8 +1182,8 @@ const RUN_ROW_NAME_FULL = 'min-w-0 break-words hyphens-auto text-old-body font-s
  * taps across the row's height instead of only its 18px text line. */
 const ROW_TAP =
   'press grid min-w-0 flex-1 items-center gap-x-1.5 self-stretch rounded-[var(--r-utility)] ' +
-  'text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
-const ROW_STATIC = 'grid min-w-0 flex-1 items-center gap-x-1.5';
+  `text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)] ${ROW_TRACKS}`;
+const ROW_STATIC = `grid min-w-0 flex-1 items-center gap-x-1.5 ${ROW_TRACKS}`;
 
 /* At least 44 × 44, and as wide as its label (2026-10-31, R2-COPY-11 /
  * V4). It was a fixed 36 wide on the theory that only the vertical size
@@ -1212,7 +1238,7 @@ type RowStateKind = 'pending' | 'unpriced' | 'saving' | 'purchased' | 'unavailab
  */
 function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
   return (
-    <span className="flex items-center justify-center">
+    <span className="flex items-center justify-center max-[359.98px]:row-span-2">
       <span aria-hidden className="flex items-center justify-center leading-none">
         {kind === 'pending' ? (
           <span className="block h-[7px] w-[7px] rounded-full ring-1 ring-[var(--c-fg-muted)]" />
@@ -1847,7 +1873,6 @@ export function PurchaseRow({
             // accessible name.
             title={i18n.t(carried ? 'run.action.recordPurchase' : 'run.price.fillIn')}
             className={ROW_TAP}
-            style={{ gridTemplateColumns: ROW_TRACKS }}
           >
             <RowStateCell
               kind={saving ? 'saving' : carried ? 'pending' : 'unpriced'}
@@ -1873,8 +1898,9 @@ export function PurchaseRow({
             </span>
 
             {/* shrink-0 + nowrap: a number never truncates and never
-                wraps. Right-aligned so it lands in a column. */}
-            <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
+                wraps. Right-aligned so it lands in a column (under 360px,
+                left-aligned under the name: ROW_QTY). */}
+            <span className={ROW_QTY}>
               <span className="tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
               {unitFor(item.plannedQty)}
             </span>
@@ -1893,7 +1919,7 @@ export function PurchaseRow({
                 still reaches a screen reader through the state cell's
                 label. */}
             <span
-              className={`shrink-0 whitespace-nowrap text-right text-old-label font-semibold tabular-nums ${moneyInk}`}
+              className={`${ROW_MONEY} font-semibold ${moneyInk}`}
               title={carried ? rawPriceTitle(lastPrice) : i18n.t('run.price.fillIn')}
             >
               {carried ? (
@@ -2000,9 +2026,9 @@ export function PurchaseRow({
             confirm with each store's manager that the planned split
             still applies if the qty diverges). */}
         {showBreakdown ? <div className="mt-1">{breakdownChips}</div> : null}
-        {/* Line 2: qty × price = total ✓ — everything on one line.
-            Total hint is inline (right of price, before ✓) so the user
-            sees their math without an extra row. */}
+        {/* Line 2: qty × price, then payment + ✓ (under the price on a
+            screen too narrow for one line, RUNWEB1-10). The total is on
+            line 3 (b below). */}
         {/* 2026-07-30: two changes here, both forced by making the price
             UNIT switchable (the K·UZS button below).
 
@@ -2027,139 +2053,148 @@ export function PurchaseRow({
             ~12px past them. At mt-1.5 / mt-1 those areas covered the top
             and bottom of the payment and ✓ buttons, leaving ✓ 33px tall
             to a finger (measured with elementFromPoint in the e2e run). */}
-        <div className="mt-3 grid items-center gap-1.5"
-             style={{ gridTemplateColumns: '4.5rem auto minmax(4.25rem,1fr) auto auto' }}>
-          {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
+        {/* RUNWEB1-10 (2026-11-11): two groups that wrap. The five-track
+            grid needed 260px in en and 282 in ru; a 320px phone leaves
+            256 (two px-4 paddings), so ✓ hung past the row and the ru
+            "Наличные" spilled out of a pill squeezed to 44px. Now
+            quantity × price keeps the first line (and its width), and
+            payment + ✓ move under it, right-aligned, when they do not
+            fit: from 360px every language stays on one line. gap-y-3
+            keeps a finger's margin between the price field and ✓. */}
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-3">
+          <div className="flex min-w-0 grow basis-[10rem] items-center gap-1.5">
+            {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
               (qty from planned, price from the last observed market
               price), so a tap that appends instead of replacing is the
               common failure — hence select-on-focus. Enter chains
               qty → price → save so a changed price is three actions
               (tap, type, Enter) instead of tap-type-reach-for-✓. */}
-          <NumberInput
-            step={step}
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-            formatError="none"
-            enterKeyHint="next"
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              priceRef.current?.focus();
-            }}
-            aria-label={i18n.t('run.action.actualQtyAriaLabel')}
-          />
-          <span className="text-old-body text-[var(--c-fg-muted)]">×</span>
-          <NumberInput
-            ref={priceRef}
-            // Without a step, type="number" defaults to 1 — which makes
-            // every fractional value a stepMismatch. In thousands mode
-            // the displayed price IS fractional (147500 → "147.5"), so
-            // the field sat :invalid the whole time it was in use.
-            // "any" is the honest constraint: a market price has no
-            // fixed granularity. qty keeps the SKU's real step.
-            step="any"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-            // The grid has no room for a message; line 3 says it.
-            formatError="none"
-            aria-invalid={priceProblem || undefined}
-            enterKeyHint="done"
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              if (canSave) handleSave('editor');
-            }}
-            placeholder={i18n.t('run.action.unitPriceAriaLabel')}
-            // DX-IX-7: the name carries the unit in force, as the sheet's
-            // label does ("单价（千 UZS）").
-            aria-label={
-              priceInThousands
-                ? i18n.t('run.action.unitPriceUzsThousands', { currency })
-                : i18n.t('run.action.unitPriceUzs', { currency })
-            }
-          />
-          {/* The unit used to sit here as a small dotted suffix that was
+            <NumberInput
+              step={step}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              formatError="none"
+              enterKeyHint="next"
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                priceRef.current?.focus();
+              }}
+              aria-label={i18n.t('run.action.actualQtyAriaLabel')}
+              className="w-[4.5rem] shrink-0"
+            />
+            <span className="shrink-0 text-old-body text-[var(--c-fg-muted)]">×</span>
+            <NumberInput
+              ref={priceRef}
+              // Without a step, type="number" defaults to 1 — which makes
+              // every fractional value a stepMismatch. In thousands mode
+              // the displayed price IS fractional (147500 → "147.5"), so
+              // the field sat :invalid the whole time it was in use.
+              // "any" is the honest constraint: a market price has no
+              // fixed granularity. qty keeps the SKU's real step.
+              step="any"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              // The row has no room for a message; line 3 says it.
+              formatError="none"
+              aria-invalid={priceProblem || undefined}
+              enterKeyHint="done"
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                if (canSave) handleSave('editor');
+              }}
+              placeholder={i18n.t('run.action.unitPriceAriaLabel')}
+              // DX-IX-7: the name carries the unit in force, as the sheet's
+              // label does ("单价（千 UZS）").
+              aria-label={
+                priceInThousands
+                  ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                  : i18n.t('run.action.unitPriceUzs', { currency })
+              }
+              className="min-w-[4.25rem] flex-1"
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* The unit used to sit here as a small dotted suffix that was
               also the toggle. It now lives on the line below, as a switch
               showing both units (2026-10-11): people did not find it. */}
-          {/* M1.14: payment-method toggle. Defaults to cash; tap to flip
+            {/* M1.14: payment-method toggle. Defaults to cash; tap to flip
               to transfer. Sits before ✓ save so the muscle memory is
               "set method → confirm".
               2026-07-30: the label is now ON the control instead of only
               in a tooltip — there is no long-press tooltip on touch. */}
-          <button
-            type="button"
-            onClick={() =>
-              setPaymentMethod((m) => (m === 'cash' ? 'transfer' : 'cash'))
-            }
-            // aria-pressed + a label that names the CONTROL, not just
-            // its current face. The old label announced "cash" with no
-            // indication that it was a toggle or what tapping would do;
-            // the ×1000 toggle two files away already gets this right.
-            aria-pressed={paymentMethod === 'transfer'}
-            aria-label={i18n.t('common.labelValue', {
-              label: i18n.t('run.label.paymentMethod'),
-              value: i18n.t(
-                paymentMethod === 'cash' ? 'run.label.paymentCash' : 'run.label.paymentTransfer',
-              ),
-            })}
-            title={
-              paymentMethod === 'cash'
-                ? i18n.t('run.label.paymentCash')
-                : i18n.t('run.label.paymentTransfer')
-            }
-            className={
-              // 2026-07-26: was h-8 min-w-8 (32px). This row is tapped
-              // hundreds of times per trip, one-handed, standing, often
-              // with wet hands — 32px is below every touch-target
-              // guideline and the misses cost a wrong record.
-              //
-              // Height is free, width is not: this button sits in a grid
-              // (see gridTemplateColumns above) whose only flexible track
-              // is the PRICE input, and `auto` tracks are maximized before
-              // `fr` tracks expand — so every pixel taken here comes
-              // straight out of the field the purchaser has to read back
-              // to the vendor. That track now has a 4.25rem floor (see the
-              // grid above), so since 2026-10-31 this is min-w-11: 44 wide
-              // and as wide as the label, which overflowed the 36px in
-              // en/ru/uz (R2-COPY-11). At 360px the ru label still leaves
-              // the price track above its floor.
-              'flex h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] px-2 text-old-label font-medium active:opacity-70 ' +
-              (paymentMethod === 'transfer'
-                ? 'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-            }
-          >
-            {/* 2026-07-30: was a bare 💵/🏦. The comment on the sibling
+            <button
+              type="button"
+              onClick={() => setPaymentMethod((m) => (m === 'cash' ? 'transfer' : 'cash'))}
+              // aria-pressed + a label that names the CONTROL, not just
+              // its current face. The old label announced "cash" with no
+              // indication that it was a toggle or what tapping would do;
+              // the ×1000 toggle two files away already gets this right.
+              aria-pressed={paymentMethod === 'transfer'}
+              aria-label={i18n.t('common.labelValue', {
+                label: i18n.t('run.label.paymentMethod'),
+                value: i18n.t(
+                  paymentMethod === 'cash' ? 'run.label.paymentCash' : 'run.label.paymentTransfer',
+                ),
+              })}
+              title={
+                paymentMethod === 'cash'
+                  ? i18n.t('run.label.paymentCash')
+                  : i18n.t('run.label.paymentTransfer')
+              }
+              className={
+                // 2026-07-26: was h-8 min-w-8 (32px). This row is tapped
+                // hundreds of times per trip, one-handed, standing, often
+                // with wet hands — 32px is below every touch-target
+                // guideline and the misses cost a wrong record.
+                //
+                // Height is free, width is not: on one line every pixel
+                // taken here comes out of the price field the purchaser
+                // reads back to the vendor. Since 2026-10-31 it is
+                // min-w-11: 44 wide and as wide as the label, which
+                // overflowed the 36px in en/ru/uz (R2-COPY-11). RUNWEB1-10:
+                // it never shrinks below its label; when the label and ✓
+                // do not fit beside the price's 4.25rem floor, the pair
+                // moves to the next line instead.
+                'flex h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] px-2 text-old-label font-medium active:opacity-70 ' +
+                (paymentMethod === 'transfer'
+                  ? 'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
+                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+              }
+            >
+              {/* 2026-07-30: was a bare 💵/🏦. The comment on the sibling
                 control below already conceded the weakness — "colour emoji
                 ignore the ink token, so 💵 vs 🏦 alone is a weak signal at
                 arm's length in sunlight" — and compensated with container
                 colour. The word is the signal; colour is now reinforcement
                 rather than the only carrier. The button grows to fit the
                 word in every language (min-w-11, 2026-10-31). */}
-            {paymentMethod === 'cash'
-              ? i18n.t('run.label.paymentCash')
-              : i18n.t('run.label.paymentTransfer')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSave('editor')}
-            disabled={!canSave}
-            aria-busy={saving || undefined}
-            aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
-            className={
-              // 44 × 44 — see the payment-method button above. This is
-              // the control that commits money, so it is the last one
-              // that should be hard to hit.
-              'flex h-11 min-w-11 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-old-body font-semibold ' +
-              (canSave
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-            }
-          >
-            ✓
-          </button>
+              {paymentMethod === 'cash'
+                ? i18n.t('run.label.paymentCash')
+                : i18n.t('run.label.paymentTransfer')}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSave('editor')}
+              disabled={!canSave}
+              aria-busy={saving || undefined}
+              aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
+              className={
+                // 44 × 44 — see the payment-method button above. This is
+                // the control that commits money, so it is the last one
+                // that should be hard to hit.
+                'flex h-11 min-w-11 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-old-body font-semibold ' +
+                (canSave
+                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
+                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+              }
+            >
+              ✓
+            </button>
+          </div>
         </div>
         {/* Line 3: the computed total, on its own line (2026-07-30).
             This is the readout that catches a ×1000 slip — "I typed 30,
@@ -2241,7 +2276,6 @@ export function PurchaseRow({
             aria-disabled={pendingSync || undefined}
             title={i18n.t(pendingSync ? 'run.pendingSync.row' : 'run.action.editPurchase')}
             className={ROW_TAP}
-            style={{ gridTemplateColumns: ROW_TRACKS }}
           >
             <RowStateCell
               kind={pendingSync ? 'saving' : 'purchased'}
@@ -2277,7 +2311,7 @@ export function PurchaseRow({
 
             {/* Same track, same meaning as every other state: quantity.
                 Planned while pending, actual once bought. */}
-            <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
+            <span className={ROW_QTY}>
               <span className="tabular-nums">{formatQty(item.purchasedQty)}</span>{' '}
               {unit}
             </span>
@@ -2290,7 +2324,7 @@ export function PurchaseRow({
                 expanded editor, which is where it gets read (before
                 paying, not after). */}
             <span
-              className="shrink-0 whitespace-nowrap text-right text-old-label font-semibold tabular-nums text-[var(--c-fg)]"
+              className={`${ROW_MONEY} font-semibold text-[var(--c-fg)]`}
               title={rawPriceTitle(item.unitPrice)}
             >
               {priceInThousands && item.unitPrice
@@ -2365,7 +2399,7 @@ export function PurchaseRow({
         {/* A dropped row has nothing to open, so this is a <div>:
             identical geometry, no false affordance, and no way to
             fat-finger a closed line while walking. */}
-        <div className={ROW_STATIC} style={{ gridTemplateColumns: ROW_TRACKS }}>
+        <div className={ROW_STATIC}>
           <RowStateCell
             kind={pendingSync ? 'saving' : 'unavailable'}
             label={i18n.t(pendingSync ? 'run.pendingSync.row' : 'run.extras.status.unavailable')}
@@ -2381,7 +2415,7 @@ export function PurchaseRow({
 
           {/* The qty stays: what you FAILED to get is a number the
               kitchen needs, and it keeps the column continuous. */}
-          <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
+          <span className={ROW_QTY}>
             <span className="tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
             {unit}
           </span>
@@ -2391,10 +2425,7 @@ export function PurchaseRow({
               a gap that reads as a rendering fault. Decorative and
               aria-hidden — the one place --c-fg-subtle is used, which is
               what that ink is for. */}
-          <span
-            aria-hidden
-            className="shrink-0 text-right text-old-label tabular-nums text-[var(--c-fg-subtle)]"
-          >
+          <span aria-hidden className={`${ROW_MONEY} text-[var(--c-fg-subtle)]`}>
             —
           </span>
         </div>
