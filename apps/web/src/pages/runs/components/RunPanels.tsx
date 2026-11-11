@@ -31,6 +31,7 @@ import {
   PickerRow,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
+import { copyText } from '../../../lib/clipboard';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
@@ -1567,29 +1568,8 @@ export function PreviewSummaryCard({
     return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
   };
 
-  const copyToClipboard = async (text: string): Promise<boolean> => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        // Fallback for environments without clipboard API.
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   const shareOrCopyText = async (text: string): Promise<void> => {
-    const copied = await copyToClipboard(text);
+    const copied = await copyText(text);
     let opened = false;
     // DX-BUY-4 (2026-11-01): outside Telegram this used to navigate the
     // app itself to t.me (the SDK object exists in every browser).

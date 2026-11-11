@@ -860,6 +860,7 @@ export const uz = {
   'admin.invite.link.hint':
     'Havola bir marta ishlatiladi, 7 kundan keyin eskiradi va faqat Telegram ichida ochiladi.',
   'admin.invite.link.submit': 'Taklif havolasini yaratish',
+  'admin.invite.link.copyTitle': 'Taklif havolasi',
   'admin.invite.tgIdHint':
     'ID ni bilmaysizmi? Undan mini-ilovani ochishni soʻrang: ekranda uning Telegram ID si chiqadi, uni sizga yuborsin.',
   'admin.invite.noRoleYet': '— hozircha rolsiz (keyinroq beriladi) —',

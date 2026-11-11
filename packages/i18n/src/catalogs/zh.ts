@@ -774,6 +774,7 @@ export const zh = {
   'admin.invite.link.description': '打开链接的人会按你选择的门店和角色加入工作区。',
   'admin.invite.link.hint': '链接仅可使用一次，7 天后过期，并且只能在 Telegram 中打开。',
   'admin.invite.link.submit': '创建邀请链接',
+  'admin.invite.link.copyTitle': '邀请链接',
   'admin.invite.tgIdHint':
     '不知道对方的 ID？让对方先打开小程序，屏幕上会显示对方的 Telegram ID，请对方发给你。',
   'admin.invite.noRoleYet': '——暂不分配角色（稍后授权）——',
