@@ -140,7 +140,7 @@ describe('RE-AUTH-1: no doubled full stop', () => {
   test('the reason loses its own closing stop', () => {
     const reason = withoutFinalStop('邀请链接无效或已被删除。');
     expect(
-      createI18n('zh').t('auth.invite.failedStillIn', { reason, org: 'Eden' }),
+      createI18n('zh').t('auth.invite.failedStillIn', { reason, org: 'Acme' }),
     ).not.toContain('。。');
     expect(withoutFinalStop('Invite not found.')).toBe('Invite not found');
     expect(withoutFinalStop('Is it?')).toBe('Is it?');

@@ -434,7 +434,7 @@ export function ApprovalPage() {
                           so `name` — which supplies both the alt text and the
                           initials fallback — has to be the submitter too.
                           2026-07-30: it was the STORE name, so a screen reader
-                          announced a person's face as "Eden Magic City", and a
+                          announced a person's face as "Store A", and a
                           submitter without a photo got the store's initials. */}
                       <Avatar
                         src={row.attribAvatarUrl}

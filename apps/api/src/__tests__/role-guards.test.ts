@@ -97,10 +97,10 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const session = await sessionOf(orgId, who);
     // The flat session set has the key, which is what used to let it through.
     expect(session.permissions.has('run.amend')).toBe(true);
-    const kamola = callerFor(session);
+    const kate = callerFor(session);
 
     const createErr = await errorOf(() =>
-      kamola.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
+      kate.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
     );
     expect(createErr?.code).toBe('FORBIDDEN');
     expect(createErr?.message).toBe('auth.errors.missingPermission');
@@ -112,7 +112,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
         .where(eq(s.rolePermissions.roleId, roleIds.manager!))
     ).map((r) => r.key);
     const updateErr = await errorOf(() =>
-      kamola.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
+      kate.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
     );
     expect(updateErr?.code).toBe('FORBIDDEN');
     expect(updateErr?.message).toBe('auth.errors.missingPermission');
@@ -125,12 +125,12 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     // Keys held org-wide still go in.
     expect(
       await errorOf(() =>
-        kamola.admin.roleCreate({ slug: `drafter-${tag}`, name: 'Drafter', rank: 20, permissionKeys: ['order.draft'] }),
+        kate.admin.roleCreate({ slug: `drafter-${tag}`, name: 'Drafter', rank: 20, permissionKeys: ['order.draft'] }),
       ),
     ).toBeNull();
 
     // DX-ADM-1: roleList says where each role can be handed on.
-    const mine = (await kamola.admin.roleList()).find((r) => r.id === night!.id)!;
+    const mine = (await kate.admin.roleList()).find((r) => r.id === night!.id)!;
     expect(mine.passOn.global).toBe(false);
     expect(mine.passOn.storeIds).toContain(storeId);
     const plain = await admin.admin.roleList();

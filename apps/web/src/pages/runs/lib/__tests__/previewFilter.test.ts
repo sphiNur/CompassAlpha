@@ -24,10 +24,10 @@ const q = (s: string) => normalizeQuery(s) ?? [];
 describe('filterStoreGroups', () => {
   const groups = [
     store('a', [
-      line({ id: '1', name: 'Tomato', supplierName: 'savza abat' }),
-      line({ id: '2', name: 'Onion', supplierName: 'zilale' }),
+      line({ id: '1', name: 'Tomato', supplierName: 'Alpha stall' }),
+      line({ id: '2', name: 'Onion', supplierName: 'Bravo' }),
     ]),
-    store('b', [line({ id: '3', name: 'Cabbage', supplierName: 'savza abat' })]),
+    store('b', [line({ id: '3', name: 'Cabbage', supplierName: 'Alpha stall' })]),
   ];
 
   it('returns everything when the query is empty', () => {
@@ -43,7 +43,7 @@ describe('filterStoreGroups', () => {
 
   it('matches the STALL name too, across stores', () => {
     // "what am I buying at this stall" — the by-store view's blind spot.
-    const out = filterStoreGroups(groups, q('savza'));
+    const out = filterStoreGroups(groups, q('alpha'));
     expect(countStoreLines(out)).toBe(2);
     expect(out.map((g) => g.storeId)).toEqual(['a', 'b']);
   });
