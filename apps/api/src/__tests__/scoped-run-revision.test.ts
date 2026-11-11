@@ -5,8 +5,8 @@
  * Pure — runs everywhere.
  */
 import { describe, expect, test } from 'bun:test';
+import { sumQty } from '@compass/contracts/quantity';
 import {
-  addDecimalStrings,
   hiddenSplits,
   mergeScopedRevision,
   splitsInheritingItemPayment,
@@ -102,7 +102,7 @@ describe('mergeScopedRevision', () => {
 
   test('the merged split sum equals actualQty', () => {
     const merged = mergeScopedRevision(item, visibleOnlyInput, new Set([A, B]));
-    expect(addDecimalStrings(merged.storeSplits.map((s) => s.qty))).toBe(merged.actualQty);
+    expect(sumQty(merged.storeSplits.map((s) => s.qty))).toBe(merged.actualQty);
   });
 });
 
@@ -134,15 +134,6 @@ describe('hiddenSplits', () => {
   test('lists only stores outside the scope; none when unrestricted', () => {
     expect(hiddenSplits(item, new Set([A, C])).map((s) => s.storeId)).toEqual([B]);
     expect(hiddenSplits(item, null)).toEqual([]);
-  });
-});
-
-describe('addDecimalStrings', () => {
-  test('exact decimal addition', () => {
-    expect(addDecimalStrings(['0.1', '0.2'])).toBe('0.3');
-    expect(addDecimalStrings(['3', '1.5', '0.25'])).toBe('4.75');
-    expect(addDecimalStrings(['1.50', '0.50'])).toBe('2');
-    expect(addDecimalStrings([])).toBe('0');
   });
 });
 

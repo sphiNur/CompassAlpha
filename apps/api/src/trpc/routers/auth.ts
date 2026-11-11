@@ -42,6 +42,7 @@ import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
+import { executeRows } from '../../services/sqlRows';
 import {
   grantBinding,
   inviterStillAuthorized,
@@ -137,10 +138,6 @@ type DevPersonaIdentityRow = {
 const DevPersonaLoginInputSchema = z.object({
   memberId: z.string().uuid(),
 });
-
-function resultRows<T>(rows: T[] | { rows?: T[] }): T[] {
-  return Array.isArray(rows) ? rows : (rows.rows ?? []);
-}
 
 function releaseChannel(): 'development' | 'staging' | 'production' {
   return (
@@ -298,8 +295,7 @@ async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
     LIMIT 1
   `),
   );
-  const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
-  const picked = list[0];
+  const picked = executeRows<(typeof rows)[number]>(rows)[0];
   if (!picked) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
@@ -330,7 +326,7 @@ async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginId
     LIMIT 1
   `),
   );
-  const picked = resultRows(rows)[0];
+  const picked = executeRows<DevPersonaIdentityRow>(rows)[0];
   if (!picked) {
     throw new TRPCError({
       code: 'NOT_FOUND',
@@ -552,7 +548,7 @@ export const authRouter = router({
     } catch (err) {
       rethrowDevLoginDatabaseError(err);
     }
-    return resultRows(rows).map((row) => ({
+    return executeRows<DevPersonaRow>(rows).map((row) => ({
       memberId: row.member_id,
       userId: row.user_id,
       orgId: row.org_id,

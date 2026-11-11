@@ -21,6 +21,9 @@ describe('quantity arithmetic (RUNAPI-05)', () => {
     expect(addQty('1.1', '0.2')).toBe('1.3');
     expect(addQty('0.7', '0.2')).toBe('0.9');
     expect(sumQty(['0.1', '0.2', '0.3'])).toBe('0.6');
+    // Mixed scales and trailing zeros (scopedRunRevision's own adder, RUNAPI-14).
+    expect(sumQty(['3', '1.5', '0.25'])).toBe('4.75');
+    expect(sumQty(['1.50', '0.50'])).toBe('2');
     expect(subQty('0.3', '0.2')).toBe('0.1');
     expect(subQty('0.3', '0.3')).toBe('0');
   });

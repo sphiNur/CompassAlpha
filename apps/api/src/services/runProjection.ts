@@ -10,7 +10,7 @@ import { schema as s } from '@compass/db';
 import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts';
 import { DomainError } from '@compass/domain';
 import type { RunEvent } from '@compass/domain/run';
-import { readStream } from './eventStore';
+import { readRunEvents } from './runStream';
 import { runCorrections } from './runCorrections';
 
 export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Promise<void> {
@@ -1059,9 +1059,7 @@ async function syncAmendMovements(
   for (const sp of splits) if (sp.confirmedAt) signedStores.add(sp.storeId);
   // DX-DLV-01: what corrections added beyond each store's confirmed
   // quantity, from the stream up to this close (so a replay agrees).
-  const events = (await readStream(db, 'run', runId)).filter(
-    (ev) => ev.seq <= e.seq,
-  ) as unknown as RunEvent[];
+  const events = (await readRunEvents(db, runId)).filter((ev) => ev.seq <= e.seq);
   const amendAdded = new Map<string, string>();
   for (const c of runCorrections(events, null)) {
     if (c.kind === 'amendAdded') amendAdded.set(`${c.storeId}|${c.skuId}`, c.qty);

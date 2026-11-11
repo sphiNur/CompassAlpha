@@ -12,7 +12,7 @@ import { logger } from '../../infra/log';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import {
   AddPurchaserItemInputSchema,
   AddRunExpenseInputSchema,
@@ -43,7 +43,6 @@ import {
   milliQty,
   qtyMilli,
   sumMoney,
-  sumQty,
   toCents,
 } from '@compass/contracts';
 import {
@@ -58,33 +57,43 @@ import {
   applyRun,
   decideRun,
   emptyRunState,
+  replayRun,
   type RunEvent,
   type RunState,
 } from '@compass/domain/run';
-import {
-  decide as decideOrder,
-  apply as applyOrder,
-  emptyState as emptyOrderState,
-  type OrderEvent,
-} from '@compass/domain/order';
+import { decide as decideOrder, type OrderEvent, type OrderState } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
+import type { RequestContext } from '../context';
 import {
   canSeePrices,
   priceStoreIds,
   pricesVisibleFor,
   withoutPrices,
 } from '../../services/priceRedaction';
-import { appendEvents, readStream } from '../../services/eventStore';
 import {
   isStreamSeqConflict,
   isUniqueViolation,
   pgConstraintName,
   withStreamConflictRetry,
 } from '../../services/pgErrors';
-import { projectRun } from '../../services/runProjection';
 import { runCorrections } from '../../services/runCorrections';
-import { projectOrder } from '../../services/orderProjection';
+import { loadRunState, readRunEvents } from '../../services/runStream';
+import { loadOrderState } from '../../services/orderStream';
+import {
+  expensesForReader,
+  itemsForStoreReader,
+  splitsForReader,
+} from '../../services/runReaderView';
+import {
+  loadRunSessions,
+  notesAndExtrasByStore,
+  runSessionsView,
+  senderName,
+  senderNames,
+  storedExtras,
+} from '../../services/runSessionsView';
+import { writeOrderEvents, writeRunEvents } from '../../services/streamWrite';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
 import {
@@ -95,6 +104,7 @@ import {
   type RunMoneyLine,
 } from '../../services/runMoney';
 import { inUuids } from '../../services/sqlIn';
+import { executeRows } from '../../services/sqlRows';
 import { todayInTz } from '@compass/domain';
 import {
   hiddenSplits,
@@ -103,12 +113,6 @@ import {
   StoreOutOfScopeError,
 } from '../../services/scopedRunRevision';
 
-/**
- * Today as YYYY-MM-DD in the session's ORG timezone. D.1 (M3.39,
- * 2026-05-20) — was UTC-only, which caused new runs created between
- * 00:00 and (org-offset) UTC to land under yesterday's runDate key
- * for UZ tenants. Same helper shape as order.ts:todayInOrgTz.
- */
 /** run.list / run.get answer without money to members lacking prices.view. */
 const runReadProcedure = authedProcedure.use(async (opts) => {
   const result = await opts.next();
@@ -121,53 +125,14 @@ const runReadProcedure = authedProcedure.use(async (opts) => {
 /** Runs not finished or cancelled: run.list keeps them whatever their age (RUNAPI-06). */
 const OPEN_RUN_STATUSES = ['planned', 'purchasing', 'delivering', 'amending'];
 
+/**
+ * Today as YYYY-MM-DD in the session's ORG timezone. D.1 (M3.39,
+ * 2026-05-20) — was UTC-only, which caused new runs created between
+ * 00:00 and (org-offset) UTC to land under yesterday's runDate key
+ * for UZ tenants. Same helper shape as order.ts:todayInOrgTz.
+ */
 function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
   return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
-}
-
-function executeRows<T>(result: unknown): T[] {
-  if (Array.isArray(result)) return result as T[];
-  if (result && typeof result === 'object' && 'rows' in result) {
-    const rows = (result as { rows?: unknown }).rows;
-    if (Array.isArray(rows)) return rows as T[];
-  }
-  return [];
-}
-
-/**
- * A run's active expenses as a reader sees them: only the splits of the
- * reader's stores, the quantity summed over those, and no receipt photo
- * when a split was cut off. The photo shows the whole amount, and with it
- * the other stores' shares. Review RUNAPI-11 (2026-11-09): run.get had
- * this rule and historyDetail returned the photo; both use this now.
- */
-function expensesForReader(
-  rawExpenses: ReadonlyArray<typeof s.runExpensesV.$inferSelect>,
-  allowedStoreSet: ReadonlySet<string> | null,
-) {
-  return rawExpenses.flatMap((expense) => {
-    const allStoreSplits = expense.storeSplitsJson as Array<{ storeId: string; qty: string }>;
-    const storeSplits = allowedStoreSet
-      ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
-      : allStoreSplits;
-    if (storeSplits.length === 0) return [];
-    return [
-      {
-        id: expense.id,
-        label: expense.label,
-        unitHint: expense.unitHint,
-        qty: sumQty(storeSplits.map((split) => split.qty)),
-        unitPrice: expense.unitPrice,
-        storeSplits,
-        paymentMethod: expense.paymentMethod,
-        receiptPhotoUrl:
-          storeSplits.length !== allStoreSplits.length ? null : expense.receiptPhotoUrl,
-        reason: expense.reason,
-        addedByMemberId: expense.addedByMemberId,
-        addedAt: expense.addedAt.toISOString(),
-      },
-    ];
-  });
 }
 
 export const runRouter = router({
@@ -455,11 +420,7 @@ export const runRouter = router({
             ORDER BY sl.sku_id,
                      sl.last_seen_at DESC NULLS LAST
           `);
-        // node-postgres returns rows under `.rows` for raw SQL; the
-        // drizzle execute() result is already an array on Postgres
-        // adapters but we defensively support both shapes.
-        const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
-        for (const r of list) {
+        for (const r of executeRows<(typeof rows)[number]>(rows)) {
           supplierBySku[r.sku_id] = {
             id: r.supplier_id,
             name: r.name,
@@ -489,73 +450,18 @@ export const runRouter = router({
               AND ph.sku_id IN ${inUuids(skuIds)}
             ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
           `);
-        const prices = Array.isArray(priceRows)
-          ? priceRows
-          : ((priceRows as { rows?: typeof priceRows }).rows ?? []);
-        for (const price of prices) {
+        for (const price of executeRows<(typeof priceRows)[number]>(priceRows)) {
           lastPurchasePriceBySku[price.sku_id] = price.unit_price;
         }
       }
 
       // M1.8 (2026-05-07): bundle the session-level "其他物品" notes
       // by store so the FE can show them inline next to that store's
-      // demand block. Per-store concat with separators for legibility.
-      //
-      // M3.16-C (2026-05-16): also bundle structured `extras`. Both
-      // surfaces are emitted so the FE can render whichever the user
-      // typed (pre-M3.16 sessions = notes string, new sessions =
-      // extras array). Eventually `notes` drops once no live sessions
-      // carry the legacy text.
-      //
-      // M3.37 (2026-05-19, Wave2 #5): each extra now carries
-      // `sessionId` + `idx` + optional `status` so the FE can route
-      // a tap into the `order.markExtraStatus` mutation. Without
-      // sessionId/idx the flattened per-store list was unaddressable.
-      type ExtraItem = {
-        name: string;
-        qty: string;
-        unit: string;
-        note?: string;
-        status?: 'pending' | 'bought' | 'unavailable';
-        sessionId: string;
-        idx: number;
-        /** The session's lastSeq, sent back as markExtraStatus's
-         *  expectedSeq (APR-18). */
-        sessionSeq: number;
-      };
-      const notesByStore = new Map<string, string[]>();
-      const extrasByStore = new Map<string, ExtraItem[]>();
-      for (const sess of sessions) {
-        const trimmed = (sess.notes ?? '').trim();
-        if (trimmed) {
-          const arr = notesByStore.get(sess.storeId) ?? [];
-          arr.push(trimmed);
-          notesByStore.set(sess.storeId, arr);
-        }
-        const sessionExtras = (sess.extrasJson ?? []) as Array<{
-          name: string;
-          qty: string;
-          unit: string;
-          note?: string;
-          status?: 'pending' | 'bought' | 'unavailable';
-        }>;
-        if (sessionExtras.length > 0) {
-          const arr = extrasByStore.get(sess.storeId) ?? [];
-          for (let i = 0; i < sessionExtras.length; i++) {
-            const ex = sessionExtras[i]!;
-            arr.push({ ...ex, sessionId: sess.id, idx: i, sessionSeq: sess.lastSeq });
-          }
-          extrasByStore.set(sess.storeId, arr);
-        }
-      }
-      const sessionNotesByStore: Record<string, string> = {};
-      for (const [sid, arr] of notesByStore.entries()) {
-        sessionNotesByStore[sid] = arr.join('\n\n');
-      }
-      const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
-      for (const [sid, arr] of extrasByStore.entries()) {
-        sessionExtrasByStore[sid] = arr;
-      }
+      // demand block. M3.16-C (2026-05-16): also the structured
+      // `extras`, each with its session and index (M3.37) so a tap can
+      // mark it. Both are sent while sessions with the legacy notes
+      // remain.
+      const { sessionNotesByStore, sessionExtrasByStore } = notesAndExtrasByStore(sessions);
 
       // ORD-01: D1 money lines added in cents, as every estimate is.
       const perStoreBudgets = involvedStoreIds.map((storeId) => {
@@ -602,22 +508,7 @@ export const runRouter = router({
       // Walkthrough F6 (2026-11-05): the picker listed "Central Kitchen"
       // four times with nothing to tell the orders apart. Who sent each
       // one, and when, is added (new fields; nothing existing changes).
-      const submitterIds = [
-        ...new Set(
-          sessions
-            .map((sess) => sess.submittedByMemberId ?? sess.initiatedByMemberId)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      ];
-      const submitterNameById = new Map<string, string>();
-      if (submitterIds.length > 0) {
-        const members = await tx
-          .select({ memberId: s.members.id, displayName: s.users.displayName })
-          .from(s.members)
-          .innerJoin(s.users, eq(s.users.id, s.members.userId))
-          .where(inArray(s.members.id, submitterIds));
-        for (const m of members) submitterNameById.set(m.memberId, m.displayName);
-      }
+      const submitterNames = await senderNames(tx, sessions);
       return {
         date,
         today,
@@ -627,12 +518,10 @@ export const runRouter = router({
           storeName: storeNameById.get(sess.storeId) ?? '—',
           orderDate: sess.orderDate,
           submittedByMemberId: sess.submittedByMemberId,
-          submittedByName:
-            submitterNameById.get(sess.submittedByMemberId ?? sess.initiatedByMemberId ?? '') ??
-            null,
+          submittedByName: senderName(submitterNames, sess),
           submittedAt: sess.submittedAt ? sess.submittedAt.toISOString() : null,
           notes: sess.notes,
-          extras: (sess.extrasJson ?? []) as ExtraItem[],
+          extras: storedExtras(sess.extrasJson),
         })),
         plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
           skuId,
@@ -890,11 +779,7 @@ export const runRouter = router({
           runIndex,
           sessionIds: input.sessionIds,
           plannedItems,
-          actor: {
-            userId: ctx.session!.userId,
-            memberId: ctx.session!.memberId,
-            permissions: ctx.session!.permissions,
-          },
+          actor: actorFromCtx(ctx),
         });
         // M1.13 (2026-05-08): atomic plan + start. The FE collapsed
         // the "+ New run" / "Start purchase" double-tap. Fold the
@@ -904,15 +789,9 @@ export const runRouter = router({
         // never sees a half-state. Single-step callers (older clients
         // and tests) still get the original two-event flow.
         if (input.startImmediately) {
-          let folded = state;
-          for (const e of events) folded = applyRun(folded, e);
-          const startEvents = decideRun(folded, {
+          const startEvents = decideRun(events.reduce(applyRun, state), {
             type: 'StartPurchase',
-            actor: {
-              userId: ctx.session!.userId,
-              memberId: ctx.session!.memberId,
-              permissions: ctx.session!.permissions,
-            },
+            actor: actorFromCtx(ctx),
           });
           events = events.concat(startEvents);
         }
@@ -926,33 +805,20 @@ export const runRouter = router({
       // store, so a new run must not silently inherit template rows.
 
       try {
-        await appendEvents(tx, {
-          streamType: 'run',
-          streamId: runId,
-          orgId: ctx.session!.orgId,
-          events: events.map((e) => ({
-            type: e.type,
-            seq: e.seq,
-            payload: e.payload,
-            actorUserId: e.actorUserId,
-            actorMemberId: e.actorMemberId,
-            occurredAt: e.occurredAt,
-          })),
-        });
-        // 2026-07-26: projectRun moved INSIDE the try. It is where
-        // market_runs_v is actually inserted, so it is where both unique
-        // constraints can fire — (org, date, index) if two callers
-        // computed the same next index, and the new one-active-per-org
-        // index if another caller created a run between this one's
-        // `live` check above and this insert. Outside the try, either
-        // surfaced as a 500.
+        // 2026-07-26: the projection (in writeRunEvents) moved INSIDE the
+        // try. It is where market_runs_v is actually inserted, so it is
+        // where both unique constraints can fire — (org, date, index) if
+        // two callers computed the same next index, and the new
+        // one-active-per-org index if another caller created a run
+        // between this one's `live` check above and this insert. Outside
+        // the try, either surfaced as a 500.
         //
         // The transaction is aborted by then, so it cannot re-read to
         // find the winner. RUNAPI-04 (2026-11-09): the error goes out as
         // it is, and withRunStreamRetry runs the whole transaction again;
         // the next attempt hits the `live` short-circuit and returns the
         // run that won.
-        await projectRun(tx, ctx.session!.orgId, events);
+        await writeRunEvents(tx, ctx.session!.orgId, state, events);
       } catch (err) {
         if (isRunSlotConflict(err)) throw err;
         if (isUniqueViolation(err)) {
@@ -962,35 +828,7 @@ export const runRouter = router({
       }
 
       // Emit AttachedToRun on each session stream.
-      const attachedSessions: Array<{ sessionId: string; lastSeq: number }> = [];
-      for (const sessionId of input.sessionIds) {
-        const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
-        let oState = emptyOrderState(sessionId);
-        for (const e of orderEvents) oState = applyOrder(oState, e);
-        const ev = decideOrder(oState, {
-          type: 'AttachToRun',
-          runId,
-          actor: {
-            userId: ctx.session!.userId,
-            memberId: ctx.session!.memberId,
-            permissions: ctx.session!.permissions,
-            isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
-          },
-        });
-        if (ev.length > 0) {
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: sessionId,
-            orgId: ctx.session!.orgId,
-            events: ev.map((e) => ({ ...e })),
-          });
-          await projectOrder(tx, ctx.session!.orgId, ev);
-          attachedSessions.push({
-            sessionId,
-            lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
-          });
-        }
-      }
+      const attachedSessions = await attachSessionsToRun(tx, ctx, runId, input.sessionIds);
 
       // 2026-07-26: run.create was the only run mutation that broadcast
       // nothing — compare attachSessions / ejectSession / purchaseItem,
@@ -1104,9 +942,7 @@ export const runRouter = router({
         }));
 
         // Replay the run aggregate, then decide AttachSessions.
-        const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
-        let runState = emptyRunState(run.id);
-        for (const e of runEvents) runState = applyRun(runState, e);
+        const runState = await loadRunState(tx, run.id);
         let producedEvents: RunEvent[];
         try {
           producedEvents = decideRun(runState, {
@@ -1119,51 +955,10 @@ export const runRouter = router({
           if (err instanceof DomainError) rethrowDomainError(err);
           throw err;
         }
-        await appendEvents(tx, {
-          streamType: 'run',
-          streamId: run.id,
-          orgId: ctx.session!.orgId,
-          events: producedEvents.map((e) => ({
-            type: e.type,
-            seq: e.seq,
-            payload: e.payload,
-            actorUserId: e.actorUserId,
-            actorMemberId: e.actorMemberId,
-            occurredAt: e.occurredAt,
-          })),
-        });
-        await projectRun(tx, ctx.session!.orgId, producedEvents);
+        await writeRunEvents(tx, ctx.session!.orgId, runState, producedEvents);
 
         // Move each attached session's stream from approved → in_run.
-        const attachedSessions: Array<{ sessionId: string; lastSeq: number }> = [];
-        for (const sessionId of dedupedNewIds) {
-          const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
-          let oState = emptyOrderState(sessionId);
-          for (const e of orderEvents) oState = applyOrder(oState, e);
-          const ev = decideOrder(oState, {
-            type: 'AttachToRun',
-            runId: run.id,
-            actor: {
-              userId: ctx.session!.userId,
-              memberId: ctx.session!.memberId,
-              permissions: ctx.session!.permissions,
-              isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
-            },
-          });
-          if (ev.length > 0) {
-            await appendEvents(tx, {
-              streamType: 'order',
-              streamId: sessionId,
-              orgId: ctx.session!.orgId,
-              events: ev.map((e) => ({ ...e })),
-            });
-            await projectOrder(tx, ctx.session!.orgId, ev);
-          }
-          attachedSessions.push({
-            sessionId,
-            lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
-          });
-        }
+        const attachedSessions = await attachSessionsToRun(tx, ctx, run.id, dedupedNewIds);
 
         // 2026-10-21 audit CA-31: same broadcast as `create` — without it
         // other purchasers' Run page and the attached sessions' Order /
@@ -1843,38 +1638,14 @@ export const runRouter = router({
         // Already reopened: nothing more to reopen from here.
         const canAmend = run.status === 'finished' && (await canAmendRun(tx, ctx, run));
         const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
-        const sessionIds = (run.sessionIdsJson as string[] | null) ?? [];
-        const rawSessions =
-          sessionIds.length > 0
-            ? await tx.query.orderSessionsV.findMany({
-                where: (session, { inArray: inArray2 }) => inArray2(session.id, sessionIds),
-                columns: {
-                  id: true,
-                  storeId: true,
-                  notes: true,
-                  extrasJson: true,
-                  submittedByMemberId: true,
-                  initiatedByMemberId: true,
-                  status: true,
-                  lastSeq: true,
-                },
-              })
-            : [];
-        const visibleSessions = allowedStoreSet
-          ? rawSessions.filter((session) => allowedStoreSet.has(session.storeId))
-          : rawSessions;
+        const { sessions: visibleSessions, items: sessionItems } = await loadRunSessions(
+          tx,
+          (run.sessionIdsJson as string[] | null) ?? [],
+          allowedStoreSet,
+        );
         if (allowedStoreSet && visibleSessions.length === 0) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
         }
-
-        const visibleSessionIds = visibleSessions.map((session) => session.id);
-        const sessionItems =
-          visibleSessionIds.length > 0
-            ? await tx.query.orderItemsV.findMany({
-                where: (item, { inArray: inArray2 }) => inArray2(item.sessionId, visibleSessionIds),
-                columns: { sessionId: true, skuId: true, qty: true },
-              })
-            : [];
         const allItems = await tx.query.runItemsV.findMany({
           where: (item, { eq: eq2 }) => eq2(item.runId, run.id),
           orderBy: (item, { asc }) => asc(item.skuId),
@@ -1883,205 +1654,15 @@ export const runRouter = router({
           where: (split, { eq: eq2 }) => eq2(split.runId, run.id),
           orderBy: (split, { asc }) => [asc(split.skuId), asc(split.storeId)],
         });
-
-        const itemBySkuId = new Map(allItems.map((item) => [item.skuId, item]));
-        const rawSplits =
-          allowedStoreSet === null
-            ? allSplits
-            : allSplits.filter((split) => allowedStoreSet.has(split.storeId));
-        const hiddenSplitSkuIds =
-          allowedStoreSet === null
-            ? new Set<string>()
-            : new Set(
-                allSplits
-                  .filter((split) => !allowedStoreSet.has(split.storeId))
-                  .map((split) => split.skuId),
-              );
-        const splits =
-          allowedStoreSet === null
-            ? rawSplits
-            : rawSplits.map((split) => {
-                const item = itemBySkuId.get(split.skuId);
-                return {
-                  ...split,
-                  // A null split value means "inherit the run item". Resolve
-                  // that inheritance while the row is known to belong to a
-                  // visible store, so downstream money math never needs the
-                  // org-wide item fallback.
-                  unitPrice: split.unitPrice ?? item?.unitPrice ?? null,
-                  paymentMethod: split.paymentMethod ?? item?.paymentMethod ?? null,
-                };
-              });
-
-        const sessionStoreById = new Map(
-          visibleSessions.map((session) => [session.id, session.storeId]),
-        );
-        const demandParts = new Map<string, string[]>();
-        const sessionQtyParts = new Map<string, string[]>();
-        const sessionSkuIds = new Map<string, Set<string>>();
-        for (const item of sessionItems) {
-          if (Number(item.qty) <= 0) continue;
-          const storeId = sessionStoreById.get(item.sessionId);
-          if (!storeId) continue;
-          const demandKey = `${storeId}|${item.skuId}`;
-          const parts = demandParts.get(demandKey) ?? [];
-          parts.push(item.qty);
-          demandParts.set(demandKey, parts);
-          const qtyParts = sessionQtyParts.get(item.sessionId) ?? [];
-          qtyParts.push(item.qty);
-          sessionQtyParts.set(item.sessionId, qtyParts);
-          const skuIds = sessionSkuIds.get(item.sessionId) ?? new Set<string>();
-          skuIds.add(item.skuId);
-          sessionSkuIds.set(item.sessionId, skuIds);
-        }
-        const perStoreDemand = [...demandParts.entries()].map(([key, qtyParts]) => {
-          const [storeId, skuId] = key.split('|');
-          return { storeId: storeId!, skuId: skuId!, qty: sumQty(qtyParts) };
-        });
-
-        const splitQtyParts = new Map<string, string[]>();
-        for (const split of splits) {
-          const parts = splitQtyParts.get(split.skuId) ?? [];
-          parts.push(split.qty);
-          splitQtyParts.set(split.skuId, parts);
-        }
-        const demandQtyParts = new Map<string, string[]>();
-        for (const demand of perStoreDemand) {
-          const parts = demandQtyParts.get(demand.skuId) ?? [];
-          parts.push(demand.qty);
-          demandQtyParts.set(demand.skuId, parts);
-        }
+        const { splits, hiddenSkuIds } = splitsForReader(allItems, allSplits, allowedStoreSet);
+        const { sessions, perStoreDemand, sessionNotesByStore, sessionExtrasByStore } =
+          await runSessionsView(tx, visibleSessions, sessionItems);
+        // Never the organisation's quantities, prices or receipts for a
+        // store-scoped history reader.
         const items =
           allowedStoreSet === null
             ? allItems
-            : allItems
-                .filter((item) =>
-                  item.status === 'purchased'
-                    ? splitQtyParts.has(item.skuId)
-                    : demandQtyParts.has(item.skuId),
-                )
-                .map((item) => {
-                  const splitQty = sumQty(splitQtyParts.get(item.skuId) ?? []);
-                  const demandQty = sumQty(demandQtyParts.get(item.skuId) ?? []);
-                  const itemSplits = splits.filter((split) => split.skuId === item.skuId);
-                  const unitPrices = new Set(
-                    itemSplits
-                      .map((split) => split.unitPrice)
-                      .filter((value): value is string => value !== null),
-                  );
-                  const paymentMethods = new Set(
-                    itemSplits
-                      .map((split) => split.paymentMethod)
-                      .filter((value): value is string => value !== null),
-                  );
-                  const hasHiddenSplit = hiddenSplitSkuIds.has(item.skuId);
-                  return {
-                    ...item,
-                    // Never return the org-wide planned/purchased quantities to
-                    // a store-scoped history reader.
-                    plannedQty: demandQty !== '0' ? demandQty : splitQty,
-                    purchasedQty: item.status === 'purchased' ? splitQty : item.purchasedQty,
-                    // Item-level purchase metadata has no store attribution.
-                    // Only expose a summary value when every visible split
-                    // resolves to the same value; otherwise the resolved split
-                    // rows remain the sole source of truth. Supplier and receipt
-                    // metadata cannot be derived from a visible split at all.
-                    unitPrice:
-                      item.status === 'purchased' &&
-                      itemSplits.length > 0 &&
-                      unitPrices.size === 1 &&
-                      itemSplits.every((split) => split.unitPrice !== null)
-                        ? [...unitPrices][0]!
-                        : null,
-                    paymentMethod:
-                      item.status === 'purchased' &&
-                      itemSplits.length > 0 &&
-                      paymentMethods.size === 1 &&
-                      itemSplits.every((split) => split.paymentMethod !== null)
-                        ? [...paymentMethods][0]!
-                        : null,
-                    // Supplier/receipt live only on the item. Preserve them
-                    // when the SKU has no hidden allocation; otherwise their
-                    // provenance is ambiguous and they must be redacted.
-                    supplierId: hasHiddenSplit ? null : item.supplierId,
-                    receiptPhotoUrl: hasHiddenSplit ? null : item.receiptPhotoUrl,
-                  };
-                });
-
-        const submitterIds = [
-          ...new Set(
-            visibleSessions
-              .map((session) => session.submittedByMemberId ?? session.initiatedByMemberId)
-              .filter((id): id is string => Boolean(id)),
-          ),
-        ];
-        const displayNameByMemberId = new Map<string, string>();
-        if (submitterIds.length > 0) {
-          const members = await tx
-            .select({ memberId: s.members.id, displayName: s.users.displayName })
-            .from(s.members)
-            .innerJoin(s.users, eq(s.users.id, s.members.userId))
-            .where(inArray(s.members.id, submitterIds));
-          for (const member of members) {
-            displayNameByMemberId.set(member.memberId, member.displayName);
-          }
-        }
-        const sessions = visibleSessions.map((session) => {
-          const submitterId = session.submittedByMemberId ?? session.initiatedByMemberId;
-          const extras = (session.extrasJson ?? []) as unknown[];
-          return {
-            id: session.id,
-            storeId: session.storeId,
-            submittedByMemberId: session.submittedByMemberId,
-            initiatedByMemberId: session.initiatedByMemberId,
-            submittedByDisplayName: submitterId
-              ? (displayNameByMemberId.get(submitterId) ?? null)
-              : null,
-            itemCount: sessionSkuIds.get(session.id)?.size ?? 0,
-            totalQty: sumQty(sessionQtyParts.get(session.id) ?? []),
-            extrasCount: Array.isArray(extras) ? extras.length : 0,
-            status: session.status,
-          };
-        });
-
-        type ExtraItem = {
-          name: string;
-          qty: string;
-          unit: string;
-          note?: string;
-          status?: 'pending' | 'bought' | 'unavailable';
-          sessionId: string;
-          idx: number;
-          /** The session's lastSeq, sent back as markExtraStatus's
-           *  expectedSeq (APR-18). */
-          sessionSeq: number;
-        };
-        const notesByStore = new Map<string, string[]>();
-        const extrasByStore = new Map<string, ExtraItem[]>();
-        for (const session of visibleSessions) {
-          const note = (session.notes ?? '').trim();
-          if (note) {
-            const notes = notesByStore.get(session.storeId) ?? [];
-            notes.push(note);
-            notesByStore.set(session.storeId, notes);
-          }
-          const extras = (session.extrasJson ?? []) as Array<{
-            name: string;
-            qty: string;
-            unit: string;
-            note?: string;
-            status?: 'pending' | 'bought' | 'unavailable';
-          }>;
-          const target = extrasByStore.get(session.storeId) ?? [];
-          extras.forEach((extra, idx) =>
-            target.push({ ...extra, sessionId: session.id, idx, sessionSeq: session.lastSeq }),
-          );
-          if (target.length > 0) extrasByStore.set(session.storeId, target);
-        }
-        const sessionNotesByStore = Object.fromEntries(
-          [...notesByStore].map(([storeId, notes]) => [storeId, notes.join('\n\n')]),
-        );
-        const sessionExtrasByStore = Object.fromEntries(extrasByStore);
+            : itemsForStoreReader(allItems, splits, perStoreDemand, hiddenSkuIds);
 
         const rawExpenses = await tx.query.runExpensesV.findMany({
           where: (expense, { and: and2, eq: eq2, isNull }) =>
@@ -2161,10 +1742,7 @@ export const runRouter = router({
           canAmend,
           // D3 / D4 (2026-10-31): quantity added in a correction and price
           // changes after receipt, for the history labels.
-          corrections: runCorrections(
-            (await readStream(tx, 'run', run.id)) as unknown as RunEvent[],
-            allowedStoreSet,
-          ),
+          corrections: runCorrections(await readRunEvents(tx, run.id), allowedStoreSet),
         };
       }),
     ),
@@ -2210,35 +1788,12 @@ export const runRouter = router({
           /** BUY-5: demand that joined after the item was decided. */
           topUpQty?: string | null;
         };
-        let items: VisibleRunItem[] = allItems;
-        let splits = await tx.query.runItemStoresV.findMany({
+        const allSplits = await tx.query.runItemStoresV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
           orderBy: (i, { asc }) => [asc(i.skuId), asc(i.storeId)],
         });
-        const allSplits = splits;
         const itemBySkuId = new Map(allItems.map((item) => [item.skuId, item]));
-        const hiddenSplitSkuIds =
-          allowedStoreSet === null
-            ? new Set<string>()
-            : new Set(
-                allSplits
-                  .filter((split) => !allowedStoreSet.has(split.storeId))
-                  .map((split) => split.skuId),
-              );
-        if (allowedStoreSet) {
-          splits = allSplits
-            .filter((split) => allowedStoreSet.has(split.storeId))
-            .map((split) => {
-              const item = itemBySkuId.get(split.skuId);
-              return {
-                ...split,
-                // Resolve item fallback only while the allocation is tied to
-                // a visible store; clients must not read hidden item metadata.
-                unitPrice: split.unitPrice ?? item?.unitPrice ?? null,
-                paymentMethod: split.paymentMethod ?? item?.paymentMethod ?? null,
-              };
-            });
-        }
+        const { splits, hiddenSkuIds } = splitsForReader(allItems, allSplits, allowedStoreSet);
 
         // Per-(store, sku) demand from the underlying sessions. The
         // RunPage uses this to PRE-FILL splits when the purchaser
@@ -2250,233 +1805,33 @@ export const runRouter = router({
         //   - it's pure SQL and trivially cheap (≤ tens of rows)
         //   - centralizing the math means cancel-cascade and
         //     re-planning paths can't drift from the client's defaults.
-        const sessionIds = (run.sessionIdsJson ?? []) as string[];
-        const perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
-        // M1.8 (2026-05-07): per-store concatenated session notes so the
-        // purchaser sees the staff's "其他物品" requests next to that
-        // store's demand block. M3.16-C extends this with per-store
-        // structured extras (name + qty + unit + note?) emitted as the
-        // M3.16+ replacement for free-text notes.
-        // M3.37 (2026-05-19, Wave2 #5): each extra carries sessionId +
-        // idx + status so the FE can route taps into the
-        // `order.markExtraStatus` mutation. Same enrichment as the
-        // run.previewCreatable path above — kept in sync manually.
-        type ExtraItem = {
-          name: string;
-          qty: string;
-          unit: string;
-          note?: string;
-          status?: 'pending' | 'bought' | 'unavailable';
-          sessionId: string;
-          idx: number;
-          /** R2-BUY-1: the session's lastSeq, sent back as markExtraStatus's
-           *  expectedSeq (as in previewCreatable / historyDetail). */
-          sessionSeq: number;
-        };
-        const sessionNotesByStore: Record<string, string> = {};
-        const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
-        let visibleSessionIds: string[] = [];
-        let runSessions: Array<{
-          id: string;
-          storeId: string;
-          submittedByMemberId: string | null;
-          initiatedByMemberId: string | null;
-          submittedByDisplayName: string | null;
-          itemCount: number;
-          totalQty: string;
-          extrasCount: number;
-          status: string;
-        }> = [];
-        if (sessionIds.length > 0) {
-          const rawSessions = await tx.query.orderSessionsV.findMany({
-            where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-            columns: {
-              id: true,
-              storeId: true,
-              notes: true,
-              extrasJson: true,
-              submittedByMemberId: true,
-              initiatedByMemberId: true,
-              status: true,
-              lastSeq: true,
-            },
-          });
-          const sessions = allowedStoreSet
-            ? rawSessions.filter((session) => allowedStoreSet.has(session.storeId))
-            : rawSessions;
-          visibleSessionIds = sessions.map((session) => session.id);
-          const sessionItems =
-            visibleSessionIds.length > 0
-              ? await tx.query.orderItemsV.findMany({
-                  where: (it, { inArray: ia }) => ia(it.sessionId, visibleSessionIds),
-                })
-              : [];
-          const sessionStoreById = new Map<string, string>();
-          const sessionStats = new Map<string, { itemCount: number; totalQty: bigint }>();
-          const noteAccumulator = new Map<string, string[]>();
-          const extrasAccumulator = new Map<string, ExtraItem[]>();
-          for (const s of sessions) {
-            sessionStoreById.set(s.id, s.storeId);
-            const trimmed = (s.notes ?? '').trim();
-            if (trimmed) {
-              const arr = noteAccumulator.get(s.storeId) ?? [];
-              arr.push(trimmed);
-              noteAccumulator.set(s.storeId, arr);
-            }
-            const sessionExtras = (s.extrasJson ?? []) as Array<{
-              name: string;
-              qty: string;
-              unit: string;
-              note?: string;
-              status?: 'pending' | 'bought' | 'unavailable';
-            }>;
-            if (sessionExtras.length > 0) {
-              const arr = extrasAccumulator.get(s.storeId) ?? [];
-              for (let i = 0; i < sessionExtras.length; i++) {
-                const ex = sessionExtras[i]!;
-                arr.push({ ...ex, sessionId: s.id, idx: i, sessionSeq: s.lastSeq });
-              }
-              extrasAccumulator.set(s.storeId, arr);
-            }
-          }
-          for (const it of sessionItems) {
-            const qty = qtyMilli(it.qty);
-            if (qty <= 0n) continue;
-            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0n };
-            stat.itemCount += 1;
-            stat.totalQty += qty;
-            sessionStats.set(it.sessionId, stat);
-          }
-          const submitterIds = [
-            ...new Set(
-              sessions
-                .map((sess) => sess.submittedByMemberId ?? sess.initiatedByMemberId)
-                .filter((id): id is string => Boolean(id)),
-            ),
-          ];
-          const displayNameByMemberId = new Map<string, string>();
-          if (submitterIds.length > 0) {
-            const rows = await tx
-              .select({
-                memberId: s.members.id,
-                displayName: s.users.displayName,
-              })
-              .from(s.members)
-              .innerJoin(s.users, eq(s.users.id, s.members.userId))
-              .where(inArray(s.members.id, submitterIds));
-            for (const row of rows) displayNameByMemberId.set(row.memberId, row.displayName);
-          }
-          runSessions = sessions.map((sess) => {
-            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0n };
-            const submitterId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
-            const extras = (sess.extrasJson ?? []) as unknown[];
-            return {
-              id: sess.id,
-              storeId: sess.storeId,
-              submittedByMemberId: sess.submittedByMemberId,
-              initiatedByMemberId: sess.initiatedByMemberId,
-              submittedByDisplayName: submitterId
-                ? (displayNameByMemberId.get(submitterId) ?? null)
-                : null,
-              itemCount: stat.itemCount,
-              totalQty: milliQty(stat.totalQty),
-              extrasCount: Array.isArray(extras) ? extras.length : 0,
-              status: sess.status,
-            };
-          });
-          for (const [sid, arr] of noteAccumulator.entries()) {
-            sessionNotesByStore[sid] = arr.join('\n\n');
-          }
-          for (const [sid, arr] of extrasAccumulator.entries()) {
-            sessionExtrasByStore[sid] = arr;
-          }
-          // Aggregate qty by (storeId, skuId).
-          // RUNAPI-05: in whole thousandths. The run page puts these in
-          // the per-store fields, which refuse more than 3 decimals.
-          const acc = new Map<string, bigint>();
-          for (const it of sessionItems) {
-            const storeId = sessionStoreById.get(it.sessionId);
-            if (!storeId) continue;
-            const qty = qtyMilli(it.qty);
-            if (qty <= 0n) continue;
-            const key = `${storeId}|${it.skuId}`;
-            acc.set(key, (acc.get(key) ?? 0n) + qty);
-          }
-          for (const [key, qty] of acc) {
-            const [storeId, skuId] = key.split('|');
-            perStoreDemand.push({
-              storeId: storeId!,
-              skuId: skuId!,
-              qty: milliQty(qty),
-            });
-          }
-        }
+        // M1.8 / M3.16-C / M3.37: each store's session notes and extras
+        // come with it, so the purchaser sees the staff's "其他物品"
+        // next to that store's demand and can mark each extra.
+        const { sessions: visibleSessions, items: sessionItems } = await loadRunSessions(
+          tx,
+          (run.sessionIdsJson ?? []) as string[],
+          allowedStoreSet,
+        );
+        const visibleSessionIds = visibleSessions.map((session) => session.id);
+        const {
+          sessions: runSessions,
+          perStoreDemand,
+          sessionNotesByStore,
+          sessionExtrasByStore,
+        } = await runSessionsView(tx, visibleSessions, sessionItems);
 
-        if (allowedStoreSet) {
-          const splitQtyParts = new Map<string, string[]>();
-          for (const split of splits) {
-            const qtyParts = splitQtyParts.get(split.skuId) ?? [];
-            qtyParts.push(split.qty);
-            splitQtyParts.set(split.skuId, qtyParts);
-          }
-          const demandQtyParts = new Map<string, string[]>();
-          for (const demand of perStoreDemand) {
-            const qtyParts = demandQtyParts.get(demand.skuId) ?? [];
-            qtyParts.push(demand.qty);
-            demandQtyParts.set(demand.skuId, qtyParts);
-          }
-          items = allItems
-            .filter((item) =>
-              item.status === 'purchased'
-                ? splitQtyParts.has(item.skuId)
-                : demandQtyParts.has(item.skuId),
-            )
-            .map((item) => {
-              const splitQty = sumQty(splitQtyParts.get(item.skuId) ?? []);
-              const demandQty = sumQty(demandQtyParts.get(item.skuId) ?? []);
-              const itemSplits = splits.filter((split) => split.skuId === item.skuId);
-              const unitPrices = new Set(
-                itemSplits
-                  .map((split) => split.unitPrice)
-                  .filter((value): value is string => value !== null),
-              );
-              const paymentMethods = new Set(
-                itemSplits
-                  .map((split) => split.paymentMethod)
-                  .filter((value): value is string => value !== null),
-              );
-              const hasHiddenSplit = hiddenSplitSkuIds.has(item.skuId);
-              return {
-                ...item,
-                plannedQty: demandQty !== '0' ? demandQty : splitQty,
-                purchasedQty: item.status === 'purchased' ? splitQty : item.purchasedQty,
-                unitPrice:
-                  item.status === 'purchased' &&
-                  itemSplits.length > 0 &&
-                  unitPrices.size === 1 &&
-                  itemSplits.every((split) => split.unitPrice !== null)
-                    ? [...unitPrices][0]!
-                    : null,
-                paymentMethod:
-                  item.status === 'purchased' &&
-                  itemSplits.length > 0 &&
-                  paymentMethods.size === 1 &&
-                  itemSplits.every((split) => split.paymentMethod !== null)
-                    ? [...paymentMethods][0]!
-                    : null,
-                supplierId: hasHiddenSplit ? null : item.supplierId,
-                receiptPhotoUrl: hasHiddenSplit ? null : item.receiptPhotoUrl,
-              };
-            });
-        }
+        let items: VisibleRunItem[] =
+          allowedStoreSet === null
+            ? allItems
+            : itemsForStoreReader(allItems, splits, perStoreDemand, hiddenSkuIds);
 
         const recalledStoreIds: string[] = [];
         // BUY-5 (2026-10-30): "still need X" lives in the domain state only
         // (no read-model column); a run stream is a few dozen events.
         {
-          const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
-          let domainState = emptyRunState(run.id);
-          for (const e of events) domainState = applyRun(domainState, e);
+          const events = await readRunEvents(tx, run.id);
+          const domainState = replayRun(run.id, events);
           items = items.map((it) => ({
             ...it,
             topUpQty: domainState.items.get(it.skuId)?.topUpQty ?? null,
@@ -2531,8 +1886,7 @@ export const runRouter = router({
             ORDER BY sl.sku_id,
                      sl.last_seen_at DESC NULLS LAST
           `);
-          const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
-          for (const r of list) {
+          for (const r of executeRows<(typeof rows)[number]>(rows)) {
             supplierBySku[r.sku_id] = {
               id: r.supplier_id,
               name: r.name,
@@ -3221,7 +2575,7 @@ export const runRouter = router({
               actor: actorFromCtx(ctx, effectivePerms),
             });
             events.push(...out);
-            for (const event of out) current = applyRun(current, event);
+            current = out.reduce(applyRun, current);
           }
           return events;
         },
@@ -3301,9 +2655,7 @@ export const runRouter = router({
   finish: idempotentMutation.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
     return withRunStreamRetry(ctx, async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
-      const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
-      let runState = emptyRunState(run.id);
-      for (const e of runEvents) runState = applyRun(runState, e);
+      let runState = await loadRunState(tx, run.id);
 
       // Step 1 — RunFinished on the run stream.
       if (runState.status === 'amending') {
@@ -3323,14 +2675,7 @@ export const runRouter = router({
         throw err;
       }
       if (finishEvents.length > 0) {
-        await appendEvents(tx, {
-          streamType: 'run',
-          streamId: run.id,
-          orgId: ctx.session!.orgId,
-          events: finishEvents.map((e) => ({ ...e })),
-        });
-        for (const e of finishEvents) runState = applyRun(runState, e);
-        await projectRun(tx, ctx.session!.orgId, finishEvents);
+        runState = await writeRunEvents(tx, ctx.session!.orgId, runState, finishEvents);
         await dispatchRunEventNotifications(
           tx,
           ctx.session!.orgId,
@@ -3349,9 +2694,7 @@ export const runRouter = router({
       // ='in_run' on the same data.
       const archiveFailures: Array<{ sessionId: string; reason: string }> = [];
       for (const sessionId of runState.sessionIds) {
-        const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
-        let oState = emptyOrderState(sessionId);
-        for (const e of orderEvents) oState = applyOrder(oState, e);
+        const oState = await loadOrderState(tx, sessionId);
         if (oState.status === 'archived') continue; // already archived → no-op
 
         let ev: OrderEvent[] = [];
@@ -3359,12 +2702,7 @@ export const runRouter = router({
           ev = decideOrder(oState, {
             type: 'Archive',
             reason: 'run_finished',
-            actor: {
-              userId: ctx.session!.userId,
-              memberId: ctx.session!.memberId,
-              permissions: ctx.session!.permissions,
-              isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
-            },
+            actor: orderActorFromCtx(ctx, oState),
           });
         } catch (err) {
           if (err instanceof DomainError) {
@@ -3377,21 +2715,13 @@ export const runRouter = router({
           }
           throw err;
         }
-        if (ev.length > 0) {
-          // RUNAPI-09 (2026-11-09): a database error here is not collected.
-          // It aborts the transaction, so the next session's read failed
-          // anyway, and a sequence race (someone marking an extra at that
-          // moment) answered 500 instead of being decided again. It goes
-          // out as it is: withRunStreamRetry runs the whole finish again
-          // on the fresh streams, and anything else rolls it back.
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: sessionId,
-            orgId: ctx.session!.orgId,
-            events: ev.map((e) => ({ ...e })),
-          });
-          await projectOrder(tx, ctx.session!.orgId, ev);
-        }
+        // RUNAPI-09 (2026-11-09): a database error here is not collected.
+        // It aborts the transaction, so the next session's read failed
+        // anyway, and a sequence race (someone marking an extra at that
+        // moment) answered 500 instead of being decided again. It goes
+        // out as it is: withRunStreamRetry runs the whole finish again
+        // on the fresh streams, and anything else rolls it back.
+        await writeOrderEvents(tx, ctx.session!.orgId, sessionId, ev);
       }
 
       // M3.4 atomicity bar — if the domain refused any session, abort
@@ -3698,9 +3028,7 @@ export const runRouter = router({
   cancel: authedProcedure.input(RunCancelInputSchema).mutation(async ({ ctx, input }) => {
     return withRunStreamRetry(ctx, async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
-      const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
-      let runState = emptyRunState(run.id);
-      for (const e of runEvents) runState = applyRun(runState, e);
+      let runState = await loadRunState(tx, run.id);
 
       // Step 1 — produce RunCancelled. Domain validates permission +
       // status guards (e.g. not already finished).
@@ -3722,14 +3050,7 @@ export const runRouter = router({
         throw err;
       }
       if (cancelEvents.length > 0) {
-        await appendEvents(tx, {
-          streamType: 'run',
-          streamId: run.id,
-          orgId: ctx.session!.orgId,
-          events: cancelEvents.map((e) => ({ ...e })),
-        });
-        for (const e of cancelEvents) runState = applyRun(runState, e);
-        await projectRun(tx, ctx.session!.orgId, cancelEvents);
+        runState = await writeRunEvents(tx, ctx.session!.orgId, runState, cancelEvents);
         // 2026-10-21 audit CA-31: the RunCancelled notification branch
         // existed but was never reached — stores that had just been told
         // "delivery arrived" never learned the run was scrapped.
@@ -3748,9 +3069,7 @@ export const runRouter = router({
       const sessionIds = runState.sessionIds;
       const ejectionFailures: Array<{ sessionId: string; reason: string }> = [];
       for (const sessionId of sessionIds) {
-        const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
-        let oState = emptyOrderState(sessionId);
-        for (const e of orderEvents) oState = applyOrder(oState, e);
+        const oState = await loadOrderState(tx, sessionId);
 
         // Only eject if still attached to THIS run. If the session was
         // already manually ejected earlier, skip silently.
@@ -3773,12 +3092,7 @@ export const runRouter = router({
             type: 'EjectFromRun',
             runId: run.id,
             reason: input.reason,
-            actor: {
-              userId: ctx.session!.userId,
-              memberId: ctx.session!.memberId,
-              permissions: ejectPerms,
-              isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
-            },
+            actor: orderActorFromCtx(ctx, oState, ejectPerms),
           });
         } catch (err) {
           // Don't let a single session's failure abort the entire cancel
@@ -3794,15 +3108,7 @@ export const runRouter = router({
           }
           throw err;
         }
-        if (ev.length > 0) {
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: sessionId,
-            orgId: ctx.session!.orgId,
-            events: ev.map((e) => ({ ...e })),
-          });
-          await projectOrder(tx, ctx.session!.orgId, ev);
-        }
+        await writeOrderEvents(tx, ctx.session!.orgId, sessionId, ev);
       }
 
       // Realtime ping so connected clients refresh both pages.
@@ -3864,9 +3170,7 @@ export const runRouter = router({
         });
       }
 
-      const runEvents = (await readStream(tx, 'run', input.runId)) as unknown as RunEvent[];
-      let runState = emptyRunState(input.runId);
-      for (const e of runEvents) runState = applyRun(runState, e);
+      let runState = await loadRunState(tx, input.runId);
 
       // Check no per-session items have been touched yet.
       if (runState.status === 'amending') await assertCanAmendRun(tx, ctx, run);
@@ -3905,14 +3209,7 @@ export const runRouter = router({
           actor: actorFromCtx(ctx, effectivePerms),
         });
         if (runRemovalEvents.length > 0) {
-          await appendEvents(tx, {
-            streamType: 'run',
-            streamId: run.id,
-            orgId: ctx.session!.orgId,
-            events: runRemovalEvents.map((e) => ({ ...e })),
-          });
-          for (const e of runRemovalEvents) runState = applyRun(runState, e);
-          await projectRun(tx, ctx.session!.orgId, runRemovalEvents);
+          runState = await writeRunEvents(tx, ctx.session!.orgId, runState, runRemovalEvents);
           await dispatchRunEventNotifications(
             tx,
             ctx.session!.orgId,
@@ -3927,33 +3224,14 @@ export const runRouter = router({
       }
 
       // Emit EjectedFromRun on the order stream in the same tx.
-      const orderEvents = (await readStream(
-        tx,
-        'order',
-        input.sessionId,
-      )) as unknown as OrderEvent[];
-      let oState = emptyOrderState(input.sessionId);
-      for (const e of orderEvents) oState = applyOrder(oState, e);
+      const oState = await loadOrderState(tx, input.sessionId);
       const ev = decideOrder(oState, {
         type: 'EjectFromRun',
         runId: input.runId,
         reason: input.reason,
-        actor: {
-          userId: ctx.session!.userId,
-          memberId: ctx.session!.memberId,
-          permissions: effectivePerms,
-          isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
-        },
+        actor: orderActorFromCtx(ctx, oState, effectivePerms),
       });
-      if (ev.length > 0) {
-        await appendEvents(tx, {
-          streamType: 'order',
-          streamId: input.sessionId,
-          orgId: ctx.session!.orgId,
-          events: ev.map((e) => ({ ...e })),
-        });
-        await projectOrder(tx, ctx.session!.orgId, ev);
-      }
+      await writeOrderEvents(tx, ctx.session!.orgId, input.sessionId, ev);
       hub.publish(ctx.session!.orgId, {
         type: 'run.changed',
         orgId: ctx.session!.orgId,
@@ -3972,7 +3250,7 @@ export const runRouter = router({
 });
 
 function actorFromCtx(
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  ctx: RequestContext,
   /**
    * Optional override for `permissions` — used by store-keyed commands
    * (`deliverToStore`, `confirmStore`, `confirmStoreItem`,
@@ -3988,6 +3266,43 @@ function actorFromCtx(
     memberId: ctx.session!.memberId,
     permissions: effectivePermissions ?? ctx.session!.permissions,
   };
+}
+
+/** The actor for an order command a run handler sends to one session. */
+function orderActorFromCtx(
+  ctx: RequestContext,
+  session: OrderState,
+  permissions?: ReadonlySet<string>,
+) {
+  return {
+    ...actorFromCtx(ctx, permissions),
+    isClaimer: session.claimedByMemberId === ctx.session!.memberId,
+  };
+}
+
+/**
+ * AttachToRun on each session's order stream (approved → in_run), for
+ * run.create and attachSessions: the orders can no longer be edited or
+ * unapproved. Returns each session's last seq for its order.changed push.
+ */
+async function attachSessionsToRun(
+  tx: DB,
+  ctx: RequestContext,
+  runId: string,
+  sessionIds: readonly string[],
+): Promise<Array<{ sessionId: string; lastSeq: number }>> {
+  const attached: Array<{ sessionId: string; lastSeq: number }> = [];
+  for (const sessionId of sessionIds) {
+    const session = await loadOrderState(tx, sessionId);
+    const events = decideOrder(session, {
+      type: 'AttachToRun',
+      runId,
+      actor: orderActorFromCtx(ctx, session),
+    });
+    await writeOrderEvents(tx, ctx.session!.orgId, sessionId, events);
+    attached.push({ sessionId, lastSeq: events[events.length - 1]?.seq ?? session.seq });
+  }
+  return attached;
 }
 
 /**
@@ -4013,8 +3328,8 @@ const runCreateRetryable = (err: unknown): boolean =>
   isStreamSeqConflict(err) || isRunSlotConflict(err);
 
 async function withRunStreamRetry<T>(
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
-  fn: (tx: import('@compass/db').DB) => Promise<T>,
+  ctx: RequestContext,
+  fn: (tx: DB) => Promise<T>,
   retryable: (err: unknown) => boolean = isStreamSeqConflict,
 ): Promise<T> {
   try {
@@ -4031,7 +3346,7 @@ async function withRunStreamRetry<T>(
 }
 
 async function runSimpleCommand(
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  ctx: RequestContext,
   runId: string,
   produce: (
     state: RunState,
@@ -4076,9 +3391,7 @@ async function runSimpleCommand(
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return withRunStreamRetry(ctx, async (tx) => {
     const run = await loadRun(tx, ctx.session!.orgId, runId);
-    const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
-    let state = emptyRunState(run.id);
-    for (const e of events) state = applyRun(state, e);
+    let state = await loadRunState(tx, run.id);
     const scope: {
       runStoreIds?: string[];
       readStoreIds?: ReadonlySet<string> | null;
@@ -4133,14 +3446,7 @@ async function runSimpleCommand(
     try {
       const out = produce(state, scope);
       if (out.length === 0) return { lastSeq: state.seq, eventCount: 0 };
-      await appendEvents(tx, {
-        streamType: 'run',
-        streamId: run.id,
-        orgId: ctx.session!.orgId,
-        events: out.map((e) => ({ ...e })),
-      });
-      for (const e of out) state = applyRun(state, e);
-      await projectRun(tx, ctx.session!.orgId, out);
+      state = await writeRunEvents(tx, ctx.session!.orgId, state, out);
       await dispatchRunEventNotifications(tx, ctx.session!.orgId, ctx.session!.userId, state, out);
       hub.publish(ctx.session!.orgId, {
         type: 'run.changed',
@@ -4158,7 +3464,7 @@ async function runSimpleCommand(
   });
 }
 
-async function loadRun(db: import('@compass/db').DB, orgId: string, runId: string) {
+async function loadRun(db: DB, orgId: string, runId: string) {
   const row = await db.query.marketRunsV.findFirst({
     where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.id, runId), eq2(r.orgId, orgId)),
   });
@@ -4176,10 +3482,7 @@ async function loadRun(db: import('@compass/db').DB, orgId: string, runId: strin
  * sessions as "involved" — eject doesn't revoke the operator's right
  * to see what they previously planned for.
  */
-async function runInvolvedStoreIds(
-  db: import('@compass/db').DB,
-  run: { sessionIdsJson: unknown },
-): Promise<string[]> {
+async function runInvolvedStoreIds(db: DB, run: { sessionIdsJson: unknown }): Promise<string[]> {
   const sessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
   if (sessionIds.length === 0) return [];
   const rows = await db.query.orderSessionsV.findMany({
@@ -4198,10 +3501,7 @@ async function runInvolvedStoreIds(
  * read beyond the member's concrete assignments. A genuine org admin still
  * returns `null` through `getActorStoreIds`.
  */
-async function resolveRunReadStoreScope(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
-): Promise<string[] | null> {
+async function resolveRunReadStoreScope(db: DB, ctx: RequestContext): Promise<string[] | null> {
   if (await hasGlobalPermission(db, ctx.session!.memberId, 'run.create.org')) {
     return getActorStoreIdsForPermission(
       db,
@@ -4227,8 +3527,8 @@ function assertStoreIdsWithinRunCreateScope(
 }
 
 async function assertRunCreateScopeForRun(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  db: DB,
+  ctx: RequestContext,
   run: { sessionIdsJson: unknown },
 ): Promise<void> {
   const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx.session!);
@@ -4247,8 +3547,8 @@ async function assertRunCreateScopeForRun(
  * this gate by itself.
  */
 async function canAmendRun(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  db: DB,
+  ctx: RequestContext,
   run: { sessionIdsJson: unknown },
 ): Promise<boolean> {
   const globallyGranted = await hasGlobalPermission(db, ctx.session!.memberId, 'run.amend');
@@ -4268,8 +3568,8 @@ async function canAmendRun(
 }
 
 async function assertCanAmendRun(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  db: DB,
+  ctx: RequestContext,
   run: { sessionIdsJson: unknown },
 ): Promise<void> {
   if (await canAmendRun(db, ctx, run)) return;
@@ -4288,8 +3588,8 @@ async function assertCanAmendRun(
  * grant returns `null`, while store-level denies force enumeration and win.
  */
 async function assertRunPermissionForAllStores(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  db: DB,
+  ctx: RequestContext,
   run: { sessionIdsJson: unknown },
   permissionKey: string,
   item?: {
@@ -4348,8 +3648,8 @@ async function assertRunPermissionForAllStores(
  * finish yet.
  */
 async function finishBlockedReasonFor(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  db: DB,
+  ctx: RequestContext,
   run: { status: string; sessionIdsJson: unknown },
 ): Promise<string | null> {
   if (run.status === 'amending') {
@@ -4374,7 +3674,7 @@ async function finishBlockedReasonFor(
 
 /** Stores whose orders in this run ask for `skuId` (BUY-6). */
 async function itemDemandStoreIds(
-  db: import('@compass/db').DB,
+  db: DB,
   run: { sessionIdsJson: unknown },
   skuId: string,
 ): Promise<string[]> {
