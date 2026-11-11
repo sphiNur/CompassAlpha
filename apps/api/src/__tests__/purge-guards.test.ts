@@ -12,7 +12,7 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
@@ -571,5 +571,109 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
       skuNames: { en: 'Rice' },
       qty: '3.500',
     });
+  });
+});
+
+// Review ADM2-02 (2026-11-10): a stocktake writes the delta that brings
+// on hand to what was counted, so it absorbed the test run's receipt
+// before it. Deleting that receipt with the run used to take it out a
+// second time. Each purge path books it back; a receipt after the last
+// count goes with the run (those goods never arrived).
+describe.skipIf(!SHOULD_RUN)('ADM2-02: purging a run keeps on hand at what was counted', () => {
+  async function countedAfterTestRun(name: string, runDate: string) {
+    const w = await purgeWorkspace(name);
+    const runId = randomUUID();
+    await w.db
+      .insert(s.marketRunsV)
+      .values({ id: runId, orgId: w.orgId, runDate, status: 'finished' });
+    const move = (
+      delta: string,
+      reason: string,
+      at: string,
+      source: 'run' | 'run_amend' | null,
+    ) => ({
+      orgId: w.orgId,
+      storeId: w.storeId,
+      skuId: w.skuId,
+      delta,
+      reason,
+      sourceType: source,
+      sourceId: source ? runId : null,
+      actorMemberId: w.memberId,
+      occurredAt: new Date(at),
+    });
+    await w.db.insert(s.inventoryMovements).values([
+      move('10', 'stocktake', '2026-06-01T08:00:00Z', null),
+      // The test run "received" 5, then the count found the real 10 …
+      move('5', 'delivery_received', `${runDate}T10:00:00Z`, 'run'),
+      move('-5', 'stocktake', '2026-07-02T08:00:00Z', null),
+      // … and a correction of the run after that count "received" 2 more.
+      move('2', 'adjustment', '2026-07-03T10:00:00Z', 'run_amend'),
+    ]);
+    const onHand = async () => {
+      const [row] = (await w.db.execute(sql`
+        SELECT COALESCE(SUM(delta), 0)::text AS n FROM inventory.movements
+         WHERE store_id = ${w.storeId} AND sku_id = ${w.skuId}`)) as unknown as Array<{
+        n: string;
+      }>;
+      return Number(row!.n);
+    };
+    const bookedBack = async () =>
+      (
+        await w.db.query.inventoryMovements.findMany({
+          where: (m, o) => o.and(o.eq(m.storeId, w.storeId), o.eq(m.sourceType, 'purge')),
+        })
+      ).map((m) => ({ reason: m.reason, delta: Number(m.delta), sourceId: m.sourceId }));
+    expect(await onHand()).toBe(12);
+    return { ...w, runId, onHand, bookedBack };
+  }
+
+  test('one run', async () => {
+    const w = await countedAfterTestRun('Purge stock run', '2026-06-24');
+    await w.admin.admin.purgeRun({ runId: w.runId, dryRun: false });
+    expect(await w.onHand()).toBe(10);
+    expect(await w.bookedBack()).toEqual([{ reason: 'adjustment', delta: 5, sourceId: w.runId }]);
+    const audit = await w.db.query.policyDecisions.findFirst({
+      where: (x, o) => o.and(o.eq(x.action, 'admin.purge.run'), o.eq(x.resourceId, w.runId)),
+    });
+    expect((audit?.inputs as { stockKept?: number } | null)?.stockKept).toBe(1);
+  });
+
+  test('a date', async () => {
+    const w = await countedAfterTestRun('Purge stock date', '2026-06-25');
+    await w.admin.admin.purgeByDate({ date: '2026-06-25', dryRun: false });
+    expect(await w.onHand()).toBe(10);
+    expect(await w.bookedBack()).toEqual([{ reason: 'adjustment', delta: 5, sourceId: w.runId }]);
+  });
+
+  test('the whole workspace', async () => {
+    const w = await countedAfterTestRun('Purge stock all', '2026-06-26');
+    await w.admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'Purge stock all' });
+    expect(await w.onHand()).toBe(10);
+    expect(await w.bookedBack()).toEqual([{ reason: 'adjustment', delta: 5, sourceId: w.runId }]);
+  });
+
+  test('without a later count the receipt just goes', async () => {
+    const w = await purgeWorkspace('Purge stock uncounted');
+    const runId = randomUUID();
+    await w.db
+      .insert(s.marketRunsV)
+      .values({ id: runId, orgId: w.orgId, runDate: '2026-06-27', status: 'finished' });
+    await w.db.insert(s.inventoryMovements).values({
+      orgId: w.orgId,
+      storeId: w.storeId,
+      skuId: w.skuId,
+      delta: '4',
+      reason: 'delivery_received',
+      sourceType: 'run',
+      sourceId: runId,
+      actorMemberId: w.memberId,
+      occurredAt: new Date('2026-06-27T10:00:00Z'),
+    });
+    await w.admin.admin.purgeRun({ runId, dryRun: false });
+    const rows = await w.db.query.inventoryMovements.findMany({
+      where: (m, o) => o.eq(m.storeId, w.storeId),
+    });
+    expect(rows).toEqual([]);
   });
 });

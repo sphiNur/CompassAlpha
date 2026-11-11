@@ -5561,11 +5561,8 @@ export const adminRouter = router({
         }
 
         // Order: dependents first, then parents.
-        await tx.execute(
-          sql`DELETE FROM inventory.movements
-              WHERE org_id = ${orgId} AND source_type IN ('run', 'run_amend')
-                AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
-        );
+        const stockKept = await keepCountedStock(tx, allRunMovements(orgId), ctx.session!.memberId);
+        await tx.execute(sql`DELETE FROM inventory.movements WHERE ${allRunMovements(orgId)}`);
         await tx.execute(
           sql`DELETE FROM read_model.run_item_stores_v
               WHERE run_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
@@ -5606,7 +5603,7 @@ export const adminRouter = router({
           'admin.purge.all',
           'org',
           orgId,
-          { total, byTable: counts },
+          { total, byTable: counts, stockKept },
           { strict: true },
         );
 
@@ -5806,6 +5803,7 @@ export const adminRouter = router({
       }
 
       // Commit pass — same id sets, dependency-safe order.
+      let stockKept = 0;
       if (runIds.length > 0) {
         const inRuns = inUuids(runIds);
         await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`);
@@ -5814,6 +5812,7 @@ export const adminRouter = router({
           sql`DELETE FROM inventory.price_history
                 WHERE org_id = ${orgId} AND run_id IN ${inRuns}`,
         );
+        stockKept = await keepCountedStock(tx, runMovements(orgId, runIds), ctx.session!.memberId);
         await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, runIds)}`);
         await tx.execute(
           sql`DELETE FROM read_model.market_runs_v
@@ -5876,7 +5875,7 @@ export const adminRouter = router({
         'admin.purge.date',
         'org',
         orgId,
-        { date, total, byTable: counts, sessionIds, runIds },
+        { date, total, byTable: counts, sessionIds, runIds, stockKept },
         { strict: true },
       );
       broadcastPurged(orgId, sessionIds, runIds);
@@ -6540,7 +6539,13 @@ export const adminRouter = router({
                 and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
               )
           : [];
-      await deleteRunCascade(tx, orgId, input.runId, sessionIds);
+      const stockKept = await deleteRunCascade(
+        tx,
+        orgId,
+        input.runId,
+        sessionIds,
+        ctx.session!.memberId,
+      );
       await auditAdmin(
         tx,
         ctx,
@@ -6556,6 +6561,7 @@ export const adminRouter = router({
           status: run.status,
           storeIds: runStores.map((r) => r.storeId),
           memberId: run.purchaserMemberId,
+          stockKept,
         },
         { strict: true },
       );
@@ -6679,6 +6685,48 @@ export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof
   if (runIds.length === 0) return sql`false`;
   // DLV-3: corrections of a finished run book 'run_amend' rows too.
   return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN ${inUuids(runIds)})`;
+}
+
+/** The stock movements of every run in the organisation (purgeAllTestData). */
+function allRunMovements(orgId: string): ReturnType<typeof sql> {
+  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend')
+    AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}))`;
+}
+
+/**
+ * Review ADM2-02 (2026-11-10): call before deleting the run movements that
+ * `which` selects (its columns are those of inventory.movements).
+ *
+ * Stock on hand is the sum of the ledger, and a stocktake writes the delta
+ * that brings the sum to what was counted, so it has already absorbed every
+ * receipt booked before it. Deleting such a receipt with its run took it
+ * out a second time: the store then showed less than it had counted, or a
+ * negative stock. For each store, product and run, the receipts that a
+ * later stocktake absorbed are booked back as one 'adjustment' (source
+ * 'purge', the run's id), so on hand stays what was counted. Receipts after
+ * the last stocktake are not booked back: the goods of a test run never
+ * arrived. Returns how many adjustments were written.
+ */
+async function keepCountedStock(
+  tx: Tx,
+  which: ReturnType<typeof sql>,
+  actorMemberId: string,
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    INSERT INTO inventory.movements
+      (org_id, store_id, sku_id, delta, reason, source_type, source_id, actor_member_id)
+    SELECT m.org_id, m.store_id, m.sku_id, SUM(m.delta), 'adjustment', 'purge', m.source_id,
+           ${actorMemberId}
+      FROM inventory.movements m
+     WHERE ${which}
+       AND EXISTS (
+         SELECT 1 FROM inventory.movements st
+          WHERE st.org_id = m.org_id AND st.store_id = m.store_id AND st.sku_id = m.sku_id
+            AND st.reason = 'stocktake' AND st.occurred_at > m.occurred_at)
+     GROUP BY m.org_id, m.store_id, m.sku_id, m.source_id
+    HAVING SUM(m.delta) <> 0
+    RETURNING id`)) as unknown as Array<{ id: string }>;
+  return rows.length;
 }
 
 // ---------- session/run cascade helpers ----------
@@ -7188,7 +7236,8 @@ async function deleteRunCascade(
   orgId: string,
   runId: string,
   sessionIds: string[],
-): Promise<void> {
+  actorMemberId: string,
+): Promise<number> {
   const allStreams = [runId, ...sessionIds];
   // Notifications first.
   const inStreams = inUuids(allStreams);
@@ -7210,6 +7259,7 @@ async function deleteRunCascade(
   await tx.execute(
     sql`DELETE FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
   );
+  const stockKept = await keepCountedStock(tx, runMovements(orgId, [runId]), actorMemberId);
   await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`);
   await tx.execute(
     sql`DELETE FROM read_model.market_runs_v WHERE org_id = ${orgId} AND id = ${runId}`,
@@ -7222,4 +7272,5 @@ async function deleteRunCascade(
       sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id IN ${inSessions}`,
     );
   }
+  return stockKept;
 }
