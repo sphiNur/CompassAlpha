@@ -373,7 +373,7 @@ export function mojibakeAndIsoDates(cats: Catalogs): string[] {
   const found: string[] = [];
   for (const lang of LANGS) {
     for (const [key, value] of Object.entries(cats[lang])) {
-      const m = value.match(/â€|Ã[\u0080-¿]|Â[\u00a0-¿]|�/);
+      const m = value.match(/â€|Ã[\u0080-¿]|Â[\u00a0-¿]|\uFFFD/);
       if (m) found.push(`${lang} ${key}: mojibake "${m[0]}" in ${value}`);
       const d = value.match(/\b\d{4}-\d{2}-\d{2}\b/);
       if (d) found.push(`${lang} ${key}: ISO date "${d[0]}" — dates follow the interface language`);

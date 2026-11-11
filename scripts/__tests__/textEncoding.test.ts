@@ -18,11 +18,12 @@ const BINARY = /\.(onnx|task|png|jpe?g|gif|webp|ico|woff2?|ttf|otf|pdf|zip|gz|tg
 
 const REPLACEMENT = String.fromCharCode(0xfffd);
 
-/** Files that contain the replacement character on purpose. */
-const ALLOWED = new Set([
-  // Its mojibake rule matches U+FFFD in catalog values.
-  'packages/i18n/src/__tests__/catalog-lint.test.ts',
-]);
+/**
+ * Files that contain the replacement character on purpose: none. The
+ * catalog lint's mojibake rule (packages/i18n/src/lint/rules.ts) names it
+ * as an escape, like this file.
+ */
+const ALLOWED = new Set<string>([]);
 
 function trackedTextFiles(): string[] {
   return execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })

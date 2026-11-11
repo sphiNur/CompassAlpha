@@ -185,30 +185,30 @@ describe('canSetOverride', () => {
 });
 
 /**
- * COREWEB2-11 / ADM1-16 (2026-11-10): store P is paused. Aziz still
+ * COREWEB2-11 / ADM1-16 (2026-11-10): store P is paused. Alice still
  * manages it (session.inactiveAdminStoreIds), so they may take people out
  * of it and act on its members, never add anyone there.
  */
 describe('paused and archived stores', () => {
   const pausedManager: Actor = {
-    userId: 'aziz',
+    userId: 'alice',
     isOrgAdmin: false,
     adminStoreIds: ['A'],
     inactiveAdminStoreIds: ['P'],
     bindings: [st('manager', 50, 'A'), st('manager', 50, 'P')],
   };
-  const staffP = { userId: 'dilnoza', bindings: [st('staff', 10, 'P')], storeIds: ['P'] };
+  const staffP = { userId: 'dana', bindings: [st('staff', 10, 'P')], storeIds: ['P'] };
   const staffAP = {
-    userId: 'kamola',
+    userId: 'kate',
     bindings: [st('staff', 10, 'A'), st('staff', 10, 'P')],
     storeIds: ['A', 'P'],
   };
 
   test('a role in a paused store can be revoked (the × was missing)', () => {
-    expect(canRevokeRole(pausedManager, 'dilnoza', st('staff', 10, 'P'))).toBe(true);
+    expect(canRevokeRole(pausedManager, 'dana', st('staff', 10, 'P'))).toBe(true);
     // An older session without the list: the store stays out of reach.
     const older: Actor = { ...pausedManager, inactiveAdminStoreIds: undefined };
-    expect(canRevokeRole(older, 'dilnoza', st('staff', 10, 'P'))).toBe(false);
+    expect(canRevokeRole(older, 'dana', st('staff', 10, 'P'))).toBe(false);
   });
 
   test('nothing is added there: no grant, no override', () => {
@@ -236,7 +236,7 @@ describe('paused and archived stores', () => {
  */
 describe('canRename', () => {
   test('everyone may rename themself, even a store manager (was: refused by rank)', () => {
-    const self = { userId: 'aziz', bindings: manager.bindings, storeIds: ['A'] };
+    const self = { userId: manager.userId, bindings: manager.bindings, storeIds: ['A'] };
     expect(canRename(manager, self)).toBe(true);
   });
   test('someone another workspace also has keeps their name', () => {
@@ -273,7 +273,7 @@ describe('canRemoveFromOrg', () => {
     expect(canRemoveFromOrg(admin, staffA)).toBe(true);
     expect(canRemoveFromOrg(manager, staffA)).toBe(false);
     expect(
-      canRemoveFromOrg(admin, { userId: 'nurzat', bindings: admin.bindings, storeIds: [] }),
+      canRemoveFromOrg(admin, { userId: admin.userId, bindings: admin.bindings, storeIds: [] }),
     ).toBe(false);
     const peerAdmin = { userId: 'p', bindings: [g('admin', 80)], storeIds: [] };
     expect(canRemoveFromOrg(admin, peerAdmin)).toBe(false);
