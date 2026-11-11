@@ -15,7 +15,10 @@
  * test environment, so pure-function extraction is the only testable
  * shape available.
  */
+import type { I18n } from '@compass/i18n';
 import { formatQty } from '../../../lib/format';
+import { pickName } from '../../../lib/productName';
+import type { UnitLabel } from '../../../lib/unitLabel';
 import type { PreviewLine, PreviewStoreGroup, PreviewSupplierGroup } from '../types';
 
 export type ShareTextDeps = {
@@ -35,6 +38,30 @@ export type ShareTextDeps = {
   /** i18n.t('run.share.heading', …): "Notes:", 「备注：」. */
   heading: (label: string) => string;
 };
+
+/**
+ * Everything one text is written with, in one language: `i18n` is the
+ * interface's for our stores, the stall's for a stall (useVendorI18n,
+ * COREWEB2-12). Catalog products take their name in `i18n.locale` and a
+ * unit label agreeing with the quantity.
+ */
+export function shareDepsFor(
+  i18n: I18n,
+  unitLabel: UnitLabel,
+  skuById: ReadonlyMap<string, { names: Record<string, string> | null | undefined; unit: string }>,
+): ShareTextDeps {
+  return {
+    resolveSku: (skuId, qty) => {
+      const sku = skuById.get(skuId);
+      if (!sku) return null;
+      return { name: pickName(sku.names, i18n.locale), unit: unitLabel(sku.unit, qty) };
+    },
+    extrasLabel: i18n.t('order.extras.label'),
+    notesLabel: i18n.t('order.notes.label'),
+    line: (name, qty) => i18n.t('run.share.line', { name, qty }),
+    heading: (label) => i18n.t('run.share.heading', { label }),
+  };
+}
 
 /** Localized `{name, unit}` for a line, falling back to the line's own. */
 function displayOf(line: PreviewLine, deps: ShareTextDeps): { name: string; unit: string } {

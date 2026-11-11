@@ -32,6 +32,7 @@ import {
   Chip,
   ChipBar,
   EmptyState,
+  NameCell,
   SectionLabel,
   Sheet,
   useToast,
@@ -46,8 +47,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
-import { pickName } from '../../../lib/productName';
-import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
@@ -66,12 +66,13 @@ import type {
 } from '../types';
 import { otherStoreSkusOf } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
+import { rowName } from '../lib/rowName';
 import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,
   buildSupplierText as buildSupplierTextPure,
+  shareDepsFor,
 } from '../lib/shareText';
-import type { ShareTextDeps } from '../lib/shareText';
 import { computePreviewStats } from '../lib/previewStats';
 import { isOpen, pruneOpen, toggleOpen } from '../lib/accordion';
 import {
@@ -258,6 +259,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   // PurchaseRow, so the same SKU read "bunch" here and "把" on the
   // preview card. Same fix as the three grouped views in RunViews.
   const unitLabel = useUnitLabel();
+  const productNameParts = useProductNameParts();
 
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -455,10 +457,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   // BUY-5 (2026-10-30): items an order asked for more of after they were
   // bought or marked unavailable.
   const topUps = run.items.filter((it) => Number(it.topUpQty ?? 0) > 0);
-  const nameOf = (skuId: string) => {
-    const sku = skuById.get(skuId);
-    return sku ? productName(sku) : skuId.slice(0, 8);
-  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -472,7 +470,10 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                 className="flex flex-wrap items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-old-body font-semibold">{nameOf(it.skuId)}</span>
+                  <NameCell
+                    as="span"
+                    {...rowName(productNameParts, skuById.get(it.skuId), it.skuId)}
+                  />
                   <span className="block text-old-label text-[var(--c-warning-fg)]">
                     {/* R2-BUY-5: for an item shared with other stores the
                         bought figure is this purchaser's share while the
@@ -706,7 +707,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           <ul className="flex flex-col" role="list">
             {visibleRunItems.map((it) => {
               const sku = skuById.get(it.skuId);
-              const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
+              const name = rowName(productNameParts, sku, it.skuId);
               // M3.52: pluck this SKU's recorded splits for the
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
@@ -718,7 +719,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                   onTogglePriceUnit={onTogglePriceUnit}
                   item={it}
                   servesOtherStores={otherStoreSkusOf(run).has(it.skuId)}
-                  skuName={skuName}
+                  name={name}
                   unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(it.skuId) ?? NO_DEMAND}
@@ -898,11 +899,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                     return (
                       <li
                         key={ln.skuId}
-                        className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5"
+                        className="flex items-start gap-2 border-t border-[var(--c-divider)] px-4 py-1.5"
                       >
-                        <span className="min-w-0 flex-1 truncate text-old-body">
-                          {sku ? productName(sku) : ln.skuId.slice(0, 8)}
-                        </span>
+                        <NameCell
+                          className="flex-1"
+                          {...rowName(productNameParts, sku, ln.skuId)}
+                          primaryClassName="font-normal"
+                        />
                         <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(ln.qty)} {unitLabel(sku?.unit, ln.qty)}
                         </span>
@@ -914,11 +917,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                     return (
                       <li
                         key={'na-' + ln.skuId}
-                        className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5 text-[var(--c-fg-muted)]"
+                        className="flex items-start gap-2 border-t border-[var(--c-divider)] px-4 py-1.5 text-[var(--c-fg-muted)]"
                       >
-                        <span className="min-w-0 flex-1 truncate text-old-body line-through">
-                          {sku ? productName(sku) : ln.skuId.slice(0, 8)}
-                        </span>
+                        <NameCell
+                          className="flex-1"
+                          {...rowName(productNameParts, sku, ln.skuId)}
+                          primaryClassName="font-normal text-[var(--c-fg-muted)] line-through"
+                        />
                         <span className="shrink-0 text-old-label">
                           {i18n.t('run.extras.status.unavailable')}
                         </span>
@@ -1023,7 +1028,12 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                           className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
                           onClick={() => onEditPrice(it)}
                         >
-                          <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
+                          <NameCell
+                            as="span"
+                            className="flex-1"
+                            {...rowName(productNameParts, skuById.get(it.skuId), it.skuId)}
+                            primaryClassName="font-normal"
+                          />
                           <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
                             {formatQty(it.purchasedQty ?? '0')} {unitLabel(unit, it.purchasedQty ?? '0')} ×{' '}
                             {it.unitPrice ? formatMoney(Number(it.unitPrice)) : '—'}
@@ -1180,6 +1190,52 @@ function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
   tallyPreviewLine(group, line);
 }
 
+/**
+ * What a preview group's toggle says: the store or stall, how to reach
+ * the stall, and the group's money line. The name takes up to two lines
+ * and the money line wraps; truncated, at 320 px it read «Total 0 UZS ·
+ * 2 items without a r…».
+ */
+function PreviewGroupTitle({
+  name,
+  contact,
+  meta,
+}: {
+  name: string;
+  contact?: string | null;
+  meta: string;
+}) {
+  return (
+    <span className="block min-w-0 flex-1">
+      <span className="line-clamp-2 break-words text-old-body font-semibold text-[var(--c-fg)]">
+        {name}
+      </span>
+      {contact ? (
+        <span className="block text-old-label text-[var(--c-fg-muted)]">{contact}</span>
+      ) : null}
+      <span className="mt-0.5 block break-words text-old-label tabular-nums text-[var(--c-fg-muted)]">
+        {meta}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A heading inside an open preview group: a stall within a store, or a
+ * store within a stall. When the name and its money line do not fit on
+ * one line, the money line moves under the name. The stall heading used
+ * to truncate instead, and at 320 px «Unassigned stall» next to a long
+ * total read «U.».
+ */
+function PreviewSubheading({ name, meta }: { name: string; meta: string }) {
+  return (
+    <div className="mb-1 flex flex-wrap items-baseline gap-x-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
+      <span className="min-w-0 break-words">{name}</span>
+      <span className="ml-auto text-right font-normal tabular-nums">{meta}</span>
+    </div>
+  );
+}
+
 export function PreviewSummaryCard({
   preview,
   skuById,
@@ -1294,11 +1350,10 @@ export function PreviewSummaryCard({
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
   const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
-  const currentSkuName = useCallback(
-    (item: { names: Record<string, string> | null | undefined }): string =>
-      pickName(item.names, i18n.locale),
-    [i18n.locale],
-  );
+  const productNameParts = useProductNameParts();
+  // COREWEB2-12: what is sent to a stall is in the stall's language.
+  const vendorI18n = useVendorI18n();
+  const vendorUnitLabel = useMemo(() => unitLabeller(vendorI18n.t), [vendorI18n]);
   /**
    * Persist only what the user CHOSE, never the computed default.
    *
@@ -1368,6 +1423,7 @@ export function PreviewSummaryCard({
         kind: 'sku',
         skuId: row.skuId,
         name: sku ? productName(sku) : row.skuId.slice(0, 8),
+        nameParts: rowName(productNameParts, sku, row.skuId),
         qty: row.qty,
         unit: currentUnitLabel(sku?.unit, row.qty),
         unitPrice,
@@ -1438,6 +1494,7 @@ export function PreviewSummaryCard({
     preview.sessionNotesByStore,
     preview.supplierBySku,
     productName,
+    productNameParts,
     skuById,
   ]);
 
@@ -1620,26 +1677,19 @@ export function PreviewSummaryCard({
   // state counter instead. A useMemo here would therefore freeze
   // extrasLabel / notesLabel at whatever the fallback catalog said on
   // first render (English, if the user's locale chunk was still in
-  // flight on bazaar LTE) for the entire mount. Rebuilding this small
-  // object each render restores the live read the old inline closures
+  // flight on bazaar LTE) for the entire mount. Rebuilding these small
+  // objects each render restores the live read the old inline closures
   // had; the builders themselves only run on a button tap.
-  const shareDeps: ShareTextDeps = {
-    resolveSku: (skuId: string, qty?: string) => {
-      const sku = skuById.get(skuId);
-      if (!sku) return null;
-      return { name: currentSkuName(sku), unit: currentUnitLabel(sku.unit, qty) };
-    },
-    extrasLabel: i18n.t('order.extras.label'),
-    notesLabel: i18n.t('order.notes.label'),
-    line: (name, qty) => i18n.t('run.share.line', { name, qty }),
-    heading: (label) => i18n.t('run.share.heading', { label }),
-  };
+  // A store's list goes to our own manager, in the interface's language;
+  // a stall's list goes to its holder, in the stall's (COREWEB2-12).
+  const storeShareDeps = shareDepsFor(i18n, currentUnitLabel, skuById);
+  const vendorShareDeps = shareDepsFor(vendorI18n, vendorUnitLabel, skuById);
 
   const buildStoreText = (group: PreviewStoreGroup): string =>
-    buildStoreTextPure(group, shareDeps);
+    buildStoreTextPure(group, storeShareDeps);
 
   const buildSupplierText = (group: PreviewSupplierGroup): string =>
-    buildSupplierTextPure(group, shareDeps);
+    buildSupplierTextPure(group, vendorShareDeps);
 
   const buildAllVendorsText = (): string =>
     bySupplier.map((b) => buildSupplierText(b)).filter(Boolean).join('\n\n');
@@ -1708,6 +1758,13 @@ export function PreviewSummaryCard({
     const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
       line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]';
+    // UI-4 (RUNWEB1-09): a product's second-language name on its own
+    // muted line; an extra shows what was typed.
+    const nameText = line.nameParts ? (
+      <NameCell as="span" {...line.nameParts} primaryClassName="font-normal" />
+    ) : (
+      line.name
+    );
     const nameNode =
       opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
         <button
@@ -1716,10 +1773,10 @@ export function PreviewSummaryCard({
           className="press min-w-0 max-w-full text-left text-[var(--c-fg)]"
           title={i18n.t('run.previewSupplier.changeVendor')}
         >
-          {line.name}
+          {nameText}
         </button>
       ) : (
-        <span className="min-w-0 max-w-full text-[var(--c-fg)]">{line.name}</span>
+        <span className="min-w-0 max-w-full text-[var(--c-fg)]">{nameText}</span>
       );
     /**
      * Two-line form for the by-store view (2026-07-26). The stall is the
@@ -1743,13 +1800,22 @@ export function PreviewSummaryCard({
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
-            <span
-              className={`min-w-0 flex-1 text-[var(--c-fg)] ${
-                line.kind === 'extra' ? 'break-words' : 'truncate'
-              }`}
-            >
-              {line.name}
-            </span>
+            {line.nameParts ? (
+              <NameCell
+                as="span"
+                className="flex-1"
+                {...line.nameParts}
+                primaryClassName="font-normal line-clamp-1"
+              />
+            ) : (
+              <span
+                className={`min-w-0 flex-1 text-[var(--c-fg)] ${
+                  line.kind === 'extra' ? 'break-words' : 'truncate'
+                }`}
+              >
+                {line.name}
+              </span>
+            )}
             <span
               className={`shrink-0 text-old-label font-semibold tabular-nums ${
                 line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'
@@ -1932,14 +1998,20 @@ export function PreviewSummaryCard({
 
           <div className="flex flex-col gap-1">
             {byStore.map((g) => (
-              <div key={g.storeId} className="flex items-baseline gap-2 text-old-body-sm">
-                <span className="min-w-0 flex-1 truncate">{g.storeName}</span>
+              // At 320 px the price warning left the store name five
+              // letters. The name keeps at least 8rem; what does not fit
+              // beside it moves to a second line.
+              <div
+                key={g.storeId}
+                className="flex flex-wrap items-baseline gap-x-2 text-old-body-sm"
+              >
+                <span className="min-w-[8rem] flex-1 break-words">{g.storeName}</span>
                 {g.unknownCount > 0 ? (
-                  <span className="shrink-0 text-old-label text-[var(--c-warning-fg)]">
+                  <span className="text-old-label text-[var(--c-warning-fg)]">
                     {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}
-                <span className="shrink-0 tabular-nums text-[var(--c-fg)]">
+                <span className="ml-auto shrink-0 tabular-nums text-[var(--c-fg)]">
                   {formatMoney(g.total, currency)}
                 </span>
               </div>
@@ -1999,14 +2071,10 @@ export function PreviewSummaryCard({
                   <span aria-hidden className="shrink-0 font-mono text-old-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
-                  <span className="block min-w-0 flex-1">
-                    <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                      {g.storeName}
-                    </span>
-                    <span className="mt-0.5 block truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                      {groupMoneyMeta(g.total, g.unknownCount)}
-                    </span>
-                  </span>
+                  <PreviewGroupTitle
+                    name={g.storeName}
+                    meta={groupMoneyMeta(g.total, g.unknownCount)}
+                  />
                 </button>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
@@ -2025,12 +2093,10 @@ export function PreviewSummaryCard({
                   i18n.locale,
                 ).map((supplier) => (
                   <section key={supplier.supplierId ?? '__unassigned__'}>
-                    <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                      <span className="min-w-0 flex-1 truncate">{supplier.supplierName}</span>
-                      <span className="shrink-0 font-normal tabular-nums">
-                        {groupMoneyMeta(supplier.total, supplier.unknownCount)}
-                      </span>
-                    </div>
+                    <PreviewSubheading
+                      name={supplier.supplierName}
+                      meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
+                    />
                     <ul className="overflow-hidden rounded-[var(--r-utility)]">
                       {supplier.items.map((line, idx) => renderLine(line, idx))}
                     </ul>
@@ -2110,19 +2176,11 @@ export function PreviewSummaryCard({
                   <span aria-hidden className="shrink-0 font-mono text-old-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
-                  <span className="block min-w-0 flex-1">
-                    <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                      {b.supplierName}
-                    </span>
-                    {b.contactTg ? (
-                      <span className="block text-old-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
-                    ) : b.contactPhone ? (
-                      <span className="block text-old-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
-                    ) : null}
-                    <span className="mt-0.5 block truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                      {groupMoneyMeta(b.total, b.unknownCount)}
-                    </span>
-                  </span>
+                  <PreviewGroupTitle
+                    name={b.supplierName}
+                    contact={b.contactTg ? `@${b.contactTg}` : b.contactPhone}
+                    meta={groupMoneyMeta(b.total, b.unknownCount)}
+                  />
                 </button>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
@@ -2155,12 +2213,10 @@ export function PreviewSummaryCard({
               <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
-                    <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                      <span>{store.storeName}</span>
-                      <span className="ml-auto font-normal tabular-nums">
-                        {groupMoneyMeta(store.total, store.unknownCount)}
-                      </span>
-                    </div>
+                    <PreviewSubheading
+                      name={store.storeName}
+                      meta={groupMoneyMeta(store.total, store.unknownCount)}
+                    />
                     <ul className="overflow-hidden rounded-[var(--r-utility)]">
                       {store.items.map((line, idx) =>
                         renderLine(line, idx, { editableSupplier: true }),
