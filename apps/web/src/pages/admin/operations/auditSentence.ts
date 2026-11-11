@@ -50,7 +50,9 @@ export type AuditSentenceKey =
   | 'ops.audit.s.purgeAll'
   | 'ops.audit.s.purgeDate'
   | 'ops.audit.s.purgeRun'
+  | 'ops.audit.s.purgeRunNoDate'
   | 'ops.audit.s.purgeSession'
+  | 'ops.audit.s.purgeSessionNoDate'
   | 'ops.audit.s.roleCreate'
   | 'ops.audit.s.roleDelete'
   | 'ops.audit.s.roleGrant'
@@ -237,19 +239,19 @@ export function describeAuditRow(
     case 'subscription.update':
       return out('ops.audit.s.subscriptionUpdate');
     // ADM2-05 (2026-11-09): what a purge deleted, from the store, day and
-    // author the server now records. Older rows carry only ids and keep
-    // the generic line below.
+    // author the server now records. Older rows carry only ids: they say
+    // what went, without the day (ADM2-14).
     case 'purge.session': {
       const date = day(inputs.orderDate);
-      if (date) return out('ops.audit.s.purgeSession', { date, store, member });
-      break;
+      return date
+        ? out('ops.audit.s.purgeSession', { date, store, member })
+        : out('ops.audit.s.purgeSessionNoDate');
     }
     case 'purge.run': {
       const date = day(inputs.runDate);
-      if (date && typeof inputs.runIndex === 'number') {
-        return out('ops.audit.s.purgeRun', { date, n: String(inputs.runIndex + 1) });
-      }
-      break;
+      return date && typeof inputs.runIndex === 'number'
+        ? out('ops.audit.s.purgeRun', { date, n: String(inputs.runIndex + 1) })
+        : out('ops.audit.s.purgeRunNoDate');
     }
     case 'purge.date': {
       const date = day(inputs.date);
