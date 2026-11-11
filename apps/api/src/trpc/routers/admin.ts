@@ -41,8 +41,10 @@ import {
   type AdminScope,
 } from '../../services/storeScope';
 import {
+  bindingIsLive,
   countAdminsInOrg,
   getActorMaxGlobalRank,
+  grantBinding,
   getActorMaxRank,
   getActorMaxRankInStore,
   grantRefusal,
@@ -320,6 +322,7 @@ async function memberStoreIdsForAudit(tx: OrgTx, memberId: string): Promise<stri
         and(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'store'),
+          bindingIsLive(),
         ),
       ),
   ]);
@@ -635,6 +638,7 @@ async function visibleMemberIds(
         and(
           eq(s.memberRoleBindings.scopeType, 'store'),
           inArray(s.memberRoleBindings.scopeId, list),
+          bindingIsLive(),
         ),
       ),
   ]);
@@ -728,6 +732,7 @@ async function assertAdministersEveryTargetStore(
         and(
           eq(s.memberRoleBindings.memberId, target.id),
           eq(s.memberRoleBindings.scopeType, 'store'),
+          bindingIsLive(),
         ),
       ),
     // ADM1-16: a paused or archived store the actor administers does not
@@ -1532,7 +1537,9 @@ export const adminRouter = router({
           })
           .from(s.memberRoleBindings)
           .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-          .where(inArray(s.memberRoleBindings.memberId, memberIds)),
+          // ADM1-04: a lapsed binding grants nothing; the card showed it
+          // as held (and the web ranked the member by it).
+          .where(and(inArray(s.memberRoleBindings.memberId, memberIds), bindingIsLive())),
         tx
           .select({
             memberId: s.memberStoreAssignments.memberId,
@@ -2152,55 +2159,27 @@ export const adminRouter = router({
               await assertCanInviteIntoStore(tx, ctx, role, storeId);
             }
           }
+          // grantBinding is idempotent and renews a lapsed binding
+          // (ADM1-04: one of those used to count as already held).
           if (role.rank >= ADMIN_RANK) {
-            // Org-tier role → single global binding. Existing-row check
-            // makes the operation idempotent.
-            const existing = await tx.query.memberRoleBindings.findFirst({
-              where: (b, { eq: eq2, and: and2 }) =>
-                and2(
-                  eq2(b.memberId, member!.id),
-                  eq2(b.roleId, role.id),
-                  eq2(b.scopeType, 'global'),
-                ),
+            // Org-tier role → single global binding.
+            await grantBinding(tx, {
+              memberId: member.id,
+              roleId: role.id,
+              scope: { type: 'global' },
+              grantedBy: ctx.session!.userId,
             });
-            if (!existing) {
-              await tx
-                .insert(s.memberRoleBindings)
-                .values({
-                  memberId: member.id,
-                  roleId: role.id,
-                  scopeType: 'global',
-                  grantedBy: ctx.session!.userId,
-                })
-                .onConflictDoNothing();
-            }
           } else {
             // Sub-admin role → one binding per assigned store. The
-            // `inviteNeedsStore` guard at line ~585 already ensured
-            // storeIds is non-empty for non-admin invites, so we can
-            // safely fan out here.
+            // `inviteNeedsStore` guard above already ensured storeIds is
+            // non-empty for non-admin invites, so we can fan out here.
             for (const storeId of input.storeIds) {
-              const existing = await tx.query.memberRoleBindings.findFirst({
-                where: (b, { eq: eq2, and: and2 }) =>
-                  and2(
-                    eq2(b.memberId, member!.id),
-                    eq2(b.roleId, role.id),
-                    eq2(b.scopeType, 'store'),
-                    eq2(b.scopeId, storeId),
-                  ),
+              await grantBinding(tx, {
+                memberId: member.id,
+                roleId: role.id,
+                scope: { type: 'store', storeId },
+                grantedBy: ctx.session!.userId,
               });
-              if (!existing) {
-                await tx
-                  .insert(s.memberRoleBindings)
-                  .values({
-                    memberId: member.id,
-                    roleId: role.id,
-                    scopeType: 'store',
-                    scopeId: storeId,
-                    grantedBy: ctx.session!.userId,
-                  })
-                  .onConflictDoNothing();
-              }
             }
           }
         }
@@ -2246,27 +2225,12 @@ export const adminRouter = router({
               if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
               const scope = { type: 'store', storeId: store.id } as const;
               if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
-              const existing = await tx.query.memberRoleBindings.findFirst({
-                where: (b, { eq: eq2, and: and2 }) =>
-                  and2(
-                    eq2(b.memberId, member!.id),
-                    eq2(b.roleId, role.id),
-                    eq2(b.scopeType, 'store'),
-                    eq2(b.scopeId, store.id),
-                  ),
+              await grantBinding(tx, {
+                memberId: member.id,
+                roleId: role.id,
+                scope,
+                grantedBy: ctx.session!.userId,
               });
-              if (!existing) {
-                await tx
-                  .insert(s.memberRoleBindings)
-                  .values({
-                    memberId: member.id,
-                    roleId: role.id,
-                    scopeType: 'store',
-                    scopeId: store.id,
-                    grantedBy: ctx.session!.userId,
-                  })
-                  .onConflictDoNothing();
-              }
             }
           }
         }
@@ -2613,6 +2577,7 @@ export const adminRouter = router({
                 and(
                   eq(s.memberRoleBindings.memberId, input.memberId),
                   eq(s.memberRoleBindings.scopeType, 'store'),
+                  bindingIsLive(),
                 ),
               );
             const otherIds = otherBindings
@@ -2778,12 +2743,15 @@ export const adminRouter = router({
           )
           .limit(1);
         // Pull the bindings to mirror. Even if mirrorRoles=false we
-        // still need the count for the audit log.
+        // still need the count for the audit log. ADM1-04: live ones
+        // only, each with its expiry; a role granted until some date
+        // used to arrive in the destination for good.
         const fromBindings = await tx
           .select({
             id: s.memberRoleBindings.id,
             roleId: s.memberRoleBindings.roleId,
             roleRank: s.roles.rank,
+            expiresAt: s.memberRoleBindings.expiresAt,
           })
           .from(s.memberRoleBindings)
           .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
@@ -2792,6 +2760,7 @@ export const adminRouter = router({
               eq(s.memberRoleBindings.memberId, input.memberId),
               eq(s.memberRoleBindings.scopeType, 'store'),
               eq(s.memberRoleBindings.scopeId, input.fromStoreId),
+              bindingIsLive(),
             ),
           );
         if (!inSource && fromBindings.length === 0) {
@@ -2834,29 +2803,15 @@ export const adminRouter = router({
         if (input.mirrorRoles) {
           for (const b of fromBindings) {
             // Idempotent: a binding for the destination might already
-            // exist (e.g. a previous transfer attempt). Skip duplicates.
-            const existing = await tx.query.memberRoleBindings.findFirst({
-              where: (r, { eq: eq2, and: and2 }) =>
-                and2(
-                  eq2(r.memberId, member.id),
-                  eq2(r.roleId, b.roleId),
-                  eq2(r.scopeType, 'store'),
-                  eq2(r.scopeId, input.toStoreId),
-                ),
+            // exist (e.g. a previous transfer attempt); a live one stays.
+            const { outcome } = await grantBinding(tx, {
+              memberId: member.id,
+              roleId: b.roleId,
+              scope: { type: 'store', storeId: input.toStoreId },
+              grantedBy: ctx.session!.userId,
+              expiresAt: b.expiresAt,
             });
-            if (!existing) {
-              await tx
-                .insert(s.memberRoleBindings)
-                .values({
-                  memberId: member.id,
-                  roleId: b.roleId,
-                  scopeType: 'store',
-                  scopeId: input.toStoreId,
-                  grantedBy: ctx.session!.userId,
-                })
-                .onConflictDoNothing();
-              mirrored++;
-            }
+            if (outcome !== 'held') mirrored++;
           }
         }
 
@@ -3075,8 +3030,14 @@ export const adminRouter = router({
           .leftJoin(s.stores, eq(s.stores.id, s.memberRoleBindings.scopeId))
           // ADM1-20 (2026-11-10): suspended holders too, marked. They
           // keep the role and block deleting it, and the list showed
-          // nobody.
-          .where(and(eq(s.memberRoleBindings.roleId, role.id), eq(s.members.orgId, orgId)));
+          // nobody. ADM1-04: lapsed grants hold nothing and are left out.
+          .where(
+            and(
+              eq(s.memberRoleBindings.roleId, role.id),
+              eq(s.members.orgId, orgId),
+              bindingIsLive(),
+            ),
+          );
         // 2026-10-21 CA-17: outside org admins, holders are limited to the
         // actor's stores — store bindings there, and global bindings of
         // members who belong to one of those stores.
@@ -3090,15 +3051,15 @@ export const adminRouter = router({
                   : visible.has(b.memberId),
               )
             : bindings;
-        // ADM1-07 / ADM1-20: every binding, the count roleDelete and a
-        // rank move across ADMIN_RANK refuse on (lapsed grants included).
-        // Only for org admins, who alone may do either.
+        // ADM1-07 / ADM1-20: every live binding, suspended holders too:
+        // the count roleDelete and a rank move across ADMIN_RANK refuse
+        // on. Only for org admins, who alone may do either.
         const [counted] =
           scope === null
             ? await tx
                 .select({ n: sql<number>`count(*)::int` })
                 .from(s.memberRoleBindings)
-                .where(eq(s.memberRoleBindings.roleId, role.id))
+                .where(and(eq(s.memberRoleBindings.roleId, role.id), bindingIsLive()))
             : [];
         return {
           id: role.id,
@@ -3298,10 +3259,11 @@ export const adminRouter = router({
         // for roleDelete: a suspended member's comes back with them.
         const orgTier = (rank: number) => rank >= ADMIN_RANK;
         if (input.rank !== undefined && orgTier(input.rank) !== orgTier(role.rank)) {
+          // ADM1-04: a lapsed binding holds nothing.
           const [held] = await tx
             .select({ id: s.memberRoleBindings.id })
             .from(s.memberRoleBindings)
-            .where(eq(s.memberRoleBindings.roleId, role.id))
+            .where(and(eq(s.memberRoleBindings.roleId, role.id), bindingIsLive()))
             .limit(1);
           if (held) {
             throw new TRPCError({
@@ -3385,9 +3347,12 @@ export const adminRouter = router({
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
-        const bindings = await tx.query.memberRoleBindings.findMany({
-          where: (b, { eq: eq2 }) => eq2(b.roleId, role.id),
-        });
+        // ADM1-04: lapsed bindings do not keep a role; they go with it
+        // (the foreign key cascades).
+        const bindings = await tx
+          .select({ id: s.memberRoleBindings.id })
+          .from(s.memberRoleBindings)
+          .where(and(eq(s.memberRoleBindings.roleId, role.id), bindingIsLive()));
         if (bindings.length > 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -3454,7 +3419,8 @@ export const adminRouter = router({
               scopeId: s.memberRoleBindings.scopeId,
             })
             .from(s.memberRoleBindings)
-            .where(eq(s.memberRoleBindings.memberId, member.id))
+            // ADM1-04: a lapsed role shows no keys "from role".
+            .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()))
         ).filter((b) => scopeVisible(b.scopeType, b.scopeId));
         const rolePerms =
           bindings.length > 0
@@ -3931,36 +3897,15 @@ export const adminRouter = router({
         input.scopeType === 'store' ? (input.scopeId ?? null) : null,
       );
 
-      // Idempotency check (fixed 2026-05-05 — audit found the prior
-      // version omitted scopeId, so granting "manager of store A" then
-      // "manager of store B" to the same member would short-circuit
-      // and leave only the A binding in place).
-      //
-      // For 'global' scope the (member, role, 'global') tuple is enough
-      // — there's no scopeId to match. For 'store' scope we MUST
-      // additionally match scopeId so distinct stores get distinct
-      // bindings. Without that, the second call wrongly returns the
-      // first store's binding as "already exists".
+      // Idempotency (fixed 2026-05-05): the binding is keyed by member,
+      // role and scope, the store included, so "manager of store B" after
+      // "manager of store A" is a second binding, not "already exists".
       // ADM-7 (2026-10-30): two grants at once (a double tap) both found
       // no binding and both inserted. Serialise per member + role so the
       // second sees the first.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${`grant:${member.id}:${role.id}`}))`,
       );
-      const existing = await tx.query.memberRoleBindings.findFirst({
-        where: (b, { eq: eq2, and: and2 }) => {
-          const base = [
-            eq2(b.memberId, member.id),
-            eq2(b.roleId, role.id),
-            eq2(b.scopeType, input.scopeType),
-          ];
-          if (input.scopeType === 'store' && input.scopeId) {
-            base.push(eq2(b.scopeId, input.scopeId));
-          }
-          return and2(...base);
-        },
-      });
-      if (existing) return { granted: false, bindingId: existing.id };
       // 2026-10-21 audit A-23: the contract checks the format; re-check
       // here so a direct caller can't store Invalid Date (→ 500) or an
       // already-expired grant.
@@ -3968,43 +3913,31 @@ export const adminRouter = router({
       if (expiresAt && !(expiresAt.getTime() > Date.now())) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.invalidExpiresAt' });
       }
-      const [created] = await tx
-        .insert(s.memberRoleBindings)
-        .values({
-          memberId: member.id,
-          roleId: role.id,
-          scopeType: input.scopeType,
-          scopeId: input.scopeId ?? null,
-          grantedBy: ctx.session!.userId,
-          expiresAt,
-        })
-        // RE-ADM-1: the unique index settles a race with the invite paths,
-        // which do not take this lock.
-        .onConflictDoNothing()
-        .returning();
-      if (!created) {
-        const raced = await tx.query.memberRoleBindings.findFirst({
-          where: (b, { eq: eq2, and: and2 }) =>
-            and2(
-              eq2(b.memberId, member.id),
-              eq2(b.roleId, role.id),
-              eq2(b.scopeType, input.scopeType),
-              input.scopeType === 'store' && input.scopeId
-                ? eq2(b.scopeId, input.scopeId)
-                : isNull(b.scopeId),
-            ),
-        });
-        return { granted: false, bindingId: raced?.id ?? '' };
-      }
+      // ADM1-04: a lapsed binding of the same role and scope is renewed;
+      // it used to answer "already has this role". RE-ADM-1: the unique
+      // index settles a race with the invite paths, which do not take
+      // this lock.
+      const { outcome, bindingId } = await grantBinding(tx, {
+        memberId: member.id,
+        roleId: role.id,
+        scope:
+          input.scopeType === 'store' && input.scopeId
+            ? { type: 'store', storeId: input.scopeId }
+            : { type: 'global' },
+        grantedBy: ctx.session!.userId,
+        expiresAt,
+      });
+      if (outcome === 'held') return { granted: false, bindingId };
       await auditAdmin(tx, ctx, 'admin.role.grant', 'member', member.id, {
         ...input,
-        bindingId: created!.id,
+        bindingId,
         roleRank: role.rank,
+        ...(outcome === 'renewed' ? { renewed: true } : {}),
       });
       // Broadcast so other admins viewing the People section see the
       // new binding without manual refresh.
       hub.publish(orgId, { type: 'people.changed', orgId });
-      return { granted: true, bindingId: created!.id };
+      return { granted: true, bindingId };
     });
   }),
 
@@ -4466,12 +4399,14 @@ export const adminRouter = router({
         let assigned = 0;
         if (input.includeMembers) {
           // Pull source bindings (only store-scoped + active members).
+          // ADM1-04: live ones, each copied with its expiry.
           const sourceBindings = await tx
             .select({
               memberId: s.memberRoleBindings.memberId,
               roleId: s.memberRoleBindings.roleId,
               roleSlug: s.roles.slug,
               roleRank: s.roles.rank,
+              expiresAt: s.memberRoleBindings.expiresAt,
             })
             .from(s.memberRoleBindings)
             .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
@@ -4481,6 +4416,7 @@ export const adminRouter = router({
                 eq(s.memberRoleBindings.scopeType, 'store'),
                 eq(s.memberRoleBindings.scopeId, input.sourceStoreId),
                 eq(s.members.status, 'active'),
+                bindingIsLive(),
               ),
             );
           // D8: a role whose keys the actor lacks in the target is skipped
@@ -4501,18 +4437,14 @@ export const adminRouter = router({
               skippedPermission++;
               continue;
             }
-            const inserted = await tx
-              .insert(s.memberRoleBindings)
-              .values({
-                memberId: b.memberId,
-                roleId: b.roleId,
-                scopeType: 'store',
-                scopeId: input.targetStoreId,
-                grantedBy: ctx.session!.userId,
-              })
-              .onConflictDoNothing()
-              .returning({ id: s.memberRoleBindings.id });
-            if (inserted.length === 0) {
+            const { outcome, bindingId } = await grantBinding(tx, {
+              memberId: b.memberId,
+              roleId: b.roleId,
+              scope: { type: 'store', storeId: input.targetStoreId },
+              grantedBy: ctx.session!.userId,
+              expiresAt: b.expiresAt,
+            });
+            if (outcome === 'held') {
               skippedExisting++;
               continue;
             }
@@ -4524,7 +4456,7 @@ export const adminRouter = router({
               roleSlug: b.roleSlug,
               scopeType: 'store',
               scopeId: input.targetStoreId,
-              bindingId: inserted[0]!.id,
+              bindingId,
               roleRank: b.roleRank,
               via: 'storeCloneRoles',
               sourceStoreId: input.sourceStoreId,

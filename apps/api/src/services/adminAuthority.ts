@@ -17,7 +17,7 @@
  *   - the person acted on is ranked by every live binding they hold
  *     (getActorMaxRank): the strongest protection.
  */
-import { and, eq, gt, gte, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, gte, isNull, lte, or } from 'drizzle-orm';
 import { ADMIN_RANK } from '@compass/contracts';
 import { schema as s, type DB } from '@compass/db';
 import { hasGlobalOrgAdmin } from './orgAdmin';
@@ -32,6 +32,59 @@ import {
 /** A binding with an expiry in the past grants nothing. */
 export function bindingIsLive() {
   return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
+}
+
+/**
+ * Review ADM1-04 (2026-11-10): give a member a role in one scope. A lapsed
+ * binding keeps the unique key (mrb_binding_unique), and every grant path
+ * took it for "already held": the person got nothing, and grantRole said
+ * they had the role. A lapsed binding is renewed instead (until
+ * `expiresAt`, or for good); a live one is left as it is.
+ */
+export async function grantBinding(
+  tx: DB,
+  binding: {
+    memberId: string;
+    roleId: string;
+    scope: { type: 'global' } | { type: 'store'; storeId: string };
+    /** Who grants it; null for an invite whose inviter is gone. */
+    grantedBy: string | null;
+    expiresAt?: Date | null;
+  },
+): Promise<{ outcome: 'created' | 'renewed' | 'held'; bindingId: string }> {
+  const scopeId = binding.scope.type === 'store' ? binding.scope.storeId : null;
+  const expiresAt = binding.expiresAt ?? null;
+  const [created] = await tx
+    .insert(s.memberRoleBindings)
+    .values({
+      memberId: binding.memberId,
+      roleId: binding.roleId,
+      scopeType: binding.scope.type,
+      scopeId,
+      grantedBy: binding.grantedBy,
+      expiresAt,
+    })
+    .onConflictDoNothing()
+    .returning({ id: s.memberRoleBindings.id });
+  if (created) return { outcome: 'created', bindingId: created.id };
+  const sameKey = and(
+    eq(s.memberRoleBindings.memberId, binding.memberId),
+    eq(s.memberRoleBindings.roleId, binding.roleId),
+    eq(s.memberRoleBindings.scopeType, binding.scope.type),
+    scopeId ? eq(s.memberRoleBindings.scopeId, scopeId) : isNull(s.memberRoleBindings.scopeId),
+  );
+  const [renewed] = await tx
+    .update(s.memberRoleBindings)
+    .set({ expiresAt, grantedBy: binding.grantedBy })
+    .where(and(sameKey, lte(s.memberRoleBindings.expiresAt, new Date())))
+    .returning({ id: s.memberRoleBindings.id });
+  if (renewed) return { outcome: 'renewed', bindingId: renewed.id };
+  const [held] = await tx
+    .select({ id: s.memberRoleBindings.id })
+    .from(s.memberRoleBindings)
+    .where(sameKey)
+    .limit(1);
+  return { outcome: 'held', bindingId: held?.id ?? '' };
 }
 
 async function maxRankWhere(

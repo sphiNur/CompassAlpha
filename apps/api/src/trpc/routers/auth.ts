@@ -42,7 +42,11 @@ import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
-import { inviterStillAuthorized, liveInviteGrants } from '../../services/adminAuthority';
+import {
+  grantBinding,
+  inviterStillAuthorized,
+  liveInviteGrants,
+} from '../../services/adminAuthority';
 import {
   adminScopeOf,
   adminStoresOf,
@@ -1033,29 +1037,17 @@ export const authRouter = router({
         if (grant.scopeType === 'store' && (!grant.scopeId || !validStoreIds.has(grant.scopeId))) {
           continue;
         }
-        const existing = await tx.query.memberRoleBindings.findFirst({
-          where: (b, { eq: eq2, and: and2 }) =>
-            and2(
-              eq2(b.memberId, member!.id),
-              eq2(b.roleId, role.id),
-              eq2(b.scopeType, grant.scopeType),
-              grant.scopeType === 'store' && grant.scopeId
-                ? eq2(b.scopeId, grant.scopeId)
-                : isNull(b.scopeId),
-            ),
+        // ADM1-04: a lapsed binding of the same role is renewed; it used
+        // to count as held and the invite granted nothing.
+        await grantBinding(tx, {
+          memberId: member.id,
+          roleId: role.id,
+          scope:
+            grant.scopeType === 'store' && grant.scopeId
+              ? { type: 'store', storeId: grant.scopeId }
+              : { type: 'global' },
+          grantedBy: invite.invitedBy,
         });
-        if (!existing) {
-          await tx
-            .insert(s.memberRoleBindings)
-            .values({
-              memberId: member.id,
-              roleId: role.id,
-              scopeType: grant.scopeType,
-              scopeId: grant.scopeType === 'store' ? grant.scopeId : null,
-              grantedBy: invite.invitedBy,
-            })
-            .onConflictDoNothing();
-        }
       }
 
       await tx
