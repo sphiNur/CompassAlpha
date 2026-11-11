@@ -29,7 +29,7 @@
  * On Windows, run this with Node. Bun's Playwright launcher can hang before
  * Chromium produces any output; the app is not failing in that case.
  */
-import type { ConsoleMessage } from 'playwright';
+import type { ConsoleMessage, Page } from 'playwright';
 import {
   PRIMARY_NAV_SELECTOR,
   blockRealtime,
@@ -150,6 +150,25 @@ const fakeStores: TrpcOutput<'catalog.stores'> = fakeSession.stores.map((st) => 
 }));
 
 const { record, finish } = createReport();
+
+/**
+ * Waits until every pattern is on the page, for up to 8 s; the record()
+ * after it reports what is there. A fixed pause after a tap read a page
+ * that loads as its own chunk before it had drawn: right after a deploy
+ * the edge cache is cold, and 6d26882f's first smoke failed so.
+ */
+async function waitForText(page: Page, patterns: RegExp[]): Promise<void> {
+  const sources = patterns.map((p) => ({ source: p.source, flags: p.flags }));
+  await page
+    .waitForFunction(
+      (list) => list.every((p) => new RegExp(p.source, p.flags).test(document.body.innerText)),
+      sources,
+      { timeout: 8_000 },
+    )
+    .catch(() => {
+      /* record() below captures the rendered text */
+    });
+}
 
 async function run() {
   const { browser, context } = await launchSmoke({
@@ -422,17 +441,19 @@ async function run() {
       await page.waitForTimeout(200);
     }
     await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Review")`);
-    await page.waitForTimeout(500);
+    await waitForText(page, [/Pending/, /Approved/, /Rejected/]);
     const approveText = await page.evaluate(() => document.body.innerText);
     record(
       'ApprovalPage shows the submitted session card',
       /Smoke Store/.test(approveText) && /Smoke/.test(approveText),
       approveText.split('\n').slice(0, 5).join(' / '),
     );
+    const missingTabs = ['Pending', 'Approved', 'Rejected'].filter((t) => !approveText.includes(t));
     record(
       'ApprovalPage shows tabs (Pending / Approved / Rejected)',
-      /Pending/.test(approveText) && /Approved/.test(approveText) && /Rejected/.test(approveText),
-      'tab labels missing',
+      missingTabs.length === 0,
+      // Only on a failure: it used to print "tab labels missing" on a pass.
+      missingTabs.length > 0 ? `missing ${missingTabs.join(', ')}` : undefined,
     );
 
     // ---- Run tab ----
@@ -733,7 +754,7 @@ async function run() {
 
     // Drill into Operations → its home shows 3 sub-options.
     await page.click('button:has-text("Operations")');
-    await page.waitForTimeout(400);
+    await waitForText(page, [/Live activity/i, /Order history/i]);
     const opsHomeText = await page.evaluate(() => document.body.innerText);
     record(
       'Operations home lists Live activity / Order history / Maintenance',
