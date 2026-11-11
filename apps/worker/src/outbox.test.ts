@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   BACKOFF_SECONDS,
   botMessage,
+  DEFAULT_BUTTON_TEXT,
   MAX_RETRIES,
   nextAttempt,
   outboxPayloadProblem,
@@ -62,6 +63,21 @@ describe('botMessage', () => {
         [{ text: 'Open Compass', web_app: { url: 'https://app.example/approve?store=s1' } }],
       ],
     });
+  });
+
+  test("COREAPI-19: the button carries the label the API wrote, in the recipient's language", () => {
+    const label = (payload: unknown) =>
+      (
+        botMessage(payload as typeof OK, 'https://app.example').opts.reply_markup as {
+          inline_keyboard: { text: string }[][];
+        }
+      ).inline_keyboard[0]![0]!.text;
+    expect(label({ ...OK, buttonText: '打开 Compass' })).toBe('打开 Compass');
+    expect(label({ ...OK, buttonText: 'Compassʼni ochish' })).toBe('Compassʼni ochish');
+    // A row queued before the label existed, or one that is blank or not text.
+    expect(label(OK)).toBe(DEFAULT_BUTTON_TEXT);
+    expect(label({ ...OK, buttonText: '  ' })).toBe(DEFAULT_BUTTON_TEXT);
+    expect(label({ ...OK, buttonText: 42 })).toBe(DEFAULT_BUTTON_TEXT);
   });
 });
 

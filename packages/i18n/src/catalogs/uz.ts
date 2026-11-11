@@ -2274,6 +2274,8 @@ export const uz = {
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
   // Notifications (APR-16 / DLV-5, 2026-10-31): sent in the recipient's language
   // by apps/api services/notify.ts, keyed by the notification template.
+  // COREAPI-19 (2026-11-10): the button under every bot notification.
+  'notify.openApp': 'Compassʼni ochish',
   'notify.order.submitted.title': 'Tekshiruv uchun yangi buyurtma',
   'notify.order.submitted.body': '{store} buyurtma yubordi, tekshiruvingizni kutmoqda.',
   'notify.order.approved.title': 'Buyurtma maʼqullandi',

@@ -3,7 +3,7 @@
  * Titles and bodies were English for everyone, without the store's name.
  */
 import { describe, expect, test } from 'bun:test';
-import { localizeEnvelope } from '../notify';
+import { localizeEnvelope, openAppLabel } from '../notify';
 
 describe('localizeEnvelope', () => {
   test('a known template is rendered from the catalog with its values', async () => {
@@ -35,5 +35,14 @@ describe('localizeEnvelope', () => {
   test('a template the catalog does not know keeps the English envelope', async () => {
     const out = await localizeEnvelope({ template: 'run.someday', title: 'T', body: 'B' }, 'ru');
     expect(out).toEqual({ title: 'T', body: 'B' });
+  });
+});
+
+describe('openAppLabel (COREAPI-19)', () => {
+  test("the button under a bot message is in the recipient's language", async () => {
+    expect(await openAppLabel('en')).toBe('Open Compass');
+    expect(await openAppLabel('zh')).toBe('打开 Compass');
+    expect(await openAppLabel('ru')).toBe('Открыть Compass');
+    expect(await openAppLabel('uz')).toBe('Compassʼni ochish');
   });
 });
