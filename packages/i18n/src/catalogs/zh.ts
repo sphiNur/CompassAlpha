@@ -581,7 +581,7 @@ export const zh = {
   'shell.pageNotLoaded.body': '需要联网才能打开。联网后会自动加载，也可以点重试。',
   'shell.offline.body':
     '看到的是上次加载的内容。下单、采购和验收的修改会先存在手机上，联网后自动发送；审核、日结、销售和管理需要联网才能保存。',
-  'shell.offline.lastUpdated': '上次更新 {time}',
+  'shell.offline.titleSince': '现在离线 · 上次更新 {time}',
   'shell.skip.mainAction': '跳到主要操作',
   'shell.skip.nav': '跳到导航',
   'approval.offline.needsConnection': '审核需要联网：通过和拒绝不会先存在手机上。',

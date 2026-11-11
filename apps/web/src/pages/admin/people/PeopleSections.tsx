@@ -45,6 +45,7 @@ import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { copyText } from '../../../lib/clipboard';
+import { formatList } from '../../../lib/listFormat';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
@@ -1825,8 +1826,15 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
       </SectionLabel>
       <div className={rowGroupClass}>
         {invites.map((inv) => {
-          const roles = inv.roles.map((r) => roleText.name(r)).join(', ');
-          const stores = inv.stores.map((st) => st.name).join(', ');
+          // COREWEB1-19: listed the way the language lists.
+          const roles = formatList(
+            inv.roles.map((r) => roleText.name(r)),
+            i18n.locale,
+          );
+          const stores = formatList(
+            inv.stores.map((st) => st.name),
+            i18n.locale,
+          );
           const expires = dateFmt.date(inv.expiresAt);
           return (
             <ListRow

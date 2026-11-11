@@ -497,6 +497,7 @@ apps/web/src/
 - **不用** TanStack Router（虽然安装过，但 M3 才接入；M1 已从 package.json 移除）
 - 当前是 **tab-based 单 SPA**：tab 列表只有一份（`stores/navStore.ts` 的 `TAB_KEYS`），当前 tab 存在 navStore 并持久化；`app/shell/tabs.ts` 给每个 tab 定权限、标签和图标，`app/shell/pages.tsx` 给每个 tab 定页面
 - 除下单页外，每个页面都通过 `resilientLazy()` + Suspense **code-split**；管理、采购、审核、验收四页在有权限时空闲预取（`app/shell/usePagePrefetch.ts`），重新打开时停留的那一页由 `main.tsx` 提前下载
+- 设置面板（齿轮）也单独分块：第一次打开时加载，之后一直挂载；登录后空闲预取（2026-11-12，启动包预算 `scripts/check-entry-budget.ts` 用完了）
 - 深链：每个 tab 都能用路径打开（如通知按钮的 `/approve`，可带 `?store=`），bot 链接用 `startapp=tab_<name>`；`app/shell/useDeepLinkTab.ts` 走与点 tab 相同的检查，切换后从地址栏去掉路径，刷新不会重复应用
 
 ### 5.5 国际化

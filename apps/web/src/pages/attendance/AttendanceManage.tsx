@@ -23,6 +23,7 @@ import { useErrToast } from '../../hooks/useErrToast';
 import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendance';
 import { minutesText, punchKindText } from '../../lib/attendanceFormat';
 import { currencyOf, formatMoney } from '../../lib/format';
+import { formatList } from '../../lib/listFormat';
 import { useAuthStore } from '../../stores/authStore';
 import { GeoMap } from '../../components/geo/GeoMap';
 import { trpc } from '../../lib/trpc';
@@ -324,7 +325,10 @@ function MemberDayRow({
           <span className="text-old-label text-[var(--c-fg-muted)]">
             {shifts.length > 0
               ? i18n.t('attendance.sheet.planned', {
-                  times: shifts.map((x) => `${x.start}–${x.end}`).join(', '),
+                  times: formatList(
+                    shifts.map((x) => `${x.start}–${x.end}`),
+                    i18n.locale,
+                  ),
                 })
               : i18n.t('attendance.sheet.noShift')}
           </span>

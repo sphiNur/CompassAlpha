@@ -675,7 +675,8 @@ export const en = {
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
   'shell.offline.body':
     'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sent when you are back online; review, daily close, sales and admin need a connection to save.',
-  'shell.offline.lastUpdated': 'last updated {time}',
+  // COREWEB1-19 (2026-11-12): one sentence, so each language orders it.
+  'shell.offline.titleSince': 'You are offline · last updated {time}',
   'shell.skip.mainAction': 'Skip to main action',
   'shell.skip.nav': 'Skip to navigation',
   'approval.offline.needsConnection':

@@ -36,7 +36,7 @@ import { useQueueOnNetworkError } from '../hooks/useOfflineWrite';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
 import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
-import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
+import { StoreContextEmpty } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
 import {
   countVerdicts,
@@ -68,7 +68,6 @@ export function ConfirmPage() {
   // store. Reading via the context helper coerces 'all' to null so the
   // pick-a-store empty-state takes over (added 2026-05-05).
   const storeCtx = useStoreContext();
-  const noStoreYet = useNoStoreYet();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const issueForm = useIssueForm();
@@ -398,34 +397,8 @@ export function ConfirmPage() {
   const issueSku = issueForm.draft ? skuById.get(issueForm.draft.skuId) : undefined;
 
   if (!session) return null;
-  if (!currentStoreId) {
-    // Three modes:
-    //   - storeCtx.kind === 'none' → user has no stores assigned at all
-    //   - storeCtx.kind === 'all'  → admin viewing aggregate; this page
-    //                                 needs a single store, prompt them
-    //   - currentStoreId fell to null → same as 'none' for UX purposes
-    return (
-      /* M3.5: the inline store-picker strip is gone — the picker now
-         lives in SettingsSheet, reachable via Telegram's gear button. */
-      <div className="flex flex-col gap-3 pb-4">
-        <div className="px-4 pt-3">
-          {noStoreYet ? (
-            <NoStoreYet />
-          ) : storeCtx.kind === 'none' ? (
-            <EmptyState
-              title={i18n.t('auth.noStore.title')}
-              description={i18n.t('auth.noStore.body')}
-            />
-          ) : (
-            <EmptyState
-              title={i18n.t('storeSwitcher.pickPrompt.title')}
-              description={i18n.t('storeSwitcher.pickPrompt.body')}
-            />
-          )}
-        </div>
-      </div>
-    );
-  }
+  // Receiving is one store's: no store, or all of them, says why.
+  if (!currentStoreId) return <StoreContextEmpty />;
 
   return (
     /* M3.5: the store-switcher pill moved to SettingsSheet. The sticky

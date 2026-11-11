@@ -55,6 +55,8 @@ import { TAX_RATE_MESSAGE, taxRateProblem, taxRateToSend } from '@compass/contra
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty } from '../lib/format';
+import { zoneName } from '../lib/dateFormat';
+import { formatList } from '../lib/listFormat';
 import { useAuthStore } from '../stores/authStore';
 import { readsFinanceOnly } from '../lib/authAccess';
 import { useNavStore } from '../stores/navStore';
@@ -686,11 +688,13 @@ function WorkspaceSection() {
               in i18n catalogs in case super_admin tooling wants it. */}
           <DetailRow
             label={i18n.t('admin.workspace.yourRole')}
-            // RE-AUTH-2: role names, not slugs ("super_admin").
+            // RE-AUTH-2: role names, not slugs ("super_admin"), listed the
+            // way the language lists (COREWEB1-19).
             value={
-              [...new Set(session?.roleSlugs ?? [])]
-                .map((slug) => roleText.name({ slug }))
-                .join(', ') || '—'
+              formatList(
+                [...new Set(session?.roleSlugs ?? [])].map((slug) => roleText.name({ slug })),
+                i18n.locale,
+              ) || '—'
             }
           />
           <DetailRow
@@ -700,10 +704,12 @@ function WorkspaceSection() {
           {/* M1.17: read-out of the new financial trio so anyone with
               Admin access can see the active settings at a glance. The
               edit affordance is the ListRow below (admin-only). */}
-          {/* AUTH-25 (2026-10-30): the section hint promised a time zone. */}
+          {/* AUTH-25 (2026-10-30): the section hint promised a time zone.
+              COREWEB1-19 (2026-11-12): named in the reader's language, as
+              the daily close names it (CONF-18), not "Asia/Tashkent". */}
           <DetailRow
             label={i18n.t('admin.workspace.timezone')}
-            value={session?.member.timezone ?? '—'}
+            value={session?.member.timezone ? zoneName(session.member.timezone, i18n.locale) : '—'}
           />
           <DetailRow label={i18n.t('admin.workspace.currency')} value={currency} />
           {taxShown ? (

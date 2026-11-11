@@ -11,7 +11,9 @@
  * offline opens on demand.
  *
  * Review COREWEB1-10 (2026-11-12): out of Shell.tsx. COREWEB1-31: reads
- * hooks/useOnline.ts instead of a copy of it.
+ * hooks/useOnline.ts instead of a copy of it. COREWEB1-19: the title with
+ * the time is one sentence of the catalog; it was two joined with " · ",
+ * which fixed the word order in every language.
  */
 import { useState } from 'react';
 import { Banner } from '@compass/ui';
@@ -32,9 +34,7 @@ export function OfflineBanner() {
         tone="warn"
         title={
           cachedAt !== null
-            ? `${i18n.t('shell.offline.title')} · ${i18n.t('shell.offline.lastUpdated', {
-                time: lastUpdatedLabel(cachedAt, dateFmt),
-              })}`
+            ? i18n.t('shell.offline.titleSince', { time: lastUpdatedLabel(cachedAt, dateFmt) })
             : i18n.t('shell.offline.title')
         }
         action={
