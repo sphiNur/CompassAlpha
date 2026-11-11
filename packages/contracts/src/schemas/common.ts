@@ -90,11 +90,6 @@ export const TimeZoneSchema = z
 export const LocaleSchema = z.enum(['en', 'zh', 'ru', 'uz']);
 export type Locale = z.infer<typeof LocaleSchema>;
 
-/** i18n names map: { en: '...', zh: '...', ru: '...', uz: '...' } — partial allowed, fallback graph en→ru→zh→uz. */
-export const I18nNamesSchema = z.record(z.string()).refine((v) => Object.keys(v).length > 0, {
-  message: 'at least one locale required',
-});
-
 /** Decimal as string. We keep it stringly-typed to avoid float drift across the wire. */
 export const DecimalStringSchema = z
   .string()

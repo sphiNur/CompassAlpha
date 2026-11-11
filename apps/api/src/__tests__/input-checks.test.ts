@@ -126,4 +126,19 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
     expect(pickExtension('image/png')).toBe('png');
     expect(pickExtension('image/jpeg')).toBe('jpg');
   });
+
+  test('ADM2-09: dish names follow the product rule; a dish sort order carries its key', async () => {
+    const { dishId } = await owner!.dishes.save({ names: { uz: '  ', ru: ' Plov ' }, ingredients: [] });
+    const listed = await owner!.dishes.list({ includeArchived: true });
+    expect(listed.dishes.find((d) => d.id === dishId)?.names).toEqual({ ru: 'Plov' });
+    expect(await keyOf(() => owner!.dishes.save({ names: { uz: ' ', en: '' }, ingredients: [] }))).toBe(
+      'dishes.errors.namesRequired',
+    );
+    expect(await keyOf(() => owner!.dishes.update({ dishId, sortIndex: 1.5 }))).toBe(
+      'admin.errors.sortIndexInteger',
+    );
+    expect(await keyOf(() => owner!.dishes.update({ dishId, sortIndex: 2 ** 31 }))).toBe(
+      'admin.errors.sortIndexInteger',
+    );
+  });
 });
