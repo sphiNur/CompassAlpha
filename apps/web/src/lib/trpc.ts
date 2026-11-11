@@ -7,9 +7,9 @@ import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
 
-// VITE_API_URL is empty in production (api served on the same origin
-// behind nginx). `||` (not `??`) so empty-string falls back to ''
-// rather than becoming '(empty)/trpc'.
+// VITE_API_URL is empty in production: the api serves the web app
+// itself, so both are on one origin. `||` (not `??`) so empty-string
+// falls back to '' rather than becoming '(empty)/trpc'.
 export const API_URL = (import.meta.env.VITE_API_URL || '') as string;
 
 /**
@@ -166,19 +166,6 @@ async function refreshAccessToken(): Promise<{
   return refreshInFlight;
 }
 
-/**
- * Custom fetch that:
- *   1. Attaches the current access token as Bearer.
- *   2. On a 401 response (UNAUTHORIZED → access token expired),
- *      transparently calls auth.refresh and retries the request once
- *      with the new token.
- *   3. A refresh token the server rejects = clear auth and let AuthGate
- *      re-login via Telegram initData. A refresh that could not reach
- *      the server leaves the session alone.
- *
- * This is THE missing piece that was causing every mutation to fail
- * with `auth.errors.required` after the 15-minute access-token TTL.
- */
 /** Queries may wait this long for an answer, writes a little longer. */
 const READ_TIMEOUT_MS = 20_000;
 const WRITE_TIMEOUT_MS = 30_000;
@@ -260,6 +247,19 @@ export async function guardedFetch(
   }
 }
 
+/**
+ * Custom fetch that:
+ *   1. Attaches the current access token as Bearer.
+ *   2. On a 401 response (UNAUTHORIZED → access token expired),
+ *      transparently calls auth.refresh and retries the request once
+ *      with the new token.
+ *   3. A refresh token the server rejects = clear auth and let AuthGate
+ *      re-login via Telegram initData. A refresh that could not reach
+ *      the server leaves the session alone.
+ *
+ * This is THE missing piece that was causing every mutation to fail
+ * with `auth.errors.required` after the 15-minute access-token TTL.
+ */
 export async function authFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
@@ -303,16 +303,6 @@ export async function authFetch(
 }
 
 /**
- * Use `httpLink` (no batching) instead of `httpBatchLink`.
- *
- * iOS Telegram WebView intermittently rejects tRPC's batched URL pattern
- * (`?batch=1` + array body + `trpc-accept` custom header) with
- * `TypeError: Load failed` — the fetch never even reaches the server.
- * The same iOS WebView happily POSTs to the exact same endpoint when
- * the request is a single, non-batched call (proven via in-app raw
- * fetch diagnostic). Batching is a perf nicety; correctness wins.
- */
-/**
  * M1.20 (2026-05-08): mutations that the server marks idempotent
  * (run.create, run.purchaseItem, sales.record, order.submit, etc.)
  * accept an `X-Idempotency-Key` header. The server caches the
@@ -332,8 +322,10 @@ export async function authFetch(
 export const IDEMPOTENT_MUTATIONS: ReadonlySet<string> = new Set<string>(IDEMPOTENT_ROUTES);
 
 function genKey(): string {
-  // Lightweight ULID-like: 26 chars, lex-sortable. crypto.randomUUID
-  // is fine too but the dash format is uglier in logs.
+  // Lightweight ULID-like: the time in base 36 (8 chars), then 26 random
+  // ones from crypto.randomUUID (about 20 from the Math.random fallback),
+  // lex-sortable by time. A plain UUID would do, but the dashes are
+  // uglier in logs.
   const rand = (
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID().replace(/-/g, '')
@@ -352,6 +344,17 @@ export function newIdempotencyKey(): string {
   return genKey();
 }
 
+/**
+ * The app's tRPC client. It uses `httpLink` (no batching) instead of
+ * `httpBatchLink`.
+ *
+ * iOS Telegram WebView intermittently rejects tRPC's batched URL pattern
+ * (`?batch=1` + array body + `trpc-accept` custom header) with
+ * `TypeError: Load failed` — the fetch never even reaches the server.
+ * The same iOS WebView happily POSTs to the exact same endpoint when
+ * the request is a single, non-batched call (proven via in-app raw
+ * fetch diagnostic). Batching is a perf nicety; correctness wins.
+ */
 export function buildTrpcClient() {
   return trpc.createClient({
     links: [

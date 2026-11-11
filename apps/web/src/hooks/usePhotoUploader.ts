@@ -1,8 +1,8 @@
 /**
  * Wraps `trpc.upload.requestPresign` in the shape `<PhotoCapture>` expects
- * via its `uploader` prop. Returns `null` until we know whether S3 is
- * configured — then either a real uploader (real PUT to S3 / MinIO /
- * R2 / COS) or `null` to keep PhotoCapture in data-URI fallback mode.
+ * via its `uploader` prop. Returns `undefined` (PhotoCapture's data-URI
+ * fallback) until the server says uploads are configured, and while they
+ * are not; then a real uploader (real PUT to S3 / MinIO / R2 / COS).
  *
  * The fallback path matters: in dev without MinIO running, OR when the
  * server has S3 env vars unset, we'd otherwise block every photo
