@@ -20,7 +20,7 @@ const { step } = runStepper(clock);
 
 // ----------------------------------------------------------------------
 // Reversal commands — every step must be undoable until the world makes
-// the action permanent (delivery accepted, run finished). These tests
+// the action permanent (goods delivered, run finished). These tests
 // pin both the happy path AND the precondition gates that prevent
 // nonsensical undos (e.g. unmarking a still-pending item).
 // ----------------------------------------------------------------------
@@ -36,12 +36,22 @@ describe('run.reversals', () => {
         actualQty: '5',
         receiptPhotoUrl: 'https://x/y',
         reason: 'price misread on receipt',
+        storeSplits: [
+          { storeId: 'A', qty: '3' },
+          { storeId: 'B', qty: '2' },
+        ],
+        paymentMethod: 'transfer',
       }),
     );
     const item = s.items.get('sku-1')!;
     expect(item.unitPrice).toBe('15000');
     expect(item.purchasedQty).toBe('5');
     expect(item.receiptPhotoUrl).toBe('https://x/y');
+    expect(item.storeSplits).toEqual([
+      { storeId: 'A', qty: '3' },
+      { storeId: 'B', qty: '2' },
+    ]);
+    expect(item.paymentMethod).toBe('transfer'); // was cash
     expect(item.status).toBe('purchased'); // status unchanged
   });
 
@@ -54,7 +64,7 @@ describe('run.reversals', () => {
     ).toThrow('run.errors.notRevisable');
   });
 
-  test('RevisePurchase of quantities blocked once the destination store has accepted', () => {
+  test('RevisePurchase of quantities blocked once the goods reached the store', () => {
     let s = planAndPurchase();
     s = deliver(s);
     expect(() =>
@@ -105,7 +115,6 @@ describe('run.reversals', () => {
   test('UndeliverStore rejected after store confirmed', () => {
     let s = planAndPurchase();
     s = deliver(s);
-    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     expect(() =>
       decideRun(
@@ -439,7 +448,6 @@ describe('run.reversals', () => {
     // 5 StoreConfirmed events. Now the second decide returns [].
     let s = planAndPurchase();
     s = deliver(s);
-    s = step(s, confirmStoreItem({ skuId: 'sku-1' }));
     s = confirmStoreAllOk(s, 'A');
     const dup = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock);
     expect(dup).toEqual([]);
@@ -467,7 +475,7 @@ describe('run.reversals', () => {
     const cancelled = applyRun(delivering, {
       streamId: delivering.streamId,
       seq: delivering.seq + 1,
-      occurredAt: new Date(),
+      occurredAt: clock.now(),
       actorUserId: null,
       actorMemberId: null,
       type: 'RunCancelled',
@@ -560,7 +568,7 @@ describe('run.reversals', () => {
     ).toHaveLength(1);
   });
 
-  test('UndoPurchase blocked after store has accepted delivery', () => {
+  test('UndoPurchase blocked once the goods reached the store', () => {
     let s = planAndPurchase();
     s = deliver(s);
     expect(() =>

@@ -262,12 +262,13 @@ describe('pay', () => {
     );
     expect(p.deductionCents).toBe(500_000);
     expect(p.netCents).toBe(9_500_000);
-    // 1 min of 540 on 100.00 → 0.185… → 0.19
+    // 09:06 is 6 min late; past the 5 min grace, all 6 count:
+    // 6/540 of 100.00 = 1.111… → 1.11.
     const q = dayPay(
       day('09:00', '18:00', [punch('in', D, '09:06'), punch('out', D, '18:00')]),
       10_000,
     );
-    expect(q.deductionCents).toBe(111); // 6 late (grace 5 passed) → 6/540·100.00 = 1.111 → 1.11
+    expect(q.deductionCents).toBe(111);
   });
   test('absent pays nothing; missing punch waits for the manager; no rate says so', () => {
     expect(dayPay(day('09:00', '18:00', []), 10_000).status).toBe('absent');

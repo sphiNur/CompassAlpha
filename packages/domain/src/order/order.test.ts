@@ -82,7 +82,6 @@ describe('order.decide (per-contributor lines)', () => {
         { clock },
       ),
     ).toThrow('order.errors.notOwner');
-    void state;
   });
 
   test('owner edits their own session normally', () => {
