@@ -1440,6 +1440,7 @@ export const en = {
   'common.unknownDish': 'Unknown dish',
   'common.unknownCategory': 'Unknown category',
   'common.unknownMember': 'Unknown member',
+  'common.unknownStatus': 'Unknown status',
   // Two whole sentences in one message (CONF-18): Chinese puts no space after 。.
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Record purchase',

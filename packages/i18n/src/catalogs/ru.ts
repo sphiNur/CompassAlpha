@@ -1385,6 +1385,7 @@ export const ru = {
   'common.unknownDish': 'Неизвестное блюдо',
   'common.unknownCategory': 'Неизвестная категория',
   'common.unknownMember': 'Неизвестный участник',
+  'common.unknownStatus': 'Неизвестный статус',
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Записать покупку',
   'offline.action.markUnavailable': 'Отметить «нет в наличии»',

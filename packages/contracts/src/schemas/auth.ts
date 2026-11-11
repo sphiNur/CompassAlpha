@@ -67,10 +67,24 @@ export const OrganizationMembershipSchema = z.object({
   joinedAt: z.string(),
 });
 
+/**
+ * A workspace subscription's state. Review ADM1-29 (2026-11-12): the one
+ * list, for the session, the platform screen and the server, which each
+ * wrote their own.
+ */
+export const SubscriptionStatusSchema = z.enum([
+  'trialing',
+  'active',
+  'past_due',
+  'suspended',
+  'canceled',
+]);
+export type SubscriptionStatus = z.infer<typeof SubscriptionStatusSchema>;
+
 export const SubscriptionSummarySchema = z.object({
   planCode: z.string(),
   planName: z.string(),
-  status: z.enum(['trialing', 'active', 'past_due', 'suspended', 'canceled']),
+  status: SubscriptionStatusSchema,
   writeAccess: z.boolean(),
   trialEndsAt: z.string().nullable(),
   currentPeriodEnd: z.string().nullable(),

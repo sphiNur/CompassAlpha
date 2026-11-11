@@ -1217,6 +1217,7 @@ export const zh = {
   'common.unknownDish': '未知菜品',
   'common.unknownCategory': '未知分类',
   'common.unknownMember': '未知成员',
+  'common.unknownStatus': '未知状态',
   'common.twoSentences': '{first}{second}',
   'offline.action.purchaseItem': '记采购',
   'offline.action.markUnavailable': '标记缺货',

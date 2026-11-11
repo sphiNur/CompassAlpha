@@ -1379,6 +1379,7 @@ export const uz = {
   'common.unknownDish': 'Nomaʼlum taom',
   'common.unknownCategory': 'Nomaʼlum kategoriya',
   'common.unknownMember': 'Nomaʼlum aʼzo',
+  'common.unknownStatus': 'Nomaʼlum holat',
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Xaridni yozish',
   'offline.action.markUnavailable': 'Mavjud emas deb belgilash',

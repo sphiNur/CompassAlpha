@@ -41,6 +41,8 @@ import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney, formatQty } from '../../../lib/format';
+import { confirmStatusLabel } from '../../../lib/statusLabels/delivery';
+import { runStatusLabel } from '../../../lib/statusLabels/run';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import type { useI18n, useProductNameParts } from '../../../hooks/useI18n';
@@ -899,11 +901,7 @@ export function RunHistoryDetailSheet({
             : dates.calendarDay(target.runDate)
       }
       // DLV-16 (2026-10-30): was the raw status ("finished", "amending").
-      description={
-        target?.status
-          ? i18n.t(`run.status.${target.status}` as Parameters<typeof i18n.t>[0])
-          : undefined
-      }
+      description={target?.status ? runStatusLabel(i18n, target.status) : undefined}
     >
       {!target ? null : detail.isLoading ? (
         <LoadingState />
@@ -1110,7 +1108,7 @@ export function RunHistoryDetailSheet({
                           {activeStoreId
                             ? ''
                             : `${storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore')} · `}
-                          {i18n.t(('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0])}
+                          {confirmStatusLabel(i18n, sp.confirmStatus)}
                           {sp.confirmReceivedQty != null
                             ? ' · ' +
                               (amendFor(sp)
