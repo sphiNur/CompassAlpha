@@ -426,7 +426,8 @@ apps/web/src/
 │   │                          > trpc.Provider > QueryClientProvider > AuthGate > Shell
 │   ├── AuthGate.tsx        # 登录后才画 app；之前是登录页 / 改名引导 / 无门店、无权限页
 │   ├── auth/               # 登录状态机 useSignIn、启动参数 launch、两个“忙”判断 signInPhase 和这些页面
-│   ├── Shell.tsx           # 底部 tab nav + Telegram SettingsButton 接入
+│   ├── Shell.tsx           # 外壳：把顶栏、<main>、主按钮和底部导航组合起来
+│   ├── shell/              # 外壳的各部分：tab 表、页面表、底部导航、顶栏、深链、离线横幅、主按钮
 │   ├── ErrorBoundary.tsx
 │   └── useWarmRunQueries.ts # 启动时预取采购页的数据
 ├── pages/
@@ -446,6 +447,7 @@ apps/web/src/
 ├── hooks/
 │   ├── useI18n.ts          # 订阅式 catalog 切换 + format
 │   ├── useTelegram.ts      # Telegram 启动、BackButton、SettingsButton 的 hook
+│   ├── useTelegramChromeInsets.ts # Telegram 顶部按钮占的位置 → CSS 变量（测算在 lib/chromeInsets.ts）
 │   ├── usePageMainButton.ts # 页面主按钮（Shell 画在底栏上方）
 │   ├── useRealtime.ts      # WS + 400ms coalesce invalidate
 │   ├── useOfflineQueue.ts  # 页面读写 outbox 的 hook
@@ -493,9 +495,9 @@ apps/web/src/
 ### 5.4 路由
 
 - **不用** TanStack Router（虽然安装过，但 M3 才接入；M1 已从 package.json 移除）
-- 当前是 **tab-based 单 SPA**：Shell.tsx 维护 `tab: 'order' | 'approve' | 'run' | 'confirm' | 'admin'`，store 在 navStore
-- AdminPage / RunPage 通过 `React.lazy()` + Suspense **code-split**，权限可见时 idle prefetch
-- 缺点：深链不支持（`/order` 直接刷新会回到默认 tab）；M3 接 TanStack Router 修正
+- 当前是 **tab-based 单 SPA**：tab 列表只有一份（`stores/navStore.ts` 的 `TAB_KEYS`），当前 tab 存在 navStore 并持久化；`app/shell/tabs.ts` 给每个 tab 定权限、标签和图标，`app/shell/pages.tsx` 给每个 tab 定页面
+- 除下单页外，每个页面都通过 `resilientLazy()` + Suspense **code-split**；管理、采购、审核、验收四页在有权限时空闲预取（`app/shell/usePagePrefetch.ts`），重新打开时停留的那一页由 `main.tsx` 提前下载
+- 深链：每个 tab 都能用路径打开（如通知按钮的 `/approve`，可带 `?store=`），bot 链接用 `startapp=tab_<name>`；`app/shell/useDeepLinkTab.ts` 走与点 tab 相同的检查，切换后从地址栏去掉路径，刷新不会重复应用
 
 ### 5.5 国际化
 

@@ -1,6 +1,6 @@
 /**
- * Pure pieces of the sign-in gate (AuthGate), kept here so they can be
- * tested without rendering it.
+ * Pure pieces of what a session may open: the sign-in gate (AuthGate) and
+ * the Admin tab. Kept here so they can be tested without rendering them.
  */
 import { isCatalogKey, type I18n } from '@compass/i18n';
 import type { AuthSession } from '../stores/authStore';
@@ -40,3 +40,17 @@ export function accessBlock(
   return null;
 }
 
+/**
+ * HIS-19 (2026-10-30): someone who reads finance (`reports.view`) without
+ * managing people gets the finance report alone: AdminPage draws only it,
+ * and the bottom nav names the Admin tab for it (RE-HIS-1). Review
+ * COREWEB1-31 (2026-11-12): one rule for both, not a copy in each.
+ */
+export function readsFinanceOnly(
+  session: Pick<AuthSession, 'permissions' | 'isPlatformAdmin'> | null,
+): boolean {
+  if (!session || session.isPlatformAdmin) return false;
+  return (
+    !session.permissions.includes('users.manage') && session.permissions.includes('reports.view')
+  );
+}

@@ -56,6 +56,7 @@ import { trpc } from '../lib/trpc';
 import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
+import { readsFinanceOnly } from '../lib/authAccess';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram } from '../lib/telegram';
 import { useTelegramBackButton } from '../hooks/useTelegram';
@@ -197,8 +198,7 @@ export function AdminPage() {
 
   // HIS-19 (2026-10-30): someone who reads finance (reports.view) without
   // managing people gets the finance report alone.
-  const readsFinance = session?.permissions.includes('reports.view') ?? false;
-  if (!isAdmin && !isPlatformAdmin && readsFinance) {
+  if (readsFinanceOnly(session)) {
     // RE-HIS-1 (2026-10-31): with the page title the manager's drill-down
     // shows; there is nowhere to go back to, so no back control.
     return (

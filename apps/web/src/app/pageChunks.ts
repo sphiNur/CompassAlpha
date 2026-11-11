@@ -1,8 +1,9 @@
 /**
  * The lazily loaded pages, one import function each, shared by the Shell
- * (React.lazy + idle prefetch) and main.tsx (DX-PFE-3: the page the app
- * reopens on starts downloading as soon as the entry runs, instead of
- * after the auth check and the saved-data restore have drawn the Shell).
+ * (React.lazy in shell/pages.tsx, idle prefetch in shell/usePagePrefetch.ts)
+ * and main.tsx (DX-PFE-3: the page the app reopens on starts downloading
+ * as soon as the entry runs, instead of after the auth check and the
+ * saved-data restore have drawn the Shell).
  *
  * The order page stays in the entry chunk: nearly every signed-in person
  * has the Order tab, and it is the default first tab.

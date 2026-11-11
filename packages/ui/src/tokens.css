@@ -157,10 +157,11 @@
   /* The phone's own bars and cutouts: the larger of the browser's env()
    * and what Telegram reports. env() keeps the iOS status bar / dynamic
    * island off the header; Android's Telegram WebView returns 0 for it
-   * (M3.42 in Shell.tsx), so there the system navigation bar covered the
-   * bottom nav in fullscreen (COREWEB1-07). telegram-web-app.js writes
-   * Telegram's insets to --tg-safe-area-inset-* in <html>'s own style,
-   * over the 0px here, and keeps them current on rotation. */
+   * (M3.42, apps/web/src/hooks/useTelegramChromeInsets.ts), so there the
+   * system navigation bar covered the bottom nav in fullscreen
+   * (COREWEB1-07). telegram-web-app.js writes Telegram's insets to
+   * --tg-safe-area-inset-* in <html>'s own style, over the 0px here, and
+   * keeps them current on rotation. */
   --tg-safe-area-inset-top: 0px;
   --tg-safe-area-inset-bottom: 0px;
   --tg-safe-area-inset-left: 0px;
