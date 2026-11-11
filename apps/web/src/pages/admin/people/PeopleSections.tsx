@@ -30,6 +30,7 @@ import {
   IconShare,
   Input,
   ListRow,
+  QueryErrorBanner,
   SearchInput,
   SectionLabel,
   Segmented,
@@ -2036,6 +2037,10 @@ function ManualInviteSheet({
                 <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                   <Spinner size={14} /> {i18n.t('admin.label.loadingStores')}
                 </div>
+              ) : storesQuery.isError && !storesQuery.data ? (
+                // ADM2-22 (2026-11-11): a failed load read "no stores to
+                // invite into".
+                <QueryErrorBanner query={storesQuery} />
               ) : eligibleStores.length === 0 ? (
                 <Banner tone="warn" title={i18n.t('admin.banner.noStoresToInviteInto.title')}>
                   {i18n.t('admin.banner.noStoresToInviteInto.body')}

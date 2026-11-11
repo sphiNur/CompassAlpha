@@ -17,6 +17,7 @@ import {
   DataState,
   EmptyState,
   Field,
+  FieldGroup,
   Input,
   NumberInput,
   Segmented,
@@ -386,10 +387,13 @@ export function StoreDetailScreen({
   focus,
   sub,
   onSubChange,
+  onLeave,
 }: {
   focus: NonNullable<StoreFocus>;
   sub: StoreSub;
   onSubChange: (s: StoreSub) => void;
+  /** Back to the store list (ADM2-22: offered when the store is gone). */
+  onLeave: () => void;
 }) {
   const i18n = useI18n();
   const isOrgLevel = focus.kind === 'org-level';
@@ -431,7 +435,7 @@ export function StoreDetailScreen({
         <StoreSalesPanel storeId={focus.storeId} />
       ) : null}
       {effectiveSub === 'settings' && focus.kind === 'store' ? (
-        <StoreSettingsTab storeId={focus.storeId} />
+        <StoreSettingsTab storeId={focus.storeId} onLeave={onLeave} />
       ) : null}
     </div>
   );
@@ -1010,7 +1014,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
  * Settings tab — no sheet, no modal — because we're already inside a
  * dedicated detail screen.
  */
-function StoreSettingsTab({ storeId }: { storeId: string }) {
+function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () => void }) {
   const session = useAuthStore((s) => s.session);
   // 2026-10-21 audit CA-08/CA-16: pause/reactivate, archive and clone-
   // roles are org.admin-only server-side. Replaces the isGlobalAdmin
@@ -1096,10 +1100,31 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
     [rolesQuery.data, myStoreRank, currentDefault, storeId],
   );
 
-  if (storesQuery.isLoading || !draft || !store) {
+  // ADM2-22 (2026-11-11): a failed load, or a store missing from the list
+  // (archived since, or no longer this person's; the open store survives
+  // a restart), spun on "Loading store…" for good.
+  if (!store || !draft) {
     return (
-      <div className="flex items-center gap-2 px-4 py-6 text-old-body-sm text-[var(--c-fg-muted)]">
-        <Spinner size={14} /> {i18n.t('admin.label.loadingStore')}
+      // Inset like the form it stands in for (and the other tabs).
+      <div className="px-4 py-3">
+        <DataState
+          query={storesQuery}
+          emptyWhen={() => !store}
+          empty={
+            <EmptyState
+              title={i18n.t('admin.store.unavailableTitle')}
+              description={i18n.t('admin.store.unavailableBody')}
+              action={
+                <Button variant="pearl" onClick={onLeave}>
+                  {i18n.t('admin.store.backToList')}
+                </Button>
+              }
+            />
+          }
+        >
+          {/* Found: the form fills in from it on the next render. */}
+          {() => null}
+        </DataState>
       </div>
     );
   }
@@ -1151,33 +1176,44 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           disabled={!canAdmin}
         />
       </Field>
-      <Field label={i18n.t('admin.field.defaultRole')}>
-        {rolesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-            <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
-          </div>
-        ) : (
-          <Select
-            value={draft.defaultRoleSlug}
-            onChange={(e) =>
-              setDraft({ ...draft, defaultRoleSlug: e.target.value })
-            }
-            disabled={!canAdmin}
-          >
-            <option value="">{i18n.t('admin.store.noDefaultRole')}</option>
-            {storeTierRoles.map((r) => (
-              <option key={r.id} value={r.slug} disabled={r.keysMissing}>
-                {r.keysMissing
-                  ? i18n.t('people.roleNameKeysYouLack', { name: roleText.name(r) })
-                  : i18n.t('people.roleNameWithRank', { name: roleText.name(r), rank: r.rank })}
-              </option>
-            ))}
-          </Select>
-        )}
-        <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-          {i18n.t('admin.store.defaultRoleHint')}
-        </p>
-      </Field>
+      {rolesQuery.isError && !rolesQuery.data ? (
+        // ADM2-22 (2026-11-11): without the roles the picker read "no
+        // default", whatever the store's default is. A group, not a
+        // <label>: inside one, the Retry button took the whole field's
+        // text as its name, and a tap anywhere on the field pressed it.
+        <FieldGroup
+          label={i18n.t('admin.field.defaultRole')}
+          hint={i18n.t('admin.store.defaultRoleHint')}
+        >
+          <QueryErrorBanner query={rolesQuery} />
+        </FieldGroup>
+      ) : (
+        <Field label={i18n.t('admin.field.defaultRole')}>
+          {rolesQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
+              <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
+            </div>
+          ) : (
+            <Select
+              value={draft.defaultRoleSlug}
+              onChange={(e) => setDraft({ ...draft, defaultRoleSlug: e.target.value })}
+              disabled={!canAdmin}
+            >
+              <option value="">{i18n.t('admin.store.noDefaultRole')}</option>
+              {storeTierRoles.map((r) => (
+                <option key={r.id} value={r.slug} disabled={r.keysMissing}>
+                  {r.keysMissing
+                    ? i18n.t('people.roleNameKeysYouLack', { name: roleText.name(r) })
+                    : i18n.t('people.roleNameWithRank', { name: roleText.name(r), rank: r.rank })}
+                </option>
+              ))}
+            </Select>
+          )}
+          <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+            {i18n.t('admin.store.defaultRoleHint')}
+          </p>
+        </Field>
+      )}
       {isOrgAdmin ? (
         <Switch
           label={i18n.t('admin.label.active')}

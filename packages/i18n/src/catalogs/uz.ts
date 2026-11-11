@@ -107,6 +107,10 @@ export const uz = {
   'catalog.import.done':
     'Import qilindi: {skus} mahsulot, {categories} kategoriya, {suppliers} yetkazib beruvchi',
   'admin.store.new': 'Yangi doʻkon',
+  'admin.store.unavailableTitle': 'Doʻkonni ochib boʻlmaydi',
+  'admin.store.unavailableBody':
+    'U arxivlangan yoki sizda unga kirish huquqi qolmagan boʻlishi mumkin.',
+  'admin.store.backToList': 'Doʻkonlar roʻyxatiga qaytish',
   'admin.store.emptyTitle': 'Doʻkonlar yoʻq',
   'admin.store.emptyBody':
     'Jamoani qoʻshishni boshlash uchun yuqoridagi tugma bilan doʻkon yarating.',
