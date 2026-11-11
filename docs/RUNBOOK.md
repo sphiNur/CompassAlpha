@@ -15,7 +15,7 @@ Telegram
   → nginx on :80 (its config is not in the repo yet: review OPS-23)
   → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
 worker (compass-worker.service): the outbox; bot messages go out
-  through the tg-relay Worker (infra/cloudflare/tg-relay.js)
+  through the tg-relay Worker (infra/cloudflare/tg-relay/)
 Postgres 18, Redis 8 and S3-compatible storage behind both
 ```
 
