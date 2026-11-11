@@ -44,7 +44,8 @@ import {
   useUnitLabel,
 } from '../../../hooks/useI18n';
 import { isWaitingOffline } from '../../../components/PendingSpinner';
-import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
+import { nativeConfirm } from '../shared';
+import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people/PeopleSections';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
 import {

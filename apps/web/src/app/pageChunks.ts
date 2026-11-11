@@ -7,7 +7,7 @@
  * The order page stays in the entry chunk: nearly every signed-in person
  * has the Order tab, and it is the default first tab.
  */
-import { NAV_STORAGE_KEY, type Tab } from '../stores/navStore';
+import { isTab, NAV_STORAGE_KEY, type Tab } from '../stores/navStore';
 
 export const importAdminPage = () =>
   import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
@@ -25,7 +25,12 @@ export const importAttendancePage = () =>
 export const importConfirmPage = () =>
   import('../pages/ConfirmPage').then((m) => ({ default: m.ConfirmPage }));
 
-const PAGE_IMPORTS: Partial<Record<Tab, () => Promise<unknown>>> = {
+/** Every tab but Order, whose page is in the entry chunk. */
+type LazyTab = Exclude<Tab, 'order'>;
+
+// Review COREWEB1-11 (2026-11-11): keyed by every lazy tab, so a new tab
+// cannot be left out of the preload.
+const PAGE_IMPORTS: Record<LazyTab, () => Promise<unknown>> = {
   approve: importApprovalPage,
   run: importRunPage,
   history: importHistoryPage,
@@ -37,11 +42,21 @@ const PAGE_IMPORTS: Partial<Record<Tab, () => Promise<unknown>>> = {
 };
 
 /**
+ * Whether a value names a lazy tab. `in` alone also took a stored
+ * "toString" or "constructor" (Object.prototype's), which main.tsx then
+ * called as a page import at start.
+ */
+function isLazyTab(tab: unknown): tab is LazyTab {
+  return isTab(tab) && tab in PAGE_IMPORTS;
+}
+
+/**
  * Start downloading a tab's page chunk without waiting for it. A failure
  * is left to the page's own import (resilientLazy shows a retry there).
  */
 export function preloadPage(tab: Tab): void {
-  PAGE_IMPORTS[tab]?.().catch(() => {
+  if (!isLazyTab(tab)) return;
+  PAGE_IMPORTS[tab]().catch(() => {
     /* offline or a removed chunk: the page's own import handles it */
   });
 }
@@ -63,7 +78,7 @@ export function savedTab(storage: Pick<Storage, 'getItem'>): Tab | null {
       state?: { tab?: unknown };
     } | null;
     const tab = nav?.state?.tab;
-    return typeof tab === 'string' && tab in PAGE_IMPORTS ? (tab as Tab) : null;
+    return isLazyTab(tab) ? tab : null;
   } catch {
     return null;
   }
