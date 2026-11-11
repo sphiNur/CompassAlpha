@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react';
 import { Sheet, Button, Field, SectionLabel, PickerGroup, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
+import { runningBuildId } from '../lib/build';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { requestTabChange, type Tab } from '../stores/navStore';
@@ -95,11 +96,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   // rather than dumped as the raw key string.
   const errToast = useErrToast();
 
-  // Build hash for the About row. Vite injects this at build time so
-  // we can read whatever HEAD was at deploy. Falls back to a string
-  // marker for local dev.
-  const buildId =
-    (typeof __COMPASS_BUILD_SHA__ === 'string' ? __COMPASS_BUILD_SHA__ : null) ?? 'dev';
+  // The build for the About row, so a bug report can say which one it
+  // is (review COREWEB1-12: always "dev" before).
+  const buildId = runningBuildId() ?? 'dev';
 
   const setLocale = trpc.auth.setLocale.useMutation({
     onSuccess: (next) => {
@@ -390,5 +389,3 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     </Sheet>
   );
 }
-
-declare const __COMPASS_BUILD_SHA__: string;

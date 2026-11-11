@@ -29,6 +29,8 @@ export interface CacheStorage {
   remove(key: string): Promise<void>;
 }
 import { keyval } from './idb';
+import { runningBuildId } from './build';
+import type { QueryPath } from './trpcPaths';
 
 const STORAGE_KEY = 'queryCache:v1';
 /** A copy older than this is not shown: a day's work, plus a night. */
@@ -56,8 +58,10 @@ export function needsSave(
  * tRPC procedures whose last answer is worth keeping for an offline
  * start. Lookups the pages need to draw those answers (products, stores,
  * categories, suppliers, dishes) are included; admin screens are not.
+ * Each name is checked against the API's queries (review COREWEB2-29): a
+ * renamed one fails type-check instead of quietly no longer being saved.
  */
-export const PERSISTED_QUERIES: ReadonlySet<string> = new Set([
+export const PERSISTED_QUERIES: ReadonlySet<string> = new Set<QueryPath>([
   'catalog.skus',
   'catalog.stores',
   'catalog.categories',
@@ -91,7 +95,7 @@ export const PERSISTED_QUERIES: ReadonlySet<string> = new Set([
  * the wrong day — so these are restored only on the day they were loaded
  * (device time; staff phones run in the organisation's time zone).
  */
-export const TODAY_QUERIES: ReadonlySet<string> = new Set([
+export const TODAY_QUERIES: ReadonlySet<string> = new Set<QueryPath>([
   'order.todaySession',
   'order.todayBatches',
   'order.extrasSuggestions',
@@ -174,9 +178,7 @@ export function isRestorable(
 
 /** The running deploy (index.html's build meta); 'dev' without one. */
 export function runningBuild(): string {
-  if (typeof document === 'undefined') return 'dev';
-  const v = (document.querySelector('meta[name="compass-build"]') as HTMLMetaElement | null)?.content;
-  return v && v !== '%VITE_BUILD_SHA%' ? v : 'dev';
+  return runningBuildId() ?? 'dev';
 }
 
 /**

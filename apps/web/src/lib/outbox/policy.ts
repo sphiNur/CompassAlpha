@@ -8,6 +8,7 @@
  */
 import type { OutboxEntry } from '../idb';
 import { isLikelyNetworkError } from '../networkError';
+import type { ReplayedProcedure } from './replayHandlers';
 
 /** Who is signed in now: the person and the organisation they work in. */
 export interface OutboxOwner {
@@ -120,7 +121,9 @@ export type ReplayErrorAction = 'drop' | 'retry';
  * the usual backoff instead. The cap keeps a genuinely stuck entry from
  * blocking the queue.
  */
-export const REPLAY_RETRYABLE_OVERRIDES: Readonly<Record<string, ReadonlySet<string>>> = {
+export const REPLAY_RETRYABLE_OVERRIDES: {
+  readonly [P in ReplayedProcedure]?: ReadonlySet<string>;
+} = {
   'order.adjustItem': new Set(['CONFLICT']),
   'order.setSessionExtras': new Set(['CONFLICT']),
   // R2 (2026-10-30): a run has one event stream for every buyer and
@@ -137,6 +140,9 @@ export const REPLAY_RETRYABLE_OVERRIDES: Readonly<Record<string, ReadonlySet<str
   'run.markStoreItemsOk': new Set(['CONFLICT']),
   'run.confirmStore': new Set(['CONFLICT']),
 };
+/** The same map by any name: a queued entry may come from another bundle. */
+const overridesByName: Readonly<Record<string, ReadonlySet<string> | undefined>> =
+  REPLAY_RETRYABLE_OVERRIDES;
 export const MAX_OVERRIDE_RETRIES = 2;
 
 /**
@@ -156,11 +162,7 @@ export function classifyReplayError(
   procedure?: string,
   retries = 0,
 ): ReplayErrorAction {
-  if (
-    code !== undefined &&
-    procedure !== undefined &&
-    REPLAY_RETRYABLE_OVERRIDES[procedure]?.has(code)
-  ) {
+  if (code !== undefined && procedure !== undefined && overridesByName[procedure]?.has(code)) {
     return retries < MAX_OVERRIDE_RETRIES ? 'retry' : 'drop';
   }
   if (

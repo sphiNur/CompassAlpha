@@ -16,8 +16,8 @@
  *      window and surface them in the splash error UI.
  *   3. 12-second failsafe: if React hasn't mounted (no .ready class
  *      on <html>) by then, force the error UI so the user can recover.
- *   4. Make the Reload / Reset & reload buttons work (CSP forbids
- *      inline onclick=).
+ *   4. Make the Reload / Reset session and reload buttons work (CSP
+ *      forbids inline onclick=).
  *   5. Set <html data-theme data-color-scheme> before the first paint,
  *      as ThemeProvider will once React runs (COREWEB1-26).
  *
@@ -54,28 +54,28 @@
       bootFailed: 'Boot failed',
       timeout: 'The app could not start. Check your connection and reload.',
       reload: 'Reload',
-      reset: 'Reset & reload',
+      reset: 'Reset session and reload',
     },
     zh: {
       startingUp: '启动中…',
       bootFailed: '启动失败',
       timeout: '应用没能启动。请检查网络后重新加载。',
       reload: '重新加载',
-      reset: '清除数据并重启',
+      reset: '清除登录状态并重新加载',
     },
     ru: {
       startingUp: 'Запуск…',
       bootFailed: 'Ошибка запуска',
       timeout: 'Приложение не запустилось. Проверьте связь и перезагрузите.',
       reload: 'Перезагрузить',
-      reset: 'Сбросить и перезагрузить',
+      reset: 'Выйти и перезагрузить',
     },
     uz: {
       startingUp: 'Ishga tushmoqda…',
       bootFailed: 'Ishga tushishda xato',
       timeout: 'Ilova ishga tushmadi. Internetni tekshirib, qayta yuklang.',
       reload: 'Qayta yuklash',
-      reset: 'Tozalab qayta yuklash',
+      reset: 'Sessiyani tozalab qayta yuklash',
     },
   };
   var t = TEXT[lang];
@@ -179,10 +179,17 @@
     var target = e.target;
     var btn = target && target.closest ? target.closest('#boot-reload-btn, #boot-reset-btn') : null;
     if (!btn) return;
+    // Reset removes the keys apps/web/src/lib/localSession.ts removes: the
+    // saved sign-in and the saved tab (COREWEB1-16; the test checks they
+    // agree). Session storage stays: it holds the launch's one-time markers,
+    // and emptying it made the reload accept an invite already accepted.
+    // The saved copy of read answers, in IndexedDB, is left to the app: a
+    // bad copy breaks the screen it is drawn on, inside React, and the
+    // crash screen's reset drops it.
     if (btn.id === 'boot-reset-btn') {
       try {
         localStorage.removeItem('compass.auth');
-        sessionStorage.clear();
+        localStorage.removeItem('compass.nav.v1');
       } catch (_) {
         /* storage unavailable; just reload */
       }

@@ -1,4 +1,5 @@
 import { detectLocale, type Locale } from '@compass/i18n';
+import { AUTH_STORAGE_KEY } from '../stores/authStore';
 
 /**
  * The language to draw in: the account's when it has one, else the
@@ -22,7 +23,7 @@ export function bootLocale(
   platformLanguage: string,
 ): Locale {
   try {
-    const raw = storage?.getItem('compass.auth');
+    const raw = storage?.getItem(AUTH_STORAGE_KEY);
     if (raw) {
       const chosen = (JSON.parse(raw) as { state?: { session?: { user?: { locale?: unknown } } } })
         .state?.session?.user?.locale;

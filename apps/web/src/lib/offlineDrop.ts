@@ -7,10 +7,11 @@
  */
 import type { CatalogKey as Key } from '@compass/i18n';
 import type { OfflineDropInfo } from './outbox/engine';
+import type { ReplayedProcedure } from './outbox/replayHandlers';
 import { I18N_KEY_RE, withoutFinalStop } from './errorText';
 
 /** The action label for each run / receiving procedure (order changes use the generic text). */
-const ACTION_KEYS: Record<string, Key> = {
+const ACTION_KEYS: { readonly [P in ReplayedProcedure]?: Key } = {
   'run.purchaseItem': 'offline.action.purchaseItem',
   'run.markUnavailable': 'offline.action.markUnavailable',
   'run.deliverToStore': 'offline.action.deliverToStore',
@@ -20,6 +21,8 @@ const ACTION_KEYS: Record<string, Key> = {
   'run.markStoreItemsOk': 'offline.action.markStoreItemsOk',
   'run.confirmStore': 'offline.action.confirmStore',
 };
+/** The same map by any name: a dropped entry may come from another bundle. */
+const actionKeyByName: Readonly<Record<string, Key | undefined>> = ACTION_KEYS;
 
 /** The toast text for a dropped entry. Exported for tests. */
 export function offlineDropText(
@@ -29,7 +32,7 @@ export function offlineDropText(
   // CA-25: an order change refused because the day it was made on is
   // over says so (was OrderPage's own drop handler before CMP-FE-3).
   if (info.message === 'order.errors.staleOfflineEdit') return t('order.errors.staleOfflineEdit');
-  const actionKey = ACTION_KEYS[info.procedure];
+  const actionKey = actionKeyByName[info.procedure];
   if (!actionKey) return t('run.toast.syncFailed');
   const action = t(actionKey);
   if (info.reason === 'rejected' && info.message && I18N_KEY_RE.test(info.message)) {

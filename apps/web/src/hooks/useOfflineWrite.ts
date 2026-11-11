@@ -25,7 +25,7 @@ import { newIdempotencyKey } from '../lib/trpc';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from './useErrToast';
 import type { WriteFallbackKey } from '../lib/errorText';
-import type { ReplayedProcedure } from '../lib/outbox/replayHandlers';
+import type { ReplayedInput, ReplayedProcedure } from '../lib/outbox/replayHandlers';
 import { useI18n } from './useI18n';
 import { enqueueWrite } from '../lib/outbox/engine';
 
@@ -51,9 +51,10 @@ export function useStableIdempotencyKey() {
   };
 }
 
-export interface QueueableWrite {
-  procedure: ReplayedProcedure;
-  input: unknown;
+export interface QueueableWrite<P extends ReplayedProcedure = ReplayedProcedure> {
+  procedure: P;
+  /** What the mutation was sent; typed by the procedure (COREWEB2-29). */
+  input: ReplayedInput<P>;
   /** The key the first attempt sent (`useStableIdempotencyKey`), if any. */
   idempotencyKey?: string | undefined;
   /** The write's own failure sentence (DX-COPY-8). */
@@ -76,7 +77,7 @@ export function useQueueOnNetworkError() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
-  return (err: unknown, write: QueueableWrite): void => {
+  return <P extends ReplayedProcedure>(err: unknown, write: QueueableWrite<P>): void => {
     const notSaved = () => {
       write.onNotSaved?.();
       errToast(write.failedKey)(err);

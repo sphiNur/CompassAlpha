@@ -13,6 +13,7 @@
  * Review COREWEB2-14 (2026-11-11): the engine used to live in this file.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useOnline } from './useOnline';
 import {
   enqueueWrite,
   flushOutbox,
@@ -23,7 +24,7 @@ import {
   subscribeSlowWrites,
 } from '../lib/outbox/engine';
 import { samePendingWrites, type PendingWrite } from '../lib/outbox/policy';
-import type { ReplayedProcedure } from '../lib/outbox/replayHandlers';
+import type { ReplayedInput, ReplayedProcedure } from '../lib/outbox/replayHandlers';
 
 interface UseOfflineQueueResult {
   /** A write has been waiting more than SLOW_WRITE_MS for its answer. */
@@ -38,9 +39,9 @@ interface UseOfflineQueueResult {
    * replays it — with `idempotencyKey`, or for absolute-value writes
    * like order.adjustItem, without doubling it.
    */
-  sendQueued<P, R>(
-    procedure: ReplayedProcedure,
-    input: P,
+  sendQueued<P extends ReplayedProcedure, R>(
+    procedure: P,
+    input: ReplayedInput<P>,
     send: () => Promise<R>,
     idempotencyKey?: string,
   ): Promise<R>;
@@ -51,7 +52,11 @@ interface UseOfflineQueueResult {
    *  Rejects when the device could not store the write (IndexedDB
    *  unavailable): nothing is queued, so tell the person it was not saved
    *  and keep what they typed (COREWEB2-04). */
-  enqueue<P>(procedure: ReplayedProcedure, input: P, idempotencyKey?: string): Promise<number>;
+  enqueue<P extends ReplayedProcedure>(
+    procedure: P,
+    input: ReplayedInput<P>,
+    idempotencyKey?: string,
+  ): Promise<number>;
   flush(): Promise<void>;
   online: boolean;
 }
@@ -66,9 +71,8 @@ interface UseOfflineQueueResult {
 export function useOfflineQueue(): UseOfflineQueueResult {
   const [savingSlow, setSavingSlow] = useState(slowWriteCount() > 0);
   const [pendingEntries, setPendingEntries] = useState<readonly PendingWrite[]>([]);
-  const [online, setOnline] = useState<boolean>(
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  );
+  // Review COREWEB2-22: the shared hook, not a second set of listeners.
+  const online = useOnline();
 
   const refresh = useCallback(async () => {
     try {
@@ -90,15 +94,7 @@ export function useOfflineQueue(): UseOfflineQueueResult {
   useEffect(() => {
     const unsubscribe = subscribeOutbox(() => void refresh());
     void refresh();
-    const onOnline = () => setOnline(true);
-    const onOffline = () => setOnline(false);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => {
-      unsubscribe();
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-    };
+    return unsubscribe;
   }, [refresh]);
 
   return {

@@ -7,6 +7,8 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { ensureCatalog, lookup, type Locale } from '@compass/i18n';
+import { SAVED_SESSION_KEYS } from '../localSession';
 
 const WEB = new URL('../../..', import.meta.url).pathname;
 const html = readFileSync(`${WEB}index.html`, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
@@ -198,21 +200,41 @@ describe('boot-guard buttons (COREWEB1-01)', () => {
     expect(JSON.parse(g.sessionStorage.getItem('compass.lastReload')!).reason).toBe('boot-guard');
   });
 
-  it('reset clears the saved sign-in before reloading', () => {
+  // COREWEB1-16 (2026-11-12): the same keys the app's own reset removes.
+  it('reset removes the saved sign-in and tab before reloading, and nothing else', () => {
     const g = timedOut();
-    g.localStorage.setItem('compass.auth', '{}');
+    for (const key of SAVED_SESSION_KEYS) g.localStorage.setItem(key, '{}');
+    g.localStorage.setItem('compass.theme', 'dark');
+    g.sessionStorage.setItem('compass.inviteSettled', 'token');
     g.click('boot-reset-btn');
-    expect(g.localStorage.getItem('compass.auth')).toBeNull();
+    for (const key of SAVED_SESSION_KEYS) expect(g.localStorage.getItem(key)).toBeNull();
+    expect(g.localStorage.getItem('compass.theme')).toBe('dark');
+    // The launch's one-time markers: an accepted invite stays accepted.
+    expect(g.sessionStorage.getItem('compass.inviteSettled')).toBe('token');
     expect(g.location.reloads).toBe(1);
   });
 
   it('are labelled in the person’s language when the error shows', () => {
     const g = timedOut('ru-RU');
     expect(g.nodes['boot-reload-btn']!.textContent).toBe('Перезагрузить');
-    expect(g.nodes['boot-reset-btn']!.textContent).toBe('Сбросить и перезагрузить');
+    expect(g.nodes['boot-reset-btn']!.textContent).toBe('Выйти и перезагрузить');
     expect(g.nodes['#boot-error [data-msg]']!.textContent).toBe(
       'Приложение не запустилось. Проверьте связь и перезагрузите.',
     );
+  });
+
+  it('reset says what the crash screen’s reset says, in each language', async () => {
+    const locales: Array<[Locale, string]> = [
+      ['en', 'en-US'],
+      ['zh', 'zh-CN'],
+      ['ru', 'ru-RU'],
+      ['uz', 'uz-UZ'],
+    ];
+    for (const [locale, language] of locales) {
+      await ensureCatalog(locale);
+      const g = timedOut(language);
+      expect(g.nodes['boot-reset-btn']!.textContent).toBe(lookup('boot.resetAndReload', locale)!);
+    }
   });
 
   it('a click elsewhere does nothing', () => {

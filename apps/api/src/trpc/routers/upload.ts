@@ -19,10 +19,9 @@
 import { TRPCError } from '@trpc/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { PHOTO_KINDS } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { isS3Configured, presignPut, S3NotConfiguredError } from '../../services/s3';
-
-const PHOTO_KINDS = ['receipt', 'issue', 'avatar', 'sku'] as const;
 
 /** Browser-allowed image MIME types. JPEG covers PhotoCapture; PNG / WebP for catalog. */
 const ALLOWED_CONTENT_TYPES = new Set([
