@@ -4,6 +4,7 @@
  */
 import { Banner, Button, Spinner } from '@compass/ui';
 import { useI18n, useRoleLabels } from '../../hooks/useI18n';
+import { formatList } from '../../lib/listFormat';
 
 export interface DevPersona {
   memberId: string;
@@ -75,11 +76,14 @@ export function DevPersonaPicker({
           {personas.map((persona) => {
             const stores =
               persona.storeNames.length > 0
-                ? persona.storeNames.join(', ')
+                ? formatList(persona.storeNames, i18n.locale)
                 : i18n.t('dev.persona.noStores');
             const roles =
               persona.roleSlugs.length > 0
-                ? persona.roleSlugs.map((slug) => roleText.name({ slug })).join(', ')
+                ? formatList(
+                    persona.roleSlugs.map((slug) => roleText.name({ slug })),
+                    i18n.locale,
+                  )
                 : i18n.t('dev.persona.noRoles');
             return (
               <button

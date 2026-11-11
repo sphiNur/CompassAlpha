@@ -667,7 +667,7 @@ export const uz = {
     'Ochish uchun internet kerak. Internet qaytganda oʻzi yuklanadi yoki «Qayta urinish»ni bosing.',
   'shell.offline.body':
     'Oxirgi yuklangan maʼlumot koʻrsatilmoqda. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; tekshiruv, kun yakuni, sotuv va boshqaruv faqat internet bilan saqlanadi.',
-  'shell.offline.lastUpdated': 'oxirgi yangilanish {time}',
+  'shell.offline.titleSince': 'Internet yoʻq · oxirgi yangilanish {time}',
   'shell.skip.mainAction': 'Asosiy amalga oʻtish',
   'shell.skip.nav': 'Navigatsiyaga oʻtish',
   'approval.offline.needsConnection':
@@ -1414,6 +1414,7 @@ export const uz = {
   'common.unknownDish': 'Nomaʼlum taom',
   'common.unknownCategory': 'Nomaʼlum kategoriya',
   'common.unknownMember': 'Nomaʼlum aʼzo',
+  'common.unknownStatus': 'Nomaʼlum holat',
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Xaridni yozish',
   'offline.action.markUnavailable': 'Mavjud emas deb belgilash',

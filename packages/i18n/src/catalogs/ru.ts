@@ -668,7 +668,7 @@ export const ru = {
     'Для неё нужна сеть. Она откроется сама, когда появится связь, или нажмите «Повторить».',
   'shell.offline.body':
     'Показано то, что было загружено раньше. Заказы, закупки и приёмка сохраняются на телефоне и отправятся при подключении; проверка, закрытие дня, продажи и управление сохраняются только онлайн.',
-  'shell.offline.lastUpdated': 'обновлено {time}',
+  'shell.offline.titleSince': 'Нет соединения · обновлено {time}',
   'shell.skip.mainAction': 'К основному действию',
   'shell.skip.nav': 'К навигации',
   'approval.offline.needsConnection':
@@ -1420,6 +1420,7 @@ export const ru = {
   'common.unknownDish': 'Неизвестное блюдо',
   'common.unknownCategory': 'Неизвестная категория',
   'common.unknownMember': 'Неизвестный участник',
+  'common.unknownStatus': 'Неизвестный статус',
   'common.twoSentences': '{first} {second}',
   'offline.action.purchaseItem': 'Записать покупку',
   'offline.action.markUnavailable': 'Отметить «нет в наличии»',

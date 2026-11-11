@@ -1,12 +1,12 @@
 /**
- * Warms the chunks of the heavy pages this member can open, once the
- * browser is idle.
+ * Warms the chunks of the heavy pages this member can open, and the
+ * settings sheet everyone has, once the browser is idle.
  *
  * Review COREWEB1-10 (2026-11-12): out of Shell.tsx.
  */
 import { useEffect } from 'react';
 import type { AuthSession } from '../../stores/authStore';
-import { preloadPage } from '../pageChunks';
+import { preloadPage, preloadSettingsSheet } from '../pageChunks';
 
 export function usePagePrefetch(session: AuthSession | null): void {
   // Warm the AdminPage chunk in the background once we know the user
@@ -32,8 +32,9 @@ export function usePagePrefetch(session: AuthSession | null): void {
   // same way for the people who have those tabs.
   const canApprove = !!session?.permissions.includes('order.approve');
   const canConfirm = !!session?.permissions.includes('delivery.confirm');
+  const signedIn = session !== null;
   useEffect(() => {
-    if (!canAdmin && !canRun && !canApprove && !canConfirm) return;
+    if (!signedIn) return;
     type IdleCB = (cb: () => void) => number;
     const ric = (window as { requestIdleCallback?: IdleCB }).requestIdleCallback;
     const kick = () => {
@@ -43,8 +44,9 @@ export function usePagePrefetch(session: AuthSession | null): void {
       if (canRun) preloadPage('run');
       if (canApprove) preloadPage('approve');
       if (canConfirm) preloadPage('confirm');
+      preloadSettingsSheet();
     };
     if (ric) ric(kick);
     else setTimeout(kick, 0);
-  }, [canAdmin, canRun, canApprove, canConfirm]);
+  }, [signedIn, canAdmin, canRun, canApprove, canConfirm]);
 }

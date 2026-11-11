@@ -141,19 +141,15 @@ function cameraView(a: Attempt, round: number, notice: CatalogKey | null): Punch
   return { at: 'camera', round, turns: a.challenge.steps, acts: a.challenge.acts, notice };
 }
 
+// Review COREWEB1-31 (2026-11-12): keys all the way from the server's
+// answer, so nothing here is cast.
 function failedView(
-  title: string,
+  title: CatalogKey,
   action: Extract<PunchView, { at: 'failed' }>['action'],
   vars: Record<string, string | number> = {},
-  body: string | null = null,
+  body: CatalogKey | null = null,
 ): PunchView {
-  return {
-    at: 'failed',
-    title: title as CatalogKey,
-    vars,
-    body: body as CatalogKey | null,
-    action,
-  };
+  return { at: 'failed', title, vars, body, action };
 }
 
 export function punchFlow(deps: PunchFlowDeps) {

@@ -6,6 +6,7 @@
  */
 import { Button, EmptyState } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
+import { useStoreContext } from '../hooks/useStoreContext';
 import { useAuthStore } from '../stores/authStore';
 import { requestTabChange, useNavStore } from '../stores/navStore';
 
@@ -38,5 +39,38 @@ export function NoStoreYet() {
         </Button>
       }
     />
+  );
+}
+
+/**
+ * What a page that works on one store shows without one: a new
+ * workspace's admin is sent to create a store, a member with no store is
+ * told so, and an admin looking at all stores is asked to pick one. On
+ * the page's 16 px gutter (UI-12).
+ *
+ * Review COREWEB1-22 (2026-11-12): the three branches were written out in
+ * the order, receiving, sales and attendance pages, with different
+ * margins; the order page's touched the screen edges.
+ */
+export function StoreContextEmpty() {
+  const i18n = useI18n();
+  const storeCtx = useStoreContext();
+  const noStoreYet = useNoStoreYet();
+  return (
+    <div className="px-4 pb-4 pt-3">
+      {noStoreYet ? (
+        <NoStoreYet />
+      ) : storeCtx.kind === 'none' ? (
+        <EmptyState
+          title={i18n.t('auth.noStore.title')}
+          description={i18n.t('auth.noStore.body')}
+        />
+      ) : (
+        <EmptyState
+          title={i18n.t('storeSwitcher.pickPrompt.title')}
+          description={i18n.t('storeSwitcher.pickPrompt.body')}
+        />
+      )}
+    </div>
   );
 }

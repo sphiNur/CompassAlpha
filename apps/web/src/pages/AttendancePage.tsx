@@ -31,11 +31,12 @@ import { Banner, Button, ConfirmSheet, DataState, EmptyState } from '@compass/ui
 import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
 import { haptic } from '../lib/telegram';
-import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
+import { StoreContextEmpty } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { useOnline } from '../hooks/useOnline';
 import { attendanceDeviceId } from '../lib/attendanceDevice';
+import { formatList } from '../lib/listFormat';
 import {
   currentLocation,
   distanceMeters,
@@ -101,30 +102,11 @@ function doneTitle(i18n: ReturnType<typeof useI18n>, r: PunchResult): string {
 }
 
 export function AttendancePage() {
-  const i18n = useI18n();
   const storeCtx = useStoreContext();
-  const noStoreYet = useNoStoreYet();
   const storeId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
 
-  if (!storeId) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {noStoreYet ? (
-          <NoStoreYet />
-        ) : storeCtx.kind === 'none' ? (
-          <EmptyState
-            title={i18n.t('auth.noStore.title')}
-            description={i18n.t('auth.noStore.body')}
-          />
-        ) : (
-          <EmptyState
-            title={i18n.t('storeSwitcher.pickPrompt.title')}
-            description={i18n.t('storeSwitcher.pickPrompt.body')}
-          />
-        )}
-      </div>
-    );
-  }
+  // Clocking in is at one store: no store, or all of them, says why.
+  if (!storeId) return <StoreContextEmpty />;
 
   return (
     // Review UI-14 / ATT-19: a tab page shows no title (UI-12). The nav
@@ -601,7 +583,11 @@ type ShiftView = {
  */
 function TodayShift({ shifts, today, now }: { shifts: ShiftView[]; today: string; now: number }) {
   const i18n = useI18n();
-  const times = (list: ShiftView[]) => list.map((x) => `${x.start}–${x.end}`).join(', ');
+  const times = (list: ShiftView[]) =>
+    formatList(
+      list.map((x) => `${x.start}–${x.end}`),
+      i18n.locale,
+    );
   const carried = shifts.filter((x) => x.date < today && Date.parse(x.endsAt) > now);
   const todays = shifts.filter((x) => x.date === today);
   return (

@@ -1,8 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, eq, sql } from 'drizzle-orm';
+import type { SubscriptionStatus } from '@compass/contracts';
 import { schema as s, type DB } from '@compass/db';
-
-export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'suspended' | 'canceled';
 
 export interface SubscriptionLimits {
   stores: number | null;
