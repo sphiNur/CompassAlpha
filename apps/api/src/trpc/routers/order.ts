@@ -11,7 +11,7 @@ import { TRPCError } from '@trpc/server';
 import { logger } from '../../infra/log';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import {
   AdjustItemInputSchema,
   ExtrasSuggestionsInputSchema,
@@ -38,7 +38,9 @@ import {
   decide,
   emptyState,
   isPastBusinessDate,
+  replay,
   type ActorCtx,
+  type OrderCommand,
   type OrderEvent,
   type OrderState,
   type SkuCtx,
@@ -51,15 +53,18 @@ import {
   pricesVisibleFor,
 } from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
-import { appendEvents, readStream } from '../../services/eventStore';
+import type { RequestContext } from '../context';
+import { readOrderEvents } from '../../services/orderStream';
+import { writeOrderEvents } from '../../services/streamWrite';
 import {
   isStreamSeqConflict,
   isUniqueViolation,
   pgConstraintName,
   withStreamConflictRetry,
 } from '../../services/pgErrors';
-import { ConcurrentDraftError, projectOrder } from '../../services/orderProjection';
+import { ConcurrentDraftError } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
+import { memberProfiles } from '../../services/memberProfiles';
 import {
   estimateLines,
   loadSkuPriceStats,
@@ -104,7 +109,7 @@ function buildActor(
   };
 }
 
-async function loadSku(db: import('@compass/db').DB, orgId: string, skuId: string): Promise<SkuCtx> {
+async function loadSku(db: DB, orgId: string, skuId: string): Promise<SkuCtx> {
   const row = await db.query.skus.findFirst({
     where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, skuId), eq2(k.orgId, orgId)),
   });
@@ -123,7 +128,7 @@ async function loadSku(db: import('@compass/db').DB, orgId: string, skuId: strin
  * setSessionExtras' store form resolves the exact same row.
  */
 async function findSelfEditSession(
-  tx: import('@compass/db').DB,
+  tx: DB,
   orgId: string,
   storeId: string,
   memberId: string,
@@ -209,7 +214,7 @@ function assertSeenLatest(
 
 /** Stores where the actor may approve or claim orders (null = all). */
 async function approverStoreIds(
-  tx: import('@compass/db').DB,
+  tx: DB,
   session: { memberId: string; permissions: ReadonlySet<string> },
 ): Promise<string[] | null> {
   const [approve, claim] = await Promise.all([
@@ -228,7 +233,7 @@ async function approverStoreIds(
  * sessionDetail refused. Both use this now.
  */
 async function assertCanReadSession(
-  tx: import('@compass/db').DB,
+  tx: DB,
   session: { memberId: string; permissions: ReadonlySet<string> },
   order: { storeId: string; initiatedByMemberId: string | null },
 ): Promise<void> {
@@ -254,10 +259,7 @@ async function assertCanReadSession(
  * there; quantities are absolute, so deciding again is safe. A race lost
  * every time is CONFLICT, which the page reconciles by refetching.
  */
-async function withOrderWriteRetry<T>(
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
-  fn: (tx: import('@compass/db').DB) => Promise<T>,
-): Promise<T> {
+async function withOrderWriteRetry<T>(ctx: RequestContext, fn: (tx: DB) => Promise<T>): Promise<T> {
   try {
     return await withStreamConflictRetry(
       () => ctx.withOrg(fn),
@@ -273,6 +275,89 @@ async function withOrderWriteRetry<T>(
       throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
     }
     throw err;
+  }
+}
+
+/*
+ * The steps every order write shares (review ORD-06). adjustItem,
+ * setNote, setSessionNote, setSessionExtras, markExtraStatus and
+ * runSimpleCommand each wrote them out, and the copies had drifted: two
+ * did not decide again after losing the race for the stream, one told no
+ * open screen, and each read the stream with its own cast.
+ */
+
+/**
+ * The session a write names, with the caller's permissions at its store
+ * and its stream replayed.
+ *
+ * Multi-store guard: the caller must be assigned to the session's store
+ * (or be an admin through the bypass), so "store A's manager approves
+ * store B's order" is impossible at the server. The permissions are the
+ * store's effective ones (2026-05-06): its allow/deny overrides on top of
+ * the session's, which the domain command's `actor.permissions` sees.
+ */
+async function openSessionForWrite(tx: DB, ctx: RequestContext, sessionId: string) {
+  const session = await loadSession(tx, ctx.session!.orgId, sessionId);
+  await assertActorAssignedToStore(
+    tx,
+    ctx.session!.memberId,
+    session.storeId,
+    ctx.session!.permissions,
+  );
+  const perms = await effectivePermissionsForStore(
+    tx,
+    ctx.session!.memberId,
+    session.storeId,
+    ctx.session!.permissions,
+  );
+  const events = await readOrderEvents(tx, session.id);
+  return { session, perms, events, state: replay(session.id, events) };
+}
+
+/**
+ * Decide `command` on `state`: its events are added to `out`, and the
+ * state after them is returned. A domain refusal is answered with its
+ * i18n key.
+ */
+function decideInto(state: OrderState, out: OrderEvent[], command: OrderCommand): OrderState {
+  let events: OrderEvent[];
+  try {
+    events = decide(state, command);
+  } catch (err) {
+    rethrowDomainError(err);
+  }
+  out.push(...events);
+  return events.reduce(apply, state);
+}
+
+/**
+ * Store a write's events in the caller's transaction and tell whoever it
+ * concerns: append and project them, send the notifications they call
+ * for (in the same transaction, so recipients see them in step with the
+ * read model), and tell the org's open screens. `state` is the state
+ * after the events.
+ */
+async function commitOrderWrite(
+  tx: DB,
+  ctx: RequestContext,
+  state: OrderState,
+  events: OrderEvent[],
+  idempotencyKey?: string,
+): Promise<void> {
+  const orgId = ctx.session!.orgId;
+  await writeOrderEvents(tx, orgId, state.streamId, events, idempotencyKey);
+  await dispatchOrderEventNotifications(tx, orgId, ctx.session!.userId, state, events);
+  hub.publish(orgId, {
+    type: 'order.changed',
+    orgId,
+    sessionId: state.streamId,
+    lastSeq: state.seq,
+  });
+  // M3.37 (2026-05-19): an order in a run is shown on the run page too
+  // (its extras), which listens for run.changed only. The order's seq
+  // doubles as a freshness hint; the page just refetches.
+  if (state.runId) {
+    hub.publish(orgId, { type: 'run.changed', orgId, runId: state.runId, lastSeq: state.seq });
   }
 }
 
@@ -377,24 +462,9 @@ export const orderRouter = router({
       // English literal, and the same "nobody can tell WHO is sitting on
       // it" problem M3.22 fixed for the approval queue. sessionDetail and
       // pendingList already ship this; todaySession didn't.
-      const claimerRow = session.claimedByMemberId
-        ? await tx
-            .select({ displayName: s.users.displayName })
-            .from(s.members)
-            .innerJoin(s.users, eq(s.users.id, s.members.userId))
-            .where(eq(s.members.id, session.claimedByMemberId))
-            .limit(1)
-        : [];
       // DX-ORD-3 (2026-11-01): a rejected batch says who sent it back.
-      const deciderRow =
-        session.status === 'rejected' && session.decidedByMemberId
-          ? await tx
-              .select({ displayName: s.users.displayName })
-              .from(s.members)
-              .innerJoin(s.users, eq(s.users.id, s.members.userId))
-              .where(eq(s.members.id, session.decidedByMemberId))
-              .limit(1)
-          : [];
+      const deciderId = session.status === 'rejected' ? session.decidedByMemberId : null;
+      const names = await memberProfiles(tx, [session.claimedByMemberId, deciderId]);
       // Per-(sku, member) rows. Aggregate by sku for the UI's running
       // total; also expose the raw per-contributor rows so the OrderPage
       // can show "Apple — your 3, total 5" and ApprovalPage can show
@@ -409,13 +479,15 @@ export const orderRouter = router({
         orderDate: session.orderDate,
         status: session.status,
         claimedByMemberId: session.claimedByMemberId,
-        claimedByDisplayName: claimerRow[0]?.displayName ?? null,
+        claimedByDisplayName: session.claimedByMemberId
+          ? (names.get(session.claimedByMemberId)?.displayName ?? null)
+          : null,
         claimedAt: session.claimedAt?.toISOString() ?? null,
         submittedAt: session.submittedAt?.toISOString() ?? null,
         decidedAt: session.decidedAt?.toISOString() ?? null,
         decidedByMemberId: session.decidedByMemberId,
         /** Who rejected it (rejected batches only; null otherwise). */
-        decidedByDisplayName: deciderRow[0]?.displayName ?? null,
+        decidedByDisplayName: deciderId ? (names.get(deciderId)?.displayName ?? null) : null,
         rejectReason: session.rejectReason,
         runId: session.runId,
         lastSeq: session.lastSeq,
@@ -589,27 +661,11 @@ export const orderRouter = router({
         // ORD-09 (2026-11-11): and who added each line. The approval card
         // read names from admin.memberList, which needs users.manage;
         // without it a line showed the first six characters of an id.
-        const memberIds = [
-          ...new Set(
-            [
-              session.claimedByMemberId,
-              session.previousClaimerMemberId,
-              ...items.map((i) => i.contributorMemberId),
-            ].filter((id): id is string => Boolean(id)),
-          ),
-        ];
-        const memberRows = memberIds.length
-          ? await tx
-              .select({
-                memberId: s.members.id,
-                displayName: s.users.displayName,
-                avatarUrl: s.users.avatarUrl,
-              })
-              .from(s.members)
-              .innerJoin(s.users, eq(s.users.id, s.members.userId))
-              .where(inArray(s.members.id, memberIds))
-          : [];
-        const memberById = new Map(memberRows.map((r) => [r.memberId, r]));
+        const memberById = await memberProfiles(tx, [
+          session.claimedByMemberId,
+          session.previousClaimerMemberId,
+          ...items.map((i) => i.contributorMemberId),
+        ]);
         const claimer = session.claimedByMemberId
           ? (memberById.get(session.claimedByMemberId) ?? null)
           : null;
@@ -690,8 +746,7 @@ export const orderRouter = router({
         }
         await assertCanReadSession(tx, ctx.session!, session);
         if (session.status === 'draft') return null;
-        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
-        const snap = submittedSnapshot(session.id, events);
+        const snap = submittedSnapshot(session.id, await readOrderEvents(tx, session.id));
         if (!snap) return null;
         return {
           seq: snap.seq,
@@ -761,40 +816,23 @@ export const orderRouter = router({
       // the literal string "reviewer" (bug fixed 2026-05-18). M3.22
       // adds previousClaimer too — so the banner can render
       // "X → Y" after an override or timeout handoff.
-      const memberIds = [
-        ...new Set(
-          sessions
-            .flatMap((x) => [
-              x.submittedByMemberId ?? x.initiatedByMemberId,
-              x.claimedByMemberId,
-              x.previousClaimerMemberId,
-            ])
-            .filter(Boolean) as string[],
-        ),
-      ];
+      const memberIds = sessions.flatMap((x) => [
+        x.submittedByMemberId ?? x.initiatedByMemberId,
+        x.claimedByMemberId,
+        x.previousClaimerMemberId,
+      ]);
       // Item-level distinct contributors per session (for "edited by N people" stat).
-      const [items, stores, members] = await Promise.all([
+      const [items, stores, memberById] = await Promise.all([
         tx.query.orderItemsV.findMany({
           where: (it, { inArray }) => inArray(it.sessionId, sessionIds),
         }),
         tx.query.stores.findMany({
           where: (st, { inArray }) => inArray(st.id, storeIds),
         }),
-        memberIds.length
-          ? tx
-              .select({
-                memberId: s.members.id,
-                displayName: s.users.displayName,
-                avatarUrl: s.users.avatarUrl,
-              })
-              .from(s.members)
-              .innerJoin(s.users, eq(s.users.id, s.members.userId))
-              .where(inArray(s.members.id, memberIds))
-          : Promise.resolve([] as Array<{ memberId: string; displayName: string; avatarUrl: string | null }>),
+        memberProfiles(tx, memberIds),
       ]);
 
       const storeById = new Map(stores.map((x) => [x.id, x]));
-      const memberById = new Map(members.map((x) => [x.memberId, x]));
 
       // Per (session, sku) aggregate first, then per-session summary.
       // Whole thousandths, not floats (RUNAPI-05).
@@ -1096,7 +1134,6 @@ export const orderRouter = router({
           );
 
       let state: OrderState;
-      let streamId: string;
       const collected: OrderEvent[] = [];
 
       if (!session) {
@@ -1117,33 +1154,21 @@ export const orderRouter = router({
           });
         }
         assertNotStaleOfflineCreate(ctx, input.date);
-        streamId = randomUUID();
-        state = emptyState(streamId);
         // Implicit StartDraft. Initiator = first member to add a line.
         // ORD-7 (2026-10-30): a store without order.draft made this throw a
         // DomainError outside any translation — a 500 (and the offline
-        // queue retried it). Translate it like AdjustItem's below.
-        let startEvents: OrderEvent[] = [];
-        try {
-          startEvents = decide(state, {
-            type: 'StartDraft',
-            orgId: ctx.session!.orgId,
-            storeId: input.storeId,
-            orderDate: date,
-            actor: buildActor(ctx, state, effectivePerms),
-          });
-        } catch (err) {
-          rethrowDomainError(err);
-        }
-        for (const e of startEvents) {
-          state = apply(state, e);
-          collected.push(e);
-        }
+        // queue retried it). It is translated like AdjustItem's below.
+        const fresh = emptyState(randomUUID());
+        state = decideInto(fresh, collected, {
+          type: 'StartDraft',
+          orgId: ctx.session!.orgId,
+          storeId: input.storeId,
+          orderDate: date,
+          actor: buildActor(ctx, fresh, effectivePerms),
+        });
       } else {
-        streamId = session.id;
-        const events = (await readStream(tx, 'order', streamId)) as unknown as OrderEvent[];
-        state = emptyState(streamId);
-        for (const e of events) state = apply(state, e);
+        const events = await readOrderEvents(tx, session.id);
+        state = replay(session.id, events);
         // D12 / U2 (2026-10-31): an approver changing a quantity on an
         // unclaimed order claims it in the same write, instead of a
         // separate Claim tap first. The claim is still taken (other
@@ -1162,72 +1187,45 @@ export const orderRouter = router({
           effectivePerms.has('order.claim')
         ) {
           assertSeenLatest(events, input.expectedSeq, ctx.session!.userId);
-          try {
-            const claimEvents = decide(state, {
-              type: 'Claim',
-              actor: buildActor(ctx, state, effectivePerms),
-            });
-            for (const e of claimEvents) {
-              state = apply(state, e);
-              collected.push(e);
-            }
-          } catch (err) {
-            rethrowDomainError(err);
-          }
+          state = decideInto(state, collected, {
+            type: 'Claim',
+            actor: buildActor(ctx, state, effectivePerms),
+          });
         }
       }
 
-      try {
-        const adjustEvents = decide(state, {
-          type: 'AdjustItem',
-          skuId: input.skuId,
-          qty: input.qty,
-          sku,
-          actor: buildActor(ctx, state, effectivePerms),
-          targetMemberId: input.targetMemberId,
-          // ORD-04 (2026-11-09): correlation_id is a uuid column. The key
-          // may be any 8-128 characters, and a key that is not a uuid
-          // failed the insert with a 500. It is still stored as the
-          // event's idempotency_key below.
-          correlationId: UuidSchema.safeParse(input.idempotencyKey).success
-            ? input.idempotencyKey
-            : undefined,
-        });
-        if (adjustEvents.length === 0 && collected.length === 0) {
-          // No-op: existing qty equals incoming qty and no implicit start needed.
-          return { sessionId: streamId, lastSeq: state.seq, applied: [] };
-        }
-        for (const e of adjustEvents) {
-          state = apply(state, e);
-          collected.push(e);
-        }
-      } catch (err) {
-        rethrowDomainError(err);
+      state = decideInto(state, collected, {
+        type: 'AdjustItem',
+        skuId: input.skuId,
+        qty: input.qty,
+        sku,
+        actor: buildActor(ctx, state, effectivePerms),
+        targetMemberId: input.targetMemberId,
+        // ORD-04 (2026-11-09): correlation_id is a uuid column. The key
+        // may be any 8-128 characters, and a key that is not a uuid
+        // failed the insert with a 500. It is still stored as the
+        // event's idempotency_key below.
+        correlationId: UuidSchema.safeParse(input.idempotencyKey).success
+          ? input.idempotencyKey
+          : undefined,
+      });
+      // No-op: existing qty equals incoming qty and no implicit start needed.
+      if (collected.length === 0) {
+        return { sessionId: state.streamId, lastSeq: state.seq, applied: [] };
       }
 
       try {
-        await appendEvents(tx, {
-          streamType: 'order',
-          streamId,
-          orgId: ctx.session!.orgId,
-          events: collected.map((e) => ({
-            type: e.type,
-            seq: e.seq,
-            payload: e.payload,
-            actorUserId: e.actorUserId,
-            actorMemberId: e.actorMemberId,
-            occurredAt: e.occurredAt,
-            correlationId: e.correlationId,
-            causationId: e.causationId,
-          })),
-          idempotencyKey: input.idempotencyKey,
-        });
+        // M3.33 (2026-05-18, Wave1 #9): adjustItem used to be the only
+        // order write that told no open screen, so two staff pressing
+        // +/- on one store's order did not see each other's changes.
+        await commitOrderWrite(tx, ctx, state, collected, input.idempotencyKey);
       } catch (err) {
-        // Optimistic concurrency: (streamId, seq) collision → tell client to refetch.
-        if (isUniqueViolation(err)) {
+        // Optimistic concurrency: a (streamId, seq) collision, or another
+        // device's draft created first.
+        if (isUniqueViolation(err) || err instanceof ConcurrentDraftError) {
           ctx.log.warn(
             {
-              streamId,
+              streamId: state.streamId,
               skuId: input.skuId,
               userId: ctx.session!.userId,
               seq: state.seq,
@@ -1240,7 +1238,7 @@ export const orderRouter = router({
         ctx.log.error(
           {
             err: err instanceof Error ? err.message : String(err),
-            streamId,
+            streamId: state.streamId,
             skuId: input.skuId,
             userId: ctx.session!.userId,
           },
@@ -1248,22 +1246,11 @@ export const orderRouter = router({
         );
         throw err;
       }
-
-      await projectOrder(tx, ctx.session!.orgId, collected);
-      // M3.33 (2026-05-18, Wave1 #9): publish order.changed so other
-      // tabs / contributors editing the same session refetch. Until
-      // this fix, adjustItem was the only mutation path that skipped
-      // the realtime fanout — concurrent +/- by two staff on the same
-      // store session would stay invisible to each other until manual
-      // refetch. runSimpleCommand already publishes on every other
-      // order mutation (submit/claim/approve/reject/withdraw/etc).
-      hub.publish(ctx.session!.orgId, {
-        type: 'order.changed',
-        orgId: ctx.session!.orgId,
-        sessionId: streamId,
+      return {
+        sessionId: state.streamId,
         lastSeq: state.seq,
-      });
-      return { sessionId: streamId, lastSeq: state.seq, applied: collected.map((e) => e.type) };
+        applied: collected.map((e) => e.type),
+      };
     });
   }),
 
@@ -1273,45 +1260,15 @@ export const orderRouter = router({
    */
   setNote: authedProcedure.input(SetNoteInputSchema).mutation(async ({ ctx, input }) => {
     logger.warn({ procedure: 'order.setNote', orgId: ctx.session?.orgId }, 'deprecated procedure called');
-    return ctx.withOrg(async (tx) => {
-      const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
-      await assertActorAssignedToStore(
-        tx,
-        ctx.session!.memberId,
-        session.storeId,
-        ctx.session!.permissions,
-      );
-      const effectivePerms = await effectivePermissionsForStore(
-        tx,
-        ctx.session!.memberId,
-        session.storeId,
-        ctx.session!.permissions,
-      );
-      const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
-      let state = emptyState(session.id);
-      for (const e of events) state = apply(state, e);
-      try {
-        const out = decide(state, {
-          type: 'SetNote',
-          skuId: input.skuId,
-          note: input.note,
-          actor: buildActor(ctx, state, effectivePerms),
-          targetMemberId: input.targetMemberId,
-        });
-        if (out.length === 0) return { lastSeq: state.seq };
-        await appendEvents(tx, {
-          streamType: 'order',
-          streamId: session.id,
-          orgId: ctx.session!.orgId,
-          events: out.map((e) => ({ ...e })),
-        });
-        for (const e of out) state = apply(state, e);
-        await projectOrder(tx, ctx.session!.orgId, out);
-        return { lastSeq: state.seq };
-      } catch (err) {
-        rethrowDomainError(err);
-      }
-    });
+    return runSimpleCommand(ctx, input.sessionId, (state, perms) =>
+      decide(state, {
+        type: 'SetNote',
+        skuId: input.skuId,
+        note: input.note,
+        actor: buildActor(ctx, state, perms),
+        targetMemberId: input.targetMemberId,
+      }),
+    );
   }),
 
   /**
@@ -1329,52 +1286,13 @@ export const orderRouter = router({
         { procedure: 'order.setSessionNote', orgId: ctx.session?.orgId },
         'deprecated procedure called',
       );
-      return ctx.withOrg(async (tx) => {
-        const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
-        const effectivePerms = await effectivePermissionsForStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
-        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
-        let state = emptyState(session.id);
-        for (const e of events) state = apply(state, e);
-        try {
-          const out = decide(state, {
-            type: 'SetSessionNote',
-            note: input.note,
-            actor: buildActor(ctx, state, effectivePerms),
-          });
-          if (out.length === 0) return { lastSeq: state.seq };
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: session.id,
-            orgId: ctx.session!.orgId,
-            events: out.map((e) => ({ ...e })),
-          });
-          for (const e of out) state = apply(state, e);
-          await projectOrder(tx, ctx.session!.orgId, out);
-          // Realtime fan-out so collaborators on the same session see
-          // the note appear without manual refetch (managers eyeing
-          // the approval queue, purchasers watching the run preview).
-          hub.publish(ctx.session!.orgId, {
-            type: 'order.changed',
-            orgId: ctx.session!.orgId,
-            sessionId: state.streamId,
-            lastSeq: state.seq,
-          });
-          return { lastSeq: state.seq };
-        } catch (err) {
-          rethrowDomainError(err);
-        }
-      });
+      return runSimpleCommand(ctx, input.sessionId, (state, perms) =>
+        decide(state, {
+          type: 'SetSessionNote',
+          note: input.note,
+          actor: buildActor(ctx, state, perms),
+        }),
+      );
     }),
 
   /**
@@ -1385,7 +1303,9 @@ export const orderRouter = router({
   setSessionExtras: authedProcedure
     .input(SetSessionExtrasInputSchema)
     .mutation(async ({ ctx, input }) => {
-      return ctx.withOrg(async (tx) => {
+      // ORD-06: decided again when it loses a race for the stream or for
+      // today's draft, as adjustItem is (withOrderWriteRetry).
+      return withOrderWriteRetry(ctx, async (tx) => {
         // 2026-10-21 audit CA-27: two addressing forms.
         //   - sessionId:       edit that session (original shape; also
         //                      how a reviewer would reach someone else's).
@@ -1438,77 +1358,46 @@ export const orderRouter = router({
           );
         }
 
-        let state: OrderState;
         const out: OrderEvent[] = [];
+        let state: OrderState;
+        let seen: OrderEvent[] = [];
         if (existing) {
-          const events = (await readStream(tx, 'order', existing.id)) as unknown as OrderEvent[];
-          state = emptyState(existing.id);
-          for (const e of events) state = apply(state, e);
+          seen = await readOrderEvents(tx, existing.id);
+          state = replay(existing.id, seen);
         } else {
           // Clearing extras on a session that doesn't exist is a no-op —
           // never start an empty draft for it.
           if (input.extras.length === 0) return { sessionId: null, lastSeq: 0 };
           assertNotStaleOfflineCreate(ctx, input.date);
-          state = emptyState(randomUUID());
-        }
-        try {
-          if (!existing) {
-            for (const e of decide(state, {
-              type: 'StartDraft',
-              orgId: ctx.session!.orgId,
-              storeId,
-              orderDate: date,
-              actor: buildActor(ctx, state, effectivePerms),
-            })) {
-              state = apply(state, e);
-              out.push(e);
-            }
-          }
-          for (const e of decide(state, {
-            type: 'SetSessionExtras',
-            extras: input.extras,
-            actor: buildActor(ctx, state, effectivePerms),
-          })) {
-            state = apply(state, e);
-            out.push(e);
-          }
-        } catch (err) {
-          rethrowDomainError(err);
-        }
-        if (out.length === 0) return { sessionId: state.streamId, lastSeq: state.seq };
-        try {
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: state.streamId,
+          const fresh = emptyState(randomUUID());
+          state = decideInto(fresh, out, {
+            type: 'StartDraft',
             orgId: ctx.session!.orgId,
-            events: out.map((e) => ({ ...e })),
+            storeId,
+            orderDate: date,
+            actor: buildActor(ctx, fresh, effectivePerms),
           });
-          // Projection is inside the try: a lazy-create racing another
-          // lazy-create (adjustItem from a second tab) trips the one-draft
-          // partial unique index there, not in the event store.
-          await projectOrder(tx, ctx.session!.orgId, out);
-        } catch (err) {
-          if (isUniqueViolation(err)) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
-          }
-          throw err;
         }
-        hub.publish(ctx.session!.orgId, {
-          type: 'order.changed',
-          orgId: ctx.session!.orgId,
-          sessionId: state.streamId,
-          lastSeq: state.seq,
+        state = decideInto(state, out, {
+          type: 'SetSessionExtras',
+          extras: input.extras,
+          actor: buildActor(ctx, state, effectivePerms),
         });
+        if (out.length === 0) return { sessionId: state.streamId, lastSeq: state.seq };
+        // Review ORD-15: the list replaces the one saved, so it is refused
+        // when someone else changed the order after the version the caller
+        // saw (`expectedSeq`; the web app does not send it yet).
+        if (existing) assertSeenLatest(seen, input.expectedSeq, ctx.session!.userId);
+        await commitOrderWrite(tx, ctx, state, out);
         return { sessionId: state.streamId, lastSeq: state.seq };
       });
     }),
 
   /**
    * Purchaser updates one extra row's outcome during a run.
-   * M3.37 (2026-05-19, Wave2 #5). Mirrors `setSessionExtras` plumbing
-   * (load events → decide → append → project → fanout) but mutates
-   * a single index in the session's extras array instead of replacing
-   * the whole list.
+   * M3.37 (2026-05-19, Wave2 #5). Changes one row of the session's
+   * extras instead of replacing the whole list; the run page hears of it
+   * through run.changed (commitOrderWrite).
    *
    * Authorization: domain layer enforces `run.purchase` and session
    * status `in_run`. We still run the store-scope assertion so a
@@ -1517,74 +1406,24 @@ export const orderRouter = router({
   markExtraStatus: authedProcedure
     .input(MarkExtraStatusInputSchema)
     .mutation(async ({ ctx, input }) => {
-      return ctx.withOrg(async (tx) => {
-        const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
-        const effectivePerms = await effectivePermissionsForStore(
-          tx,
-          ctx.session!.memberId,
-          session.storeId,
-          ctx.session!.permissions,
-        );
-        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
-        let state = emptyState(session.id);
-        for (const e of events) state = apply(state, e);
-        try {
-          const out = decide(state, {
+      // APR-18: the row is addressed by its index, so a caller that read an
+      // older version can name the wrong one. Refused when someone else
+      // changed the order since the version the caller saw; the caller's
+      // own marks in between (several taps in a row) do not count, and a
+      // repeat of the same mark writes nothing. No bot or email message:
+      // staff need no ping for each mark.
+      return runSimpleCommand(
+        ctx,
+        input.sessionId,
+        (state, perms) =>
+          decide(state, {
             type: 'MarkExtraStatus',
             extraIndex: input.extraIndex,
             status: input.status,
-            actor: buildActor(ctx, state, effectivePerms),
-          });
-          if (out.length === 0) return { lastSeq: state.seq };
-          // APR-18: the row is addressed by its index, so a caller that read
-          // an older version can name the wrong one. Refused when someone
-          // else changed the order since the version the caller saw; the
-          // caller's own marks in between (several taps in a row) do not
-          // count, and a repeat of the same mark is a no-op above.
-          assertSeenLatest(events, input.expectedSeq, ctx.session!.userId);
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: session.id,
-            orgId: ctx.session!.orgId,
-            events: out.map((e) => ({ ...e })),
-          });
-          for (const e of out) state = apply(state, e);
-          await projectOrder(tx, ctx.session!.orgId, out);
-          // No bot/email notification — the staff don't need a ping
-          // for each extra mark; they can pull when curious. The WS
-          // pubsub does drive realtime updates on any open run pages.
-          hub.publish(ctx.session!.orgId, {
-            type: 'order.changed',
-            orgId: ctx.session!.orgId,
-            sessionId: state.streamId,
-            lastSeq: state.seq,
-          });
-          // Bump the run subscribers too — RunExtrasCard is rendered
-          // on RunPage which subscribes to run.changed; without this
-          // the inline status mark would only update on the next 6s
-          // poll. The run id is on the session (in_run state). The
-          // session seq doubles as a freshness hint; the FE handler
-          // doesn't compare seq numbers, just invalidates the `run`
-          // tRPC family.
-          if (state.runId) {
-            hub.publish(ctx.session!.orgId, {
-              type: 'run.changed',
-              orgId: ctx.session!.orgId,
-              runId: state.runId,
-              lastSeq: state.seq,
-            });
-          }
-          return { lastSeq: state.seq };
-        } catch (err) {
-          rethrowDomainError(err);
-        }
-      });
+            actor: buildActor(ctx, state, perms),
+          }),
+        { expectedSeq: input.expectedSeq },
+      );
     }),
 
   /**
@@ -1810,7 +1649,7 @@ export function claimTakenFrom(
 }
 
 async function runSimpleCommand(
-  ctx: Awaited<ReturnType<typeof import('../context.js').createContext>>,
+  ctx: RequestContext,
   sessionId: string,
   produce: (state: OrderState, perms: ReadonlySet<string>, events: OrderEvent[]) => OrderEvent[],
   opts: { expectedSeq?: number | undefined } = {},
@@ -1820,54 +1659,14 @@ async function runSimpleCommand(
   // the loser hears "already claimed by someone" rather than "edited by
   // someone else — retry".
   return withOrderWriteRetry(ctx, async (tx) => {
-    const session = await loadSession(tx, ctx.session!.orgId, sessionId);
-    // Multi-store guard: the actor must be assigned to this session's
-    // store (or be an admin / super_admin via the bypass). This makes
-    // "store A's manager approves store B's order" impossible at the
-    // server level.
-    await assertActorAssignedToStore(
-      tx,
-      ctx.session!.memberId,
-      session.storeId,
-      ctx.session!.permissions,
-    );
-    // Per-store effective permissions (added 2026-05-06). Apply
-    // store-scoped allow/deny overrides on top of the flat session
-    // perms. The domain command's `actor.permissions.has(...)` then
-    // sees the right answer for THIS store. Admins keep their full
-    // set (helper handles the bypass).
-    const effectivePerms = await effectivePermissionsForStore(
-      tx,
-      ctx.session!.memberId,
-      session.storeId,
-      ctx.session!.permissions,
-    );
-    const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
-    let state = emptyState(session.id);
-    for (const e of events) state = apply(state, e);
+    const { perms, events, state } = await openSessionForWrite(tx, ctx, sessionId);
     try {
-      const out = produce(state, effectivePerms, events);
+      const out = produce(state, perms, events);
       if (out.length === 0) return { lastSeq: state.seq };
       assertSeenLatest(events, opts.expectedSeq, ctx.session!.userId);
-      await appendEvents(tx, {
-        streamType: 'order',
-        streamId: session.id,
-        orgId: ctx.session!.orgId,
-        events: out.map((e) => ({ ...e })),
-      });
-      for (const e of out) state = apply(state, e);
-      await projectOrder(tx, ctx.session!.orgId, out);
-      // Fire notifications inside the same tx as the projection so
-      // recipients see them in lockstep with the read model.
-      await dispatchOrderEventNotifications(tx, ctx.session!.orgId, ctx.session!.userId, state, out);
-      // Best-effort realtime fan-out so other tabs in this org refetch.
-      hub.publish(ctx.session!.orgId, {
-        type: 'order.changed',
-        orgId: ctx.session!.orgId,
-        sessionId: state.streamId,
-        lastSeq: state.seq,
-      });
-      return { lastSeq: state.seq };
+      const after = out.reduce(apply, state);
+      await commitOrderWrite(tx, ctx, after, out);
+      return { lastSeq: after.seq };
     } catch (err) {
       // Surface the failure in journalctl so we can diagnose silent-fail
       // reports without having to attach a debugger to the user's phone.
@@ -1889,7 +1688,7 @@ async function runSimpleCommand(
   });
 }
 
-async function loadSession(db: import('@compass/db').DB, orgId: string, sessionId: string) {
+async function loadSession(db: DB, orgId: string, sessionId: string) {
   const row = await db.query.orderSessionsV.findFirst({
     where: (sess, { eq: eq2, and: and2 }) =>
       and2(eq2(sess.id, sessionId), eq2(sess.orgId, orgId)),

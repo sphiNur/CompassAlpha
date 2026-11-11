@@ -2,9 +2,10 @@
  * Writing what a command decided, in the caller's transaction (review
  * RUNAPI-14): append the events to their stream, then project them.
  *
- * The run router wrote this out by hand at every append. Notifications
- * and realtime pushes stay with the caller, because which of them a
- * command sends differs: run.create and attachSessions notify nobody.
+ * The run and order routers wrote this out by hand at every append.
+ * Notifications and realtime pushes stay with the caller, because which
+ * of them a command sends differs: run.create and attachSessions notify
+ * nobody.
  */
 import type { DB } from '@compass/db';
 import type { OrderEvent } from '@compass/domain/order';
@@ -26,14 +27,24 @@ export async function writeRunEvents(
   return events.reduce(applyRun, state);
 }
 
-/** Append and project a session's new order events. */
+/**
+ * Append and project a session's new order events. `idempotencyKey` is
+ * stored on each of them (order.adjustItem keeps the key it was sent).
+ */
 export async function writeOrderEvents(
   db: DB,
   orgId: string,
   sessionId: string,
   events: OrderEvent[],
+  idempotencyKey?: string,
 ): Promise<void> {
   if (events.length === 0) return;
-  await appendEvents(db, { streamType: 'order', streamId: sessionId, orgId, events });
+  await appendEvents(db, {
+    streamType: 'order',
+    streamId: sessionId,
+    orgId,
+    events,
+    idempotencyKey,
+  });
   await projectOrder(db, orgId, events);
 }

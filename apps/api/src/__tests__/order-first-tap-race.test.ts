@@ -2,14 +2,19 @@
  * ORD-6 / ORD-7 (2026-10-30 operation atlas): two devices of one person
  * making the day's first change at once used to answer one of them with
  * a 500 and lose that tap; ordering in a store without order.draft
- * answered 500 instead of 403.
+ * answered 500 instead of 403. Review ORD-06 (2026-11-11): the extras
+ * list still answered 500 when it lost that race; it is decided again
+ * now, as adjustItem is.
  *
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/order-first-tap-race.test.ts
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
-import { getDb, schema as s } from '@compass/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { getDb, schema as s, type DB } from '@compass/db';
+import { decide, emptyState } from '@compass/domain/order';
 import { appRouter } from '../trpc/router';
+import { writeOrderEvents } from '../services/streamWrite';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
@@ -24,6 +29,8 @@ let fix: {
   storeId: string;
   skuIds: string[];
   staff: Array<{ memberId: string; devices: () => Promise<[Caller, Caller]> }>;
+  /** Someone with no order yet, for the extras race. */
+  racer: { userId: string; memberId: string; devices: () => Promise<[Caller, Caller]> };
   noDraft: Caller;
 } | null = null;
 
@@ -57,13 +64,22 @@ beforeAll(async () => {
     });
     const caller = async () => callerFor(await sessionOf(orgId, who));
     return {
+      userId: who.userId,
       memberId: who.memberId,
       devices: async () => [await caller(), await caller()] as [Caller, Caller],
     };
   };
   const staff = [await person('staff'), await person('staff'), await person('staff')];
+  const racer = await person('staff');
   const buyer = await person('purchaser');
-  fix = { orgId, storeId: store!.id, skuIds, staff, noDraft: (await buyer.devices())[0] };
+  fix = {
+    orgId,
+    storeId: store!.id,
+    skuIds,
+    staff,
+    racer,
+    noDraft: (await buyer.devices())[0],
+  };
 });
 
 describe.skipIf(!SHOULD_RUN)('the day\'s first change from two devices (PG-gated)', () => {
@@ -84,6 +100,70 @@ describe.skipIf(!SHOULD_RUN)('the day\'s first change from two devices (PG-gated
       const items = await db.select().from(s.orderItemsV).where(eq(s.orderItemsV.sessionId, drafts[0]!.id));
       expect(items).toHaveLength(2);
     }
+  });
+
+  test('ORD-06: an extras list that loses the race for the draft joins the one that won', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const { orgId, storeId, racer } = fix!;
+    const [device] = await racer.devices();
+    // The other device's first change, not committed yet: its draft holds
+    // the one-draft-a-day index. The org's time zone is UTC.
+    const wonId = randomUUID();
+    let release!: () => void;
+    const released = new Promise<void>((r) => {
+      release = r;
+    });
+    let written!: () => void;
+    const held = new Promise<void>((r) => {
+      written = r;
+    });
+    const holder = db.transaction(async (tx) => {
+      const started = decide(emptyState(wonId), {
+        type: 'StartDraft',
+        orgId,
+        storeId,
+        orderDate: new Date().toISOString().slice(0, 10),
+        actor: {
+          userId: racer.userId,
+          memberId: racer.memberId,
+          permissions: new Set(['order.draft']),
+          isClaimer: false,
+        },
+      });
+      // Drizzle's transaction has the handle's query API (as withOrgContext).
+      await writeOrderEvents(tx as unknown as DB, orgId, wonId, started);
+      written();
+      await released;
+    });
+    await held;
+
+    const saving = device.order.setSessionExtras({
+      storeId,
+      extras: [{ name: 'Napkins', qty: '1', unit: 'pack' }],
+    });
+    // Wait until it is blocked on the winner's draft.
+    for (let i = 0; i < 100; i += 1) {
+      const rows = (await db.execute(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+      `)) as unknown as Array<{ n: number }>;
+      if ((rows[0]?.n ?? 0) > 0) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    release();
+    await holder;
+
+    expect(await saving).toMatchObject({ sessionId: wonId });
+    const drafts = await db
+      .select({ id: s.orderSessionsV.id, extras: s.orderSessionsV.extrasJson })
+      .from(s.orderSessionsV)
+      .where(
+        and(
+          eq(s.orderSessionsV.initiatedByMemberId, racer.memberId),
+          eq(s.orderSessionsV.status, 'draft'),
+        ),
+      );
+    expect(drafts).toEqual([{ id: wonId, extras: [{ name: 'Napkins', qty: '1', unit: 'pack' }] }]);
   });
 
   test('ORD-7: ordering where one has no order.draft is FORBIDDEN, not a server error', async () => {
