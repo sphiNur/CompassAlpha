@@ -101,6 +101,44 @@ describe('monthWorkbook: an overnight shift', () => {
   });
 });
 
+// 2026-11-13: the workbook sorted people in the server's own collation, so
+// Chinese names came out in code-point order (张, 李, 王), not pinyin.
+describe('monthWorkbook: the order of people', () => {
+  test('by name in the workbook language; two people with one name stay apart', async () => {
+    const day = sheet.days[0]!;
+    const people = [
+      ['m-zhang', '张三'],
+      ['m-wang-b', '王五'],
+      ['m-li', '李四'],
+      ['m-wang-a', '王五'],
+    ] as const;
+    const of: MonthSheet = {
+      members: people.map(([memberId, name]) => ({ memberId, name, inStore: true, enabled: true })),
+      shifts: [],
+      punches: [],
+      days: people.flatMap(([memberId]) =>
+        ['2026-11-02', '2026-11-01'].map((date) => ({ ...day, memberId, date })),
+      ),
+      overtime: [],
+    };
+    const rows = (await dailyRows(of, 'zh')).slice(1).map((row) => {
+      const name = /(张三|李四|王五)</.exec(row)?.[1];
+      const date = />(\d{4}-\d{2}-\d{2})</.exec(row)?.[1];
+      return `${name} ${date}`;
+    });
+    expect(rows).toEqual([
+      '李四 2026-11-01',
+      '李四 2026-11-02',
+      '王五 2026-11-01',
+      '王五 2026-11-02',
+      '王五 2026-11-01',
+      '王五 2026-11-02',
+      '张三 2026-11-01',
+      '张三 2026-11-02',
+    ]);
+  });
+});
+
 describe('a download link that fails (review ATT-15)', () => {
   const http = new Hono().get('/files/attendance-month.xlsx', attendanceMonthExport);
 

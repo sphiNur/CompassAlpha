@@ -157,10 +157,12 @@ export async function monthWorkbook(
     overtimeBy.set(k, [...(overtimeBy.get(k) ?? []), o]);
   }
 
+  // People in the workbook's language order (zh: pinyin), not the
+  // server's own collation. Two people with one name stay apart.
+  const byPerson = (a: string, b: string) =>
+    (name.get(a) ?? '').localeCompare(name.get(b) ?? '', locale) || a.localeCompare(b);
   const days = [...sheet.days].sort(
-    (a, b) =>
-      (name.get(a.memberId) ?? '').localeCompare(name.get(b.memberId) ?? '') ||
-      a.date.localeCompare(b.date),
+    (a, b) => byPerson(a.memberId, b.memberId) || a.date.localeCompare(b.date),
   );
 
   const dayRows: Cell[][] = days.map((d) => {
@@ -251,7 +253,7 @@ export async function monthWorkbook(
     if (o.status === 'pending') v.otPending += o.minutes;
   }
   const summaryRows: Cell[][] = [...totals.entries()]
-    .sort((a, b) => (name.get(a[0]) ?? '').localeCompare(name.get(b[0]) ?? ''))
+    .sort((a, b) => byPerson(a[0], b[0]))
     .map(([id, v]) => [
       name.get(id) ?? '—',
       v.scheduled,

@@ -19,6 +19,7 @@ import { Button, DataState, Field, Input, Switch, useToast } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
+import { sheetMemberOrder } from '../../lib/attendanceFormat';
 import { useErrToast } from '../../hooks/useErrToast';
 import { GeoMap } from '../../components/geo/GeoMap';
 import type { AttendancePolicyData } from '@compass/api/src/trpc/routers/attendance';
@@ -76,6 +77,7 @@ function PeopleBlock({ storeId }: { storeId: string }) {
           <ul className="flex flex-col gap-2">
             {data.members
               .filter((m) => m.inStore)
+              .sort(sheetMemberOrder(i18n.locale))
               .map((m) => (
                 <li
                   key={m.memberId}

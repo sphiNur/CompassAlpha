@@ -21,7 +21,7 @@ import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { useErrToast } from '../../hooks/useErrToast';
 import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendance';
-import { minutesText, punchKindText } from '../../lib/attendanceFormat';
+import { minutesText, punchKindText, sheetMemberOrder } from '../../lib/attendanceFormat';
 import { currencyOf, formatMoney } from '../../lib/format';
 import { formatList } from '../../lib/listFormat';
 import { useAuthStore } from '../../stores/authStore';
@@ -231,12 +231,14 @@ export function AttendanceSheet({ storeId }: { storeId: string }) {
       />
       <DataState query={sheet}>
         {(data) => {
-          const rows = data.members.filter(
-            (m) =>
-              m.enabled ||
-              data.shifts.some((x) => x.memberId === m.memberId) ||
-              data.punches.some((p) => p.memberId === m.memberId && p.day === date),
-          );
+          const rows = data.members
+            .filter(
+              (m) =>
+                m.enabled ||
+                data.shifts.some((x) => x.memberId === m.memberId) ||
+                data.punches.some((p) => p.memberId === m.memberId && p.day === date),
+            )
+            .sort(sheetMemberOrder(i18n.locale));
           if (rows.length === 0) {
             return (
               <div className="px-4">
@@ -750,7 +752,7 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
       />
       <DataState query={sheet}>
         {(data) => {
-          const people = data.members.filter((m) => m.inStore);
+          const people = data.members.filter((m) => m.inStore).sort(sheetMemberOrder(i18n.locale));
           const name = (id: string) => data.members.find((m) => m.memberId === id)?.name ?? '—';
           const newDraft = (date: string): ShiftDraft => {
             // Start from the last shift planned on that weekday, else 09:00–18:00.

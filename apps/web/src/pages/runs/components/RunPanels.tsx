@@ -1590,12 +1590,12 @@ export function PreviewSummaryCard({
     return [...buckets.values()]
       .map((b) => ({
         ...b,
-        stores: b.stores.sort((a, b2) => a.storeName.localeCompare(b2.storeName)),
+        stores: b.stores.sort((a, b2) => a.storeName.localeCompare(b2.storeName, i18n.locale)),
       }))
       .sort((a, b) => {
         if (a.supplierId === null) return 1;
         if (b.supplierId === null) return -1;
-        return a.supplierName.localeCompare(b.supplierName);
+        return a.supplierName.localeCompare(b.supplierName, i18n.locale);
       });
   }, [byStore, i18n, preview.supplierBySku]);
 

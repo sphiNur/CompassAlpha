@@ -18,6 +18,7 @@ import {
   Sheet,
 } from '@compass/ui';
 import { trpc } from '../../lib/trpc';
+import { matchesAnyString, normalizeQuery } from '../../lib/searchMatch';
 import { useI18n, useRoleLabels } from '../../hooks/useI18n';
 
 export interface WagePick {
@@ -93,14 +94,18 @@ function WageRoster({
     );
   }, [roster, roleText, i18n.locale]);
   const shown = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    return (roster ?? []).filter((employee) => {
-      if (roleFilter && !employee.roles.some((role) => role.id === roleFilter)) {
-        return false;
-      }
-      return !query || employee.displayName.toLocaleLowerCase().includes(query);
-    });
-  }, [roleFilter, roster, search]);
+    // The search every list uses (lib/searchMatch): case, Uzbek apostrophes
+    // and word order do not matter.
+    const tokens = normalizeQuery(search);
+    return (roster ?? [])
+      .filter((employee) => {
+        if (roleFilter && !employee.roles.some((role) => role.id === roleFilter)) {
+          return false;
+        }
+        return !tokens || matchesAnyString([employee.displayName], tokens);
+      })
+      .sort((left, right) => left.displayName.localeCompare(right.displayName, i18n.locale));
+  }, [roleFilter, roster, search, i18n.locale]);
   const loaded = !rosterQuery.isPending && !rosterQuery.isError;
   const rosterSize = roster?.length ?? 0;
 
