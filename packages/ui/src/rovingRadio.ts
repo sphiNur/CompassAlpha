@@ -9,8 +9,8 @@ import type { KeyboardEvent } from 'react';
  * ends). Before this every chip was its own Tab stop (seven category
  * chips to get past on the order page) and arrows did nothing.
  *
- * Radios render `tabIndex={checked ? 0 : -1}` themselves; this hook only
- * adds the first radio as the stop when nothing is checked, and handles
+ * Radios render `tabIndex={checked ? 0 : -1}` themselves; this hook
+ * makes the first radio the stop when nothing is checked, and handles
  * the keys. `followFocus` also checks the radio focus lands on (a filter
  * strip); leave it off where choosing does real work (a delivery status
  * that sends a request) so arrows only move and Space / Enter chooses.
@@ -33,6 +33,15 @@ export function nextRadioIndex(count: number, current: number, key: string): num
   }
 }
 
+/**
+ * The radio that is the group's one Tab stop: the checked one, or the
+ * first when none is checked; -1 for an empty group.
+ */
+export function rovingStopIndex(checked: readonly boolean[]): number {
+  const index = checked.indexOf(true);
+  return index >= 0 ? index : checked.length > 0 ? 0 : -1;
+}
+
 function radiosIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('[role="radio"]')].filter(
     (el) => !(el as HTMLButtonElement).disabled,
@@ -44,13 +53,19 @@ export function useRovingRadio<T extends HTMLElement>({ followFocus }: { followF
 
   // No dependency list on purpose: the radios inside may change on any
   // render of the group (options load, the checked one moves).
+  //
+  // Review UI-07 (2026-11-11): sets every radio, not only the first. The
+  // first radio kept the 0 it was given while nothing was checked once
+  // another one was checked — React leaves an attribute alone while its
+  // prop does not change — so the group had two Tab stops.
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
     const radios = radiosIn(root);
-    if (radios.length > 0 && !radios.some((r) => r.getAttribute('aria-checked') === 'true')) {
-      radios[0]!.tabIndex = 0;
-    }
+    const stop = rovingStopIndex(radios.map((r) => r.getAttribute('aria-checked') === 'true'));
+    radios.forEach((radio, index) => {
+      radio.tabIndex = index === stop ? 0 : -1;
+    });
   });
 
   const onKeyDown = useCallback(

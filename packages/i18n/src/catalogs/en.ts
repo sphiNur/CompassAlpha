@@ -157,6 +157,7 @@ export const en = {
   'ops.history.contributorBreakdown': 'Contributor breakdown',
   'ops.purge.tabOrders': 'Orders',
   'ops.purge.tabRuns': 'Runs',
+  'ops.purge.listLabel': 'What to delete',
   'ops.purge.noSessionsTitle': 'No orders',
   'ops.purge.noSessionsBody': 'Nothing was submitted on {date}.',
   'ops.purge.noRunsTitle': 'No runs',
@@ -286,7 +287,6 @@ export const en = {
   'people.grantRoleTitle': 'Grant role',
   'people.grantRoleTo': 'to {name}',
   'people.grantGlobally': 'Globally',
-  'people.grantGloballyLocked': 'Globally (workspace admins only)',
   'people.noGrantStoresTitle': 'No stores you can grant in',
   'people.noGrantStoresBody':
     "You don't administer any store yet. Ask an admin to add you to a store first.",
@@ -1352,6 +1352,7 @@ export const en = {
   // Plan-time preview views (M1.5).
   'run.previewView.byStore': 'By store',
   'run.previewView.bySupplier': 'By stall',
+  'run.previewView.label': 'Group the list',
   'run.previewSupplier.unassigned': 'Unassigned stall',
   'run.previewSupplier.unassignedHint':
     'These items have no preferred stall. Open the product and pick one to group them automatically.',
@@ -1526,6 +1527,7 @@ export const en = {
   // M3.44 (2026-05-22): off-catalog expenses (porter / taxi / one-off items)
   'run.action.addItem.modeSku': 'Catalog product',
   'run.action.addItem.modeExpense': 'Off-catalog',
+  'run.action.addItem.modeLabel': 'What to add',
   'run.action.addExpense.title': 'Add off-catalog item or expense',
   'run.action.addExpense.subtitle':
     'Porter fee · taxi · stall freebie · one-off purchase that is not in the catalog',

@@ -145,6 +145,7 @@ export const uz = {
   'ops.history.contributorBreakdown': 'Yuboruvchilar boʻyicha',
   'ops.purge.tabOrders': 'Buyurtmalar',
   'ops.purge.tabRuns': 'Xaridlar',
+  'ops.purge.listLabel': 'Nimani oʻchirish',
   'ops.purge.noSessionsTitle': 'Buyurtma yoʻq',
   'ops.purge.noSessionsBody': '{date} kuni hech narsa yuborilmagan.',
   'ops.purge.noRunsTitle': 'Xarid yoʻq',
@@ -267,7 +268,6 @@ export const uz = {
   'people.grantRoleTitle': 'Rol berish',
   'people.grantRoleTo': 'Kimga: {name}',
   'people.grantGlobally': 'Global',
-  'people.grantGloballyLocked': 'Global (faqat ish maydoni admini)',
   'people.noGrantStoresTitle': 'Berish uchun doʻkon yoʻq',
   'people.noGrantStoresBody':
     'Siz hali hech qanday doʻkonni boshqarmaysiz. Administratordan sizni doʻkonga qoʻshishni soʻrang.',
@@ -1298,6 +1298,7 @@ export const uz = {
   'run.deliveryStage.confirmed': 'Tasdiqlandi',
   'run.previewView.byStore': 'Doʻkon boʻyicha',
   'run.previewView.bySupplier': 'Sotuvchi boʻyicha',
+  'run.previewView.label': 'Roʻyxatni guruhlash',
   'run.previewSupplier.unassigned': 'Sotuvchi tanlanmagan',
   'run.previewSupplier.unassignedHint':
     'Bu mahsulotlar uchun doimiy sotuvchi belgilanmagan. Mahsulot kartasini oching va birini tanlang — roʻyxat avtomatik guruhlanadi.',
@@ -1467,6 +1468,7 @@ export const uz = {
   // M3.44 (2026-05-22): katalogdan tashqari xarajatlar
   'run.action.addItem.modeSku': 'Katalogdagi mahsulot',
   'run.action.addItem.modeExpense': 'Katalogdan tashqari',
+  'run.action.addItem.modeLabel': 'Nimani qoʻshish',
   'run.action.addExpense.title': 'Katalogdan tashqari yoki xarajat qoʻshish',
   'run.action.addExpense.subtitle':
     'Yuk tashuvchi · taksi · sotuvchi bonusi · katalogdan tashqari xarid',

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { nextRadioIndex } from '../rovingRadio';
+import { nextRadioIndex, rovingStopIndex } from '../rovingRadio';
 
 describe('nextRadioIndex (A11Y-15)', () => {
   test('arrows move by one and wrap around', () => {
@@ -19,5 +19,19 @@ describe('nextRadioIndex (A11Y-15)', () => {
     expect(nextRadioIndex(3, 1, 'Tab')).toBeNull();
     expect(nextRadioIndex(3, 1, ' ')).toBeNull();
     expect(nextRadioIndex(0, 0, 'ArrowRight')).toBeNull();
+  });
+});
+
+describe('rovingStopIndex (UI-07)', () => {
+  test('the checked radio is the Tab stop', () => {
+    expect(rovingStopIndex([false, true, false])).toBe(1);
+  });
+
+  test('the first radio is the stop while none is checked', () => {
+    expect(rovingStopIndex([false, false])).toBe(0);
+  });
+
+  test('an empty group has no stop', () => {
+    expect(rovingStopIndex([])).toBe(-1);
   });
 });

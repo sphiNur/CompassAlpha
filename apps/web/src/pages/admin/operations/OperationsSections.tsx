@@ -476,6 +476,7 @@ function TargetedPurgeBrowser() {
           value={tab}
           onChange={setTab}
           equalWidth={false}
+          ariaLabel={i18n.t('ops.purge.listLabel')}
           options={[
             { value: 'orders', label: i18n.t('ops.purge.tabOrders') },
             { value: 'runs', label: i18n.t('ops.purge.tabRuns') },
