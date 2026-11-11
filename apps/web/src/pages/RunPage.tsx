@@ -2,7 +2,7 @@
  * RunPage — purchaser cockpit.
  *
  * Stages and reversibility (designed 2026-05-03):
- *   - planned     : show preview, "Start purchase" via Telegram MainButton.
+ *   - planned     : show preview, "Start purchase" via the main button.
  *                   Header ⋯ menu lets you cancel the entire run.
  *   - purchasing  : per-item Buy / N/A; multi-store split sheet on Buy.
  *                   Already-purchased rows: ⋯ menu → Edit (RevisePurchase).
@@ -14,7 +14,7 @@
  *                   ⋯ menu → Recall delivery.
  *                   Header ⋯ menu: Cancel run · Back to purchase (only when
  *                   no store has been delivered to yet).
- *                   Finish via MainButton when all confirmed (with summary
+ *                   Finish via the main button when all confirmed (with summary
  *                   confirm sheet).
  *   - finished / cancelled : terminal.
  *
@@ -35,7 +35,7 @@ import {
   Button,
   Chip,
   ChipBar,
-  ConfirmSheet as PriceCheckSheet,
+  ConfirmSheet,
   DataState,
   QueryErrorBanner,
   EmptyState,
@@ -68,7 +68,6 @@ import { otherStoreSkusOf } from './runs/types';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
-import { purchaseDraftCheck } from './runs/lib/purchaseForm';
 import {
   allItemsHandled as allItemsHandledOf,
   pendingItemCount as pendingItemCountOf,
@@ -82,7 +81,6 @@ import {
 import {
   PurchaseSheet,
   AddItemSheet,
-  ConfirmSheet,
   type PurchaseDraft,
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
@@ -93,12 +91,13 @@ import { closedFor } from './runs/lib/draftClose';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
-import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
+import { daysOld, selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { topUpPrefill, topUpRevision } from './runs/lib/topUp';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 import { moneyLine as moneyLineAmount } from '../lib/money';
+import { orgToday } from '../lib/calendarDate';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -125,6 +124,20 @@ type ConfirmKind =
   // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
   // confirmation or undo.
   | { kind: 'removeExpense'; expenseId: string; label: string };
+
+/** What the run's confirm sheet asks (ConfirmSheet in @compass/ui). */
+interface RunConfirm {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  danger: boolean;
+  irreversible?: boolean;
+  requireReason: boolean;
+  reasonOptional?: boolean;
+  reasonPlaceholder?: string;
+  isPending: boolean;
+  run: () => void;
+}
 
 export function RunPage() {
   const i18n = useI18n();
@@ -316,8 +329,9 @@ export function RunPage() {
   // A committed-but-lost response (the iOS "Load failed" case) therefore
   // recorded the off-catalog purchase or the expense TWICE. Same shape as
   // purchaseIdemCtx below; safe to share one ref per mutation because the
-  // add-item sheet's submit is gated on isPending (see the MainButton
-  // guard), so two concurrent calls of the same mutation can't interleave.
+  // add-item sheet's submit button carries `loading` (disabled while the
+  // mutation runs, and a repeat tap is dropped), so two concurrent calls
+  // of the same mutation can't interleave.
   const addItemIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const addExpenseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
 
@@ -793,6 +807,41 @@ export function RunPage() {
     for (const [id, store] of storeById) if (allowed.has(id)) m.set(id, store);
     return m;
   }, [runStoreIds, purchaseDraft?.splits, storeById]);
+  // Review RUNWEB1-07: the sheets' lists, kept until their data changes.
+  // The sheets' drafts live here, so each keystroke in one draws this page
+  // again, and a new array or map each time made AddItemSheet filter the
+  // whole catalogue again on every key.
+  const pickableSkus = useMemo(
+    () => (skusQuery.data ?? []).filter((s) => !s.isArchived),
+    [skusQuery.data],
+  );
+  const purchaseSuppliers = useMemo(
+    () =>
+      (suppliersQuery.data ?? []).filter(
+        (sup) => !sup.isArchived || sup.id === purchaseDraft?.supplierId,
+      ),
+    [suppliersQuery.data, purchaseDraft?.supplierId],
+  );
+  // M3.54 (2026-05-23): for each SKU in the run, which stores already
+  // have demand. AddItemSheet uses this to (1) still SHOW in-run SKUs as
+  // long as some store hasn't claimed them yet, (2) restrict the store
+  // dropdown to non-conflicting stores, (3) print the "augmenting
+  // existing item" hint.
+  const existingStoreIdsBySku = useMemo(() => {
+    const m = new Map<string, { storeIds: Set<string>; status: string }>();
+    for (const it of runDetailQuery.data?.items ?? []) {
+      m.set(it.skuId, { storeIds: new Set<string>(), status: it.status });
+    }
+    for (const sp of runDetailQuery.data?.splits ?? []) {
+      const e = m.get(sp.skuId);
+      if (e) e.storeIds.add(sp.storeId);
+    }
+    for (const d of runDetailQuery.data?.perStoreDemand ?? []) {
+      const e = m.get(d.skuId);
+      if (e) e.storeIds.add(d.storeId);
+    }
+    return m;
+  }, [runDetailQuery.data]);
 
   useEffect(() => {
     if (!inlineSavingSkuId) return;
@@ -1003,12 +1052,6 @@ export function RunPage() {
   }, [runDetailQuery.data]);
 
   /**
-   * Submit-purchase logic factored out of PurchaseSheet so the page-level
-   * MainButton can drive it. The sheet's in-footer button (rendered only
-   * outside Telegram) calls the same function. Keeping the math in one
-   * place avoids the "two save buttons disagree" bug.
-   */
-  /**
    * 2026-10-11: a price 5× away from the last one paid is asked about
    * once before it is saved. Not a block — the purchaser is the one who
    * knows — but the two figures are put side by side, which is all it
@@ -1045,6 +1088,10 @@ export function RunPage() {
     [runDetailQuery.data?.lastPriceBySku, skuById, productName],
   );
 
+  /**
+   * The purchase sheet's save: a top-up or an edit is a revision, anything
+   * else a purchase; each after the price check.
+   */
   const submitPurchaseDraft = useCallback(
     (d: PurchaseDraft) => {
       // DX-BUY-2: a top-up is its own batch on the row (lib/topUp.ts).
@@ -1100,18 +1147,6 @@ export function RunPage() {
       );
     },
     [purchaseItem, revisePurchase, withPriceCheck],
-  );
-
-  /**
-   * The purchase sheet's own rule (runs/lib/purchaseForm.ts), for
-   * sheetPrimary below. RUNWEB2-04: this was a copy that took a price
-   * the sheet and the server refuse. Since M3.49 an open sheet covers
-   * the page's main button, so sheetPrimary is not seen (review
-   * RUNWEB1-05).
-   */
-  const purchaseFormState = useMemo(
-    () => (purchaseDraft ? purchaseDraftCheck(purchaseDraft) : null),
-    [purchaseDraft],
   );
 
   // ---- MainButton -----------------------------------------------------
@@ -1385,93 +1420,6 @@ export function RunPage() {
     create,
   ]);
 
-  /**
-   * MainButton dispatch: when a sheet with a single primary action is
-   * open, the Telegram MainButton TAKES OVER as that sheet's submit
-   * button. This avoids the "two duplicate buttons" UX the user
-   * reported (sheet's blue button + MainButton showing through
-   * underneath the sheet — looks awkward and confusing).
-   *
-   *   - createOpen / purchaseDraft / unavailableFor / confirmAction
-   *     → MainButton becomes the sheet's primary; the sheet's footer
-   *       hides its own primary (only renders it outside Telegram).
-   *   - itemActionFor / storeActionFor / headerMenuOpen / historyDetailFor
-   *     → these are MULTI-option menus; MainButton hides entirely so
-   *       the user only sees the menu options.
-   *
-   * The dispatch is computed below (`sheetPrimary` / `multiOptionSheetOpen`),
-   * then a single `usePageMainButton` call binds whichever applies.
-   */
-  const sheetPrimary = useMemo<{
-    text: string;
-    onClick: () => void;
-    active: boolean;
-  } | null>(() => {
-    // Generic confirm sheet (start/finish/deliver/recall/cancel/etc).
-    if (confirmAction) {
-      // Re-resolve the same i18n payload that ConfirmSheet uses below.
-      // We can't reference confirmConfig here because it's defined later
-      // in the file order; build the minimum dispatcher inline.
-      // (Cheaper than restructuring the file.)
-      return null; // filled in below right after confirmConfig is defined
-    }
-    if (purchaseDraft && purchaseFormState) {
-      const submitting = purchaseItem.isPending || revisePurchase.isPending;
-      const text = !purchaseFormState.splitMatches
-        ? i18n.t('run.label.splitsMismatch', {
-            sum: formatQty(purchaseFormState.splitTotal),
-            target: formatQty(purchaseDraft.actualQty || '0'),
-          })
-        : !purchaseFormState.reasonOk
-          ? i18n.t('run.errors.reviseReasonRequired')
-          : purchaseDraft.isEdit
-            ? i18n.t('run.action.editPurchase')
-            : i18n.t('run.action.savePurchase');
-      return {
-        text,
-        onClick: () => {
-          if (!purchaseFormState.canSubmit || submitting) return;
-          submitPurchaseDraft(purchaseDraft);
-        },
-        active: purchaseFormState.canSubmit && !submitting,
-      };
-    }
-    if (unavailableFor) {
-      const reasonOk = unavailableNote.trim().length > 0;
-      return {
-        text: i18n.t('run.action.markNa'),
-        onClick: () => {
-          if (!reasonOk || markUnavailable.isPending) return;
-          markUnavailable.mutate({
-            runId: unavailableFor.runId,
-            skuId: unavailableFor.skuId,
-            note: unavailableNote.trim(),
-          });
-        },
-        active: reasonOk && !markUnavailable.isPending,
-      };
-    }
-    // Q7(a): the create sheet is gone, so it no longer takes over the
-    // MainButton. Starting a run is the page-level button itself.
-    return null;
-  }, [
-    confirmAction,
-    purchaseDraft,
-    purchaseFormState,
-    purchaseItem.isPending,
-    revisePurchase.isPending,
-    submitPurchaseDraft,
-    unavailableFor,
-    unavailableNote,
-    markUnavailable,
-    i18n,
-  ]);
-
-  /* The "multi-option sheet" branch is gone with the history drill
-     (2026-07-30). Its only member was `historyDetailFor`; the history
-     detail sheet lives on the 历史 tab now, so on this page there is
-     no longer any sheet that hides MainButton outright. */
-
   // ---- Confirm-sheet wiring --------------------------------------------
   // Resets the reason input whenever the confirm switches kind (or
   // closes). Avoids stale text leaking from one decision into the next.
@@ -1481,7 +1429,7 @@ export function RunPage() {
 
   /** Returns the current confirmation's i18n payload + the side effect
    *  to fire on Confirm. Returns null when no confirm is open. */
-  const confirmConfig = useMemo(() => {
+  const confirmConfig = useMemo((): RunConfirm | null => {
     if (!confirmAction || !activeRun) return null;
     const runId = activeRun.id;
     if (typeof confirmAction === 'string') {
@@ -1937,40 +1885,12 @@ export function RunPage() {
     removeExpense,
   ]);
 
-  // ---- Unified MainButton dispatcher --------------------------------
-  // Single bind point. Source of truth for which action MainButton
-  // currently fires:
-  //   1. confirmConfig (generic confirm sheet) — highest priority,
-  //      because it can stack on top of other sheets in theory.
-  //   2. sheetPrimary (purchase/unavailable/create) — a sheet with a
-  //      single primary action, no body-level controls beyond the form.
-  //   3. multi-option sheet open → MainButton hidden.
-  //   4. Page-level mainButton (Start purchase / Start delivery /
-  //      Finish run) when no sheet is open.
-  let mainBtnText = mainButton.text;
-  let mainBtnClick = mainButton.onClick;
-  let mainBtnVisible = mainButton.visible;
-  let mainBtnActive = mainButton.active;
-
-  if (confirmConfig) {
-    const reasonOk = !confirmConfig.requireReason || confirmReason.trim().length > 0;
-    mainBtnText = confirmConfig.confirmLabel;
-    mainBtnClick = () => {
-      if (!reasonOk || confirmConfig.isPending) return;
-      confirmConfig.run();
-    };
-    mainBtnVisible = true;
-    mainBtnActive = reasonOk && !confirmConfig.isPending;
-  } else if (sheetPrimary) {
-    mainBtnText = sheetPrimary.text;
-    mainBtnClick = sheetPrimary.onClick;
-    mainBtnVisible = true;
-    mainBtnActive = sheetPrimary.active;
-  }
-
-  usePageMainButton(mainBtnText, mainBtnClick, {
-    visible: mainBtnVisible,
-    active: mainBtnActive,
+  // The page's own action. An open sheet covers the button (M3.49: it is
+  // part of the page, under the sheet's scrim) and carries its own submit,
+  // so nothing here changes while one is open (review RUNWEB1-05).
+  usePageMainButton(mainButton.text, mainButton.onClick, {
+    visible: mainButton.visible,
+    active: mainButton.active,
   });
 
   // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.
@@ -2022,20 +1942,14 @@ export function RunPage() {
   /**
    * Whole days between the run's date and today; 0 for today's run.
    *
-   * `runDate` is YYYY-MM-DD in the ORG's timezone while "today" here comes
-   * from the device. On a device set to a wildly different timezone the
-   * count can be off by one around midnight — acceptable, because this
-   * drives a "this is old" hint, not a gate. Both sides are pinned to UTC
-   * midnight so the subtraction itself can't drift.
+   * RUNWEB1-33 (2026-11-11): both are days of the org's calendar. Today is
+   * the server's (`previewToday`), or the org's from the session until it
+   * answers; it was the phone's, a day off around midnight on a phone set
+   * to another zone.
    */
-  const runAgeDays = (() => {
-    if (!activeRun) return 0;
-    const runMs = Date.parse(`${activeRun.runDate}T00:00:00Z`);
-    if (Number.isNaN(runMs)) return 0;
-    const now = new Date();
-    const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-    return Math.max(0, Math.round((todayMs - runMs) / 86_400_000));
-  })();
+  const runAgeDays = activeRun
+    ? daysOld(activeRun.runDate, previewToday ?? orgToday(session.member.timezone))
+    : 0;
 
   // 2026-07-30: drop the year for runs in the current year. The bar has to
   // fit `+ 新增`, this line and the staleness badge inside ~223 px once
@@ -2769,9 +2683,7 @@ export function RunPage() {
         draft={purchaseDraft}
         skuById={skuById}
         storeById={purchaseStoreById}
-        suppliers={(suppliersQuery.data ?? []).filter(
-          (sup) => !sup.isArchived || sup.id === purchaseDraft?.supplierId,
-        )}
+        suppliers={purchaseSuppliers}
         productName={productName}
         photoUploader={photoUploader}
         i18n={i18n}
@@ -2812,27 +2724,8 @@ export function RunPage() {
       <AddItemSheet
         draft={addItemDraft}
         runStoreIds={addableStoreIds}
-        existingStoreIdsBySku={(() => {
-          // M3.54 (2026-05-23): for each SKU in the run, which stores
-          // already have demand. AddItemSheet uses this to (1) still
-          // SHOW in-run SKUs as long as some store hasn't claimed them
-          // yet, (2) restrict the store dropdown to non-conflicting
-          // stores, (3) print the "augmenting existing item" hint.
-          const m = new Map<string, { storeIds: Set<string>; status: string }>();
-          for (const it of runDetailQuery.data?.items ?? []) {
-            m.set(it.skuId, { storeIds: new Set<string>(), status: it.status });
-          }
-          for (const sp of runDetailQuery.data?.splits ?? []) {
-            const e = m.get(sp.skuId);
-            if (e) e.storeIds.add(sp.storeId);
-          }
-          for (const d of runDetailQuery.data?.perStoreDemand ?? []) {
-            const e = m.get(d.skuId);
-            if (e) e.storeIds.add(d.storeId);
-          }
-          return m;
-        })()}
-        skus={(skusQuery.data ?? []).filter((s) => !s.isArchived)}
+        existingStoreIdsBySku={existingStoreIdsBySku}
+        skus={pickableSkus}
         expenseTemplates={expenseTemplatesQuery.data ?? []}
         storeById={storeById}
         productName={productName}
@@ -2991,7 +2884,7 @@ export function RunPage() {
           revisePurchase.isPending
         }
       />
-      <PriceCheckSheet
+      <ConfirmSheet
         open={!!priceCheck}
         title={i18n.t('run.price.check.title')}
         body={
@@ -3024,15 +2917,14 @@ export function RunPage() {
         onCancel={() => setPriceCheck(null)}
       />
 
-      {/* Mark-unavailable sheet — primary action handled by MainButton
-          inside Telegram. Footer button only outside Telegram. */}
+      {/* Mark-unavailable sheet. */}
       <Sheet
         open={!!unavailableFor}
         onOpenChange={(open) => !open && setUnavailableFor(null)}
         title={i18n.t('run.action.markUnavailable')}
         description={i18n.t('run.action.markUnavailableDesc')}
         footer={
-          // M3.49: see RunPage's plan-run sheet for the rationale.
+          // M3.49: the sheet carries its own submit (Shell's PageMainButton).
           <Button
             block
             variant="danger"
@@ -3064,11 +2956,23 @@ export function RunPage() {
       {/* Generic confirm sheet for ALL the major transitions. Centralized
           so every "I changed my mind" path looks identical. */}
       <ConfirmSheet
-        config={confirmConfig}
+        open={!!confirmConfig}
+        title={confirmConfig?.title ?? ''}
+        body={confirmConfig?.body}
+        confirmLabel={confirmConfig?.confirmLabel ?? ''}
+        danger={confirmConfig?.danger}
+        irreversible={confirmConfig?.irreversible}
+        requireReason={confirmConfig?.requireReason}
+        reasonOptional={confirmConfig?.reasonOptional}
+        reasonLabel={i18n.t('run.label.reasonForChange')}
+        reasonPlaceholder={
+          confirmConfig?.reasonPlaceholder ?? i18n.t('run.label.reasonPlaceholder')
+        }
+        pending={confirmConfig?.isPending}
         reason={confirmReason}
         onReasonChange={setConfirmReason}
+        onConfirm={() => confirmConfig?.run()}
         onCancel={() => setConfirmAction(null)}
-        i18n={i18n}
       />
 
       {/* Item & store action sheets removed (2026-05-03):

@@ -9,6 +9,7 @@ import type { RequestContext } from './context';
 import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
 import { isUniqueViolation } from '../services/pgErrors';
+import { stableJson } from '../services/stableJson';
 
 /**
  * Placeholders a non-domain refusal names for its sentence, thrown as
@@ -22,7 +23,18 @@ function causeContext(cause: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-const t = initTRPC.context<RequestContext>().create({
+/**
+ * Procedure metadata. `idempotent` marks the procedures built from
+ * `idempotentMutation`, so a test can list them from the router
+ * (TEST3-06).
+ */
+export interface ProcedureMeta {
+  idempotent?: boolean;
+}
+
+const trpcBuilder = initTRPC.context<RequestContext>().meta<ProcedureMeta>();
+
+const t = trpcBuilder.create({
   errorFormatter({ shape, error }) {
     const cause = error.cause;
     if (cause instanceof DomainError) {
@@ -271,18 +283,6 @@ const IDEMPOTENCY_WAIT_MS = 8 * 1000;
  */
 let capturedMiddlewareMarker: unknown;
 
-/** JSON with object keys sorted, so the same input always hashes alike. */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object' && !(value instanceof Date)) {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
 /**
  * BUY-16 (2026-10-31): what the key was first used for. The cache used to
  * answer any request carrying a known key with the first one's result, so
@@ -506,7 +506,9 @@ async function releaseClaim(
  * Anything that ONLY reads, OR that has natural-key dedupe through
  * an event-store unique seq, can stay on plain authedProcedure.
  */
-export const idempotentMutation = authedProcedure.use(idempotencyMiddleware);
+export const idempotentMutation = authedProcedure
+  .use(idempotencyMiddleware)
+  .meta({ idempotent: true });
 
 // Suppress unused-import diagnostics for drizzle helpers brought in
 // only for the idempotency middleware's lookup query.

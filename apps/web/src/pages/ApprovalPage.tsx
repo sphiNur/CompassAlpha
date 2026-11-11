@@ -434,7 +434,7 @@ export function ApprovalPage() {
                           so `name` — which supplies both the alt text and the
                           initials fallback — has to be the submitter too.
                           2026-07-30: it was the STORE name, so a screen reader
-                          announced a person's face as "Eden Magic City", and a
+                          announced a person's face as "Store A", and a
                           submitter without a photo got the store's initials. */}
                       <Avatar
                         src={row.attribAvatarUrl}
@@ -1043,19 +1043,6 @@ function SessionItems({
     onHold(sessionId, hold);
   }, [hold, onHold, sessionId]);
 
-  // Member directory lookup so we can show who contributed each row.
-  const membersQuery = trpc.admin.memberList.useQuery(undefined, {
-    // memberList requires users.manage. Managers usually have it; if not,
-    // fall back to showing the bare member id instead of erroring.
-    enabled: canEdit,
-    retry: false,
-  });
-  const memberById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const row of membersQuery.data ?? []) m.set(row.memberId, row.displayName);
-    return m;
-  }, [membersQuery.data]);
-
   // skuPriceStats hooked here (BEFORE early returns, fixed 2026-05-05)
   // so React's hooks-order invariant holds across loading/empty/error
   // branches. Manager sees estimated budget before approving.
@@ -1166,12 +1153,21 @@ function SessionItems({
     );
   }
 
-  // Group raw items by SKU for the breakdown.
-  const rowsBySku = new Map<string, Array<{ contributorMemberId: string; qty: string }>>();
+  // Group raw items by SKU for the breakdown. ORD-09 (2026-11-11): the
+  // contributor's name comes with the line; it was looked up in
+  // admin.memberList, which needs users.manage.
+  const rowsBySku = new Map<
+    string,
+    Array<{ contributorMemberId: string; contributorName: string; qty: string }>
+  >();
   for (const it of rawItems) {
     if (Number(it.qty) <= 0) continue;
     const arr = rowsBySku.get(it.skuId) ?? [];
-    arr.push({ contributorMemberId: it.contributorMemberId, qty: it.qty });
+    arr.push({
+      contributorMemberId: it.contributorMemberId,
+      contributorName: it.contributorName ?? i18n.t('people.memberFallback'),
+      qty: it.qty,
+    });
     rowsBySku.set(it.skuId, arr);
   }
 
@@ -1290,7 +1286,7 @@ function SessionItems({
                     Number(singleRow.qty)
                   }
                   step={Number(sku.step)}
-                  unit={unitLabel(sku.unit)}
+                  unit={unitLabel.uncounted(sku.unit)}
                   unitFor={(qty) => unitLabel(sku.unit, qty)}
                   max={ORDER_QTY_MAX}
                   disabled={drafts.isSaving(qtyKey(t.skuId, singleRow.contributorMemberId))}
@@ -1332,7 +1328,9 @@ function SessionItems({
                 className="mt-0.5 flex items-baseline justify-between gap-2 text-old-label tabular-nums text-[var(--c-fg-muted)]"
               >
                 <span className="min-w-0">
-                  {unitPrice ? `~${formatMoney(unitPrice)} / ${unitLabel(sku?.unit ?? '')}` : null}
+                  {unitPrice
+                    ? `~${formatMoney(unitPrice)} / ${unitLabel.uncounted(sku?.unit ?? '')}`
+                    : null}
                   {unitPrice && t.usualPayment ? ' · ' : null}
                   {t.usualPayment
                     ? i18n.t(
@@ -1359,22 +1357,16 @@ function SessionItems({
                     key={r.contributorMemberId}
                     className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]"
                   >
-                    <span className="truncate">
-                      {memberById.get(r.contributorMemberId) ??
-                        r.contributorMemberId.slice(0, 6)}
-                    </span>
+                    <span className="truncate">{r.contributorName}</span>
                     {canEdit && sku ? (
                       <QtyControl
                         size="sm"
-                        itemLabel={`${productName(sku)} · ${
-                          memberById.get(r.contributorMemberId) ??
-                          r.contributorMemberId.slice(0, 6)
-                        }`}
+                        itemLabel={`${productName(sku)} · ${r.contributorName}`}
                         value={
                           drafts.value(qtyKey(t.skuId, r.contributorMemberId)) ?? Number(r.qty)
                         }
                         step={Number(sku.step)}
-                        unit={unitLabel(sku.unit)}
+                        unit={unitLabel.uncounted(sku.unit)}
                         unitFor={(qty) => unitLabel(sku.unit, qty)}
                         max={ORDER_QTY_MAX}
                         disabled={drafts.isSaving(qtyKey(t.skuId, r.contributorMemberId))}
@@ -1418,7 +1410,7 @@ function SessionItems({
                     itemLabel={productName(sku)}
                     value={drafts.value(key) ?? 0}
                     step={Number(sku.step)}
-                    unit={unitLabel(sku.unit)}
+                    unit={unitLabel.uncounted(sku.unit)}
                     unitFor={(qty) => unitLabel(sku.unit, qty)}
                     max={ORDER_QTY_MAX}
                     disabled={drafts.isSaving(key)}

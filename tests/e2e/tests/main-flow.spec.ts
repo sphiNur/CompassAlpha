@@ -64,6 +64,51 @@ test('sign in and confirm a display name', async () => {
   await evidence('signed-in');
 });
 
+test('the app keeps clear of the phone bars Telegram reports', async () => {
+  // COREWEB1-07. Android's Telegram WebView answers env(safe-area-inset-*)
+  // with 0, so the app also reads the insets Telegram's SDK writes to
+  // --tg-safe-area-inset-*. Set here the way the SDK sets them.
+  const report = (insets: Record<string, string> | null) =>
+    page.evaluate((i) => {
+      for (const side of ['top', 'right', 'bottom', 'left']) {
+        const name = `--tg-safe-area-inset-${side}`;
+        if (i) document.documentElement.style.setProperty(name, i[side]!);
+        else document.documentElement.style.removeProperty(name);
+      }
+    }, insets);
+  /** The four insets the app pads with: top right bottom left. */
+  const safeArea = () =>
+    page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.padding =
+        'var(--app-safe-top) var(--app-safe-right) var(--app-safe-bottom) var(--app-safe-left)';
+      document.body.append(probe);
+      const s = getComputedStyle(probe);
+      const out = `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`;
+      probe.remove();
+      return out;
+    });
+  const padding = (el: Locator) =>
+    el.evaluate((n) => {
+      const s = getComputedStyle(n);
+      return `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`;
+    });
+  const nav = page.getByTestId('primary-nav');
+
+  // Outside Telegram nothing is reported: env() (0 in this browser) and
+  // the floors.
+  expect(await safeArea()).toBe('16px 0px 8px 0px');
+
+  // Android in fullscreen: the status bar, the three-button navigation
+  // bar and, on its side, a cutout.
+  await report({ top: '32px', right: '20px', bottom: '48px', left: '30px' });
+  expect(await safeArea()).toBe('32px 20px 48px 30px');
+  expect(await padding(nav)).toBe('0px 20px 48px 30px');
+  expect(await padding(main())).toBe('0px 20px 0px 30px');
+  await report(null);
+  expect(await padding(nav)).toBe('0px 0px 8px 0px');
+});
+
 test('place an order', async () => {
   await tab('order').click();
   // Weighed goods step by half a kilo per tap.
@@ -236,9 +281,9 @@ test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
-  await main().getByRole('button', { name: 'All arrived fine' }).click();
+  await main().getByRole('button', { name: 'All OK' }).click();
   await sheet()
-    .getByRole('button', { name: /Mark 2 items correct/ })
+    .getByRole('button', { name: /Mark 2 items OK/ })
     .click();
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
@@ -370,6 +415,57 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
   await item('Apple').getByRole('button', { name: 'Save purchase: Apple' }).click();
   await expect(item('Apple').getByRole('button', { name: /^Bought Apple/ })).toBeVisible();
   await expect(main()).toContainText('1 bought · 0 n/a · 1 left');
+});
+
+test('a store that cannot be loaded, or is gone, says so', async ({ browser }) => {
+  const row = (name: RegExp): Locator => main().getByRole('button', { name });
+  // The app reopens on the store that was open when it closed.
+  await tab('admin').click();
+  await row(/^Stores/).click();
+  await row(/Central Kitchen/).click();
+  await main().getByRole('radio', { name: 'Settings' }).click();
+  await expect(main().getByRole('textbox', { name: /^Name/ })).toHaveValue('Central Kitchen');
+  const nav = await page.evaluate(() => localStorage.getItem('compass.nav.v1'));
+  expect(nav).toContain('"storeSub":"settings"');
+
+  // ADM2-22: both spun on "Loading store…" for good. A new browser each
+  // time, so nothing comes from the saved copy of the list.
+  async function reopen(): Promise<Page> {
+    const later = await browser.newPage();
+    // Same origin, no app code: a place to seed storage before the app boots.
+    await later.goto('/boot.css');
+    await later.evaluate((saved) => localStorage.setItem('compass.nav.v1', saved), nav ?? '');
+    return later;
+  }
+
+  // The store list does not load: the error, and a retry that recovers.
+  const offline = await reopen();
+  await offline.route(/admin\.storeList/, (route) => route.abort('failed'));
+  await offline.goto('/');
+  const retry = offline.getByRole('main').getByRole('button', { name: 'Retry' });
+  await expect(retry).toBeVisible({ timeout: 20_000 });
+  await offline.unroute(/admin\.storeList/);
+  await retry.click();
+  await expect(offline.getByRole('main').getByRole('textbox', { name: /^Name/ })).toHaveValue(
+    'Central Kitchen',
+  );
+  await offline.close();
+
+  // The store is no longer in the list (archived, or no longer theirs).
+  const gone = await reopen();
+  await gone.route(/admin\.storeList/, async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as { result: { data: { name: string }[] } };
+    body.result.data = body.result.data.filter((s) => s.name !== 'Central Kitchen');
+    await route.fulfill({ response: res, json: body });
+  });
+  await gone.goto('/');
+  const goneMain = gone.getByRole('main');
+  await expect(goneMain.getByText('Store not available')).toBeVisible();
+  await goneMain.getByRole('button', { name: 'Back to stores' }).click();
+  await expect(goneMain.getByRole('button', { name: /Riverside Hotel/ })).toBeVisible();
+  await expect(goneMain.getByRole('button', { name: /Central Kitchen/ })).toHaveCount(0);
+  await gone.close();
 });
 
 test('nothing went wrong along the way', () => {

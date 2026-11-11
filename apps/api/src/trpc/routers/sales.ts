@@ -46,14 +46,16 @@
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import {
   DateStringSchema,
   PositiveDecimalStringSchema,
   UuidSchema,
+  mulQty,
+  subQty,
 } from '@compass/contracts';
-import { todayInTz } from '@compass/domain';
-import { BACKDATE_LIMIT_DAYS } from '@compass/contracts';
+import { nextDate, todayInTz, zonedTimeToUtc } from '@compass/domain';
+import { BACKDATE_LIMIT_DAYS, normalizeQty, sumMoney } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
@@ -148,38 +150,6 @@ const ListInputSchema = z.object({
   toDate: DateStringSchema.optional(),
 });
 
-/** UTC offset (ms) of `tz` at instant `at`: local wall clock − UTC. */
-function tzOffsetMs(tz: string, at: Date): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(at);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
-  const wall = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
-  return wall - Math.floor(at.getTime() / 1000) * 1000;
-}
-
-/** The UTC instant of local 00:00 on `date` (YYYY-MM-DD) in `tz`. */
-function startOfDayInTz(date: string, tz: string): Date {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const wallMidnight = Date.UTC(y, m - 1, d);
-  // Two passes so a DST transition between the guess and the answer
-  // still lands on the correct offset.
-  const first = wallMidnight - tzOffsetMs(tz, new Date(wallMidnight));
-  return new Date(wallMidnight - tzOffsetMs(tz, new Date(first)));
-}
-
-function nextDate(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-}
-
 /**
  * 2026-10-21 audit CA-23 (D-03): sales.list day boundaries in the
  * store's business timezone (store.timezone || org timezone — the same
@@ -194,9 +164,46 @@ export function salesListRange(
 ): { from: Date; toExclusive: Date } {
   const today = todayInTz(tz, now);
   return {
-    from: startOfDayInTz(fromDate ?? today, tz),
-    toExclusive: startOfDayInTz(nextDate(toDate ?? today), tz),
+    from: zonedTimeToUtc(fromDate ?? today, '00:00', tz),
+    toExclusive: zonedTimeToUtc(nextDate(toDate ?? today), '00:00', tz),
   };
+}
+
+type SalesSession = {
+  memberId: string;
+  orgId: string;
+  orgTimezone: string;
+  permissions: ReadonlySet<string>;
+};
+
+/**
+ * What sales.list and sales.summary share (review CONF-17): the
+ * store-scope check, then the business days asked for as instants.
+ */
+async function salesRangeFor(
+  tx: DB,
+  session: SalesSession,
+  input: z.infer<typeof ListInputSchema>,
+): Promise<{ from: Date; toExclusive: Date }> {
+  // M3.1 (2026-05-15): store-scope assertion. Without this a staff
+  // member assigned only to Store A could pass storeId=<Store B uuid>
+  // and read Store B's entire sales history (RLS only filters by
+  // org, not by store, so the leak isn't caught at the DB layer
+  // either — see migration 0014).
+  await assertActorAssignedToStore(tx, session.memberId, input.storeId, session.permissions);
+  // 2026-10-21 audit CA-23: business-day boundaries in the store's
+  // timezone (falling back to the org's), matching settlement. Was
+  // UTC, which put 00:00–05:00 Tashkent sales on "yesterday".
+  const store = await tx.query.stores.findFirst({
+    where: (st, { eq: eq2, and: and2 }) =>
+      and2(eq2(st.id, input.storeId), eq2(st.orgId, session.orgId)),
+    columns: { timezone: true },
+  });
+  return salesListRange(
+    storeTimeZone(store?.timezone, session.orgTimezone),
+    input.fromDate,
+    input.toDate,
+  );
 }
 
 export const salesRouter = router({
@@ -208,35 +215,33 @@ export const salesRouter = router({
     .input(RecordInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireSalesRecord(ctx.session!.permissions);
-      // M3.1 (2026-05-15): store-scope assertion BEFORE per-store
-      // override evaluation. The flat permission set says "this user
-      // can record sales somewhere"; we must confirm the somewhere
-      // includes input.storeId. Without this a staff at Store A could
-      // post a sale with storeId=<Store B> and the only gate would be
-      // perm presence (Store A staff has sales.record from their role
-      // globally) — Store B's inventory would silently get deducted.
-      await ctx.withOrg((tx) =>
-        assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        ),
-      );
-      // Per-store override: an admin may have explicitly denied this
-      // actor sales.record on this specific store.
-      const effective = await ctx.withOrg((tx) =>
-        effectivePermissionsForStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        ),
-      );
-      requireSalesRecord(effective);
-
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        // M3.1 (2026-05-15): store-scope assertion BEFORE per-store
+        // override evaluation. The flat permission set says "this user
+        // can record sales somewhere"; we must confirm the somewhere
+        // includes input.storeId. Without this a staff at Store A could
+        // post a sale with storeId=<Store B> and the only gate would be
+        // perm presence (Store A staff has sales.record from their role
+        // globally) — Store B's inventory would silently get deducted.
+        // CONF-23: both checks run in the write's own transaction; they
+        // used to take one each.
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+        // Per-store override: an admin may have explicitly denied this
+        // actor sales.record on this specific store.
+        requireSalesRecord(
+          await effectivePermissionsForStore(
+            tx,
+            ctx.session!.memberId,
+            input.storeId,
+            ctx.session!.permissions,
+          ),
+        );
 
         // 1. Verify the dish exists in this org.
         const dish = await tx.query.dishes.findFirst({
@@ -310,12 +315,17 @@ export const salesRouter = router({
         const saleId = inserted!.id;
 
         // 5. Auto-deduct ingredient inventory.
-        const saleQty = Number(input.qty);
+        // CONF-15: exact decimals, rounded once to 3 places like every
+        // other quantity (float × and toFixed rounded some halves down).
+        // The response keeps toFixed(3)'s form ("0.500").
+        const fixed3 = (qty: string) => {
+          const [whole, fraction = ''] = qty.split('.');
+          return `${whole}.${fraction.padEnd(3, '0')}`;
+        };
         const deductions = recipe.map((r) => {
-          const lineQty = Number(r.qtyPerServing) * saleQty;
+          const qty = mulQty(r.qtyPerServing, input.qty);
           // Negative delta — that's a consumption.
-          const delta = (-lineQty).toFixed(3);
-          return { skuId: r.skuId, qty: lineQty.toFixed(3), delta };
+          return { skuId: r.skuId, qty: fixed3(qty), delta: subQty(0, qty) };
         });
 
         await tx
@@ -379,34 +389,31 @@ export const salesRouter = router({
   void: authedProcedure.input(VoidInputSchema).mutation(async ({ ctx, input }) => {
     requireSalesRecord(ctx.session!.permissions);
     const orgId = ctx.session!.orgId;
-    const sale = await ctx.withOrg((tx) =>
-      tx.query.sales.findFirst({
+    // CONF-23: finding the sale's store, both checks and the write share
+    // one transaction; they used to take four.
+    return ctx.withOrg(async (tx) => {
+      const sale = await tx.query.sales.findFirst({
         where: (sl, { eq: eq2, and: and2 }) => and2(eq2(sl.id, input.saleId), eq2(sl.orgId, orgId)),
         columns: { storeId: true },
-      }),
-    );
-    if (!sale) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'sales.errors.saleNotFound' });
-    }
-    await ctx.withOrg((tx) =>
-      assertActorAssignedToStore(
+      });
+      if (!sale) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'sales.errors.saleNotFound' });
+      }
+      await assertActorAssignedToStore(
         tx,
         ctx.session!.memberId,
         sale.storeId,
         ctx.session!.permissions,
-      ),
-    );
-    const effective = await ctx.withOrg((tx) =>
-      effectivePermissionsForStore(
-        tx,
-        ctx.session!.memberId,
-        sale.storeId,
-        ctx.session!.permissions,
-      ),
-    );
-    requireSalesRecord(effective);
+      );
+      requireSalesRecord(
+        await effectivePermissionsForStore(
+          tx,
+          ctx.session!.memberId,
+          sale.storeId,
+          ctx.session!.permissions,
+        ),
+      );
 
-    return ctx.withOrg(async (tx) => {
       // Same rule as record / the inventory ledger guard (CA-54): no
       // ledger writes against an archived or paused store.
       const store = await tx.query.stores.findFirst({
@@ -481,30 +488,7 @@ export const salesRouter = router({
   list: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      // M3.1 (2026-05-15): store-scope assertion. Without this a staff
-      // member assigned only to Store A could pass storeId=<Store B uuid>
-      // and read Store B's entire sales history (RLS only filters by
-      // org, not by store, so the leak isn't caught at the DB layer
-      // either — see migration 0014).
-      await assertActorAssignedToStore(
-        tx,
-        ctx.session!.memberId,
-        input.storeId,
-        ctx.session!.permissions,
-      );
-      // 2026-10-21 audit CA-23: business-day boundaries in the store's
-      // timezone (falling back to the org's), matching settlement. Was
-      // UTC, which put 00:00–05:00 Tashkent sales on "yesterday".
-      const store = await tx.query.stores.findFirst({
-        where: (st, { eq: eq2, and: and2 }) =>
-          and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
-        columns: { timezone: true },
-      });
-      const { from, toExclusive } = salesListRange(
-        storeTimeZone(store?.timezone, ctx.session!.orgTimezone),
-        input.fromDate,
-        input.toDate,
-      );
+      const { from, toExclusive } = await salesRangeFor(tx, ctx.session!, input);
 
       const rows = await tx
         .select({
@@ -535,6 +519,43 @@ export const salesRouter = router({
       // holds for this store; counts and servings stay.
       if (pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [input.storeId])) return rows;
       return rows.map((row) => ({ ...row, unitPrice: null }));
+    });
+  }),
+
+  /**
+   * Review CONF-17: the totals of the days sales.list covers, over every
+   * sale. sales.list returns the newest 200 rows and the web added those
+   * up, so a busy day's headline came out low. Voided sales do not count.
+   * Revenue is each sale's qty × price rounded to cents, added in cents
+   * (D1), and only where prices.view holds for this store (D6).
+   */
+  summary: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const { from, toExclusive } = await salesRangeFor(tx, ctx.session!, input);
+      const standing = sql`${s.sales.voidedAt} IS NULL`;
+      const [totals] = await tx
+        .select({
+          servings: sql<string>`COALESCE(SUM(${s.sales.qty}) FILTER (WHERE ${standing}), 0)::text`,
+          revenue: sql<string>`COALESCE(SUM(ROUND(${s.sales.qty} * ${s.sales.unitPrice}, 2)) FILTER (WHERE ${standing}), 0)::text`,
+        })
+        .from(s.sales)
+        .where(
+          and(
+            eq(s.sales.orgId, ctx.session!.orgId),
+            eq(s.sales.storeId, input.storeId),
+            gte(s.sales.occurredAt, from),
+            lt(s.sales.occurredAt, toExclusive),
+          ),
+        );
+      const pricesVisible = pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [
+        input.storeId,
+      ]);
+      return {
+        /** Servings sold ("12.5"). */
+        servings: normalizeQty(totals?.servings ?? '0'),
+        /** Revenue with two decimals ("1991.67"), or null without prices.view here. */
+        revenue: pricesVisible ? sumMoney([totals?.revenue]) : null,
+      };
     });
   }),
 });

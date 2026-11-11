@@ -10,7 +10,7 @@
  * what is shown, and when a rank is unknown (an older server) the action
  * is shown and the server answers as before.
  */
-import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
+import { ADMIN_RANK, SUPER_ADMIN_RANK } from '@compass/contracts/schemas/roles';
 
 /** A role binding as the member list returns it. */
 export interface Binding {
@@ -28,6 +28,12 @@ export interface Actor {
   isOrgAdmin: boolean;
   /** Stores where the actor may manage people (session.adminStoreIds). */
   adminStoreIds: readonly string[];
+  /**
+   * Paused and archived stores the same rule covers
+   * (session.inactiveAdminStoreIds): people can be taken out there, never
+   * added (R2-ADM-2). Absent from older sessions.
+   */
+  inactiveAdminStoreIds?: readonly string[];
   /** The actor's own role bindings (their row in the member list). */
   bindings: readonly Binding[];
 }
@@ -35,8 +41,15 @@ export interface Actor {
 export interface TargetMember {
   userId: string;
   bindings: readonly Binding[];
-  /** Every store the member is in (assignments and store bindings). */
+  /** Every store the member is in (assignments and store bindings),
+   *  paused and archived ones included. */
   storeIds: readonly string[];
+  /** Some of their stores are outside what the actor may see, so
+   *  `storeIds` is partial (memberList `statusOutOfReach`). */
+  outOfReach?: boolean;
+  /** They also belong to another organisation: only they may change
+   *  their name (memberList `nameShared`, D22). */
+  nameShared?: boolean;
 }
 
 const UNKNOWN = Number.POSITIVE_INFINITY;
@@ -80,8 +93,18 @@ function outranks(actorRank: number, targetRank: number): boolean {
   return targetRank < actorRank;
 }
 
+/** Adding people to the store: active stores only. */
 function administers(actor: Actor, storeId: string): boolean {
   return actor.adminStoreIds.includes(storeId);
+}
+
+/**
+ * Taking people out of the store or acting on its members: paused and
+ * archived stores count too (COREWEB2-11; the server passes
+ * `includeInactive` there).
+ */
+function governs(actor: Actor, storeId: string): boolean {
+  return administers(actor, storeId) || (actor.inactiveAdminStoreIds?.includes(storeId) ?? false);
 }
 
 /**
@@ -94,7 +117,7 @@ export function canRevokeRole(actor: Actor, targetUserId: string, binding: Bindi
     return false;
   }
   const storeId = binding.scopeType === 'store' ? binding.scopeId : null;
-  if (storeId ? !administers(actor, storeId) : !actor.isOrgAdmin) return false;
+  if (storeId ? !governs(actor, storeId) : !actor.isOrgAdmin) return false;
   if (binding.rank === undefined) return true;
   return outranks(
     storeId ? rankIn(actor.bindings, storeId) : orgRankOf(actor.bindings),
@@ -117,10 +140,57 @@ export function canSetStatus(
   if (actor.isOrgAdmin) {
     return outranks(orgRankOf(actor.bindings), rankIn(target.bindings, null));
   }
-  if (target.storeIds.length === 0) return false;
+  return reachesEveryStore(actor, target);
+}
+
+/**
+ * assertAdministersEveryTargetStore: the actor manages every store the
+ * member is in, paused and archived ones too, and outranks them in each.
+ */
+function reachesEveryStore(actor: Actor, target: TargetMember): boolean {
+  if (target.outOfReach || target.storeIds.length === 0) return false;
   return target.storeIds.every(
-    (id) =>
-      administers(actor, id) && outranks(rankIn(actor.bindings, id), rankIn(target.bindings, id)),
+    (id) => governs(actor, id) && outranks(rankIn(actor.bindings, id), rankIn(target.bindings, id)),
+  );
+}
+
+/**
+ * memberSetDisplayName: everyone may rename themself (ADM1-06). Someone
+ * another organisation also has keeps the name they chose (D22). An
+ * organisation admin needs to outrank the member organisation-wide, or be
+ * a super admin; anyone else needs the reach suspending takes.
+ */
+export function canRename(actor: Actor, target: TargetMember): boolean {
+  if (target.userId === actor.userId) return true;
+  if (target.nameShared) return false;
+  if (actor.isOrgAdmin) {
+    const actorRank = orgRankOf(actor.bindings);
+    return actorRank >= SUPER_ADMIN_RANK || outranks(actorRank, rankIn(target.bindings, null));
+  }
+  return reachesEveryStore(actor, target);
+}
+
+/**
+ * memberRemove: an organisation admin, never on themself, who outranks
+ * the member organisation-wide (someone holding no role at all goes).
+ * Whether they are the last admin or have attendance records only the
+ * server knows.
+ */
+export function canRemoveFromOrg(actor: Actor, target: TargetMember): boolean {
+  if (!actor.isOrgAdmin || target.userId === actor.userId) return false;
+  const targetRank = rankIn(target.bindings, null);
+  return targetRank === 0 || outranks(orgRankOf(actor.bindings), targetRank);
+}
+
+/**
+ * memberDetachFromStore: the actor manages the store, paused or archived
+ * ones included, and outranks the member there. (A member's last store
+ * is the server's call.)
+ */
+export function canDetachFromStore(actor: Actor, target: TargetMember, storeId: string): boolean {
+  return (
+    governs(actor, storeId) &&
+    outranks(rankIn(actor.bindings, storeId), rankIn(target.bindings, storeId))
   );
 }
 
@@ -166,9 +236,10 @@ export function rolePassesOn(
 
 /**
  * memberTransferStore: the actor manages both stores and outranks the
- * member in the one they leave. Destinations are stores the member is
- * not in already (CMP-ADM-18: "transfer" to a store they were in did
- * nothing useful).
+ * member in the one they leave, which may be paused or archived (a
+ * removal); the destination may not (ADM1-16). Destinations are stores
+ * the member is not in already (CMP-ADM-18: "transfer" to a store they
+ * were in did nothing useful).
  */
 export function transferTargets<S extends { id: string }>(
   actor: Actor,
@@ -176,7 +247,7 @@ export function transferTargets<S extends { id: string }>(
   fromStoreId: string,
   stores: readonly S[],
 ): S[] {
-  if (!administers(actor, fromStoreId)) return [];
+  if (!governs(actor, fromStoreId)) return [];
   if (!outranks(rankIn(actor.bindings, fromStoreId), rankIn(target.bindings, fromStoreId))) {
     return [];
   }

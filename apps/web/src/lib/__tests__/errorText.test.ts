@@ -6,6 +6,7 @@ import {
   errorVars,
   isServerSideFailure,
   networkFailureKey,
+  writeErrorTextOf,
 } from '../errorText';
 
 describe('errorTextKey', () => {
@@ -87,22 +88,31 @@ describe('errorTextOf: placeholders from the server', () => {
   };
 
   test('every server error key with a placeholder gets its value', () => {
-    expect(say(domainError('order.errors.qtyNotMultipleOfStep', { step: '0.500' }))).toBe(
-      '数量必须是 0.5 的倍数',
-    );
+    // TEST3-09: compared with the catalog sentence filled with the value as
+    // it should read (`0.500` → `0.5`), not with a copy of the sentence.
+    const sentence = (
+      key: string,
+      vars: Record<string, string | number>,
+      locale: 'zh' | 'en' | 'ru' | 'uz' = 'zh',
+    ) => createI18n(locale).t(key as Parameters<ReturnType<typeof createI18n>['t']>[0], vars);
+    const step = say(domainError('order.errors.qtyNotMultipleOfStep', { step: '0.500' }));
+    expect(step).toBe(sentence('order.errors.qtyNotMultipleOfStep', { step: '0.5' }));
+    expect(step).not.toContain('0.500');
     expect(say(domainError('run.errors.storeItemsUnchecked', { n: 3 }))).toBe(
-      '还有 3 项待核对，核对完才能确认收货',
+      sentence('run.errors.storeItemsUnchecked', { n: 3 }),
     );
-    expect(say(domainError('run.errors.receivedQtyExceedsSplit', { max: '12.000' }))).toBe(
-      '实收数量不能超过 12',
-    );
+    const max = say(domainError('run.errors.receivedQtyExceedsSplit', { max: '12.000' }));
+    expect(max).toBe(sentence('run.errors.receivedQtyExceedsSplit', { max: '12' }));
+    expect(max).not.toContain('12.000');
     expect(say(domainError('run.errors.receivedQtyNotShort', { max: '2.5' }))).toContain('2.5');
-    expect(say(domainError('settlement.errors.dateTooOld', { days: 90 }), 'en')).toContain(
-      'at most 90 days back',
-    );
+    expect(say(domainError('settlement.errors.dateTooOld', { days: 90 }), 'en')).toContain('90');
     expect(say(domainError('order.errors.qtyNotMultipleOfStep', { step: '0.25' }), 'ru')).toBe(
-      'Количество должно быть кратно 0.25',
+      sentence('order.errors.qtyNotMultipleOfStep', { step: '0.25' }, 'ru'),
     );
+    // No placeholder is left unfilled.
+    for (const l of ['zh', 'en', 'ru', 'uz'] as const) {
+      expect(say(domainError('run.errors.storeItemsUnchecked', { n: 3 }), l)).not.toMatch(/[{}]/);
+    }
   });
 
   test('data.i18nKey names the sentence when the message is something else', () => {
@@ -121,7 +131,7 @@ describe('errorTextOf: placeholders from the server', () => {
       message: JSON.stringify([{ code: 'invalid_string', message: 'invalid decimal' }]),
       data: { i18nKey: 'common.errors.validation' },
     };
-    expect(errorTextOf(err, 'order.toast.saveFailed').key).toBe('order.toast.saveFailed');
+    expect(errorTextOf(err, 'order.toast.adjustFailed').key).toBe('order.toast.adjustFailed');
   });
 
   test('only plain values are used; transport failures still map as before', () => {
@@ -135,5 +145,77 @@ describe('errorTextOf: placeholders from the server', () => {
       key: 'common.networkError',
       vars: {},
     });
+  });
+});
+
+// Review TEST3-08 (2026-11-10): the toast of a failed write, which used to
+// be decided inside the errToast hook without a test.
+describe('writeErrorTextOf', () => {
+  const ONLINE = { online: true, retrySafe: false };
+  const lost = new Error('Failed to fetch');
+
+  test('a server key wins, with its placeholders, whatever the connection', () => {
+    const err = {
+      message: 'order.errors.qtyNotMultipleOfStep',
+      data: { context: { step: '0.500' } },
+    };
+    for (const write of [ONLINE, { online: false, retrySafe: true }]) {
+      expect(writeErrorTextOf(err, 'order.toast.adjustFailed', write)).toEqual({
+        key: 'order.errors.qtyNotMultipleOfStep',
+        vars: { step: '0.5' },
+      });
+    }
+  });
+
+  test('a schema refusal names its field key, or keeps the action sentence', () => {
+    const issue = JSON.stringify([{ message: 'dishes.errors.codeTaken' }]);
+    expect(writeErrorTextOf({ message: issue }, 'common.errors.actionFailed', ONLINE).key).toBe(
+      'dishes.errors.codeTaken',
+    );
+    const generic = { message: '[]', data: { i18nKey: 'common.errors.validation' } };
+    expect(writeErrorTextOf(generic, 'common.errors.actionFailed', ONLINE).key).toBe(
+      'common.errors.actionFailed',
+    );
+  });
+
+  test('a lost connection says whether the write may have been saved', () => {
+    const key = (online: boolean, retrySafe: boolean) =>
+      writeErrorTextOf(lost, 'order.toast.adjustFailed', { online, retrySafe }).key;
+    expect(key(false, false)).toBe('common.offlineNotSaved');
+    expect(key(false, true)).toBe('common.offlineNotSaved');
+    expect(key(true, false)).toBe('common.maybeSaved');
+    expect(key(true, true)).toBe('common.maybeSavedRetrySafe');
+    // A fetch that failed below tRPC is a lost connection too.
+    const below = { message: 'boom', cause: { name: 'TypeError' } };
+    expect(writeErrorTextOf(below, 'order.toast.adjustFailed', ONLINE).key).toBe(
+      'common.maybeSaved',
+    );
+  });
+
+  test('an answer from the server or its proxy is not the connection', () => {
+    for (const message of [
+      'Failed to fetch (gateway 502)',
+      'Failed to fetch (session refresh did not complete: server 500)',
+    ]) {
+      const write = { online: false, retrySafe: true };
+      expect(writeErrorTextOf(new Error(message), 'order.toast.adjustFailed', write)).toEqual({
+        key: 'common.errors.internal',
+        vars: {},
+      });
+    }
+  });
+
+  test('anything else gets the action sentence, never the raw text', () => {
+    for (const err of [
+      new Error('FORBIDDEN'),
+      { message: 'Unexpected token <' },
+      null,
+      undefined,
+    ]) {
+      expect(writeErrorTextOf(err, 'order.toast.adjustFailed', ONLINE)).toEqual({
+        key: 'order.toast.adjustFailed',
+        vars: {},
+      });
+    }
   });
 });

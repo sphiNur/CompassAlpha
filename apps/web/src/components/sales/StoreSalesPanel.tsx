@@ -26,7 +26,7 @@ import { useErrToast } from '../../lib/errToast';
 import { formatMoney, formatQty } from '../../lib/format';
 import { useCanSeePrices } from '../../lib/pricesVisible';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
-import { normalizeVoidReason, salesListView, summarizeSales } from './salesSummary';
+import { normalizeVoidReason, salesListView } from './salesSummary';
 import { moneyLine } from '../../lib/money';
 
 /** Server-side row cap of `sales.list` (apps/api/src/trpc/routers/sales.ts). */
@@ -81,6 +81,9 @@ export function StoreSalesPanel({
   const canSeePrices = useCanSeePrices(storeId);
   const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: true, storeId });
   const salesQuery = trpc.sales.list.useQuery({ storeId });
+  // CONF-17: the day's totals come from the server, over every sale; the
+  // list holds only the newest SALES_LIST_CAP.
+  const summaryQuery = trpc.sales.summary.useQuery({ storeId });
 
   const dishById = useMemo(() => {
     const m = new Map<
@@ -129,6 +132,7 @@ export function StoreSalesPanel({
     onSuccess: (data) => {
       recordIdemCtx.idempotencyKey = newIdempotencyKey();
       void utils.sales.list.invalidate({ storeId });
+      void utils.sales.summary.invalidate({ storeId });
       // M2.0c: also invalidate inventory levels — consumption rows
       // just landed in the ledger.
       void utils.inventory.levels.invalidate({ storeId });
@@ -159,6 +163,7 @@ export function StoreSalesPanel({
   const voidSale = trpc.sales.void.useMutation({
     onSuccess: () => {
       void utils.sales.list.invalidate({ storeId });
+      void utils.sales.summary.invalidate({ storeId });
       // Reversal rows just landed in the ledger.
       void utils.inventory.levels.invalidate({ storeId });
       void utils.inventory.recentMovements.invalidate({ storeId });
@@ -175,17 +180,18 @@ export function StoreSalesPanel({
   // hide the summary and lock record/void until the list is back, so a
   // cashier can't re-enter sales that already exist.
 
-  // Compute today's headline (revenue + count) for the summary row.
-  // 2026-10-21: voided sales don't count (see salesSummary.ts).
-  const summary = useMemo(() => summarizeSales(sales), [sales]);
+  // Today's headline (servings + revenue), counted by the server over the
+  // sales that stand (CONF-17). Not shown while it loads or after it
+  // failed: never a made-up 0.
+  const summary = summaryQuery.isError ? undefined : summaryQuery.data;
 
   // Sort dishes alphabetically for the picker.
   const dishOptions = useMemo(() => {
     const list = [...dishById.values()].filter((d) => !d.isArchived);
     return list.sort((a, b) =>
-      productName({ names: a.names }).localeCompare(productName({ names: b.names })),
+      productName({ names: a.names }).localeCompare(productName({ names: b.names }), i18n.locale),
     );
-  }, [dishById, productName]);
+  }, [dishById, productName, i18n.locale]);
   // R2-INT-2 (2026-10-31): dishes without a recipe can't be sold; when that
   // is all there is, say so instead of "tap Record for the first sale".
   const canManageDishes = session?.permissions.includes('dishes.manage') ?? false;
@@ -203,25 +209,25 @@ export function StoreSalesPanel({
 
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
-      {/* 2026-10-21 CA-09: sales.list returns at most SALES_LIST_CAP rows,
-          so on a busy day the summary below undercounts — say so. */}
+      {/* 2026-10-21 CA-09: sales.list returns at most SALES_LIST_CAP rows.
+          The totals below count every sale (CONF-17); only the list is cut. */}
       {!listErrored && sales.length >= SALES_LIST_CAP ? (
-        <Banner tone="warn" title={i18n.t('sales.list.capReached', { n: SALES_LIST_CAP })} />
+        <Banner title={i18n.t('sales.list.capReached', { n: SALES_LIST_CAP })} />
       ) : null}
       {/* Today summary tile. */}
-      {listErrored ? null : (
+      {listErrored || !summary ? null : (
         <div
           className={`grid ${canSeePrices ? 'grid-cols-2' : 'grid-cols-1'} gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline`}
         >
           <div>
             <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
             <div className="text-old-h2 font-semibold tabular-nums">
-              {formatQty(summary.count.toString())}
+              {formatQty(summary.servings)}
             </div>
             {/* R2-COPY-5: the noun agrees with the big figure above it
                 ("1 serving", «2 порции»). */}
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('sales.summary.servings', { n: summary.count })}
+              {i18n.t('sales.summary.servings', { n: Number(summary.servings) })}
             </div>
           </div>
           {canSeePrices ? (

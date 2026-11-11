@@ -16,6 +16,17 @@ export type { StocktakeCountProblem } from '../limits';
 export const UuidSchema = z.string().uuid();
 
 /**
+ * A photo the app shows and links: an http(s) URL, or a data:image URI
+ * (the base64 fallback when the upload store is not there), at most
+ * 300,000 characters. Review RUNAPI-24: receipt photos took any string,
+ * `javascript:` included; delivery photos had this rule since DLV-7.
+ */
+export const PhotoUrlSchema = z
+  .string()
+  .max(300_000)
+  .regex(/^(https?:\/\/|data:image\/)/i, 'common.errors.invalidPhotoUrl');
+
+/**
  * True when the text holds a C0/C1 control character (U+0000–U+001F,
  * U+007F–U+009F). Security scan F10 (2026-10-31): names a tenant admin
  * types are later printed raw by the operator's maintenance scripts, and
@@ -89,11 +100,6 @@ export const TimeZoneSchema = z
 
 export const LocaleSchema = z.enum(['en', 'zh', 'ru', 'uz']);
 export type Locale = z.infer<typeof LocaleSchema>;
-
-/** i18n names map: { en: '...', zh: '...', ru: '...', uz: '...' } — partial allowed, fallback graph en→ru→zh→uz. */
-export const I18nNamesSchema = z.record(z.string()).refine((v) => Object.keys(v).length > 0, {
-  message: 'at least one locale required',
-});
 
 /** Decimal as string. We keep it stringly-typed to avoid float drift across the wire. */
 export const DecimalStringSchema = z

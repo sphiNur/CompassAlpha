@@ -11,7 +11,8 @@
  *
  * Deliberately small, and never in the way while online:
  *   - page loads   network first; the last good index.html only when
- *                  the network fails. An online user always gets the
+ *                  the network fails or has not answered within
+ *                  NETWORK_TIMEOUT_MS. An online user always gets the
  *                  current deploy.
  *   - /assets/*    Vite's content-hashed files never change under one
  *                  URL: served from the cache once seen, so a lazy page
@@ -20,6 +21,8 @@
  *                  age out (see trimAssets).
  *   - other files  of the app's own origin under / (boot.css,
  *                  boot-guard.js): network first, cache as fallback.
+ *   - Telegram SDK the one script from another origin: network first,
+ *                  cache as fallback (TELEGRAM_SDK).
  *   - everything else — /trpc, /health, /ws, uploads, other origins,
  *     non-GET — is not touched at all: data is never served from here.
  *
@@ -44,6 +47,25 @@ var MAX_ASSETS = 300;
 var SHELL_KEY = '/index.html';
 var PASS_THROUGH = ['/trpc', '/health', '/ws', '/upload', '/api', '/sw.js'];
 /**
+ * COREWEB1-14 (2026-11-11): an offline start without the SDK ran as in a
+ * plain browser: no Telegram theme, BackButton, SettingsButton or haptics,
+ * and in fullscreen the app's own top bar sat under Telegram's buttons.
+ * The browser's own cache keeps it only as long as telegram.org allows
+ * (four days, 2026-11) and loses it when the WebView's cache is cleared;
+ * this copy stays. index.html loads it without `crossorigin`, so the
+ * answer is opaque: the <script> can run it, this worker cannot read it
+ * (status 0).
+ */
+var TELEGRAM_SDK = 'https://telegram.org/js/telegram-web-app.js';
+/**
+ * COREWEB1-15 (2026-11-11): on a connection that is up but carries
+ * nothing, a load waited for the browser's own timeout, which can take
+ * minutes, before the cached copy was tried. After this long the cached
+ * copy answers, when there is one; the network's answer, if it comes,
+ * still replaces it in the cache.
+ */
+var NETWORK_TIMEOUT_MS = 4000;
+/**
  * The server sends `Vary: Origin` (CORS). A module script asks with an
  * Origin header and a precached copy was stored without one, so a plain
  * match missed it and an offline reload after the first visit still
@@ -51,10 +73,11 @@ var PASS_THROUGH = ['/trpc', '/health', '/ws', '/upload', '/api', '/sw.js'];
  */
 var MATCH = { ignoreVary: true };
 
-/** Which strategy a request gets: 'page' | 'asset' | 'static' | null (untouched). */
+/** Which strategy a request gets: 'page' | 'asset' | 'static' | 'sdk' | null (untouched). */
 function route(request, origin) {
   if (request.method !== 'GET') return null;
   var url = new URL(request.url);
+  if (url.origin + url.pathname === TELEGRAM_SDK) return 'sdk';
   if (url.origin !== origin) return null;
   for (var i = 0; i < PASS_THROUGH.length; i++) {
     if (url.pathname === PASS_THROUGH[i] || url.pathname.indexOf(PASS_THROUGH[i] + '/') === 0) {
@@ -67,6 +90,31 @@ function route(request, origin) {
   return null;
 }
 self.__compassSwRoute = route; // for the unit test only
+
+/**
+ * Whether an answer may be kept (COREWEB1-15). The server answers a path
+ * it does not know with index.html and 200 (only a missing /assets/ file
+ * is a 404, since OPS-14), so a request for a stray .js or .png kept the
+ * page under that file's name, served from then on in its place. A page
+ * must be HTML and a file must not be. The SDK's opaque answer cannot be
+ * read and is kept as it is.
+ */
+function cacheable(res, kind) {
+  if (kind === 'sdk') return res.type === 'opaque' || (res.type === 'cors' && res.ok);
+  if (!res.ok || res.type !== 'basic') return false;
+  var html = (res.headers.get('content-type') || '').toLowerCase().indexOf('text/html') === 0;
+  return kind === 'page' ? html : !html;
+}
+self.__compassSwCacheable = cacheable; // for the unit test only
+
+function noop() {}
+
+/** Fetch `url` and keep the answer when it passes `cacheable`. */
+function fetchInto(cache, url, kind, init) {
+  return fetch(url, init).then(function (res) {
+    return cacheable(res, kind) ? cache.put(url, res) : undefined;
+  });
+}
 
 function pathOf(url) {
   return new URL(url, self.location.origin).pathname;
@@ -143,7 +191,7 @@ self.__compassShellAssetUrls = shellAssetUrls; // for the unit test only
 /** Cache the shell and its entry files so the very first visit works offline. */
 function precacheShell() {
   return fetch('/', { cache: 'no-store', credentials: 'same-origin' }).then(function (res) {
-    if (!res.ok || res.type !== 'basic') return undefined;
+    if (!cacheable(res, 'page')) return undefined;
     return res
       .clone()
       .text()
@@ -152,7 +200,8 @@ function precacheShell() {
           return c.put(SHELL_KEY, res).then(function () {
             return Promise.all(
               shellAssetUrls(html).map(function (u) {
-                return c.add(u).catch(function () {
+                var kind = u.indexOf('/assets/') === 0 ? 'asset' : 'static';
+                return fetchInto(c, u, kind).catch(function () {
                   /* one missing file must not fail the install */
                 });
               }),
@@ -160,6 +209,13 @@ function precacheShell() {
           });
         });
       });
+  });
+}
+
+/** The SDK too: the first visit loaded it before this worker existed. */
+function precacheSdk() {
+  return caches.open(CACHE).then(function (c) {
+    return fetchInto(c, TELEGRAM_SDK, 'sdk', { mode: 'no-cors' });
   });
 }
 
@@ -176,7 +232,7 @@ function cacheUrls(urls) {
         if (kind !== 'asset' && kind !== 'static') return undefined;
         return c.match(u, MATCH).then(function (hit) {
           if (hit) return touch(c, u, hit);
-          return c.add(u).catch(function () {});
+          return fetchInto(c, u, kind).catch(noop);
         });
       }),
     ).then(function () {
@@ -190,61 +246,120 @@ function isOriginDown(status) {
   return status >= 500 && status <= 599;
 }
 
-function networkFirst(request, cacheKey, cacheOnOriginDown) {
-  return fetch(request)
-    .then(function (res) {
-      if (res.ok && res.type === 'basic') {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) {
-          return c.put(cacheKey || request, copy);
-        });
-        return res;
-      }
-      if (cacheOnOriginDown && isOriginDown(res.status)) {
-        return caches.match(cacheKey || request, MATCH).then(function (hit) {
-          return hit || res;
-        });
-      }
-      return res;
-    })
-    .catch(function (err) {
-      return caches.match(cacheKey || request, MATCH).then(function (hit) {
-        if (hit) return hit;
-        throw err;
+/**
+ * Network first, for pages, the boot files and the SDK: the network's
+ * answer, or the cached copy when the network fails, when the origin is
+ * down (5xx; an opaque answer has no status and is passed on as it is),
+ * or when nothing has come back within NETWORK_TIMEOUT_MS.
+ *
+ * Returns the answer and `done`, which settles once a fresh copy is
+ * stored. COREWEB1-15: the write used to run outside the event, so a
+ * worker stopped right after answering could lose it and keep the old
+ * shell.
+ */
+function networkFirst(request, kind, cacheKey) {
+  var key = cacheKey || request;
+  var copy = null;
+  var network = fetch(request).then(function (res) {
+    if (cacheable(res, kind)) copy = res.clone();
+    return res;
+  });
+  var done = network
+    .then(function () {
+      if (!copy) return undefined;
+      return caches.open(CACHE).then(function (c) {
+        return c.put(key, copy);
       });
-    });
+    })
+    .catch(noop);
+  function cached() {
+    return caches.match(key, MATCH).catch(noop);
+  }
+  var response = new Promise(function (resolve, reject) {
+    var answered = false;
+    function answer(res) {
+      if (answered) return;
+      answered = true;
+      resolve(res);
+    }
+    var timer = setTimeout(function () {
+      cached().then(function (hit) {
+        if (hit) answer(hit);
+      });
+    }, NETWORK_TIMEOUT_MS);
+    network.then(
+      function (res) {
+        clearTimeout(timer);
+        if (!isOriginDown(res.status)) {
+          answer(res);
+          return;
+        }
+        cached().then(function (hit) {
+          answer(hit || res);
+        });
+      },
+      function (err) {
+        clearTimeout(timer);
+        cached().then(function (hit) {
+          if (hit) answer(hit);
+          else if (!answered) {
+            answered = true;
+            reject(err);
+          }
+        });
+      },
+    );
+  });
+  return { response: response, done: done };
 }
 
+/**
+ * Cache first, for Vite's hashed files. Returns the answer and `done`,
+ * which settles once the write it started (a fresh copy, or a hit's
+ * "recently used" mark) is finished.
+ */
 function cacheFirst(request) {
-  return caches.match(request, MATCH).then(function (hit) {
+  var settle;
+  var done = new Promise(function (resolve) {
+    settle = resolve;
+  });
+  var response = caches.match(request, MATCH).then(function (hit) {
     if (hit) {
       var again = hit.clone();
-      caches.open(CACHE).then(function (c) {
-        return touch(c, request.url, again);
-      });
+      settle(
+        caches.open(CACHE).then(function (c) {
+          return touch(c, request.url, again);
+        }),
+      );
       return hit;
     }
     return fetch(request).then(function (res) {
-      if (res.ok && res.type === 'basic') {
-        var copy = res.clone();
+      if (!cacheable(res, 'asset')) {
+        settle();
+        return res;
+      }
+      var copy = res.clone();
+      settle(
         caches.open(CACHE).then(function (c) {
           return c.put(request.url, copy).then(function () {
             return trimAssets(c);
           });
-        });
-      }
+        }),
+      );
       return res;
     });
   });
+  response.catch(function () {
+    settle();
+  });
+  return { response: response, done: done.catch(noop) };
 }
 
 self.addEventListener('install', function (event) {
   self.skipWaiting();
-  event.waitUntil(
-    precacheShell().catch(function () {
-      /* offline or the origin is down: the next online visit fills the cache */
-    }),
-  );
+  // Offline, or the origin or telegram.org is down: the next online visit
+  // fills the cache.
+  event.waitUntil(Promise.all([precacheShell().catch(noop), precacheSdk().catch(noop)]));
 });
 
 self.addEventListener('message', function (event) {
@@ -276,7 +391,12 @@ self.addEventListener('activate', function (event) {
 
 self.addEventListener('fetch', function (event) {
   var kind = route(event.request, self.location.origin);
-  if (kind === 'page') event.respondWith(networkFirst(event.request, SHELL_KEY, true));
-  else if (kind === 'asset') event.respondWith(cacheFirst(event.request));
-  else if (kind === 'static') event.respondWith(networkFirst(event.request, undefined, true));
+  if (!kind) return;
+  var job;
+  if (kind === 'asset') job = cacheFirst(event.request);
+  else if (kind === 'page') job = networkFirst(event.request, kind, SHELL_KEY);
+  else if (kind === 'sdk') job = networkFirst(event.request, kind, TELEGRAM_SDK);
+  else job = networkFirst(event.request, kind);
+  event.respondWith(job.response);
+  event.waitUntil(job.done);
 });

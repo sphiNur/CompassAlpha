@@ -22,7 +22,7 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1; CI's
  * integration job runs Postgres so this fires there.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
@@ -42,6 +42,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
 import { orderStream, runStream } from './helpers/streams';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 /**
  * Direct tRPC callers can issue the next request in the same JavaScript turn.
@@ -76,14 +79,17 @@ let fix: Fixture | null = null;
     .insert(s.organizations)
     .values({ slug, name: 'Cancel-cascade test', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const [staffUser] = await db
     .insert(s.users)
     .values({ displayName: 'Staff', tgUserId: freshTgId() })
     .returning();
+  noteUser(staffUser!.id);
   const [cancellerUser] = await db
     .insert(s.users)
     .values({ displayName: 'Canceller', tgUserId: freshTgId() })
     .returning();
+  noteUser(cancellerUser!.id);
   const [staffMember] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: staffUser!.id })
@@ -197,11 +203,6 @@ let fix: Fixture | null = null;
     cancellerMemberId: cancellerMember!.id,
     slug,
   };
-});
-
-afterAll(() => {
-  // Slugs are timestamped — leaving rows simplifies forensic
-  // inspection if a future run flakes.
 });
 
 describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {

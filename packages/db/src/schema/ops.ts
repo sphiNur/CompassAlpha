@@ -82,7 +82,9 @@ export const auditLog = opsSchema.table(
 );
 
 /**
- * Per-org client telemetry mirror �?kept for offline forensics in addition to OTel.
+ * Per-org client telemetry mirror — kept for offline forensics in addition to OTel.
+ * Under RLS by org_id (review DB-03); rows sent before sign-in have none and
+ * only the system context sees them.
  */
 export const clientLogs = opsSchema.table(
   'client_logs',
@@ -115,6 +117,11 @@ export const clientLogs = opsSchema.table(
   }),
 );
 
+/**
+ * Left from the debug page's old "Unreviewed" tab: no code reads or writes
+ * it now. Under RLS like the other tables with an org_id (review DB-03);
+ * dropping it would be a migration of its own.
+ */
 export const logReviewCursor = opsSchema.table('log_review_cursor', {
   orgId: uuid('org_id').primaryKey(),
   lastReviewedAt: timestamp('last_reviewed_at', { withTimezone: true, mode: 'date' })

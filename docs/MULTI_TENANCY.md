@@ -73,11 +73,12 @@ authenticated session plus a row in `auth.platform_admins`; being the
 4. Create the owner membership and a global `admin` binding.
 5. Issue a session for the new tenant.
 
-Grant platform access with:
+Grant, list and revoke platform access with:
 
 ```bash
 compass platform grant <tgUserId>
 compass platform list
+compass platform revoke <tgUserId>   # refused for the last one
 ```
 
 The provisioning helper is also used by `compass org create --owner`

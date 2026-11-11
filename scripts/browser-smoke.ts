@@ -24,6 +24,7 @@
  *
  * COMPASS_BASE is required (P0-4, 2026-05-17 — stale-default footgun removed).
  */
+import { fileURLToPath } from 'node:url';
 import type { ConsoleMessage } from 'playwright';
 import {
   HEADLESS,
@@ -40,6 +41,15 @@ import {
 
 const BASE = smokeBase();
 const { record, finish } = createReport();
+
+/**
+ * Review OPS-40 (2026-11-11): a failure screenshot goes under the repo's
+ * test-results/ (ignored), wherever the script runs from. It used to land
+ * in the working directory, unignored, and the next deploy refused the
+ * dirty tree.
+ */
+const failureShot = (name: string): string =>
+  fileURLToPath(new URL(`../test-results/${name}`, import.meta.url));
 
 async function run() {
   const { browser, context } = await launchSmoke({
@@ -90,7 +100,7 @@ async function run() {
     } catch (err) {
       record('React mounted (.ready class added)', false, (err as Error).message);
       // Capture screenshot on failure for forensics.
-      await page.screenshot({ path: 'smoke-failure.png', fullPage: true });
+      await page.screenshot({ path: failureShot('smoke-failure.png'), fullPage: true });
     }
 
     // Auth should resolve (fake telegramLogin) → AuthGate releases → Shell mounts.
@@ -125,7 +135,7 @@ async function run() {
       );
       console.log('  --- diagnostic: #root html (first 800 chars) ---');
       console.log('    ' + rootHtml.replace(/\n/g, '\n    '));
-      await page.screenshot({ path: 'smoke-failure-shell.png', fullPage: true });
+      await page.screenshot({ path: failureShot('smoke-failure-shell.png'), fullPage: true });
     }
 
     // Walk every tab. Each click must not produce a JS error.

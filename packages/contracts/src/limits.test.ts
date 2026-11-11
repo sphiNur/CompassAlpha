@@ -6,12 +6,18 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
+  ATTENDANCE_ACCURACY_SLACK_M,
+  ATTENDANCE_MAX_ACCURACY_M,
   isPurchasePrice,
+  locationVerdict,
   ORDER_QTY_MAX,
   SKU_STEPS,
   SKU_UNITS,
   settlementMoneyProblem,
   stocktakeCountProblem,
+  TAX_RATE_MESSAGE,
+  taxRateProblem,
+  taxRateToSend,
 } from './limits';
 import { OrderQtySchema } from './schemas/common';
 import {
@@ -66,6 +72,35 @@ describe('limits.ts', () => {
     expect(barrel.stocktakeCountProblem).toBe(stocktakeCountProblem);
   });
 
+  it('taxRateProblem: the finance sheet and orgFinanceUpdate ask one rule (ADM1-14)', () => {
+    for (const ok of ['0', '0.00', '7', '12.5', '12.50', '50', '50.00']) {
+      expect(taxRateProblem(ok)).toBeNull();
+    }
+    for (const bad of ['', '12,5', '-1', '7.125', '1e1', '.5', '12.', 'abc', '1000']) {
+      expect(taxRateProblem(bad)).toBe('format');
+    }
+    for (const high of ['50.01', '51', '100', '999.99']) {
+      expect(taxRateProblem(high)).toBe('range');
+    }
+    expect(TAX_RATE_MESSAGE).toEqual({
+      format: 'admin.errors.taxRateFormat',
+      range: 'admin.errors.taxRateOutOfRange',
+    });
+  });
+
+  it('taxRateToSend sends a number still being typed as the server takes it', () => {
+    expect(taxRateToSend('12.')).toBe('12');
+    expect(taxRateToSend('.5')).toBe('0.5');
+    expect(taxRateToSend('12.50')).toBe('12.5');
+    expect(taxRateToSend('007')).toBe('7');
+    // Not a reading of the field: left for taxRateProblem to name.
+    expect(taxRateToSend('')).toBe('');
+    expect(taxRateToSend('12,5')).toBe('12,5');
+    for (const typed of ['12.', '.5', '12.50', '0', '49.99']) {
+      expect(taxRateProblem(taxRateToSend(typed))).toBeNull();
+    }
+  });
+
   it('settlementMoneyProblem keeps the daily close rule the schemas had (CONF-08)', () => {
     // The two patterns the schemas, the page and its field lines each carried.
     const unsigned = /^\d{1,12}(\.\d{1,2})?$/;
@@ -113,5 +148,18 @@ describe('limits.ts', () => {
     expect(zero.success).toBe(false);
     expect(zero.error?.issues[0]?.message).toBe('settlement.errors.invalidDetails');
     expect(line('12.345').error?.issues[0]?.message).toBe('settlement.errors.invalidMoney');
+  });
+
+  it('locationVerdict is the one rule for the clock-in area (ATT-08)', () => {
+    const at = (distanceM: number, accuracyM: number) =>
+      locationVerdict({ distanceM, accuracyM, radiusM: 100 });
+    expect([at(100, 0), at(101, 0)]).toEqual(['inside', 'outside']);
+    // The fix's own uncertainty counts, up to the slack.
+    expect([at(130, 30), at(131, 30)]).toEqual(['inside', 'outside']);
+    const slack = ATTENDANCE_ACCURACY_SLACK_M;
+    expect([at(100 + slack, 200), at(101 + slack, 200)]).toEqual(['inside', 'outside']);
+    // A fix coarser than the cap places no one, even at the centre.
+    expect(at(0, ATTENDANCE_MAX_ACCURACY_M)).toBe('inside');
+    expect(at(0, ATTENDANCE_MAX_ACCURACY_M + 1)).toBe('inaccurate');
   });
 });

@@ -23,6 +23,7 @@ import { TRPCError } from '@trpc/server';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import type { CatalogKey } from '@compass/i18n';
 import {
   AttendanceCopyWeekInputSchema,
   AttendanceLivenessChallengeInputSchema,
@@ -51,10 +52,9 @@ import {
   AttendanceReviewQueueInputSchema,
 } from '@compass/contracts';
 import {
-  ATTENDANCE_ACCURACY_SLACK_M,
   ATTENDANCE_FACE_CONSENT_VERSION,
-  ATTENDANCE_MAX_ACCURACY_M,
   ATTENDANCE_UNDO_WINDOW_MS,
+  locationVerdict,
 } from '@compass/contracts/limits';
 import { z } from 'zod';
 import { attendance as rules, dateInTz, todayInTz } from '@compass/domain';
@@ -94,7 +94,7 @@ import { linkForStore } from '../../services/notifyForEvent';
 import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
 import type { RequestContext } from '../context';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
-import { loadWageRoster } from './settlement';
+import { loadWageRoster } from '../../services/wageRoster';
 
 type Session = {
   memberId: string;
@@ -117,9 +117,14 @@ const WRONG_PERSON_REASON = 'attendance.voidReason.wrongPerson';
 /** How long a colleague taken back as "not them" stays out of that phone's face look. */
 const TAKEN_BACK_LEFT_OUT_MS = 5 * 60_000;
 
+/** The last part of a key under `attendance.errors.`; a misspelt one fails tsc (TEST2-15). */
+type AttendanceErrorKey<K = CatalogKey> = K extends `attendance.errors.${infer Rest}`
+  ? Rest
+  : never;
+
 function fail(
   code: 'FORBIDDEN' | 'BAD_REQUEST' | 'NOT_FOUND' | 'CONFLICT',
-  key: string,
+  key: AttendanceErrorKey,
   cause?: object,
 ): never {
   throw new TRPCError({ code, message: `attendance.errors.${key}`, cause });
@@ -1273,14 +1278,18 @@ export const attendanceRouter = router({
       if (policy.requireGeo && policy.geo) {
         const loc = input.location;
         if (!loc) fail('BAD_REQUEST', 'locationRequired');
-        if (loc.accuracy > ATTENDANCE_MAX_ACCURACY_M) {
+        distanceM = Math.round(rules.distanceMeters(loc, policy.geo));
+        const verdict = locationVerdict({
+          distanceM,
+          accuracyM: loc.accuracy,
+          radiusM: policy.geo.radiusM,
+        });
+        if (verdict === 'inaccurate') {
           fail('BAD_REQUEST', 'locationInaccurate', {
             context: { accuracy: Math.round(loc.accuracy) },
           });
         }
-        distanceM = Math.round(rules.distanceMeters(loc, policy.geo));
-        const slack = Math.min(loc.accuracy, ATTENDANCE_ACCURACY_SLACK_M);
-        if (distanceM > policy.geo.radiusM + slack) {
+        if (verdict === 'outside') {
           fail('FORBIDDEN', 'outsideArea', {
             context: { distance: distanceM, radius: policy.geo.radiusM },
           });

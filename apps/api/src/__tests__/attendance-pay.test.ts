@@ -8,9 +8,11 @@
  * Skipped when DATABASE_URL is unset or SKIP_PG_TESTS=1.
  */
 import { describe, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { attendance, dateInTz, todayInTz } from '@compass/domain';
 import { Hono } from 'hono';
 import { attendanceMonthExport } from '../http/attendanceExport';
+import { signExportToken } from '../services/attendanceExport';
 import { SHOULD_RUN } from './helpers/pg';
 import {
   attendanceSuite,
@@ -151,6 +153,19 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 
     const bad = await http.request('/files/attendance-month.xlsx?t=nope');
     expect(bad.status).toBe(410);
+    // Review ATT-15: a link for no member of the workspace is refused in
+    // the language it was asked for in.
+    const stranger = await signExportToken({
+      sub: randomUUID(),
+      org: f.orgId,
+      mid: randomUUID(),
+      storeId: f.storeId,
+      month,
+      locale: 'uz',
+    });
+    const refused = await http.request(`/files/attendance-month.xlsx?t=${stranger}`);
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toBe('Bu faylga ruxsatingiz yoʻq.');
   });
 
   test("an overnight clock-out and its overtime count for the shift's day, also when entered later", async () => {

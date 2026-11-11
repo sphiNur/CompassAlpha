@@ -20,7 +20,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getSheetCount, useToast } from '@compass/ui';
 import { useI18n } from './useI18n';
 import { outbox } from '../lib/idb';
-import { mayAutoReload, reloadApp } from '../lib/reload';
+import { reloadApp } from '../lib/reload';
+import { versionCheck } from '../lib/versionCheck';
 
 const POLL_MS = 30_000;
 
@@ -45,74 +46,45 @@ export function useVersionCheck(): void {
     const running = getRunningBuildId();
     if (!running) return;
 
-    let updateWaiting = false;
-    let hiddenSince: number | null = document.visibilityState === 'hidden' ? Date.now() : null;
-
-    const tryBackgroundReload = async () => {
-      if (!updateWaiting || hiddenSince === null) return;
-      let queuedWrites = 0;
-      try {
-        queuedWrites = await outbox.size();
-      } catch {
-        /* IDB unavailable: nothing can be queued */
-      }
-      const ok = mayAutoReload({
-        hiddenForMs: hiddenSince === null ? null : Date.now() - hiddenSince,
-        openSheets: getSheetCount(),
-        mutationsInFlight: latest.current.queryClient.isMutating(),
-        queuedWrites,
-      });
-      if (ok) reloadApp('update-while-hidden', running);
-    };
-
-    const check = async () => {
-      if (updateWaiting) {
-        void tryBackgroundReload();
-        return;
-      }
-      try {
+    const versions = versionCheck({
+      running,
+      async serverBuild() {
         // Bypass any browser cache.
-        const url = '/health/version?t=' + Date.now();
-        const res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = (await res.json()) as { commit?: string };
-        const server = data.commit;
-        if (!server || server === running || updateWaiting) return;
-        updateWaiting = true;
+        const res = await fetch('/health/version?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return null;
+        return ((await res.json()) as { commit?: string }).commit ?? null;
+      },
+      now: () => Date.now(),
+      hidden: () => document.visibilityState === 'hidden',
+      queuedWrites: () => outbox.size(),
+      openSheets: () => getSheetCount(),
+      mutationsInFlight: () => latest.current.queryClient.isMutating(),
+      prompt(reload) {
         const { toast: t, i18n: tr } = latest.current;
         t.show(tr.t('app.update.title'), {
           ttlMs: 0,
           actions: [
-            // "Later" just dismisses; the hidden-app auto-reload above
-            // still picks the update up when nothing can be lost.
             { label: tr.t('app.update.later') },
-            {
-              label: tr.t('app.update.reload'),
-              emphasis: 'primary',
-              onClick: () => reloadApp('update-accepted', running),
-            },
+            { label: tr.t('app.update.reload'), emphasis: 'primary', onClick: reload },
           ],
         });
-      } catch {
-        // Network errors are fine — we'll try again next interval.
-      }
-    };
+      },
+      reload: (reason) => reloadApp(reason, running),
+    });
 
-    const onVisibility = () => {
-      hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null;
-    };
+    const check = () => void versions.check();
+    const onVisibility = () => versions.visibilityChanged();
 
     // Initial check after first paint settles.
-    const timer = setTimeout(() => void check(), 5_000);
-    const handle = setInterval(() => void check(), POLL_MS);
-    const onFocus = () => void check();
-    window.addEventListener('focus', onFocus);
+    const timer = setTimeout(check, 5_000);
+    const handle = setInterval(check, POLL_MS);
+    window.addEventListener('focus', check);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       clearTimeout(timer);
       clearInterval(handle);
-      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('focus', check);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);

@@ -21,27 +21,24 @@
  * itself has no opinion on auth.
  */
 
+import {
+  WS_CLOSE_EVICTED,
+  WS_CLOSE_MEMBERSHIP_ENDED,
+  type EvictionNotice,
+  type RealtimeMessage,
+} from '@compass/contracts/schemas/realtime';
 import { afterCommit } from '@compass/db';
 
-export type RealtimeMessage =
-  | { type: 'order.changed'; orgId: string; sessionId: string; lastSeq: number }
-  | { type: 'run.changed'; orgId: string; runId: string; lastSeq: number }
-  // Admin-side mutations (added 2026-05-03). Coarse channels — the
-  // client invalidates the whole admin.* query family on receive
-  // because catalog/people pages re-fetch quickly and the broadcast
-  // payload here is a "something changed" hint, not a delta.
-  //
-  //   catalog.changed: stores, skus, suppliers, categories, expenseTemplates
-  //   people.changed:  members, role bindings, store assignments
-  | {
-      type: 'catalog.changed';
-      orgId: string;
-      entity: 'store' | 'sku' | 'supplier' | 'category' | 'expenseTemplate';
-    }
-  | { type: 'people.changed'; orgId: string }
-  | { type: 'attendance.changed'; orgId: string; storeId: string }
-  | { type: 'notification'; orgId: string; userId: string; title: string; body?: string }
-  | { type: 'ping'; t: number };
+// Review COREWEB2-24: the messages and close codes are the web's too, so
+// they live in contracts. Admin-side changes (2026-05-03) are coarse
+// channels: the client reads the whole admin.* family again, since the
+// push is a "something changed" hint, not a delta.
+//
+//   catalog.changed: stores, skus, suppliers, categories, expenseTemplates
+//   people.changed:  members, role bindings, store assignments
+//
+// The `notification` message it also listed was never sent.
+export { WS_CLOSE_EVICTED, WS_CLOSE_MEMBERSHIP_ENDED, type RealtimeMessage };
 
 type Send = (data: string) => void;
 /** Closes the sink's socket with the given WS close code. */
@@ -71,17 +68,7 @@ const MAX_CONNECTIONS_PER_ORG = 1000;
 const EVICTION_NOTICE = JSON.stringify({
   type: 'evicted',
   reason: 'org connection cap reached',
-});
-
-/** Close code the WS layer uses for an evicted connection. */
-export const WS_CLOSE_EVICTED = 4000;
-
-/**
- * Close code for a socket whose member was suspended or removed
- * (security scan F7, 2026-10-31). The client's ordinary reconnect is
- * then refused at the upgrade, which re-checks the membership.
- */
-export const WS_CLOSE_MEMBERSHIP_ENDED = 4003;
+} satisfies EvictionNotice);
 
 /**
  * Close code for every socket when the API shuts down (COREAPI-14,

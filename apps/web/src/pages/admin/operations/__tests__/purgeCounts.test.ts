@@ -60,12 +60,12 @@ describe('resetConfirmMatches on a phone number pad (DX-CAT-4)', () => {
 
 describe('wipeConfirmMatches (DX-CAT-17)', () => {
   test('the visible workspace name confirms, spaces around ignored', () => {
-    expect(wipeConfirmMatches('Eden', 'Eden')).toBe(true);
-    expect(wipeConfirmMatches(' Eden ', 'Eden')).toBe(true);
+    expect(wipeConfirmMatches('Acme', 'Acme')).toBe(true);
+    expect(wipeConfirmMatches(' Acme ', 'Acme')).toBe(true);
   });
   test('anything else does not', () => {
-    expect(wipeConfirmMatches('default', 'Eden')).toBe(false);
-    expect(wipeConfirmMatches('eden', 'Eden')).toBe(false);
+    expect(wipeConfirmMatches('default', 'Acme')).toBe(false);
+    expect(wipeConfirmMatches('acme', 'Acme')).toBe(false);
     expect(wipeConfirmMatches('', '')).toBe(false);
   });
 });

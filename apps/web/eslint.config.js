@@ -9,11 +9,13 @@
  *
  * CI runs `pnpm lint`. react-hooks/rules-of-hooks is enforced;
  * exhaustive-deps is on except for a baseline of older files (see the
- * note at the rule).
+ * note at the rule). The globals and rules for src/ are shared with
+ * packages/ui (eslint.shared.mjs at the repository root, OPS-19).
  */
 import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
+import { BROWSER_GLOBALS, SOURCE_RULES, TEST_RULES } from '../../eslint.shared.mjs';
 
 export default [
   // 1) Files to ignore entirely.
@@ -78,126 +80,13 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: {
-        // Browser globals available everywhere in apps/web.
-        window: 'readonly',
-        document: 'readonly',
-        navigator: 'readonly',
-        location: 'readonly',
-        localStorage: 'readonly',
-        sessionStorage: 'readonly',
-        fetch: 'readonly',
-        Request: 'readonly',
-        Response: 'readonly',
-        Headers: 'readonly',
-        URL: 'readonly',
-        URLSearchParams: 'readonly',
-        crypto: 'readonly',
-        IDBDatabase: 'readonly',
-        IDBOpenDBRequest: 'readonly',
-        console: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        requestAnimationFrame: 'readonly',
-        cancelAnimationFrame: 'readonly',
-        MessageEvent: 'readonly',
-        WebSocket: 'readonly',
-        AbortController: 'readonly',
-        Event: 'readonly',
-        EventTarget: 'readonly',
-        CustomEvent: 'readonly',
-        HTMLElement: 'readonly',
-        HTMLInputElement: 'readonly',
-        HTMLTextAreaElement: 'readonly',
-        HTMLButtonElement: 'readonly',
-        HTMLDivElement: 'readonly',
-        Element: 'readonly',
-        Node: 'readonly',
-        FormData: 'readonly',
-        File: 'readonly',
-        FileReader: 'readonly',
-        Blob: 'readonly',
-        Image: 'readonly',
-        XMLHttpRequest: 'readonly',
-        MediaQueryListEvent: 'readonly',
-        KeyboardEvent: 'readonly',
-        MouseEvent: 'readonly',
-        TouchEvent: 'readonly',
-        PointerEvent: 'readonly',
-        process: 'readonly',
-      },
+      globals: BROWSER_GLOBALS,
     },
     plugins: { 'react-hooks': reactHooks },
     // The baseline files' disable comments for exhaustive-deps are
     // "unused" while the rule is off there.
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    rules: {
-      // Hooks called conditionally break React's hook ordering at runtime.
-      'react-hooks/rules-of-hooks': 'error',
-      // DX-PFE-7 (2026-11-01): on for new code. With --max-warnings 0 a
-      // warning fails CI like an error. The files that had findings when
-      // it was turned on are listed in the baseline block below; each
-      // fix there changes when an effect or memo re-runs, so they are
-      // migrated one file at a time, not in bulk.
-      'react-hooks/exhaustive-deps': 'warn',
-
-      // DX-PFE-12 (2026-11-01): money is qty × price rounded half-up to
-      // cents and added in cents (D1). `Number(price) * Number(qty)` in
-      // display code drifted a cent from the server's figure.
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            // Scaling by a literal (`Number(v) * 1000` to thousandths) is
-            // not a money line and is allowed.
-            "BinaryExpression[operator='*']:not([left.type='Literal']):not([right.type='Literal']) > CallExpression[callee.name=/^(Number|parseFloat)$/]",
-          message:
-            'Money: use moneyLine / sumMoneyLines (src/lib/money.ts) or the @compass/contracts/money helpers, not float multiplication (D1). Not money? Disable this line with a reason.',
-        },
-      ],
-
-      // No raw console.log/debug/info — matches the CI grep guard.
-      // console.warn / console.error are still allowed (legitimate
-      // warning paths in long-running code).
-      'no-console': ['error', { allow: ['warn', 'error'] }],
-
-      // Allow underscore-prefixed unused parameters and variables —
-      // the codebase uses them deliberately (e.g. `_opts` in callbacks
-      // whose signature is fixed by the caller).
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-          destructuredArrayIgnorePattern: '^_',
-        },
-      ],
-      // Plain 'no-unused-vars' fights the TS one on type imports.
-      'no-unused-vars': 'off',
-
-      // Empty catches are a real anti-pattern — surface them.
-      'no-empty': ['error', { allowEmptyCatch: false }],
-
-      // Allow ts-expect-error with a clear comment so legitimate
-      // escape hatches don't need bare @ts-ignore.
-      '@typescript-eslint/ban-ts-comment': [
-        'error',
-        {
-          'ts-expect-error': 'allow-with-description',
-          'ts-ignore': true,
-          'ts-nocheck': true,
-          'ts-check': false,
-        },
-      ],
-
-      // The codebase uses `as any` in a few places (5 in apps/api's
-      // trpc middleware, 0 in web). Web SHOULD stay clean; warn so
-      // new ones are surfaced but don't break the build on day one.
-      '@typescript-eslint/no-explicit-any': 'warn',
-    },
+    rules: SOURCE_RULES,
   },
 
   // 4b) exhaustive-deps baseline: files that had findings when the rule
@@ -222,6 +111,31 @@ export default [
     },
   },
 
+  // 4c) Review TEST3-06 (2026-11-10): P-5 (2026-10-31) — a value import
+  //     from the `@compass/contracts` barrel pulls zod and every schema
+  //     into the web bundle (the schema modules run `z.object(...)` at
+  //     load, so they cannot be tree-shaken). Types are free; values come
+  //     from the zod-free subpaths. A test used to look for this with a
+  //     regex that missed `export … from`.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@compass/contracts',
+              allowTypeImports: true,
+              message:
+                'The barrel pulls zod into the bundle: import only types from it, and values from a zod-free subpath (@compass/contracts/limits, /money, /quantity, /schemas/roles).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // 5) ErrorBoundary tolerates console.error as a true last-resort
   //    fallback when the structured logger itself fails.
   {
@@ -235,9 +149,6 @@ export default [
   //    catching real bugs in tests.
   {
     files: ['**/__tests__/**', '**/*.test.{ts,tsx}'],
-    rules: {
-      'no-console': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
-    },
+    rules: TEST_RULES,
   },
 ];

@@ -1,98 +1,39 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { disabledClass, disabledLook } from '../components/disabled';
+import {
+  TOKENS_CSS,
+  UI_SRC,
+  color,
+  computedOnRoot,
+  contrast,
+  declaredProperties,
+  luminance,
+  parseRules,
+  readProperties,
+  sources,
+  themeOf,
+} from '../testing/tokenCss';
 
 /**
  * V3 / V7 / V8 / V9 (2026-10-30): the colour tokens are checked by
  * arithmetic, not by eye. Each text pair must clear WCAG 4.5:1 and each
- * field edge 3:1, in the light and the dark theme; every `var(--c-*)`
- * the app references must exist; the status components must not
- * hard-code colours that ignore the dark theme.
+ * field edge 3:1, in every theme; every `var(--c-*)` the components
+ * reference must exist; the status components must not hard-code colours
+ * that ignore the dark theme.
+ *
+ * Review TEST4-14 (2026-11-10): only this package's sources are read
+ * here. The checks of what apps/web uses are in its own tests
+ * (apps/web/src/styles/__tests__/tokensInUse.test.ts), and the cascade
+ * and colour arithmetic are in ../testing/tokenCss.ts for both.
  */
 
-const UI_SRC = join(import.meta.dir, '..');
-const WEB_SRC = join(UI_SRC, '../../../apps/web/src');
-const css = readFileSync(join(UI_SRC, 'tokens.css'), 'utf8');
-
-/**
- * Every custom property on <html> for one set of attributes, through the
- * cascade below (parseRules / computedOnRoot). Review TEST4-15: this used
- * to cut the light and dark blocks out of the file by string offsets, so
- * merging two selectors threw "no block", and the apple theme was never
- * measured.
- */
-function themeOf(attrs: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const rule of parseRules(css)) {
-    for (const name of Object.keys(rule.decls)) {
-      if (!name.startsWith('--') || name in out) continue;
-      const value = computedOnRoot(name, attrs, { reducedMotion: false });
-      if (value !== undefined) out[name] = value;
-    }
-  }
-  return out;
-}
-
+const css = TOKENS_CSS;
 const light = themeOf({ 'data-theme': 'native' });
 const dark = themeOf({ 'data-theme': 'dark' });
 const nativeDark = themeOf({ 'data-theme': 'native', 'data-color-scheme': 'dark' });
 const apple = themeOf({ 'data-theme': 'apple' });
-
-type Rgba = [number, number, number, number];
-
-/** CSS Color 4 oklch() → sRGB 0–255, out-of-gamut channels clipped. */
-function oklch(value: string): Rgba {
-  const m = /^oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/.exec(value);
-  if (!m) throw new Error(`not an oklch() colour: ${value}`);
-  const L = Number(m[1]) / 100;
-  const C = Number(m[2]);
-  const h = (Number(m[3]) * Math.PI) / 180;
-  const a = C * Math.cos(h);
-  const b = C * Math.sin(h);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const mm = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  const lin = [
-    4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s,
-  ];
-  const enc = (x: number) => {
-    const c = Math.min(1, Math.max(0, x));
-    return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
-  };
-  return [enc(lin[0]!), enc(lin[1]!), enc(lin[2]!), m[4] ? Number(m[4]) : 1];
-}
-
-function color(theme: Record<string, string>, name: string): Rgba {
-  const v = theme[name];
-  if (!v) throw new Error(`${name} is not defined`);
-  const ref = /^var\((--[a-z0-9-]+)\)$/.exec(v);
-  return ref ? color(theme, ref[1]!) : oklch(v);
-}
-
-const over = (top: Rgba, under: Rgba): Rgba => [
-  top[0] * top[3] + under[0] * (1 - top[3]),
-  top[1] * top[3] + under[1] * (1 - top[3]),
-  top[2] * top[3] + under[2] * (1 - top[3]),
-  1,
-];
-
-function luminance(c: Rgba): number {
-  const f = (v: number) => {
-    const x = v / 255;
-    return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
-}
-
-function contrast(theme: Record<string, string>, fg: string, bg: string): number {
-  const back = color(theme, bg);
-  const a = luminance(over(color(theme, fg), back));
-  const b = luminance(back);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
 
 const SURFACES = ['--c-bg', '--c-surface', '--c-surface-2'];
 // Text colours that sit on any of the page surfaces.
@@ -152,31 +93,20 @@ describe.each([
   });
 });
 
-function sources(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) return name === 'node_modules' ? [] : sources(p);
-    return /\.(tsx?|css)$/.test(name) ? [p] : [];
-  });
-}
-
 /**
- * Custom properties the app sets from JavaScript (no stylesheet declares
- * them; every reader has a fallback): the Telegram chrome insets measured
- * in Shell.tsx and the MainButton height (lib/mainButtonInset.ts).
+ * Custom properties the host app sets at run time, which the components
+ * read with a fallback: the MainButton height (Toast keeps clear of it).
  */
-const RUNTIME_VARS = [
-  '--app-chrome-reserve',
-  '--app-chrome-safe-top',
-  '--app-chrome-pad-left',
-  '--app-chrome-pad-right',
-  '--app-main-btn-h',
-];
+const HOST_VARS = ['--app-main-btn-h'];
+
+/** The package's own sources: not its tests or their helpers in src/testing. */
+const componentFiles = () =>
+  sources(UI_SRC).filter((f) => !f.includes('__tests__') && !f.includes('/src/testing/'));
 
 describe('colour tokens in use', () => {
-  test('every var(--c-*) referenced by the web app and the UI kit is defined', () => {
+  test('every var(--c-*) referenced by the UI kit is defined', () => {
     const used = new Set<string>();
-    for (const file of [...sources(UI_SRC), ...sources(WEB_SRC)]) {
+    for (const file of sources(UI_SRC)) {
       for (const m of readFileSync(file, 'utf8').matchAll(/var\((--c-[a-z0-9-]+)/g)) used.add(m[1]!);
     }
     const missing = [...used].filter((name) => !(name in light));
@@ -186,35 +116,18 @@ describe('colour tokens in use', () => {
   // N3 (2026-10-31): only `--c-*` was checked, so `--r-input` (never
   // defined) left one select square in an all-pill screen. Now every
   // custom property read anywhere — `var(--x)` or Tailwind's `[--x]` —
-  // must be declared in a stylesheet, or be one the app writes at run time.
-  test('every custom property referenced by the web app and the UI kit is defined', () => {
-    const files = [...sources(UI_SRC), ...sources(WEB_SRC)].filter((f) => !f.includes('__tests__'));
-    const declared = new Set<string>();
-    const used = new Map<string, string>();
-    for (const file of files) {
-      const src = readFileSync(file, 'utf8');
-      if (file.endsWith('.css')) {
-        for (const m of src.matchAll(/(--[a-z0-9-]+)\s*:/g)) declared.add(m[1]!);
-      }
-      // A name followed by `-` or `*` is a prose pattern (`--app-chrome-pad-*`).
-      for (const m of src.matchAll(/(?:var\(\s*|\[)(--[a-z0-9-]*[a-z0-9])(?![a-z0-9*-])/g)) {
-        if (!used.has(m[1]!)) used.set(m[1]!, file.slice(file.indexOf('/src/') + 1));
+  // must be declared in tokens.css, or be one the host sets at run time.
+  test('every custom property referenced by the UI kit is defined', () => {
+    const declared = declaredProperties(css);
+    const missing: string[] = [];
+    for (const file of componentFiles()) {
+      for (const name of readProperties(readFileSync(file, 'utf8'))) {
+        if (!declared.has(name) && !HOST_VARS.includes(name)) {
+          missing.push(`${name} (${file.slice(file.indexOf('/src/') + 1)})`);
+        }
       }
     }
-    const missing = [...used]
-      .filter(([name]) => !declared.has(name) && !RUNTIME_VARS.includes(name))
-      .map(([name, file]) => `${name} (${file})`);
-    expect(missing).toEqual([]);
-  });
-
-  test('each run-time custom property is really written by the app', () => {
-    const code = [...sources(UI_SRC), ...sources(WEB_SRC)]
-      .filter((f) => !f.includes('__tests__') && !f.endsWith('.css'))
-      .map((f) => readFileSync(f, 'utf8'))
-      .join('\n');
-    for (const name of RUNTIME_VARS) {
-      expect({ name, written: code.includes(`'${name}'`) }).toEqual({ name, written: true });
-    }
+    expect([...new Set(missing)]).toEqual([]);
   });
 
   test('status components take their colours from tokens', () => {
@@ -256,18 +169,6 @@ describe('tap areas', () => {
   });
 });
 
-/** The text of a JSX className value: `"…"` or a balanced `{…}`. */
-function classNameValue(after: string): string {
-  if (after.startsWith('"')) return after.slice(1, after.indexOf('"', 1));
-  if (!after.startsWith('{')) return '';
-  let depth = 0;
-  for (let i = 0; i < after.length; i++) {
-    if (after[i] === '{') depth++;
-    else if (after[i] === '}' && --depth === 0) return after.slice(1, i);
-  }
-  return after.slice(1);
-}
-
 describe('D18: text fields are 44px', () => {
   const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
 
@@ -287,37 +188,6 @@ describe('D18: text fields are 44px', () => {
     expect(read('Button.tsx')).toContain("md: 'h-[var(--control-h)]");
     expect(read('Textarea.tsx')).toContain('min-h-11');
   });
-
-  test('no raw <input>, <select> or <textarea> in the web app is shorter than 44px', () => {
-    // TEST4-15: the scan read only `className="…"`; a `className={cn(…)}`
-    // or a template string went unchecked, and so did `h-[36px]`.
-    const SHORT =
-      /(^|[\s'"`])(h-(?:[0-9]|10)|h-\[(?:[0-9]|[1-3][0-9]|4[0-3])px\]|py-1)(?=$|[\s'"`])/;
-    const short: string[] = [];
-    for (const file of sources(WEB_SRC)) {
-      if (!file.endsWith('.tsx')) continue;
-      const src = readFileSync(file, 'utf8');
-      for (const m of src.matchAll(/<(input|select|textarea)\b/g)) {
-        // The element's own attributes: up to its first className.
-        const attrs = src.slice(m.index!, m.index! + 1200);
-        const at = attrs.indexOf('className=');
-        const type = /type="([a-z]+)"/.exec(at < 0 ? attrs : attrs.slice(0, at))?.[1];
-        if (type && ['checkbox', 'radio', 'hidden', 'file'].includes(type)) continue;
-        const cls = at < 0 ? '' : classNameValue(attrs.slice(at + 'className='.length));
-        if (SHORT.test(cls))
-          short.push(`${file.slice(WEB_SRC.length)}: ${cls.replace(/\s+/g, ' ')}`);
-      }
-    }
-    expect(short).toEqual([]);
-  });
-
-  test('the scan reads every way a className is written', () => {
-    expect(classNameValue('"h-9 w-full" />')).toBe('h-9 w-full');
-    expect(classNameValue("{cn('h-[36px] px-2', a && 'b')} />")).toBe(
-      "cn('h-[36px] px-2', a && 'b')",
-    );
-    expect(classNameValue('{`h-10 ${x}`} />')).toBe('`h-10 ${x}`');
-  });
 });
 
 describe('V18: the sheet keeps its lift', () => {
@@ -331,112 +201,6 @@ describe('V18: the sheet keeps its lift', () => {
     expect(rule).toContain('inset 0 0 0 1px var(--c-divider)');
   });
 });
-
-describe('purchase row controls', () => {
-  test('the row controls are at least 44 wide and grow with their label', () => {
-    const src = readFileSync(join(WEB_SRC, 'pages/runs/views/RunViews.tsx'), 'utf8');
-    const ctrl = /const ROW_CTRL =\s*([\s\S]*?);/.exec(src)![1]!;
-    expect(ctrl).toContain('min-w-11');
-    expect(ctrl).toContain('whitespace-nowrap');
-    expect(ctrl).not.toMatch(/\bw-9\b/);
-    expect(src).not.toContain('min-w-9');
-  });
-});
-
-describe('CMP-INT-6: keyboard focus is visible', () => {
-  const appCss = readFileSync(join(WEB_SRC, 'styles/index.css'), 'utf8').replace(
-    /\/\*[\s\S]*?\*\//g,
-    '',
-  );
-
-  test('no global rule removes the focus outline', () => {
-    expect(appCss).not.toMatch(/focus-visible\s*\{[^}]*outline:\s*none/);
-  });
-
-  test('a global :focus-visible ring drawn in the --c-ring token', () => {
-    const rule = /(?:^|\n)\s*:focus-visible\s*\{([^}]*)\}/.exec(appCss)?.[1] ?? '';
-    expect(rule).toContain('outline: 2px solid var(--c-ring)');
-  });
-});
-
-/**
- * DX-VIS-4 / DX-IX-1 (2026-11-01): a small cascade over tokens.css for the
- * <html> element. It computes which declaration of a custom property wins
- * (media query, selector specificity, source order), the way the browser
- * does, so a selector that loses to `:root[data-theme='native']` fails
- * here instead of silently in production.
- */
-type Rule = { selectors: string[]; media: string | null; decls: Record<string, string>; order: number };
-
-function parseRules(source: string): Rule[] {
-  const text = source.replace(/\/\*[\s\S]*?\*\//g, '');
-  const rules: Rule[] = [];
-  let order = 0;
-  const walk = (chunk: string, media: string | null) => {
-    let i = 0;
-    while (i < chunk.length) {
-      const open = chunk.indexOf('{', i);
-      if (open < 0) break;
-      const prelude = chunk.slice(i, open).trim();
-      // Find the matching close brace.
-      let depth = 1;
-      let j = open + 1;
-      while (j < chunk.length && depth > 0) {
-        if (chunk[j] === '{') depth++;
-        else if (chunk[j] === '}') depth--;
-        j++;
-      }
-      const body = chunk.slice(open + 1, j - 1);
-      if (prelude.startsWith('@media')) walk(body, prelude.slice('@media'.length).trim());
-      else if (!prelude.startsWith('@')) {
-        const decls: Record<string, string> = {};
-        for (const m of body.matchAll(/([a-z-]+|--[a-z0-9-]+)\s*:\s*([^;]+);/g)) decls[m[1]!] = m[2]!.trim();
-        rules.push({ selectors: prelude.split(',').map((s) => s.trim()), media, decls, order: order++ });
-      }
-      i = j;
-    }
-  };
-  walk(text, null);
-  return rules;
-}
-
-/** Specificity of `:root` / `.class:pseudo` + attribute selectors on one element, as a single number. */
-function specificity(selector: string): number {
-  const classes = (selector.match(/\[[^\]]*\]|:[a-z-]+|\.[a-z0-9-]+/g) ?? []).length;
-  return classes * 1000;
-}
-
-function matchesRoot(selector: string, attrs: Record<string, string>): boolean {
-  const m = /^:root((?:\[[^\]]+\])*)$/.exec(selector);
-  if (!m) return false;
-  for (const a of m[1]!.matchAll(/\[([a-z-]+)(?:='([^']*)')?\]/g)) {
-    const have = attrs[a[1]!];
-    if (have === undefined) return false;
-    if (a[2] !== undefined && have !== a[2]) return false;
-  }
-  return true;
-}
-
-function computedOnRoot(
-  name: string,
-  attrs: Record<string, string>,
-  media: { reducedMotion: boolean },
-): string | undefined {
-  let best: { spec: number; order: number; value: string } | undefined;
-  for (const rule of parseRules(css)) {
-    if (rule.media && rule.media.includes('prefers-reduced-motion: reduce') && !media.reducedMotion) continue;
-    if (rule.media && !rule.media.includes('prefers-reduced-motion')) continue;
-    if (!(name in rule.decls)) continue;
-    for (const sel of rule.selectors) {
-      if (!matchesRoot(sel, attrs)) continue;
-      const spec = specificity(sel);
-      if (!best || spec > best.spec || (spec === best.spec && rule.order > best.order)) {
-        best = { spec, order: rule.order, value: rule.decls[name]! };
-      }
-    }
-  }
-  return best?.value;
-}
 
 describe('DX-VIS-4: reduced motion reaches the transition tokens', () => {
   const themes: Array<Record<string, string>> = [
@@ -485,9 +249,9 @@ describe('DX-XS-1: colour with an opacity modifier', () => {
   // Tailwind 3 cannot apply `/40` to an arbitrary colour variable: the class
   // is dropped and a ring falls back to Tailwind's default blue (the
   // danger-ghost Button border). Use color-mix() instead.
-  test('no `[var(--c-*)]/NN` utility in the web app or the UI kit', () => {
+  test('no `[var(--c-*)]/NN` utility in the UI kit', () => {
     const hits: string[] = [];
-    for (const file of [...sources(UI_SRC), ...sources(WEB_SRC)].filter((f) => !f.includes('__tests__'))) {
+    for (const file of componentFiles()) {
       for (const m of readFileSync(file, 'utf8').matchAll(/\[var\(--c-[a-z0-9-]+\)\]\/\d+/g)) {
         hits.push(`${file.slice(file.indexOf('/src/') + 1)}: ${m[0]}`);
       }

@@ -18,6 +18,8 @@
  *      on <html>) by then, force the error UI so the user can recover.
  *   4. Make the Reload / Reset & reload buttons work (CSP forbids
  *      inline onclick=).
+ *   5. Set <html data-theme data-color-scheme> before the first paint,
+ *      as ThemeProvider will once React runs (COREWEB1-26).
  *
  * NOT inside the SPA bundle: this script must run BEFORE the bundle
  * loads, including in the failure case where the bundle never loads
@@ -188,4 +190,62 @@
     noteReload();
     location.reload();
   });
+
+  // ---- 5. Colour scheme before the first paint (COREWEB1-26) ----------------
+  // The app's colours (tokens.css) follow <html data-theme data-color-scheme>,
+  // which ThemeProvider sets once React runs. Until then every screen, the
+  // splash included, was light, also in a dark Telegram. Set them now as
+  // ThemeProvider will: the saved theme, else 'native' (VITE_DEFAULT_THEME's
+  // default), and Telegram's scheme, else the phone's. The deferred SDK has
+  // not run yet, so Telegram's colours come from where it reads them: its
+  // copy in sessionStorage (newer, it wins in the SDK too), else the launch
+  // URL. Last in this file, and never thrown out of: a colour is not worth
+  // the boot error screen, which the capture above would show.
+  function telegramScheme() {
+    var params = null;
+    try {
+      params = JSON.parse(sessionStorage.getItem('__telegram__themeParams') || 'null');
+    } catch (_) {
+      /* unreadable: try the launch URL */
+    }
+    if (!params || !params.bg_color) {
+      var m = /[#&?]tgWebAppThemeParams=([^&]*)/.exec(String(location.hash || ''));
+      try {
+        params = m ? JSON.parse(decodeURIComponent(m[1].replace(/\+/g, '%20'))) : null;
+      } catch (_) {
+        params = null;
+      }
+    }
+    var hex = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(String((params && params.bg_color) || ''));
+    if (!hex) return null;
+    var h = hex[1].length === 3 ? hex[1].replace(/(.)/g, '$1$1') : hex[1];
+    var r = parseInt(h.substr(0, 2), 16);
+    var g = parseInt(h.substr(2, 2), 16);
+    var b = parseInt(h.substr(4, 2), 16);
+    // The SDK's own test (isColorDark), so the two agree.
+    return Math.sqrt(0.299 * r * r + 0.587 * g * g + 0.114 * b * b) < 120 ? 'dark' : 'light';
+  }
+  function applyScheme() {
+    var root = document.documentElement;
+    if (!root.dataset) return;
+    var theme = 'native';
+    try {
+      var saved = localStorage.getItem('compass.theme');
+      if (saved === 'native' || saved === 'apple' || saved === 'dark') theme = saved;
+    } catch (_) {
+      /* storage unavailable */
+    }
+    var scheme = telegramScheme();
+    if (!scheme) {
+      var phone = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      scheme = phone && phone.matches ? 'dark' : 'light';
+    }
+    root.dataset.theme = theme;
+    root.dataset.colorScheme = scheme;
+  }
+  try {
+    applyScheme();
+  } catch (_) {
+    /* ThemeProvider sets them once the app runs */
+  }
 })();

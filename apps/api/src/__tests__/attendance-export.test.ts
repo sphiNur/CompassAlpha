@@ -6,7 +6,11 @@
  * it was made.
  */
 import { describe, expect, test } from 'bun:test';
+import { Hono } from 'hono';
+import { SignJWT } from 'jose';
 import type { Locale } from '@compass/i18n';
+import { attendanceMonthExport } from '../http/attendanceExport';
+import { purposeKey } from '../infra/jwt';
 import { monthWorkbook, type MonthSheet } from '../services/attendanceExport';
 
 const NIGHT = '2026-11-09';
@@ -94,5 +98,44 @@ describe('monthWorkbook: an overnight shift', () => {
     };
     expect((await dailyRows(manual, 'en'))[1]).toContain(`>00:30 (${MORNING}) (manual)<`);
     expect((await dailyRows(manual, 'zh'))[1]).toContain(`>00:30（${MORNING}）（补卡）<`);
+  });
+});
+
+describe('a download link that fails (review ATT-15)', () => {
+  const http = new Hono().get('/files/attendance-month.xlsx', attendanceMonthExport);
+
+  async function open(token: string, headers: Record<string, string> = {}) {
+    const res = await http.request(`/files/attendance-month.xlsx?t=${token}`, { headers });
+    return { status: res.status, type: res.headers.get('content-type'), text: await res.text() };
+  }
+
+  test('an expired link says so in the language it was asked for in', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const expired = await new SignJWT({
+      sub: 'u',
+      org: 'o',
+      mid: 'm',
+      storeId: 's',
+      month: '2026-11',
+      locale: 'zh',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setAudience('attendance-month-export')
+      .setIssuedAt(now - 600)
+      .setExpirationTime(now - 300)
+      .sign(purposeKey('attendance-month-export'));
+    const page = await open(expired, { 'accept-language': 'ru' });
+    expect(page.status).toBe(410);
+    expect(page.type).toContain('charset=UTF-8');
+    expect(page.text).toBe('下载链接已过期，请回到应用重新导出。');
+  });
+
+  test("a link that is not ours is answered in the browser's first language", async () => {
+    const ru = await open('nope', { 'accept-language': 'ru-RU,ru;q=0.9,en;q=0.8' });
+    expect(ru.status).toBe(410);
+    expect(ru.text).toBe('Срок действия ссылки истёк. Выгрузите файл снова в приложении.');
+    expect((await open('nope')).text).toBe(
+      'This download link has expired. Export again from the app.',
+    );
   });
 });

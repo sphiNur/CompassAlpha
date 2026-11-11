@@ -12,8 +12,15 @@ const inTests = { NODE_ENV: 'test' };
 const devUrl = 'postgres://compass:compass@localhost:5433/compass';
 
 describe('which database a test run may use', () => {
-  test('one with "test" or "e2e" in its name', () => {
-    for (const name of ['compass_test', 'compass_test_rx', 'COMPASS_TEST', 'compass_e2e']) {
+  test('one with "test" or "e2e" as a word of its name', () => {
+    for (const name of [
+      'compass_test',
+      'compass_test_rx',
+      'COMPASS_TEST',
+      'compass_e2e',
+      'test-x',
+      'e2e',
+    ]) {
       const url = `postgres://u:p@localhost:5433/${name}?sslmode=disable`;
       expect([name, testDatabaseRefusal(url, inTests)]).toEqual([name, null]);
     }
@@ -21,6 +28,12 @@ describe('which database a test run may use', () => {
 
   test('any other name is refused, and the refusal names the database', () => {
     expect(testDatabaseRefusal(devUrl, inTests)).toContain('this one is "compass"');
+    // The letters inside another word are not enough.
+    for (const name of ['latest', 'contest', 'compass_attestation', 'compass_testing']) {
+      expect(testDatabaseRefusal(`postgres://u:p@localhost:5433/${name}`, inTests)).toContain(
+        `this one is "${name}"`,
+      );
+    }
     expect(testDatabaseRefusal('postgres://u:p@db.example.com/compass_prod', inTests)).toContain(
       'this one is "compass_prod"',
     );

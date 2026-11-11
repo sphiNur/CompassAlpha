@@ -17,6 +17,9 @@ import { revokeAllForUser } from '../services/refreshTokens';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
@@ -39,10 +42,13 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   beforeAll(async () => {
     const db = getDb(undefined, { system: 'maintenance' });
     // The old behaviour only fired when an org with this slug existed.
-    await db
+    // Removed after the file when this file made it (review TEST1-07).
+    const [made] = await db
       .insert(s.organizations)
       .values({ slug: 'default', name: 'Default', localeDefault: 'en', timezone: 'UTC' })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning();
+    if (made) noteOrg(made.id);
     const org = await db.query.organizations.findFirst({
       where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
     });
@@ -67,6 +73,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId, displayName: `tg:${tgUserId}` })
       .returning();
+    noteUser(user!.id);
     await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
 
     const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
@@ -96,6 +103,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId, displayName: `tg:${tgUserId}` })
       .returning();
+    noteUser(user!.id);
     const [member] = await db
       .insert(s.members)
       .values({ orgId, userId: user!.id, status: 'active' })
@@ -135,6 +143,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId, displayName: `tg:${tgUserId}` })
       .returning();
+    noteUser(user!.id);
     const [member] = await fixtures
       .insert(s.members)
       .values({ orgId, userId: user!.id, status: 'active' })
@@ -176,6 +185,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId, displayName: `tg:${tgUserId}` })
       .returning();
+    noteUser(user!.id);
     await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
     const login = await callerFor(null).auth.telegramLogin({
       initData: signInitData(tgUserId, { languageCode: 'zh-hans' }),
@@ -192,6 +202,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId: earlier, displayName: `tg:${earlier}`, locale: 'ru-RU' })
       .returning();
+    noteUser(old!.id);
     await db.insert(s.members).values({ orgId, userId: old!.id, status: 'active' });
     const again = await callerFor(null).auth.telegramLogin({ initData: signInitData(earlier) });
     expect(again.session.user.locale).toBe('ru');

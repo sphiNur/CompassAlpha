@@ -66,6 +66,7 @@ import {
   isTabVisible,
   requestTabChange,
   resolveVisibleTab,
+  TAB_KEYS,
   useNavStore,
   type Tab,
 } from '../stores/navStore';
@@ -77,10 +78,11 @@ import {
 } from '../lib/deepLink';
 import { publishMainButtonInset } from '../lib/mainButtonInset';
 import { subscribeAnnouncements } from '../lib/announce';
+import { focusFirst } from '../lib/focusFirst';
 import { setPageTitleBase } from '../lib/pageTitle';
 import { createTabScrollMemory, restoreScroll } from '../lib/tabScroll';
 import { scrollBehavior } from '../lib/reducedMotion';
-import { useI18n } from '../hooks/useI18n';
+import { useDateFormat, useI18n } from '../hooks/useI18n';
 import {
   getTg,
   isInTelegram,
@@ -120,26 +122,37 @@ type TabDef = {
    */
   shortKey: string;
   Icon: IconComponent;
+  /**
+   * The page works on the selected store (SHL-2), so whether the tab shows
+   * follows what the member may do in that store, not in any store.
+   */
+  storeBound: boolean;
 };
 
-const TABS: TabDef[] = [
-  {
-    key: 'order',
+/**
+ * Each tab's permission, labels and icon, and whether its page works on
+ * the selected store. Review COREWEB1-11 (2026-11-11): keyed by `Tab`, so a
+ * tab added to TAB_KEYS (stores/navStore.ts) needs its entry here; the nav
+ * shows them in TAB_KEYS order.
+ */
+const TAB_DEFS: { [K in Tab]: Omit<TabDef, 'key'> } = {
+  order: {
     permission: 'order.draft',
+    storeBound: true,
     labelKey: 'nav.order',
     shortKey: 'nav.short.order',
     Icon: IconOrder,
   },
-  {
-    key: 'approve',
+  approve: {
     permission: 'order.approve',
+    storeBound: true,
     labelKey: 'nav.approve',
     shortKey: 'nav.short.approve',
     Icon: IconApprove,
   },
-  {
-    key: 'run',
+  run: {
     permission: 'run.purchase',
+    storeBound: false,
     labelKey: 'nav.run',
     shortKey: 'nav.short.run',
     Icon: IconRun,
@@ -151,16 +164,16 @@ const TABS: TabDef[] = [
   // + manager + admin + super_admin) and is the right gate for a
   // price-and-spend record. See HistoryPage.tsx for why this needed no
   // server-side change.
-  {
-    key: 'history',
+  history: {
     permission: 'prices.view',
+    storeBound: false,
     labelKey: 'nav.history',
     shortKey: 'nav.short.history',
     Icon: IconHistory,
   },
-  {
-    key: 'settlement',
+  settlement: {
     permission: 'settlement.record',
+    storeBound: true,
     labelKey: 'nav.settlement',
     shortKey: 'nav.short.settlement',
     Icon: IconSettlement,
@@ -168,50 +181,41 @@ const TABS: TabDef[] = [
   // 2026-10-21: staff hold sales.record but not settlement.record, so
   // the Settlement page's sales block was unreachable for them. Users
   // with settlement.record keep that block and don't get this tab.
-  {
-    key: 'sales',
+  sales: {
     permission: 'sales.record',
     hiddenWith: 'settlement.record',
+    storeBound: true,
     labelKey: 'nav.sales',
     shortKey: 'nav.short.sales',
     Icon: IconCatalog,
   },
-  {
-    key: 'confirm',
+  confirm: {
     permission: 'delivery.confirm',
+    storeBound: true,
     labelKey: 'nav.confirm',
     shortKey: 'nav.short.confirm',
     Icon: IconConfirm,
   },
   // 2026-11-05: clock in / out. `attendance.clock` is switched on per
   // member; managers review attendance under Admin, not here.
-  {
-    key: 'attendance',
+  attendance: {
     permission: 'attendance.clock',
+    storeBound: true,
     labelKey: 'nav.attendance',
     shortKey: 'nav.short.attendance',
     Icon: IconAttendance,
   },
-  {
-    key: 'admin',
+  admin: {
     permission: 'users.manage',
     orPermission: 'reports.view',
+    storeBound: false,
     labelKey: 'nav.admin',
     shortKey: 'nav.short.admin',
     Icon: IconAdmin,
   },
-];
+};
 
-
-/** Tabs whose page works on the selected store (SHL-2). */
-const STORE_BOUND_TABS: ReadonlySet<Tab> = new Set<Tab>([
-  'order',
-  'approve',
-  'settlement',
-  'sales',
-  'confirm',
-  'attendance',
-]);
+const TABS: TabDef[] = TAB_KEYS.map((key) => ({ key, ...TAB_DEFS[key] }));
 
 /**
  * The tabs a member sees. Tabs that work on one store follow what the
@@ -225,7 +229,7 @@ function visibleTabsFor(
 ): TabDef[] {
   return TABS.filter(
     (t) =>
-      isTabVisible(t, storePerms && STORE_BOUND_TABS.has(t.key) ? storePerms : permissions) ||
+      isTabVisible(t, storePerms && t.storeBound ? storePerms : permissions) ||
       (t.key === 'admin' && isPlatformAdmin),
   );
 }
@@ -307,6 +311,7 @@ function ShellInner() {
     };
   }, []);
   const cachedAt = useCachedDataAge(!online);
+  const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
   // M1.12: contextual "this page" actions live in the same gear as the
   // global SettingsSheet. Pages register via usePageMenu(). When the
@@ -821,6 +826,10 @@ function ShellInner() {
         style={{
           WebkitOverflowScrolling: 'touch',
           overscrollBehaviorY: 'contain',
+          // COREWEB1-07: a phone on its side puts the notch and rounded
+          // corners over the left and right; pages add their px-4 inside.
+          paddingLeft: 'var(--app-safe-left, 0px)',
+          paddingRight: 'var(--app-safe-right, 0px)',
         }}
       >
         {/* HIS-9 / CLS-6 (2026-10-30): offline, lists kept showing the last
@@ -835,7 +844,7 @@ function ShellInner() {
               title={
                 cachedAt !== null
                   ? `${i18n.t('shell.offline.title')} · ${i18n.t('shell.offline.lastUpdated', {
-                      time: lastUpdatedLabel(cachedAt),
+                      time: lastUpdatedLabel(cachedAt, dateFmt),
                     })}`
                   : i18n.t('shell.offline.title')
               }
@@ -872,16 +881,23 @@ function ShellInner() {
         {visibleKeys.length > 0 ? (
           <PageErrorBoundary
             key={tab}
+            // Review COREWEB1-23 (2026-11-11): an error is a danger
+            // Banner with retry, as DataState draws one (UI-15), not the
+            // empty-list look.
             fallback={(retry) => (
-              <EmptyState
-                title={i18n.t('shell.pageError.title')}
-                description={i18n.t('shell.pageError.body')}
-                action={
-                  <Button variant="pearl" onClick={retry}>
-                    {i18n.t('common.retry')}
-                  </Button>
-                }
-              />
+              <div className="px-4 pt-3">
+                <Banner
+                  tone="danger"
+                  title={i18n.t('shell.pageError.title')}
+                  action={
+                    <Button size="sm" variant="secondary" onClick={retry}>
+                      {i18n.t('common.retry')}
+                    </Button>
+                  }
+                >
+                  {i18n.t('shell.pageError.body')}
+                </Banner>
+              </div>
             )}
           >
             {PAGES[tab]()}
@@ -972,6 +988,9 @@ function BottomNav({
       className="flex shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
         paddingBottom: 'var(--app-safe-bottom)',
+        // COREWEB1-07: keeps the first and last tabs off a side notch.
+        paddingLeft: 'var(--app-safe-left, 0px)',
+        paddingRight: 'var(--app-safe-right, 0px)',
         height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
         // M3.50: block tab switches during in-flight mutations.
         pointerEvents: busy ? 'none' : undefined,
@@ -1055,8 +1074,11 @@ function BottomNav({
   );
 }
 
-/** A11Y-10: pages that render their own visible <h1>. */
-const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'sales', 'admin']);
+/**
+ * A11Y-10: pages that render their own visible <h1>. Review COREWEB1-23
+ * (2026-11-11): not Sales, which no longer shows a title (UI-12).
+ */
+const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'admin']);
 
 /**
  * DX-IX-5 (2026-11-01): the page's main button and the bottom nav come
@@ -1066,9 +1088,13 @@ const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'sales', 'ad
 function SkipLinks({ hasNav }: { hasNav: boolean }) {
   const i18n = useI18n();
   const mainButton = usePageMainButtonState();
-  const jump = (selector: string) => () => {
-    document.querySelector<HTMLElement>(selector)?.focus();
-  };
+  // Review COREWEB1-25 (2026-11-11): selectors tried in order, so the
+  // current tab wins over the first one (focusFirst).
+  const jump =
+    (...selectors: string[]) =>
+    () => {
+      focusFirst(selectors);
+    };
   const linkClass =
     'sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[60] focus:rounded-[var(--r-pill)] ' +
     'focus:bg-[var(--c-surface)] focus:px-4 focus:py-2 focus:text-old-h3 focus:text-[var(--c-action)] focus:shadow-sheet';
@@ -1083,7 +1109,10 @@ function SkipLinks({ hasNav }: { hasNav: boolean }) {
         <button
           type="button"
           className={linkClass}
-          onClick={jump('[data-testid="primary-nav"] [aria-current="page"], [data-testid="primary-nav"] button')}
+          onClick={jump(
+            '[data-testid="primary-nav"] [aria-current="page"]',
+            '[data-testid="primary-nav"] button',
+          )}
         >
           {i18n.t('shell.skip.nav')}
         </button>

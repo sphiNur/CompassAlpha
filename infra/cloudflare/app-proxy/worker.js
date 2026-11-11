@@ -8,9 +8,11 @@
  * remain in the Compass API.
  *
  * The quick tunnel in front of nginx can change hostname after a
- * restart. The server-side watchdog POSTs the new hostname to
- * `/__origin`; it is stored in KV and picked up here without changing
- * the public URL.
+ * restart. The server-side watchdog publishes the new hostname to a
+ * private ntfy topic (it cannot reach workers.dev); the Worker reads it
+ * from there, keeps the newest one in KV and serves it without changing
+ * the public URL. `/__origin` takes the same signed message by hand when
+ * ntfy is down (review OPS-15, see the handler).
  *
  * 2026-10-21 audit CA-12: the ntfy topic is public to anyone who knows
  * its name, and whoever can post to it could point the whole app at
@@ -119,6 +121,33 @@ async function originFromMessage(message, env) {
 }
 
 /**
+ * The highest signed timestamp accepted so far: this isolate's copy, or
+ * KV's when it is higher (F3).
+ */
+async function signedFloor(env) {
+  try {
+    return Math.max(highestSignedTs, Number(await env.COMPASS_ORIGIN.get('signedTs')) || 0);
+  } catch {
+    return highestSignedTs; // KV unavailable: the per-isolate floor still applies
+  }
+}
+
+/**
+ * Take a signed origin newer than any accepted before: remember it in this
+ * isolate and in KV, which is also the fallback when the topic holds no
+ * fresh message (watchdog late, ntfy down).
+ */
+async function acceptSigned(env, found) {
+  highestSignedTs = Math.max(highestSignedTs, found.ts);
+  try {
+    await env.COMPASS_ORIGIN.put('signedTs', String(found.ts));
+    await env.COMPASS_ORIGIN.put('url', found.url);
+  } catch (error) {
+    console.warn('could not persist the accepted origin to KV', error);
+  }
+}
+
+/**
  * Pick the origin from the topic's ndjson lines, or null.
  *
  * Signed mode (F3): the valid message with the largest signed timestamp
@@ -185,29 +214,12 @@ async function currentOrigin(env) {
       );
       if (response.ok) {
         const lines = (await response.text()).trim().split('\n');
-        let floorTs = highestSignedTs;
-        if (env.ORIGIN_SIGNING_KEY) {
-          try {
-            floorTs = Math.max(floorTs, Number(await env.COMPASS_ORIGIN.get('signedTs')) || 0);
-          } catch {
-            // KV unavailable: the per-isolate floor still applies.
-          }
-        }
+        const floorTs = env.ORIGIN_SIGNING_KEY ? await signedFloor(env) : highestSignedTs;
         highestSignedTs = floorTs;
         const found = await pickOrigin(lines, env, floorTs);
         if (found) {
           if (found.ts !== null && found.ts > floorTs) {
-            highestSignedTs = found.ts;
-            try {
-              // Also the KV fallback below, so a topic that holds no
-              // fresh message (watchdog late, ntfy down) still serves the
-              // newest origin rather than a stale manual or wrangler.toml
-              // one.
-              await env.COMPASS_ORIGIN.put('signedTs', String(found.ts));
-              await env.COMPASS_ORIGIN.put('url', found.url);
-            } catch (error) {
-              console.warn('could not persist the accepted origin to KV', error);
-            }
+            await acceptSigned(env, found);
           } else if (found.ts === null && found.url !== lastAccepted) {
             // Unsigned mode (no ORIGIN_SIGNING_KEY) never wrote KV, so a
             // cold isolate whose ntfy poll timed out served the stale
@@ -264,32 +276,34 @@ export default {
       if (hit) return hit;
     }
 
+    // Manual fallback for when ntfy is down (scripts/refresh-app-proxy-
+    // origin.sh). Review OPS-15 (2026-11-10): it takes one origin message
+    // signed on the server (`compass-origin-watch --print-signed`) and
+    // checks it like a topic message: signature, age window, and newer
+    // than any origin accepted before. It used to take a shared key in a
+    // header, and the script sent the server's signing key itself.
     if (incoming.pathname === '/__origin') {
       if (request.method !== 'POST') return json({ ok: false, error: 'use POST' }, 405);
-      if (!env.ORIGIN_UPDATE_KEY) {
-        return json({ ok: false, error: 'watchdog secret is not configured' }, 503);
+      if (!env.ORIGIN_SIGNING_KEY) {
+        return json({ ok: false, error: 'ORIGIN_SIGNING_KEY is not configured' }, 503);
       }
-      if (!timingSafeEqual(request.headers.get('x-origin-key'), env.ORIGIN_UPDATE_KEY)) {
-        return json({ ok: false, error: 'forbidden' }, 403);
+      const message = await request.text();
+      let found = null;
+      if (message.length <= 512) {
+        try {
+          found = await originFromMessage(message, env);
+        } catch {
+          found = null; // not a URL
+        }
       }
-      let body;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ ok: false, error: 'invalid json' }, 400);
+      if (!found) return json({ ok: false, error: 'not a valid signed origin message' }, 400);
+      if (found.ts < (await signedFloor(env))) {
+        return json({ ok: false, error: 'an origin signed later is already in use' }, 409);
       }
-      let candidate;
-      try {
-        candidate = new URL(String(body?.url ?? ''));
-      } catch {
-        return json({ ok: false, error: 'invalid url' }, 400);
-      }
-      if (!isTunnelOrigin(candidate)) {
-        return json({ ok: false, error: 'origin must be a trycloudflare origin' }, 400);
-      }
-      await env.COMPASS_ORIGIN.put('url', candidate.toString());
-      originCache = { url: candidate.toString(), readAt: Date.now() };
-      return json({ ok: true, url: candidate.toString() });
+      await acceptSigned(env, found);
+      lastAccepted = found.url;
+      originCache = { url: found.url, readAt: Date.now() };
+      return json({ ok: true, url: found.url });
     }
 
     const origin = new URL(await currentOrigin(env));

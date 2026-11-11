@@ -1,5 +1,5 @@
 /**
- * Reading a response from the Bot API relay (infra/cloudflare/tg-relay.js).
+ * Reading a response from the Bot API relay (infra/cloudflare/tg-relay/worker.js).
  *
  * Two parties can say no. The Bot API answers in JSON (`{ ok: false,
  * error_code, description }`) and its 400 / 403 are about the recipient:

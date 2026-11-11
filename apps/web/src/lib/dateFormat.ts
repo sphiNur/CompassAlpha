@@ -105,3 +105,23 @@ export function makeDateFormatters(locale: Locale, now: () => Date = () => new D
     time: fmt({ hour: '2-digit', minute: '2-digit' }),
   };
 }
+
+/**
+ * A time zone's name in the UI language ("Uzbekistan Standard Time",
+ * 「乌兹别克斯坦标准时间」), or its IANA id where the runtime cannot name it.
+ * Review CONF-18: the daily close printed "Asia/Tashkent" in every
+ * language. Uzbek gets the app's ʻ / ʼ in place of CLDR's ‘ / ’.
+ */
+export function zoneName(timeZone: string, locale: Locale, at: Date = new Date()): string {
+  for (const style of ['longGeneric', 'long'] as const) {
+    try {
+      const name = new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: style })
+        .formatToParts(at)
+        .find((part) => part.type === 'timeZoneName')?.value;
+      if (name) return locale === 'uz' ? name.replace(/‘/g, 'ʻ').replace(/’/g, 'ʼ') : name;
+    } catch {
+      // An unknown zone, or a runtime without this style: try the next.
+    }
+  }
+  return timeZone;
+}

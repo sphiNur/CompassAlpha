@@ -27,14 +27,8 @@ import type { CatalogKey } from '@compass/i18n';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { createActWatcher, type Act } from './faceActs';
-import {
-  basicGuide,
-  useAutoCapture,
-  useCamera,
-  useFrameLoop,
-  useTracker,
-  type Guide,
-} from './faceCapture';
+import { useAutoCapture, useCamera, useFrameLoop, useTracker } from './faceCapture';
+import { basicGuide, type Guide } from './faceGuide';
 
 export type Turn = 'left' | 'right';
 export type PunchPhotos = {

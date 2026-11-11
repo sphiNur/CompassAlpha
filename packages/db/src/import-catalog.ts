@@ -112,7 +112,7 @@ async function importInto(db: Tx, orgId: string) {
     where: (cat, { eq: eq2 }) => eq2(cat.orgId, orgId),
   });
   const dbCatBySlug = new Map(dbCats.map((c2) => [c2.slug, c2]));
-  const newSlugs = new Set(CATEGORIES.map((c2) => c2.slug));
+  const newSlugs = new Set<string>(CATEGORIES.map((c2) => c2.slug));
 
   const catInsert: typeof CATEGORIES = [];
   const catUpdate: typeof CATEGORIES = [];
@@ -133,7 +133,7 @@ async function importInto(db: Tx, orgId: string) {
   }
   if (ARCHIVE_OLD) {
     for (const have of dbCats) {
-      if (!newSlugs.has(have.slug as any) && !have.isArchived) {
+      if (!newSlugs.has(have.slug) && !have.isArchived) {
         catArchive.push(have);
       }
     }
@@ -145,7 +145,7 @@ async function importInto(db: Tx, orgId: string) {
   console.log(`  ${c.red('-')} archive: ${catArchive.length}`);
   for (const cat of catInsert) console.log(c.dim(`    + ${cat.slug.padEnd(14)} ${cat.names.zh}`));
   for (const cat of catUpdate) console.log(c.dim(`    ~ ${cat.slug.padEnd(14)} ${cat.names.zh}`));
-  for (const cat of catArchive) console.log(c.dim(`    - ${printable(cat.slug).padEnd(14)} (was: ${printable((cat.names as any).zh ?? cat.slug)})`));
+  for (const cat of catArchive) console.log(c.dim(`    - ${printable(cat.slug).padEnd(14)} (was: ${printable((cat.names as { zh?: string }).zh ?? cat.slug)})`));
 
   // --- Apply categories -----------------------------------------------------
   if (APPLY) {
@@ -241,7 +241,11 @@ async function importInto(db: Tx, orgId: string) {
   for (const k of skuInsert) insertByCat.set(k.catSlug, (insertByCat.get(k.catSlug) ?? 0) + 1);
   for (const [cs, n] of insertByCat) console.log(c.dim(`    + ${cs.padEnd(12)} +${n}`));
   for (const k of skuArchive)
-    console.log(c.dim(`    - ${printable(k.code ?? 'no-code').padEnd(20)} ${printable((k.names as any).en)}`));
+    console.log(
+      c.dim(
+        `    - ${printable(k.code ?? 'no-code').padEnd(20)} ${printable((k.names as { en?: string }).en)}`,
+      ),
+    );
 
   // --- Apply SKUs -----------------------------------------------------------
   if (APPLY) {
@@ -310,5 +314,5 @@ async function importInto(db: Tx, orgId: string) {
 
 main().catch((err) => {
   console.error(c.red('FAILED'), err);
-  closeDb().finally(() => process.exit(1));
+  void closeDb().finally(() => process.exit(1));
 });

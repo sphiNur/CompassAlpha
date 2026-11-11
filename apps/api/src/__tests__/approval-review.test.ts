@@ -22,6 +22,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -50,6 +53,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `review-${suffix}`, name: 'Review', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const [store] = await db
     .insert(s.stores)

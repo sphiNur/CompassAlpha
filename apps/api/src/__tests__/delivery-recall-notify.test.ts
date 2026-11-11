@@ -13,6 +13,9 @@ import { emptyRunState, type RunEvent } from '@compass/domain/run';
 import { dispatchRunEventNotifications } from '../services/notifyForEvent';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
   test('deliver → recall → deliver again tells the store three times', async () => {
@@ -22,6 +25,7 @@ describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
       .insert(s.organizations)
       .values({ slug: `recall-${suffix}`, name: 'Recall', localeDefault: 'en', timezone: 'UTC' })
       .returning();
+    noteOrg(org!.id);
     const orgId = org!.id;
     const [role] = await db
       .insert(s.roles)
@@ -34,6 +38,7 @@ describe.skipIf(!SHOULD_RUN)('delivery recall notifications (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Store staff', tgUserId: freshTgId() })
       .returning();
+    noteUser(user!.id);
     const [member] = await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' }).returning();
     await db
       .insert(s.memberRoleBindings)

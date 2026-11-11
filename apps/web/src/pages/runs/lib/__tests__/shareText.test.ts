@@ -22,7 +22,8 @@
  * The per-store split is the required behaviour. These tests hold it
  * there.
  */
-import { describe, it, expect } from 'bun:test';
+import { beforeAll, describe, it, expect } from 'bun:test';
+import { createI18n, loadCatalog } from '@compass/i18n';
 import { buildStoreText, buildSupplierText, formatLineForText } from '../shareText';
 import type { ShareTextDeps } from '../shareText';
 import type { PreviewLine, PreviewStoreGroup } from '../../types';
@@ -34,80 +35,99 @@ const CATALOG: Record<string, { name: string; unit: string }> = {
   'sku-carrot': { name: '胡萝卜', unit: '公斤' },
 };
 
+beforeAll(async () => {
+  await Promise.all([loadCatalog('zh'), loadCatalog('en')]);
+});
+
+const zh = createI18n('zh');
 const deps: ShareTextDeps = {
   resolveSku: (skuId) => CATALOG[skuId] ?? null,
   extrasLabel: '其他物品',
   notesLabel: '备注',
+  line: (name, qty) => zh.t('run.share.line', { name, qty }),
+  heading: (label) => zh.t('run.share.heading', { label }),
 };
 
 const store = (storeId: string, storeName: string, items: PreviewLine[], legacyNote?: string) =>
   previewStore(storeId, items, { storeName, legacyNote });
 
 const supplier = (stores: PreviewStoreGroup[]) =>
-  previewSupplier('sup-1', stores, { supplierName: 'savza abat' });
+  previewSupplier('sup-1', stores, { supplierName: 'Alpha stall' });
 
 describe('formatLineForText', () => {
   it('uses the catalog name + localized unit when the SKU resolves', () => {
-    expect(formatLineForText(line({ qty: '2' }), deps)).toBe('西红柿: 2 公斤');
+    expect(formatLineForText(line({ qty: '2' }), deps)).toBe('西红柿：2 公斤');
   });
 
   it('falls back to the line own name/unit for off-catalog extras', () => {
     const l = line({ kind: 'extra', skuId: null, name: '面包', unit: '个', qty: '3' });
-    expect(formatLineForText(l, deps)).toBe('其他物品 · 面包: 3 个');
+    expect(formatLineForText(l, deps)).toBe('其他物品 · 面包：3 个');
+  });
+
+  it('follows the punctuation of the language (RUNWEB2-17)', () => {
+    const en = createI18n('en');
+    const enDeps: ShareTextDeps = {
+      ...deps,
+      extrasLabel: 'Extras',
+      notesLabel: 'Notes',
+      line: (name, qty) => en.t('run.share.line', { name, qty }),
+      heading: (label) => en.t('run.share.heading', { label }),
+    };
+    const l = line({ kind: 'extra', skuId: null, name: 'Bread', unit: 'pcs', qty: '3' });
+    expect(formatLineForText(l, enDeps)).toBe('Extras · Bread: 3 pcs');
+    expect(buildStoreText(store('s1', 'Store-A', [l], 'fresh'), enDeps)).toContain('\nNotes:\n');
   });
 
   it('puts a note on its own indented line', () => {
     expect(formatLineForText(line({ qty: '1', note: '要熟的' }), deps)).toBe(
-      '西红柿: 1 公斤\n  要熟的',
+      '西红柿：1 公斤\n  要熟的',
     );
   });
 });
 
 describe('buildStoreText', () => {
   it('KEEPS the store name — this string goes to that store own manager', () => {
-    const g = store('s1', 'Eden-Magic-City', [line({ qty: '5' })]);
+    const g = store('s1', 'Store-A', [line({ qty: '5' })]);
     const text = buildStoreText(g, deps);
-    expect(text).toContain('Eden-Magic-City');
-    expect(text).toContain('西红柿: 5 公斤');
+    expect(text).toContain('Store-A');
+    expect(text).toContain('西红柿：5 公斤');
   });
 
   it('keeps the extras marker — off-catalog is meaningful to a manager', () => {
     const text = buildStoreText(
-      store('s1', 'Hotel-Uzbek', [
-        line({ kind: 'extra', skuId: null, name: '面包', unit: '个' }),
-      ]),
+      store('s1', 'Store-B', [line({ kind: 'extra', skuId: null, name: '面包', unit: '个' })]),
       deps,
     );
     expect(text).toContain('其他物品 · 面包');
   });
 
   it('appends the legacy note under the notes label', () => {
-    const text = buildStoreText(store('s1', 'Hotel-Uzbek', [], '再买两箱水'), deps);
-    expect(text).toContain('备注:');
+    const text = buildStoreText(store('s1', 'Store-B', [], '再买两箱水'), deps);
+    expect(text).toContain('备注：');
     expect(text).toContain('再买两箱水');
   });
 });
 
 describe('buildSupplierText', () => {
   const threeStores = supplier([
-    store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '5' })]),
-    store('s2', 'Hotel-Uzbek', [line({ id: 'b', qty: '3' })]),
-    store('s3', 'Eden-Seoul', [line({ id: 'c', qty: '3' })]),
+    store('s1', 'Store-A', [line({ id: 'a', qty: '5' })]),
+    store('s2', 'Store-B', [line({ id: 'b', qty: '3' })]),
+    store('s3', 'Store-C', [line({ id: 'c', qty: '3' })]),
   ]);
 
   it('keeps each store as its own labelled section', () => {
     expect(buildSupplierText(threeStores, deps)).toBe(
       [
-        'savza abat',
+        'Alpha stall',
         '',
-        'Eden-Magic-City',
-        '西红柿: 5 公斤',
+        'Store-A',
+        '西红柿：5 公斤',
         '',
-        'Hotel-Uzbek',
-        '西红柿: 3 公斤',
+        'Store-B',
+        '西红柿：3 公斤',
         '',
-        'Eden-Seoul',
-        '西红柿: 3 公斤',
+        'Store-C',
+        '西红柿：3 公斤',
       ].join('\n'),
     );
   });
@@ -118,8 +138,8 @@ describe('buildSupplierText', () => {
     // at the scale with the vendor waiting.
     const text = buildSupplierText(threeStores, deps);
     expect(text).not.toContain('11 公斤');
-    expect(text).toContain('西红柿: 5 公斤');
-    expect(text).toContain('西红柿: 3 公斤');
+    expect(text).toContain('西红柿：5 公斤');
+    expect(text).toContain('西红柿：3 公斤');
   });
 
   it('names every store that contributes', () => {
@@ -129,29 +149,21 @@ describe('buildSupplierText', () => {
 
   it('keeps distinct SKUs under the store that asked for them', () => {
     const g = supplier([
-      store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '2' })]),
-      store('s2', 'Hotel-Uzbek', [line({ id: 'b', skuId: 'sku-onion', qty: '4' })]),
+      store('s1', 'Store-A', [line({ id: 'a', qty: '2' })]),
+      store('s2', 'Store-B', [line({ id: 'b', skuId: 'sku-onion', qty: '4' })]),
     ]);
     expect(buildSupplierText(g, deps)).toBe(
-      [
-        'savza abat',
-        '',
-        'Eden-Magic-City',
-        '西红柿: 2 公斤',
-        '',
-        'Hotel-Uzbek',
-        '洋葱: 4 公斤',
-      ].join('\n'),
+      ['Alpha stall', '', 'Store-A', '西红柿：2 公斤', '', 'Store-B', '洋葱：4 公斤'].join('\n'),
     );
   });
 
   it('carries off-catalog extras with their own name and unit', () => {
     const g = supplier([
-      store('s1', 'Eden-Magic-City', [
+      store('s1', 'Store-A', [
         line({ kind: 'extra', skuId: null, name: '面包', unit: '个', qty: '2' }),
       ]),
     ]);
-    expect(buildSupplierText(g, deps)).toContain('面包: 2 个');
+    expect(buildSupplierText(g, deps)).toContain('面包：2 个');
   });
 
   it('keeps each note attached to the store that wrote it', () => {
@@ -159,7 +171,7 @@ describe('buildSupplierText', () => {
     // wanting the same item differently. Split by store, each
     // instruction sits under its own shop and nothing can collide.
     const g = supplier([
-      store('s1', 'Eden-Magic-City', [
+      store('s1', 'Store-A', [
         line({
           id: 'a',
           kind: 'extra',
@@ -170,7 +182,7 @@ describe('buildSupplierText', () => {
           note: '要冰的',
         }),
       ]),
-      store('s2', 'Hotel-Uzbek', [
+      store('s2', 'Store-B', [
         line({
           id: 'b',
           kind: 'extra',
@@ -184,24 +196,24 @@ describe('buildSupplierText', () => {
     ]);
     expect(buildSupplierText(g, deps)).toBe(
       [
-        'savza abat',
+        'Alpha stall',
         '',
-        'Eden-Magic-City',
-        '其他物品 · 水: 2 瓶',
+        'Store-A',
+        '其他物品 · 水：2 瓶',
         '  要冰的',
         '',
-        'Hotel-Uzbek',
-        '其他物品 · 水: 1 瓶',
+        'Store-B',
+        '其他物品 · 水：1 瓶',
         '  常温',
       ].join('\n'),
     );
   });
 
   it('carries a store-level note under that store', () => {
-    const g = supplier([store('s1', 'Eden-Seoul', [line({ qty: '1' })], '要新鲜的')]);
+    const g = supplier([store('s1', 'Store-C', [line({ qty: '1' })], '要新鲜的')]);
     const text = buildSupplierText(g, deps);
-    expect(text).toContain('Eden-Seoul');
-    expect(text).toContain('备注:');
+    expect(text).toContain('Store-C');
+    expect(text).toContain('备注：');
     expect(text).toContain('要新鲜的');
   });
 
@@ -212,7 +224,7 @@ describe('buildSupplierText', () => {
   });
 
   it('passes a quantity through verbatim rather than summing it', () => {
-    const g = supplier([store('s1', 'Eden-Magic-City', [line({ qty: '0.1' })])]);
-    expect(buildSupplierText(g, deps)).toContain('西红柿: 0.1 公斤');
+    const g = supplier([store('s1', 'Store-A', [line({ qty: '0.1' })])]);
+    expect(buildSupplierText(g, deps)).toContain('西红柿：0.1 公斤');
   });
 });

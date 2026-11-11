@@ -174,7 +174,7 @@ users see English.
 | Layer | Tool | Where | Notes |
 |---|---|---|---|
 | Domain unit | `bun test` | `packages/domain/src/<a>/*.test.ts` | Pure decide/apply tests, no DB. Always cheap. |
-| API integration | `bun test` (PG-gated) | `apps/api/src/__tests__/*.test.ts` | Migrate a throwaway Postgres first, named like `compass_test`: a test run refuses a database without `test` or `e2e` in its name. CI's unit job skips them with `SKIP_PG_TESTS=1`; its integration job runs them. |
+| API integration | `bun test` (PG-gated) | `apps/api/src/__tests__/*.test.ts` | Migrate a throwaway Postgres first, named like `compass_test`: a test run refuses a database without `test` or `e2e` as a word of its name (`latest` is not one). CI's unit job skips them with `SKIP_PG_TESTS=1`; its integration job runs them. |
 | FE lib | `bun test` | `apps/web/src/lib/__tests__/`, `apps/web/src/hooks/__tests__/` | Pure utility tests. |
 | Smoke | `bun run scripts/smoke.ts` | server-side tRPC against the live URL | 29 checks, ~5–10 s. |
 | Browser smoke | `node scripts/browser-smoke*.ts` | Playwright against the live URL | Shallow render + deep walk. |
@@ -182,6 +182,12 @@ users see English.
 Aim for **at minimum** a domain unit test per command branch. PG-gated
 integration is mandatory for any path that crosses a transaction boundary
 (grant, transfer, cancel-cascade).
+
+The directories CI and the deploy test are listed once, in
+`scripts/lib/testTargets.ts`. A test file outside them, or a PG-gated one
+outside the integration directories, fails
+`scripts/__tests__/testTargets.test.ts`: add the directory there and to
+the matching step in `.github/workflows/ci.yml`.
 
 ### 10. Smoke + deploy
 
@@ -215,8 +221,8 @@ runtime issues, smokes do.
   `eq(table.orgId, ctx.session.orgId)`. Both layers — RLS + app code —
   must hold.
 - **Permissions**: declared in `packages/db/src/seed-data.ts`. Use granular
-  keys (`users.invite`) over the legacy `users.manage` for new roles. Per-
-  store scope flows through `getActorAdminStoreIds`.
+  keys (`users.grant_role`) over the legacy `users.manage` for new roles.
+  Per-store scope flows through `getActorAdminStoreIds`.
 
 ## Local dev gotchas
 

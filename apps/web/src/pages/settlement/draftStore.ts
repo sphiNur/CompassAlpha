@@ -25,11 +25,17 @@ export interface DraftStorage {
   removeItem(key: string): void;
 }
 
+/** Storage whose keys can be listed, for pruneDrafts. */
+export interface PrunableStorage extends DraftStorage {
+  readonly length: number;
+  key(index: number): string | null;
+}
+
 const PREFIX = 'compass.settlementDraft:';
 /** Drafts older than this are dropped instead of offered back. */
 export const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function draftStorage(): DraftStorage | null {
+export function draftStorage(): PrunableStorage | null {
   try {
     return typeof window !== 'undefined' ? window.localStorage : null;
   } catch {
@@ -41,6 +47,45 @@ export function draftKey(userId: string, recordKey: string): string {
   return `${PREFIX}${userId}:${recordKey}`;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+const isText = (value: unknown): value is string => typeof value === 'string';
+
+/** An expense line the form can show and total: text id, amount and reason. */
+const isExpenseLine = (value: unknown): value is Record<string, unknown> =>
+  isRecord(value) && isText(value.id) && isText(value.amount) && isText(value.reason);
+
+/** A wage line also has its person's name and a status. */
+const isWageLine = (value: unknown): boolean =>
+  isExpenseLine(value) && isText(value.personName) && isText(value.status);
+
+/**
+ * The stored draft, or null when it is expired, unreadable or not the
+ * form's shape. CONF-13: only the two lists' presence used to be checked,
+ * so a line or a field of another type (written by another build, or
+ * edited by hand) reached the form as undefined. The form's other fields
+ * are all text.
+ */
+function parseDraft<T extends StoredDraftShape>(raw: string, now: number): T | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  const { at, draft } = parsed;
+  if (typeof at !== 'number' || now - at > DRAFT_MAX_AGE_MS || !isRecord(draft)) return null;
+  const { operatingExpenseItems, wageItems, ...fields } = draft;
+  const valid =
+    Array.isArray(operatingExpenseItems) &&
+    operatingExpenseItems.every(isExpenseLine) &&
+    Array.isArray(wageItems) &&
+    wageItems.every(isWageLine) &&
+    Object.values(fields).every(isText);
+  return valid ? (draft as T) : null;
+}
+
 export function readDraft<T extends StoredDraftShape>(
   storage: DraftStorage | null,
   key: string,
@@ -50,19 +95,8 @@ export function readDraft<T extends StoredDraftShape>(
   try {
     const raw = storage.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { at?: unknown; draft?: unknown };
-    const draft = parsed?.draft as T | undefined;
-    const fresh = typeof parsed?.at === 'number' && now - parsed.at <= DRAFT_MAX_AGE_MS;
-    if (
-      !fresh ||
-      !draft ||
-      typeof draft !== 'object' ||
-      !Array.isArray(draft.operatingExpenseItems) ||
-      !Array.isArray(draft.wageItems)
-    ) {
-      storage.removeItem(key);
-      return null;
-    }
+    const draft = parseDraft<T>(raw, now);
+    if (!draft) storage.removeItem(key);
     return draft;
   } catch {
     return null;
@@ -89,5 +123,49 @@ export function forgetDraft(storage: DraftStorage | null, key: string): void {
     storage.removeItem(key);
   } catch {
     // Nothing to clean up if storage is unavailable.
+  }
+}
+
+/** One record's drafts: keys `prefix` + version; the record is now at `version`. */
+export interface DraftVersions {
+  prefix: string;
+  version: number;
+}
+
+function isEarlierVersion(key: string, { prefix, version }: DraftVersions): boolean {
+  if (!key.startsWith(prefix)) return false;
+  const rest = key.slice(prefix.length);
+  return /^\d+$/.test(rest) && Number(rest) < version;
+}
+
+/**
+ * CONF-13: only the draft being opened was ever read, so the others stayed
+ * in storage for good. Drops every draft but `keep` that is expired or
+ * unreadable and, given the open record's `versions`, every draft of an
+ * earlier version of it: typed before someone else saved, and never
+ * offered again. A later version's draft stays, in case the record shown
+ * is a stale copy.
+ */
+export function pruneDrafts(
+  storage: PrunableStorage | null,
+  keep: string,
+  versions: DraftVersions | null,
+  now = Date.now(),
+): void {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && key !== keep && key.startsWith(PREFIX)) keys.push(key);
+    }
+    for (const key of keys) {
+      const raw = storage.getItem(key);
+      const dead =
+        !raw || !parseDraft(raw, now) || (versions !== null && isEarlierVersion(key, versions));
+      if (dead) storage.removeItem(key);
+    }
+  } catch {
+    // Storage blocked: nothing to tidy.
   }
 }

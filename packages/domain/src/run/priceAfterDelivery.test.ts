@@ -16,7 +16,7 @@ const { step } = runStepper(clock);
 
 describe('run.priceAfterDelivery (2026-10-30)', () => {
   const deliveredRun = () => {
-    let s = planAndPurchase();
+    const s = planAndPurchase();
     return deliver(s);
   };
   const revise = (unitPrice: string, actualQty: string): RunCommand =>
@@ -31,8 +31,10 @@ describe('run.priceAfterDelivery (2026-10-30)', () => {
 
   test('price and payment method may change after the goods went out', () => {
     const s = deliveredRun();
+    expect(s.items.get('sku-1')?.paymentMethod).toBe('cash');
     const out = step(s, revise('15000', '4'));
     expect(out.items.get('sku-1')?.unitPrice).toBe('15000');
+    expect(out.items.get('sku-1')?.paymentMethod).toBe('transfer');
   });
 
   test('quantities may not', () => {

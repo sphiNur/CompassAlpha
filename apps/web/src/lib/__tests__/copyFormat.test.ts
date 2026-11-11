@@ -12,7 +12,7 @@ import { BUILTIN_ROLE_DEFAULTS, roleLabeller } from '../roleLabels';
 import { withoutFinalStop } from '../errorText';
 import { formatMoneyThousands } from '../format';
 import { punchKindText } from '../attendanceFormat';
-import { BUILTIN_ROLES, PERMISSIONS } from '../../../../../packages/db/src/seed-data';
+import { BUILTIN_ROLES, PERMISSIONS } from '@compass/db/seed-data';
 
 beforeAll(async () => {
   await Promise.all(['en', 'zh', 'ru', 'uz'].map((l) => loadCatalog(l as 'en' | 'zh' | 'ru' | 'uz')));
@@ -24,8 +24,16 @@ describe('D16: business dates follow the UI language', () => {
   test('this year: day and month only, no ISO', () => {
     expect(makeDateFormatters('en', now).calendarDay('2026-10-31')).toBe('Oct 31');
     expect(makeDateFormatters('zh', now).calendarDay('2026-10-31')).toBe('10月31日');
-    expect(makeDateFormatters('ru', now).calendarDay('2026-10-31')).toMatch(/^31 окт/);
-    expect(makeDateFormatters('uz', now).calendarDay('2026-10-31')).toMatch(/31.*okt/i);
+    // TEST3-09: ru and uz month names come from the runtime's ICU data (or,
+    // for uz, the hand-made fallback), so only their shape is pinned: the
+    // day, a month word in the language's script, no year, no ISO.
+    const ru = makeDateFormatters('ru', now).calendarDay('2026-10-31');
+    expect(ru).toMatch(/\b31\b/);
+    expect(ru).toMatch(/[а-яё]/i);
+    const uz = makeDateFormatters('uz', now).calendarDay('2026-10-31');
+    expect(uz).toMatch(/\b31\b/);
+    expect(uz).toMatch(/okt/i);
+    for (const day of [ru, uz]) expect(day).not.toMatch(/2026|\d{4}-\d{2}/);
   });
 
   test('another year keeps the year', () => {
@@ -60,8 +68,8 @@ describe('R2-COPY-3 / R2-COPY-4: units', () => {
   });
 
   test('without a quantity: the singular label the pickers show', () => {
-    expect(unitLabeller(createI18n('ru').t)('pair')).toBe('пара');
-    expect(unitLabeller(createI18n('zh').t)('pair')).toBe('副');
+    expect(unitLabeller(createI18n('ru').t).uncounted('pair')).toBe('пара');
+    expect(unitLabeller(createI18n('zh').t).uncounted('pair')).toBe('副');
   });
 
   test('box has a label in every language; unknown units stay as typed', () => {
@@ -69,7 +77,7 @@ describe('R2-COPY-3 / R2-COPY-4: units', () => {
     expect(unitLabeller(createI18n('en').t)('box', 3)).toBe('boxes');
     expect(unitLabeller(createI18n('ru').t)('box', 3)).toBe('коробки');
     expect(unitLabeller(createI18n('uz').t)('box', 3)).toBe('quti');
-    expect(unitLabeller(createI18n('zh').t)('karobka')).toBe('karobka');
+    expect(unitLabeller(createI18n('zh').t).uncounted('karobka')).toBe('karobka');
   });
 });
 
@@ -98,21 +106,28 @@ describe('ADM-17 / RE-AUTH-2: built-in roles and permissions', () => {
   });
 
   test('a seeded role reads in the UI language; a renamed one keeps its name', () => {
-    const zh = roleLabeller(createI18n('zh').t);
+    // TEST3-09: compared with the catalog's own text, so rewording a role
+    // in the catalog does not break this test.
+    const { t } = createI18n('zh');
+    const zh = roleLabeller(t);
     expect(zh.name({ slug: 'super_admin' })).not.toContain('super_admin');
-    expect(zh.name({ slug: 'manager', name: 'Store Manager' })).toBe('店长');
+    expect(zh.name({ slug: 'manager', name: 'Store Manager' })).toBe(
+      t('settings.about.roleName.manager'),
+    );
+    expect(zh.name({ slug: 'manager', name: 'Store Manager' })).not.toBe('Store Manager');
     expect(zh.name({ slug: 'manager', name: '厨房主管' })).toBe('厨房主管');
     expect(zh.name({ slug: 'shift-lead', name: 'Shift lead' })).toBe('Shift lead');
-    expect(
-      zh.description({ slug: 'staff', description: BUILTIN_ROLE_DEFAULTS.staff!.description }),
-    ).toBe('填写并提交每日订单；确认收货；记录门店销售');
+    const staff = BUILTIN_ROLE_DEFAULTS.staff!.description;
+    expect(zh.description({ slug: 'staff', description: staff })).toBe(t('role.description.staff'));
+    expect(zh.description({ slug: 'staff', description: staff })).not.toBe(staff);
   });
 
   test('every seeded permission and its group has a catalog name', () => {
     for (const l of ['zh', 'en', 'ru', 'uz'] as const) {
       const r = roleLabeller(createI18n(l).t);
       for (const p of PERMISSIONS) {
-        expect(r.permission(p.key, p.description)).not.toBe(p.key);
+        // Without the stored text: the admin audit has only the key.
+        expect(r.permission(p.key, null)).not.toBe(p.key);
         const prefix = p.key.split('.')[0]!;
         expect(r.permissionGroup(prefix)).not.toBe(prefix);
       }
@@ -126,7 +141,7 @@ describe('RE-AUTH-1: no doubled full stop', () => {
   test('the reason loses its own closing stop', () => {
     const reason = withoutFinalStop('邀请链接无效或已被删除。');
     expect(
-      createI18n('zh').t('auth.invite.failedStillIn', { reason, org: 'Eden' }),
+      createI18n('zh').t('auth.invite.failedStillIn', { reason, org: 'Acme' }),
     ).not.toContain('。。');
     expect(withoutFinalStop('Invite not found.')).toBe('Invite not found');
     expect(withoutFinalStop('Is it?')).toBe('Is it?');
@@ -148,8 +163,9 @@ describe('a clock-in made on another day than its row (2026-11-10)', () => {
       'Out (Nov 10)',
     );
     // Full-width brackets, no space before them.
-    expect(punchKindText(createI18n('zh'), makeDateFormatters('zh', now), out, row)).toBe(
-      '下班（11月10日）',
-    );
+    const zh = createI18n('zh');
+    const text = punchKindText(zh, makeDateFormatters('zh', now), out, row);
+    expect(text).toBe(`${zh.t('attendance.kind.out')}（11月10日）`);
+    expect(text).not.toContain(' （');
   });
 });

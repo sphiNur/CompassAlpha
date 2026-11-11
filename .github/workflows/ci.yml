@@ -1,16 +1,17 @@
 # CompassAlpha CI (M1.9, 2026-05-07; expanded M1.9-extra 2026-05-07)
 #
-# Three jobs in one file:
+# Jobs:
 #
 #   1. unit
-#        Migration journal consistency, i18n catalog parity, workspace
-#        type-check, all unit tests EXCEPT the PG-gated integration suite.
+#        Migration journal consistency, workspace type-check (a key
+#        missing from a catalog fails here), the i18n and UI guards, all
+#        unit tests EXCEPT the PG-gated integration suite.
 #        Runs on every push + PR; ~45-90s warm.
 #
 #   2. integration
-#        Spins up a real Postgres 16 service, applies migrations,
-#        runs the PG-gated tests (full-lifecycle, store-scoped-admin,
-#        refreshTokens service, cancel-run-cascade, rls-isolation).
+#        Spins up a real Postgres 18 service, applies migrations, runs
+#        every PG-gated test in apps/api and apps/worker as a role that
+#        owns nothing and is subject to RLS.
 #        Runs on every push + PR; ~2-3min cold.
 #
 # Why two jobs:
@@ -108,61 +109,15 @@ jobs:
             console.log('migration journal consistent:', sqls.length, 'files');
           "
 
-      - name: i18n catalog parity
-        # Each catalog must have the same key count as en.ts. The
-        # CatalogKey type already enforces "no extra keys", but a
-        # missing key in ru/uz/zh would silently fall back to the
-        # English literal at runtime. Cheap grep-based check.
-        run: |
-          en=$(grep -cE "^  '[a-z]" packages/i18n/src/catalogs/en.ts)
-          for lang in zh ru uz; do
-            count=$(grep -cE "^  '[a-z]" packages/i18n/src/catalogs/$lang.ts)
-            if [ "$count" != "$en" ]; then
-              echo "i18n DRIFT: en has $en keys, $lang has $count"
-              exit 1
-            fi
-          done
-          echo "i18n parity: $en keys × 4 langs"
-
-      - name: ICU plural sanity
-        # 2026-07-30. Two failure modes, both of which shipped and neither of
-        # which any existing check could see:
-        #
-        #   1. `format()` used to DISCARD plural blocks, replacing
-        #      `{n, plural, one {# role} other {# roles}}` with the bare count.
-        #      24 keys in en / 20 in ru / 8 in uz were authored in ICU form
-        #      anyway, so English and Russian silently rendered "3" where they
-        #      meant "3 contributors". zh has no plural blocks at all (Chinese
-        #      doesn't inflect for number) — which is exactly why the primary
-        #      locale looked perfect the whole time.
-        #
-        #   2. A CLDR *category* case whose body hardcodes a digit:
-        #      `one {1 role}`. Russian's `one` covers 1, 21, 31, 101 …, so
-        #      n=21 rendered "1 role". 8 ru keys + 1 en key had this.
-        #
-        # The engine is fixed and unit-tested (packages/i18n plural.test.ts).
-        # This grep is the cheap guard against (2) creeping back in a new key:
-        # inside a category case the count must come from `#` or `{n}`.
-        run: |
-          bad=$(grep -nE "\b(one|few|many|other) \{[^#{]*[0-9]" \
-            packages/i18n/src/catalogs/*.ts || true)
-          if [ -n "$bad" ]; then
-            echo "ICU plural: category case hardcodes a digit instead of # / {n}:"
-            echo "$bad"
-            echo
-            echo "In ru, 'one' also matches 21/31/101 — a literal 1 renders wrong."
-            exit 1
-          fi
-          echo "ICU plural: category cases all reference the count ✓"
-
       - name: Untranslated-literal guard
-        # 2026-07-30. The parity check above is blind to the failure mode
-        # that actually shipped: strings that never became KEYS. The
-        # 2026-07-30 flow walkthrough found 124 English literals rendering
-        # inside an otherwise-Chinese UI — `Edit` / `Archive` / `+ New SKU`
-        # buttons, `Archive SKU "x"?` confirms, and every string
-        # @compass/ui renders itself (QtyControl's quick-pick sheet was
-        # entirely English, and that's the app's most-used interaction).
+        # 2026-07-30. The catalog checks (type-check, catalog lint) are
+        # blind to the failure mode that actually shipped: strings that
+        # never became KEYS. The 2026-07-30 flow walkthrough found 124
+        # English literals rendering inside an otherwise-Chinese UI —
+        # `Edit` / `Archive` / `+ New SKU` buttons, `Archive SKU "x"?`
+        # confirms, and every string @compass/ui renders itself
+        # (QtyControl's quick-pick sheet was entirely English, and that's
+        # the app's most-used interaction).
         #
         # Started as a ratchet (baseline 124) so CI wasn't red from day one.
         # The backlog was cleared in three passes and the count reached 0, so
@@ -190,9 +145,12 @@ jobs:
         run: pnpm type-check
 
       - name: Lint
-        # apps/web only for now (the one workspace with a lint script).
-        # react-hooks/rules-of-hooks is enforced; exhaustive-deps is on
-        # except for a baseline of older files — see apps/web/eslint.config.js.
+        # Every workspace package (OPS-19); the shared rules are in
+        # eslint.shared.mjs. React code: rules-of-hooks, and exhaustive-deps
+        # except for a baseline of older web files (apps/web/eslint.config.js).
+        # The rest reads the types: a promise nobody awaits or catches fails
+        # the build. no-console everywhere but where the console is the
+        # output (worker, bot, command-line tools, tests).
         run: pnpm lint
 
       - name: Startup JavaScript budget
@@ -203,44 +161,6 @@ jobs:
         run: |
           pnpm --filter @compass/web exec vite build --outDir "$RUNNER_TEMP/web-dist" --emptyOutDir --logLevel warn
           bun run scripts/check-entry-budget.ts "$RUNNER_TEMP/web-dist"
-
-      - name: No console.log in user-facing code
-        # M3.18 (launch hardening): a leftover console.log(tsv) in
-        # AdminPage.tsx leaked exported CSV rows to the browser
-        # console. This guard ensures that pattern can't reappear
-        # silently in the SPA or the API request path.
-        #
-        # SCOPE intentionally excludes:
-        #   - apps/bot/src and apps/worker/src — these are independent
-        #     Bun processes whose stdout IS their log output (captured
-        #     by systemd journal). console.log there is the canonical
-        #     way to emit operational lines like '[worker] heartbeat'.
-        #   - __tests__ — test harness output is fine.
-        #   - ErrorBoundary.tsx — last-resort console.error fallback.
-        # console.warn / console.error are NOT flagged (legitimate
-        # warning paths in long-running code).
-        run: |
-          set -e
-          found=$(
-            grep -rEn 'console\.(log|debug|info)\(' \
-              apps/web/src apps/api/src \
-              --include='*.ts' --include='*.tsx' 2>/dev/null \
-              | grep -v '__tests__' \
-              | grep -v 'ErrorBoundary.tsx' \
-              | grep -v 'eslint-disable' \
-              || true
-          )
-          if [ -n "$found" ]; then
-            echo "console.log / console.debug / console.info found in user-facing code:"
-            echo "$found"
-            echo ""
-            echo "Use the structured logger from @compass/telemetry instead,"
-            echo "or wrap in 'if (import.meta.env.DEV) { ... }' for dev-only diagnostics."
-            echo "If this is a legitimate use case, add an // eslint-disable-next-line no-console"
-            echo "comment with rationale on the line above."
-            exit 1
-          fi
-          echo "no stray console.log / debug / info in web/api/packages ✓"
 
       - name: Unit tests (non-PG)
         run: |
@@ -373,6 +293,34 @@ jobs:
             apps/api/src/services/__tests__ \
             apps/worker/src
 
+      - name: The tests left nothing behind
+        # Review TEST1-07 (2026-11): each PG test removes the organisations
+        # and users it made (apps/api/src/__tests__/helpers/cleanup.ts).
+        # Only an organisation that holds daily-close revisions stays, with
+        # its members: those revisions are kept for good. Anything else
+        # here was made by a test that does not clean up after itself.
+        run: |
+          pnpm --filter @compass/db exec bun - <<'EOF'
+          import postgres from 'postgres';
+
+          const db = postgres(process.env.DATABASE_URL, { max: 1, prepare: false });
+          const kept = db`
+            SELECT DISTINCT org_id FROM inventory.store_daily_settlement_revisions`;
+          const orgs = await db`
+            SELECT slug FROM auth.organizations WHERE id NOT IN (${kept}) ORDER BY slug`;
+          const users = await db`
+            SELECT display_name FROM auth.users u
+            WHERE NOT EXISTS (
+              SELECT 1 FROM auth.members m WHERE m.user_id = u.id AND m.org_id IN (${kept})
+            )
+            ORDER BY display_name`;
+          await db.end({ timeout: 5 });
+          console.log(`left behind: ${orgs.length} organisations, ${users.length} users`);
+          for (const o of orgs.slice(0, 20)) console.log(`  organisation ${o.slug}`);
+          for (const u of users.slice(0, 20)) console.log(`  user ${u.display_name}`);
+          if (orgs.length > 0 || users.length > 0) process.exit(1);
+          EOF
+
   # ============ Job 3: the app in a real browser ============
   e2e:
     name: end-to-end (Playwright)
@@ -433,3 +381,64 @@ jobs:
             tests/e2e/playwright-report
             tests/e2e/test-results
           retention-days: 7
+
+  # ============ Job 4: a nightly dump restores ============
+  restore-drill:
+    name: backup and restore drill (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: compass
+          POSTGRES_PASSWORD: compass
+          POSTGRES_DB: compass_drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compass"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install bun (matches .bun-version)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Postgres 18 client tools
+        # pg_dump refuses a server newer than itself, and the runner's is
+        # older; the server runs 18 (CLAUDE.md).
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -q postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
+      - name: Back up, restore, compare
+        # Review OPS-11 (2026-11-10): no restore had ever been tried. The
+        # nightly script dumps a database set up the way production has
+        # it, restore.sh puts the dump into a new database, and the two
+        # must match; then the restored one is dumped again and swapped
+        # in (infra/backup/drill.sh).
+        env:
+          DRILL_ADMIN_URL: postgres://compass:compass@localhost:5432/postgres
+        run: |
+          pg_dump --version
+          bash infra/backup/drill.sh

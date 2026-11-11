@@ -40,10 +40,23 @@ describe('format', () => {
   });
 
   test('a missing variable renders empty, never as "{name}" or "undefined"', () => {
-    const out = format(key, 'en', { reason: 'forgot phone' });
-    expect(out).toContain('forgot phone');
-    expect(out).not.toContain('{');
-    expect(out).not.toContain('undefined');
+    // As on a screen; a test run throws instead (next test).
+    const before = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const out = format(key, 'en', { reason: 'forgot phone' });
+      expect(out).toContain('forgot phone');
+      expect(out).not.toContain('{');
+      expect(out).not.toContain('undefined');
+    } finally {
+      if (before === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = before;
+    }
+  });
+
+  test('in a test run a missing variable throws, naming the key and the variable', () => {
+    // Review I18N1-24: "Enter  or more" passed every test unnoticed.
+    expect(() => format(key, 'en', { reason: 'forgot phone' })).toThrow(`${key} needs {name}`);
   });
 
   test('zero is a value, not a missing variable', () => {

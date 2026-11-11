@@ -10,9 +10,14 @@ import {
   parseAuditAction,
   type AuditRowLike,
 } from '../auditSentence';
+import { createI18n, loadCatalog } from '@compass/i18n';
+import { roleLabeller } from '../../../../lib/roleLabels';
 
 const loc = {
   unknown: '?',
+  system: 'System',
+  roleName: (role: { slug: string; name?: string | null }) => role.name ?? role.slug,
+  permission: (key: string) => `perm(${key})`,
   localName: (names: Record<string, string>) => names.en ?? Object.values(names)[0] ?? '',
   day: (iso: string) => `day(${iso})`,
 };
@@ -163,6 +168,90 @@ describe('describeAuditRow', () => {
     ).toMatchObject({ key: 'ops.audit.s.catalogArchive', params: { name: 'Bazaar' } });
   });
 
+  test('a grant from the command line was made by the system', () => {
+    const row = {
+      action: 'admin.role.grant',
+      inputs: { memberId: 'm1', roleId: 'r1', scopeType: 'global', scopeId: null },
+      actor: null,
+      labels: labels({ memberName: 'Dilnoza', roleName: 'Super admin' }),
+    };
+    expect(describeAuditRow({ ...row, bySystem: true }, loc)).toMatchObject({
+      key: 'ops.audit.s.roleGrant',
+      params: { actor: 'System', member: 'Dilnoza', role: 'Super admin' },
+    });
+    // A row whose author is gone is not the system's.
+    expect(describeAuditRow({ ...row, bySystem: false }, loc).params.actor).toBe('?');
+  });
+
+  test('a role is named through the role localizer, with its slug', () => {
+    const seen: { slug: string; name?: string | null }[] = [];
+    const s = describeAuditRow(
+      {
+        action: 'admin.role.grant',
+        inputs: { memberId: 'm1', roleId: 'r1' },
+        actor,
+        labels: labels({ memberName: 'Ali', roleName: 'Super Admin', roleSlug: 'super_admin' }),
+      },
+      {
+        ...loc,
+        roleName: (role) => {
+          seen.push(role);
+          return 'Super administrator';
+        },
+      },
+    );
+    expect(seen).toEqual([{ slug: 'super_admin', name: 'Super Admin' }]);
+    expect(s.params.role).toBe('Super administrator');
+  });
+
+  test('a permission override names the permission, not its key', () => {
+    const row = (verb: string, inputs: Record<string, unknown>) =>
+      describeAuditRow(
+        {
+          action: `admin.memberPermission.${verb}`,
+          inputs,
+          actor,
+          labels: labels({ memberName: 'Ali' }),
+        },
+        loc,
+      );
+    expect(row('allow', { memberId: 'm1', permissionKey: 'order.approve' })).toMatchObject({
+      key: 'ops.audit.s.permissionAllow',
+      tone: 'success',
+      params: { actor: 'Aziz', member: 'Ali', permission: 'perm(order.approve)' },
+    });
+    expect(row('deny', { permissionKey: 'prices.view' })).toMatchObject({
+      key: 'ops.audit.s.permissionDeny',
+      params: { permission: 'perm(prices.view)' },
+    });
+    expect(row('revoke', { permissionKey: 'prices.view' })).toMatchObject({
+      key: 'ops.audit.s.permissionRevoke',
+      params: { permission: 'perm(prices.view)' },
+    });
+    expect(row('allow', {}).params.permission).toBe('?');
+  });
+
+  test('in the catalogs the sentence carries the permission name', async () => {
+    await Promise.all([loadCatalog('en'), loadCatalog('zh')]);
+    const want = {
+      en: 'Aziz denied Ali: View price history',
+      zh: 'Aziz 为 Ali 禁止了「查看价格历史」',
+    };
+    for (const lang of ['en', 'zh'] as const) {
+      const { t } = createI18n(lang);
+      const s = describeAuditRow(
+        {
+          action: 'admin.memberPermission.deny',
+          inputs: { permissionKey: 'prices.view' },
+          actor,
+          labels: labels({ memberName: 'Ali' }),
+        },
+        { ...loc, permission: (key) => roleLabeller(t).permission(key, null) },
+      );
+      expect(t(s.key, s.params)).toBe(want[lang]);
+    }
+  });
+
   test('rows from an older server (no labels) still render', () => {
     const s = describeAuditRow({ action: 'admin.store.update', inputs: {}, actor }, loc);
     expect(s).toMatchObject({ key: 'ops.audit.s.storeUpdate', params: { store: '?' } });
@@ -203,10 +292,42 @@ describe('describeAuditRow', () => {
     });
   });
 
-  test('a purge row from before keeps the generic line', () => {
+  test('a purge row from before says what went, without the day (ADM2-14)', () => {
     expect(
       describeAuditRow({ action: 'admin.purge.session', inputs: { sessionId: 's1' }, actor }, loc),
-    ).toMatchObject({ key: 'ops.audit.s.generic', tone: 'danger' });
+    ).toMatchObject({
+      key: 'ops.audit.s.purgeSessionNoDate',
+      tone: 'danger',
+      params: { actor: 'Aziz' },
+    });
+    expect(
+      describeAuditRow(
+        { action: 'admin.purge.run', inputs: { runId: 'r1', sessionIds: ['s1'] }, actor },
+        loc,
+      ),
+    ).toMatchObject({ key: 'ops.audit.s.purgeRunNoDate', tone: 'danger' });
+  });
+
+  test('a catalog import counts the products it added (ADM2-14)', () => {
+    expect(
+      describeAuditRow(
+        {
+          action: 'admin.catalog.import',
+          inputs: {
+            sourceOrgId: 'o2',
+            includeSuppliers: true,
+            summary: { skus: { created: 12, existing: 3 } },
+          },
+          actor,
+        },
+        loc,
+      ),
+    ).toMatchObject({
+      key: 'ops.audit.s.catalogImport',
+      category: 'catalog',
+      object: 'catalog',
+      params: { actor: 'Aziz', n: '12' },
+    });
   });
 
   test('unknown action → generic sentence with parsed words', () => {

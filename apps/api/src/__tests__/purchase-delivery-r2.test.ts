@@ -37,6 +37,9 @@ import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember } from './helpers/fixtures';
 import { planRun, runStream, seedOrder } from './helpers/streams';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -81,6 +84,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `pdr2-${suffix}`, name: 'Purchase r2', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'purchaser']);
   const storeIds: string[] = [];
@@ -552,6 +556,21 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
       .where(eq(s.orderSessionsV.id, sessionA));
     expect(after[0]?.status).toBe('archived');
     expect((after[0]?.extras as Array<{ status?: string }>)[0]?.status).toBe('bought');
+  });
+
+  test('RUNAPI-25: a stream read back names the member who acted', async () => {
+    const { admin, orgId } = fix!;
+    const { runId, sessionA } = await seedRun('delivered');
+    for (const [type, id] of [
+      ['run', runId],
+      ['order', sessionA],
+    ] as const) {
+      const events = await withOrgContext(getDb(), orgId, (tx) => readStream(tx, type, id));
+      const byAdmin = events.filter((e) => e.actorUserId === admin.userId);
+      expect(byAdmin.length).toBeGreaterThan(0);
+      for (const e of byAdmin) expect(e.actorMemberId).toBe(admin.memberId);
+      for (const e of events) if (e.actorUserId === null) expect(e.actorMemberId).toBeNull();
+    }
   });
 
   test("RUNAPI-11: a shared expense's receipt is hidden from a reader of one of its stores", async () => {

@@ -1004,7 +1004,9 @@ export const attendancePunchReviews = inventorySchema.table(
       .notNull()
       .defaultNow(),
   },
-  (t) => ({ orgIdx: index('apr_org_idx').on(t.orgId) }),
+  // Not apr_org_idx: attendance_pay_rates has that name (review DB-10,
+  // migration 0069).
+  (t) => ({ orgIdx: index('apr_reviews_org_idx').on(t.orgId) }),
 );
 
 /**

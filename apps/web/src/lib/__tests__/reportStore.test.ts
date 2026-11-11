@@ -3,10 +3,10 @@ import { defaultReportStore } from '../reportStore';
 
 // CMP-HIS-1 (2026-10-31): History and Finance follow the top bar's store.
 describe('defaultReportStore', () => {
-  const stores = [{ id: 'central' }, { id: 'eden' }];
+  const stores = [{ id: 'central' }, { id: 'north' }];
 
   test('the store picked in the top bar', () => {
-    expect(defaultReportStore({ kind: 'specific', storeId: 'eden' }, stores)).toBe('eden');
+    expect(defaultReportStore({ kind: 'specific', storeId: 'north' }, stores)).toBe('north');
   });
 
   test('all stores only when "all stores" is picked or there is no store', () => {
@@ -17,6 +17,6 @@ describe('defaultReportStore', () => {
   test('a store the reader may not see the report for falls back to all', () => {
     // The server refuses a storeId outside the reader's report stores.
     expect(defaultReportStore({ kind: 'specific', storeId: 'other' }, stores)).toBe('');
-    expect(defaultReportStore({ kind: 'specific', storeId: 'eden' }, undefined)).toBe('');
+    expect(defaultReportStore({ kind: 'specific', storeId: 'north' }, undefined)).toBe('');
   });
 });

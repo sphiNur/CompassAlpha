@@ -3,6 +3,9 @@
 -- purchase-metrics.sql (the event log) for the before/after comparison.
 --
 --   psql "$DATABASE_URL" -v days=14 -f scripts/sql/purchase-telemetry.sql
+--
+-- Grouped by organisation id, as purchase-metrics.sql is: by name, two
+-- organisations with one name were added together (review OPS-43).
 BEGIN READ ONLY;
 SELECT set_config('app.system_context', 'maintenance', true);
 
@@ -28,7 +31,7 @@ SELECT
 FROM ops.client_logs l
 LEFT JOIN auth.organizations o ON o.id = l.org_id
 WHERE l.kind LIKE 'purchase.%' AND l.created_at > now() - make_interval(days => :days)
-GROUP BY o.name
+GROUP BY o.id, o.name
 ORDER BY entries DESC;
 
 -- Field text scale (Android font-size setting), for the type-size decision.

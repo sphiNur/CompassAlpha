@@ -45,7 +45,7 @@ export function SessionPicker({
   /** Render without the Card chrome (inside a Sheet). */
   bare?: boolean;
 }) {
-  const groups = groupSessionsByDate(sessions, today);
+  const groups = groupSessionsByDate(sessions, today, i18n.locale);
   const selected = new Set(selectedSessionIds(sessions, today, overrides));
   const isChecked = (id: string) => selected.has(id);
   const batchOf = batchNumbers(sessions);

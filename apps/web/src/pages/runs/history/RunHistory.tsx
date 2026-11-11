@@ -18,7 +18,7 @@
  * comes from ../lib/settlement (unit-tested); only super-admin correction
  * actions mutate a finished run.
  */
-import { addMoney } from '@compass/contracts/money';
+import { addMoney, toCents } from '@compass/contracts/money';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Badge,
@@ -26,8 +26,10 @@ import {
   Card,
   Chip,
   ChipBar,
+  EmptyState,
   Input,
   NameCell,
+  QueryErrorBanner,
   SectionLabel,
   Sheet,
   Spinner,
@@ -40,7 +42,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductNameParts } from '../../../hooks/useI18n';
-import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
+import { splitPaymentMethod } from '../lib/settlement';
 import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 import { localDateValue } from '../../admin/operations/financeDates';
@@ -199,7 +201,7 @@ export function RunHistoryPage({
     <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
       {/* The title row exists to host the Back button. As a tab there is
           no Back, and a lone <h1> reading "历史记录" directly above a card
-          whose own header reads "历史记录  39 · 118,112,379.9 UZS" is the
+          whose own header reads "历史记录  12 · 1,234,567.8 UZS" is the
           same word twice with the second one carrying all the
           information. Drop the row and let the card header BE the page
           heading (`as="h1"`), which is also how Order / Run already
@@ -249,9 +251,7 @@ export function RunHistoryPage({
           </div>
         ) : null}
         {waitingOffline ? (
-          <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
-            {i18n.t('common.offlineNoData')}
-          </div>
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : loading ? (
           <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
             <Spinner size={28} />
@@ -259,16 +259,18 @@ export function RunHistoryPage({
         ) : failed ? null : runs.length === 0 ? (
           // R2-HIS-2 (2026-10-31): a failed load shows its error banner
           // above; "no runs match — clear all" under it blamed the filters.
-          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-old-body-sm text-[var(--c-fg-muted)]">
-            <span>
-              {i18n.t(hasSearchOrFilters ? 'run.history.noMatches' : 'run.history.subtitle')}
-            </span>
-            {hasSearchOrFilters && onClearSearchOrFilters ? (
-              <Button variant="secondary" size="sm" onClick={onClearSearchOrFilters}>
-                {i18n.t('run.history.clearAll')}
-              </Button>
-            ) : null}
-          </div>
+          // RUNWEB2-21: the kit's empty state; with no runs at all it said
+          // "past runs — tap to see details" over an empty list.
+          <EmptyState
+            title={i18n.t(hasSearchOrFilters ? 'run.history.noMatches' : 'run.history.empty')}
+            action={
+              hasSearchOrFilters && onClearSearchOrFilters ? (
+                <Button variant="secondary" size="sm" onClick={onClearSearchOrFilters}>
+                  {i18n.t('run.history.clearAll')}
+                </Button>
+              ) : undefined
+            }
+          />
         ) : (
           <ul className="flex flex-col" role="list">
             {/* 2026-10-23: one entry per day. A day's second trip (or a run
@@ -635,12 +637,12 @@ function RunHistoryDaySheet({
               {i18n.t('run.history.tripsHeading')}
             </SectionLabel>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
-              {trips.map((run, i) => (
+              {trips.map((run) => (
                 <li key={run.id}>
                   <button type="button" onClick={() => open(run)} className={rowClass}>
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-old-body font-semibold">
-                        {i18n.t('run.history.trip', { n: i + 1 })}
+                        {i18n.t('run.history.trip', { n: run.runIndex + 1 })}
                       </span>
                       <span className="text-old-body font-semibold tabular-nums">
                         {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
@@ -773,79 +775,34 @@ export function RunHistoryDetailSheet({
     setSelectedStoreId(target?.initialStoreId ?? null);
   }, [target?.initialStoreId, target?.runId]);
 
+  // Review RUNWEB2-03 (2026-11): every amount here comes from the server
+  // (run.historyDetail's money), made from the lines the History list row
+  // and the finance report add up. The page recomputed them with its own
+  // copy of the rule, so the detail could disagree with the row it opened.
+  // M3.52: each store's slice stays strictly its own.
   const breakdown = useMemo(() => {
     if (!detail.data) return null;
-    const items = detail.data.items;
-    const splits = detail.data.splits;
-    const perStoreDemand = detail.data.perStoreDemand ?? [];
-    const expenses = detail.data.expenses ?? [];
-    let total = 0;
-    let totalCash = 0;
-    let totalTransfer = 0;
-    let expensesTotal = 0;
-    const purchasedCount = items.filter((i) => i.status === 'purchased').length;
-    const unavailableCount = items.filter((i) => i.status === 'unavailable').length;
-    for (const it of items) {
-      const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
-      if (
-        it.status === 'purchased' &&
-        it.purchasedQty &&
-        (it.unitPrice || itemSplits.some((split) => split.unitPrice))
-      ) {
-        const { line, cash, transfer } = settleItemLine(it, itemSplits);
-        total = addMoney(total, line);
-        totalCash = addMoney(totalCash, cash);
-        totalTransfer = addMoney(totalTransfer, transfer);
-      }
-    }
-    // M3.44: off-catalog expenses contribute to the run total + the
-    // payment-method breakdown the same way SKU buys do.
-    for (const ex of expenses) {
-      const line = expenseLine(ex);
-      total = addMoney(total, line);
-      expensesTotal = addMoney(expensesTotal, line);
-      if (ex.paymentMethod === 'transfer') totalTransfer = addMoney(totalTransfer, line);
-      else totalCash = addMoney(totalCash, line);
-    }
-    /**
-     * M3.52 (2026-05-23): per-store settlement — strictly each store's
-     * own slice, NEVER mixed across stores. The user's pain point:
-     * "采购完成后的结算也记得严格按照每家店的清单来结算，别相互混淆了"
-     * — after finish, the manager must see X for store-A and Y for
-     * store-B without any cross-contamination.
-     *
-     * Each store row aggregates:
-     *   - SKU lines: their split of `unitPrice × splits.qty` for every
-     *     purchased item, broken into cash/transfer by the item's
-     *     payment method.
-     *   - Expenses: their slice of `unitPrice × storeSplits.qty` for
-     *     every off-catalog expense, payment-method tracked too.
-     *
-     * `itemCount` counts UNIQUE skuIds that touched this store (was
-     * "split rows" before, which double-counted when the run had
-     * multiple delivery cycles in legacy data).
-     */
-    // 2026-07-26: shared with finishSummary's byStore in RunPage, which
-    // held a verbatim copy of this loop. See runs/lib/settlement.ts.
-    const perStore = settlePerStore(items, splits, expenses);
+    const { items, splits, money } = detail.data;
     return {
       items,
       splits,
-      perStoreDemand,
-      expenses,
-      total,
-      totalCash,
-      totalTransfer,
-      expensesTotal,
-      purchasedCount,
-      unavailableCount,
-      perStore,
+      perStoreDemand: detail.data.perStoreDemand ?? [],
+      expenses: detail.data.expenses ?? [],
+      total: money.total,
+      itemsTotal: money.itemsTotal,
+      totalCash: money.cash,
+      totalTransfer: money.transfer,
+      expensesTotal: money.expensesTotal,
+      purchasedCount: items.filter((i) => i.status === 'purchased').length,
+      unavailableCount: items.filter((i) => i.status === 'unavailable').length,
+      // Largest first, as the server orders them.
+      perStore: new Map(money.byStore.map((store) => [store.storeId, store])),
     };
   }, [detail.data]);
 
   const storeOptions = useMemo(() => {
     if (!breakdown) return [];
-    return [...breakdown.perStore.values()].sort((a, b) => b.total - a.total);
+    return [...breakdown.perStore.values()];
   }, [breakdown]);
 
   const activeStoreId =
@@ -859,46 +816,44 @@ export function RunHistoryDetailSheet({
   type VisibleHistoryRow = {
     item: HistoryItem;
     qty: string | null;
-    lineTotal: number;
+    lineTotal: string | null;
     perStoreSplits: HistorySplit[];
   };
 
-  const linePayment = (
-    item: Parameters<typeof settleItemLine>[0],
-    itemSplits: Parameters<typeof settleItemLine>[1],
-  ): string => {
-    const { cash, transfer } = settleItemLine(item, itemSplits);
+  /**
+   * How a line was paid. In one store's view the line is that store's
+   * split; across stores, a line paid both ways says how much of each.
+   */
+  const linePayment = (item: HistoryItem, itemSplits: readonly HistorySplit[]): string => {
     const cashLabel = i18n.t('run.label.paymentCash') as string;
     const transferLabel = i18n.t('run.label.paymentTransfer') as string;
-    if (cash > 0 && transfer > 0) {
+    if (activeStoreId) {
+      const split = itemSplits[0];
+      const method = split ? splitPaymentMethod(split, item) : item.paymentMethod;
+      return method === 'transfer' ? transferLabel : cashLabel;
+    }
+    const cash = item.cashAmount ?? '0';
+    const transfer = item.transferAmount ?? '0';
+    if (toCents(cash) > 0n && toCents(transfer) > 0n) {
       return `${cashLabel} ${formatMoney(cash)} · ${transferLabel} ${formatMoney(transfer)}`;
     }
     // 2026-10-25: the label follows the money. It used to say transfer
     // whenever the ITEM said so, even where the split paid in cash and
     // the line was counted as cash in every total.
-    if (transfer > 0) return transferLabel;
-    if (cash > 0) return cashLabel;
+    if (toCents(transfer) > 0n) return transferLabel;
+    if (toCents(cash) > 0n) return cashLabel;
     return item.paymentMethod === 'transfer' ? transferLabel : cashLabel;
   };
 
   const visibleHistoryRows = useMemo<VisibleHistoryRow[]>(() => {
     if (!breakdown) return [];
     if (!activeStoreId) {
-      return breakdown.items.map((item) => {
-        const itemSplits = breakdown.splits.filter((split) => split.skuId === item.skuId);
-        const hasVisiblePrice = Boolean(
-          item.unitPrice || itemSplits.some((split) => split.unitPrice),
-        );
-        return {
-          item,
-          qty: item.purchasedQty,
-          lineTotal:
-            item.status === 'purchased' && item.purchasedQty && hasVisiblePrice
-              ? settleItemLine(item, itemSplits).line
-              : 0,
-          perStoreSplits: itemSplits,
-        };
-      });
+      return breakdown.items.map((item) => ({
+        item,
+        qty: item.purchasedQty,
+        lineTotal: item.amount,
+        perStoreSplits: breakdown.splits.filter((split) => split.skuId === item.skuId),
+      }));
     }
 
     const demandBySku = new Map(
@@ -916,7 +871,7 @@ export function RunHistoryDetailSheet({
           {
             item,
             qty: split.qty,
-            lineTotal: splitSubtotal(split, item),
+            lineTotal: split.amount,
             perStoreSplits: [split],
           },
         ];
@@ -926,7 +881,7 @@ export function RunHistoryDetailSheet({
           {
             item,
             qty: demandBySku.get(item.skuId) ?? null,
-            lineTotal: 0,
+            lineTotal: null,
             perStoreSplits: [],
           },
         ];
@@ -946,13 +901,12 @@ export function RunHistoryDetailSheet({
       n + row.perStoreSplits.filter((sp) => sp.confirmStatus && sp.confirmStatus !== 'ok').length,
     0,
   );
-  const headlineTotal = activeStoreTotal?.total ?? breakdown?.total ?? 0;
-  const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
-  const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
+  const headlineTotal = activeStoreTotal?.total ?? breakdown?.total ?? '0';
+  const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? '0';
+  const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? '0';
   // 2026-10-21 CA-11: items / expenses / total, for the run or the store.
-  const headlineExpenses = activeStoreTotal
-    ? activeStoreTotal.expensesTotal
-    : (breakdown?.expensesTotal ?? 0);
+  const headlineItems = activeStoreTotal?.itemsTotal ?? breakdown?.itemsTotal ?? '0';
+  const headlineExpenses = activeStoreTotal?.expensesTotal ?? breakdown?.expensesTotal ?? '0';
   const headlineStoreCount = activeStoreId ? 1 : (breakdown?.perStore.size ?? 0);
   const activeStoreName = activeStoreId
     ? (storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8))
@@ -985,22 +939,14 @@ export function RunHistoryDetailSheet({
           </div>
       ) : detail.isError && !breakdown ? (
         // F11 (2026-10-30): a failed load said "no data", so nobody retried.
-        <div className="flex flex-col items-center gap-3 py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.error')}
-          <Button size="sm" variant="secondary" onClick={() => void detail.refetch()}>
-            {i18n.t('common.retry')}
-          </Button>
-        </div>
+        // RUNWEB2-21: the kit's banner, with the translated reason.
+        <QueryErrorBanner query={detail} />
       ) : !breakdown && detail.fetchStatus === 'paused' ? (
         // HIS-18 (2026-10-31): offline, a detail never opened before waits
         // for the network; it is not "no data" and loads once back online.
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.offlineNoData')}
-        </div>
+        <EmptyState title={i18n.t('common.offlineNoData')} />
       ) : !breakdown ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('run.history.noDetail')}
-        </div>
+        <EmptyState title={i18n.t('run.history.noDetail')} />
       ) : (
         <div className="flex flex-col gap-4 py-3">
           {/* Top summary */}
@@ -1016,10 +962,10 @@ export function RunHistoryDetailSheet({
                 <div className="text-old-h2 font-semibold tabular-nums">
                   {formatMoney(headlineTotal)} {currency}
                 </div>
-                {headlineExpenses > 0 ? (
+                {toCents(headlineExpenses) > 0n ? (
                   <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                     {i18n.t('run.money.itemsExpenses', {
-                      items: formatMoney(addMoney(headlineTotal, -headlineExpenses)),
+                      items: formatMoney(headlineItems),
                       expenses: formatMoney(headlineExpenses),
                     })}
                   </div>
@@ -1048,7 +994,7 @@ export function RunHistoryDetailSheet({
                 whenever there is money, not only when both methods were
                 used — a one-store, all-cash day still needs to say how
                 much was cash and that transfer was 0. */}
-            {headlineCash + headlineTransfer > 0 ? (
+            {toCents(headlineCash) + toCents(headlineTransfer) > 0n ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-old-label">
                 <span className="text-[var(--c-fg-muted)]">{i18n.t('run.label.paymentCash')}</span>
                 <span className="tabular-nums text-[var(--c-fg)]">
@@ -1151,7 +1097,7 @@ export function RunHistoryDetailSheet({
                       />
                       {it.status === 'purchased' ? (
                         <span className="text-old-body font-semibold tabular-nums">
-                          {formatMoney(lineTotal)}
+                          {lineTotal !== null ? formatMoney(lineTotal) : '—'}
                         </span>
                       ) : (
                         <Badge tone="danger">{i18n.t('run.action.markNa')}</Badge>
@@ -1314,10 +1260,9 @@ export function RunHistoryDetailSheet({
               <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
                 {[...breakdown.perStore.values()]
                   .filter((ps) => !activeStoreId || ps.storeId === activeStoreId)
-                  .sort((a, b) => b.total - a.total)
                   .map((ps) => {
                     const store = storeById.get(ps.storeId);
-                    const mixed = ps.cash > 0 && ps.transfer > 0;
+                    const mixed = toCents(ps.cash) > 0n && toCents(ps.transfer) > 0n;
                     return (
                       <li
                         key={ps.storeId}
@@ -1335,13 +1280,13 @@ export function RunHistoryDetailSheet({
                                  Counts UNIQUE SKUs delivered to this
                                  store, not split rows. */}
                               {i18n.t('run.label.itemsCount', {
-                                n: ps.skuIds.size,
+                                n: ps.itemCount,
                               })}
-                              {ps.expensesCount > 0 ? (
+                              {ps.expenseCount > 0 ? (
                                 <>
                                   {' · '}
                                   {i18n.t('run.confirm.finish.expenses', {
-                                    n: ps.expensesCount,
+                                    n: ps.expenseCount,
                                     total: formatMoney(ps.expensesTotal),
                                     currency,
                                   })}
@@ -1392,7 +1337,7 @@ export function RunHistoryDetailSheet({
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="min-w-0 truncate text-old-body font-semibold">{ex.label}</span>
                         <span className="text-old-body font-semibold tabular-nums">
-                          {ex.unitPrice != null ? formatMoney(expenseLine(ex)) : '—'}
+                          {ex.unitPrice != null ? formatMoney(ex.amount ?? '0') : '—'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">

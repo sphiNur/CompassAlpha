@@ -25,6 +25,7 @@ function lookups(over: Partial<AuditLookups> = {}): AuditLookups {
     userNameById: new Map(),
     roleNameBySlug: new Map(),
     roleNameById: new Map(),
+    roleSlugById: new Map(),
     storeNameById: new Map(),
     catalogNameById: new Map(),
     catalogNamesById: new Map(),
@@ -42,6 +43,25 @@ describe('auditRowRefs', () => {
     });
     expect(refs).toMatchObject({ memberId: M, userId: U, roleSlug: 'manager', storeId: S1 });
     expect(refs.catalog).toBeNull();
+  });
+
+  test('a grant from the command line names its role by id', () => {
+    const refs = auditRowRefs({
+      resourceType: 'member',
+      resourceId: M,
+      inputs: { memberId: M, roleId: R, scopeType: 'global', scopeId: null, roleRank: 100 },
+      scopeStoreId: null,
+    });
+    expect(refs).toMatchObject({ memberId: M, roleSlug: null, roleId: R });
+    expect(
+      buildAuditLabels(
+        refs,
+        lookups({
+          roleNameById: new Map([[R, 'Super Admin']]),
+          roleSlugById: new Map([[R, 'super_admin']]),
+        }),
+      ),
+    ).toMatchObject({ roleName: 'Super Admin', roleSlug: 'super_admin' });
   });
 
   test('role.revoke: binding resource still yields the user and role', () => {
@@ -128,13 +148,13 @@ describe('buildAuditLabels', () => {
       lookups({
         memberNameById: new Map([[M, 'Ali']]),
         roleNameBySlug: new Map([['manager', 'Manager']]),
-        storeNameById: new Map([[S1, 'Chilonzor']]),
+        storeNameById: new Map([[S1, 'Store A']]),
       }),
     );
     expect(labels).toMatchObject({
       memberName: 'Ali',
       roleName: 'Manager',
-      storeName: 'Chilonzor',
+      storeName: 'Store A',
     });
   });
 

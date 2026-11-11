@@ -15,7 +15,14 @@ export interface PersistedEvent {
   type: string;
   payload: unknown;
   occurredAt: Date;
+  /** The acting user (`domain.events.actor_id`); null for the system. */
   actorUserId: string | null;
+  /**
+   * That user's membership in the event's organisation, looked up on read
+   * (review RUNAPI-25: it was always null, so a projection replayed from
+   * the store, such as the run_amend stock rows, lost who acted). Null
+   * for the system, or when the membership is gone.
+   */
   actorMemberId: string | null;
 }
 
@@ -26,8 +33,12 @@ export async function readStream(
   fromSeq = 0,
 ): Promise<PersistedEvent[]> {
   const rows = await db
-    .select()
+    .select({ event: s.events, actorMemberId: s.members.id })
     .from(s.events)
+    .leftJoin(
+      s.members,
+      and(eq(s.members.orgId, s.events.orgId), eq(s.members.userId, s.events.actorId)),
+    )
     .where(
       and(
         eq(s.events.streamType, streamType),
@@ -36,7 +47,7 @@ export async function readStream(
       ),
     )
     .orderBy(asc(s.events.seq));
-  return rows.map((r) => ({
+  return rows.map(({ event: r, actorMemberId }) => ({
     id: r.id,
     streamId: r.streamId,
     seq: r.seq,
@@ -44,7 +55,7 @@ export async function readStream(
     payload: r.payload,
     occurredAt: r.occurredAt,
     actorUserId: r.actorId ?? null,
-    actorMemberId: null, // (we record memberId inside payload for now)
+    actorMemberId: actorMemberId ?? null,
   }));
 }
 
@@ -57,7 +68,11 @@ export interface AppendInput {
     seq: number;
     payload: unknown;
     actorUserId: string | null;
-    actorMemberId: string | null;
+    /**
+     * Not stored: the member is the acting user's membership in `orgId`,
+     * which readStream looks up (RUNAPI-25).
+     */
+    actorMemberId?: string | null;
     occurredAt: Date;
     correlationId?: string | undefined;
     causationId?: string | undefined;

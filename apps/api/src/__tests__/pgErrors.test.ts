@@ -9,6 +9,9 @@ import {
   withStreamConflictRetry,
 } from '../services/pgErrors';
 import { SHOULD_RUN } from './helpers/pg';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 describe('pgErrorCode', () => {
   test('reads the code off a bare driver error', () => {
@@ -55,6 +58,7 @@ describe('a real sequence collision in the event store (PG)', () => {
       .values({ slug: `pgerr-${randomUUID().slice(0, 8)}`, name: 'PG error probe' })
       .returning();
     if (!org) throw new Error('org insert failed');
+    noteOrg(org.id);
 
     const append = () =>
       appendEvents(db, {
@@ -98,6 +102,7 @@ describe('a real sequence collision in the event store (PG)', () => {
         .values({ slug: `pgretry-${randomUUID().slice(0, 8)}`, name: 'Stream retry probe' })
         .returning();
       if (!org) throw new Error('org insert failed');
+      noteOrg(org.id);
       const streamId = randomUUID();
 
       // One "command": read the stream, take a moment (as deciding does),

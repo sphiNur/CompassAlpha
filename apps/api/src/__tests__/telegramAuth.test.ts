@@ -34,7 +34,7 @@
  * (helpers/telegram.ts) computes it on its own, so the tests don't
  * depend on the implementation under test for their own setup.
  */
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test, setSystemTime } from 'bun:test';
 import { verifyInitData } from '../services/telegramAuth';
 import { signFields } from './helpers/telegram';
 
@@ -155,9 +155,8 @@ describe('verifyInitData (Telegram WebApp)', () => {
   // mobile devices drift; the strict pre-M1.22 check rejected
   // initData from a user whose device clock was 90 seconds slow.
   test('accepts initData up to 600s past maxAgeSec (slow device clock)', () => {
-    // Signed 30 seconds ago, verify with maxAge=60 → ageSec=30 fits.
-    // Push the auth_date to 500 seconds in the past with maxAge=60.
-    // ageSec=500 > maxAge=60 but < maxAge+600 so it passes.
+    // 500 seconds old with maxAge=60: past maxAge, but within
+    // maxAge+600, so it passes.
     const skewedAuth = Math.floor(Date.now() / 1000) - 500;
     const initData = sign({
       auth_date: skewedAuth.toString(),
@@ -190,5 +189,28 @@ describe('verifyInitData (Telegram WebApp)', () => {
     const result = verifyInitData(initData, BOT_TOKEN, 60);
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('auth_date too far in future');
+  });
+
+  // The edges of the window, on a stopped clock so that a second ticking
+  // over between signing and checking cannot move them (TEST2-21).
+  describe('the edges of the ±600 s window', () => {
+    const NOW = 1_800_000_000; // seconds
+    afterEach(() => setSystemTime());
+    const verifyAged = (ageSec: number) => {
+      setSystemTime(new Date(NOW * 1000));
+      const initData = sign({ auth_date: String(NOW - ageSec), user: SAMPLE_USER });
+      return verifyInitData(initData, BOT_TOKEN, 60);
+    };
+
+    test('exactly maxAgeSec + 600 old passes; one second more is expired', () => {
+      expect(verifyAged(660).ok).toBe(true);
+      expect(verifyAged(661)).toEqual({ ok: false, reason: 'expired' });
+    });
+
+    test('a phone clock up to 600 s ahead passes; one second more does not', () => {
+      expect(verifyAged(-300).ok).toBe(true);
+      expect(verifyAged(-600).ok).toBe(true);
+      expect(verifyAged(-601)).toEqual({ ok: false, reason: 'auth_date too far in future' });
+    });
   });
 });

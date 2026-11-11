@@ -5,15 +5,22 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./idempotency": "./src/idempotency.ts",
     "./limits": "./src/limits.ts",
     "./money": "./src/money.ts",
     "./quantity": "./src/quantity.ts",
     "./schemas/*": "./src/schemas/*.ts"
   },
   "scripts": {
+    "lint": "eslint . --max-warnings 0",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "typescript-eslint": "^8.59.3"
   }
 }

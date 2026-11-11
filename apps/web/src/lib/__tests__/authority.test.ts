@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  canDetachFromStore,
   canGrantRole,
+  canRemoveFromOrg,
+  canRename,
   canRevokeRole,
   canSetOverride,
   canSetStatus,
@@ -20,23 +23,23 @@ const st = (slug: string, rank: number, storeId: string): Binding => ({
   scopeId: storeId,
 });
 
-/** Aziz: manager (50) of store A only. */
+/** Alice: manager (50) of store A only. */
 const manager: Actor = {
-  userId: 'aziz',
+  userId: 'alice',
   isOrgAdmin: false,
   adminStoreIds: ['A'],
   bindings: [st('manager', 50, 'A')],
 };
-/** Nurzat: org admin (80). */
+/** Olga: org admin (80). */
 const admin: Actor = {
-  userId: 'nurzat',
+  userId: 'olga',
   isOrgAdmin: true,
   adminStoreIds: ['A', 'B'],
   bindings: [g('admin', 80)],
 };
-const staffA = { userId: 'dilnoza', bindings: [st('staff', 10, 'A')], storeIds: ['A'] };
+const staffA = { userId: 'dana', bindings: [st('staff', 10, 'A')], storeIds: ['A'] };
 const staffAB = {
-  userId: 'kamola',
+  userId: 'kate',
   bindings: [st('staff', 10, 'A'), st('staff', 10, 'B')],
   storeIds: ['A', 'B'],
 };
@@ -54,7 +57,7 @@ describe('rankIn', () => {
 });
 
 /**
- * ADM1-01 (2026-11-09): Nurzat is an org admin (80) who also kept a
+ * ADM1-01 (2026-11-09): Olga is an org admin (80) who also kept a
  * legacy super_admin (100) binding in store A. Organisation-wide she
  * weighs 80, as the server now ranks her (getActorMaxGlobalRank).
  */
@@ -83,25 +86,25 @@ describe('orgRankOf (ADM1-01)', () => {
 
 describe('canRevokeRole (CMP-ADM-1)', () => {
   test('a manager cannot take away their own manager role (was: confirm, then 403)', () => {
-    expect(canRevokeRole(manager, 'aziz', st('manager', 50, 'A'))).toBe(false);
+    expect(canRevokeRole(manager, 'alice', st('manager', 50, 'A'))).toBe(false);
   });
   test('a manager can take away staff in their store, not in another', () => {
-    expect(canRevokeRole(manager, 'dilnoza', st('staff', 10, 'A'))).toBe(true);
-    expect(canRevokeRole(manager, 'kamola', st('staff', 10, 'B'))).toBe(false);
+    expect(canRevokeRole(manager, 'dana', st('staff', 10, 'A'))).toBe(true);
+    expect(canRevokeRole(manager, 'kate', st('staff', 10, 'B'))).toBe(false);
   });
   test('an admin never removes their own admin role', () => {
-    expect(canRevokeRole(admin, 'nurzat', g('admin', 80))).toBe(false);
+    expect(canRevokeRole(admin, 'olga', g('admin', 80))).toBe(false);
   });
   test('a global binding needs an org admin, whatever the rank (ADM1-17)', () => {
     const legacyStaff = g('staff', 10);
-    expect(canRevokeRole(manager, 'dilnoza', legacyStaff)).toBe(false);
-    expect(canRevokeRole(admin, 'dilnoza', legacyStaff)).toBe(true);
+    expect(canRevokeRole(manager, 'dana', legacyStaff)).toBe(false);
+    expect(canRevokeRole(admin, 'dana', legacyStaff)).toBe(true);
     expect(
-      canRevokeRole(manager, 'dilnoza', { slug: 'staff', scopeType: 'global', scopeId: null }),
+      canRevokeRole(manager, 'dana', { slug: 'staff', scopeType: 'global', scopeId: null }),
     ).toBe(false);
   });
   test('without a rank the × stays and the server decides', () => {
-    expect(canRevokeRole(manager, 'dilnoza', { slug: 'staff', scopeType: 'store', scopeId: 'A' })).toBe(
+    expect(canRevokeRole(manager, 'dana', { slug: 'staff', scopeType: 'store', scopeId: 'A' })).toBe(
       true,
     );
   });
@@ -109,7 +112,7 @@ describe('canRevokeRole (CMP-ADM-1)', () => {
 
 describe('canSetStatus', () => {
   test('nobody suspends themself', () => {
-    expect(canSetStatus(admin, { userId: 'nurzat', bindings: [g('admin', 80)], storeIds: [] }, 'suspended')).toBe(
+    expect(canSetStatus(admin, { userId: 'olga', bindings: [g('admin', 80)], storeIds: [] }, 'suspended')).toBe(
       false,
     );
   });
@@ -178,5 +181,122 @@ describe('canSetOverride', () => {
     expect(canSetOverride(manager, staffA, 'A')).toBe(true);
     expect(canSetOverride(manager, staffAB, 'B')).toBe(false);
     expect(canSetOverride(admin, staffA, null)).toBe(true);
+  });
+});
+
+/**
+ * COREWEB2-11 / ADM1-16 (2026-11-10): store P is paused. Alice still
+ * manages it (session.inactiveAdminStoreIds), so they may take people out
+ * of it and act on its members, never add anyone there.
+ */
+describe('paused and archived stores', () => {
+  const pausedManager: Actor = {
+    userId: 'alice',
+    isOrgAdmin: false,
+    adminStoreIds: ['A'],
+    inactiveAdminStoreIds: ['P'],
+    bindings: [st('manager', 50, 'A'), st('manager', 50, 'P')],
+  };
+  const staffP = { userId: 'dana', bindings: [st('staff', 10, 'P')], storeIds: ['P'] };
+  const staffAP = {
+    userId: 'kate',
+    bindings: [st('staff', 10, 'A'), st('staff', 10, 'P')],
+    storeIds: ['A', 'P'],
+  };
+
+  test('a role in a paused store can be revoked (the × was missing)', () => {
+    expect(canRevokeRole(pausedManager, 'dana', st('staff', 10, 'P'))).toBe(true);
+    // An older session without the list: the store stays out of reach.
+    const older: Actor = { ...pausedManager, inactiveAdminStoreIds: undefined };
+    expect(canRevokeRole(older, 'dana', st('staff', 10, 'P'))).toBe(false);
+  });
+
+  test('nothing is added there: no grant, no override', () => {
+    expect(canGrantRole(pausedManager, { rank: 10 }, { type: 'store', storeId: 'P' })).toBe(false);
+    expect(canSetOverride(pausedManager, staffP, 'P')).toBe(false);
+  });
+
+  test('its members can be suspended by whoever manages it', () => {
+    expect(canSetStatus(pausedManager, staffP, 'suspended')).toBe(true);
+    expect(canSetStatus(pausedManager, staffAP, 'suspended')).toBe(true);
+    expect(canSetStatus(manager, staffAP, 'suspended')).toBe(false);
+  });
+
+  test('a transfer may leave it, not go into it', () => {
+    const stores = [{ id: 'A' }, { id: 'B' }, { id: 'P' }];
+    const wide: Actor = { ...pausedManager, adminStoreIds: ['A', 'B'] };
+    expect(transferTargets(wide, staffP, 'P', stores).map((s) => s.id)).toEqual(['A', 'B']);
+    expect(transferTargets(wide, staffA, 'A', stores).map((s) => s.id)).toEqual(['B']);
+  });
+});
+
+/**
+ * ADM1-06 / ADM1-07 (2026-11-10): renaming, removing from the workspace
+ * and taking out of a store, as the server decides them.
+ */
+describe('canRename', () => {
+  test('everyone may rename themself, even a store manager (was: refused by rank)', () => {
+    const self = { userId: manager.userId, bindings: manager.bindings, storeIds: ['A'] };
+    expect(canRename(manager, self)).toBe(true);
+  });
+  test('someone another workspace also has keeps their name', () => {
+    expect(canRename(admin, { ...staffA, nameShared: true })).toBe(false);
+    expect(canRename(manager, { ...staffA, nameShared: true })).toBe(false);
+  });
+  test('an org admin outranks the member, or is a super admin', () => {
+    const peerAdmin = { userId: 'p', bindings: [g('admin', 80)], storeIds: [] };
+    expect(canRename(admin, staffA)).toBe(true);
+    expect(canRename(admin, peerAdmin)).toBe(false);
+    const owner: Actor = { ...admin, userId: 'owner', bindings: [g('super_admin', 100)] };
+    const otherOwner = { userId: 'o2', bindings: [g('super_admin', 100)], storeIds: [] };
+    expect(canRename(owner, otherOwner)).toBe(true);
+  });
+  test('anyone else needs every store of the member, and to outrank them there', () => {
+    expect(canRename(manager, staffA)).toBe(true);
+    expect(canRename(manager, staffAB)).toBe(false);
+    expect(canRename(manager, { ...staffA, outOfReach: true })).toBe(false);
+    const peer = { userId: 'm2', bindings: [st('manager', 50, 'A')], storeIds: ['A'] };
+    expect(canRename(manager, peer)).toBe(false);
+  });
+});
+
+describe('canSetStatus with stores out of view', () => {
+  test('a store the actor cannot see makes the member out of reach', () => {
+    expect(canSetStatus(manager, { ...staffA, outOfReach: true }, 'suspended')).toBe(false);
+    // An org admin sees every store; the flag does not come up for them.
+    expect(canSetStatus(admin, staffA, 'suspended')).toBe(true);
+  });
+});
+
+describe('canRemoveFromOrg', () => {
+  test('an org admin, not on themself, who outranks the member', () => {
+    expect(canRemoveFromOrg(admin, staffA)).toBe(true);
+    expect(canRemoveFromOrg(manager, staffA)).toBe(false);
+    expect(
+      canRemoveFromOrg(admin, { userId: admin.userId, bindings: admin.bindings, storeIds: [] }),
+    ).toBe(false);
+    const peerAdmin = { userId: 'p', bindings: [g('admin', 80)], storeIds: [] };
+    expect(canRemoveFromOrg(admin, peerAdmin)).toBe(false);
+  });
+  test('someone holding no role at all can go', () => {
+    expect(canRemoveFromOrg(admin, { userId: 'x', bindings: [], storeIds: ['A'] })).toBe(true);
+  });
+});
+
+describe('canDetachFromStore', () => {
+  test('the store manager takes out those below them, in their store only', () => {
+    expect(canDetachFromStore(manager, staffA, 'A')).toBe(true);
+    expect(canDetachFromStore(manager, staffAB, 'B')).toBe(false);
+    const peer = { userId: 'm2', bindings: [st('manager', 50, 'A')], storeIds: ['A'] };
+    expect(canDetachFromStore(manager, peer, 'A')).toBe(false);
+  });
+  test('a paused store counts for taking people out', () => {
+    const pausedManager: Actor = {
+      ...manager,
+      inactiveAdminStoreIds: ['P'],
+      bindings: [st('manager', 50, 'A'), st('manager', 50, 'P')],
+    };
+    const staffP = { userId: 'd', bindings: [st('staff', 10, 'P')], storeIds: ['P'] };
+    expect(canDetachFromStore(pausedManager, staffP, 'P')).toBe(true);
   });
 });

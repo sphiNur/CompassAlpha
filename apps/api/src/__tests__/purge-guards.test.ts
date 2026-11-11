@@ -12,7 +12,7 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
@@ -23,6 +23,9 @@ import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedRoles, seedMember } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -48,6 +51,7 @@ async function purgeWorkspace(name: string): Promise<Fixture> {
     .insert(s.organizations)
     .values({ slug: `purge-${suffix}`, name, localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const def = BUILTIN_ROLES.find((r) => r.slug === 'staff')!;
   const staffRoleId = (await seedRoles(db, orgId, ['staff'])).staff!;
@@ -117,6 +121,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Real buyer', tgUserId: freshTgId() })
       .returning();
+    noteUser(purchaser!.id);
     const runId = randomUUID();
     await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-06-03', status: 'finished' });
     await db.insert(s.events).values({
@@ -144,6 +149,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Real approver', tgUserId: freshTgId() })
       .returning();
+    noteUser(approver!.id);
     const sessionId = randomUUID();
     await db.insert(s.orderSessionsV).values({
       id: sessionId,
@@ -173,6 +179,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       .insert(s.users)
       .values({ displayName: 'Waiver buyer', tgUserId: freshTgId() })
       .returning();
+    noteUser(buyer!.id);
     const runId = randomUUID();
     await db
       .insert(s.marketRunsV)
@@ -472,6 +479,7 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
       .insert(s.users)
       .values({ displayName: 'List approver', tgUserId: freshTgId() })
       .returning();
+    noteUser(approver!.id);
     await db.insert(s.events).values({
       orgId,
       streamType: 'order',
@@ -519,6 +527,159 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
     expect(after.find((r) => r.runId === runId)?.deleteBlock).toBe('actedOnByOthers');
   });
 
+  test('ADM2-08: what each row says is what its delete answers', async () => {
+    const { admin, staff, db, orgId, storeId, skuId, memberId } = fix!;
+    const date = '2026-08-03';
+    const theirs = await staff.order.adjustItem({ storeId, skuId, qty: '1' });
+    await db
+      .update(s.orderSessionsV)
+      .set({ orderDate: date })
+      .where(eq(s.orderSessionsV.id, theirs.sessionId));
+    const staffMemberId = (await db.query.orderSessionsV.findFirst({
+      where: (x, o) => o.eq(x.id, theirs.sessionId),
+    }))!.initiatedByMemberId!;
+    const order = async (values: Partial<typeof s.orderSessionsV.$inferInsert> = {}) => {
+      const id = randomUUID();
+      await db.insert(s.orderSessionsV).values({
+        id,
+        orgId,
+        storeId,
+        orderDate: date,
+        status: 'submitted',
+        initiatedByMemberId: memberId,
+        submittedByMemberId: memberId,
+        ...values,
+      });
+      return id;
+    };
+    const [someone] = await db
+      .insert(s.users)
+      .values({ displayName: 'Rule approver', tgUserId: freshTgId() })
+      .returning();
+    const actOn = (streamType: 'order' | 'run', streamId: string) =>
+      db.insert(s.events).values({
+        orgId,
+        streamType,
+        streamId,
+        seq: 1,
+        type: streamType === 'order' ? 'Approved' : 'ItemPurchased',
+        payload: {},
+        actorId: someone!.id,
+      });
+    const run = async (author: string, runIndex: number) => {
+      const runId = randomUUID();
+      const sessionId = randomUUID();
+      await db.insert(s.marketRunsV).values({
+        id: runId,
+        orgId,
+        runDate: date,
+        runIndex,
+        status: 'finished',
+        sessionIdsJson: [sessionId],
+      });
+      await order({
+        id: sessionId,
+        status: 'archived',
+        runId,
+        initiatedByMemberId: author,
+        submittedByMemberId: author,
+      });
+      return { runId, sessionId };
+    };
+
+    const mine = await order();
+    const withTheirLine = await order();
+    await db
+      .insert(s.orderItemsV)
+      .values({ sessionId: withTheirLine, skuId, contributorMemberId: staffMemberId, qty: '1' });
+    const reviewed = await order({ status: 'approved' });
+    await actOn('order', reviewed);
+    const orphan = await order({ status: 'archived', runId: randomUUID() });
+    const ownRun = await run(memberId, 0);
+    const boughtRun = await run(memberId, 1);
+    await actOn('run', boughtRun.runId);
+    const theirRun = await run(staffMemberId, 2);
+
+    const sessions = await admin.admin.sessionList({ date, limit: 50 });
+    expect(new Map(sessions.map((x) => [x.sessionId, x.deleteBlock]))).toEqual(
+      new Map([
+        [theirs.sessionId, 'othersOrder'],
+        [mine, null],
+        [withTheirLine, 'othersLines'],
+        [reviewed, 'actedOnByOthers'],
+        [orphan, null],
+        [ownRun.sessionId, 'inRun'],
+        [boughtRun.sessionId, 'inRun'],
+        [theirRun.sessionId, 'inRun'],
+      ]),
+    );
+    const sessionAnswer = {
+      notSuperAdmin: 'admin.errors.purgeRequiresSuperAdmin',
+      inRun: 'admin.errors.sessionAttachedToRun',
+      othersOrder: 'admin.errors.sessionHasForeignAuthors',
+      othersLines: 'admin.errors.sessionHasForeignAuthors',
+      actedOnByOthers: 'admin.errors.sessionActedOnByOthers',
+    } as const;
+    for (const row of sessions) {
+      const err = await errorOf(() =>
+        admin.admin.purgeSession({ sessionId: row.sessionId, dryRun: true }),
+      );
+      expect([row.sessionId, err?.message ?? null]).toEqual([
+        row.sessionId,
+        row.deleteBlock ? sessionAnswer[row.deleteBlock] : null,
+      ]);
+    }
+
+    const runs = await admin.admin.runList({ date, limit: 50 });
+    expect(new Map(runs.map((r) => [r.runId, r.deleteBlock]))).toEqual(
+      new Map([
+        [ownRun.runId, null],
+        [boughtRun.runId, 'actedOnByOthers'],
+        [theirRun.runId, 'foreignSessions'],
+      ]),
+    );
+    const runAnswer = {
+      notSuperAdmin: 'admin.errors.purgeRequiresSuperAdmin',
+      foreignSessions: 'admin.errors.runHasForeignSessions',
+      actedOnByOthers: 'admin.errors.runActedOnByOthers',
+    } as const;
+    for (const row of runs) {
+      const err = await errorOf(() => admin.admin.purgeRun({ runId: row.runId, dryRun: true }));
+      expect([row.runId, err?.message ?? null]).toEqual([
+        row.runId,
+        row.deleteBlock ? runAnswer[row.deleteBlock] : null,
+      ]);
+    }
+
+    // An admin without the super admin role: every row says so, and the
+    // deletes refuse before reading anything.
+    const userId = (await db.query.members.findFirst({ where: (x, o) => o.eq(x.id, memberId) }))!
+      .userId;
+    const plainAdmin = callerFor({
+      userId,
+      memberId,
+      orgId,
+      orgTimezone: 'UTC',
+      permissions: new Set(['users.manage', 'org.admin']),
+      roleSlugs: new Set(['org-admin-dx']),
+    });
+    expect(
+      (await plainAdmin.admin.sessionList({ date, limit: 50 })).map((x) => x.deleteBlock),
+    ).toEqual(sessions.map(() => 'notSuperAdmin'));
+    expect((await plainAdmin.admin.runList({ date, limit: 50 })).map((r) => r.deleteBlock)).toEqual(
+      runs.map(() => 'notSuperAdmin'),
+    );
+    for (const call of [
+      () => plainAdmin.admin.purgeSession({ sessionId: mine, dryRun: true }),
+      () => plainAdmin.admin.purgeRun({ runId: ownRun.runId, dryRun: true }),
+    ]) {
+      const err = await errorOf(call);
+      expect([err?.code, err?.message]).toEqual([
+        'FORBIDDEN',
+        'admin.errors.purgeRequiresSuperAdmin',
+      ]);
+    }
+  });
   test('DX-CAT-5: the date preview lists what goes with it from other dates', async () => {
     const { admin, db, orgId, storeId } = fix!;
     const runId = randomUUID();
@@ -571,5 +732,109 @@ describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will d
       skuNames: { en: 'Rice' },
       qty: '3.500',
     });
+  });
+});
+
+// Review ADM2-02 (2026-11-10): a stocktake writes the delta that brings
+// on hand to what was counted, so it absorbed the test run's receipt
+// before it. Deleting that receipt with the run used to take it out a
+// second time. Each purge path books it back; a receipt after the last
+// count goes with the run (those goods never arrived).
+describe.skipIf(!SHOULD_RUN)('ADM2-02: purging a run keeps on hand at what was counted', () => {
+  async function countedAfterTestRun(name: string, runDate: string) {
+    const w = await purgeWorkspace(name);
+    const runId = randomUUID();
+    await w.db
+      .insert(s.marketRunsV)
+      .values({ id: runId, orgId: w.orgId, runDate, status: 'finished' });
+    const move = (
+      delta: string,
+      reason: string,
+      at: string,
+      source: 'run' | 'run_amend' | null,
+    ) => ({
+      orgId: w.orgId,
+      storeId: w.storeId,
+      skuId: w.skuId,
+      delta,
+      reason,
+      sourceType: source,
+      sourceId: source ? runId : null,
+      actorMemberId: w.memberId,
+      occurredAt: new Date(at),
+    });
+    await w.db.insert(s.inventoryMovements).values([
+      move('10', 'stocktake', '2026-06-01T08:00:00Z', null),
+      // The test run "received" 5, then the count found the real 10 …
+      move('5', 'delivery_received', `${runDate}T10:00:00Z`, 'run'),
+      move('-5', 'stocktake', '2026-07-02T08:00:00Z', null),
+      // … and a correction of the run after that count "received" 2 more.
+      move('2', 'adjustment', '2026-07-03T10:00:00Z', 'run_amend'),
+    ]);
+    const onHand = async () => {
+      const [row] = (await w.db.execute(sql`
+        SELECT COALESCE(SUM(delta), 0)::text AS n FROM inventory.movements
+         WHERE store_id = ${w.storeId} AND sku_id = ${w.skuId}`)) as unknown as Array<{
+        n: string;
+      }>;
+      return Number(row!.n);
+    };
+    const bookedBack = async () =>
+      (
+        await w.db.query.inventoryMovements.findMany({
+          where: (m, o) => o.and(o.eq(m.storeId, w.storeId), o.eq(m.sourceType, 'purge')),
+        })
+      ).map((m) => ({ reason: m.reason, delta: Number(m.delta), sourceId: m.sourceId }));
+    expect(await onHand()).toBe(12);
+    return { ...w, runId, onHand, bookedBack };
+  }
+
+  test('one run', async () => {
+    const w = await countedAfterTestRun('Purge stock run', '2026-06-24');
+    await w.admin.admin.purgeRun({ runId: w.runId, dryRun: false });
+    expect(await w.onHand()).toBe(10);
+    expect(await w.bookedBack()).toEqual([{ reason: 'adjustment', delta: 5, sourceId: w.runId }]);
+    const audit = await w.db.query.policyDecisions.findFirst({
+      where: (x, o) => o.and(o.eq(x.action, 'admin.purge.run'), o.eq(x.resourceId, w.runId)),
+    });
+    expect((audit?.inputs as { stockKept?: number } | null)?.stockKept).toBe(1);
+  });
+
+  test('a date', async () => {
+    const w = await countedAfterTestRun('Purge stock date', '2026-06-25');
+    await w.admin.admin.purgeByDate({ date: '2026-06-25', dryRun: false });
+    expect(await w.onHand()).toBe(10);
+    expect(await w.bookedBack()).toEqual([{ reason: 'adjustment', delta: 5, sourceId: w.runId }]);
+  });
+
+  test('the whole workspace', async () => {
+    const w = await countedAfterTestRun('Purge stock all', '2026-06-26');
+    await w.admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'Purge stock all' });
+    expect(await w.onHand()).toBe(10);
+    expect(await w.bookedBack()).toEqual([{ reason: 'adjustment', delta: 5, sourceId: w.runId }]);
+  });
+
+  test('without a later count the receipt just goes', async () => {
+    const w = await purgeWorkspace('Purge stock uncounted');
+    const runId = randomUUID();
+    await w.db
+      .insert(s.marketRunsV)
+      .values({ id: runId, orgId: w.orgId, runDate: '2026-06-27', status: 'finished' });
+    await w.db.insert(s.inventoryMovements).values({
+      orgId: w.orgId,
+      storeId: w.storeId,
+      skuId: w.skuId,
+      delta: '4',
+      reason: 'delivery_received',
+      sourceType: 'run',
+      sourceId: runId,
+      actorMemberId: w.memberId,
+      occurredAt: new Date('2026-06-27T10:00:00Z'),
+    });
+    await w.admin.admin.purgeRun({ runId, dryRun: false });
+    const rows = await w.db.query.inventoryMovements.findMany({
+      where: (m, o) => o.eq(m.storeId, w.storeId),
+    });
+    expect(rows).toEqual([]);
   });
 });

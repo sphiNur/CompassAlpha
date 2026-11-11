@@ -22,6 +22,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { planRun, runStream, seedOrder } from './helpers/streams';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -68,6 +71,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `navb-${suffix}`, name: 'Nav badges', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'manager', 'staff', 'purchaser']);
   const storeIds: string[] = [];

@@ -76,7 +76,7 @@ const db = getDb(process.env.DATABASE_URL);
  * retry every 5 s and flood the journal with timeouts (incident
  * 2026-05-05). So we added a Cloudflare Worker relay that runs on
  * Cloudflare's edge and forwards to Telegram (see
- * `infra/cloudflare/tg-relay.js`).
+ * `infra/cloudflare/tg-relay/worker.js`).
  *
  * Transport selection:
  *   1. Relay path — set both `TG_RELAY_URL` and `COMPASS_RELAY_KEY`.
@@ -344,7 +344,6 @@ async function sendViaRelay(
  * (M1.22). Same logic as the original; just takes a tx handle instead
  * of using the module-level db.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tx = DB;
 async function deferOutboxTx(
   tx: Tx,

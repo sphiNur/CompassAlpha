@@ -5,7 +5,7 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
@@ -13,12 +13,11 @@ import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
 describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
-  const cleanupOrgIds: string[] = [];
-  const cleanupUserIds: string[] = [];
   let userId = '';
   let memberA = '';
   let memberB = '';
@@ -39,7 +38,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       })
       .returning();
     userId = user!.id;
-    cleanupUserIds.push(userId);
+    noteUser(userId);
     await db.insert(s.platformAdmins).values({ userId, note: 'multi-tenant test' });
 
     const suffix = Math.random().toString(36).slice(2, 8);
@@ -60,7 +59,8 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     orgB = provisioned.b.orgId;
     memberA = provisioned.a.ownerMemberId!;
     memberB = provisioned.b.ownerMemberId!;
-    cleanupOrgIds.push(orgA, orgB);
+    noteOrg(orgA);
+    noteOrg(orgB);
 
     const [normalUser] = await db
       .insert(s.users)
@@ -71,7 +71,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       })
       .returning();
     normalUserId = normalUser!.id;
-    cleanupUserIds.push(normalUserId);
+    noteUser(normalUserId);
     await db.insert(s.members).values({ orgId: orgA, userId: normalUserId, status: 'active' });
   });
 
@@ -82,15 +82,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     await db.update(s.users).set({ lastOrgId: orgB }).where(eq(s.users.id, userId));
   });
 
-  afterAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    for (const id of cleanupOrgIds) {
-      await db.delete(s.organizations).where(eq(s.organizations.id, id));
-    }
-    for (const id of cleanupUserIds) {
-      await db.delete(s.users).where(eq(s.users.id, id));
-    }
-  });
+  cleanUpAfterAll();
 
   test('login reopens the last workspace and lists every membership', async () => {
     const login = await callerFor(null).auth.telegramLogin({ initData: signInitData(tgUserId) });
@@ -129,7 +121,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       .insert(s.users)
       .values({ tgUserId: freshTgId(), displayName: 'Founder', displayNameLocked: true })
       .returning();
-    cleanupUserIds.push(founder!.id);
+    noteUser(founder!.id);
     await db.insert(s.platformAdmins).values({ userId: founder!.id, note: 'multi-tenant test' });
     const home = await withSystemContext(db, 'maintenance', (tx) =>
       provisionOrganization(tx, {
@@ -138,7 +130,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
         ownerUserId: founder!.id,
       }),
     );
-    cleanupOrgIds.push(home.orgId);
+    noteOrg(home.orgId);
     const founderSession: SessionContext = {
       userId: founder!.id,
       memberId: home.ownerMemberId!,
@@ -152,7 +144,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       locale: 'en',
       timezone: 'Asia/Tashkent',
     });
-    cleanupOrgIds.push(created.session.member.orgId);
+    noteOrg(created.session.member.orgId);
 
     expect(created.session.member.orgId).not.toBe(home.orgId);
     // 2026-10-24: the owner is Super Admin, so they can appoint admins.

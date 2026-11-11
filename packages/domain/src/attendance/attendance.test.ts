@@ -117,9 +117,32 @@ describe('summarize', () => {
     const duty = run(s, p, at(D, '12:00'))[0]!;
     expect(duty.flags).toEqual(['onDuty']);
     expect(duty.workedMinutes).toBe(180);
-    const forgot = run(s, p, at(D, '23:00'))[0]!;
+    // Six hours after the end, a clock-out would no longer count for it.
+    const forgot = run(s, p, at('2026-11-06', '00:30'))[0]!;
     expect(forgot.flags).toEqual(['missingOut']);
     expect(forgot.workedMinutes).toBe(0);
+    expect(dayPay(forgot, 100_000_00).status).toBe('needsReview');
+  });
+  test('past the end without a clock-out is working on, while a clock-out would still count (review ATT-21)', () => {
+    const s = [shift('s', D, '09:00', '18:00')];
+    const p = [punch('in', D, '09:00')];
+    const late = run(s, p, at(D, '20:00'))[0]!;
+    expect(late.flags).toEqual(['onDuty']);
+    expect(late.workedMinutes).toBe(660);
+    expect(dayPay(late, 100_000_00).status).toBe('inProgress');
+    expect(run(s, p, at(D, '23:59'))[0]!.flags).toEqual(['onDuty']);
+    // The clock-out, when it comes, closes the shift as usual.
+    const out = run(s, [...p, punch('out', D, '21:00')], at(D, '22:00'))[0]!;
+    expect(out.flags).toEqual([]);
+    expect(out.workedMinutes).toBe(720);
+  });
+  test('a clock-out that would count for the next shift ends the wait (review ATT-21)', () => {
+    const s = [shift('a', D, '09:00', '13:00'), shift('b', D, '17:00', '21:00')];
+    const p = [punch('in', D, '09:00')];
+    // 14:00 is nearer the first shift's end than the second's start.
+    expect(run(s, p, at(D, '14:00'))[0]!.flags).toEqual(['onDuty', 'upcoming']);
+    // At 15:30 a clock-out would go to the second shift.
+    expect(run(s, p, at(D, '15:30'))[0]!.flags).toEqual(['missingOut', 'upcoming']);
   });
   test('out without in', () => {
     const [r] = run([shift('s', D, '09:00', '18:00')], [punch('out', D, '18:00')], at(D, '20:00'));
@@ -239,18 +262,19 @@ describe('pay', () => {
     );
     expect(p.deductionCents).toBe(500_000);
     expect(p.netCents).toBe(9_500_000);
-    // 1 min of 540 on 100.00 → 0.185… → 0.19
+    // 09:06 is 6 min late; past the 5 min grace, all 6 count:
+    // 6/540 of 100.00 = 1.111… → 1.11.
     const q = dayPay(
       day('09:00', '18:00', [punch('in', D, '09:06'), punch('out', D, '18:00')]),
       10_000,
     );
-    expect(q.deductionCents).toBe(111); // 6 late (grace 5 passed) → 6/540·100.00 = 1.111 → 1.11
+    expect(q.deductionCents).toBe(111);
   });
   test('absent pays nothing; missing punch waits for the manager; no rate says so', () => {
     expect(dayPay(day('09:00', '18:00', []), 10_000).status).toBe('absent');
-    expect(dayPay(day('09:00', '18:00', [punch('in', D, '09:00')]), 10_000).status).toBe(
-      'needsReview',
-    );
+    // Once a clock-out would no longer count for the shift (review ATT-21).
+    const missingOut = day('09:00', '18:00', [punch('in', D, '09:00')], at('2026-11-06', '00:30'));
+    expect(dayPay(missingOut, 10_000).status).toBe('needsReview');
     expect(
       dayPay(day('09:00', '18:00', [punch('in', D, '09:00')], at(D, '12:00')), 10_000).status,
     ).toBe('inProgress');

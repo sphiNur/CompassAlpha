@@ -24,7 +24,7 @@
  *
  * Self-protection rules are server-side; the FE just gives the UI.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -40,8 +40,8 @@ import {
   IconPeople,
   IconShield,
   IconWorkspace,
-  Input,
   ListRow,
+  NumberInput,
   SectionRow,
   Sheet,
   Switch,
@@ -50,8 +50,10 @@ import {
   cn,
   rowGroupClass,
 } from '@compass/ui';
+import { TAX_RATE_MESSAGE, taxRateProblem, taxRateToSend } from '@compass/contracts/limits';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
+import { formatQty } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
@@ -77,13 +79,14 @@ import {
   ExpenseTemplatesSection,
   DishesSection,
 } from './admin/catalog/CatalogSections';
-import {
-  type AdminSection,
-  type CatalogSub,
-  type OperationsSub,
-  type StoreFocus,
-  type StoreSub,
-} from './admin/shared';
+// Review COREWEB1-11 (2026-11-11): the drill-down's one definition.
+import type {
+  AdminSection,
+  CatalogSub,
+  OperationsSub,
+  StoreFocus,
+  StoreSub,
+} from '../stores/navStore';
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
@@ -131,7 +134,7 @@ export function AdminPage() {
   const session = useAuthStore((s) => s.session);
   // M3.16-B (2026-05-16): drill-down state migrated from useState to
   // navStore (persisted). Reload now restores the exact admin view —
-  // e.g. /admin → Stores → Eden Magic City → Team comes back intact
+  // e.g. /admin → Stores → Store A → Team comes back intact
   // instead of resetting to the admin home menu.
   const section = useNavStore((s) => s.adminSection);
   const setSection = useNavStore((s) => s.setAdminSection);
@@ -226,6 +229,12 @@ export function AdminPage() {
     (section === 'catalog' && !seesCatalog) ||
     (section === 'attendance' && !seesAttendance) ||
     (section === 'platform' && !isPlatformAdmin);
+  // Back from a store to the store list: the header's back, and the way
+  // out a store's settings offer once the store is gone (ADM2-22).
+  const leaveStore = () => {
+    setStoreFocus(null);
+    setStoreSub('team');
+  };
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
@@ -236,8 +245,7 @@ export function AdminPage() {
           drill.markReturn();
           // Drill-up: one level at a time. Sub-route → section root → home.
           if (section === 'stores' && storeFocus !== null) {
-            setStoreFocus(null);
-            setStoreSub('team');
+            leaveStore();
           } else if (section === 'catalog' && catalogSub) {
             setCatalogSub(null);
           } else if (section === 'operations' && opsSub) {
@@ -259,7 +267,15 @@ export function AdminPage() {
           />
         ) : null}
         {section === 'stores' && storeFocus !== null ? (
-          <StoreDetailScreen focus={storeFocus} sub={storeSub} onSubChange={setStoreSub} />
+          <StoreDetailScreen
+            focus={storeFocus}
+            sub={storeSub}
+            onSubChange={setStoreSub}
+            onLeave={() => {
+              drill.markReturn();
+              leaveStore();
+            }}
+          />
         ) : null}
         {section === 'permissions' ? <PermissionsSection isSuperAdmin={isSuperAdmin} /> : null}
         {section === 'catalog' && !catalogSub ? (
@@ -620,6 +636,9 @@ function WorkspaceSection() {
   const currentLocale = session?.user.locale ?? 'en';
   const currency = session?.member.currency ?? 'UZS';
   const taxRatePct = session?.member.taxRatePct ?? '0';
+  // ADM1-14: the shared number format ("12.50" shows as 12.5%); no rate
+  // is shown as none (UI-3), not as "0%" in one place and "—" in another.
+  const taxShown = Number(taxRatePct) > 0 ? `${formatQty(taxRatePct)}%` : null;
   const pricesIncludeTax = session?.member.pricesIncludeTax ?? true;
   // 2026-10-21 audit CA-16: orgFinanceUpdate is requireOrgAdmin on the
   // server; `users.manage` (store managers) only got a FORBIDDEN on save.
@@ -630,6 +649,13 @@ function WorkspaceSection() {
   const [draftCurrency, setDraftCurrency] = useState<string>(currency);
   const [draftTax, setDraftTax] = useState<string>(taxRatePct);
   const [draftInclTax, setDraftInclTax] = useState<boolean>(pricesIncludeTax);
+  // ADM1-14 (2026-11-10): the rate is read like every typed number ("12,5"
+  // in Russian is 12.5) and checked as the server checks it, so the sheet
+  // says what is wrong instead of a failed save. Nothing typed: Save waits.
+  const taxToSend = taxRateToSend(draftTax);
+  const taxProblem = taxRateProblem(taxToSend);
+  const taxError = draftTax.trim() === '' ? null : taxProblem;
+  const taxErrorId = useId();
   useEffect(() => {
     if (!financeSheetOpen) return;
     setDraftCurrency(currency);
@@ -638,15 +664,15 @@ function WorkspaceSection() {
   }, [financeSheetOpen, currency, taxRatePct, pricesIncludeTax]);
 
   const orgFinanceUpdate = trpc.admin.orgFinanceUpdate.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       if (session) {
         patchSession({
           ...session,
           member: {
             ...session.member,
-            currency: draftCurrency,
-            taxRatePct: draftTax,
-            pricesIncludeTax: draftInclTax,
+            currency: vars.currency,
+            taxRatePct: vars.taxRatePct,
+            pricesIncludeTax: vars.pricesIncludeTax,
           },
         });
       }
@@ -697,10 +723,9 @@ function WorkspaceSection() {
             value={session?.member.timezone ?? '—'}
           />
           <DetailRow label={i18n.t('admin.workspace.currency')} value={currency} />
-          <DetailRow
-            label={i18n.t('admin.workspace.taxRate')}
-            value={Number(taxRatePct) > 0 ? `${taxRatePct}%` : '—'}
-          />
+          {taxShown ? (
+            <DetailRow label={i18n.t('admin.workspace.taxRate')} value={taxShown} />
+          ) : null}
         </div>
       </Card>
       <div className={cn('mt-3', rowGroupClass)}>
@@ -714,10 +739,11 @@ function WorkspaceSection() {
         {isAdmin ? (
           <ListRow
             label={i18n.t('admin.workspace.financeRow')}
-            hint={i18n.t('admin.workspace.financeRowHint', {
-              currency,
-              tax: Number(taxRatePct) > 0 ? `${taxRatePct}%` : '0%',
-            })}
+            hint={
+              taxShown
+                ? i18n.t('admin.workspace.financeRowHint', { currency, tax: taxShown })
+                : currency
+            }
             onClick={() => setFinanceSheetOpen(true)}
           />
         ) : null}
@@ -735,10 +761,11 @@ function WorkspaceSection() {
           <Button
             block
             loading={orgFinanceUpdate.isPending}
+            disabled={taxProblem !== null}
             onClick={() =>
               orgFinanceUpdate.mutate({
                 currency: draftCurrency,
-                taxRatePct: draftTax,
+                taxRatePct: taxToSend,
                 pricesIncludeTax: draftInclTax,
               })
             }
@@ -762,21 +789,34 @@ function WorkspaceSection() {
               ))}
             </Select>
           </Field>
-          <Field
-            label={i18n.t('admin.workspace.taxRate')}
-            hint={i18n.t('admin.workspace.taxRateHint')}
-          >
-            <Input
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              max="50"
-              value={draftTax}
-              onChange={(e) => setDraftTax(e.target.value)}
-              placeholder="0"
-            />
-          </Field>
+          <div>
+            <Field
+              label={i18n.t('admin.workspace.taxRate')}
+              hint={i18n.t('admin.workspace.taxRateHint')}
+            >
+              <NumberInput
+                formatError="none"
+                value={draftTax}
+                onChange={(e) => setDraftTax(e.target.value)}
+                placeholder="0"
+                aria-invalid={taxError ? true : undefined}
+                aria-describedby={taxError ? taxErrorId : undefined}
+                className={taxError ? 'border-[var(--c-danger)]' : undefined}
+              />
+            </Field>
+            {/* Outside the Field's <label>, so the reason is tied to the
+                input instead of read as part of its name. */}
+            {taxError ? (
+              <span
+                id={taxErrorId}
+                role="alert"
+                className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
+              >
+                <span aria-hidden>⚠</span>
+                <span>{i18n.t(TAX_RATE_MESSAGE[taxError])}</span>
+              </span>
+            ) : null}
+          </div>
           <FieldGroup label={i18n.t('admin.workspace.pricesIncludeTax')}>
             <Switch
               checked={draftInclTax}

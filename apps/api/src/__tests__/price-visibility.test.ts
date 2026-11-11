@@ -34,6 +34,9 @@ import { ALL_PERMISSION_KEYS } from '@compass/db/seed-data';
 import { seedRoles } from './helpers/fixtures';
 import { runStream, type RunStream } from './helpers/streams';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -77,6 +80,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `prices-${suffix}`, name: 'Price visibility', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'manager', 'staff', 'purchaser']);
   const [accountantRole] = await db
@@ -114,6 +118,7 @@ beforeAll(async () => {
       .insert(s.users)
       .values({ displayName: `Prices ${n}`, tgUserId: freshTgId() })
       .returning();
+    noteUser(u!.id);
     const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
     for (const [roleId, storeId] of bindings) {
       if (storeId) {

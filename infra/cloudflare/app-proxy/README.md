@@ -30,8 +30,7 @@ of the form `<url>|<unix_ts>|<hex sig>`, where
 `sig = HMAC-SHA256(key, "<url>|<unix_ts>")`, the timestamp is at most
 6 h 30 min old and at most 5 minutes in the future, and the signature
 compares in constant time. Without the secret it accepts unsigned (and signed)
-messages as before and logs one warning per isolate. The `/__origin` key
-check is constant-time too.
+messages as before and logs one warning per isolate.
 
 Replays (security scan F3, 2026-10-31): anyone can re-post an old signed
 message to the topic. The Worker therefore takes the valid message with
@@ -99,14 +98,24 @@ model never reached KV (only `.wasm` and `.tflite` matched).
 The quick tunnel is supervised by `compass-app-tunnel.service` and logs
 its current hostname to `/home/ubuntu/compass-tunnel.log`.
 
-Manual fallback (only if the watchdog or ntfy is unavailable) writes the
-current origin into the Worker's KV fallback:
+Manual fallback (only if the watchdog or ntfy is unavailable) hands the
+Worker the current origin directly:
 
 ```bash
 COMPASS_DEPLOY_HOST=ubuntu@<server> \
-COMPASS_DEPLOY_KEY=$HOME/.ssh/compass_alpha_ed25519 \
+COMPASS_DEPLOY_KEY=<the key scripts/deploy.ts uses> \
 bash scripts/refresh-app-proxy-origin.sh
 ```
+
+Review OPS-15 (2026-11-10): the script asks the server for one signed
+message (`compass-origin-watch --print-signed`, over ssh with the host key
+pinned in `infra/deploy/known_hosts`) and POSTs it to `/__origin`. The
+Worker checks it exactly like a topic message (signature, age window,
+newer than the origin in use) and answers 503 while `ORIGIN_SIGNING_KEY`
+is not set. No key leaves the server. Before, `/__origin` took a shared
+key in an `x-origin-key` header and the script sent the server's signing
+key there; once this Worker is deployed, delete the old secret with
+`wrangler secret delete ORIGIN_UPDATE_KEY`.
 
 The server's `FRONTEND_URL` must remain the workers.dev URL so invite
 fallbacks, notifications and CORS all point at the stable entry.

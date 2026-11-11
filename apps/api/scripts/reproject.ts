@@ -240,13 +240,14 @@ async function replay<E extends { streamId: string }, S>(
 ): Promise<number> {
   const rows = (await tx.execute(sql`
     SELECT
-      stream_id::text   AS stream_id,
-      org_id::text      AS org_id,
-      seq::int          AS seq,
-      occurred_at       AS occurred_at,
-      actor_id::text    AS actor_user_id,
-      type              AS type,
-      payload           AS payload
+      ordered.stream_id::text   AS stream_id,
+      ordered.org_id::text      AS org_id,
+      ordered.seq::int          AS seq,
+      ordered.occurred_at       AS occurred_at,
+      ordered.actor_id::text    AS actor_user_id,
+      m.id::text                AS actor_member_id,
+      ordered.type              AS type,
+      ordered.payload           AS payload
     FROM (
       SELECT
         e.*,
@@ -254,13 +255,17 @@ async function replay<E extends { streamId: string }, S>(
       FROM domain.events e
       WHERE stream_type = ${cfg.streamType}
     ) ordered
-    ORDER BY replay_at, stream_id, seq
+    -- RUNAPI-25: the acting member, as the first projection had it
+    -- (readStream looks it up the same way).
+    LEFT JOIN auth.members m ON m.org_id = ordered.org_id AND m.user_id = ordered.actor_id
+    ORDER BY ordered.replay_at, ordered.stream_id, ordered.seq
   `)) as unknown as Array<{
     stream_id: string;
     org_id: string;
     seq: number;
     occurred_at: Date;
     actor_user_id: string | null;
+    actor_member_id: string | null;
     type: string;
     payload: unknown;
   }>;
@@ -275,7 +280,7 @@ async function replay<E extends { streamId: string }, S>(
       seq: row.seq,
       occurredAt: new Date(row.occurred_at),
       actorUserId: row.actor_user_id,
-      actorMemberId: null,
+      actorMemberId: row.actor_member_id,
       type: row.type,
       payload: row.payload,
     } as unknown as E;

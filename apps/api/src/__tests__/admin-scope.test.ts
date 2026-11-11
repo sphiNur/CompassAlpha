@@ -1483,3 +1483,381 @@ describe('2026-10-21 audit admin gates', () => {
     });
   });
 });
+
+// ---------- ADM1-03 / ADM1-16: one rule for the stores a member manages ----------
+
+describe('ADM1-03 / ADM1-16 managed stores: one rule, inactive stores for removals', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+
+  async function inStores(name: string, roleId: string, storeIds: string[]) {
+    const user = await makeUser(name);
+    const memberId = await makeMember(user.id);
+    for (const storeId of storeIds) {
+      await bindRole(memberId, roleId, { type: 'store', storeId });
+      await maintenance()
+        .insert(s.memberStoreAssignments)
+        .values({ memberId, storeId })
+        .onConflictDoNothing();
+    }
+    return { memberId, userId: user.id };
+  }
+
+  const pause = (storeId: string) =>
+    maintenance().update(s.stores).set({ isActive: false }).where(eq(s.stores.id, storeId));
+
+  const denyEverywhereIn = (memberId: string, storeId: string, keys: string[]) =>
+    maintenance()
+      .insert(s.memberPermissionOverrides)
+      .values(
+        keys.map((permissionKey) => ({
+          memberId,
+          permissionKey,
+          effect: 'deny',
+          scopeType: 'store',
+          scopeId: storeId,
+        })),
+      );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a paused store: its manager may take people out, never add them',
+    async () => {
+      const open = await makeStore(`Open-${Math.random()}`);
+      const paused = await makeStore(`Paused-${Math.random()}`);
+      const mgr = await inStores('Paused-Manager', fixture().managerRoleId, [open.id, paused.id]);
+      const staff = await inStores('Paused-Staff', fixture().staffRoleId, [open.id, paused.id]);
+      const newcomer = await inStores('Paused-Newcomer', fixture().staffRoleId, [open.id]);
+      await pause(paused.id);
+      const caller = callerFor(await sessionFor(mgr.memberId, mgr.userId));
+
+      // The session says which is which (COREWEB2-11): the web offers
+      // removals in the paused store and nothing else.
+      const me = await caller.auth.me();
+      expect(me.adminStoreIds).toEqual([open.id]);
+      expect(me.inactiveAdminStoreIds).toEqual([paused.id]);
+
+      // Adding there is refused, as it already was for a global admin.
+      const archived = { code: 'PRECONDITION_FAILED', message: 'auth.errors.storeArchived' };
+      expect(
+        await errorOf(() =>
+          caller.admin.grantRole({
+            userId: newcomer.userId,
+            roleSlug: 'staff',
+            scopeType: 'store',
+            scopeId: paused.id,
+          }),
+        ),
+      ).toMatchObject(archived);
+      expect(
+        await errorOf(() =>
+          caller.admin.memberAssignStore({ memberId: newcomer.memberId, storeId: paused.id }),
+        ),
+      ).toMatchObject(archived);
+      expect(
+        await errorOf(() =>
+          caller.admin.memberInviteByTgId({
+            tgUserId: String(freshTgId()),
+            storeIds: [paused.id],
+          }),
+        ),
+      ).toMatchObject(archived);
+
+      // The people list names the paused store instead of dropping it.
+      const row = (await caller.admin.memberList()).find((m) => m.memberId === staff.memberId);
+      expect(row?.stores.map((st) => st.id)).toEqual([open.id]);
+      expect(row?.inactiveStores).toEqual([{ id: paused.id, name: paused.name, archived: false }]);
+      expect(row?.statusOutOfReach).toBe(false);
+
+      // Taking out works: the role, then the assignment.
+      const roleThere = row?.roles.find((r) => r.scopeId === paused.id);
+      expect((await caller.admin.revokeRole({ bindingId: roleThere!.bindingId })).revoked).toBe(
+        true,
+      );
+      await caller.admin.memberUnassignStore({ memberId: staff.memberId, storeId: paused.id });
+      const left = await maintenance()
+        .select({ storeId: s.memberStoreAssignments.storeId })
+        .from(s.memberStoreAssignments)
+        .where(eq(s.memberStoreAssignments.memberId, staff.memberId));
+      expect(left.map((r) => r.storeId)).toEqual([open.id]);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'an org admin may move someone out of a paused store, not into one',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const open = await makeStore(`MoveOpen-${Math.random()}`);
+      const paused = await makeStore(`MovePaused-${Math.random()}`);
+      const other = await makeStore(`MoveOther-${Math.random()}`);
+      const staff = await inStores('Move-Staff', fixture().staffRoleId, [paused.id, other.id]);
+      await pause(paused.id);
+
+      expect(
+        await errorOf(() =>
+          admin.admin.memberTransferStore({
+            memberId: staff.memberId,
+            fromStoreId: other.id,
+            toStoreId: paused.id,
+          }),
+        ),
+      ).toMatchObject({ message: 'auth.errors.storeArchived' });
+      await admin.admin.memberTransferStore({
+        memberId: staff.memberId,
+        fromStoreId: paused.id,
+        toStoreId: open.id,
+      });
+      const assigned = await maintenance()
+        .select({ storeId: s.memberStoreAssignments.storeId })
+        .from(s.memberStoreAssignments)
+        .where(eq(s.memberStoreAssignments.memberId, staff.memberId));
+      expect(assigned.map((r) => r.storeId).sort()).toEqual([open.id, other.id].sort());
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a store deny limits an organisation-wide manager there, in the session and on the server',
+    async () => {
+      const kept = await makeStore(`Kept-${Math.random()}`);
+      const denied = await makeStore(`Denied-${Math.random()}`);
+      const user = await makeUser('Global-Manager-Denied');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fixture().managerRoleId, { type: 'global' });
+      await denyEverywhereIn(memberId, denied.id, ['users.manage']);
+      const caller = callerFor(await sessionFor(memberId, user.id));
+
+      const me = await caller.auth.me();
+      expect(me.adminStoreIds).toContain(kept.id);
+      expect(me.adminStoreIds).not.toContain(denied.id);
+
+      const target = await inStores('Denied-Target', fixture().staffRoleId, [kept.id]);
+      expect(
+        await errorOf(() =>
+          caller.admin.memberAssignStore({ memberId: target.memberId, storeId: denied.id }),
+        ),
+      ).toMatchObject({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'an org-tier invite asks for organisation-wide authority, which one denied store keeps',
+    async () => {
+      const denied = await makeStore(`InviteDenied-${Math.random()}`);
+      const owner = await makeSuperAdmin('Super-Admin-Denied-In-One-Store');
+      await denyEverywhereIn(owner.memberId, denied.id, ['users.manage', 'users.grant_role']);
+      const caller = callerFor(await sessionFor(owner.memberId, owner.userId));
+      expect((await caller.auth.me()).adminStoreIds).not.toContain(denied.id);
+      // "Administers every active store" used to stand in for this and
+      // refused them; the global authority itself decides now.
+      const invited = await caller.admin.memberInviteByTgId({
+        tgUserId: String(freshTgId()),
+        roleSlug: 'admin',
+        storeIds: [],
+      });
+      expect(invited.memberId).toBeTruthy();
+    },
+  );
+});
+
+// ---------- ADM1-06 / ADM1-20: renaming oneself, holders of a role ----------
+
+describe('ADM1-06 / ADM1-20 the People screen asks only what the server allows', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+
+  test.skipIf(!SHOULD_RUN)('a store manager renames themself', async () => {
+    const store = await makeStore(`Self-${Math.random()}`);
+    const user = await makeUser('Self-Renaming-Manager');
+    const memberId = await makeMember(user.id);
+    await bindRole(memberId, fixture().managerRoleId, { type: 'store', storeId: store.id });
+    const caller = callerFor(await sessionFor(memberId, user.id));
+    // It used to fail the rank check against their own rank.
+    await caller.admin.memberSetDisplayName({ memberId, displayName: 'Renamed Manager' });
+    const row = await maintenance().query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, user.id),
+    });
+    expect(row?.displayName).toBe('Renamed Manager');
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'a role lists its suspended holders and counts the bindings that block deleting it',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const store = await makeStore(`Holders-${Math.random()}`);
+      const slug = `held-${Math.random().toString(36).slice(2, 8)}`;
+      const { id: roleId } = await admin.admin.roleCreate({ slug, name: 'Held role', rank: 10 });
+      const suspended = await makeUser('Suspended-Holder');
+      const suspendedId = await makeMember(suspended.id);
+      await bindRole(suspendedId, roleId, { type: 'store', storeId: store.id });
+      await admin.admin.memberSetStatus({ memberId: suspendedId, status: 'suspended' });
+      const lapsed = await makeUser('Lapsed-Holder');
+      const lapsedId = await makeMember(lapsed.id);
+      await maintenance()
+        .insert(s.memberRoleBindings)
+        .values({
+          memberId: lapsedId,
+          roleId,
+          scopeType: 'store',
+          scopeId: store.id,
+          expiresAt: new Date(Date.now() - 60_000),
+        });
+
+      const detail = await admin.admin.roleDetail({ roleSlug: slug });
+      // ADM1-04: the lapsed grant holds nothing, so it neither shows nor counts.
+      expect(detail.bindingCount).toBe(1);
+      expect(detail.assignees.find((a) => a.memberId === suspendedId)?.status).toBe('suspended');
+      expect(detail.assignees.some((a) => a.memberId === lapsedId)).toBe(false);
+      expect(await errorOf(() => admin.admin.roleDelete({ roleId }))).toMatchObject({
+        message: 'admin.errors.roleHasBindings',
+      });
+
+      // Store managers see holders in their stores, never the count.
+      const mgrUser = await makeUser('Holders-Manager');
+      const mgr = await makeMember(mgrUser.id);
+      await bindRole(mgr, fixture().managerRoleId, { type: 'store', storeId: store.id });
+      const asManager = callerFor(await sessionFor(mgr, mgrUser.id));
+      expect((await asManager.admin.roleDetail({ roleSlug: slug })).bindingCount).toBeNull();
+    },
+  );
+});
+
+// ---------- ADM1-04: lapsed role bindings ----------
+
+describe('ADM1-04 a lapsed role binding holds nothing, anywhere', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+  const anHourAgo = () => new Date(Date.now() - 3_600_000);
+
+  async function lapsedStaff(name: string, storeId: string) {
+    const user = await makeUser(name);
+    const memberId = await makeMember(user.id);
+    await maintenance()
+      .insert(s.memberStoreAssignments)
+      .values({ memberId, storeId })
+      .onConflictDoNothing();
+    await maintenance().insert(s.memberRoleBindings).values({
+      memberId,
+      roleId: fixture().staffRoleId,
+      scopeType: 'store',
+      scopeId: storeId,
+      expiresAt: anHourAgo(),
+    });
+    return { memberId, userId: user.id };
+  }
+
+  test.skipIf(!SHOULD_RUN)(
+    'granting the role again renews it (was: "already has it")',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const store = await makeStore(`Renew-${Math.random()}`);
+      const who = await lapsedStaff('Lapsed-Then-Renewed', store.id);
+      // The member list no longer shows the lapsed role as held.
+      const before = (await admin.admin.memberList()).find((m) => m.memberId === who.memberId);
+      expect(before?.roles).toEqual([]);
+
+      const granted = await admin.admin.grantRole({
+        userId: who.userId,
+        roleSlug: 'staff',
+        scopeType: 'store',
+        scopeId: store.id,
+      });
+      expect(granted.granted).toBe(true);
+      const rows = await maintenance()
+        .select({ id: s.memberRoleBindings.id, expiresAt: s.memberRoleBindings.expiresAt })
+        .from(s.memberRoleBindings)
+        .where(eq(s.memberRoleBindings.memberId, who.memberId));
+      expect(rows).toEqual([{ id: granted.bindingId, expiresAt: null }]);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'a transfer carries a role until its date, and leaves lapsed ones behind',
+    async () => {
+      const admin = appRouter.createCaller(fixture().superAdminCtx);
+      const from = await makeStore(`TransferFrom-${Math.random()}`);
+      const to = await makeStore(`TransferTo-${Math.random()}`);
+      const who = await lapsedStaff('Transfer-With-Dates', from.id);
+      const until = new Date(Date.now() + 7 * 86_400_000);
+      await maintenance().insert(s.memberRoleBindings).values({
+        memberId: who.memberId,
+        roleId: fixture().purchaserRoleId,
+        scopeType: 'store',
+        scopeId: from.id,
+        expiresAt: until,
+      });
+
+      await admin.admin.memberTransferStore({
+        memberId: who.memberId,
+        fromStoreId: from.id,
+        toStoreId: to.id,
+      });
+      const there = await maintenance()
+        .select({ roleId: s.memberRoleBindings.roleId, expiresAt: s.memberRoleBindings.expiresAt })
+        .from(s.memberRoleBindings)
+        .where(
+          and(
+            eq(s.memberRoleBindings.memberId, who.memberId),
+            eq(s.memberRoleBindings.scopeId, to.id),
+          ),
+        );
+      // Was: the purchaser role for good, and the lapsed staff role revived.
+      expect(there).toEqual([{ roleId: fixture().purchaserRoleId, expiresAt: until }]);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)('a role held only by lapsed grants can be deleted', async () => {
+    const admin = appRouter.createCaller(fixture().superAdminCtx);
+    const store = await makeStore(`LapsedOnly-${Math.random()}`);
+    const slug = `lapsed-${Math.random().toString(36).slice(2, 8)}`;
+    const { id: roleId } = await admin.admin.roleCreate({ slug, name: 'Lapsed only', rank: 10 });
+    const user = await makeUser('Lapsed-Only-Holder');
+    const memberId = await makeMember(user.id);
+    await maintenance().insert(s.memberRoleBindings).values({
+      memberId,
+      roleId,
+      scopeType: 'store',
+      scopeId: store.id,
+      expiresAt: anHourAgo(),
+    });
+    expect((await admin.admin.roleDetail({ roleSlug: slug })).bindingCount).toBe(0);
+    await admin.admin.roleDelete({ roleId });
+    const left = await maintenance()
+      .select({ id: s.memberRoleBindings.id })
+      .from(s.memberRoleBindings)
+      .where(eq(s.memberRoleBindings.roleId, roleId));
+    expect(left).toEqual([]);
+  });
+});
+
+// ---------- ADM1-05: a member's permissions per scope ----------
+
+describe('ADM1-05 the permissions screen reads each scope on its own', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'a manager of A who is staff in B: keys per store, a store deny stays in its store',
+    async () => {
+      const fx = fixture();
+      const admin = appRouter.createCaller(fx.superAdminCtx);
+      const storeA = await makeStore(`PermA-${Math.random()}`);
+      const storeB = await makeStore(`PermB-${Math.random()}`);
+      const user = await makeUser('Manager-A-Staff-B-Perms');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(memberId, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      await admin.admin.memberPermissionSet({
+        memberId,
+        permissionKey: 'order.draft',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: storeA.id,
+      });
+
+      const perms = await admin.admin.memberPermissionsList({ memberId });
+      const atA = perms.byScope.stores[storeA.id]!;
+      const atB = perms.byScope.stores[storeB.id]!;
+      // "From role" on B's tab used to include A's manager keys.
+      expect(atA.roleKeys).toContain('order.approve');
+      expect(atB.roleKeys).not.toContain('order.approve');
+      expect(perms.byScope.global.roleKeys).toEqual([]);
+      // The deny in A used to remove order.draft everywhere.
+      expect(atA.effective).not.toContain('order.draft');
+      expect(atB.effective).toContain('order.draft');
+      expect(perms.effective).toContain('order.draft');
+    },
+  );
+});

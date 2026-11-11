@@ -1,6 +1,7 @@
-import { Banner, Card, DetailRow } from '@compass/ui';
+import { Card, DetailRow } from '@compass/ui';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
+import { planName } from '../lib/planName';
 
 export function SubscriptionSummary() {
   const session = useAuthStore((s) => s.session);
@@ -13,16 +14,16 @@ export function SubscriptionSummary() {
     value == null ? i18n.t('subscription.unlimited') : String(value);
   const endDate = sub.trialEndsAt ?? sub.currentPeriodEnd;
 
+  // Review COREWEB1-23 (2026-11-11): no read-only Banner here. Shell shows
+  // one on every page, so the organisation page said it twice (UI-2).
   return (
     <div className="flex flex-col gap-2">
-      {!sub.writeAccess ? (
-        <Banner tone="warn" title={i18n.t('subscription.readOnlyTitle')}>
-          {i18n.t('subscription.readOnlyBody')}
-        </Banner>
-      ) : null}
       <Card>
         <div className="flex flex-col gap-2 px-4 py-3">
-          <DetailRow label={i18n.t('subscription.plan')} value={sub.planName} />
+          <DetailRow
+            label={i18n.t('subscription.plan')}
+            value={planName(sub.planCode, sub.planName, i18n.locale)}
+          />
           <DetailRow
             label={i18n.t('subscription.status')}
             value={i18n.t(`subscription.status.${sub.status}` as Parameters<typeof i18n.t>[0])}

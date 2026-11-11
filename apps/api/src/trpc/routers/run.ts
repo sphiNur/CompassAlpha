@@ -51,6 +51,7 @@ import {
   effectivePermissionsForStore,
   getActorStoreIds,
   getActorStoreIdsForPermission,
+  resolveRunCreateStoreScope,
 } from '../../services/storeScope';
 import { hasGlobalPermission } from '../../services/orgAdmin';
 import {
@@ -86,7 +87,13 @@ import { runCorrections } from '../../services/runCorrections';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
-import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import {
+  moneyText,
+  runDetailMoney,
+  runMoneyLinesSql,
+  uuidListSql,
+  type RunMoneyLine,
+} from '../../services/runMoney';
 import { inUuids } from '../../services/sqlIn';
 import { todayInTz } from '@compass/domain';
 import {
@@ -264,7 +271,7 @@ export const runRouter = router({
       // query to the actor's bound stores. `getActorStoreIds`
       // returns `null` for org-tier actors (skip filter), an
       // explicit array for store-tier actors.
-      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx.session!);
       const sessions = await tx.query.orderSessionsV.findMany({
         where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) => {
           const base = [eq2(sess.orgId, ctx.session!.orgId), eq2(sess.status, 'approved')];
@@ -835,7 +842,7 @@ export const runRouter = router({
       // `run.create.org` grant. Otherwise resolve `run.create` at each
       // concrete store, so Store-A purchaser + Store-B staff membership
       // cannot combine into Store-B planning authority.
-      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx.session!);
       assertStoreIdsWithinRunCreateScope(
         sessions.map((session) => session.storeId),
         allowedStoreIds,
@@ -1072,7 +1079,7 @@ export const runRouter = router({
             });
           }
         }
-        const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+        const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx.session!);
         assertStoreIdsWithinRunCreateScope(
           sessions.map((session) => session.storeId),
           allowedStoreIds,
@@ -2098,19 +2105,58 @@ export const runRouter = router({
           for (const row of rows) supplierNameById[row.id] = row.name;
         }
 
+        // Review RUNWEB2-03 (2026-11): the money, from the lines the History
+        // list row and report.* add up, in the stores this reader may see
+        // prices in. The page recomputed it with its own copy of the rule.
+        const moneyLines = executeRows<RunMoneyLine>(
+          await tx.execute(sql`
+            SELECT
+              store_id::text AS "storeId",
+              kind,
+              sku_id::text AS "skuId",
+              expense_id::text AS "expenseId",
+              amount::text AS amount,
+              payment_method AS "paymentMethod"
+            FROM (
+              ${runMoneyLinesSql({
+                runsSql: sql`(SELECT ${run.id}::uuid AS id)`,
+                storeIdsSql: uuidListSql(allowedStoreIds),
+              })}
+            ) money_lines
+          `),
+        );
+        const { byStore, bySku, bySplit, byExpense, ...runTotals } = runDetailMoney(moneyLines);
+
         return {
           id: run.id,
           runDate: run.runDate,
           runIndex: run.runIndex,
           status: run.status,
           finishedAt: run.finishedAt,
-          items,
-          splits,
+          items: items.map((item) => {
+            const money = bySku.get(item.skuId);
+            return {
+              ...item,
+              /** What it cost in the visible stores; null when nothing was bought. */
+              amount: money?.total ?? null,
+              cashAmount: money?.cash ?? null,
+              transferAmount: money?.transfer ?? null,
+            };
+          }),
+          splits: splits.map((split) => ({
+            ...split,
+            amount: bySplit.get(`${split.skuId}|${split.storeId}`)?.total ?? null,
+          })),
           perStoreDemand,
           sessionNotesByStore,
           sessionExtrasByStore,
           sessions,
-          expenses,
+          expenses: expenses.map((expense) => ({
+            ...expense,
+            /** Its share in the visible stores. */
+            amount: byExpense.get(expense.id)?.total ?? null,
+          })),
+          money: { ...runTotals, byStore },
           supplierNameById,
           canAmend,
           // D3 / D4 (2026-10-31): quantity added in a correction and price
@@ -2205,7 +2251,7 @@ export const runRouter = router({
         //   - centralizing the math means cancel-cascade and
         //     re-planning paths can't drift from the client's defaults.
         const sessionIds = (run.sessionIdsJson ?? []) as string[];
-        let perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
+        const perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
         // M1.8 (2026-05-07): per-store concatenated session notes so the
         // purchaser sees the staff's "其他物品" requests next to that
         // store's demand block. M3.16-C extends this with per-store
@@ -4167,38 +4213,6 @@ async function resolveRunReadStoreScope(
   return getActorStoreIds(db, ctx.session!.memberId, ctx.session!.permissions);
 }
 
-/**
- * Resolve the stores where this actor may plan/extend a run.
- *
- * `SessionContext.permissions` is a compatibility union across every role
- * binding, so the presence of `run.create.org` there cannot prove an
- * organization-wide grant. Only an active persisted GLOBAL grant selects the
- * org-wide path. Both paths still go through the effective-permission resolver
- * so a store-scoped deny wins:
- *
- *   - GLOBAL `run.create.org` -> stores where `run.create.org` is effective
- *   - otherwise              -> stores where `run.create` is effective
- *
- * This also prevents an unrelated Store-B staff assignment from widening a
- * Store-A purchaser's planning scope.
- */
-export async function resolveRunCreateStoreScope(
-  db: import('@compass/db').DB,
-  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
-): Promise<string[] | null> {
-  const hasPersistedOrgGrant = await hasGlobalPermission(
-    db,
-    ctx.session!.memberId,
-    'run.create.org',
-  );
-  return getActorStoreIdsForPermission(
-    db,
-    ctx.session!.memberId,
-    hasPersistedOrgGrant ? 'run.create.org' : 'run.create',
-    ctx.session!.permissions,
-  );
-}
-
 function assertStoreIdsWithinRunCreateScope(
   storeIds: readonly string[],
   allowedStoreIds: readonly string[] | null,
@@ -4217,7 +4231,7 @@ async function assertRunCreateScopeForRun(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   run: { sessionIdsJson: unknown },
 ): Promise<void> {
-  const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx);
+  const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx.session!);
   if (allowedStoreIds === null) return;
   const involvedStoreIds = await runInvolvedStoreIds(db, run);
   const allowed = new Set(allowedStoreIds);

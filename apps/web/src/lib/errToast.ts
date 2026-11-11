@@ -34,22 +34,20 @@
  * refresh") otherwise. `common.error` ("Something went wrong") is a
  * title, not a toast: it says neither why nor what to do.
  */
-import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';
+import type { CatalogKey } from '@compass/i18n';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
-import { errorVars, isServerSideFailure, networkFailureKey, serverErrorKey } from './errorText';
-import { isLikelyNetworkError } from './networkError';
-
-interface ErrLike {
-  message?: string;
-}
+import { errorVars, serverErrorKey, writeErrorTextOf } from './errorText';
 
 /**
- * Returns a curried error-handler builder. Pass the fallback i18n
- * key (used when the server message isn't recognizable as an i18n
- * key); receive a function suitable for `useMutation({ onError })`.
+ * The sentence a failed write falls back to: its own failure sentence, or
+ * `common.errors.actionFailed`. Never the bare `common.error`, which says
+ * neither why nor what to do (DX-COPY-8); the type refuses it (review
+ * TEST3-06: a test used to look for it in the source).
  */
+export type WriteFallbackKey = Exclude<CatalogKey, 'common.error'>;
+
 export interface ErrToastOptions {
   /**
    * The write sends the same idempotency key when repeated with the same
@@ -58,37 +56,25 @@ export interface ErrToastOptions {
   retrySafe?: boolean;
 }
 
+/**
+ * Returns a curried error-handler builder. Pass the fallback i18n
+ * key (used when the server message isn't recognizable as an i18n
+ * key); receive a function suitable for `useMutation({ onError })`.
+ */
 export function useErrToast(): (
-  defaultKey: Parameters<ReturnType<typeof useI18n>['t']>[0],
+  defaultKey: WriteFallbackKey,
   options?: ErrToastOptions,
 ) => (err: unknown) => void {
   const i18n = useI18n();
   const toast = useToast();
   return (defaultKey, options) => (err: unknown) => {
     haptic('error');
-    const raw = (err as ErrLike | null)?.message;
-    // A schema refusal carries its key inside the zod issue list.
-    const key = serverErrorKey(err);
-    // RE-CLS-3 (2026-10-30): writes that reach here were NOT queued (the
-    // queued ones say "saved offline" themselves). Say what is known about
-    // whether it was saved (R2-CLS-1, networkFailureKey), instead of a
-    // generic failure next to a banner promising that changes sync later.
-    // A server that answered with a gateway error is not the user's
-    // connection (R2-AUTH-3).
-    // CMP-FE-1: with the placeholders the server sent (`data.context`).
-    const text: ReactNode = key
-      ? i18n.t(key as Parameters<typeof i18n.t>[0], errorVars(err))
-      : isLikelyNetworkError(err)
-        ? i18n.t(
-            isServerSideFailure(raw)
-              ? 'common.errors.internal'
-              : networkFailureKey(
-                  typeof navigator === 'undefined' ? true : navigator.onLine !== false,
-                  options?.retrySafe ?? false,
-                ),
-          )
-        : i18n.t(defaultKey);
-    toast.error(text);
+    // Which sentence, and with which placeholders: see writeErrorTextOf.
+    const { key, vars } = writeErrorTextOf(err, defaultKey, {
+      online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+      retrySafe: options?.retrySafe ?? false,
+    });
+    toast.error(i18n.t(key as Parameters<typeof i18n.t>[0], vars));
   };
 }
 
@@ -98,10 +84,7 @@ export function useErrToast(): (
  * larger composition (e.g. a banner subtitle). Skips haptic since
  * the caller controls UI side-effects.
  */
-export function useTranslateError(): (
-  err: unknown,
-  defaultKey: Parameters<ReturnType<typeof useI18n>['t']>[0],
-) => string {
+export function useTranslateError(): (err: unknown, defaultKey: WriteFallbackKey) => string {
   const i18n = useI18n();
   return (err, defaultKey) => {
     const key = serverErrorKey(err);

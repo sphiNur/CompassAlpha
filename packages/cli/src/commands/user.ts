@@ -2,13 +2,9 @@ import type { Command } from 'commander';
 import kleur from 'kleur';
 import { eq } from 'drizzle-orm';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
-import { closeDb, getDb, schema as s } from '@compass/db';
-import { loadRepoEnv } from '@compass/db/env';
-
-loadRepoEnv(import.meta.url);
-
-/** A refusal: said in red, nothing written. */
-class Refusal extends Error {}
+import { schema as s, type DB } from '@compass/db';
+import { withMaintenanceDb } from '../db';
+import { parseTgUserId, Refusal } from '../refusal';
 
 export function registerUserCommands(parent: Command): void {
   parent
@@ -30,17 +26,8 @@ export function registerUserCommands(parent: Command): void {
           newUser?: boolean;
         },
       ) => {
-        const db = getDb(undefined, { system: 'maintenance' });
-        try {
-          const done = await grant(db, tgUserIdRaw, opts);
-          console.log(kleur.green(done.granted ? 'Granted' : 'Already held'), done.what);
-        } catch (err) {
-          if (!(err instanceof Refusal)) throw err;
-          console.error(kleur.red(err.message));
-          process.exitCode = 1;
-        } finally {
-          await closeDb();
-        }
+        const done = await withMaintenanceDb((db) => grant(db, tgUserIdRaw, opts));
+        console.log(kleur.green(done.granted ? 'Granted' : 'Already held'), done.what);
       },
     );
 
@@ -48,30 +35,26 @@ export function registerUserCommands(parent: Command): void {
     .command('list')
     .description('List users in an organization')
     .requiredOption('--org <slug>', 'Org slug')
-    .action(async (opts: { org: string }) => {
-      const db = getDb(undefined, { system: 'maintenance' });
-      const org = await db.query.organizations.findFirst({
-        where: (o, { eq: eq2 }) => eq2(o.slug, opts.org),
-      });
-      if (!org) {
-        console.error(kleur.red(`No org with slug=${opts.org}`));
-        await closeDb();
-        process.exit(1);
-      }
-      const rows = await db
-        .select({
-          memberId: s.members.id,
-          userId: s.users.id,
-          tgUserId: s.users.tgUserId,
-          displayName: s.users.displayName,
-          memberStatus: s.members.status,
-        })
-        .from(s.members)
-        .innerJoin(s.users, eq(s.users.id, s.members.userId))
-        .where(eq(s.members.orgId, org.id));
-      console.table(rows);
-      await closeDb();
-    });
+    .action((opts: { org: string }) =>
+      withMaintenanceDb(async (db) => {
+        const org = await db.query.organizations.findFirst({
+          where: (o, { eq: eq2 }) => eq2(o.slug, opts.org),
+        });
+        if (!org) throw new Refusal(`No org with slug=${opts.org}`);
+        const rows = await db
+          .select({
+            memberId: s.members.id,
+            userId: s.users.id,
+            tgUserId: s.users.tgUserId,
+            displayName: s.users.displayName,
+            memberStatus: s.members.status,
+          })
+          .from(s.members)
+          .innerJoin(s.users, eq(s.users.id, s.members.userId))
+          .where(eq(s.members.orgId, org.id));
+        console.table(rows);
+      }),
+    );
 }
 
 /**
@@ -83,7 +66,7 @@ export function registerUserCommands(parent: Command): void {
  * super admin.
  */
 async function grant(
-  db: ReturnType<typeof getDb>,
+  db: DB,
   tgUserIdRaw: string,
   opts: {
     role: string;
@@ -93,10 +76,7 @@ async function grant(
     newUser?: boolean;
   },
 ): Promise<{ granted: boolean; what: Record<string, string> }> {
-  if (!/^[1-9]\d{0,18}$/.test(tgUserIdRaw)) {
-    throw new Refusal(`Not a Telegram user id: ${tgUserIdRaw}`);
-  }
-  const tgUserId = BigInt(tgUserIdRaw);
+  const tgUserId = parseTgUserId(tgUserIdRaw);
   if (opts.scope !== 'global' && opts.scope !== 'store') {
     throw new Refusal(`--scope is global or store, not ${opts.scope}`);
   }

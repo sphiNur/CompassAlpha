@@ -14,6 +14,9 @@ import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: {
@@ -33,6 +36,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `runlist-${suffix}`, name: 'Run list', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleId = (await seedRoles(db, orgId, ['staff'])).staff!;
   const store = async (name: string) =>

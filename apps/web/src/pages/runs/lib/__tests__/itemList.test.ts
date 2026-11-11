@@ -34,10 +34,10 @@ const names = (rows: Row[]) => rows.map((r) => r.name);
 describe('visibleItems ordering', () => {
   it('groups by stall, then sorts by name inside each stall', () => {
     const items = [
-      row('4', 'Onion', 'Bekzod'),
-      row('1', 'Tomato', 'Aziz'),
-      row('3', 'Carrot', 'Bekzod'),
-      row('2', 'Apple', 'Aziz'),
+      row('4', 'Onion', 'Bravo'),
+      row('1', 'Tomato', 'Alpha'),
+      row('3', 'Carrot', 'Bravo'),
+      row('2', 'Apple', 'Alpha'),
     ];
     expect(names(visibleItems(items, view))).toEqual([
       'Apple',
@@ -50,7 +50,7 @@ describe('visibleItems ordering', () => {
   it('puts items with no stall last instead of under an empty name', () => {
     const items = [
       row('1', 'Aaa', null),
-      row('2', 'Zzz', 'Aziz'),
+      row('2', 'Zzz', 'Alpha'),
       row('3', 'Bbb', null),
     ];
     expect(names(visibleItems(items, view))).toEqual(['Zzz', 'Aaa', 'Bbb']);
@@ -58,8 +58,8 @@ describe('visibleItems ordering', () => {
 
   it('breaks ties on id so equal names never swap between renders', () => {
     const items = [
-      row('sku-b', 'Milk', 'Aziz'),
-      row('sku-a', 'Milk', 'Aziz'),
+      row('sku-b', 'Milk', 'Alpha'),
+      row('sku-a', 'Milk', 'Alpha'),
     ];
     const once = visibleItems(items, view).map((r) => r.skuId);
     const twice = visibleItems([...items].reverse(), view).map((r) => r.skuId);
@@ -73,9 +73,9 @@ describe('visibleItems ordering', () => {
     // every row below it up — under a thumb already moving toward the
     // next ✓, on a list where a tap commits money.
     const items = [
-      row('1', 'Apple', 'Aziz'),
-      row('2', 'Milk', 'Aziz'),
-      row('3', 'Onion', 'Aziz'),
+      row('1', 'Apple', 'Alpha'),
+      row('2', 'Milk', 'Alpha'),
+      row('3', 'Onion', 'Alpha'),
     ];
     const before = names(visibleItems(items, view));
     const after = names(
@@ -89,8 +89,8 @@ describe('visibleItems ordering', () => {
 
   it('keeps every row in place as the whole trip completes', () => {
     const items = [
-      row('1', 'Apple', 'Aziz'),
-      row('2', 'Milk', 'Bekzod'),
+      row('1', 'Apple', 'Alpha'),
+      row('2', 'Milk', 'Bravo'),
       row('3', 'Onion', null),
     ];
     const baseline = names(visibleItems(items, view));
@@ -103,10 +103,10 @@ describe('visibleItems ordering', () => {
 
 describe('visibleItems filtering', () => {
   const items = [
-    row('1', 'Tomato', 'Aziz', 'pending'),
-    row('2', 'Milk', 'Aziz', 'purchased'),
-    row('3', 'Onion', 'Bekzod', 'unavailable'),
-    row('4', 'Apple', 'Bekzod', 'pending'),
+    row('1', 'Tomato', 'Alpha', 'pending'),
+    row('2', 'Milk', 'Alpha', 'purchased'),
+    row('3', 'Onion', 'Bravo', 'unavailable'),
+    row('4', 'Apple', 'Bravo', 'pending'),
   ];
 
   it('shows everything by default', () => {
@@ -137,7 +137,7 @@ describe('visibleItems filtering', () => {
   });
 
   it('finds every row of a stall by typing the stall name', () => {
-    const tokens = normalizeQuery('bekzod')!;
+    const tokens = normalizeQuery('bravo')!;
     expect(names(visibleItems(items, view, { tokens }))).toEqual([
       'Apple',
       'Onion',
@@ -156,7 +156,7 @@ describe('visibleItems filtering', () => {
   });
 
   it('combines search and filter', () => {
-    const tokens = normalizeQuery('aziz')!;
+    const tokens = normalizeQuery('alpha')!;
     expect(
       names(visibleItems(items, view, { tokens, filter: 'pending' })),
     ).toEqual(['Tomato']);
@@ -213,5 +213,17 @@ describe('countByStatus', () => {
       purchased: 0,
       unavailable: 0,
     });
+  });
+});
+
+describe('collation (RUNWEB2-30)', () => {
+  it('orders names in the UI language, not the device one', () => {
+    const items = [row('1', '土豆'), row('2', '洋葱'), row('3', '胡萝卜')];
+    // By pinyin: hu, tu, yang. Code-point order would put 胡萝卜 last.
+    expect(names(visibleItems(items, { ...view, locale: 'zh' }))).toEqual([
+      '胡萝卜',
+      '土豆',
+      '洋葱',
+    ]);
   });
 });

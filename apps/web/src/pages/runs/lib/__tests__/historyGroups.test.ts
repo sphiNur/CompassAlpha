@@ -58,6 +58,15 @@ describe('groupRunsByDay', () => {
     expect(day!.total).toBe(200);
   });
 
+  test('a trip is the run’s own number, also after a gap (RUNWEB2-29)', () => {
+    // #2 was cancelled or moved to another day: #1 and #3 remain.
+    const [day] = groupRunsByDay([run('c', '2026-10-22', 2), run('a', '2026-10-22', 0)]);
+    expect(day!.storeLines.map((l) => [l.trip, l.run.id])).toEqual([
+      [1, 'a'],
+      [3, 'c'],
+    ]);
+  });
+
   test('a single-run day is one entry with trip 1', () => {
     const [day] = groupRunsByDay([run('a', '2026-10-20', 0)]);
     expect(day!.runs).toHaveLength(1);
@@ -68,7 +77,7 @@ describe('groupRunsByDay', () => {
 describe('dayStoreSummaries', () => {
   test('a store in two trips is one row with both trips', () => {
     const shared = (total: string) => ({
-      storeId: 'lagman',
+      storeId: 'south',
       total,
       cash: total,
       transfer: '0',
@@ -84,13 +93,13 @@ describe('dayStoreSummaries', () => {
       run('a', '2026-10-22', 0, { storeTotals: [shared('80')] }),
     ]);
     const stores = dayStoreSummaries(day!);
-    expect(stores.map((s) => s.storeId)).toEqual(['x', 'lagman']);
-    const lagman = stores[1]!;
-    expect(lagman.total).toBe(130);
-    expect(lagman.cash).toBe(130);
-    expect(lagman.transfer).toBe(0);
-    expect(lagman.itemCount).toBe(4);
-    expect(lagman.lines.map((l) => [l.trip, l.run.id])).toEqual([
+    expect(stores.map((s) => s.storeId)).toEqual(['x', 'south']);
+    const south = stores[1]!;
+    expect(south.total).toBe(130);
+    expect(south.cash).toBe(130);
+    expect(south.transfer).toBe(0);
+    expect(south.itemCount).toBe(4);
+    expect(south.lines.map((l) => [l.trip, l.run.id])).toEqual([
       [1, 'a'],
       [2, 'b'],
     ]);

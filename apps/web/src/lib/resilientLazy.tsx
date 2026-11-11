@@ -11,6 +11,7 @@ import { lazy, useCallback, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { Button, EmptyState } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
+import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from './reload';
 
 type PageModule<P> = { default: ComponentType<P> };
 
@@ -28,8 +29,10 @@ export function resilientLazy<P extends object>(factory: () => Promise<PageModul
             .catch(() => {
               // Browsers keep a failed module import for that URL too, so
               // a second import() can fail although the network is back.
-              // Online, a reload is what actually fetches it again.
-              if (navigator.onLine) window.location.reload();
+              // Online, a reload is what actually fetches it again. Review
+              // COREWEB2-25: through reload.ts, which records why and does
+              // not reload again within the window if it did not help.
+              if (navigator.onLine) reloadForStaleChunk(STALE_CHUNK_RELOAD_WINDOW_MS);
             })
             .finally(() => setBusy(false));
         }, []);

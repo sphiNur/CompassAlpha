@@ -24,7 +24,6 @@ import {
   Segmented,
   Select,
   Sheet,
-  confirmCancelPolicy,
   pillButtonClass,
   useToast,
 } from '@compass/ui';
@@ -223,7 +222,7 @@ export function PurchaseSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.actualQty]);
 
-  // RUNWEB2-04: the one rule, which the page's main button reads too.
+  // RUNWEB2-04: the one rule (runs/lib/purchaseForm.ts).
   const { splitTotal, splitMatches, reasonOk, canSubmit } = draft
     ? purchaseDraftCheck(draft)
     : { splitTotal: 0, splitMatches: false, reasonOk: true, canSubmit: false };
@@ -278,7 +277,7 @@ export function PurchaseSheet({
               {i18n.t('run.topUp.sheetBody', {
                 qty: `${formatQty(
                   draft.topUp.base.reduce((sum, b) => sum + Number(b.qty), 0),
-                )} ${sku ? unitLabel(sku.unit) : ''}`.trim(),
+                )} ${sku ? unitLabel.uncounted(sku.unit) : ''}`.trim(),
                 price: `${formatMoney(draft.topUp.item.unitPrice)} ${currency}`,
               })}
             </Banner>
@@ -295,7 +294,7 @@ export function PurchaseSheet({
               {/* R2-BUY-4: the localised unit ("升"), not the code ("L"); no
                   empty brackets when the SKU has none. */}
               {sku?.unit
-                ? i18n.t('run.action.actualQty', { unit: unitLabel(sku.unit) })
+                ? i18n.t('run.action.actualQty', { unit: unitLabel.uncounted(sku.unit) })
                 : i18n.t('run.action.actualQtyPlain')}
               <Input
                 className="mt-1"
@@ -349,7 +348,7 @@ export function PurchaseSheet({
                 typed={priceInput}
                 priceInThousands={priceInThousands}
                 currency={currency}
-                unit={sku?.unit ? unitLabel(sku.unit) : undefined}
+                unit={sku?.unit ? unitLabel.uncounted(sku.unit) : undefined}
               />
             </span>
           </div>
@@ -878,7 +877,7 @@ export function AddItemSheet({
                     secondaryLang={selectedName?.secondaryLang}
                   />
                   <div className="text-old-label text-[var(--c-fg-muted)]">
-                    {unitLabel(selectedSku.unit)}
+                    {unitLabel.uncounted(selectedSku.unit)}
                   </div>
                 </div>
                 <Button
@@ -936,7 +935,7 @@ export function AddItemSheet({
                               secondaryLang={nm.secondaryLang}
                             />
                             <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
-                              {unitLabel(sku.unit)}
+                              {unitLabel.uncounted(sku.unit)}
                             </span>
                           </button>
                         </li>
@@ -1221,7 +1220,7 @@ export function AddItemSheet({
                     // R2-BUY-4: localised unit; no "（）" without one.
                     const unit =
                       draft.mode === 'sku'
-                        ? unitLabel(selectedSku?.unit)
+                        ? unitLabel.uncounted(selectedSku?.unit)
                         : draft.unitHint.trim();
                     return unit
                       ? i18n.t('run.action.actualQty', { unit })
@@ -1347,172 +1346,6 @@ export function AddItemSheet({
                 </div>
               ) : null}
             </>
-          ) : null}
-        </div>
-      ) : null}
-    </Sheet>
-  );
-}
-
-/** Generic confirm sheet used by every major transition. Single component
- *  + single render slot keeps the look-and-feel identical across:
- *  Start/Stop purchase, Start/Stop delivery, Deliver to store, Recall
- *  delivery, Cancel run, Unmark unavailable. */
-export function ConfirmSheet({
-  config,
-  reason,
-  onReasonChange,
-  onCancel,
-  i18n,
-}: {
-  config:
-    | {
-        title: string;
-        body: string;
-        confirmLabel: string;
-        danger: boolean;
-        /**
-         * DX-IX-6 (2026-11-01): the person cannot take it back (finishing
-         * the purchase locks it; only a super admin reopens). Like
-         * `danger`, the sheet then shows Cancel and starts on it.
-         */
-        irreversible?: boolean;
-        requireReason: boolean;
-        /**
-         * M1.7-A (2026-05-06): "soft" reason — when true, the reason
-         * input is rendered (so the operator CAN add context) but
-         * submit is NOT gated on it. Used by the cancel-run flow
-         * where requiring a reason produces "asdf" noise but having
-         * the option to write one helps the team learn.
-         * `requireReason: true` overrides this (hard requirement).
-         */
-        reasonOptional?: boolean;
-        /** Override the default reason placeholder copy. */
-        reasonPlaceholder?: string;
-        isPending: boolean;
-        run: () => void;
-      }
-    | null;
-  reason: string;
-  onReasonChange: (s: string) => void;
-  onCancel: () => void;
-  i18n: ReturnType<typeof useI18n>;
-}) {
-  const reasonOk = !config?.requireReason || reason.trim().length > 0;
-  // M1.13 (2026-05-08): for soft-reason flows (cancel-run is the only
-  // current consumer), the input is hidden behind a small "Add note
-  // (optional)" toggle. Was: input always visible + autofocused →
-  // keyboard popped → user felt obligated to type "asdf" or similar
-  // noise. Now: 1-tap confirm by default, expand only if you actually
-  // have something to say. Hard `requireReason` flows still render
-  // the input unconditionally as before.
-  const [reasonExpanded, setReasonExpanded] = useState(false);
-  // Reset expanded state every time the sheet opens with a new config
-  // so a previously-expanded reason field doesn't leak across confirms.
-  useEffect(() => {
-    if (!config) setReasonExpanded(false);
-  }, [config]);
-  const isHardReason = !!config?.requireReason;
-  const isSoftReason = !!(config && !isHardReason && config.reasonOptional);
-  const showReasonField = isHardReason || (isSoftReason && reasonExpanded);
-  const showReasonToggle = isSoftReason && !reasonExpanded;
-  // Inside Telegram the MainButton drives the primary action — the sheet
-  // doesn't need its own confirm button. The Cancel button was also
-  // dropped (2026-05-04, user feedback) because:
-  //   - tap-on-backdrop, swipe-down, and Telegram BackButton all close the
-  //     sheet — three dismiss paths is plenty for a 1-action confirmation
-  //   - on a 640px WebView the trailing "Cancel" was ~52px of muted-pearl
-  //     button that visually competed with the body text and made cancel
-  //     feel like the default
-  // We DO keep the Cancel button when the user has to type a reason —
-  // the soft keyboard covers the backdrop, so without an explicit close
-  // target they'd have to dismiss the keyboard first to tap outside.
-  // M3.49 (2026-05-23): the in-page PageMainButton sits behind any
-  // open sheet — so we always show the confirm sheet's own primary
-  // button now, regardless of Telegram presence. Was `!inTelegram`
-  // (Telegram MainButton was the canonical CTA), no longer correct.
-  // DX-IX-6 (2026-11-01): destructive and locking confirms always offer
-  // Cancel and focus it, so Enter on the opener followed by a repeated
-  // Enter cannot finish a purchase (confirmCancelPolicy).
-  const { showCancel, focusCancel } = confirmCancelPolicy({
-    danger: config?.danger,
-    irreversible: config?.irreversible,
-    requireReason: isHardReason,
-    showCancelInSheet: isHardReason || (isSoftReason && reasonExpanded),
-  });
-  const showPrimary = true;
-  const hasFooter = showPrimary || showCancel;
-  return (
-    <Sheet
-      open={!!config}
-      onOpenChange={(open) => {
-        // M3.10: block dismiss while the wrapped mutation is in flight.
-        // Without this the operator could swipe-down (or tap-outside)
-        // mid-mutation, the local reason text would clear on cancel,
-        // and a subsequent failure would arrive as an error toast with
-        // no way to retry without re-typing the reason. The sheet
-        // naturally closes via the mutation's onSuccess callback.
-        if (!open && config?.isPending) return;
-        if (!open) onCancel();
-      }}
-      title={config?.title ?? ''}
-      footer={
-        hasFooter ? (
-          <div className="flex flex-col gap-2">
-            {showPrimary ? (
-              <Button
-                block
-                variant={config?.danger ? 'danger' : undefined}
-                loading={config?.isPending}
-                disabled={!reasonOk}
-                onClick={() => config?.run()}
-              >
-                {config?.confirmLabel ?? ''}
-              </Button>
-            ) : null}
-            {showCancel ? (
-              <Button
-                block
-                variant="pearl"
-                onClick={onCancel}
-                // DX-IX-6: Sheet focuses [data-autofocus] when it opens.
-                data-autofocus={focusCancel || undefined}
-              >
-                {i18n.t('common.cancel')}
-              </Button>
-            ) : null}
-          </div>
-        ) : undefined
-      }
-    >
-      {config ? (
-        <div className="flex flex-col gap-3 py-3">
-          <p className="whitespace-pre-line text-old-body leading-snug text-[var(--c-fg-muted)]">
-            {config.body}
-          </p>
-          {showReasonField ? (
-            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.label.reasonForChange')}
-              <Input
-                className="mt-1"
-                value={reason}
-                onChange={(e) => onReasonChange(e.target.value)}
-                placeholder={
-                  config.reasonPlaceholder ?? i18n.t('run.label.reasonPlaceholder')
-                }
-                autoFocus={isHardReason}
-              />
-            </label>
-          ) : null}
-          {showReasonToggle ? (
-            <button
-              type="button"
-              onClick={() => setReasonExpanded(true)}
-              // DX-VIS-6 (2026-11-01): was a 16px-tall tap target.
-              className="hit-44 self-start py-1 text-old-label text-[var(--c-action)] active:opacity-70"
-            >
-              {i18n.t('run.label.addReasonOptional')}
-            </button>
           ) : null}
         </div>
       ) : null}

@@ -4,6 +4,7 @@ import { cn } from '../cn';
 import { useUiLabels } from '../labels';
 import { useDecimalField } from '../useDecimalField';
 import { disabledClass } from './disabled';
+import { FieldError } from './FieldError';
 
 export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
@@ -91,9 +92,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
     return (
       <>
         {input}
-        <span role="alert" className="block text-old-label text-[var(--c-danger)]">
-          {labels.numberInvalid}
-        </span>
+        <FieldError className="mt-0">{labels.numberInvalid}</FieldError>
       </>
     );
   },

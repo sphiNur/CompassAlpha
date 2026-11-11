@@ -16,6 +16,7 @@ import {
   Textarea,
   useToast,
 } from '@compass/ui';
+import { locationVerdict } from '@compass/contracts/limits';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
@@ -25,18 +26,13 @@ import { currencyOf, formatMoney } from '../../lib/format';
 import { useAuthStore } from '../../stores/authStore';
 import { GeoMap } from '../../components/geo/GeoMap';
 import { trpc } from '../../lib/trpc';
+import { orgToday } from '../../lib/calendarDate';
 
 type SheetData = AttendanceSheetData;
 type Member = SheetData['members'][number];
 type Punch = SheetData['punches'][number];
 type Shift = SheetData['shifts'][number];
 type Day = SheetData['days'][number];
-
-/** `YYYY-MM-DD` of this device's today. */
-function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 export function addDays(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
@@ -215,8 +211,12 @@ export const LIVE_TONE = {
 export function AttendanceSheet({ storeId }: { storeId: string }) {
   const i18n = useI18n();
   const dates = useDateFormat();
-  const [date, setDate] = useState(localToday);
+  // COREWEB2-21: the org's today until the server answers with the
+  // store's; it was the phone's.
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const [date, setDate] = useState(() => orgToday(orgTimeZone));
   const sheet = trpc.attendance.sheet.useQuery({ storeId, from: date, to: date });
+  const today = sheet.data?.today ?? orgToday(orgTimeZone);
   const [openMember, setOpenMember] = useState<string | null>(null);
 
   return (
@@ -225,8 +225,8 @@ export function AttendanceSheet({ storeId }: { storeId: string }) {
         label={dates.weekdayLong(date)}
         onPrev={() => setDate(addDays(date, -1))}
         onNext={() => setDate(addDays(date, 1))}
-        onToday={() => setDate(sheet.data?.today ?? localToday())}
-        showToday={date !== (sheet.data?.today ?? localToday())}
+        onToday={() => setDate(today)}
+        showToday={date !== today}
       />
       <DataState query={sheet}>
         {(data) => {
@@ -717,7 +717,8 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
-  const [monday, setMonday] = useState(() => mondayOf(localToday()));
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const [monday, setMonday] = useState(() => mondayOf(orgToday(orgTimeZone)));
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(monday, i)), [monday]);
   const sheet = trpc.attendance.sheet.useQuery({ storeId, from: monday, to: week[6]! });
   const [draft, setDraft] = useState<ShiftDraft | null>(null);
@@ -729,7 +730,7 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
     },
     onError: errToast('attendance.errors.saveFailed'),
   });
-  const thisMonday = mondayOf(sheet.data?.today ?? localToday());
+  const thisMonday = mondayOf(sheet.data?.today ?? orgToday(orgTimeZone));
 
   return (
     <div className="flex flex-col">
@@ -991,7 +992,9 @@ function ShiftSheet({
 /**
  * Where the day's punches were, on a map with the store's area
  * (2026-11-07): green inside, red outside, the faint circle the phone's
- * accuracy. Only punches that carried a location.
+ * accuracy. Inside is the punch's own rule (locationVerdict, review
+ * ATT-08); an accuracy the phone did not send counts as none. Only
+ * punches that carried a location.
  */
 function PunchMap({ data, punches }: { data: SheetData; punches: readonly Punch[] }) {
   const i18n = useI18n();
@@ -1009,7 +1012,11 @@ function PunchMap({ data, punches }: { data: SheetData; punches: readonly Punch[
           const outside =
             area !== null &&
             p.distanceM !== null &&
-            p.distanceM > area.radiusM + Math.min(p.location!.accuracyM ?? 0, 50);
+            locationVerdict({
+              distanceM: p.distanceM,
+              accuracyM: p.location!.accuracyM ?? 0,
+              radiusM: area.radiusM,
+            }) !== 'inside';
           return {
             lat: p.location!.lat,
             lng: p.location!.lng,

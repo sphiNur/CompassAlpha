@@ -3,13 +3,13 @@
  *
  * Runs are numbered per day (read_model.market_runs_v is unique on
  * org + run_date + run_index). Changing the 23rd's run #0 to the 22nd,
- * where Lagman's run #0 already was, violated that index and came back
+ * where Store B's run #0 already was, violated that index and came back
  * as "edited by someone else — retry". The moved run now becomes the
  * day's next run.
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import type { SessionContext } from '../trpc/context';
@@ -17,6 +17,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
 import { seedOwnedOrg, type SeededMember } from './helpers/fixtures';
+import { cleanUpAfterAll } from './helpers/cleanup';
 import { planRun, runStream } from './helpers/streams';
 
 describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated)', () => {
@@ -46,14 +47,10 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
     session = org.session;
   });
 
-  afterAll(async () => {
-    const db = getDb(undefined, { system: 'maintenance' });
-    if (orgId) await db.delete(s.organizations).where(eq(s.organizations.id, orgId));
-    if (owner) await db.delete(s.users).where(eq(s.users.id, owner.userId));
-  });
+  cleanUpAfterAll();
 
   test('the moved run becomes the next run of that day', async () => {
-    const lagman = await plannedRun('2026-10-22', 0);
+    const southRun = await plannedRun('2026-10-22', 0);
     const threeStores = await plannedRun('2026-10-23', 0);
 
     await callerFor(session).run.changeDate({ runId: threeStores, runDate: '2026-10-22' });
@@ -64,7 +61,7 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
       .from(s.marketRunsV)
       .where(and(eq(s.marketRunsV.orgId, orgId), eq(s.marketRunsV.runDate, '2026-10-22')));
     const index = new Map(rows.map((r) => [r.id, r.runIndex]));
-    expect(index.get(lagman)).toBe(0);
+    expect(index.get(southRun)).toBe(0);
     expect(index.get(threeStores)).toBe(1);
 
     // The number is in the event, so a replay lands on the same row.

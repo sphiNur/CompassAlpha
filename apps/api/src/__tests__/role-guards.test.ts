@@ -16,6 +16,9 @@ import { callerFor } from './helpers/ctx';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { db: ReturnType<typeof getDb>; storeId: string; orgId: string; admin: Caller; manager: Caller; owner: Caller; roleIds: Record<string, string> } | null = null;
@@ -28,6 +31,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `roles-${suffix}`, name: 'Role guards', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'admin', 'manager', 'staff']);
   const [store] = await db.insert(s.stores).values({ orgId, name: 'Store', code: `R-${suffix.slice(-6)}` }).returning();
@@ -93,10 +97,10 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const session = await sessionOf(orgId, who);
     // The flat session set has the key, which is what used to let it through.
     expect(session.permissions.has('run.amend')).toBe(true);
-    const kamola = callerFor(session);
+    const kate = callerFor(session);
 
     const createErr = await errorOf(() =>
-      kamola.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
+      kate.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
     );
     expect(createErr?.code).toBe('FORBIDDEN');
     expect(createErr?.message).toBe('auth.errors.missingPermission');
@@ -108,7 +112,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
         .where(eq(s.rolePermissions.roleId, roleIds.manager!))
     ).map((r) => r.key);
     const updateErr = await errorOf(() =>
-      kamola.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
+      kate.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
     );
     expect(updateErr?.code).toBe('FORBIDDEN');
     expect(updateErr?.message).toBe('auth.errors.missingPermission');
@@ -121,12 +125,12 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     // Keys held org-wide still go in.
     expect(
       await errorOf(() =>
-        kamola.admin.roleCreate({ slug: `drafter-${tag}`, name: 'Drafter', rank: 20, permissionKeys: ['order.draft'] }),
+        kate.admin.roleCreate({ slug: `drafter-${tag}`, name: 'Drafter', rank: 20, permissionKeys: ['order.draft'] }),
       ),
     ).toBeNull();
 
     // DX-ADM-1: roleList says where each role can be handed on.
-    const mine = (await kamola.admin.roleList()).find((r) => r.id === night!.id)!;
+    const mine = (await kate.admin.roleList()).find((r) => r.id === night!.id)!;
     expect(mine.passOn.global).toBe(false);
     expect(mine.passOn.storeIds).toContain(storeId);
     const plain = await admin.admin.roleList();

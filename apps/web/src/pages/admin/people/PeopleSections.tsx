@@ -30,6 +30,7 @@ import {
   IconShare,
   Input,
   ListRow,
+  QueryErrorBanner,
   SearchInput,
   SectionLabel,
   Segmented,
@@ -43,6 +44,7 @@ import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
+import { copyText } from '../../../lib/clipboard';
 import { useErrToast } from '../../../lib/errToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
@@ -53,6 +55,7 @@ import {
   shareLink as makeShareLink,
 } from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
+import { InviteCopySheet } from './InviteCopySheet';
 import {
   defaultNewRoleRank,
   normaliseSlugInput,
@@ -62,7 +65,10 @@ import {
   tgIdProblem,
 } from '../../../lib/adminFields';
 import {
+  canDetachFromStore,
   canGrantRole,
+  canRemoveFromOrg,
+  canRename,
   canRevokeRole,
   canSetOverride,
   canSetStatus,
@@ -91,6 +97,7 @@ function useActor(
       userId: session?.user.id ?? '',
       isOrgAdmin: session?.permissions.includes('org.admin') ?? false,
       adminStoreIds: session?.adminStoreIds ?? [],
+      inactiveAdminStoreIds: session?.inactiveAdminStoreIds ?? [],
       bindings: self ? self.roles : [{ slug: '', scopeType: 'global', scopeId: null }],
     };
   }, [members, session]);
@@ -100,8 +107,17 @@ function targetOf(m: {
   userId: string;
   roles: readonly Binding[];
   stores: ReadonlyArray<{ id: string }>;
+  inactiveStores: ReadonlyArray<{ id: string }>;
+  statusOutOfReach: boolean;
+  nameShared: boolean;
 }): TargetMember {
-  return { userId: m.userId, bindings: m.roles, storeIds: m.stores.map((st) => st.id) };
+  return {
+    userId: m.userId,
+    bindings: m.roles,
+    storeIds: [...m.stores, ...m.inactiveStores].map((st) => st.id),
+    outOfReach: m.statusOutOfReach,
+    nameShared: m.nameShared,
+  };
 }
 
 // ============ People ============
@@ -210,8 +226,9 @@ export function PeopleSection({
     displayName: string;
     status: 'active' | 'suspended';
     stores: Array<{ id: string; name: string }>;
+    /** ADM1-16: paused and archived stores; the member can only leave them. */
+    inactiveStores: Array<{ id: string; name: string }>;
     isSelf: boolean;
-    statusOutOfReach: boolean;
     member: TargetMember;
     /** DX-ADM-11: the roles this person may take away, with a name for each. */
     revocable: Array<{ bindingId: string; role: string; store: string | null }>;
@@ -268,41 +285,50 @@ export function PeopleSection({
     staleTime: STALE.long,
   });
   const createInvite = trpc.admin.memberInviteCreate.useMutation({
-    onSuccess: async (data) => {
-      void utils.admin.memberInviteList.invalidate();
-      const link = makeInviteLink(appConfig.data?.botUsername, data.token);
-      if (!link) {
-        toast.error(i18n.t('people.inviteNoBot'));
-        return;
-      }
-      const message = i18n.t('people.inviteMessage', {
-        org: session?.member.orgName ?? '',
-      });
-      if (linkAction === 'copy') {
-        try {
-          if (!navigator.clipboard) {
-            toast.error(i18n.t('admin.toast.clipboardUnavailable'));
-            return;
-          }
-          await navigator.clipboard.writeText(`${message}\n${link}`);
-          toast.success(i18n.t('admin.toast.linkCopied'));
-        } catch {
-          toast.error(i18n.t('admin.toast.couldNotCopy'));
-          return;
-        }
-      } else {
-        const shareUrl = makeShareLink({ url: link, text: message });
-        const tg = getTg();
-        if (tg) {
-          tg.openTelegramLink(shareUrl);
-        } else if (typeof window !== 'undefined') {
-          window.open(shareUrl, '_blank');
-        }
-      }
-      setLinkDraft(null);
-    },
+    onSuccess: () => void utils.admin.memberInviteList.invalidate(),
     onError: errToast('common.errors.actionFailed'),
   });
+  // ADM1-15: an invite the clipboard refused, shown to copy by hand. The
+  // server keeps no copy of the token, so it can't be fetched again.
+  const [uncopiedInvite, setUncopiedInvite] = useState<string | null>(null);
+  /**
+   * Creates a link invite, then copies or shares it. ADM1-15 (2026-11-11):
+   * the copy is asked for here, inside the tap, and filled in when the
+   * link arrives; WebKit (Telegram on iOS) refused the write that waited
+   * for the server (lib/clipboard).
+   */
+  const sendLinkInvite = (input: { roleSlug?: string; storeIds: string[] }) => {
+    const NO_BOT = 'people.inviteNoBot';
+    const invite = createInvite.mutateAsync(input).then((data) => {
+      const link = makeInviteLink(appConfig.data?.botUsername, data.token);
+      if (!link) throw new Error(NO_BOT);
+      const message = i18n.t('people.inviteMessage', { org: session?.member.orgName ?? '' });
+      return { link, message, text: `${message}\n${link}` };
+    });
+    const failed = (err: unknown) => {
+      // A refused create was already reported by the mutation's onError.
+      if (err instanceof Error && err.message === NO_BOT) toast.error(i18n.t(NO_BOT));
+    };
+    if (linkAction === 'copy') {
+      const text = invite.then((sent) => sent.text);
+      void copyText(text).then((copied) => {
+        setLinkDraft(null);
+        if (copied) toast.success(i18n.t('admin.toast.linkCopied'));
+        else void text.then(setUncopiedInvite);
+      }, failed);
+      return;
+    }
+    void invite.then(({ link, message }) => {
+      const shareUrl = makeShareLink({ url: link, text: message });
+      const tg = getTg();
+      if (tg) {
+        tg.openTelegramLink(shareUrl);
+      } else if (typeof window !== 'undefined') {
+        window.open(shareUrl, '_blank');
+      }
+      setLinkDraft(null);
+    }, failed);
+  };
 
   // M1.10 (2026-05-08): people directory search by name + tg + role.
   const [searchQuery, setSearchQuery] = useState('');
@@ -352,6 +378,17 @@ export function PeopleSection({
                 ),
               )
             : rawRows;
+          // ADM1-16: paused and archived stores are named and marked.
+          // A role in one used to lose its store name, and the revoke
+          // list called it organisation-wide.
+          const inactiveName = (st: { name: string; archived: boolean }) =>
+            `${st.name} · ${i18n.t(st.archived ? 'stores.archived' : 'stores.paused')}`;
+          const storeNameOf = (m: (typeof rows)[number], storeId: string) => {
+            const active = m.stores.find((st) => st.id === storeId);
+            if (active) return active.name;
+            const inactive = m.inactiveStores.find((st) => st.id === storeId);
+            return inactive ? inactiveName(inactive) : null;
+          };
           // Filter / group by store context (added 2026-05-05).
           const renderCard = (m: (typeof rows)[number]) => {
             const isSelf = m.userId === session?.user.id;
@@ -395,12 +432,18 @@ export function PeopleSection({
                     spot org-level members at a glance.
                     M3.17 (2026-05-16): inline pill spans → <Badge>.
                     Same visual rhythm as the "active" status badge in
-                    the header above. */}
-                {m.stores.length > 0 ? (
+                    the header above. Paused and archived stores follow,
+                    muted, as on the store list (ADM1-16). */}
+                {m.stores.length > 0 || m.inactiveStores.length > 0 ? (
                   <div className="flex flex-wrap gap-1 px-4 pt-2 pb-1">
                     {m.stores.map((st) => (
                       <Badge key={st.id} tone="info">
                         {st.name}
+                      </Badge>
+                    ))}
+                    {m.inactiveStores.map((st) => (
+                      <Badge key={st.id} tone="muted">
+                        {inactiveName(st)}
                       </Badge>
                     ))}
                   </div>
@@ -420,9 +463,7 @@ export function PeopleSection({
                       // render as just the role name (no scope label).
                       m.roles.map((r) => {
                         const scopedStoreName =
-                          r.scopeType === 'store' && r.scopeId
-                            ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
-                            : null;
+                          r.scopeType === 'store' && r.scopeId ? storeNameOf(m, r.scopeId) : null;
                         // DX-ADM-11 (2026-11-01): the chip is a label only.
                         // Revoking was a tap on this 18 px chip, with the verb
                         // only in a tooltip; it now sits in the member's ⋯
@@ -491,8 +532,11 @@ export function PeopleSection({
                         displayName: m.displayName,
                         status: m.status as 'active' | 'suspended',
                         stores: m.stores.map((st) => ({ id: st.id, name: st.name })),
+                        inactiveStores: m.inactiveStores.map((st) => ({
+                          id: st.id,
+                          name: inactiveName(st),
+                        })),
                         isSelf,
-                        statusOutOfReach: m.statusOutOfReach ?? false,
                         member: targetOf(m),
                         revocable: m.roles
                           .filter((r) => canRevokeRole(actor, m.userId, r))
@@ -501,7 +545,7 @@ export function PeopleSection({
                             role: roleText.name(r),
                             store:
                               r.scopeType === 'store' && r.scopeId
-                                ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
+                                ? storeNameOf(m, r.scopeId)
                                 : null,
                           })),
                       })
@@ -529,7 +573,10 @@ export function PeopleSection({
 
           // Specific store: only show members assigned there.
           if (storeCtx.kind === 'specific') {
-            const filtered = rows.filter((m) => m.stores.some((s) => s.id === storeCtx.storeId));
+            // A paused store's page lists its people too (ADM1-16).
+            const filtered = rows.filter((m) =>
+              [...m.stores, ...m.inactiveStores].some((s) => s.id === storeCtx.storeId),
+            );
             if (filtered.length === 0 && tokens) return noMatch;
             if (filtered.length === 0) {
               return (
@@ -549,7 +596,9 @@ export function PeopleSection({
           // M1.4: org-level pseudo-store. Show only members with no
           // store assignments (admin / super_admin operators).
           if (storeCtx.kind === 'org-level') {
-            const orgOnly = rows.filter((m) => m.stores.length === 0);
+            const orgOnly = rows.filter(
+              (m) => m.stores.length === 0 && m.inactiveStores.length === 0,
+            );
             if (orgOnly.length === 0 && tokens) return noMatch;
             if (orgOnly.length === 0) {
               return (
@@ -569,19 +618,28 @@ export function PeopleSection({
           // ALL view: group by store. Members appear once per store
           // they belong to. Members with no stores (admins, super-
           // admins) get a separate "Org-level" section at the top.
-          const orgLevel = rows.filter((m) => m.stores.length === 0);
+          const orgLevel = rows.filter(
+            (m) => m.stores.length === 0 && m.inactiveStores.length === 0,
+          );
           // Build store → members map. Every (store, member) pair where
-          // the member is in that store contributes one entry.
-          const byStore = new Map<string, { name: string; members: typeof rows }>();
+          // the member is in that store contributes one entry. Paused and
+          // archived stores come after the active ones (ADM1-16).
+          const byStore = new Map<
+            string,
+            { name: string; inactive: boolean; members: typeof rows }
+          >();
+          const addTo = (id: string, name: string, inactive: boolean, m: (typeof rows)[number]) => {
+            const bucket = byStore.get(id) ?? { name, inactive, members: [] };
+            bucket.members.push(m);
+            byStore.set(id, bucket);
+          };
           for (const m of rows) {
-            for (const st of m.stores) {
-              const bucket = byStore.get(st.id) ?? { name: st.name, members: [] };
-              bucket.members.push(m);
-              byStore.set(st.id, bucket);
-            }
+            for (const st of m.stores) addTo(st.id, st.name, false, m);
+            for (const st of m.inactiveStores) addTo(st.id, inactiveName(st), true, m);
           }
-          const storeSections = [...byStore.entries()].sort((a, b) =>
-            a[1].name.localeCompare(b[1].name),
+          const storeSections = [...byStore.entries()].sort(
+            (a, b) =>
+              Number(a[1].inactive) - Number(b[1].inactive) || a[1].name.localeCompare(b[1].name),
           );
           if (rows.length === 0) return noMatch;
           return (
@@ -700,7 +758,6 @@ export function PeopleSection({
               </Button>
             ) : null}
             {!memberMenuFor.isSelf &&
-            !memberMenuFor.statusOutOfReach &&
             memberMenuFor.status === 'active' &&
             canSetStatus(actor, memberMenuFor.member, 'suspended') ? (
               <Button
@@ -718,7 +775,6 @@ export function PeopleSection({
               </Button>
             ) : null}
             {!memberMenuFor.isSelf &&
-            !memberMenuFor.statusOutOfReach &&
             memberMenuFor.status === 'suspended' &&
             canSetStatus(actor, memberMenuFor.member, 'active') ? (
               <Button
@@ -738,7 +794,10 @@ export function PeopleSection({
                 the member belongs to it. */}
             {!memberMenuFor.isSelf &&
             storeCtx.kind === 'specific' &&
-            memberMenuFor.stores.some((st) => st.id === storeCtx.storeId) ? (
+            [...memberMenuFor.stores, ...memberMenuFor.inactiveStores].some(
+              (st) => st.id === storeCtx.storeId,
+            ) &&
+            canDetachFromStore(actor, memberMenuFor.member, storeCtx.storeId) ? (
               <Button
                 block
                 variant="pearl"
@@ -746,8 +805,9 @@ export function PeopleSection({
                   if (storeCtx.kind !== 'specific') return;
                   const target = memberMenuFor;
                   const storeName =
-                    target.stores.find((st) => st.id === storeCtx.storeId)?.name ??
-                    i18n.t('admin.label.thisStore');
+                    [...target.stores, ...target.inactiveStores].find(
+                      (st) => st.id === storeCtx.storeId,
+                    )?.name ?? i18n.t('admin.label.thisStore');
                   setMemberMenuFor(null);
                   nativeConfirm(
                     i18n.t('admin.confirm.removeFromStore', {
@@ -765,8 +825,9 @@ export function PeopleSection({
                 {i18n.t('admin.action.removeFromStore')}
               </Button>
             ) : null}
-            {/* 2026-10-21 audit CA-16: memberRemove is org.admin only. */}
-            {!memberMenuFor.isSelf && isGlobalAdminPeople ? (
+            {/* 2026-10-21 audit CA-16: memberRemove is org.admin only;
+                ADM1-07: and only on someone they outrank. */}
+            {canRemoveFromOrg(actor, memberMenuFor.member) ? (
               <Button
                 block
                 variant="danger"
@@ -810,6 +871,7 @@ export function PeopleSection({
       />
       <ManualInviteSheet
         mode="tgid"
+        actor={actor}
         draft={manualDraft}
         setDraft={setManualDraft}
         onSubmit={() => {
@@ -825,17 +887,19 @@ export function PeopleSection({
       />
       <ManualInviteSheet
         mode="link"
+        actor={actor}
         draft={linkDraft}
         setDraft={setLinkDraft}
         onSubmit={() => {
           if (!linkDraft) return;
-          createInvite.mutate({
+          sendLinkInvite({
             roleSlug: linkDraft.roleSlug || undefined,
             storeIds: linkDraft.storeIds,
           });
         }}
         pending={createInvite.isPending}
       />
+      <InviteCopySheet text={uncopiedInvite} onClose={() => setUncopiedInvite(null)} />
     </div>
   );
 }
@@ -1258,13 +1322,11 @@ function RolePermissionsSheet({
   // Below-rank gate — only roles strictly below actor's rank are editable.
   const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
   const isBuiltIn = detail.data?.isBuiltIn ?? false;
+  // ADM1-20: every binding counts, suspended holders and lapsed grants
+  // too, as the server counts them (older servers: the listed holders).
+  const held = (detail.data?.bindingCount ?? detail.data?.assignees.length ?? 0) > 0;
   // ADM1-02: a held role keeps its side of ADMIN_RANK.
-  const rankRange = roleRankRange(
-    detail.data?.rank ?? 0,
-    (detail.data?.assignees.length ?? 0) > 0,
-    myMaxRank,
-    ADMIN_RANK,
-  );
+  const rankRange = roleRankRange(detail.data?.rank ?? 0, held, myMaxRank, ADMIN_RANK);
   const rankRead = readRank(rankText, rankRange.max, rankRange.min);
   const rank = rankRead.ok ? rankRead.rank : (detail.data?.rank ?? 0);
   // DX-ADM-28: the edit form asks before its changes are thrown away.
@@ -1366,19 +1428,28 @@ function RolePermissionsSheet({
               {i18n.t('common.edit')}
             </Button>
             {!isBuiltIn ? (
-              <Button
-                block
-                variant="danger"
-                loading={remove.isPending}
-                onClick={() => {
-                  nativeConfirm(
-                    i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
-                    () => remove.mutate({ roleId: detail.data!.id }),
-                  );
-                }}
-              >
-                {i18n.t('people.deleteRole')}
-              </Button>
+              <>
+                {/* ADM1-07: a held role cannot be deleted; say so up front. */}
+                <Button
+                  block
+                  variant="danger"
+                  loading={remove.isPending}
+                  disabled={held}
+                  onClick={() => {
+                    nativeConfirm(
+                      i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
+                      () => remove.mutate({ roleId: detail.data!.id }),
+                    );
+                  }}
+                >
+                  {i18n.t('people.deleteRole')}
+                </Button>
+                {held ? (
+                  <p className="text-old-label text-[var(--c-fg-muted)]">
+                    {i18n.t('admin.errors.roleHasBindings')}
+                  </p>
+                ) : null}
+              </>
             ) : null}
           </div>
         ) : undefined
@@ -1518,6 +1589,8 @@ function RoleAssigneesByStore({
     scopeType: 'global' | 'store';
     scopeId: string | null;
     storeName: string | null;
+    /** ADM1-20: suspended holders are listed too, marked. */
+    status?: string;
   }>;
 }) {
   const i18n = useI18n();
@@ -1571,6 +1644,11 @@ function RoleAssigneesByStore({
                   <span className="text-old-body text-[var(--c-fg)]">{a.displayName}</span>
                   {a.tgUsername ? (
                     <span className="text-old-label text-[var(--c-fg-muted)]">@{a.tgUsername}</span>
+                  ) : null}
+                  {a.status === 'suspended' || a.status === 'invited' ? (
+                    <Badge tone="warn" className="ml-auto">
+                      {i18n.t(`people.memberStatus.${a.status}`)}
+                    </Badge>
                   ) : null}
                 </li>
               ))}
@@ -1768,12 +1846,14 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
 
 function ManualInviteSheet({
   mode = 'tgid',
+  actor,
   draft,
   setDraft,
   onSubmit,
   pending,
 }: {
   mode?: 'tgid' | 'link';
+  actor: Actor;
   draft: InviteDraft | null;
   setDraft: (d: InviteDraft | null) => void;
   onSubmit: () => void;
@@ -1799,28 +1879,32 @@ function ManualInviteSheet({
   // "admin of every visible store" heuristic.
   const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
 
-  const sortedRoles = useMemo(
-    () =>
-      [...(rolesQuery.data ?? [])]
-        // Hide org-tier roles for non-global admins (mirrors server's
-        // cannotInviteOrgAdminAsStoreAdmin gate). The role still exists
-        // server-side; this is purely a UX decision.
-        .filter((r) => isGlobalAdmin || r.rank < ADMIN_RANK)
-        // ADM-16: nobody can invite at their own rank or above (a super
-        // admin was offered Super Admin, which the server always refuses).
-        .filter((r) => r.rank < (session?.myMaxRank ?? 0))
-        // DX-ADM-22: highest first, like the grant sheet (was by stored name).
-        .sort((a, b) => b.rank - a.rank),
-    [rolesQuery.data, isGlobalAdmin, session?.myMaxRank],
-  );
   const eligibleStores = useMemo(
     () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
     [storesQuery.data, adminStoreIds],
   );
+  // ADM1-07: the server weighs the role against the actor's rank in each
+  // store the invite names (org-tier roles: organisation-wide, org admins
+  // only), not against their highest rank anywhere. With no store picked
+  // yet, a role passes when some store of theirs would take it.
+  const pickedStoreIds = draft?.storeIds;
+  const rankAllows = (r: { rank: number }) => {
+    if (r.rank >= ADMIN_RANK) return canGrantRole(actor, r, { type: 'global' });
+    const ids = pickedStoreIds?.length ? pickedStoreIds : null;
+    return ids
+      ? ids.every((storeId) => canGrantRole(actor, r, { type: 'store', storeId }))
+      : eligibleStores.some((st) => canGrantRole(actor, r, { type: 'store', storeId: st.id }));
+  };
+  const sortedRoles = [...(rolesQuery.data ?? [])]
+    // Org-tier roles only for org admins (cannotInviteOrgAdminAsStoreAdmin).
+    .filter((r) => isGlobalAdmin || r.rank < ADMIN_RANK)
+    // The picked role stays listed so the reason below can name it.
+    .filter((r) => rankAllows(r) || r.slug === draft?.roleSlug)
+    // DX-ADM-22: highest first, like the grant sheet (was by stored name).
+    .sort((a, b) => b.rank - a.rank);
   // DX-ADM-1: a custom role carrying a key the actor lacks where it would
   // be bound (org-tier roles globally, others in each chosen store; with
   // no store chosen yet, in any of theirs) is shown greyed with the reason.
-  const pickedStoreIds = draft?.storeIds;
   const keysMissing = (r: (typeof sortedRoles)[number]) => {
     if (r.rank >= ADMIN_RANK) return !rolePassesOn(r, { type: 'global' });
     const ids = pickedStoreIds?.length ? pickedStoreIds : null;
@@ -1829,7 +1913,8 @@ function ManualInviteSheet({
       : !eligibleStores.some((st) => rolePassesOn(r, { type: 'store', storeId: st.id }));
   };
   const pickedRole = sortedRoles.find((r) => r.slug === draft?.roleSlug) ?? null;
-  const pickedRoleBlocked = pickedRole ? keysMissing(pickedRole) : false;
+  const pickedRoleOutranks = pickedRole ? !rankAllows(pickedRole) : false;
+  const pickedRoleBlocked = pickedRole ? keysMissing(pickedRole) || pickedRoleOutranks : false;
 
   // DX-ADM-5: the id is kept as typed; a phone number is refused with a
   // reason instead of being turned into digits.
@@ -1930,7 +2015,11 @@ function ManualInviteSheet({
                 })}
               </Select>
             )}
-            {pickedRoleBlocked ? (
+            {pickedRoleOutranks ? (
+              <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
+                {i18n.t('auth.errors.cannotGrantEqualOrHigher')}
+              </p>
+            ) : pickedRoleBlocked ? (
               <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
                 {i18n.t('people.roleHasKeysYouLack')}
               </p>
@@ -1948,6 +2037,10 @@ function ManualInviteSheet({
                 <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                   <Spinner size={14} /> {i18n.t('admin.label.loadingStores')}
                 </div>
+              ) : storesQuery.isError && !storesQuery.data ? (
+                // ADM2-22 (2026-11-11): a failed load read "no stores to
+                // invite into".
+                <QueryErrorBanner query={storesQuery} />
               ) : eligibleStores.length === 0 ? (
                 <Banner tone="warn" title={i18n.t('admin.banner.noStoresToInviteInto.title')}>
                   {i18n.t('admin.banner.noStoresToInviteInto.body')}
@@ -2081,10 +2174,9 @@ function ManageMemberSheet({
   );
   // 2026-10-21 audit CA-07: renaming changes the person's global name,
   // so the server requires org.admin or authority over every store the
-  // member is in (plus a higher rank there, checked server-side).
-  const canRename =
-    isGlobalAdmin ||
-    (assignedIds.size > 0 && [...assignedIds].every((id) => adminStoreIds.has(id)));
+  // member is in, and a higher rank (lib/authority canRename, ADM1-06:
+  // ranks, store roles and other organisations count; oneself always).
+  const renameAllowed = target ? canRename(actor, target.member) : false;
 
   // D2 (2026-05-06): transfer wizard state. fromStoreId is set when
   // the operator taps "Transfer..." on a particular row. The sheet
@@ -2110,7 +2202,7 @@ function ManageMemberSheet({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={200}
-                disabled={!canRename}
+                disabled={!renameAllowed}
                 placeholder={i18n.t('admin.field.memberNamePlaceholder')}
               />
               {/* md, not sm (RE-ADM-9): the field beside it is 44px, and at
@@ -2119,7 +2211,7 @@ function ManageMemberSheet({
               <Button
                 className="shrink-0"
                 loading={renameMut.isPending}
-                disabled={!canRename || !name.trim() || name.trim() === target.displayName}
+                disabled={!renameAllowed || !name.trim() || name.trim() === target.displayName}
                 onClick={() =>
                   renameMut.mutate({ memberId: target.memberId, displayName: name.trim() })
                 }
@@ -2144,8 +2236,11 @@ function ManageMemberSheet({
                   const pending = assignMut.isPending || detachMut.isPending;
                   // C2: stores you don't administer are visible (so
                   // you see the full picture) but the checkbox is
-                  // disabled. The server would reject anyway.
-                  const editable = adminStoreIds.has(st.id);
+                  // disabled. The server would reject anyway. ADM1-07:
+                  // so is taking someone who outranks you there out.
+                  const editable = checked
+                    ? canDetachFromStore(actor, target.member, st.id)
+                    : adminStoreIds.has(st.id);
                   return (
                     <label
                       key={st.id}
@@ -2153,7 +2248,7 @@ function ManageMemberSheet({
                         'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
                         (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
                       }
-                      title={editable ? undefined : i18n.t('people.notYourStore')}
+                      title={adminStoreIds.has(st.id) ? undefined : i18n.t('people.notYourStore')}
                     >
                       <Checkbox
                         checked={checked}
@@ -2525,7 +2620,14 @@ function MemberPermissionsSheet({
   const currentScopeKey = scope.kind === 'global' ? 'global' : `store:${scope.storeId}`;
   const overrideByKey = overrideByScopeKey.get(currentScopeKey) ?? new Map();
 
-  const roleKeys = useMemo(() => new Set(detail.data?.roleKeys ?? []), [detail.data]);
+  // ADM1-05: the tab's own keys. A store no row names is as the
+  // organisation (global roles apply in every store).
+  const scopeKeys = detail.data
+    ? scope.kind === 'global'
+      ? detail.data.byScope.global
+      : (detail.data.byScope.stores[scope.storeId] ?? detail.data.byScope.global)
+    : null;
+  const roleKeys = useMemo(() => new Set(scopeKeys?.roleKeys ?? []), [scopeKeys]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, Array<{ key: string; description: string | null }>>();
@@ -2573,10 +2675,10 @@ function MemberPermissionsSheet({
           : i18n.t('people.permissionsTitle')
       }
       description={
-        detail.data
+        scopeKeys
           ? i18n.t('people.effectiveOverridesLine', {
-              eff: detail.data.effective.length,
-              ov: detail.data.overrides.length,
+              eff: scopeKeys.effective.length,
+              ov: overrideByKey.size,
             })
           : undefined
       }

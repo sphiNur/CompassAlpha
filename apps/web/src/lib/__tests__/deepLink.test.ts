@@ -7,6 +7,7 @@ import {
   tabFromDeepLinkPath,
   tabFromStartParam,
 } from '../deepLink';
+import { TAB_KEYS } from '../../stores/navStore';
 
 describe('tabFromDeepLinkPath', () => {
   it('maps the notification paths to their tabs', () => {
@@ -22,11 +23,19 @@ describe('tabFromDeepLinkPath', () => {
     expect(tabFromDeepLinkPath('/app/run')).toBe('run');
   });
 
+  it('links to every tab (review COREWEB1-11: the one list in navStore)', () => {
+    for (const tab of TAB_KEYS) {
+      expect(tabFromDeepLinkPath(`/${tab}`)).toBe(tab);
+      expect(tabFromStartParam(`tab_${tab}`)).toBe(tab);
+    }
+  });
+
   it('ignores the root and unknown paths', () => {
     expect(tabFromDeepLinkPath('/')).toBeNull();
     expect(tabFromDeepLinkPath('')).toBeNull();
     expect(tabFromDeepLinkPath('/index.html')).toBeNull();
     expect(tabFromDeepLinkPath('/approvals')).toBeNull();
+    expect(tabFromDeepLinkPath('/toString')).toBeNull();
   });
 });
 

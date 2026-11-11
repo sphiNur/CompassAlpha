@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { savedTab } from '../../app/pageChunks';
+import { preloadPage, savedTab } from '../../app/pageChunks';
 
 const storage = (items: Record<string, unknown>) => ({
   getItem: (key: string) => (key in items ? JSON.stringify(items[key]) : null),
@@ -28,5 +28,15 @@ describe('savedTab (DX-PFE-3: preload the page the app reopens on)', () => {
     expect(savedTab(storage({ 'compass.auth': signedIn }))).toBeNull();
     expect(savedTab(storage({ 'compass.auth': signedIn, 'compass.nav.v1': { state: { tab: 'nope' } } }))).toBeNull();
     expect(savedTab({ getItem: () => '{bad' })).toBeNull();
+  });
+
+  test("Object.prototype's names are not tabs (review COREWEB1-11)", () => {
+    // `"toString" in PAGE_IMPORTS` was true: main.tsx then called
+    // Object.prototype.toString as the page import and threw at start.
+    for (const tab of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      const nav = { state: { tab } };
+      expect(savedTab(storage({ 'compass.auth': signedIn, 'compass.nav.v1': nav }))).toBeNull();
+    }
+    expect(() => preloadPage('order')).not.toThrow();
   });
 });

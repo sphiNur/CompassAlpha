@@ -15,6 +15,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedFinishedPurchase, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -38,6 +41,7 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `scoped-${suffix}`, name: 'Scoped reads', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
 
   const roleIds = await seedRoles(db, orgId, ['manager', 'cashier', 'staff']);
@@ -130,5 +134,13 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
     expect(err?.code).toBe('FORBIDDEN');
     expect(await errorOf(() => fix!.staffA.order.sessionDetail({ sessionId: fix!.submittedSessionId }))).toBeNull();
     expect(await errorOf(() => fix!.mixed.order.sessionDetail({ sessionId: fix!.submittedSessionId }))).toBeNull();
+  });
+
+  test('ORD-09: each line names who added it, for every reader of the order', async () => {
+    // The approval card took names from admin.memberList (users.manage only).
+    for (const reader of [fix!.mixed, fix!.staffA]) {
+      const detail = await reader.order.sessionDetail({ sessionId: fix!.submittedSessionId });
+      expect(detail.items.map((i) => i.contributorName)).toEqual(['Scoped 2']);
+    }
   });
 });

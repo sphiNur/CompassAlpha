@@ -20,6 +20,9 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Db = ReturnType<typeof getDb>;
 type Caller = ReturnType<typeof appRouter.createCaller>;
@@ -56,6 +59,7 @@ beforeAll(async () => {
       timezone: 'UTC',
     })
     .returning();
+  noteOrg(org!.id);
   const orgId = org!.id;
   const roleIds = await seedRoles(db, orgId, ['super_admin', 'admin', 'manager', 'staff']);
   const [store] = await db

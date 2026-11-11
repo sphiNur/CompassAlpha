@@ -14,7 +14,7 @@ import { organizations, users } from './auth';
 import { domainSchema, pkUuid } from './_helpers';
 
 /**
- * Single source of truth �?the immutable event store.
+ * Single source of truth — the immutable event store.
  * Read models (read_model.*) are projections; if a projection schema
  * needs to change, drop the projection table and replay events.
  *

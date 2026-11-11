@@ -11,7 +11,8 @@
 ```bash
 # 1. 准备环境（要求 Bun 1.4.4, pnpm 12.16, Node 26 LTS, PostgreSQL 18, Redis 8.10 —— 生产、CI、本地三边一致）
 cp .env.example .env
-docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis + MinIO + Adminer
+docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis
+# 要测照片上传再加 --profile storage（MinIO），要 Adminer 加 --profile tools；端口只监听本机。
 # 注意：dev compose 把 PG 暴露在 5433，Redis 在 6380（避开本机已有进程）。
 # .env.example 里的 DATABASE_URL/REDIS_URL 已对应这两个端口。
 
@@ -26,7 +27,7 @@ pnpm db:seed
 pnpm dev
 # API:  http://localhost:3000
 # Web:  http://localhost:5173
-# Adminer (DB):  http://localhost:8080
+# Adminer (DB):  http://localhost:8080（--profile tools 起的）
 
 # 5. 给自己授超管（第一次授权时你还没有账号，所以加 --new-user）
 pnpm compass user grant <你的 Telegram user id> --role super_admin --org default --new-user

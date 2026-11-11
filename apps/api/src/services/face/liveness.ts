@@ -32,7 +32,7 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
-import { purposeKey } from '../../infra/jwt';
+import { purposeKey, TOKEN_ALG } from '../../infra/jwt';
 import type { FaceResult } from './pipeline';
 import { cosine } from './index';
 
@@ -74,7 +74,7 @@ export async function signLivenessToken(
   const acts = claims.acts ?? randomActs();
   const nonce = randomBytes(18).toString('base64url');
   const token = await new SignJWT({ ...claims, steps, acts, nonce })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: TOKEN_ALG })
     .setAudience(AUDIENCE)
     .setIssuedAt()
     .setExpirationTime('3m')
@@ -85,7 +85,10 @@ export async function signLivenessToken(
 /** The claims, or null for a bad or expired token. */
 export async function verifyLivenessToken(token: string): Promise<LivenessClaims | null> {
   try {
-    const { payload } = await jwtVerify(token, secret, { audience: AUDIENCE });
+    const { payload } = await jwtVerify(token, secret, {
+      audience: AUDIENCE,
+      algorithms: [TOKEN_ALG],
+    });
     return payload as unknown as LivenessClaims;
   } catch {
     return null;

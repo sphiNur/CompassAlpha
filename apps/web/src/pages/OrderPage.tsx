@@ -22,12 +22,9 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, useTelegramBackButton, haptic } from '../hooks/useTelegram';
-import {
-  frozenOrderDate,
-  localDateString,
-  staysQueued,
-  useOfflineQueue,
-} from '../hooks/useOfflineQueue';
+import { staysQueued, useOfflineQueue } from '../hooks/useOfflineQueue';
+import { orgToday } from '../lib/calendarDate';
+import { frozenOrderDate } from './order/orderDate';
 import { outbox } from '../lib/idb';
 import { registerLocalWrites } from '../lib/localWrites';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -41,6 +38,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
 import { sessionLoadState } from './order/sessionLoadState';
 import { InRunBanner } from './order/InRunBanner';
+import {
+  badExtraQty,
+  cleanExtraRows,
+  extraLinesToSave,
+  isInvalidExtraRow,
+  unlistedUnit,
+  wholeNumberRequired,
+  type ExtraDraft,
+  type ExtraLine,
+} from './order/extraRows';
 import { useErrToast } from '../lib/errToast';
 import { normalizeQuery, rankNameLike } from '../lib/searchMatch';
 import {
@@ -53,23 +60,6 @@ import {
 import type { ProductNameParts } from '../hooks/useI18n';
 import { useAnnounce } from '../hooks/useAnnounce';
 
-// M3.34 (2026-05-19): canonical units for the extras editor's unit
-// dropdown — kept in sync with CanonicalUnitSchema in
-// @compass/contracts. STEP map drives NumberInput's decimal vs
-// integer granularity per unit; UNIT_IS_INTEGER drives inputMode.
-const CANONICAL_UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'pair', 'bunch', 'roll', 'box'] as const;
-const UNIT_STEP: Record<string, string> = {
-  kg: '0.1',
-  L: '0.1',
-  g: '10',
-  ml: '10',
-  pcs: '1',
-  pack: '1',
-  pair: '1',
-  bunch: '1',
-  roll: '1',
-};
-const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 /** Statuses where the batch is sent and no longer editable by its owner. */
 function isLockedStatus(status: string | null | undefined): boolean {
   return (
@@ -82,8 +72,14 @@ function isLockedStatus(status: string | null | undefined): boolean {
 import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
-import { ORDER_QTY_MAX } from '@compass/contracts/limits';
+import {
+  CANONICAL_UNITS,
+  ORDER_QTY_MAX,
+  WHOLE_NUMBER_UNITS,
+  isCanonicalUnit,
+} from '@compass/contracts/limits';
 import { estimateOrder } from '@compass/contracts/money';
+import type { UnitLabel } from '../lib/unitLabel';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -113,6 +109,8 @@ export function OrderPage() {
   const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
   const orgCurrency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  // COREWEB2-21: an order is dated on the org's calendar, not the phone's.
+  const orgTimeZone = session?.member.timezone;
   // Language picker — accessible from every page's header so staff
   // who don't have admin access can still switch languages (added
   // 2026-05-05). State lives at OrderPage level since this is the
@@ -379,12 +377,15 @@ export function OrderPage() {
           'order.adjustItem',
           {
             ...payload,
-            date: frozenOrderDate(utils.order.todaySession.getData({ storeId: payload.storeId })),
+            date: frozenOrderDate(
+              utils.order.todaySession.getData({ storeId: payload.storeId }),
+              orgTimeZone,
+            ),
           },
           () => adjustAsync(payload),
         ),
       ),
-    [adjustAsync, sendQueued, serializeOnStore, utils.order.todaySession],
+    [adjustAsync, orgTimeZone, sendQueued, serializeOnStore, utils.order.todaySession],
   );
 
   /**
@@ -504,11 +505,12 @@ export function OrderPage() {
             storeId,
             initiatedByMemberId: myMember,
             submittedByMemberId: null,
-            // Review ORD-03 (2026-11-09): the device's own date, as
-            // frozenOrderDate uses. The UTC date was yesterday in Tashkent
-            // between 00:00 and 05:00, and once the real id came back it
-            // was frozen into queued offline taps.
-            orderDate: localDateString(new Date()),
+            // Review ORD-03 (2026-11-09): today on the calendar
+            // frozenOrderDate uses, the org's (COREWEB2-21; it was the
+            // phone's). The UTC date was yesterday in Tashkent between
+            // 00:00 and 05:00, and once the real id came back it was
+            // frozen into queued offline taps.
+            orderDate: orgToday(orgTimeZone),
             status: 'draft' as const,
             claimedByMemberId: null,
             claimedByDisplayName: null,
@@ -567,7 +569,7 @@ export function OrderPage() {
       }, DEBOUNCE_MS);
       pendingTimers.current.set(key, timer);
     },
-    [flushOne, session?.member.memberId, utils.order.todaySession],
+    [flushOne, orgTimeZone, session?.member.memberId, utils.order.todaySession],
   );
 
   /**
@@ -802,7 +804,7 @@ export function OrderPage() {
   const showExtrasEditor =
     !!currentStoreId && (extrasSessionId !== null || (!isReadOnly && sessionQuery.isSuccess));
   const saveExtras = useCallback(
-    async (extras: ExtraDraft[]): Promise<void> => {
+    async (extras: ExtraLine[]): Promise<void> => {
       if (!currentStoreId) return;
       const storeId = currentStoreId;
       // Same per-store queue as AdjustItem taps: the first tap and the
@@ -831,7 +833,7 @@ export function OrderPage() {
         // addresses the session by store without one.
         const queuedInput =
           'storeId' in input && !input.date
-            ? { ...input, date: frozenOrderDate(cached) }
+            ? { ...input, date: frozenOrderDate(cached, orgTimeZone) }
             : input;
         let res: { sessionId: string | null } | undefined;
         try {
@@ -856,7 +858,7 @@ export function OrderPage() {
         }
       });
     },
-    [currentStoreId, sendQueued, serializeOnStore, setSessionExtras, utils.order],
+    [currentStoreId, orgTimeZone, sendQueued, serializeOnStore, setSessionExtras, utils.order],
   );
 
   // Telegram MainButton — single point of control for the entire submit
@@ -1267,12 +1269,7 @@ export function OrderPage() {
           key={v.id}
           sessionId={v.id}
           storeId={currentStoreId}
-          initialValue={(v.extras ?? []).map((r) => ({
-            ...r,
-            unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-              ? (r.unit as (typeof CANONICAL_UNITS)[number])
-              : 'kg',
-          }))}
+          initialValue={v.extras ?? []}
           isReadOnly
           onSave={async () => {
             /* read-only — never called */
@@ -1373,12 +1370,7 @@ export function OrderPage() {
           <SessionExtrasEditor
             sessionId={locked.id}
             storeId={currentStoreId}
-            initialValue={(locked.extras ?? []).map((r) => ({
-              ...r,
-              unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-                ? (r.unit as (typeof CANONICAL_UNITS)[number])
-                : 'kg',
-            }))}
+            initialValue={locked.extras ?? []}
             isReadOnly
             onSave={async () => {
               /* read-only — never called */
@@ -1652,18 +1644,11 @@ export function OrderPage() {
         <SessionExtrasEditor
           sessionId={extrasSessionId}
           storeId={currentStoreId ?? ''}
-          // M3.34 (2026-05-19): coerce server-side extras into the
-          // canonical-unit shape. Rows submitted pre-M3.34 may carry
-          // free-text like "kgs" or "公斤" — map to 'kg' so the
-          // dropdown can render them and re-saving lands a canonical
-          // value. Anything we can't match falls back to 'kg' (the
-          // most-common SKU unit) which the user can then change.
-          initialValue={(sessionQuery.data?.extras ?? []).map((r) => ({
-            ...r,
-            unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-              ? (r.unit as (typeof CANONICAL_UNITS)[number])
-              : 'kg',
-          }))}
+          // Rows saved before M3.34 (2026-05-19) may carry free text such
+          // as "kgs" or "公斤". ORD-13 (2026-11-11): shown as written, not
+          // turned into 'kg' (which re-saving then made true); the editor
+          // asks for a unit from the list before it saves again.
+          initialValue={sessionQuery.data?.extras ?? []}
           isReadOnly={isReadOnly}
           onSave={saveExtras}
         />
@@ -1775,12 +1760,7 @@ export function OrderPage() {
             <SessionExtrasEditor
               sessionId={sessionQuery.data.id}
               storeId={currentStoreId}
-              initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
-                ...r,
-                unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-                  ? (r.unit as (typeof CANONICAL_UNITS)[number])
-                  : 'kg',
-              }))}
+              initialValue={sessionQuery.data.extras ?? []}
               isReadOnly
               inSheet
               onSave={async () => {
@@ -1849,7 +1829,7 @@ const SkuRow = memo(function SkuRow({
   productNameParts: (item: {
     names: Record<string, string> | null | undefined;
   }) => ProductNameParts;
-  unitLabel: (unit: string | null | undefined, qty?: string | number | null) => string;
+  unitLabel: UnitLabel;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
@@ -1911,7 +1891,7 @@ const SkuRow = memo(function SkuRow({
       <QtyControl
         value={myQty}
         step={Number(sku.step)}
-        unit={unitLabel(sku.unit)}
+        unit={unitLabel.uncounted(sku.unit)}
         unitFor={(qty) => unitLabel(sku.unit, qty)}
         disabled={isReadOnly}
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
@@ -2288,7 +2268,7 @@ function ReviewList({
                       <QtyControl
                         value={myQty}
                         step={Number(r.step)}
-                        unit={unitLabel(r.unit)}
+                        unit={unitLabel.uncounted(r.unit)}
                         unitFor={(q) => unitLabel(r.unit, q)}
                         max={r.archived ? myQty : ORDER_QTY_MAX}
                         pickTitle={r.name}
@@ -2379,17 +2359,6 @@ function ReviewList({
  * Read-only mode: collapses each row to a one-line "name · qty unit"
  * read. Hidden entirely when no extras (read-only + empty list).
  */
-interface ExtraDraft {
-  name: string;
-  qty: string;
-  // M3.34: tightened from `string` to the canonical unit set so
-  // tRPC's input schema validation (CanonicalUnitSchema) matches the
-  // local shape — extras coming back from server may carry pre-M3.34
-  // free-text units, the editor coerces to 'kg' on render if so.
-  unit: (typeof CANONICAL_UNITS)[number];
-  note?: string;
-}
-
 function SessionExtrasEditor({
   sessionId,
   storeId,
@@ -2405,7 +2374,7 @@ function SessionExtrasEditor({
   storeId: string;
   initialValue: ExtraDraft[];
   isReadOnly: boolean;
-  onSave: (extras: ExtraDraft[]) => Promise<void>;
+  onSave: (extras: ExtraLine[]) => Promise<void>;
 }) {
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
@@ -2451,33 +2420,6 @@ function SessionExtrasEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, storeId]);
 
-  // Sanitize for the wire: drop empty-name rows, trim, coerce qty to
-  // a valid decimal-as-string (or '1' fallback). The server enforces
-  // the same rules; we just don't want to fire a guaranteed-reject
-  // request for in-progress UI state.
-  const sanitize = useCallback((draft: ExtraDraft[]): ExtraDraft[] => {
-    const out: ExtraDraft[] = [];
-    for (const r of draft) {
-      const name = r.name.trim();
-      // M3.34: unit is already type-constrained to the canonical enum;
-      // no trim needed for the value (whitespace can't enter through
-      // the <select>), but we still validate presence in case of a
-      // pre-M3.34 cache write that smuggled in a stale free-text.
-      const unit = r.unit;
-      const qty = r.qty.trim();
-      if (!name || !(CANONICAL_UNITS as readonly string[]).includes(unit)) continue;
-      if (!/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0) continue;
-      const note = r.note?.trim();
-      out.push({
-        name,
-        qty,
-        unit,
-        ...(note ? { note } : {}),
-      });
-    }
-    return out;
-  }, []);
-
   // CA-25: the save waiting out its 700 ms debounce, so unmount /
   // pagehide can send it instead of dropping it.
   const pendingFireRef = useRef<(() => Promise<void>) | null>(null);
@@ -2487,13 +2429,17 @@ function SessionExtrasEditor({
       if (debounceRef.current) clearTimeout(debounceRef.current);
       pendingFireRef.current = null;
       const fire = async () => {
-        // DX-ORD-13: "1.5 个" is not saved either; the row says why. (Only
-        // here: rows saved like that before still show on receipts.)
-        const cleaned = sanitize(next).filter((r) => !wholeNumberRequired(r));
+        // ORD-13: null while a row has a unit from before M3.34; the row
+        // asks for one from the list.
+        const cleaned = extraLinesToSave(next);
+        if (cleaned === null) {
+          setSavingState('idle');
+          return;
+        }
         const cleanedJson = JSON.stringify(cleaned);
-        // 2026-10-21 audit CA-27 (B-09): rows sanitize() drops (no name,
-        // bad / zero qty) are NOT persisted — don't claim "Saved ✓" while
-        // any are on screen; invalid named rows are flagged inline.
+        // 2026-10-21 audit CA-27 (B-09): rows extraLinesToSave leaves out
+        // (no name, bad / zero qty) are NOT persisted — don't claim "Saved ✓"
+        // while any are on screen; invalid named rows are flagged inline.
         const allPersisted = cleaned.length === next.length;
         if (cleanedJson === lastSavedRef.current) {
           if (!allPersisted) setSavingState('idle');
@@ -2528,7 +2474,7 @@ function SessionExtrasEditor({
         }, 700);
       }
     },
-    [onSave, sanitize],
+    [onSave],
   );
 
   // 2026-10-21 audit CA-25: send (don't drop) a debounced save on
@@ -2552,7 +2498,7 @@ function SessionExtrasEditor({
 
   // Read-only and nothing to show → render nothing (avoids an empty
   // section under a submitted/approved session).
-  const cleanedView = sanitize(rows);
+  const cleanedView = cleanExtraRows(rows);
   if (isReadOnly && cleanedView.length === 0) return null;
 
   const updateRow = (idx: number, patch: Partial<ExtraDraft>) => {
@@ -2581,8 +2527,8 @@ function SessionExtrasEditor({
     setRows((prev) => {
       if (prev.length >= 50) return prev;
       const next: ExtraDraft[] = [...prev, { name: '', qty: '1', unit: 'kg' as const }];
-      // Don't fire save immediately — name is empty, sanitize drops
-      // it. The save fires when the user types into the name field.
+      // Don't fire save immediately — name is empty, cleanExtraRows
+      // drops it. The save fires when the user types into the name field.
       return next;
     });
   };
@@ -2650,28 +2596,6 @@ function SessionExtrasEditor({
  * types (debounced via react-query's natural caching — same key →
  * cached result for ~30s).
  */
-/**
- * A named extras row whose qty sanitize() would reject (empty, malformed
- * or ≤ 0). Blank-name rows are just "not filled in yet" and aren't
- * flagged. 2026-10-21 audit CA-27 (B-09).
- */
-function isInvalidExtraRow(row: ExtraDraft): boolean {
-  if (!row.name.trim()) return false;
-  const qty = row.qty.trim();
-  // ORD-9: the server's upper bound too, so the row is flagged before save.
-  return (
-    !/^\d+(\.\d{1,3})?$/.test(qty) ||
-    Number(qty) <= 0 ||
-    Number(qty) > ORDER_QTY_MAX ||
-    wholeNumberRequired(row)
-  );
-}
-
-/** DX-ORD-13: a whole-number unit (个, 包 …) with a fractional qty. */
-function wholeNumberRequired(row: ExtraDraft): boolean {
-  const qty = Number(row.qty.trim());
-  return UNIT_IS_INTEGER.has(row.unit) && Number.isFinite(qty) && !Number.isInteger(qty);
-}
 
 function ExtraRowEditor({
   row,
@@ -2781,14 +2705,13 @@ function ExtraRowEditor({
       <div className="mt-2 flex items-center gap-2">
         <NumberInput
           value={row.qty}
-          // M3.34 (2026-05-19): step + inputMode track the unit so a
-          // pcs/bunch row gives an integer keypad while a kg/L row
-          // allows decimals. Prevents accidental decimal-in-pcs typos
-          // (e.g. "1.5 个 of 鸡蛋" doesn't make sense).
-          inputMode={UNIT_IS_INTEGER.has(row.unit) ? 'numeric' : 'decimal'}
-          step={UNIT_STEP[row.unit] ?? '0.1'}
-          min="0"
-          aria-invalid={invalid || undefined}
+          // M3.34 (2026-05-19): inputMode tracks the unit so a pcs/bunch
+          // row gives an integer keypad while a kg/L row allows decimals.
+          // Prevents accidental decimal-in-pcs typos (e.g. "1.5 个 of 鸡蛋"
+          // doesn't make sense). ORD-13: no step or min, which this text
+          // field ignored.
+          inputMode={WHOLE_NUMBER_UNITS.has(row.unit) ? 'numeric' : 'decimal'}
+          aria-invalid={(invalid && badExtraQty(row)) || undefined}
           aria-label={i18n.t('order.extras.qtyLabel')}
           className="w-24 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
@@ -2797,19 +2720,21 @@ function ExtraRowEditor({
           <Select
             value={row.unit}
             aria-label={i18n.t('order.extras.unitLabel')}
+            invalid={unlistedUnit(row)}
             // M3.34: constrained to canonical units (CanonicalUnitSchema).
             // Free-text caused "kg"/"kgs"/"公斤" drift that broke
             // aggregation + i18n. Labels go through useUnitLabel so the
             // visible option text matches the rest of the UI in the
             // user's locale.
-            onChange={(e) =>
-              onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
-            }
+            onChange={(e) => onChange({ unit: e.target.value })}
             className="pl-3 pr-7 text-old-body"
           >
+            {/* ORD-13: a unit from before M3.34, as written, until one
+                from the list is picked. */}
+            {isCanonicalUnit(row.unit) ? null : <option value={row.unit}>{row.unit}</option>}
             {CANONICAL_UNITS.map((u) => (
               <option key={u} value={u}>
-                {unitLabel(u)}
+                {unitLabel.uncounted(u)}
               </option>
             ))}
           </Select>
@@ -2817,9 +2742,11 @@ function ExtraRowEditor({
       </div>
       {invalid ? (
         <p className="mt-1 px-1 text-old-label text-[var(--c-danger)]">
-          {wholeNumberRequired(row)
-            ? i18n.t('order.extras.wholeNumber')
-            : i18n.t('order.errors.invalidQty')}
+          {unlistedUnit(row)
+            ? i18n.t('order.extras.chooseUnit')
+            : wholeNumberRequired(row)
+              ? i18n.t('order.extras.wholeNumber')
+              : i18n.t('order.errors.invalidQty')}
         </p>
       ) : null}
     </div>

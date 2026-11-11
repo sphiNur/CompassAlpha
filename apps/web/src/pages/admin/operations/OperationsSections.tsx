@@ -35,10 +35,17 @@ import {
 } from '@compass/ui';
 import { PAGE_SIZE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
+import { copyText } from '../../../lib/clipboard';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import {
+  useDateFormat,
+  useI18n,
+  useProductName,
+  useRoleLabels,
+  useUnitLabel,
+} from '../../../hooks/useI18n';
 import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
@@ -356,8 +363,11 @@ function formatRelative(iso: string, i18n: ReturnType<typeof useI18n>): string {
 
 // 2026-10-21 FE-07: local calendar date — the UTC slice made "reset
 // today" purge YESTERDAY east of UTC before the offset hour.
-function todayIso(): string {
-  return maintenanceToday();
+// ADM2-28 (2026-11-11): and the org's calendar, not the phone's, as in
+// Finance (HIS-13): a phone set to another zone previewed, and purged,
+// the org's yesterday or tomorrow.
+function todayIso(orgTimeZone: string | undefined): string {
+  return maintenanceToday(new Date(), orgTimeZone);
 }
 
 /**
@@ -366,7 +376,8 @@ function todayIso(): string {
  * dry-run preview sheet before committing.
  */
 function TargetedPurgeBrowser() {
-  const [date, setDate] = useState(todayIso());
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const [date, setDate] = useState(() => todayIso(orgTimeZone));
   const [tab, setTab] = useState<'orders' | 'runs'>('orders');
   const sessionsQuery = trpc.admin.sessionList.useQuery({ date, limit: PAGE_SIZE.list });
   const runsQuery = trpc.admin.runList.useQuery({ date, limit: PAGE_SIZE.list });
@@ -441,14 +452,16 @@ function TargetedPurgeBrowser() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      {/* Review ADM2-13 (2026-11-11): wraps. At 320px the tabs left the date
+          field «11/11» in Uzbek; 9rem holds the whole date and its icon. */}
+      <div className="flex flex-wrap items-center gap-2">
         <input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
           aria-label={i18n.t('ops.purge.dateLabel')}
-          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field min-w-0 appearance-none"
+          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field min-w-[9rem] appearance-none"
         />
         {/* DX-VIS-7 (2026-11-01): was two hand-rolled pills whose state
             was colour only; Segmented says which is selected. */}
@@ -796,12 +809,13 @@ export function AdminAuditSection() {
   const i18n = useI18n();
   const dateFmt = useDateFormat();
   const productName = useProductName();
+  const roleLabels = useRoleLabels();
   const unitLabel = useUnitLabel();
   // ADM2-06: how the before / after values of an edit read.
   const changeFormat: ChangeFormat = {
     empty: '—',
     localName: (names) => productName({ names }),
-    unit: unitLabel,
+    unit: unitLabel.uncounted,
     paymentMethod: (method) =>
       method === 'transfer'
         ? i18n.t('run.history.payment.transfer')
@@ -844,7 +858,7 @@ export function AdminAuditSection() {
     other: i18n.t('settlement.expenseCategory.other'),
   };
   // Catalog rows get a per-kind badge (SKUs / Suppliers …) instead of
-  // the generic "Catalog".
+  // the generic "Catalog"; one without a kind (an import) keeps it.
   const kindLabel: Record<string, string> = {
     sku: i18n.t('admin.subsection.skus'),
     category: i18n.t('admin.subsection.categories'),
@@ -927,13 +941,16 @@ export function AdminAuditSection() {
                 // instead of raw verb/object words and id prefixes.
                 const s = describeAuditRow(r, {
                   unknown: i18n.t('ops.audit.unknown'),
+                  system: i18n.t('ops.activity.system'),
+                  roleName: (role) => roleLabels.name(role),
+                  permission: (key) => roleLabels.permission(key, null),
                   localName: (names) => productName({ names }),
                   day: (d) => dateFmt.calendarDay(d),
                 });
                 const changes = auditChangeLines(r.inputs, changeFormat);
                 const badge =
                   s.category === 'catalog'
-                    ? (kindLabel[s.object] ?? s.object)
+                    ? (kindLabel[s.object] ?? categoryLabel.catalog)
                     : categoryLabel[s.category];
                 // Store chip: the resolved name, else the session's store
                 // list, else the id prefix (B2 / M3.17).
@@ -950,7 +967,7 @@ export function AdminAuditSection() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-baseline gap-2">
                           <Badge tone={s.tone}>{badge}</Badge>
-                          {storeChip ? <Badge tone="muted">🏪 {storeChip}</Badge> : null}
+                          {storeChip ? <Badge tone="muted">{storeChip}</Badge> : null}
                         </div>
                         <div className="mt-1 text-old-body text-[var(--c-fg)]">
                           {i18n.t(s.key, s.params)}
@@ -1131,7 +1148,7 @@ export function PriceReportSection() {
                   <span className="text-old-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
                     <span className="text-old-label font-normal text-[var(--c-fg-muted)]">
-                      / {unitLabel(r.unit)}
+                      / {unitLabel.uncounted(r.unit)}
                     </span>
                   </span>
                 </div>
@@ -1271,7 +1288,8 @@ export function FinanceSection() {
    * 2026-10-21 CA-11: purchaseLines now also carries off-catalog expense
    * splits (`kind: 'expense'`, skuId null, free-text label), so finance
    * shows the same money as History and the finish sheet. One name
-   * resolver for both kinds; expenses get a 🧾 marker.
+   * resolver for both kinds. Review ADM2-15 (2026-11-11): a named expense
+   * says so in words ("Expense: Taxi"), not with a 🧾 (UI-1).
    */
   const plainLineName = useCallback(
     (l: (typeof lines)[number]): string => {
@@ -1283,8 +1301,10 @@ export function FinanceSection() {
   );
   const lineName = useCallback(
     (l: (typeof lines)[number]): string =>
-      l.kind === 'expense' || !l.skuId ? `🧾 ${plainLineName(l)}` : plainLineName(l),
-    [plainLineName],
+      (l.kind === 'expense' || !l.skuId) && l.label
+        ? i18n.t('finance.label.expenseNamed', { name: l.label })
+        : plainLineName(l),
+    [plainLineName, i18n],
   );
   // HIS-15 (2026-10-31): quantities as everywhere else — trailing zeros
   // dropped, with the product's unit ("0.5 公斤", not "0.500").
@@ -1435,26 +1455,19 @@ export function FinanceSection() {
           l.supplierId ? (supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8)) : '—',
           methodLabel(l.paymentMethod),
           toQtyInput(l.qty),
-          sku ? unitLabel(sku.unit) : '',
+          sku ? unitLabel.uncounted(sku.unit) : '',
           l.unitPrice ?? '',
           l.lineTotal ?? '',
         ].join('\t');
       }),
     ].join('\n');
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      // HIS-8 (2026-10-30): the write can be refused (no clipboard
-      // permission); only claim success once it actually happened.
-      navigator.clipboard.writeText(tsv).then(
-        () => toast.success(i18n.t('finance.export.copied')),
-        () => toast.error(i18n.t('finance.export.noClipboard')),
-      );
-    } else {
-      // Fallback for older WebViews — clipboard API unavailable. We
-      // surface a user-facing error toast; the TSV is dropped (the
-      // earlier console.log was deleted as part of the production
-      // hardening pass — privacy + CSP cleanliness).
-      toast.error(i18n.t('finance.export.noClipboard'));
-    }
+    // HIS-8 (2026-10-30): the write can be refused (no clipboard
+    // permission); only claim success once it actually happened.
+    void copyText(tsv).then((copied) =>
+      copied
+        ? toast.success(i18n.t('finance.export.copied'))
+        : toast.error(i18n.t('finance.export.noClipboard')),
+    );
   }, [
     lines,
     plainLineName,
@@ -1510,20 +1523,27 @@ export function FinanceSection() {
           ))}
         </ChipBar>
         {preset === 'custom' ? (
-          <div className="flex items-center gap-2">
+          // ADM2-13: at 320px both dates lost their year («11/01/202»). Each
+          // keeps 9rem; when the row is narrower the end date goes to a
+          // second line, with its dash.
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               aria-label={i18n.t('finance.range.start')}
+              className="min-w-[9rem] flex-1"
             />
-            <span className="text-old-body text-[var(--c-fg-muted)]">—</span>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              aria-label={i18n.t('finance.range.end')}
-            />
+            <div className="flex flex-1 items-center gap-2">
+              <span className="text-old-body text-[var(--c-fg-muted)]">—</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                aria-label={i18n.t('finance.range.end')}
+                className="min-w-[9rem]"
+              />
+            </div>
           </div>
         ) : (
           <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -1569,7 +1589,7 @@ export function FinanceSection() {
           </div>
           <div className="col-span-2 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 border-t border-[var(--c-divider)] pt-2">
             <div className="min-w-0">
-              <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
+              <SectionLabel padded={false}>{i18n.t('finance.label.total')}</SectionLabel>
               {totalsQuery.data.total !== null ? (
                 <div className="break-all text-old-h2 font-semibold tabular-nums">
                   {formatMoney(totalsQuery.data.total)}
@@ -1728,7 +1748,7 @@ export function FinanceSection() {
             const isOpen = expanded === key;
             const name =
               key === '__expense'
-                ? `🧾 ${i18n.t('finance.label.expenses')}`
+                ? i18n.t('finance.label.expenses')
                 : g.supplierId
                   ? (supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8))
                   : `— ${i18n.t('finance.label.noSupplier')}`;
@@ -1879,13 +1899,14 @@ export function MaintenanceSection() {
   // DX-CAT-17: the wipe is confirmed with the name shown on the workspace
   // page, not the slug nobody sees.
   const orgName = session?.member.orgName ?? '';
+  const orgTimeZone = session?.member.timezone;
   // R2-CAT-3: the live server refuses the bulk purges; don't offer them.
   // Until the config arrives (or from an older server) they stay shown.
   const appConfig = trpc.system.appConfig.useQuery(undefined, { staleTime: Infinity });
   const bulkPurgeAllowed = appConfig.data?.bulkPurgeAllowed !== false;
 
   // ---- by-date purge state ----
-  const [dateInput, setDateInput] = useState<string>(todayIso());
+  const [dateInput, setDateInput] = useState<string>(() => todayIso(orgTimeZone));
   const [datePreview, setDatePreview] = useState<{
     date: string;
     total: number;
@@ -1981,14 +2002,16 @@ export function MaintenanceSection() {
                     {i18n.t('ops.maint.resetTodayTitle')}
                   </div>
                   <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
+                    {i18n.t('ops.maint.resetTodayBody', { date: todayIso(orgTimeZone) })}
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="pearl"
                   loading={datePreviewMut.isPending}
-                  onClick={() => datePreviewMut.mutate({ date: todayIso(), dryRun: true })}
+                  onClick={() =>
+                    datePreviewMut.mutate({ date: todayIso(orgTimeZone), dryRun: true })
+                  }
                 >
                   {i18n.t('ops.maint.resetToday')}
                 </Button>

@@ -13,6 +13,9 @@ import { getDb, schema as s } from '@compass/db';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Db = ReturnType<typeof getDb>;
 
@@ -27,6 +30,7 @@ async function lateShift(db: Db, timezone: string, now: Date) {
     .insert(s.organizations)
     .values({ slug: `remind-${suffix}`, name: 'Remind', localeDefault: 'en', timezone })
     .returning();
+  noteOrg(org!.id);
   const [store] = await db
     .insert(s.stores)
     .values({ orgId: org!.id, name: 'Store', code: `RM-${suffix.slice(-8)}` })
@@ -35,6 +39,7 @@ async function lateShift(db: Db, timezone: string, now: Date) {
     .insert(s.users)
     .values({ displayName: 'Late', tgUserId: freshTgId() })
     .returning();
+  noteUser(user!.id);
   const [member] = await db
     .insert(s.members)
     .values({ orgId: org!.id, userId: user!.id, status: 'active' })

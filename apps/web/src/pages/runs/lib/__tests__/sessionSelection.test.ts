@@ -41,6 +41,15 @@ describe('session selection (CA-03)', () => {
     ]);
   });
 
+  test('stores within a date sort in the UI language (RUNWEB2-30)', () => {
+    const zh = [
+      { id: 't', storeId: 'T', storeName: '土城店', orderDate: TODAY, notes: null },
+      { id: 'h', storeId: 'H', storeName: '湖滨店', orderDate: TODAY, notes: null },
+    ];
+    const [today] = groupSessionsByDate(zh, TODAY, 'zh');
+    expect(today!.sessions.map((s) => s.storeName)).toEqual(['湖滨店', '土城店']);
+  });
+
   test('a group toggle sets every session in the group', () => {
     const [, old] = groupSessionsByDate(sessions, TODAY);
     const o = withGroupSelection(new Map(), old!, true);

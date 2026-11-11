@@ -1,0 +1,14 @@
+name = "tg-relay"
+main = "worker.js"
+compatibility_date = "2026-10-20"
+workers_dev = true
+
+# `name` must be the Worker's name in the Cloudflare dashboard: the URL is
+# https://<name>.<account>.workers.dev and TG_RELAY_URL on the server points
+# at it. Deploying under another name creates a second Worker with a new
+# URL and no secrets.
+#
+# Secrets (not in this file; `wrangler secret put <NAME>` or the dashboard):
+#   BOT_TOKEN          the BotFather token
+#   COMPASS_RELAY_KEY  the shared key; must equal COMPASS_RELAY_KEY in the
+#                      server .env

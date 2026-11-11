@@ -86,6 +86,32 @@ export function errorTextOf(
 }
 
 /**
+ * The toast for a write that failed and was not queued (errToast; review
+ * TEST3-08 moved the choice here from the hook). A server key wins, with
+ * its placeholders. A transport failure says what is known about whether
+ * the write was saved (networkFailureKey; RE-CLS-3: queued writes say
+ * "saved offline" themselves), unless the server or its proxy answered,
+ * which is not the user's connection (R2-AUTH-3). Anything else gets the
+ * action's own failure sentence.
+ */
+export function writeErrorTextOf(
+  err: unknown,
+  fallbackKey: string,
+  write: { online: boolean; retrySafe: boolean },
+): { key: string; vars: ErrorVars } {
+  const key = serverErrorKey(err);
+  if (key) return { key, vars: errorVars(err) };
+  if (!isLikelyNetworkError(err)) return { key: fallbackKey, vars: {} };
+  const raw = (err as { message?: unknown } | null)?.message;
+  return {
+    key: isServerSideFailure(typeof raw === 'string' ? raw : undefined)
+      ? 'common.errors.internal'
+      : networkFailureKey(write.online, write.retrySafe),
+    vars: {},
+  };
+}
+
+/**
  * R2-AUTH-3 (2026-10-31): the request reached our side and the server or
  * its proxy answered with an error — a 502 page while the API restarts,
  * or a session refresh that got a 5xx. Those travel as network failures
@@ -122,7 +148,7 @@ export function zodIssueKey(message: string | undefined): string | null {
 /**
  * RE-AUTH-1 (2026-10-31): drop a message's own closing full stop before it
  * goes into a template that ends the sentence itself — "{reason}。你仍在…"
- * printed "…已被删除。。你仍在「Eden」。".
+ * printed "…已被删除。。你仍在「工作区 A」。".
  */
 export function withoutFinalStop(message: string): string {
   return message.replace(/[。．.!！]+$/u, '');

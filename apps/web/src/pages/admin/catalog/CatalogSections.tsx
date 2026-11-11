@@ -31,7 +31,7 @@ import {
   rowGroupClass,
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
-import { SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
+import { CATALOG_TEXT_MAX, SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { snapStepToCanonical } from './skuStep';
@@ -344,7 +344,7 @@ export function CategoriesSection() {
               <Input
                 value={draft.slug}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
-                maxLength={64}
+                maxLength={CATALOG_TEXT_MAX.categorySlug}
                 invalid={!!draft.slug && !SLUG_RE.test(draft.slug)}
                 placeholder={i18n.t('catalog.category.slugPlaceholder')}
               />
@@ -358,7 +358,7 @@ export function CategoriesSection() {
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="Sabzavotlar" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -366,7 +366,7 @@ export function CategoriesSection() {
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="Овощи" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -374,7 +374,7 @@ export function CategoriesSection() {
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="Vegetables" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -382,7 +382,7 @@ export function CategoriesSection() {
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="蔬菜" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -593,7 +593,7 @@ export function SkusSection() {
                         </div>
                       ) : null}
                       <CardMeta>
-                        {categoryName(sk.categoryId)} · {unitLabel(sk.unit)} ·{' '}
+                        {categoryName(sk.categoryId)} · {unitLabel.uncounted(sk.unit)} ·{' '}
                         {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
                         {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
                         {sk.code ? ` · ${sk.code}` : ''}
@@ -715,7 +715,7 @@ export function SkusSection() {
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="Pomidor" /* i18n-exempt: example word FOR that specific language field */
                 autoFocus
               />
@@ -724,7 +724,7 @@ export function SkusSection() {
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="Помидор" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -732,7 +732,7 @@ export function SkusSection() {
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="Tomato" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -740,7 +740,7 @@ export function SkusSection() {
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder="西红柿" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
@@ -778,7 +778,7 @@ export function SkusSection() {
                   {/* R2-COPY-3: the localised unit, not the stored code. */}
                   {SKU_UNITS.map((u) => (
                     <option key={u} value={u}>
-                      {unitLabel(u)}
+                      {unitLabel.uncounted(u)}
                     </option>
                   ))}
                 </Select>
@@ -797,7 +797,12 @@ export function SkusSection() {
               </Field>
             </div>
             <Field label={i18n.t('admin.field.code')}>
-              <Input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} maxLength={64} placeholder={i18n.t('common.optional')} />
+              <Input
+                value={draft.code}
+                onChange={(e) => setDraft({ ...draft, code: e.target.value })}
+                maxLength={CATALOG_TEXT_MAX.skuCode}
+                placeholder={i18n.t('common.optional')}
+              />
             </Field>
             <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
@@ -862,7 +867,9 @@ export function SuppliersSection() {
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      <div className="mb-3 flex items-center gap-2">
+      {/* Review ADM2-13 (2026-11-11): wraps, like the products bar (WALK-04).
+          At 320px the switch's label squeezed the button to «+ Новый постав…». */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {canWrite ? (
           <Button
             size="sm"
@@ -1005,19 +1012,44 @@ export function SuppliersSection() {
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
             <Field label={`${i18n.t('admin.field.name')} *`}>
-              <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={200} autoFocus />
+              <Input
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                maxLength={CATALOG_TEXT_MAX.name}
+                autoFocus
+              />
             </Field>
             <Field label={i18n.t('admin.field.phone')}>
-              <Input value={draft.contactPhone} onChange={(e) => setDraft({ ...draft, contactPhone: e.target.value })} maxLength={32} placeholder="+998 …" />
+              <Input
+                value={draft.contactPhone}
+                onChange={(e) => setDraft({ ...draft, contactPhone: e.target.value })}
+                maxLength={CATALOG_TEXT_MAX.phone}
+                placeholder="+998 …"
+              />
             </Field>
             <Field label={i18n.t('admin.field.tgUsername')}>
-              <Input value={draft.contactTg} onChange={(e) => setDraft({ ...draft, contactTg: e.target.value.replace(/^@/, '') })} maxLength={64} placeholder={i18n.t('catalog.supplier.tgPlaceholder')} />
+              <Input
+                value={draft.contactTg}
+                onChange={(e) =>
+                  setDraft({ ...draft, contactTg: e.target.value.replace(/^@/, '') })
+                }
+                maxLength={CATALOG_TEXT_MAX.telegram}
+                placeholder={i18n.t('catalog.supplier.tgPlaceholder')}
+              />
             </Field>
             <Field label={i18n.t('admin.field.address')}>
-              <Input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} maxLength={500} />
+              <Input
+                value={draft.address}
+                onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+                maxLength={CATALOG_TEXT_MAX.address}
+              />
             </Field>
             <Field label={i18n.t('admin.field.notes')}>
-              <Input value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} maxLength={1000} />
+              <Input
+                value={draft.notes}
+                onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+                maxLength={CATALOG_TEXT_MAX.notes}
+              />
             </Field>
           </div>
         ) : null}
@@ -1091,7 +1123,8 @@ export function ExpenseTemplatesSection() {
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
-      <div className="mb-3 flex items-center gap-2">
+      {/* ADM2-13: wraps; at 320px in Uzbek the button read «+ Yangi sha…». */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {canWrite ? (
           <Button
             size="sm"
@@ -1154,8 +1187,8 @@ export function ExpenseTemplatesSection() {
                         </span>
                         {' · '}
                         {tpl.defaultPaymentMethod === 'transfer'
-                          ? `🏦 ${i18n.t('run.label.paymentTransfer')}`
-                          : `💵 ${i18n.t('run.label.paymentCash')}`}
+                          ? i18n.t('run.label.paymentTransfer')
+                          : i18n.t('run.label.paymentCash')}
                       </CardMeta>
                     </div>
                     {tpl.isArchived ? (
@@ -1276,7 +1309,7 @@ export function ExpenseTemplatesSection() {
               <Input
                 value={draft.label}
                 onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                maxLength={200}
+                maxLength={CATALOG_TEXT_MAX.name}
                 placeholder={i18n.t('admin.expenseTemplates.labelPlaceholder')}
                 autoFocus
               />
@@ -1285,7 +1318,7 @@ export function ExpenseTemplatesSection() {
               <Input
                 value={draft.unitHint}
                 onChange={(e) => setDraft({ ...draft, unitHint: e.target.value })}
-                maxLength={32}
+                maxLength={CATALOG_TEXT_MAX.unitHint}
                 placeholder={i18n.t('admin.expenseTemplates.unitHintPlaceholder')}
               />
             </Field>
@@ -1571,8 +1604,9 @@ export function DishesSection() {
 
   return (
     <div className="px-4 py-3">
-      {/* Top bar: archive toggle + new dish. */}
-      <div className="mb-3 flex items-center gap-2">
+      {/* Top bar: archive toggle + new dish. Wraps like the other catalog
+          bars (ADM2-13). */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {/* M2.1: archive toggle now uses Button (was raw <button>).
             Sat awkwardly next to the proper Button below — same size,
             same shape, but different DOM. Unified to one primitive. */}
@@ -1739,6 +1773,7 @@ export function DishesSection() {
               >
                 <Input
                   value={draft.names[loc] ?? ''}
+                  maxLength={CATALOG_TEXT_MAX.name}
                   onChange={(e) =>
                     setDraft({
                       ...draft,
@@ -1752,6 +1787,7 @@ export function DishesSection() {
               <Input
                 value={draft.code}
                 onChange={(e) => setDraft({ ...draft, code: e.target.value })}
+                maxLength={CATALOG_TEXT_MAX.dishCode}
                 placeholder="D-12"
               />
             </Field>
@@ -1850,7 +1886,7 @@ export function DishesSection() {
                             placeholder={i18n.t('dishes.field.qtyPlaceholder')}
                           />
                           <span className="text-old-label text-[var(--c-fg-muted)]">
-                            {sku?.unit ? unitLabel(sku.unit) : '—'}
+                            {sku?.unit ? unitLabel.uncounted(sku.unit) : '—'}
                           </span>
                         </div>
                         {archivedSku ? (

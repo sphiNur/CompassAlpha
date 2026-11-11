@@ -7,6 +7,7 @@
  *   bun run scripts/deploy.ts --allow-active-run    # ship during a live run
  *   bun run scripts/deploy.ts --allow-stale-backup  # ship without a recent backup
  *   bun run scripts/deploy.ts --skip-rls-check      # ship without the DB role check
+ *   bun run scripts/deploy.ts --allow-toolchain-drift # ship to a server off the pinned bun/pnpm/node
  *   bun run scripts/deploy.ts --rollback --dry      # show the release a rollback would restore
  *   bun run scripts/deploy.ts --rollback            # put the previous release back + verify
  *
@@ -29,6 +30,9 @@
  *                      or could not be checked.
  *   --skip-rls-check   ships although step 0.8 could not confirm that the
  *                      database role is subject to row-level security.
+ *   --allow-toolchain-drift ships although step 0.9 found the server's
+ *                      bun, pnpm or node off the repository's pins
+ *                      (review OPS-21), or could not ask.
  *
  * A check that cannot run stops the deploy, the same as a check that
  * fails (review OPS-03, OPS-04). It used to print a warning and go on, or
@@ -86,7 +90,7 @@
  *     "Backups" for verify + restore commands.
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,6 +112,7 @@ import {
   knownHostsFile,
   markIncompleteScript,
   pendingMigrationTags,
+  pinnedToolchain,
   remoteCommand,
   remoteStepError,
   restoreScript,
@@ -117,7 +122,10 @@ import {
   sshOptions,
   stageSeedScript,
   stageTarScript,
+  toolchainProblems,
+  toolchainScript,
 } from './lib/deployRemote';
+import { UNIT_TEST_DIRS } from './lib/testTargets';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname); // .../CompassAlpha
@@ -536,39 +544,25 @@ if (!ROLLBACK) {
   // reachable from the dev box); CI runs them on every push.
   //
   // 2026-10-21: paths are RELATIVE to ROOT (bun 1.1.x treats an absolute
-  // directory argument as an entry point and fails with ModuleNotFound) and
-  // mirror the CI unit job. apps/api validates its env at import time, so
-  // — like CI — fill placeholders when the shell has none: the database URL
-  // points at an unreachable local port and SKIP_PG_TESTS keeps every
-  // PG-backed test skipped, so nothing here can touch a real database.
-  const tt = spawnSync(
-    'bun',
-    [
-      'test',
-      'packages/domain',
-      'packages/contracts',
-      'packages/db',
-      'packages/i18n',
-      'packages/ui',
-      'apps/api',
-      'apps/worker',
-      'apps/web/src',
-      'scripts',
-    ],
-    {
-      stdio: 'inherit',
-      cwd: ROOT,
-      timeout: LIMIT.step,
-      env: {
-        ...process.env,
-        SKIP_PG_TESTS: '1',
-        DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
-        JWT_SECRET: process.env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
-        JWT_REFRESH_SECRET:
-          process.env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
-      },
+  // directory argument as an entry point and fails with ModuleNotFound).
+  // OPS-16 (2026-11-10): the list is CI's unit job, from lib/testTargets.
+  // apps/api validates its env at import time, so — like CI — fill
+  // placeholders when the shell has none: the database URL points at an
+  // unreachable local port and SKIP_PG_TESTS keeps every PG-backed test
+  // skipped, so nothing here can touch a real database.
+  const tt = spawnSync('bun', ['test', ...UNIT_TEST_DIRS], {
+    stdio: 'inherit',
+    cwd: ROOT,
+    timeout: LIMIT.step,
+    env: {
+      ...process.env,
+      SKIP_PG_TESTS: '1',
+      DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
+      JWT_SECRET: process.env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
+      JWT_REFRESH_SECRET:
+        process.env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
     },
-  );
+  });
   if (tt.status !== 0) {
     console.error(
       `\x1b[31m✖ unit tests FAILED${stoppedNote(tt, LIMIT.step)} — nothing was deployed\x1b[0m`,
@@ -686,6 +680,41 @@ if (!DRY) {
       ? `  \x1b[33m⚠ --skip-rls-check: ${problem}\x1b[0m`
       : '  ✓ DB role is not a superuser and does not bypass RLS',
   );
+
+  step('0.9. the server runs the bun, pnpm and node the repository pins');
+  // Review OPS-21 (2026-11-10): "production, CI and dev run the same
+  // versions" was kept by hand, and the server once ran bun 1.3.13 while
+  // the repository said 1.1.38. A check that cannot run counts as failed.
+  // A rollback goes ahead with a warning: the release it restores ran on
+  // this server before.
+  let drift: string[];
+  try {
+    drift = toolchainProblems(
+      ssh(toolchainScript()),
+      pinnedToolchain(
+        readFileSync(join(ROOT, '.bun-version'), 'utf8'),
+        readFileSync(join(ROOT, 'package.json'), 'utf8'),
+      ),
+    );
+  } catch (err) {
+    drift = [`the check did not run: ${(err as Error).message}`];
+  }
+  if (drift.length === 0) {
+    console.log('  ✓ bun, pnpm and node on the server match .bun-version and package.json');
+  } else if (args.has('--allow-toolchain-drift') || ROLLBACK) {
+    const why = ROLLBACK ? 'rolling back anyway' : '--allow-toolchain-drift';
+    for (const d of drift) console.log(`  \x1b[33m⚠ ${why}: ${d}\x1b[0m`);
+  } else {
+    console.error(
+      '\x1b[31m✖ Refusing to deploy — the server does not run the pinned toolchain:\x1b[0m',
+    );
+    for (const d of drift) console.error(`  ${d}`);
+    console.error(
+      '  Install the pinned versions on the server (docs/RUNBOOK.md), or bump the pins',
+    );
+    console.error('  in the repository together. Deploy anyway: --allow-toolchain-drift.');
+    process.exit(1);
+  }
 }
 
 /** Shell script: install exactly the dependencies the tree on disk locks. */

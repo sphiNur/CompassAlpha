@@ -360,7 +360,7 @@ export const roles = authSchema.table(
 );
 
 /**
- * Permissions are a global static dictionary �?one row per `(domain, action)`,
+ * Permissions are a global static dictionary — one row per `(domain, action)`,
  * e.g. `order.adjust`, `run.create`. Roles bind to a subset; policies layer on top.
  */
 export const permissions = authSchema.table('permissions', {
@@ -383,7 +383,7 @@ export const rolePermissions = authSchema.table(
   }),
 );
 
-/** A member's role binding. `scopeType` �?('global','store') controls reach. */
+/** A member's role binding. `scopeType` ('global' or 'store') controls its reach. */
 export const memberRoleBindings = authSchema.table(
   'member_role_bindings',
   {

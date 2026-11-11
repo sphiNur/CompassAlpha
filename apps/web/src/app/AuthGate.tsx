@@ -5,6 +5,7 @@ import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { I18nGate, useI18n, useRoleLabels } from '../hooks/useI18n';
+import { STALE } from '../config/timings';
 import { useTranslateError } from '../lib/errToast';
 import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -165,7 +166,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
   const loginModes = trpc.auth.loginModes.useQuery(undefined, {
     enabled: authHydrated && !activeSession,
     retry: false,
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
   const shouldShowDevPersonas = Boolean(
     !activeSession &&
@@ -176,7 +177,7 @@ function useAuthGateScreen(children: ReactNode): ReactNode {
   const devPersonas = trpc.auth.devPersonas.useQuery(undefined, {
     enabled: authHydrated && shouldShowDevPersonas,
     retry: false,
-    staleTime: 15_000,
+    staleTime: STALE.short,
   });
 
   // If an existing token is bad, drop it. In Telegram Mini App we can
@@ -1009,18 +1010,31 @@ function BlockedScreen({ title, body }: { title: string; body: string }) {
   );
 }
 
-/** A Telegram user id (the caller's by default), tap to copy. */
+/**
+ * A Telegram user id (the caller's by default), tap to copy. Review
+ * COREWEB1-25 (2026-11-11): nothing said it copies, and a vibration was
+ * the only answer (none in a browser). It is named "tap to copy" and
+ * says whether it did.
+ */
 function TelegramIdChip({ id }: { id?: string } = {}) {
+  const i18n = useI18n();
+  const toast = useToast();
   const tgUserId = id ?? getTg()?.initDataUnsafe?.user?.id;
   if (!tgUserId) return null;
+  const failed = () => toast.error(i18n.t('admin.toast.couldNotCopy'));
   return (
     <button
       type="button"
+      aria-label={i18n.t('auth.copyTelegramId', { id: String(tgUserId) })}
       onClick={() => {
-        void navigator.clipboard?.writeText(String(tgUserId)).then(
-          () => haptic('success'),
-          () => undefined,
-        );
+        if (!navigator.clipboard) {
+          failed();
+          return;
+        }
+        void navigator.clipboard.writeText(String(tgUserId)).then(() => {
+          haptic('success');
+          toast.success(i18n.t('auth.telegramIdCopied'));
+        }, failed);
       }}
       className="press rounded-full bg-[var(--c-surface-2)] px-4 py-2 font-mono text-old-body ring-hairline"
     >

@@ -20,9 +20,17 @@ export interface OutboxPayload {
   title: string;
   body?: string;
   deepLink?: string;
+  /**
+   * The button's label in the recipient's language, written by the API's
+   * dispatch (COREAPI-19, 2026-11-10). Rows queued before it have none.
+   */
+  buttonText?: string;
   dedupKey?: string;
   extra?: Record<string, unknown>;
 }
+
+/** The button's label when the payload carries none. */
+export const DEFAULT_BUTTON_TEXT = 'Open Compass';
 
 export const MAX_RETRIES = 8;
 /** Waits before the next try: 5 s, 10 s, 30 s, 1 min, 5 min, 15 min, 1 h, 3 h. */
@@ -49,12 +57,22 @@ export function outboxPayloadProblem(payload: unknown): string | null {
   return null;
 }
 
-/** The link behind the message's "Open Compass" button. */
+/** The link behind the message's button. */
 export function resolveDeepLink(path: string, frontendUrl: string | undefined): string {
   const base = frontendUrl?.replace(/\/$/, '') ?? '';
   if (path.startsWith('http')) return path;
   if (!base) return path;
   return base + (path.startsWith('/') ? path : '/' + path);
+}
+
+/**
+ * The button's label. A label that is missing, blank or not text falls
+ * back to the English one rather than holding the message back: the
+ * button is still the way into the app.
+ */
+function buttonLabel(payload: OutboxPayload): string {
+  const label = typeof payload.buttonText === 'string' ? payload.buttonText.trim() : '';
+  return label || DEFAULT_BUTTON_TEXT;
 }
 
 /** The Telegram message for a payload that passed `outboxPayloadProblem`. */
@@ -73,7 +91,7 @@ export function botMessage(
             inline_keyboard: [
               [
                 {
-                  text: 'Open Compass',
+                  text: buttonLabel(payload),
                   web_app: { url: resolveDeepLink(payload.deepLink, frontendUrl) },
                 },
               ],

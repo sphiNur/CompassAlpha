@@ -5,6 +5,7 @@
  * services/telegramAuth.ts against itself.
  */
 import { createHmac } from 'node:crypto';
+import { noteTgId } from './cleanup';
 
 /**
  * `fields` as a Mini App receives them from Telegram: URL-encoded, with
@@ -57,15 +58,19 @@ let sequence = Math.floor(Math.random() * 100);
 
 /**
  * A Telegram user id no earlier test has used: the clock in milliseconds,
- * then a two-digit counter. users.tg_user_id is unique and test data is
- * kept, so ids must differ across runs as well as within one. The counter
- * trails the clock: hand-made ids that put a distinguishing digit in front
- * of Date.now() and then kept the last 12 digits cut it off again (TEST1-18).
- * Distinct as long as a process asks for at most 100 a millisecond. About
- * 1.8e14 today, 15 digits: the most admin.memberInviteByTgId accepts, and a
- * safe JS integer, so `Number(id)` in initData is exact.
+ * then a two-digit counter. users.tg_user_id is unique and some test data
+ * outlives its run (see cleanup.ts), so ids must differ across runs as well
+ * as within one. The counter trails the clock: hand-made ids that put a
+ * distinguishing digit in front of Date.now() and then kept the last 12
+ * digits cut it off again (TEST1-18). Distinct as long as a process asks
+ * for at most 100 a millisecond. About 1.8e14 today, 15 digits: the most
+ * admin.memberInviteByTgId accepts, and a safe JS integer, so `Number(id)`
+ * in initData is exact.
+ *
+ * The id is noted for the clean-up, so a user the API makes for it (at
+ * sign-in, on accepting an invite) is removed with the file's other rows.
  */
 export function freshTgId(): bigint {
   sequence = (sequence + 1) % 100;
-  return BigInt(Date.now()) * 100n + BigInt(sequence);
+  return noteTgId(BigInt(Date.now()) * 100n + BigInt(sequence));
 }

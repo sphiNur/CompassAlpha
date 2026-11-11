@@ -15,16 +15,30 @@ import { z } from 'zod';
 import { allowEventPurge, inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
   ADMIN_RANK,
+  SUPER_ADMIN_RANK,
   GrantRoleInputSchema,
   MemberInviteRevokeInputSchema,
-  SkuStepSchema,
-  SkuUnitSchema,
+  CategoryCreateInputSchema,
+  CategoryDeleteInputSchema,
+  CategoryUpdateInputSchema,
+  ExpenseTemplateCreateInputSchema,
+  ExpenseTemplateDeleteInputSchema,
+  ExpenseTemplateUpdateInputSchema,
+  SkuCreateInputSchema,
+  SkuDeleteInputSchema,
+  SkuUpdateInputSchema,
+  SupplierCreateInputSchema,
+  SupplierDeleteInputSchema,
+  SupplierUpdateInputSchema,
+  TrimmedNameSchema,
+  codeTextSchema,
   UuidSchema,
   TimeZoneSchema,
   DateStringSchema,
   CONTROL_CHARS_MESSAGE,
   noControlChars,
 } from '@compass/contracts';
+import { TAX_RATE_MESSAGE, TAX_RATE_RE, taxRateProblem } from '@compass/contracts/limits';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
@@ -32,13 +46,20 @@ import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import {
   ORG_WIDE_PERMISSION_KEYS,
+  adminScopeOf,
+  adminStoresOf,
   effectiveGlobalPermissions,
   effectivePermissionsForStore,
+  flatEffectivePermissions,
+  loadScopedPermissions,
+  permissionsByScope,
+  type AdminScope,
 } from '../../services/storeScope';
 import {
   bindingIsLive,
   countAdminsInOrg,
   getActorMaxGlobalRank,
+  grantBinding,
   getActorMaxRank,
   getActorMaxRankInStore,
   grantRefusal,
@@ -53,6 +74,13 @@ import { assertCanAddMember, assertCanAddStore } from '../../services/subscripti
 import { isUniqueViolation } from '../../services/pgErrors';
 import { auditChanges } from '../../services/auditChanges';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
+import {
+  requirePurgeRole,
+  runDeleteBlocks,
+  runDeleteRefusal,
+  sessionDeleteBlocks,
+  sessionDeleteRefusal,
+} from '../../services/purgeGuards';
 import { recentEventContext } from '../../services/eventContext';
 import { inTexts, inUuids } from '../../services/sqlIn';
 import { env } from '../../env';
@@ -174,21 +202,26 @@ async function catalogSourceMemberships(
  * the caller's own memberships.
  */
 async function userInAnotherOrg(ctx: AdminCtx, userId: string): Promise<boolean> {
+  return (await usersInOtherOrgs(ctx, [userId])).has(userId);
+}
+
+/** userInAnotherOrg for several users at once (memberList, ADM1-06). */
+async function usersInOtherOrgs(ctx: AdminCtx, userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
   const rows = await inSystem(ctx.db, 'auth', (tx) =>
     tx
-      .select({ orgId: s.members.orgId })
+      .selectDistinct({ userId: s.members.userId })
       .from(s.members)
       .innerJoin(s.organizations, eq(s.organizations.id, s.members.orgId))
       .where(
         and(
-          eq(s.members.userId, userId),
+          inArray(s.members.userId, userIds),
           ne(s.members.orgId, ctx.session!.orgId),
           isNull(s.organizations.deletedAt),
         ),
-      )
-      .limit(1),
+      ),
   );
-  return rows.length > 0;
+  return new Set(rows.map((r) => r.userId));
 }
 
 /** Read the source catalog, after checking the caller administers it. */
@@ -231,7 +264,6 @@ async function readCatalogSource(ctx: AdminCtx, sourceOrgId: string): Promise<Ca
  * mid-deploy), we swallow and continue — losing an audit row is
  * preferable to losing the catalog write that already committed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 /**
  * B2 (2026-05-06): derive a store id from action input so the audit
  * row can be indexed by store and the FE can filter by it.
@@ -311,6 +343,7 @@ async function memberStoreIdsForAudit(tx: OrgTx, memberId: string): Promise<stri
         and(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'store'),
+          bindingIsLive(),
         ),
       ),
   ]);
@@ -357,7 +390,7 @@ function auditTouchesStores(storeIds: string[]) {
 }
 
 export async function auditAdmin(
-  tx: any,
+  tx: OrgTx,
   ctx: { session?: { userId: string; orgId: string } | null },
   action: string,
   resourceType: string,
@@ -376,7 +409,7 @@ export async function auditAdmin(
     // aborts the whole transaction, so catching the error here was not
     // "best effort" — the admin action itself then failed. A nested
     // transaction rolls back only this insert.
-    await tx.transaction(async (sp: typeof tx) => {
+    await tx.transaction(async (sp) => {
       const scopeStoreId = deriveScopeStoreId(action, resourceType, inputs);
       // R2-ADM-3 (2026-10-31): the list resolves names when it is read,
       // so a role deleted or a member removed since showed as "(unknown)".
@@ -487,109 +520,72 @@ const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
  * Returns the storeIds in which the actor is permitted to perform
  * admin-tier actions (invite a member, grant a role, assign a store).
  *
- *   - If the actor has any GLOBAL binding granting one of the admin
- *     permissions (`users.manage`, `users.invite`, `users.grant_role`),
- *     they're a "global admin" — return every active store in the org.
- *   - Otherwise, return the storeIds from store-scoped bindings whose
- *     role grants any of those perms. A store-scoped manager who can
- *     `users.invite` in Store A only is gated to Store A here.
- *   - Member-permission overrides participate too: a per-member allow
- *     `users.invite` scoped to a store extends the set; deny shrinks
- *     it. Global allow override → global admin path.
+ *   - An admin-tier key (`users.manage`, `users.grant_role`) that holds
+ *     organisation-wide makes the actor a "global admin": every active
+ *     store in the org, except a store where overrides deny both.
+ *   - Otherwise, the active stores where one holds. A store-scoped
+ *     manager who holds `users.manage` in Store A only is gated to A.
+ *   - `includeInactive` adds the paused and archived stores it covers.
+ *   - Each scope resolves role grants, then allows, then denies (deny
+ *     wins), per key: storeScope.adminScopeOf (ADM1-03).
  *
  * Returns an EMPTY array if the actor has no admin authority anywhere.
  * Callers (grantRole, memberInvite, memberAssignStore) check whether
  * the target storeId is in this set; mismatches throw FORBIDDEN.
  */
-const ADMIN_PERM_KEYS = ['users.manage', 'users.invite', 'users.grant_role'] as const;
-
 async function getActorAdminStoreIds(
   tx: import('@compass/db').DB,
   orgId: string,
   actorUserId: string,
-  // R2-ADM-2: removing someone from a paused or archived store must stay
-  // possible; granting there must not. Only revoke/detach pass true.
   opts: { includeInactive?: boolean } = {},
 ): Promise<string[]> {
-  // Step 1: load actor's bindings (with scope) + the perm keys their
-  // roles grant. Cheap: actor typically has ≤3 bindings.
+  return storesAdministeredBy(tx, orgId, await getActorAdminScope(tx, orgId, actorUserId), opts);
+}
+
+/**
+ * The actor's authority over people (storeScope.adminScopeOf, ADM1-03):
+ * the one rule the session payload and invite acceptance use too. Null
+ * when they are not a member.
+ */
+async function getActorAdminScope(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  actorUserId: string,
+): Promise<AdminScope | null> {
   const member = await tx.query.members.findFirst({
     where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, actorUserId)),
   });
-  if (!member) return [];
-  const bindings = await tx
-    .select({
-      roleId: s.memberRoleBindings.roleId,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()));
-  const roleIds = [...new Set(bindings.map((b) => b.roleId))];
-  const rolePerms =
-    roleIds.length > 0
-      ? await tx
-          .select({
-            roleId: s.rolePermissions.roleId,
-            key: s.rolePermissions.permissionKey,
-          })
-          .from(s.rolePermissions)
-          .where(inArray(s.rolePermissions.roleId, roleIds))
-      : [];
-  const adminRoleIds = new Set<string>();
-  for (const rp of rolePerms) {
-    if ((ADMIN_PERM_KEYS as readonly string[]).includes(rp.key)) {
-      adminRoleIds.add(rp.roleId);
-    }
-  }
+  if (!member) return null;
+  const { grants, overrides } = await loadScopedPermissions(tx, member.id);
+  return adminScopeOf(grants, overrides);
+}
 
-  let isGlobalAdmin = false;
-  const storeAdminSet = new Set<string>();
-  for (const b of bindings) {
-    if (!adminRoleIds.has(b.roleId)) continue;
-    if (b.scopeType === 'global') isGlobalAdmin = true;
-    else if (b.scopeType === 'store' && b.scopeId) storeAdminSet.add(b.scopeId);
-  }
-
-  // Step 2: per-member overrides. Allow extends; deny shrinks. We
-  // only care about admin-tier perm keys here.
-  const overrides = await tx
-    .select({
-      effect: s.memberPermissionOverrides.effect,
-      scopeType: s.memberPermissionOverrides.scopeType,
-      scopeId: s.memberPermissionOverrides.scopeId,
-      permissionKey: s.memberPermissionOverrides.permissionKey,
-      expiresAt: s.memberPermissionOverrides.expiresAt,
-    })
-    .from(s.memberPermissionOverrides)
-    .where(eq(s.memberPermissionOverrides.memberId, member.id));
-  const now = new Date();
-  for (const o of overrides) {
-    if (o.expiresAt && o.expiresAt <= now) continue;
-    if (!(ADMIN_PERM_KEYS as readonly string[]).includes(o.permissionKey)) continue;
-    if (o.effect === 'allow') {
-      if (o.scopeType === 'global') isGlobalAdmin = true;
-      else if (o.scopeType === 'store' && o.scopeId) storeAdminSet.add(o.scopeId);
-    } else {
-      // deny
-      if (o.scopeType === 'global') isGlobalAdmin = false;
-      else if (o.scopeType === 'store' && o.scopeId) storeAdminSet.delete(o.scopeId);
-    }
-  }
-
-  if (isGlobalAdmin) {
-    // Global admin → every active store in the org.
-    const all = await tx
-      .select({ id: s.stores.id })
-      .from(s.stores)
-      .where(
-        opts.includeInactive
-          ? eq(s.stores.orgId, orgId)
-          : and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)),
-      );
-    return all.map((r) => r.id);
-  }
-  return [...storeAdminSet];
+/** The stores of `orgId` that `scope` manages people in (getActorAdminStoreIds). */
+async function storesAdministeredBy(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  scope: AdminScope | null,
+  // R2-ADM-2: removing someone from a paused or archived store must stay
+  // possible; adding them there must not. Only removals and reads pass
+  // true; ADM1-16 (2026-11-10): for store admins too, whose list used to
+  // keep archived stores for grants and invites.
+  opts: { includeInactive?: boolean } = {},
+): Promise<string[]> {
+  if (!scope || (!scope.isGlobalAdmin && scope.storeIds.size === 0)) return [];
+  const candidates = await tx
+    .select({ id: s.stores.id })
+    .from(s.stores)
+    .where(
+      and(
+        eq(s.stores.orgId, orgId),
+        opts.includeInactive ? undefined : eq(s.stores.isActive, true),
+        scope.isGlobalAdmin ? undefined : inArray(s.stores.id, [...scope.storeIds]),
+      ),
+    );
+  return adminStoresOf(
+    scope,
+    candidates.map((r) => r.id),
+  );
 }
 
 /**
@@ -631,7 +627,11 @@ async function getAdminReadScope(
   session: { userId: string; memberId: string; orgId: string },
 ): Promise<Set<string> | null> {
   if (await hasGlobalOrgAdmin(tx, session.memberId)) return null;
-  return new Set(await getActorAdminStoreIds(tx, session.orgId, session.userId));
+  // Paused and archived stores too: their people can still be removed
+  // (R2-ADM-2).
+  return new Set(
+    await getActorAdminStoreIds(tx, session.orgId, session.userId, { includeInactive: true }),
+  );
 }
 
 /**
@@ -659,6 +659,7 @@ async function visibleMemberIds(
         and(
           eq(s.memberRoleBindings.scopeType, 'store'),
           inArray(s.memberRoleBindings.scopeId, list),
+          bindingIsLive(),
         ),
       ),
   ]);
@@ -698,9 +699,6 @@ export function runTouchesStores(
   );
   return sql`(${runIdExpr} IN (SELECT os.run_id FROM read_model.order_sessions_v os WHERE os.run_id IS NOT NULL AND os.store_id IN (${ids})) OR ${runIdExpr} IN (SELECT ris.run_id FROM read_model.run_item_stores_v ris WHERE ris.store_id IN (${ids})))`;
 }
-
-/** Highest built-in rank; super_admin may rename anyone (2026-10-21). */
-const SUPER_ADMIN_RANK = 100;
 
 /**
  * Gate for suspending / reactivating a member.
@@ -755,9 +753,12 @@ async function assertAdministersEveryTargetStore(
         and(
           eq(s.memberRoleBindings.memberId, target.id),
           eq(s.memberRoleBindings.scopeType, 'store'),
+          bindingIsLive(),
         ),
       ),
-    getActorAdminStoreIds(tx, orgId, session.userId),
+    // ADM1-16: a paused or archived store the actor administers does not
+    // block acting on the member; adding to it is what stays refused.
+    getActorAdminStoreIds(tx, orgId, session.userId, { includeInactive: true }),
   ]);
   const targetStoreIds = new Set<string>();
   for (const row of [...assignments, ...storeBindings]) {
@@ -783,79 +784,22 @@ const RevokeRoleInputSchema = z.object({
   bindingId: UuidSchema,
 });
 
-// History: 2026-05-05 made all four languages (uz, ru, en, zh) mandatory
-// because a single-locale row rendered as the bare SKU code on OrderPage.
-// Display now goes through useProductName/pickName, which falls back
-// across locales, so that failure mode is gone.
-//
-// `aliases` is left lax (record<string,string[]>) — those are search
-// keywords, not display strings, and a missing locale just means
-// fewer hits, not a broken render.
-// 2026-10-21 CA-40: relaxed from "all four locales required" to "at least
-// one" (the dishes rule). Blank locales are dropped before storage so
-// display fallbacks (`pickName`'s `??` chain) skip them instead of
-// rendering an empty string.
-const NamesSchema = z
-  .object({
-    uz: z.string().max(200).optional(),
-    ru: z.string().max(200).optional(),
-    en: z.string().max(200).optional(),
-    zh: z.string().max(200).optional(),
-  })
-  .strict()
-  .transform((v) => {
-    const out: Partial<Record<'uz' | 'ru' | 'en' | 'zh', string>> = {};
-    for (const k of ['uz', 'ru', 'en', 'zh'] as const) {
-      const t = v[k]?.trim();
-      if (t) out[k] = t;
-    }
-    return out;
-  })
-  .refine((v) => Object.keys(v).length > 0, { message: 'admin.errors.namesRequired' })
-  // F10: names are printed by the operator's scripts; no control characters.
-  .refine((v) => Object.values(v).every(noControlChars), { message: CONTROL_CHARS_MESSAGE });
-
-// M3.14 (2026-05-16) restricted step to {'0.5','1'}; 2026-07-30 widened
-// it to the canonical {'0.5','1','10','50','100'} grid and locked unit
-// to a fixed vocabulary. Both enums live in @compass/contracts
-// (SkuStepSchema / SkuUnitSchema) so the admin sheet's Selects and this
-// gate can't drift apart. Migration 0036 backfills existing rows.
-const StepSchema = SkuStepSchema;
-
-/**
- * CAT-10 (2026-10-31): a sort position. A fractional or huge value came
- * back as zod's English "Expected integer" — "出错了" in the form — or
- * overflowed the int column as a 500.
- */
-const SortIndexSchema = z
-  .number({ invalid_type_error: 'admin.errors.sortIndexInteger' })
-  .int('admin.errors.sortIndexInteger')
-  .min(-1_000_000, 'admin.errors.sortIndexInteger')
-  .max(1_000_000, 'admin.errors.sortIndexInteger');
-
 /** A store's own time zone, or empty/null to follow the organisation's (CLS-7). */
 const StoreTimeZoneSchema = z
   .preprocess((value) => (value === '' ? null : value), TimeZoneSchema.nullable())
   .optional();
 
-// ADM-11 (2026-10-30): names are trimmed before the length check, so
-// "   " is refused instead of stored; an empty code means no code.
-// F10 (2026-10-31): and refuse control characters (an escape sequence in
-// a store name reached the operator's terminal through the ops scripts).
-const TrimmedName = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .refine(noControlChars, CONTROL_CHARS_MESSAGE);
-const CodeText = (max: number) =>
-  z.string().trim().max(max).refine(noControlChars, CONTROL_CHARS_MESSAGE);
+// ADM-11 (2026-10-30): an empty code means no code. Names and codes are
+// trimmed and refuse control characters (TrimmedNameSchema, F10).
 const StoreCodeSchema = z
-  .preprocess((value) => (typeof value === 'string' && value.trim() === '' ? null : value), CodeText(32).nullable())
+  .preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+    codeTextSchema(32).nullable(),
+  )
   .optional();
 
 const StoreCreateInputSchema = z.object({
-  name: TrimmedName,
+  name: TrimmedNameSchema,
   code: StoreCodeSchema,
   address: z.string().max(500).optional().nullable(),
   timezone: StoreTimeZoneSchema,
@@ -863,7 +807,7 @@ const StoreCreateInputSchema = z.object({
 
 const StoreUpdateInputSchema = z.object({
   storeId: UuidSchema,
-  name: TrimmedName.optional(),
+  name: TrimmedNameSchema.optional(),
   code: StoreCodeSchema,
   address: z.string().max(500).optional().nullable(),
   timezone: StoreTimeZoneSchema,
@@ -888,114 +832,6 @@ const StoreDeleteInputSchema = z.object({
   storeId: UuidSchema,
 });
 
-const SkuCreateInputSchema = z.object({
-  categoryId: UuidSchema.optional().nullable(),
-  code: z.string().max(64).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional().nullable(),
-  names: NamesSchema,
-  unit: SkuUnitSchema,
-  step: StepSchema.default('1'),
-  sortIndex: SortIndexSchema.default(0),
-});
-
-const SkuUpdateInputSchema = z.object({
-  skuId: UuidSchema,
-  categoryId: UuidSchema.optional().nullable(),
-  code: z.string().max(64).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional().nullable(),
-  names: NamesSchema.optional(),
-  unit: SkuUnitSchema.optional(),
-  step: StepSchema.optional(),
-  sortIndex: SortIndexSchema.optional(),
-  isArchived: z.boolean().optional(),
-});
-
-const SkuDeleteInputSchema = z.object({
-  skuId: UuidSchema,
-});
-
-const SupplierCreateInputSchema = z.object({
-  name: TrimmedName,
-  contactPhone: z.string().max(32).optional().nullable(),
-  contactTg: z.string().max(64).optional().nullable(),
-  address: z.string().max(500).optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-});
-
-const SupplierUpdateInputSchema = z.object({
-  supplierId: UuidSchema,
-  name: TrimmedName.optional(),
-  contactPhone: z.string().max(32).optional().nullable(),
-  contactTg: z.string().max(64).optional().nullable(),
-  address: z.string().max(500).optional().nullable(),
-  notes: z.string().max(1000).optional().nullable(),
-  isArchived: z.boolean().optional(),
-});
-
-const SupplierDeleteInputSchema = z.object({
-  supplierId: UuidSchema,
-});
-
-// M3.57 (2026-05-23): expense-template CRUD schemas. Same shape as
-// the inventory.expense_templates row except `id` is server-generated
-// on create. `defaultUnitPrice` must be > 0 because the auto-attach
-// loop calls AddRunExpense which uses the existing
-// PositiveDecimalString check — a zero default would fail validation
-// at run-create time and break the whole transaction.
-// CAT-11 (2026-10-30): bounded to the columns (a 15-digit price was a
-// 500, a third decimal was rounded away silently) and a quantity must be
-// positive (a 0 default reached the purchaser as a 0-quantity line).
-const DecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,9}(\.\d{1,3})?$/);
-const PositiveDecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,12}(\.\d{1,2})?$/);
-const ExpenseTemplateCreateInputSchema = z.object({
-  label: TrimmedName,
-  unitHint: CodeText(32).optional().nullable(),
-  defaultQty: DecimalStr.default('1'),
-  defaultUnitPrice: PositiveDecimalStr,
-  defaultPaymentMethod: z.enum(['cash', 'transfer']).default('cash'),
-  sortIndex: SortIndexSchema.default(0),
-});
-
-const ExpenseTemplateUpdateInputSchema = z.object({
-  templateId: UuidSchema,
-  label: TrimmedName.optional(),
-  unitHint: CodeText(32).optional().nullable(),
-  defaultQty: DecimalStr.optional(),
-  defaultUnitPrice: PositiveDecimalStr.optional(),
-  defaultPaymentMethod: z.enum(['cash', 'transfer']).optional(),
-  sortIndex: SortIndexSchema.optional(),
-  isArchived: z.boolean().optional(),
-});
-
-const ExpenseTemplateDeleteInputSchema = z.object({
-  templateId: UuidSchema,
-});
-
-const CategoryCreateInputSchema = z.object({
-  slug: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9-]+$/),
-  names: NamesSchema,
-  sortIndex: SortIndexSchema.default(0),
-});
-
-const CategoryUpdateInputSchema = z.object({
-  categoryId: UuidSchema,
-  slug: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9-]+$/)
-    .optional(),
-  names: NamesSchema.optional(),
-  sortIndex: SortIndexSchema.optional(),
-  isArchived: z.boolean().optional(),
-});
-
-const CategoryDeleteInputSchema = z.object({
-  categoryId: UuidSchema,
-});
-
 const MemberSetStatusInputSchema = z.object({
   memberId: UuidSchema,
   status: z.enum(['active', 'suspended']),
@@ -1010,7 +846,7 @@ const InviteMemberByTgIdInputSchema = z.object({
     .string()
     .regex(/^\d{4,15}$/, 'Telegram ID must be a numeric string')
     .transform((s) => BigInt(s)),
-  displayName: TrimmedName.optional(),
+  displayName: TrimmedNameSchema.optional(),
   roleSlug: z.string().min(1).max(64).optional(),
   /** Stores to assign at invite time. The new model REQUIRES at least
    *  one store unless the role is admin/super_admin (which bypass via
@@ -1026,7 +862,7 @@ const CreateMemberInviteInputSchema = z.object({
 
 const MemberSetDisplayNameInputSchema = z.object({
   memberId: UuidSchema,
-  displayName: TrimmedName,
+  displayName: TrimmedNameSchema,
 });
 
 const MemberAssignStoreInputSchema = z.object({
@@ -1159,6 +995,8 @@ export interface AuditRowRefs {
 export interface AuditRowLabels {
   memberName: string | null;
   roleName: string | null;
+  /** Lets the client show a built-in role's name in the UI language. */
+  roleSlug: string | null;
   storeName: string | null;
   toStoreName: string | null;
   /** Supplier / expense-template label (single string). */
@@ -1172,6 +1010,7 @@ export interface AuditLookups {
   userNameById: Map<string, string>;
   roleNameBySlug: Map<string, string>;
   roleNameById: Map<string, string>;
+  roleSlugById: Map<string, string>;
   storeNameById: Map<string, string>;
   catalogNameById: Map<string, string>;
   catalogNamesById: Map<string, Record<string, string>>;
@@ -1211,7 +1050,9 @@ export function auditRowRefs(row: {
     memberId,
     userId: str(o, 'userId'),
     roleSlug: str(o, 'roleSlug'),
-    roleId: rt === 'role' && rid ? rid : null,
+    // A grant from the command line (`compass user grant`) names its
+    // role by id only.
+    roleId: rt === 'role' && rid ? rid : str(o, 'roleId'),
     storeId,
     toStoreId: str(o, 'toStoreId') ?? (rt === 'store' ? null : str(o, 'targetStoreId')),
     catalog:
@@ -1247,6 +1088,7 @@ export function buildAuditLabels(
       get(l.roleNameBySlug, refs.roleSlug) ??
       get(l.roleNameById, refs.roleId) ??
       text(atWrite.roleName),
+    roleSlug: refs.roleSlug ?? get(l.roleSlugById, refs.roleId) ?? text(atWrite.roleSlug),
     storeName: get(l.storeNameById, refs.storeId) ?? text(atWrite.storeName),
     toStoreName: get(l.storeNameById, refs.toStoreId) ?? text(atWrite.toStoreName),
     targetName:
@@ -1305,7 +1147,7 @@ async function loadAuditLookups(
         : [],
       roleIds.length
         ? tx
-            .select({ id: s.roles.id, name: s.roles.name })
+            .select({ id: s.roles.id, name: s.roles.name, slug: s.roles.slug })
             .from(s.roles)
             .where(and(eq(s.roles.orgId, orgId), inArray(s.roles.id, roleIds)))
         : [],
@@ -1353,6 +1195,7 @@ async function loadAuditLookups(
       (rolesBySlug as { slug: string; name: string }[]).map((r) => [r.slug, r.name]),
     ),
     roleNameById: byId(rolesById),
+    roleSlugById: new Map((rolesById as { id: string; slug: string }[]).map((r) => [r.id, r.slug])),
     storeNameById: byId(stores),
     catalogNameById: byId([...suppliers, ...templates]),
     catalogNamesById: new Map(
@@ -1468,24 +1311,17 @@ export const adminRouter = router({
           .string()
           .length(3)
           .regex(/^[A-Z]{3}$/, 'currency must be ISO-4217 (3 uppercase letters)'),
-        taxRatePct: z
-          .string()
-          .regex(/^\d{1,3}(\.\d{1,2})?$/, 'admin.errors.taxRateFormat'),
+        taxRatePct: z.string().regex(TAX_RATE_RE, TAX_RATE_MESSAGE.format),
         pricesIncludeTax: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       requireOrgAdmin(ctx.session!.permissions);
-      // Reject runaway tax rates — 50% is the legal ceiling pretty
-      // much everywhere; anything higher is almost certainly a typo.
-      // (Hungary has the world's highest standard VAT at 27%, so 50
-      // leaves headroom for special items.)
-      const taxNum = Number(input.taxRatePct);
-      if (!Number.isFinite(taxNum) || taxNum < 0 || taxNum > 50) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.taxRateOutOfRange',
-        });
+      // Runaway rates are refused (TAX_RATE_MAX_PCT); the finance sheet
+      // asks the same function before Save.
+      const taxProblem = taxRateProblem(input.taxRatePct);
+      if (taxProblem) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: TAX_RATE_MESSAGE[taxProblem] });
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
@@ -1557,7 +1393,9 @@ export const adminRouter = router({
           })
           .from(s.memberRoleBindings)
           .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-          .where(inArray(s.memberRoleBindings.memberId, memberIds)),
+          // ADM1-04: a lapsed binding grants nothing; the card showed it
+          // as held (and the web ranked the member by it).
+          .where(and(inArray(s.memberRoleBindings.memberId, memberIds), bindingIsLive())),
         tx
           .select({
             memberId: s.memberStoreAssignments.memberId,
@@ -1565,14 +1403,18 @@ export const adminRouter = router({
           })
           .from(s.memberStoreAssignments)
           .where(inArray(s.memberStoreAssignments.memberId, memberIds)),
+        // Paused and archived stores too (ADM1-16): their roles can still
+        // be revoked, and a card named them as organisation-wide.
         tx
           .select({
             id: s.stores.id,
             name: s.stores.name,
             code: s.stores.code,
+            isActive: s.stores.isActive,
+            archived: sql<boolean>`${s.stores.deletedAt} IS NOT NULL`,
           })
           .from(s.stores)
-          .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true))),
+          .where(eq(s.stores.orgId, orgId)),
       ]);
 
       const rolesByMember = new Map<
@@ -1601,6 +1443,12 @@ export const adminRouter = router({
       }
 
       const storeById = new Map(allStores.map((st) => [st.id, st]));
+      // ADM1-06: whose name only they may change (D22), so the web does
+      // not offer to rename them.
+      const nameShared = await usersInOtherOrgs(
+        ctx,
+        rows.map((r) => r.userId),
+      );
       const storesByMember = new Map<string, Set<string>>();
       for (const a of msa) {
         const set = storesByMember.get(a.memberId) ?? new Set();
@@ -1629,6 +1477,9 @@ export const adminRouter = router({
         // reach so the card doesn't offer an action the server refuses.
         const statusOutOfReach =
           scope !== null && (allStoreIds.length === 0 || storeIds.length < allStoreIds.length);
+        const memberStores = storeIds
+          .map((id) => storeById.get(id))
+          .filter((st): st is NonNullable<typeof st> => !!st);
         return {
           memberId: r.memberId,
           userId: r.userId,
@@ -1642,10 +1493,14 @@ export const adminRouter = router({
           roles: (rolesByMember.get(r.memberId) ?? []).filter(
             (role) => role.scopeType !== 'store' || inScope(r.memberId, role.scopeId),
           ),
-          stores: storeIds
-            .map((id) => storeById.get(id))
-            .filter((st): st is NonNullable<typeof st> => !!st),
+          stores: memberStores
+            .filter((st) => st.isActive)
+            .map((st) => ({ id: st.id, name: st.name, code: st.code })),
+          inactiveStores: memberStores
+            .filter((st) => !st.isActive)
+            .map((st) => ({ id: st.id, name: st.name, archived: st.archived })),
           statusOutOfReach,
+          nameShared: nameShared.has(r.userId),
         };
       });
     });
@@ -1736,24 +1591,22 @@ export const adminRouter = router({
           });
         }
 
-        const actorAdminStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        const allowedStores = new Set(actorAdminStores);
+        const adminScope = await getActorAdminScope(tx, orgId, ctx.session!.userId);
+        const allowedStores = new Set(await storesAdministeredBy(tx, orgId, adminScope));
         for (const storeId of storeIds) {
           if (!allowedStores.has(storeId)) {
             throw await notAdminOfStore(tx, orgId, [storeId]);
           }
         }
-        if (isAdminInvite) {
-          const allOrgStores = await tx
-            .select({ id: s.stores.id })
-            .from(s.stores)
-            .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)));
-          if (!allOrgStores.every((st) => allowedStores.has(st.id))) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
-            });
-          }
+        // ADM1-03: an org-tier invite needs admin authority held
+        // organisation-wide. "Administers every active store" stood in
+        // for it, which a store manager of a one-store org passes and a
+        // global admin with one denied store fails.
+        if (isAdminInvite && !adminScope?.isGlobalAdmin) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
+          });
         }
 
         const validStores =
@@ -2055,32 +1908,23 @@ export const adminRouter = router({
         // would normally block that via the rank check, but the
         // invite path inlines its own grant so we mirror the rule
         // here.
-        const actorAdminStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+        const adminScope = await getActorAdminScope(tx, orgId, ctx.session!.userId);
         if (input.storeIds.length > 0) {
-          const allowed = new Set(actorAdminStores);
+          const allowed = new Set(await storesAdministeredBy(tx, orgId, adminScope));
           for (const sid of input.storeIds) {
             if (!allowed.has(sid)) {
               throw await notAdminOfStore(tx, orgId, [sid]);
             }
           }
         }
-        if (isAdminInvite) {
-          // Granting an org-tier role requires the actor to be a global
-          // admin. Detect this by checking if the actor's adminStoreIds
-          // covers ALL active stores in the org — that's the signal we
-          // use elsewhere.
-          const allOrgStores = await tx
-            .select({ id: s.stores.id })
-            .from(s.stores)
-            .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)));
-          const allowedSet = new Set(actorAdminStores);
-          const isGlobalAdmin = allOrgStores.every((st) => allowedSet.has(st.id));
-          if (!isGlobalAdmin) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
-            });
-          }
+        // Granting an org-tier role requires admin authority held
+        // organisation-wide (ADM1-03; it used to be inferred from
+        // "administers every active store").
+        if (isAdminInvite && !adminScope?.isGlobalAdmin) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
+          });
         }
         // Find or auto-provision the user.
         let user = await tx.query.users.findFirst({
@@ -2171,55 +2015,27 @@ export const adminRouter = router({
               await assertCanInviteIntoStore(tx, ctx, role, storeId);
             }
           }
+          // grantBinding is idempotent and renews a lapsed binding
+          // (ADM1-04: one of those used to count as already held).
           if (role.rank >= ADMIN_RANK) {
-            // Org-tier role → single global binding. Existing-row check
-            // makes the operation idempotent.
-            const existing = await tx.query.memberRoleBindings.findFirst({
-              where: (b, { eq: eq2, and: and2 }) =>
-                and2(
-                  eq2(b.memberId, member!.id),
-                  eq2(b.roleId, role.id),
-                  eq2(b.scopeType, 'global'),
-                ),
+            // Org-tier role → single global binding.
+            await grantBinding(tx, {
+              memberId: member.id,
+              roleId: role.id,
+              scope: { type: 'global' },
+              grantedBy: ctx.session!.userId,
             });
-            if (!existing) {
-              await tx
-                .insert(s.memberRoleBindings)
-                .values({
-                  memberId: member.id,
-                  roleId: role.id,
-                  scopeType: 'global',
-                  grantedBy: ctx.session!.userId,
-                })
-                .onConflictDoNothing();
-            }
           } else {
             // Sub-admin role → one binding per assigned store. The
-            // `inviteNeedsStore` guard at line ~585 already ensured
-            // storeIds is non-empty for non-admin invites, so we can
-            // safely fan out here.
+            // `inviteNeedsStore` guard above already ensured storeIds is
+            // non-empty for non-admin invites, so we can fan out here.
             for (const storeId of input.storeIds) {
-              const existing = await tx.query.memberRoleBindings.findFirst({
-                where: (b, { eq: eq2, and: and2 }) =>
-                  and2(
-                    eq2(b.memberId, member!.id),
-                    eq2(b.roleId, role.id),
-                    eq2(b.scopeType, 'store'),
-                    eq2(b.scopeId, storeId),
-                  ),
+              await grantBinding(tx, {
+                memberId: member.id,
+                roleId: role.id,
+                scope: { type: 'store', storeId },
+                grantedBy: ctx.session!.userId,
               });
-              if (!existing) {
-                await tx
-                  .insert(s.memberRoleBindings)
-                  .values({
-                    memberId: member.id,
-                    roleId: role.id,
-                    scopeType: 'store',
-                    scopeId: storeId,
-                    grantedBy: ctx.session!.userId,
-                  })
-                  .onConflictDoNothing();
-              }
             }
           }
         }
@@ -2265,27 +2081,12 @@ export const adminRouter = router({
               if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
               const scope = { type: 'store', storeId: store.id } as const;
               if (await grantRefusal(ctx.db, tx, granterOf(ctx), role, scope)) continue;
-              const existing = await tx.query.memberRoleBindings.findFirst({
-                where: (b, { eq: eq2, and: and2 }) =>
-                  and2(
-                    eq2(b.memberId, member!.id),
-                    eq2(b.roleId, role.id),
-                    eq2(b.scopeType, 'store'),
-                    eq2(b.scopeId, store.id),
-                  ),
+              await grantBinding(tx, {
+                memberId: member.id,
+                roleId: role.id,
+                scope,
+                grantedBy: ctx.session!.userId,
               });
-              if (!existing) {
-                await tx
-                  .insert(s.memberRoleBindings)
-                  .values({
-                    memberId: member.id,
-                    roleId: role.id,
-                    scopeType: 'store',
-                    scopeId: store.id,
-                    grantedBy: ctx.session!.userId,
-                  })
-                  .onConflictDoNothing();
-              }
             }
           }
         }
@@ -2334,9 +2135,13 @@ export const adminRouter = router({
         // alone let a store manager rename an admin or another store's
         // staff. Org admins may rename anyone; everyone else needs the
         // same reach memberSetStatus demands.
-        if (!(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) {
+        // ADM1-06 (2026-11-10): except over themself. A store manager
+        // renaming themself failed the rank check against their own rank,
+        // and this is the only way to change a name after onboarding.
+        const self = member.id === ctx.session!.memberId;
+        if (!self && !(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) {
           await assertAdministersEveryTargetStore(tx, ctx.session!, member);
-        } else if (member.id !== ctx.session!.memberId) {
+        } else if (!self) {
           // 2026-10-21 rename rank: an org admin used to rename anyone,
           // including a fellow admin or the super_admin. Like status
           // changes, renaming someone else now needs a strictly higher
@@ -2477,8 +2282,11 @@ export const adminRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
         // C2 (2026-05-06): can only unassign from a store the actor
-        // administers. Symmetric to memberAssignStore.
-        const allowedStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+        // administers. Symmetric to memberAssignStore, but a paused or
+        // archived store counts: a removal (R2-ADM-2, ADM1-16).
+        const allowedStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId, {
+          includeInactive: true,
+        });
         if (!allowedStores.includes(input.storeId)) {
           throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
@@ -2625,6 +2433,7 @@ export const adminRouter = router({
                 and(
                   eq(s.memberRoleBindings.memberId, input.memberId),
                   eq(s.memberRoleBindings.scopeType, 'store'),
+                  bindingIsLive(),
                 ),
               );
             const otherIds = otherBindings
@@ -2743,9 +2552,16 @@ export const adminRouter = router({
         // could "transfer" a B-staff into A by passing fromStoreId=B —
         // they'd successfully ATTACH the member to A but the from-side
         // would silently fail (no admin authority in B). Refuse up front.
-        const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        if (!allowed.includes(input.fromStoreId) || !allowed.includes(input.toStoreId)) {
-          throw await notAdminOfStore(tx, orgId, [input.fromStoreId, input.toStoreId]);
+        // ADM1-16: leaving a paused or archived store is a removal;
+        // joining one is not allowed. Each side answers for itself.
+        const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId, {
+          includeInactive: true,
+        });
+        if (!allowed.includes(input.fromStoreId)) {
+          throw await notAdminOfStore(tx, orgId, [input.fromStoreId]);
+        }
+        if (!toStore.isActive || !allowed.includes(input.toStoreId)) {
+          throw await notAdminOfStore(tx, orgId, [input.toStoreId]);
         }
         // C1: rank gate in BOTH stores. The "from" rank must outrank
         // the target IN from-store (mirror of detach). The "to" rank
@@ -2783,12 +2599,15 @@ export const adminRouter = router({
           )
           .limit(1);
         // Pull the bindings to mirror. Even if mirrorRoles=false we
-        // still need the count for the audit log.
+        // still need the count for the audit log. ADM1-04: live ones
+        // only, each with its expiry; a role granted until some date
+        // used to arrive in the destination for good.
         const fromBindings = await tx
           .select({
             id: s.memberRoleBindings.id,
             roleId: s.memberRoleBindings.roleId,
             roleRank: s.roles.rank,
+            expiresAt: s.memberRoleBindings.expiresAt,
           })
           .from(s.memberRoleBindings)
           .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
@@ -2797,6 +2616,7 @@ export const adminRouter = router({
               eq(s.memberRoleBindings.memberId, input.memberId),
               eq(s.memberRoleBindings.scopeType, 'store'),
               eq(s.memberRoleBindings.scopeId, input.fromStoreId),
+              bindingIsLive(),
             ),
           );
         if (!inSource && fromBindings.length === 0) {
@@ -2839,29 +2659,15 @@ export const adminRouter = router({
         if (input.mirrorRoles) {
           for (const b of fromBindings) {
             // Idempotent: a binding for the destination might already
-            // exist (e.g. a previous transfer attempt). Skip duplicates.
-            const existing = await tx.query.memberRoleBindings.findFirst({
-              where: (r, { eq: eq2, and: and2 }) =>
-                and2(
-                  eq2(r.memberId, member.id),
-                  eq2(r.roleId, b.roleId),
-                  eq2(r.scopeType, 'store'),
-                  eq2(r.scopeId, input.toStoreId),
-                ),
+            // exist (e.g. a previous transfer attempt); a live one stays.
+            const { outcome } = await grantBinding(tx, {
+              memberId: member.id,
+              roleId: b.roleId,
+              scope: { type: 'store', storeId: input.toStoreId },
+              grantedBy: ctx.session!.userId,
+              expiresAt: b.expiresAt,
             });
-            if (!existing) {
-              await tx
-                .insert(s.memberRoleBindings)
-                .values({
-                  memberId: member.id,
-                  roleId: b.roleId,
-                  scopeType: 'store',
-                  scopeId: input.toStoreId,
-                  grantedBy: ctx.session!.userId,
-                })
-                .onConflictDoNothing();
-              mirrored++;
-            }
+            if (outcome !== 'held') mirrored++;
           }
         }
 
@@ -3069,6 +2875,7 @@ export const adminRouter = router({
             avatarUrl: s.users.avatarUrl,
             tgUsername: s.users.tgUsername,
             storeName: s.stores.name,
+            status: s.members.status,
           })
           .from(s.memberRoleBindings)
           .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
@@ -3077,11 +2884,14 @@ export const adminRouter = router({
           // want one row per binding (the FE buckets them into
           // "Org-level" when storeName is null).
           .leftJoin(s.stores, eq(s.stores.id, s.memberRoleBindings.scopeId))
+          // ADM1-20 (2026-11-10): suspended holders too, marked. They
+          // keep the role and block deleting it, and the list showed
+          // nobody. ADM1-04: lapsed grants hold nothing and are left out.
           .where(
             and(
               eq(s.memberRoleBindings.roleId, role.id),
               eq(s.members.orgId, orgId),
-              eq(s.members.status, 'active'),
+              bindingIsLive(),
             ),
           );
         // 2026-10-21 CA-17: outside org admins, holders are limited to the
@@ -3097,6 +2907,16 @@ export const adminRouter = router({
                   : visible.has(b.memberId),
               )
             : bindings;
+        // ADM1-07 / ADM1-20: every live binding, suspended holders too:
+        // the count roleDelete and a rank move across ADMIN_RANK refuse
+        // on. Only for org admins, who alone may do either.
+        const [counted] =
+          scope === null
+            ? await tx
+                .select({ n: sql<number>`count(*)::int` })
+                .from(s.memberRoleBindings)
+                .where(and(eq(s.memberRoleBindings.roleId, role.id), bindingIsLive()))
+            : [];
         return {
           id: role.id,
           slug: role.slug,
@@ -3105,6 +2925,7 @@ export const adminRouter = router({
           isBuiltIn: role.isBuiltIn,
           rank: role.rank,
           permissions: perms.map((p) => p.key),
+          bindingCount: counted?.n ?? null,
           assignees: shown.map((b) => ({
             bindingId: b.bindingId,
             memberId: b.memberId,
@@ -3114,6 +2935,7 @@ export const adminRouter = router({
             scopeType: b.scopeType as 'global' | 'store',
             scopeId: b.scopeId,
             storeName: b.storeName,
+            status: b.status,
           })),
         };
       });
@@ -3293,10 +3115,11 @@ export const adminRouter = router({
         // for roleDelete: a suspended member's comes back with them.
         const orgTier = (rank: number) => rank >= ADMIN_RANK;
         if (input.rank !== undefined && orgTier(input.rank) !== orgTier(role.rank)) {
+          // ADM1-04: a lapsed binding holds nothing.
           const [held] = await tx
             .select({ id: s.memberRoleBindings.id })
             .from(s.memberRoleBindings)
-            .where(eq(s.memberRoleBindings.roleId, role.id))
+            .where(and(eq(s.memberRoleBindings.roleId, role.id), bindingIsLive()))
             .limit(1);
           if (held) {
             throw new TRPCError({
@@ -3380,9 +3203,12 @@ export const adminRouter = router({
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
-        const bindings = await tx.query.memberRoleBindings.findMany({
-          where: (b, { eq: eq2 }) => eq2(b.roleId, role.id),
-        });
+        // ADM1-04: lapsed bindings do not keep a role; they go with it
+        // (the foreign key cascades).
+        const bindings = await tx
+          .select({ id: s.memberRoleBindings.id })
+          .from(s.memberRoleBindings)
+          .where(and(eq(s.memberRoleBindings.roleId, role.id), bindingIsLive()));
         if (bindings.length > 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -3408,11 +3234,15 @@ export const adminRouter = router({
   /**
    * Read the role-derived baseline + the override layer for one member.
    * Returns:
-   *   roleKeys     — union of the member's role permissions
+   *   byScope      — per scope (ADM1-05): `global`, and each store a
+   *                  binding or override names (`stores[id]`; any other
+   *                  store is as `global`), its role keys and its
+   *                  effective keys after overrides
    *   overrides    — explicit per-member rows (allow + deny + scope)
-   *   effective    — final set after layering overrides on roleKeys
+   *   roleKeys     — union of the member's role permissions
+   *   effective    — keys effective in some scope (the session's set)
    *
-   * UI shows roleKeys as a grayed-out "from role" badge and
+   * UI shows the tab's role keys as a grayed-out "from role" badge and
    * overrides as the toggleable surface.
    */
   memberPermissionsList: authedProcedure
@@ -3440,30 +3270,12 @@ export const adminRouter = router({
         }
         const scopeVisible = (scopeType: string, scopeId: string | null) =>
           !scope || isSelf || scopeType !== 'store' || (!!scopeId && scope.has(scopeId));
-        // Role-derived perms (across all visible bindings).
-        const bindings = (
-          await tx
-            .select({
-              roleId: s.memberRoleBindings.roleId,
-              scopeType: s.memberRoleBindings.scopeType,
-              scopeId: s.memberRoleBindings.scopeId,
-            })
-            .from(s.memberRoleBindings)
-            .where(eq(s.memberRoleBindings.memberId, member.id))
-        ).filter((b) => scopeVisible(b.scopeType, b.scopeId));
-        const rolePerms =
-          bindings.length > 0
-            ? await tx
-                .select({ key: s.rolePermissions.permissionKey })
-                .from(s.rolePermissions)
-                .where(
-                  inArray(
-                    s.rolePermissions.roleId,
-                    bindings.map((b) => b.roleId),
-                  ),
-                )
-            : [];
-        const roleKeys = [...new Set(rolePerms.map((r) => r.key))];
+        // Role-derived keys, each with the scope of its binding (live and
+        // visible ones; ADM1-04: a lapsed role shows nothing "from role").
+        const grants = (await loadScopedPermissions(tx, member.id)).grants.filter((g) =>
+          scopeVisible(g.scopeType, g.scopeId),
+        );
+        const roleKeys = [...new Set(grants.map((g) => g.key))];
         // Active overrides only (non-expired).
         const rawOverrides = await tx
           .select()
@@ -3481,18 +3293,20 @@ export const adminRouter = router({
             scopeId: o.scopeId,
             expiresAt: o.expiresAt?.toISOString() ?? null,
           }));
-        const effective = new Set(roleKeys);
-        for (const o of overrides) {
-          if (o.effect === 'allow') effective.add(o.permissionKey);
-        }
-        for (const o of overrides) {
-          if (o.effect === 'deny') effective.delete(o.permissionKey);
-        }
+        // ADM1-05: resolved per scope, as every permission check does; a
+        // store-scoped deny used to remove its key everywhere.
+        const scoped = overrides.map((o) => ({
+          key: o.permissionKey,
+          effect: o.effect,
+          scopeType: o.scopeType,
+          scopeId: o.scopeId,
+        }));
         return {
           memberId: member.id,
           roleKeys,
           overrides,
-          effective: [...effective].sort(),
+          effective: [...flatEffectivePermissions(grants, scoped)].sort(),
+          byScope: permissionsByScope(grants, scoped),
         };
       });
     }),
@@ -3926,36 +3740,15 @@ export const adminRouter = router({
         input.scopeType === 'store' ? (input.scopeId ?? null) : null,
       );
 
-      // Idempotency check (fixed 2026-05-05 — audit found the prior
-      // version omitted scopeId, so granting "manager of store A" then
-      // "manager of store B" to the same member would short-circuit
-      // and leave only the A binding in place).
-      //
-      // For 'global' scope the (member, role, 'global') tuple is enough
-      // — there's no scopeId to match. For 'store' scope we MUST
-      // additionally match scopeId so distinct stores get distinct
-      // bindings. Without that, the second call wrongly returns the
-      // first store's binding as "already exists".
+      // Idempotency (fixed 2026-05-05): the binding is keyed by member,
+      // role and scope, the store included, so "manager of store B" after
+      // "manager of store A" is a second binding, not "already exists".
       // ADM-7 (2026-10-30): two grants at once (a double tap) both found
       // no binding and both inserted. Serialise per member + role so the
       // second sees the first.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${`grant:${member.id}:${role.id}`}))`,
       );
-      const existing = await tx.query.memberRoleBindings.findFirst({
-        where: (b, { eq: eq2, and: and2 }) => {
-          const base = [
-            eq2(b.memberId, member.id),
-            eq2(b.roleId, role.id),
-            eq2(b.scopeType, input.scopeType),
-          ];
-          if (input.scopeType === 'store' && input.scopeId) {
-            base.push(eq2(b.scopeId, input.scopeId));
-          }
-          return and2(...base);
-        },
-      });
-      if (existing) return { granted: false, bindingId: existing.id };
       // 2026-10-21 audit A-23: the contract checks the format; re-check
       // here so a direct caller can't store Invalid Date (→ 500) or an
       // already-expired grant.
@@ -3963,43 +3756,31 @@ export const adminRouter = router({
       if (expiresAt && !(expiresAt.getTime() > Date.now())) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.invalidExpiresAt' });
       }
-      const [created] = await tx
-        .insert(s.memberRoleBindings)
-        .values({
-          memberId: member.id,
-          roleId: role.id,
-          scopeType: input.scopeType,
-          scopeId: input.scopeId ?? null,
-          grantedBy: ctx.session!.userId,
-          expiresAt,
-        })
-        // RE-ADM-1: the unique index settles a race with the invite paths,
-        // which do not take this lock.
-        .onConflictDoNothing()
-        .returning();
-      if (!created) {
-        const raced = await tx.query.memberRoleBindings.findFirst({
-          where: (b, { eq: eq2, and: and2 }) =>
-            and2(
-              eq2(b.memberId, member.id),
-              eq2(b.roleId, role.id),
-              eq2(b.scopeType, input.scopeType),
-              input.scopeType === 'store' && input.scopeId
-                ? eq2(b.scopeId, input.scopeId)
-                : isNull(b.scopeId),
-            ),
-        });
-        return { granted: false, bindingId: raced?.id ?? '' };
-      }
+      // ADM1-04: a lapsed binding of the same role and scope is renewed;
+      // it used to answer "already has this role". RE-ADM-1: the unique
+      // index settles a race with the invite paths, which do not take
+      // this lock.
+      const { outcome, bindingId } = await grantBinding(tx, {
+        memberId: member.id,
+        roleId: role.id,
+        scope:
+          input.scopeType === 'store' && input.scopeId
+            ? { type: 'store', storeId: input.scopeId }
+            : { type: 'global' },
+        grantedBy: ctx.session!.userId,
+        expiresAt,
+      });
+      if (outcome === 'held') return { granted: false, bindingId };
       await auditAdmin(tx, ctx, 'admin.role.grant', 'member', member.id, {
         ...input,
-        bindingId: created!.id,
+        bindingId,
         roleRank: role.rank,
+        ...(outcome === 'renewed' ? { renewed: true } : {}),
       });
       // Broadcast so other admins viewing the People section see the
       // new binding without manual refresh.
       hub.publish(orgId, { type: 'people.changed', orgId });
-      return { granted: true, bindingId: created!.id };
+      return { granted: true, bindingId };
     });
   }),
 
@@ -4461,12 +4242,14 @@ export const adminRouter = router({
         let assigned = 0;
         if (input.includeMembers) {
           // Pull source bindings (only store-scoped + active members).
+          // ADM1-04: live ones, each copied with its expiry.
           const sourceBindings = await tx
             .select({
               memberId: s.memberRoleBindings.memberId,
               roleId: s.memberRoleBindings.roleId,
               roleSlug: s.roles.slug,
               roleRank: s.roles.rank,
+              expiresAt: s.memberRoleBindings.expiresAt,
             })
             .from(s.memberRoleBindings)
             .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
@@ -4476,6 +4259,7 @@ export const adminRouter = router({
                 eq(s.memberRoleBindings.scopeType, 'store'),
                 eq(s.memberRoleBindings.scopeId, input.sourceStoreId),
                 eq(s.members.status, 'active'),
+                bindingIsLive(),
               ),
             );
           // D8: a role whose keys the actor lacks in the target is skipped
@@ -4496,18 +4280,14 @@ export const adminRouter = router({
               skippedPermission++;
               continue;
             }
-            const inserted = await tx
-              .insert(s.memberRoleBindings)
-              .values({
-                memberId: b.memberId,
-                roleId: b.roleId,
-                scopeType: 'store',
-                scopeId: input.targetStoreId,
-                grantedBy: ctx.session!.userId,
-              })
-              .onConflictDoNothing()
-              .returning({ id: s.memberRoleBindings.id });
-            if (inserted.length === 0) {
+            const { outcome, bindingId } = await grantBinding(tx, {
+              memberId: b.memberId,
+              roleId: b.roleId,
+              scope: { type: 'store', storeId: input.targetStoreId },
+              grantedBy: ctx.session!.userId,
+              expiresAt: b.expiresAt,
+            });
+            if (outcome === 'held') {
               skippedExisting++;
               continue;
             }
@@ -4519,7 +4299,7 @@ export const adminRouter = router({
               roleSlug: b.roleSlug,
               scopeType: 'store',
               scopeId: input.targetStoreId,
-              bindingId: inserted[0]!.id,
+              bindingId,
               roleRank: b.roleRank,
               via: 'storeCloneRoles',
               sourceStoreId: input.sourceStoreId,
@@ -5301,6 +5081,9 @@ export const adminRouter = router({
           resourceType: r.resourceType,
           resourceId: r.resourceId,
           actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
+          /** No person acted: `compass user grant` writes its rows
+           *  without an actor. A missing user is not this. */
+          bySystem: r.actorId === null,
           occurredAt: r.occurredAt.toISOString(),
           inputs: r.inputs as unknown,
           scopeStoreId: r.scopeStoreId,
@@ -5338,12 +5121,7 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       requireAdmin(ctx.session!.permissions);
       // Extra gate: only super_admin can purge.
-      if (!ctx.session!.roleSlugs.has('super_admin')) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.purgeRequiresSuperAdmin',
-        });
-      }
+      requirePurgeRole(ctx.session!);
       // D1 (2026-10-30): off on production unless the server opts in.
       if (!bulkPurgeAllowed(env)) {
         throw new TRPCError({
@@ -5561,11 +5339,8 @@ export const adminRouter = router({
         }
 
         // Order: dependents first, then parents.
-        await tx.execute(
-          sql`DELETE FROM inventory.movements
-              WHERE org_id = ${orgId} AND source_type IN ('run', 'run_amend')
-                AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
-        );
+        const stockKept = await keepCountedStock(tx, allRunMovements(orgId), ctx.session!.memberId);
+        await tx.execute(sql`DELETE FROM inventory.movements WHERE ${allRunMovements(orgId)}`);
         await tx.execute(
           sql`DELETE FROM read_model.run_item_stores_v
               WHERE run_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
@@ -5606,7 +5381,7 @@ export const adminRouter = router({
           'admin.purge.all',
           'org',
           orgId,
-          { total, byTable: counts },
+          { total, byTable: counts, stockKept },
           { strict: true },
         );
 
@@ -5636,12 +5411,7 @@ export const adminRouter = router({
    */
   purgeByDate: authedProcedure.input(PurgeByDateInputSchema).mutation(async ({ ctx, input }) => {
     requireAdmin(ctx.session!.permissions);
-    if (!ctx.session!.roleSlugs.has('super_admin')) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'admin.errors.purgeRequiresSuperAdmin',
-      });
-    }
+    requirePurgeRole(ctx.session!);
     // D1 (2026-10-30): off on production unless the server opts in.
     if (!bulkPurgeAllowed(env)) {
       throw new TRPCError({
@@ -5806,6 +5576,7 @@ export const adminRouter = router({
       }
 
       // Commit pass — same id sets, dependency-safe order.
+      let stockKept = 0;
       if (runIds.length > 0) {
         const inRuns = inUuids(runIds);
         await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`);
@@ -5814,6 +5585,7 @@ export const adminRouter = router({
           sql`DELETE FROM inventory.price_history
                 WHERE org_id = ${orgId} AND run_id IN ${inRuns}`,
         );
+        stockKept = await keepCountedStock(tx, runMovements(orgId, runIds), ctx.session!.memberId);
         await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, runIds)}`);
         await tx.execute(
           sql`DELETE FROM read_model.market_runs_v
@@ -5876,7 +5648,7 @@ export const adminRouter = router({
         'admin.purge.date',
         'org',
         orgId,
-        { date, total, byTable: counts, sessionIds, runIds },
+        { date, total, byTable: counts, sessionIds, runIds, stockKept },
         { strict: true },
       );
       broadcastPurged(orgId, sessionIds, runIds);
@@ -5986,49 +5758,15 @@ export const adminRouter = router({
         ]);
         const storeById = new Map(stores.map((st) => [st.id, st]));
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
-        const callerMemberRow = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
-        });
-        const callerMemberId = callerMemberRow?.id ?? null;
+        const callerMemberId = ctx.session!.memberId;
 
         // DX-CAT-3 (2026-11-01): say on each row whether it can be deleted
-        // here and why not — the same checks purgeSession makes, in the
-        // same order. The list offered a red Delete on every order that
-        // was not in a run, and the refusal only came after a tap.
-        const isSuperAdmin = ctx.session!.roleSlugs.has('super_admin');
-        const sessionIds = rows.map((r) => r.id);
-        const linkedRunIds = [...new Set(rows.map((r) => r.runId).filter(Boolean) as string[])];
-        const [liveRuns, foreignSessions, actedOnSessions] = await Promise.all([
-          linkedRunIds.length
-            ? tx
-                .select({ id: s.marketRunsV.id })
-                .from(s.marketRunsV)
-                .where(
-                  and(eq(s.marketRunsV.orgId, orgId), inArray(s.marketRunsV.id, linkedRunIds)),
-                )
-            : Promise.resolve([] as Array<{ id: string }>),
-          sessionsWithForeignAuthors(tx, callerMemberId, sessionIds),
-          streamsActedOnByOthers(tx, ctx.session!.userId, 'order', sessionIds),
-        ]);
-        const liveRunIds = new Set(liveRuns.map((r) => r.id));
-        const deleteBlockOf = (r: (typeof rows)[number]): SessionDeleteBlock | null => {
-          if (!isSuperAdmin) return 'notSuperAdmin';
-          const orphaned = r.runId !== null && !liveRunIds.has(r.runId);
-          if (
-            !orphaned &&
-            (r.status === 'in_run' || r.status === 'archived' || (r.runId && liveRunIds.has(r.runId)))
-          ) {
-            return 'inRun';
-          }
-          if (foreignSessions.has(r.id)) {
-            // Someone else's order, or the caller's with others' lines in it.
-            const author = r.submittedByMemberId ?? r.initiatedByMemberId;
-            return author && author !== callerMemberId ? 'othersOrder' : 'othersLines';
-          }
-          if (actedOnSessions.has(r.id)) return 'actedOnByOthers';
-          return null;
-        };
+        // here and why not. The list offered a red Delete on every order
+        // that was not in a run, and the refusal only came after a tap.
+        // ADM2-08: the rule purgeSession applies (services/purgeGuards.ts).
+        const deleteBlocks = await sessionDeleteBlocks(tx, ctx.session!, rows, {
+          requireOnlyTestSessions: true,
+        });
 
         // Per-session: aggregate qty across contributors per SKU.
         const skuTotalsBySession = new Map<string, Map<string, number>>();
@@ -6079,7 +5817,7 @@ export const adminRouter = router({
                 itemCount: agg.itemCount,
                 totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
                 updatedAt: r.updatedAt.toISOString(),
-                deleteBlock: deleteBlockOf(r),
+                deleteBlock: deleteBlocks.get(r.id) ?? null,
               };
             })
             // #4: an "empty" session (every contributor's qty is 0) shouldn't
@@ -6151,38 +5889,21 @@ export const adminRouter = router({
               .where(inArray(s.members.id, memberIds))
           : [];
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
-        // DX-CAT-3 (2026-11-01): the checks purgeRun makes, per row.
-        const isSuperAdmin = ctx.session!.roleSlugs.has('super_admin');
-        const callerMember = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
-          columns: { id: true },
-        });
-        const allSessionIds = [
-          ...new Set(rows.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
-        ];
-        const [foreignSessions, actedOnRuns, actedOnSessions] = await Promise.all([
-          sessionsWithForeignAuthors(tx, callerMember?.id ?? null, allSessionIds),
-          streamsActedOnByOthers(
-            tx,
-            ctx.session!.userId,
-            'run',
-            rows.map((r) => r.id),
-          ),
-          streamsActedOnByOthers(tx, ctx.session!.userId, 'order', allSessionIds),
-        ]);
+        // DX-CAT-3 (2026-11-01): why each run can't be deleted here, by
+        // the rule purgeRun applies (ADM2-08).
+        const sessionIdsOf = (r: (typeof rows)[number]) =>
+          (r.sessionIdsJson as unknown as string[]) ?? [];
+        const deleteBlocks = await runDeleteBlocks(
+          tx,
+          ctx.session!,
+          rows.map((r) => ({ id: r.id, sessionIds: sessionIdsOf(r) })),
+          { requireOnlyTestSessions: true },
+        );
         return rows.map((r) => {
-          const sessionIds = (r.sessionIdsJson as unknown as string[]) ?? [];
+          const sessionIds = sessionIdsOf(r);
           const m = r.purchaserMemberId ? memberById.get(r.purchaserMemberId) : null;
-          const deleteBlock: RunDeleteBlock | null = !isSuperAdmin
-            ? 'notSuperAdmin'
-            : sessionIds.some((id) => foreignSessions.has(id))
-              ? 'foreignSessions'
-              : actedOnRuns.has(r.id) || sessionIds.some((id) => actedOnSessions.has(id))
-                ? 'actedOnByOthers'
-                : null;
           return {
-            deleteBlock,
+            deleteBlock: deleteBlocks.get(r.id) ?? null,
             runId: r.id,
             runDate: r.runDate,
             runIndex: r.runIndex,
@@ -6375,12 +6096,7 @@ export const adminRouter = router({
   /** Surgical single-session purge. See PurgeSessionInputSchema doc. */
   purgeSession: authedProcedure.input(PurgeSessionInputSchema).mutation(async ({ ctx, input }) => {
     requireAdmin(ctx.session!.permissions);
-    if (!ctx.session!.roleSlugs.has('super_admin')) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'admin.errors.purgeRequiresSuperAdmin',
-      });
-    }
+    requirePurgeRole(ctx.session!);
     refuseGuardWaiverInProduction(input.requireOnlyTestSessions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
@@ -6391,42 +6107,15 @@ export const adminRouter = router({
       if (!session) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.sessionNotFound' });
       }
-      // Refuse if attached to a run — caller should purge the run. A
-      // session whose run no longer exists (left behind by an earlier
-      // purge, CAT-4) has nothing to purge it through, so it may go alone.
-      const run = session.runId
-        ? await tx.query.marketRunsV.findFirst({
-            where: (r, { eq: eq2, and: and2 }) =>
-              and2(eq2(r.id, session.runId!), eq2(r.orgId, orgId)),
-          })
-        : undefined;
-      const orphaned = session.runId !== null && !run;
-      if (!orphaned && (session.status === 'in_run' || session.status === 'archived' || run)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.sessionAttachedToRun',
-        });
-      }
-      // CAT-3 (2026-10-30): the page promises real users' orders are
-      // never touched; this used to delete anyone's.
-      if (input.requireOnlyTestSessions) {
-        if ((await foreignAuthors(tx, orgId, ctx.session!.userId, [input.sessionId])).size > 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.sessionHasForeignAuthors',
-          });
-        }
-        // RE-CAT-1: someone else approved, claimed or rejected it.
-        // R2-CAT-1: say so, rather than claiming others wrote the order.
-        if (
-          await othersActedOn(tx, ctx.session!.userId, [{ type: 'order', ids: [input.sessionId] }])
-        ) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.sessionActedOnByOthers',
-          });
-        }
-      }
+      // Refuse an order in a run, someone else's, or one someone else
+      // acted on. The maintenance list shows the same reason on its row
+      // (ADM2-08).
+      const block = (
+        await sessionDeleteBlocks(tx, ctx.session!, [session], {
+          requireOnlyTestSessions: input.requireOnlyTestSessions,
+        })
+      ).get(session.id);
+      if (block) throw sessionDeleteRefusal(block);
 
       const counts = await countSessionCascade(tx, orgId, input.sessionId);
       if (input.dryRun) {
@@ -6471,12 +6160,7 @@ export const adminRouter = router({
   /** Whole-run purge. See PurgeRunInputSchema doc. */
   purgeRun: authedProcedure.input(PurgeRunInputSchema).mutation(async ({ ctx, input }) => {
     requireAdmin(ctx.session!.permissions);
-    if (!ctx.session!.roleSlugs.has('super_admin')) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'admin.errors.purgeRequiresSuperAdmin',
-      });
-    }
+    requirePurgeRole(ctx.session!);
     refuseGuardWaiverInProduction(input.requireOnlyTestSessions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
@@ -6488,36 +6172,15 @@ export const adminRouter = router({
       }
       const sessionIds = (run.sessionIdsJson as unknown as string[]) ?? [];
 
-      // Safety: refuse if any attached session belongs to someone other
-      // than the caller, unless explicitly waived.
-      // RE-CAT-1 (2026-10-30): authorship of the orders alone let a run that
-      // a real purchaser bought, priced or delivered be wiped with its
-      // price history and stock movements. Anyone else acting on the run
-      // (or on its orders) makes it real data.
-      if (input.requireOnlyTestSessions) {
-        if (
-          sessionIds.length > 0 &&
-          (await foreignAuthors(tx, orgId, ctx.session!.userId, sessionIds)).size > 0
-        ) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.runHasForeignSessions',
-          });
-        }
-        // R2-CAT-1: the orders are the caller's own but someone else
-        // claimed, bought, delivered or approved — a separate reason.
-        if (
-          await othersActedOn(tx, ctx.session!.userId, [
-            { type: 'run', ids: [input.runId] },
-            { type: 'order', ids: sessionIds },
-          ])
-        ) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.runActedOnByOthers',
-          });
-        }
-      }
+      // Refuse a run with someone else's orders in it, or one that
+      // someone else acted on (or on its orders). The maintenance list
+      // shows the same reason on its row (ADM2-08).
+      const block = (
+        await runDeleteBlocks(tx, ctx.session!, [{ id: run.id, sessionIds }], {
+          requireOnlyTestSessions: input.requireOnlyTestSessions,
+        })
+      ).get(run.id);
+      if (block) throw runDeleteRefusal(block);
 
       const counts = await countRunCascade(tx, orgId, input.runId, sessionIds);
       if (input.dryRun) {
@@ -6540,7 +6203,13 @@ export const adminRouter = router({
                 and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
               )
           : [];
-      await deleteRunCascade(tx, orgId, input.runId, sessionIds);
+      const stockKept = await deleteRunCascade(
+        tx,
+        orgId,
+        input.runId,
+        sessionIds,
+        ctx.session!.memberId,
+      );
       await auditAdmin(
         tx,
         ctx,
@@ -6556,6 +6225,7 @@ export const adminRouter = router({
           status: run.status,
           storeIds: runStores.map((r) => r.storeId),
           memberId: run.purchaserMemberId,
+          stockKept,
         },
         { strict: true },
       );
@@ -6622,16 +6292,6 @@ async function purgeDateScope(
   };
 }
 
-/** DX-CAT-3: why the maintenance list can't delete an order here. */
-type SessionDeleteBlock =
-  | 'notSuperAdmin'
-  | 'inRun'
-  | 'othersOrder'
-  | 'othersLines'
-  | 'actedOnByOthers';
-/** DX-CAT-3: why the maintenance list can't delete a run here. */
-type RunDeleteBlock = 'notSuperAdmin' | 'foreignSessions' | 'actedOnByOthers';
-
 /**
  * D2 / R2-CAT-2 (2026-10-31): `requireOnlyTestSessions: false` skips the
  * "someone else wrote or handled it" guard. On production that is the
@@ -6681,135 +6341,50 @@ export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof
   return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN ${inUuids(runIds)})`;
 }
 
+/** The stock movements of every run in the organisation (purgeAllTestData). */
+function allRunMovements(orgId: string): ReturnType<typeof sql> {
+  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend')
+    AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}))`;
+}
+
+/**
+ * Review ADM2-02 (2026-11-10): call before deleting the run movements that
+ * `which` selects (its columns are those of inventory.movements).
+ *
+ * Stock on hand is the sum of the ledger, and a stocktake writes the delta
+ * that brings the sum to what was counted, so it has already absorbed every
+ * receipt booked before it. Deleting such a receipt with its run took it
+ * out a second time: the store then showed less than it had counted, or a
+ * negative stock. For each store, product and run, the receipts that a
+ * later stocktake absorbed are booked back as one 'adjustment' (source
+ * 'purge', the run's id), so on hand stays what was counted. Receipts after
+ * the last stocktake are not booked back: the goods of a test run never
+ * arrived. Returns how many adjustments were written.
+ */
+async function keepCountedStock(
+  tx: Tx,
+  which: ReturnType<typeof sql>,
+  actorMemberId: string,
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    INSERT INTO inventory.movements
+      (org_id, store_id, sku_id, delta, reason, source_type, source_id, actor_member_id)
+    SELECT m.org_id, m.store_id, m.sku_id, SUM(m.delta), 'adjustment', 'purge', m.source_id,
+           ${actorMemberId}
+      FROM inventory.movements m
+     WHERE ${which}
+       AND EXISTS (
+         SELECT 1 FROM inventory.movements st
+          WHERE st.org_id = m.org_id AND st.store_id = m.store_id AND st.sku_id = m.sku_id
+            AND st.reason = 'stocktake' AND st.occurred_at > m.occurred_at)
+     GROUP BY m.org_id, m.store_id, m.sku_id, m.source_id
+    HAVING SUM(m.delta) <> 0
+    RETURNING id`)) as unknown as Array<{ id: string }>;
+  return rows.length;
+}
+
 // ---------- session/run cascade helpers ----------
 type OrgTx = import('@compass/db').DB;
-
-/**
- * Members other than the caller who wrote any of these sessions. Per-store
- * sessions can have several contributors, so a session counts as the
- * caller's test only if the submitter (or, before submit, the initiator)
- * and every line author is the caller.
- */
-/**
- * RE-CAT-1: has anyone other than `userId` written an event on these
- * streams? System events (no actor) do not count.
- */
-async function othersActedOn(
-  tx: OrgTx,
-  userId: string,
-  streams: Array<{ type: 'run' | 'order'; ids: string[] }>,
-): Promise<boolean> {
-  for (const stream of streams) {
-    if (stream.ids.length === 0) continue;
-    const [row] = await tx
-      .select({ id: s.events.id })
-      .from(s.events)
-      .where(
-        and(
-          eq(s.events.streamType, stream.type),
-          inArray(s.events.streamId, stream.ids),
-          sql`${s.events.actorId} IS NOT NULL`,
-          sql`${s.events.actorId} <> ${userId}`,
-        ),
-      )
-      .limit(1);
-    if (row) return true;
-  }
-  return false;
-}
-
-/**
- * DX-CAT-3 (2026-11-01): which of these streams someone other than
- * `userId` wrote an event on — othersActedOn for a whole list at once,
- * so the maintenance list can say up front what can't be deleted.
- */
-async function streamsActedOnByOthers(
-  tx: OrgTx,
-  userId: string,
-  type: 'run' | 'order',
-  ids: string[],
-): Promise<Set<string>> {
-  if (ids.length === 0) return new Set();
-  const rows = await tx
-    .selectDistinct({ streamId: s.events.streamId })
-    .from(s.events)
-    .where(
-      and(
-        eq(s.events.streamType, type),
-        inArray(s.events.streamId, ids),
-        sql`${s.events.actorId} IS NOT NULL`,
-        sql`${s.events.actorId} <> ${userId}`,
-      ),
-    );
-  return new Set(rows.map((r) => r.streamId));
-}
-
-/**
- * DX-CAT-3: the sessions (of these) that someone other than the caller
- * wrote — the same rule as foreignAuthors, per session. `null` caller
- * member means every author is someone else.
- */
-async function sessionsWithForeignAuthors(
-  tx: OrgTx,
-  myMemberId: string | null,
-  sessionIds: string[],
-): Promise<Set<string>> {
-  if (sessionIds.length === 0) return new Set();
-  const sessions = await tx.query.orderSessionsV.findMany({
-    where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-  });
-  const items = await tx.query.orderItemsV.findMany({
-    where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-  });
-  const foreign = new Set<string>();
-  for (const sess of sessions) {
-    const author = sess.submittedByMemberId ?? sess.initiatedByMemberId;
-    if (author && author !== myMemberId) foreign.add(sess.id);
-  }
-  for (const it of items) {
-    if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
-      foreign.add(it.sessionId);
-    }
-  }
-  return foreign;
-}
-
-async function foreignAuthors(
-  tx: OrgTx,
-  orgId: string,
-  userId: string,
-  sessionIds: string[],
-): Promise<Set<string>> {
-  const myMember = await tx.query.members.findFirst({
-    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, userId)),
-  });
-  const myMemberId = myMember?.id ?? null;
-  const sessions = await tx.query.orderSessionsV.findMany({
-    where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-  });
-  const items = await tx.query.orderItemsV.findMany({
-    where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-  });
-  const foreign = new Set<string>();
-  for (const sess of sessions) {
-    if (sess.submittedByMemberId && sess.submittedByMemberId !== myMemberId) {
-      foreign.add(sess.submittedByMemberId);
-    }
-    if (
-      sess.initiatedByMemberId &&
-      sess.initiatedByMemberId !== myMemberId &&
-      !sess.submittedByMemberId
-    ) {
-      foreign.add(sess.initiatedByMemberId);
-    }
-  }
-  for (const it of items) {
-    if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
-      foreign.add(it.contributorMemberId);
-    }
-  }
-  return foreign;
-}
 
 /**
  * Grow the purge sets (in place) until no order points at a run outside
@@ -7188,7 +6763,8 @@ async function deleteRunCascade(
   orgId: string,
   runId: string,
   sessionIds: string[],
-): Promise<void> {
+  actorMemberId: string,
+): Promise<number> {
   const allStreams = [runId, ...sessionIds];
   // Notifications first.
   const inStreams = inUuids(allStreams);
@@ -7210,6 +6786,7 @@ async function deleteRunCascade(
   await tx.execute(
     sql`DELETE FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
   );
+  const stockKept = await keepCountedStock(tx, runMovements(orgId, [runId]), actorMemberId);
   await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`);
   await tx.execute(
     sql`DELETE FROM read_model.market_runs_v WHERE org_id = ${orgId} AND id = ${runId}`,
@@ -7222,4 +6799,5 @@ async function deleteRunCascade(
       sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id IN ${inSessions}`,
     );
   }
+  return stockKept;
 }

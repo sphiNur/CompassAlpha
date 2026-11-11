@@ -19,9 +19,13 @@ export interface AuditRowLike {
   action: string;
   inputs?: unknown;
   actor: { displayName: string | null } | null;
+  /** No person acted (a grant from the command line); older servers omit it. */
+  bySystem?: boolean;
   labels?: {
     memberName: string | null;
     roleName: string | null;
+    /** Older servers omit it. */
+    roleSlug?: string | null;
     storeName: string | null;
     toStoreName: string | null;
     targetName: string | null;
@@ -50,7 +54,9 @@ export type AuditSentenceKey =
   | 'ops.audit.s.purgeAll'
   | 'ops.audit.s.purgeDate'
   | 'ops.audit.s.purgeRun'
+  | 'ops.audit.s.purgeRunNoDate'
   | 'ops.audit.s.purgeSession'
+  | 'ops.audit.s.purgeSessionNoDate'
   | 'ops.audit.s.roleCreate'
   | 'ops.audit.s.roleDelete'
   | 'ops.audit.s.roleGrant'
@@ -142,6 +148,12 @@ export function describeAuditRow(
   loc: {
     /** Placeholder for a name that could not be resolved. */
     unknown: string;
+    /** The actor of a row no person wrote. */
+    system: string;
+    /** A role's name in the UI language (lib/roleLabels.ts). */
+    roleName: (role: { slug: string; name?: string | null }) => string;
+    /** A permission's name in the UI language (lib/roleLabels.ts). */
+    permission: (key: string) => string;
     /** Localizes an i18n names map (SKU / category). */
     localName: (names: Record<string, string>) => string;
     /** Formats an ISO calendar date (a purged order's or run's day). */
@@ -153,11 +165,13 @@ export function describeAuditRow(
     row.inputs && typeof row.inputs === 'object' ? (row.inputs as Record<string, unknown>) : {};
   const l = row.labels ?? null;
   const or = (v: string | null | undefined) => (v && v.trim() ? v : loc.unknown);
-  const actor = or(row.actor?.displayName);
+  const actor = row.bySystem ? loc.system : or(row.actor?.displayName);
   const member = or(
     l?.memberName ?? (typeof inputs.displayName === 'string' ? inputs.displayName : null),
   );
-  const role = or(l?.roleName ?? (typeof inputs.roleSlug === 'string' ? inputs.roleSlug : null));
+  // A built-in role reads in the UI language unless an admin renamed it.
+  const roleSlug = l?.roleSlug ?? (typeof inputs.roleSlug === 'string' ? inputs.roleSlug : null);
+  const role = or(roleSlug ? loc.roleName({ slug: roleSlug, name: l?.roleName }) : l?.roleName);
   const store = or(l?.storeName);
   const category = auditCategory(row.action);
   const tone = object === 'purge' ? 'danger' : toneOf(verb, inputs);
@@ -186,7 +200,10 @@ export function describeAuditRow(
     case 'memberPermission.allow':
     case 'memberPermission.deny':
     case 'memberPermission.revoke': {
-      const permission = or(typeof inputs.permissionKey === 'string' ? inputs.permissionKey : null);
+      // The stored key (order.approve) is not a word anyone reads.
+      const permission = or(
+        typeof inputs.permissionKey === 'string' ? loc.permission(inputs.permissionKey) : null,
+      );
       const key =
         verb === 'allow'
           ? 'ops.audit.s.permissionAllow'
@@ -237,19 +254,19 @@ export function describeAuditRow(
     case 'subscription.update':
       return out('ops.audit.s.subscriptionUpdate');
     // ADM2-05 (2026-11-09): what a purge deleted, from the store, day and
-    // author the server now records. Older rows carry only ids and keep
-    // the generic line below.
+    // author the server now records. Older rows carry only ids: they say
+    // what went, without the day (ADM2-14).
     case 'purge.session': {
       const date = day(inputs.orderDate);
-      if (date) return out('ops.audit.s.purgeSession', { date, store, member });
-      break;
+      return date
+        ? out('ops.audit.s.purgeSession', { date, store, member })
+        : out('ops.audit.s.purgeSessionNoDate');
     }
     case 'purge.run': {
       const date = day(inputs.runDate);
-      if (date && typeof inputs.runIndex === 'number') {
-        return out('ops.audit.s.purgeRun', { date, n: String(inputs.runIndex + 1) });
-      }
-      break;
+      return date && typeof inputs.runIndex === 'number'
+        ? out('ops.audit.s.purgeRun', { date, n: String(inputs.runIndex + 1) })
+        : out('ops.audit.s.purgeRunNoDate');
     }
     case 'purge.date': {
       const date = day(inputs.date);

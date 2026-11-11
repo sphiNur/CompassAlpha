@@ -29,7 +29,6 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 // Chevron icon as inline SVG → data URL. Kept as a const so we don't
 // re-encode it on every render.
 const CHEVRON =
-  // eslint-disable-next-line max-len
   "data-[slot=chevron] url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%2399a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")";
 void CHEVRON; // (reserved; we render the chevron via a sibling span)
 

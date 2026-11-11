@@ -32,8 +32,59 @@ export function isoDateDaysBefore(isoDate: string, days: number): string {
 /** SKU units (2026-07-30): the fixed vocabulary; `SkuUnitSchema` is built from it. */
 export const SKU_UNITS = ['kg', 'L', 'pcs', 'pack', 'bunch', 'box', 'roll', 'pair'] as const;
 
+/**
+ * The units an off-catalog order line ("other items") may name (M3.34):
+ * every SKU unit, and g and ml. `CanonicalUnitSchema` is built from it and
+ * the order page lists it (ORD-13, 2026-11-11: the page kept its own copy,
+ * which went without `box` when R2-COPY-3 added it here).
+ */
+export const CANONICAL_UNITS = [
+  'kg',
+  'g',
+  'L',
+  'ml',
+  'pcs',
+  'pack',
+  'pair',
+  'bunch',
+  'roll',
+  'box',
+] as const;
+
+export function isCanonicalUnit(unit: string): unit is (typeof CANONICAL_UNITS)[number] {
+  return (CANONICAL_UNITS as readonly string[]).includes(unit);
+}
+
+/** Units counted in whole numbers: "1.5 pcs" or "1.5 boxes" is a typo. */
+export const WHOLE_NUMBER_UNITS: ReadonlySet<string> = new Set([
+  'pcs',
+  'pack',
+  'pair',
+  'bunch',
+  'roll',
+  'box',
+]);
+
 /** SKU steps (M3.14): the canonical +/- grid; `SkuStepSchema` is built from it. */
 export const SKU_STEPS = ['0.5', '1', '10', '50', '100'] as const;
+
+/**
+ * ADM2-09 (2026-11-11): the longest text each catalog field takes. The
+ * input schemas (`schemas/catalog.ts`) and the admin forms' `maxLength`
+ * read the same numbers, so a form can't take text the server refuses.
+ */
+export const CATALOG_TEXT_MAX = {
+  /** A name in one language; also a supplier name and an expense label. */
+  name: 200,
+  skuCode: 64,
+  categorySlug: 64,
+  dishCode: 32,
+  unitHint: 32,
+  phone: 32,
+  telegram: 64,
+  address: 500,
+  notes: 1000,
+} as const;
 
 /**
  * RE-ENG-1 / BUY-15 (2026-10-30): a purchase price the column stores —
@@ -44,6 +95,40 @@ export const PURCHASE_PRICE_RE = /^\d{1,12}(\.\d{1,2})?$/;
 
 export function isPurchasePrice(v: string): boolean {
   return PURCHASE_PRICE_RE.test(v) && Number(v) > 0;
+}
+
+/**
+ * M1.17 / ADM1-14 (2026-11-10): an organisation's tax rate, in percent:
+ * numeric(5,2), so at most 3 digits before the point and 2 after, and no
+ * more than TAX_RATE_MAX_PCT. 50% is about the legal ceiling everywhere
+ * (Hungary's 27% is the highest standard VAT); anything higher is almost
+ * certainly a typo. orgFinanceUpdate and the finance sheet ask
+ * taxRateProblem, so the sheet can say what is wrong before Save.
+ */
+export const TAX_RATE_RE = /^\d{1,3}(\.\d{1,2})?$/;
+export const TAX_RATE_MAX_PCT = 50;
+
+export type TaxRateProblem = 'format' | 'range';
+
+export function taxRateProblem(value: string): TaxRateProblem | null {
+  if (!TAX_RATE_RE.test(value)) return 'format';
+  return Number(value) > TAX_RATE_MAX_PCT ? 'range' : null;
+}
+
+/** The catalog key the server and the finance sheet show for each problem. */
+export const TAX_RATE_MESSAGE = {
+  format: 'admin.errors.taxRateFormat',
+  range: 'admin.errors.taxRateOutOfRange',
+} as const satisfies Record<TaxRateProblem, string>;
+
+/**
+ * The tax rate as the finance sheet sends it. The field hands over its
+ * reading ("12,5" arrives as "12.5"); a number still being typed ("12.",
+ * ".5") goes in the form TAX_RATE_RE takes ("12", "0.5"). Anything else
+ * is left as it is, for taxRateProblem to name.
+ */
+export function taxRateToSend(text: string): string {
+  return /^(\d+\.?\d*|\.\d+)$/.test(text) ? String(Number(text)) : text;
 }
 
 /** CLS-19 (2026-10-30): a stocktake count has at most 8 integer digits. */
@@ -126,10 +211,30 @@ export const ATTENDANCE_FACE_CONSENT_VERSION = 1;
  * than this cannot, and the phone's own uncertainty counts for up to the
  * slack. The phone checks the same before it opens the camera
  * (2026-11-07), so nobody does the face check only to hear they are too
- * far; the server decides.
+ * far; the server decides. The rule itself is `locationVerdict`.
  */
 export const ATTENDANCE_MAX_ACCURACY_M = 300;
 export const ATTENDANCE_ACCURACY_SLACK_M = 50;
+
+/** Where a phone's fix places someone, for a store's clock-in area. */
+export type LocationVerdict = 'inside' | 'outside' | 'inaccurate';
+
+/**
+ * The one rule for "inside the clock-in area" (review ATT-08,
+ * 2026-11-10): the server's at the punch, the phone's before the camera,
+ * and the two maps'. They were four copies, and the maps disagreed with
+ * the server. `distanceM` is from the area's centre, rounded to the metre
+ * as the server stores it; `accuracyM` is the fix's own uncertainty.
+ */
+export function locationVerdict(fix: {
+  distanceM: number;
+  accuracyM: number;
+  radiusM: number;
+}): LocationVerdict {
+  if (fix.accuracyM > ATTENDANCE_MAX_ACCURACY_M) return 'inaccurate';
+  const slack = Math.min(fix.accuracyM, ATTENDANCE_ACCURACY_SLACK_M);
+  return fix.distanceM > fix.radiusM + slack ? 'outside' : 'inside';
+}
 
 /**
  * A colleague clocked on someone's phone (owner decision 2026-11-07):

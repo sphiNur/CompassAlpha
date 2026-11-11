@@ -8,7 +8,13 @@ import { useAuthStore } from '../stores/authStore';
 import { makeDateFormatters } from '../lib/dateFormat';
 import { unitLabeller } from '../lib/unitLabel';
 import { roleLabeller } from '../lib/roleLabels';
-import { nameLang, otherLang } from '../lib/nameLang';
+import {
+  pickName,
+  productName,
+  productNameParts,
+  vendorLocale,
+  type ProductNameParts,
+} from '../lib/productName';
 
 const VALID_LOCALES = ['en', 'zh', 'ru', 'uz'] as const;
 function asLocale(v: string | null | undefined): Locale | null {
@@ -170,118 +176,41 @@ export function useUnitLabel() {
   return useMemo(() => unitLabeller(i18n.t), [i18n]);
 }
 
-
-/**
- * Pick the best available name from a multi-locale SKU, with a
- * documented fallback chain. Pure — no React state involved — so it
- * can be reused by the bilingual hook below + by tests.
- */
-function pickName(
-  names: Record<string, string> | null | undefined,
-  locale: string,
-): string {
-  const n = names ?? {};
-  return (
-    n[locale] ??
-    n.en ??
-    n.ru ??
-    n.zh ??
-    n.uz ??
-    Object.values(n)[0] ??
-    '—'
-  );
-}
-
 export function useProductName() {
   const i18n = useI18n();
-  // M3.45 (2026-05-22): bilingual display. When the user has set a
-  // secondary locale (Settings → "市场摊位语言"), product names
-  // render as "Primary (Secondary)" so a Chinese-speaking operator
-  // can cross-reference what they're looking at against what the
-  // Uzbek-speaking vendor will see in the copy-paste message. Null
-  // secondaryLocale (default) keeps the legacy single-language
-  // behavior — invisible to users who don't opt in.
-  //
-  // The dedup guard (primary === secondary) covers two cases:
-  //   1. User chose the same locale for primary + secondary (no-op).
-  //   2. The SKU's secondary-locale name is identical to the primary
-  //      (e.g. a SKU only typed in English).
   const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
   // M3.10 (2026-05-16): memoize the callback by locale so passing
   // `productName` as a prop into a React.memo-wrapped row component
   // doesn't bust referential equality on every parent render.
   return useMemo(
     () =>
-      (item: { names: Record<string, string> | null | undefined }): string => {
-        const primary = pickName(item.names, i18n.locale);
-        if (!secondaryLocale || secondaryLocale === i18n.locale) return primary;
-        const secondary = pickName(item.names, secondaryLocale);
-        if (!secondary || secondary === primary) return primary;
-        return `${primary} (${secondary})`;
-      },
+      (item: { names: Record<string, string> | null | undefined }): string =>
+        productName(item.names, i18n.locale, secondaryLocale),
     [i18n.locale, secondaryLocale],
   );
 }
 
-/**
- * UI-4 (2026-07): the two-line form of {@link useProductName}. Returns the
- * primary-locale name and (when the user opted into a secondary locale and
- * it differs) the secondary name SEPARATELY, so a row can render the primary
- * on its own line and the secondary as a muted second line — instead of the
- * `primary (secondary)` inline form that doubled row width and truncated the
- * transliteration mid-word ("To'g'ralgan s…"). `secondary` is null whenever
- * there is no distinct second name (default single-language users see no
- * change). Memoized by locale for the same memo-stability reason as
- * useProductName.
- */
+/** The two-line form of {@link useProductName}; see productNameParts. */
 export function useProductNameParts() {
   const i18n = useI18n();
   const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
   return useMemo(
     () =>
-      (item: {
-        names: Record<string, string> | null | undefined;
-      }): ProductNameParts => {
-        const primary = pickName(item.names, i18n.locale);
-        // A11Y-3 (2026-10-31): say which language a name is in when it is
-        // not the interface's, so a screen reader switches voice for it.
-        const primaryLang = otherLang(nameLang(item.names, i18n.locale), i18n.locale);
-        if (!secondaryLocale || secondaryLocale === i18n.locale) {
-          return { primary, secondary: null, primaryLang };
-        }
-        const secondary = pickName(item.names, secondaryLocale);
-        if (!secondary || secondary === primary) return { primary, secondary: null, primaryLang };
-        return {
-          primary,
-          secondary,
-          primaryLang,
-          secondaryLang: otherLang(nameLang(item.names, secondaryLocale), i18n.locale),
-        };
-      },
+      (item: { names: Record<string, string> | null | undefined }): ProductNameParts =>
+        productNameParts(item.names, i18n.locale, secondaryLocale),
     [i18n.locale, secondaryLocale],
   );
 }
 
-export interface ProductNameParts {
-  primary: string;
-  secondary: string | null;
-  /** Set only when the name shown is in another language than the UI. */
-  primaryLang?: string;
-  secondaryLang?: string;
-}
+export type { ProductNameParts };
 
 export function useVendorName() {
   const i18n = useI18n();
   const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
   return useMemo(
     () =>
-      (item: { names: Record<string, string> | null | undefined }): string => {
-        const effective =
-          secondaryLocale && secondaryLocale !== i18n.locale
-            ? secondaryLocale
-            : i18n.locale;
-        return pickName(item.names, effective);
-      },
+      (item: { names: Record<string, string> | null | undefined }): string =>
+        pickName(item.names, vendorLocale(i18n.locale, secondaryLocale)),
     [i18n.locale, secondaryLocale],
   );
 }
@@ -308,10 +237,7 @@ export function useVendorUnitLabel() {
   // Pre-load secondary catalog. If null, ensure primary (no-op).
   useEnsureLocale(secondaryLocale ?? i18n.locale);
   return useMemo(() => {
-    const effective: Locale =
-      secondaryLocale && secondaryLocale !== i18n.locale
-        ? secondaryLocale
-        : i18n.locale;
+    const effective: Locale = vendorLocale(i18n.locale, secondaryLocale);
     const t = effective === i18n.locale ? i18n.t : createI18n(effective).t;
     return unitLabeller(t);
   }, [i18n, secondaryLocale]);

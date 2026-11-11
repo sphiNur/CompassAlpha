@@ -9,19 +9,7 @@
  * Only the LAST path segment is read, so a FRONTEND_URL served under a
  * sub-path (`/app/approve`) works the same as the root.
  */
-import type { Tab } from '../stores/navStore';
-
-const DEEP_LINK_TABS: readonly Tab[] = [
-  'order',
-  'approve',
-  'run',
-  'history',
-  'settlement',
-  'sales',
-  'confirm',
-  'attendance',
-  'admin',
-];
+import { isTab, type Tab } from '../stores/navStore';
 
 function lastSegment(pathname: string): { segment: string; parent: string } {
   const trimmed = pathname.replace(/\/+$/, '');
@@ -31,9 +19,9 @@ function lastSegment(pathname: string): { segment: string; parent: string } {
 
 /** The tab a deep-link pathname points at, or null when it isn't one. */
 export function tabFromDeepLinkPath(pathname: string): Tab | null {
-  const { segment } = lastSegment(pathname);
-  const key = segment.toLowerCase() as Tab;
-  return DEEP_LINK_TABS.includes(key) ? key : null;
+  const key = lastSegment(pathname).segment.toLowerCase();
+  // Every tab can be linked to (review COREWEB1-11: navStore's one list).
+  return isTab(key) ? key : null;
 }
 
 /**
@@ -61,8 +49,8 @@ export function resolveDeepLinkTab(pathname: string, visibleKeys: readonly Tab[]
 export function tabFromStartParam(startParam: string | null | undefined): Tab | null {
   const raw = startParam?.trim().toLowerCase();
   if (!raw?.startsWith('tab_')) return null;
-  const key = raw.slice(4) as Tab;
-  return DEEP_LINK_TABS.includes(key) ? key : null;
+  const key = raw.slice(4);
+  return isTab(key) ? key : null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

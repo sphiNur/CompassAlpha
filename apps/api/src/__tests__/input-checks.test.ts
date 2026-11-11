@@ -18,6 +18,9 @@ import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedRoles } from './helpers/fixtures';
 import { codeOf, errorOf } from './helpers/errors';
+import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+
+cleanUpAfterAll();
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
@@ -42,11 +45,13 @@ beforeAll(async () => {
     .insert(s.organizations)
     .values({ slug: `checks-${suffix}`, name: 'Input checks', localeDefault: 'en', timezone: 'UTC' })
     .returning();
+  noteOrg(org!.id);
   const roleId = (await seedRoles(db, org!.id, ['super_admin'])).super_admin!;
   const [u] = await db
     .insert(s.users)
     .values({ displayName: 'Checks', tgUserId: freshTgId() })
     .returning();
+  noteUser(u!.id);
   const [m] = await db.insert(s.members).values({ orgId: org!.id, userId: u!.id, status: 'active' }).returning();
   await db
     .insert(s.memberRoleBindings)
@@ -83,6 +88,10 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
     expect(await keyOf(() => owner!.admin.orgFinanceUpdate({ ...finance, taxRatePct: '7.125' }))).toBe(
       'admin.errors.taxRateFormat',
     );
+    // ADM1-14: the range comes from the same rule the finance sheet asks.
+    expect(
+      await keyOf(() => owner!.admin.orgFinanceUpdate({ ...finance, taxRatePct: '50.01' })),
+    ).toBe('admin.errors.taxRateOutOfRange');
     expect(await keyOf(() => owner!.admin.storeCreate({ name: 'Mars', timezone: 'Mars/Base' }))).toBe(
       'admin.errors.timeZoneUnknown',
     );
@@ -125,5 +134,20 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
   test('an upload key takes its extension from the signed content type only', () => {
     expect(pickExtension('image/png')).toBe('png');
     expect(pickExtension('image/jpeg')).toBe('jpg');
+  });
+
+  test('ADM2-09: dish names follow the product rule; a dish sort order carries its key', async () => {
+    const { dishId } = await owner!.dishes.save({ names: { uz: '  ', ru: ' Plov ' }, ingredients: [] });
+    const listed = await owner!.dishes.list({ includeArchived: true });
+    expect(listed.dishes.find((d) => d.id === dishId)?.names).toEqual({ ru: 'Plov' });
+    expect(await keyOf(() => owner!.dishes.save({ names: { uz: ' ', en: '' }, ingredients: [] }))).toBe(
+      'dishes.errors.namesRequired',
+    );
+    expect(await keyOf(() => owner!.dishes.update({ dishId, sortIndex: 1.5 }))).toBe(
+      'admin.errors.sortIndexInteger',
+    );
+    expect(await keyOf(() => owner!.dishes.update({ dishId, sortIndex: 2 ** 31 }))).toBe(
+      'admin.errors.sortIndexInteger',
+    );
   });
 });

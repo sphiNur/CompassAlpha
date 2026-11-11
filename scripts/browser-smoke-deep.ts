@@ -272,6 +272,11 @@ async function run() {
       claimedByAvatarUrl: null,
       previousClaimerDisplayName: null,
       totals: mockSession.totals.map((t) => ({ ...t, usualPayment: null })),
+      // ORD-09: the detail names each line's contributor.
+      items: mockSession.items.map((i) => ({
+        ...i,
+        contributorName: fakeSession.user.displayName,
+      })),
     };
   });
 
@@ -302,7 +307,9 @@ async function run() {
       lastSeenAt: new Date().toISOString(),
       roles: [],
       stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE' }],
+      inactiveStores: [],
       statusOutOfReach: false,
+      nameShared: false,
     },
   ]);
   await stubTrpc(context, 'admin.storeList', [

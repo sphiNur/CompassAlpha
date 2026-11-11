@@ -29,9 +29,9 @@
  * too; pages only enqueue and read the queue.
  *
  * The hook returns:
- *   - `pendingCount`     — how many writes are waiting offline
- *   - `pendingEntries`   — those writes (procedure + input), so a page can
- *                          show the queued change on the item it touches
+ *   - `pendingEntries`   — the signed-in person's writes waiting offline
+ *                          (procedure + input), so a page can show the
+ *                          queued change on the item it touches
  *   - `enqueue(proc, input)` — enqueue a write directly (used by host)
  *   - `flush()`          — trigger an immediate replay attempt
  *   - `online`           — current connectivity
@@ -40,8 +40,26 @@ import { useCallback, useEffect, useState } from 'react';
 import { nextSeq, outbox, type OutboxEntry } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useAuthStore } from '../stores/authStore';
+import type { ReplayedProcedure } from '../lib/outboxReplay';
 
 type ReplayFn = (entry: OutboxEntry) => Promise<void>;
+
+/** Who is signed in now: the person and the organisation they work in. */
+export interface OutboxOwner {
+  userId: string | undefined;
+  orgId: string | undefined;
+}
+
+function currentOwner(): OutboxOwner {
+  const session = useAuthStore.getState().session;
+  return { userId: session?.user.id, orgId: session?.member.orgId };
+}
+
+/** The owner fields every new entry carries. */
+function ownerStamp(): Pick<OutboxEntry, 'ownerUserId' | 'ownerOrgId'> {
+  const { userId, orgId } = currentOwner();
+  return { ownerUserId: userId, ownerOrgId: orgId };
+}
 
 /**
  * Union of every page's replay handlers, keyed by procedure. Populated as
@@ -154,7 +172,7 @@ export async function sendWriteAhead<P, R>(
       enqueuedAt: Date.now(),
       retries: 0,
       idempotencyKey,
-      ownerUserId: useAuthStore.getState().session?.user.id,
+      ...ownerStamp(),
     });
     liveSeqs.add(clientSeq);
   } catch {
@@ -194,16 +212,19 @@ export function flushOutbox(): Promise<void> {
   // for a flush someone else already started, not return straight away.
   if (flushInFlight) return flushInFlight;
   if (typeof navigator !== 'undefined' && !navigator.onLine) return Promise.resolve();
-  const currentUserId = useAuthStore.getState().session?.user.id;
-  if (!currentUserId) return Promise.resolve();
+  const owner = currentOwner();
+  if (!owner.userId) return Promise.resolve();
   flushInFlight = (async () => {
     try {
       const all = (await outbox.list()).sort((a, b) => a.clientSeq - b.clientSeq);
       for (const entry of all) {
         const ageMs = Date.now() - entry.enqueuedAt;
-        if (!isOwnEntry(entry.ownerUserId, currentUserId)) {
-          // Queued by someone else on this device. Never send it under
-          // this session; keep it for its author unless it has gone stale.
+        if (!isOwnEntry(entry, owner)) {
+          // Queued by someone else on this device, or by this person in
+          // another organisation (COREWEB2-03). Never send it under this
+          // session, where its ids do not exist and the refusal would
+          // delete it; keep it for its own session unless it has gone
+          // stale.
           if (classifyEntry(false, ageMs) === 'expire') {
             await outbox.remove(entry.clientSeq);
           }
@@ -279,14 +300,34 @@ export function flushOutbox(): Promise<void> {
  *  fires an `online` event, so the backlog used to wait for a remount. */
 const BACKLOG_RETRY_MS = 15_000;
 
-/** Should the signed-in user replay this entry? Unstamped (older) entries
- *  keep their previous behaviour and replay for whoever is signed in. */
+/**
+ * Should the signed-in session replay this entry? Only its author, in the
+ * organisation it was made in. A field the entry lacks (queued before it
+ * was recorded) does not count against it, as before.
+ */
 export function isOwnEntry(
-  ownerUserId: string | undefined,
-  currentUserId: string | undefined,
+  entry: Pick<OutboxEntry, 'ownerUserId' | 'ownerOrgId'>,
+  owner: OutboxOwner,
 ): boolean {
-  if (!currentUserId) return false;
-  return ownerUserId === undefined || ownerUserId === currentUserId;
+  if (!owner.userId) return false;
+  if (entry.ownerUserId !== undefined && entry.ownerUserId !== owner.userId) return false;
+  return entry.ownerOrgId === undefined || entry.ownerOrgId === owner.orgId;
+}
+
+/**
+ * How many of the signed-in session's writes wait to be sent, not counting
+ * the ones being sent right now. Asked before switching organisation:
+ * they stay queued for this one (COREWEB2-03). 0 when the outbox cannot be
+ * read.
+ */
+export async function waitingWriteCount(): Promise<number> {
+  try {
+    const owner = currentOwner();
+    const all = await outbox.list();
+    return all.filter((e) => !isLiveEntry(e.clientSeq) && isOwnEntry(e, owner)).length;
+  } catch {
+    return 0;
+  }
 }
 
 /** The tRPC error code of a failed call, if the server answered with one. */
@@ -420,28 +461,6 @@ export function classifyReplayError(
   return 'retry';
 }
 
-/** Device-local calendar date as YYYY-MM-DD. */
-export function localDateString(now: Date): string {
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${m}-${d}`;
-}
-
-/**
- * The business date to FREEZE into an offline-queued order write
- * (2026-10-21 audit CA-25). Without it the server resolved "today" at
- * REPLAY time, so a change made offline last night landed in this
- * morning's order. Prefer the date of the session the page is showing
- * (server truth, org timezone); before any session exists fall back to
- * the device's local date (staff devices run in the org's timezone).
- */
-export function frozenOrderDate(
-  cached: { id: string; orderDate: string } | null | undefined,
-  now: Date = new Date(),
-): string {
-  return cached && cached.id !== 'optimistic' ? cached.orderDate : localDateString(now);
-}
-
 /** Cap on transient retries before an entry is abandoned (mirrors the
  *  server-side outbox worker's MAX_RETRIES). Stops an endlessly-failing
  *  entry from blocking the queue forever. */
@@ -479,7 +498,6 @@ export function samePendingWrites(
 }
 
 interface UseOfflineQueueResult {
-  pendingCount: number;
   /** A write has been waiting more than SLOW_WRITE_MS for its answer. */
   savingSlow: boolean;
   /**
@@ -518,7 +536,6 @@ interface UseOfflineQueueResult {
  * queued on one tab syncs whichever tab is open.
  */
 export function useOfflineQueue(): UseOfflineQueueResult {
-  const [pendingCount, setPendingCount] = useState(0);
   const [savingSlow, setSavingSlow] = useState(slowWrites > 0);
   const [pendingEntries, setPendingEntries] = useState<readonly PendingWrite[]>([]);
   const [online, setOnline] = useState<boolean>(
@@ -528,12 +545,10 @@ export function useOfflineQueue(): UseOfflineQueueResult {
   const refresh = useCallback(async () => {
     try {
       const all = await outbox.list();
-      const userId = useAuthStore.getState().session?.user.id;
+      const owner = currentOwner();
       // In-flight write-ahead entries are not "waiting" yet (R2-ORD-5).
-      const waiting = all.filter((e) => !isLiveEntry(e.clientSeq));
-      setPendingCount(waiting.length);
-      const next = waiting
-        .filter((entry) => isOwnEntry(entry.ownerUserId, userId))
+      const next = all
+        .filter((entry) => !isLiveEntry(entry.clientSeq) && isOwnEntry(entry, owner))
         .sort((a, b) => a.clientSeq - b.clientSeq)
         .map(({ clientSeq, procedure, input, enqueuedAt }) => ({
           clientSeq,
@@ -550,8 +565,11 @@ export function useOfflineQueue(): UseOfflineQueueResult {
 
   const flush = flushOutbox;
 
+  // Review TEST3-06 (2026-11-10): only a procedure with a replay handler
+  // (lib/outboxReplay.ts) may be queued. A test used to look for the
+  // queued names in the page sources.
   const enqueue = useCallback(
-    async <P,>(procedure: string, input: P, idempotencyKey?: string): Promise<number> => {
+    async <P>(procedure: ReplayedProcedure, input: P, idempotencyKey?: string): Promise<number> => {
       const clientSeq = await nextSeq();
       await outbox.add({
         clientSeq,
@@ -560,7 +578,7 @@ export function useOfflineQueue(): UseOfflineQueueResult {
         enqueuedAt: Date.now(),
         retries: 0,
         idempotencyKey,
-        ownerUserId: useAuthStore.getState().session?.user.id,
+        ...ownerStamp(),
       });
       notifyOutboxChanged();
       // Try immediately if we're online — if we're offline this will no-op.
@@ -571,7 +589,12 @@ export function useOfflineQueue(): UseOfflineQueueResult {
   );
 
   const sendQueued = useCallback(
-    <P, R>(procedure: string, input: P, send: () => Promise<R>, idempotencyKey?: string) =>
+    <P, R>(
+      procedure: ReplayedProcedure,
+      input: P,
+      send: () => Promise<R>,
+      idempotencyKey?: string,
+    ) =>
       sendWriteAhead(procedure, input, send, idempotencyKey, (queued) => {
         notifyOutboxChanged();
         // Now an ordinary queued write: try it again as enqueue() would.
@@ -604,13 +627,14 @@ export function useOfflineQueue(): UseOfflineQueueResult {
     };
   }, [refresh]);
 
-  return { pendingCount, pendingEntries, savingSlow, enqueue, sendQueued, flush, online };
+  return { pendingEntries, savingSlow, enqueue, sendQueued, flush, online };
 }
 
 /**
  * The app-level replay loop (CMP-FE-3), mounted once by lib/outboxReplay.
  * Flushes on start, when the browser comes back online, when the app
- * returns from the background, after sign-in, and every BACKLOG_RETRY_MS
+ * returns from the background, after sign-in or a switch of organisation,
+ * and every BACKLOG_RETRY_MS
  * (a server that was down while the browser stayed "online" fires no
  * event).
  */
@@ -620,13 +644,14 @@ export function useOutboxFlushTriggers(): void {
     const onVisible = () => {
       if (document.visibilityState === 'visible') void flushOutbox();
     };
-    let userId = useAuthStore.getState().session?.user.id;
-    const unsubscribe = useAuthStore.subscribe((state) => {
-      const next = state.session?.user.id;
-      if (next === userId) return;
-      userId = next;
-      // Signed in (or switched person): their backlog, and what others
-      // see as pending, changes.
+    const ownerKey = (o: OutboxOwner) => (o.userId ? `${o.userId}:${o.orgId ?? ''}` : '');
+    let owner = ownerKey(currentOwner());
+    const unsubscribe = useAuthStore.subscribe(() => {
+      const next = ownerKey(currentOwner());
+      if (next === owner) return;
+      owner = next;
+      // Signed in, or switched person or organisation: which writes are
+      // this session's, and so shown as pending and replayed, changes.
       notifyOutboxChanged();
       if (next) void flushOutbox();
     });

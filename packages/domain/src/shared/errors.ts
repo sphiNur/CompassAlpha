@@ -16,19 +16,17 @@ export class DomainError extends Error {
   public readonly code: DomainErrorCode;
   public readonly i18nKey: string;
   public readonly context: Record<string, unknown>;
-  public readonly retriable: boolean;
 
   constructor(
     code: DomainErrorCode,
     i18nKey: string,
-    opts: { message?: string; context?: Record<string, unknown>; retriable?: boolean } = {},
+    opts: { message?: string; context?: Record<string, unknown> } = {},
   ) {
     super(opts.message ?? i18nKey);
     this.name = 'DomainError';
     this.code = code;
     this.i18nKey = i18nKey;
     this.context = opts.context ?? {};
-    this.retriable = opts.retriable ?? false;
   }
 }
 
@@ -39,10 +37,7 @@ export const forbidden = (key: string, ctx?: Record<string, unknown>): DomainErr
   new DomainError('FORBIDDEN', key, { context: ctx });
 
 export const conflict = (key: string, ctx?: Record<string, unknown>): DomainError =>
-  new DomainError('CONFLICT', key, { context: ctx, retriable: true });
+  new DomainError('CONFLICT', key, { context: ctx });
 
 export const preconditionFailed = (key: string, ctx?: Record<string, unknown>): DomainError =>
   new DomainError('PRECONDITION_FAILED', key, { context: ctx });
-
-export const notFound = (key: string, ctx?: Record<string, unknown>): DomainError =>
-  new DomainError('NOT_FOUND', key, { context: ctx });

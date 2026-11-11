@@ -30,6 +30,10 @@ export type ShareTextDeps = {
   extrasLabel: string;
   /** i18n.t('order.notes.label') */
   notesLabel: string;
+  /** i18n.t('run.share.line', …): "Tomato: 2 kg", 「西红柿：2 公斤」. */
+  line: (name: string, qty: string) => string;
+  /** i18n.t('run.share.heading', …): "Notes:", 「备注：」. */
+  heading: (label: string) => string;
 };
 
 /** Localized `{name, unit}` for a line, falling back to the line's own. */
@@ -39,7 +43,7 @@ function displayOf(line: PreviewLine, deps: ShareTextDeps): { name: string; unit
 }
 
 /**
- * One line of STORE-facing text: `[其他物品 · ]Name: 2 kg[\n  note]`.
+ * One line of STORE-facing text: `[其他物品 · ]西红柿：2 公斤[\n  note]`.
  * Store managers get the extras marker because "off-catalog" is a
  * meaningful distinction on their side of the transaction.
  */
@@ -48,7 +52,7 @@ export function formatLineForText(line: PreviewLine, deps: ShareTextDeps): strin
   const qtyUnit = `${formatQty(line.qty)} ${unit}`.trim();
   const prefix = line.kind === 'extra' ? `${deps.extrasLabel} · ` : '';
   const note = line.note ? `\n  ${line.note}` : '';
-  return `${prefix}${name}: ${qtyUnit}${note}`;
+  return `${prefix}${deps.line(name, qtyUnit)}${note}`;
 }
 
 /**
@@ -59,7 +63,7 @@ export function buildStoreText(group: PreviewStoreGroup, deps: ShareTextDeps): s
   const lines = [group.storeName, ''];
   for (const line of group.items) lines.push(formatLineForText(line, deps));
   if (group.legacyNote) {
-    lines.push('', `${deps.notesLabel}:`, group.legacyNote);
+    lines.push('', deps.heading(deps.notesLabel), group.legacyNote);
   }
   return lines.join('\n').trim();
 }
@@ -73,14 +77,14 @@ export function buildStoreText(group: PreviewStoreGroup, deps: ShareTextDeps): s
  * 2026-07-27 and asked for the split back, so the split is the
  * behaviour:
  *
- *     savza abat
+ *     Stall 1
  *
- *     Eden Magic City
- *     Pomidor: 7 kg
- *     Piyoz: 9 kg
+ *     Store A
+ *     Tomatoes: 7 kg
+ *     Onions: 9 kg
  *
- *     Eden Seoul
- *     Piyoz: 5 kg
+ *     Store B
+ *     Onions: 5 kg
  *
  * Why the merge was the wrong call, now that the actual workflow is
  * clear: this text is not only a price quote, it is the instruction for
@@ -104,7 +108,7 @@ export function buildSupplierText(group: PreviewSupplierGroup, deps: ShareTextDe
     lines.push(store.storeName);
     for (const line of store.items) lines.push(formatLineForText(line, deps));
     if (store.legacyNote) {
-      lines.push(`${deps.notesLabel}:`, store.legacyNote);
+      lines.push(deps.heading(deps.notesLabel), store.legacyNote);
     }
     lines.push('');
   }

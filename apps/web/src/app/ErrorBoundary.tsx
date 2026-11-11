@@ -102,9 +102,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             gap: '12px',
           }}
         >
-          <div style={{ fontSize: 64 }} aria-hidden>
-            ⚠
-          </div>
+          {/* Review COREWEB1-23 (2026-11-11): no 64 px ⚠ over a title that
+              says the same (UI-1). */}
           <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{t('boot.crashTitle')}</h1>
           <p style={{ fontSize: 14, opacity: 0.7, margin: 0, maxWidth: 320 }}>
             {t('boot.crashBody')}
@@ -136,11 +135,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             onClick={() => {
               this.setState({ error: null, copied: false });
             }}
+            // Review COREWEB1-25 (2026-11-11): the action colour is light
+            // blue in the dark theme, and white on it was 2.4:1.
             style={{
               padding: '10px 20px',
               borderRadius: 9999,
               background: 'var(--c-action, #0066cc)',
-              color: 'white',
+              color: 'var(--c-action-fg, white)',
               border: 0,
               fontSize: 15,
               fontWeight: 500,
@@ -167,7 +168,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               borderRadius: 9999,
               background: 'transparent',
               color: 'var(--c-fg-muted, #6e6e73)',
-              border: '1px solid rgba(0,0,0,0.12)',
+              // The kit's hairline: a black one vanished on the dark theme.
+              border: '1px solid var(--c-divider, rgba(0,0,0,0.12))',
               fontSize: 14,
               cursor: 'pointer',
             }}

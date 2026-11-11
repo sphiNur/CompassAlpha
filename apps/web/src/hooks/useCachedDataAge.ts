@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Query } from '@tanstack/react-query';
+import type { makeDateFormatters } from '../lib/dateFormat';
 
 /**
  * When the oldest data on screen was loaded, or null when nothing on
@@ -20,15 +21,22 @@ export function oldestShownData(
   return oldest;
 }
 
-/** "14:05" today, "10-30 14:05" on an earlier day (device time). */
-export function lastUpdatedLabel(at: number, now: number = Date.now()): string {
+/**
+ * The time today, the day and time on an earlier day, in the UI language
+ * and device time: "14:05", "10月30日 14:05", "30 окт. 14:05". Review
+ * COREWEB2-20: it was "10-30 14:05" in every language, which reads as
+ * 10 October where the day comes first.
+ */
+export function lastUpdatedLabel(
+  at: number,
+  fmt: Pick<ReturnType<typeof makeDateFormatters>, 'time' | 'calendarDay'>,
+  now: number = Date.now(),
+): string {
   const d = new Date(at);
   const n = new Date(now);
-  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const sameDay =
     d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
-  if (sameDay) return hhmm;
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hhmm}`;
+  return sameDay ? fmt.time(d) : `${fmt.calendarDay(d)} ${fmt.time(d)}`;
 }
 
 /**

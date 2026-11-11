@@ -89,10 +89,11 @@ const NEUTRAL = new Set([
 /**
  * WHY THERE IS NO "PROSE" RULE (2026-07-30)
  *
- * The four rules below anchor on syntax — a prop name, a ternary of two
- * literals, a confirm() argument, a line that is nothing but bare words
- * between JSX tags. Each has a near-zero false-positive rate; I hand-checked
- * all 77 hits from the first full run.
+ * The rules below anchor on syntax (1, 1b, 2, 3 and 4: a prop name, a
+ * ternary of two literals, a confirm() argument, bare words between JSX
+ * tags) or on the script itself (5: Chinese or Cyrillic in the code). Each
+ * has a near-zero false-positive rate; I hand-checked all 77 hits from the
+ * first full run.
  *
  * A fifth rule that tried to catch multi-word PROSE (the body paragraph
  * under a flagged `<Banner title=...>`) was written and then removed. Every
@@ -325,14 +326,23 @@ function scan(file: string): Finding[] {
   return found;
 }
 
-const repoRoot = process.cwd();
+// Review OPS-42 (2026-11-11): from the script's own place, not the
+// working directory. Run from apps/web, every root was missing, the error
+// was swallowed, and the guard said "clean (0 files scanned)" with exit 0.
+// A missing root, or nothing to scan, is now a failure.
+const repoRoot = join(import.meta.dir, '..');
 const files: string[] = [];
 for (const root of ROOTS) {
   try {
     walk(join(repoRoot, root), files);
-  } catch {
-    // Root missing (partial checkout) — nothing to scan.
+  } catch (err) {
+    console.error(`untranslated-literal guard: cannot read ${root} (${(err as Error).message}).`);
+    process.exit(1);
   }
+}
+if (files.length === 0) {
+  console.error(`untranslated-literal guard: no files found under ${ROOTS.join(', ')}.`);
+  process.exit(1);
 }
 
 const findings: Finding[] = [];

@@ -395,8 +395,11 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {
-  /** Ali and Bob ready to clock. Bob's shift ended an hour ago; he clocked in at its start. */
-  async function bobsShiftOver() {
+  /**
+   * Ali and Bob ready to clock. Bob's shift ended an hour ago; he clocked
+   * in at its start. Returns the shift's date.
+   */
+  async function bobsShiftOver(): Promise<string> {
     const f = fixture();
     await staffReady();
     await colleagueReady();
@@ -417,6 +420,7 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       time: attendance.localTime(start, TZ),
       reason: 'test',
     });
+    return dateInTz(start, TZ);
   }
   /** Bob's face on Ali's phone, with a reason for the overtime. */
   const bobOnAlisPhone = () =>
@@ -449,9 +453,10 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
 
   test('"not them": only the phone that made it, only once, and its overtime goes too', async () => {
     const f = fixture();
-    await bobsShiftOver();
+    // The overtime is on the shift's day: after midnight, that is not the
+    // clock-out's own day (review TEST1-08).
+    const date = await bobsShiftOver();
     const out = await bobOnAlisPhone();
-    const date = dateInTz(new Date(out.at), TZ);
     const sheet = () => f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
     const pendingOvertime = async () =>
       (await sheet()).overtime.filter((o) => o.punchId === out.id && o.status === 'pending');

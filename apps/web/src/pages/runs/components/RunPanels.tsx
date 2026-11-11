@@ -12,7 +12,16 @@
  *
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
-import { useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { ComponentProps } from 'react';
 import {
   Badge,
   Banner,
@@ -31,13 +40,16 @@ import {
   PickerRow,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
+import { copyText } from '../../../lib/clipboard';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
+import { pickName } from '../../../lib/productName';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
+import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,
   PerVendorView,
@@ -53,6 +65,7 @@ import type {
   PreviewSupplierGroup,
 } from '../types';
 import { otherStoreSkusOf } from '../types';
+import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,
@@ -113,7 +126,34 @@ const SAFE_PHOTO_URL = /^(https?:\/\/|data:image\/)/i;
  * No more stacked menu sheets. Page-level Telegram MainButton still
  * drives Start purchase / Start delivery / Finish run.
  */
-export function ActiveRunPanel({
+export function ActiveRunPanel(props: ComponentProps<typeof ActiveRunPanelBody>) {
+  // Review RUNWEB1-07: RunPage draws again on every keystroke in its
+  // sheets (their drafts live there) and writes these handlers inline, so
+  // the panel and every row in it drew again each time. Handed stand-ins
+  // that keep their identity, the memo()'d body draws only when what it
+  // shows changes.
+  const handlers = useStableCallbacks({
+    onTogglePriceUnit: props.onTogglePriceUnit,
+    onSavePurchaseInline: props.onSavePurchaseInline,
+    onMarkNa: props.onMarkNa,
+    onEditPurchased: props.onEditPurchased,
+    onUnmark: props.onUnmark,
+    onOpenAdvancedPurchase: props.onOpenAdvancedPurchase,
+    onDeliverStore: props.onDeliverStore,
+    onRecallStore: props.onRecallStore,
+    onMarkExtraStatus: props.onMarkExtraStatus,
+    onRecordExtraExpense: props.onRecordExtraExpense,
+    onRemoveExpense: props.onRemoveExpense,
+    onOpenExpense: props.onOpenExpense,
+    onSetPaymentMethod: props.onSetPaymentMethod,
+    onTopUpBuy: props.onTopUpBuy,
+    onTopUpDismiss: props.onTopUpDismiss,
+    onEditPrice: props.onEditPrice,
+  });
+  return <ActiveRunPanelBody {...props} {...handlers} />;
+}
+
+const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   run,
   skuById,
   categoryById,
@@ -242,24 +282,6 @@ export function ActiveRunPanel({
     }
     return m;
   }, [run.perStoreDemand]);
-
-  /**
-   * SKU → its recorded splits, for the same reason as `demandBySku`.
-   *
-   * Every row was calling `run.splits.filter(sp => sp.skuId === ...)`,
-   * so an 87-item run with ~260 splits did ~22,000 comparisons per
-   * render — and the 6-second poll hands back fresh arrays every time,
-   * so this recomputed on a timer even when nothing had changed.
-   */
-  const splitsBySku = useMemo(() => {
-    const m = new Map<string, typeof run.splits>();
-    for (const sp of run.splits) {
-      const arr = m.get(sp.skuId) ?? [];
-      arr.push(sp);
-      m.set(sp.skuId, arr);
-    }
-    return m;
-  }, [run.splits]);
 
   /**
    * Inverse of `demandBySku` — `storeId → [{ skuId, qty }]`. Powers the
@@ -414,8 +436,9 @@ export function ActiveRunPanel({
       extraHaystackOf: (it) => Object.values(skuById.get(it.skuId)?.names ?? {}),
       statusOf: (it) => it.status,
       idOf: (it) => it.skuId,
+      locale: i18n.locale,
     }),
-    [skuById, productName, run.supplierBySku],
+    [skuById, productName, run.supplierBySku, i18n.locale],
   );
   const visibleRunItems = useMemo(
     () => visibleItems(run.items, itemListView, { tokens: itemTokens, filter: itemFilter }),
@@ -689,12 +712,7 @@ export function ActiveRunPanel({
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
               // row component — so we pass both regardless of status.
-              const actualSplits = (splitsBySku.get(it.skuId) ?? []).map((sp) => ({
-                storeId: sp.storeId,
-                qty: sp.qty,
-                unitPrice: sp.unitPrice,
-                paymentMethod: sp.paymentMethod,
-              }));
+              const actualSplits = rowSplitsOf(run.splits, it.skuId);
               return (
                 <PurchaseRow
                   key={it.skuId}
@@ -704,7 +722,7 @@ export function ActiveRunPanel({
                   skuName={skuName}
                   unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
-                  demand={demandBySku.get(it.skuId) ?? []}
+                  demand={demandBySku.get(it.skuId) ?? NO_DEMAND}
                   storeById={storeById}
                   actualSplits={actualSplits}
                   isMultiStoreRun={demandStoreIds.length > 1}
@@ -1075,7 +1093,7 @@ export function ActiveRunPanel({
           The banner just took up vertical space without adding info. */}
     </div>
   );
-}
+});
 
 /**
  * Per-store view (added 2026-05-05).
@@ -1285,18 +1303,8 @@ export function PreviewSummaryCard({
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
   const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
   const currentSkuName = useCallback(
-    (item: { names: Record<string, string> | null | undefined }): string => {
-      const names = item.names ?? {};
-      return (
-        names[i18n.locale] ??
-        names.en ??
-        names.ru ??
-        names.zh ??
-        names.uz ??
-        Object.values(names)[0] ??
-        '—'
-      );
-    },
+    (item: { names: Record<string, string> | null | undefined }): string =>
+      pickName(item.names, i18n.locale),
     [i18n.locale],
   );
   /**
@@ -1567,29 +1575,8 @@ export function PreviewSummaryCard({
     return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
   };
 
-  const copyToClipboard = async (text: string): Promise<boolean> => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        // Fallback for environments without clipboard API.
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   const shareOrCopyText = async (text: string): Promise<void> => {
-    const copied = await copyToClipboard(text);
+    const copied = await copyText(text);
     let opened = false;
     // DX-BUY-4 (2026-11-01): outside Telegram this used to navigate the
     // app itself to t.me (the SDK object exists in every browser).
@@ -1653,6 +1640,8 @@ export function PreviewSummaryCard({
     },
     extrasLabel: i18n.t('order.extras.label'),
     notesLabel: i18n.t('order.notes.label'),
+    line: (name, qty) => i18n.t('run.share.line', { name, qty }),
+    heading: (label) => i18n.t('run.share.heading', { label }),
   };
 
   const buildStoreText = (group: PreviewStoreGroup): string =>
@@ -2042,6 +2031,7 @@ export function PreviewSummaryCard({
                 {groupStoreBySupplier(
                   g,
                   i18n.t('run.previewSupplier.unassigned'),
+                  i18n.locale,
                 ).map((supplier) => (
                   <section key={supplier.supplierId ?? '__unassigned__'}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
@@ -2087,10 +2077,17 @@ export function PreviewSummaryCard({
               the bazaar. Hidden when there's nothing to copy (no rows
               with qty > 0 in any bucket). */}
           {bySupplier.length > 0 ? (
-            <div className="mb-2 flex justify-end">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              {/* RUNWEB1-11 (2026-11-11): a product name opens the stall
+                  picker; that was only in each name's tooltip, which
+                  touch never shows. */}
+              <p className="min-w-0 text-old-label text-[var(--c-fg-muted)]">
+                {i18n.t('run.previewSupplier.tapHint')}
+              </p>
               <Button
                 variant="pearl"
                 size="sm"
+                className="shrink-0"
                 onClick={() => void shareOrCopyText(buildAllVendorsText())}
               >
                 {i18n.t('run.previewShare.sendAll')}

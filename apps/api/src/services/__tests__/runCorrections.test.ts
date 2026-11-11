@@ -69,4 +69,48 @@ describe('runCorrections', () => {
     ]);
     expect(runCorrections(events, new Set(['B']))).toEqual([]);
   });
+
+  /** Rice bought at 1000 with store A paying its own price, then delivered. */
+  const deliveredOwn = (ownA: string): RunCommand[] => [
+    { type: 'StartPurchase', actor },
+    purchaseItem({
+      skuId: 'rice',
+      unitPrice: '1000',
+      actualQty: '2',
+      storeSplits: [{ storeId: 'A', qty: '2', unitPrice: ownA }],
+      actor,
+    }),
+    { type: 'StartDelivery', actor },
+    { type: 'DeliverToStore', storeId: 'A', actor },
+    confirmStoreItem({ skuId: 'rice', actor }),
+    { type: 'ConfirmStore', storeId: 'A', actor },
+  ];
+  const reviseOwn = (price: string, ownA: string) =>
+    revisePurchase({
+      skuId: 'rice',
+      unitPrice: price,
+      actualQty: '2',
+      reason: 'receipt',
+      storeSplits: [{ storeId: 'A', qty: '2', unitPrice: ownA }],
+      actor,
+    });
+
+  test('RUNAPI-26: an item price no receiving store pays is no correction', () => {
+    const events = stream([...deliveredOwn('1200'), reviseOwn('1500', '1200')]);
+    expect(runCorrections(events, null)).toEqual([]);
+    expect(runCorrections(events, new Set(['A']))).toEqual([]);
+  });
+
+  test("RUNAPI-26: a change to one store's own price is that store's line, with its prices", () => {
+    const events = stream([...deliveredOwn('1200'), reviseOwn('1000', '1300')]);
+    const line = {
+      kind: 'priceAfterReceipt',
+      skuId: 'rice',
+      storeId: 'A',
+      from: '1200',
+      to: '1300',
+    };
+    expect(runCorrections(events, null)).toMatchObject([line]);
+    expect(runCorrections(events, new Set(['A']))).toMatchObject([line]);
+  });
 });

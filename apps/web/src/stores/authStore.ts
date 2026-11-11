@@ -80,6 +80,9 @@ export interface AuthSession {
    *  role store picker, and the assign/unassign rows. Server enforces
    *  with `getActorAdminStoreIds`. Empty array = no admin authority. */
   adminStoreIds?: string[];
+  /** COREWEB2-11: the paused and archived stores the same rule covers
+   *  (removals only). Absent from older servers. */
+  inactiveAdminStoreIds?: string[];
   /** SHL-2: effective permission keys per store (older sessions lack it). */
   storePermissions?: Record<string, string[]>;
   /** True until the user confirms their name in onboarding. */

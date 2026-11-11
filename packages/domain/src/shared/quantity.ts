@@ -8,9 +8,9 @@
  * 3 decimals here; anything that is not a plain decimal goes through
  * Number, as the old code did.
  */
-import { qtyMilli } from '@compass/contracts';
+import { qtyMilli } from '@compass/contracts/quantity';
 
-export { milliQty } from '@compass/contracts';
+export { milliQty } from '@compass/contracts/quantity';
 
 /** A stored quantity in thousandths; missing or unreadable counts as 0. */
 export function storedQtyMilli(value: string | null | undefined): bigint {

@@ -7,14 +7,15 @@
 
 ```
 Telegram
-  → Cloudflare Worker app-proxy (infra/cloudflare/app-proxy): finds
-    the origin's current tunnel URL in KV, which compass-origin-watch
-    publishes (infra/tunnel)
+  → Cloudflare Worker app-proxy (infra/cloudflare/app-proxy): reads
+    the origin's current tunnel URL from the ntfy topic that
+    compass-origin-watch publishes to (infra/tunnel); KV keeps the
+    newest one
   → cloudflared quick tunnel (compass-app-tunnel.service)
   → nginx on :80 (its config is not in the repo yet: review OPS-23)
   → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
 worker (compass-worker.service): the outbox; bot messages go out
-  through the tg-relay Worker (infra/cloudflare/tg-relay.js)
+  through the tg-relay Worker (infra/cloudflare/tg-relay/)
 Postgres 18, Redis 8 and S3-compatible storage behind both
 ```
 
@@ -46,11 +47,12 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 ```
 
 ### Triaging client errors
-- Open `/debug` in the Mini App — Unreviewed tab shows new client_logs.
-- After scanning + fixing, hit "Mark all reviewed" so the cursor advances.
+- Open `/debug` in the Mini App (needs `system.logs.view`): the Server tab
+  lists the organisation's latest `ops.client_logs` rows.
 - From a terminal (there is no `compass logs` CLI command): query
-  `ops.client_logs` with psql. RLS is fail-closed, so open a transaction in
-  the system context first:
+  `ops.client_logs` with psql. It is under RLS by organisation, and rows
+  sent before sign-in have no organisation, so open a transaction in the
+  system context first:
   ```sql
   BEGIN; SELECT set_config('app.system_context', 'maintenance', true);
   SELECT created_at, org_id, kind, action, error_msg FROM ops.client_logs
@@ -112,6 +114,10 @@ warning and the deploy went on (the `.env` check even passed outright).
 - The `.env` check: no override; fix the server.
 - The database role check, which now refuses a superuser as well as
   BYPASSRLS: `--skip-rls-check`.
+- The toolchain check (review OPS-21, 2026-11-10): the bun the units
+  start (`/home/ubuntu/.bun/bin/bun`) must be `.bun-version`, and the
+  pnpm and node on the deploy's PATH must be `packageManager` and meet
+  `engines.node`: `--allow-toolchain-drift`. A rollback only warns.
 
 Since 2026-11 (review OPS-05/OPS-06), `COMPASS_BASE` must be set before a
 deploy starts, and the provenance gates also refuse unless:
@@ -159,6 +165,13 @@ Since 2026-11 (review OPS-10/OPS-12):
 - The web bundle is built into `dist.next` before the migrations and
   swapped in just before the restart. The old api used to run against
   the new schema for the whole build.
+- A migration waits at most 3 s for a table lock (review DB-08), so the
+  live app never waits longer behind it. The step is tried again after
+  2, 5, 10 and 20 s (`↻` lines in the output); each try rolls back
+  whole. If every try fails, the deploy stops: look for the long
+  transaction in `pg_stat_activity` (`state = 'idle in transaction'`,
+  an old `xact_start`, a running `pg_dump`) and deploy again once it
+  ends.
 - `compass-backup.timer` no longer has `Requires=compass-backup.service`.
   Starting the timer (install, boot) no longer starts a backup, so
   `INSTALL_SKIP_FIRST_RUN=1` works, and stopping a stuck backup no longer
@@ -415,18 +428,57 @@ sudo systemctl start compass-backup.service   # oneshot — returns when done
 journalctl -u compass-backup.service -n 50 --no-pager
 ```
 
-### Restore from a dump (DESTRUCTIVE)
-```bash
-# Interactive — pick from list:
-sudo -u ubuntu bash /home/ubuntu/compass-alpha/infra/backup/restore.sh
+### Restore from a dump
+`restore.sh` restores into a NEW, empty database, never over the live
+one (review OPS-11, 2026-11-10). Restoring over the live database
+failed whenever the role did not own every object it had to drop, or
+the database held something newer than the dump, and left nothing to
+go back to. Now the live database stays as it is until the restored one
+has been checked, and the swap can be undone. CI rehearses every step
+below on each change (`infra/backup/drill.sh`, job `restore-drill`);
+its dump restores in about a second.
 
-# Specific file:
-sudo -u ubuntu bash /home/ubuntu/compass-alpha/infra/backup/restore.sh \
-  /home/ubuntu/compass-backups/compass-2026-05-04-033000.dump
+1. Make the new database, owned by the role the migrations run as: the
+   user in `DATABASE_URL_DIRECT`, or in `DATABASE_URL` without it
+   (`compass` below).
+   ```bash
+   sudo -u postgres createdb -O compass compass_restored
+   ```
+2. Restore into it as that role: the restored tables belong to the role
+   that restores them, and the next migration must own them. Where only
+   a superuser can connect, name that role in `RESTORE_OWNER`; without
+   it the script refuses a superuser. It also refuses a database that
+   is not empty, uses `--single-transaction` (a failure leaves the
+   database empty), and gives the backup role its SELECT again.
+   ```bash
+   cd /home/ubuntu/compass-alpha
+   RESTORE_DATABASE_URL='postgresql://compass:…@localhost/compass_restored' \
+     bash infra/backup/restore.sh        # lists the dumps; or name one
+   ```
+3. Check it before anything else changes: the newest rows you expect to
+   find, such as the last run and the last daily close.
+4. Swap the names. The api and the worker hold connections to the live
+   database, so stop them first. The old database is kept.
+   ```bash
+   sudo systemctl stop compass-api compass-worker
+   sudo -u postgres psql -c 'ALTER DATABASE compass RENAME TO compass_before_restore' \
+     -c 'ALTER DATABASE compass_restored RENAME TO compass'
+   ```
+5. Migrate (an older dump may lack the release's newest migrations),
+   start, and run the server smoke from your machine:
+   ```bash
+   cd /home/ubuntu/compass-alpha && pnpm --filter @compass/db migrate
+   sudo systemctl start compass-api compass-worker
+   COMPASS_BASE=https://compass-alpha.sphinxr.workers.dev bun run scripts/smoke.ts
+   ```
+   If the api connects as a role other than the owner (restore.sh warns
+   when it does), give it its grants again first: a dump carries none
+   (`--no-privileges`).
+6. Once all is well: `sudo -u postgres dropdb compass_before_restore`.
+   Until then, to undo: stop, swap the names back, start.
 
-# Restore into staging instead of prod DB:
-DATABASE_URL=postgresql://… bash restore.sh <dump>
-```
-The script asks for `yes` confirmation before running `pg_restore`. It uses
-`--single-transaction` so a partial failure rolls back instead of leaving the
-DB half-migrated.
+On a new server a dump brings no roles. Create them first, with the
+passwords from the old `.env`: `compass` (LOGIN, NOSUPERUSER,
+NOBYPASSRLS) and `compass_backup` (LOGIN, BYPASSRLS); then the steps
+above with the database name from `.env`, and `install.sh` for the
+nightly timer.

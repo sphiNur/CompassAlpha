@@ -16,6 +16,7 @@ function loadRoute(): Route {
 
 const route = loadRoute();
 const O = 'https://app.example';
+const SDK = 'https://telegram.org/js/telegram-web-app.js';
 const get = (path: string, mode = 'cors') => ({ method: 'GET', url: O + path, mode });
 
 describe('sw.js route', () => {
@@ -40,19 +41,70 @@ describe('sw.js route', () => {
   it('never touches writes or other origins', () => {
     expect(route({ method: 'POST', url: O + '/trpc/run.create' }, O)).toBeNull();
     expect(route(get('/x.js'), 'https://other.example')).toBeNull();
-    expect(route({ method: 'GET', url: 'https://telegram.org/js/telegram-web-app.js' }, O)).toBeNull();
+    expect(route({ method: 'GET', url: 'https://telegram.org/js/other.js' }, O)).toBeNull();
+  });
+
+  // COREWEB1-14 (2026-11-11): an offline start without it ran as in a
+  // plain browser.
+  it('keeps the Telegram SDK, the one script from another origin', () => {
+    expect(route({ method: 'GET', url: SDK, mode: 'no-cors' }, O)).toBe('sdk');
+    expect(route({ method: 'POST', url: SDK }, O)).toBeNull();
   });
 });
+
+/** A same-origin answer, typed as the browser types it (`new Response` is 'default'). */
+function basic(body: string, contentType: string, status = 200): Response {
+  const res = new Response(body, { status, headers: { 'content-type': contentType } });
+  Object.defineProperty(res, 'type', { value: 'basic' });
+  return res;
+}
+
+/** The answer to a no-cors request for another origin's file: status 0, unreadable. */
+function opaque(body = 'sdk'): Response {
+  const res = new Response(body);
+  Object.defineProperties(res, {
+    type: { value: 'opaque' },
+    status: { value: 0 },
+    ok: { value: false },
+  });
+  return res;
+}
+
+/** A fetch event: what the worker answers, and what it asked the browser to wait for. */
+function fetchEvent(request: { method: string; url: string; mode?: string }) {
+  const event = {
+    request,
+    answer: undefined as Promise<Response> | undefined,
+    done: undefined as Promise<unknown> | undefined,
+    respondWith(p: Promise<Response>) {
+      event.answer = p;
+    },
+    waitUntil(p: Promise<unknown>) {
+      event.done = p;
+    },
+  };
+  return event;
+}
 
 // R2-SHL-1 / R2-ENG-5 (2026-10-31): the first visit precaches the shell,
 // and a page load the proxy answers 5xx (origin down) gets the cached shell.
 type Listener = (event: Record<string, unknown>) => void;
-function loadWorker(fetchImpl: (req: unknown) => Promise<Response>) {
+type Timers = {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (id: unknown) => void;
+};
+function loadWorker(
+  fetchImpl: (req: unknown, init?: RequestInit) => Promise<Response>,
+  { timers = { setTimeout, clearTimeout } as Timers, slowPut = false } = {},
+) {
   const src = readFileSync(join(import.meta.dir, '../../../public/sw.js'), 'utf8');
   const listeners: Record<string, Listener> = {};
   const stored = new Map<string, Response>();
   const cache = {
-    put: async (k: unknown, res: Response) => void stored.set(typeof k === 'string' ? k : String((k as Request).url ?? k), res),
+    put: async (k: unknown, res: Response) => {
+      if (slowPut) await new Promise((r) => setTimeout(r, 5));
+      stored.set(typeof k === 'string' ? k : String((k as Request).url ?? k), res);
+    },
     add: async (u: string) => void stored.set(u, new Response('asset')),
     match: async (k: string) => stored.get(k),
     keys: async () => [],
@@ -69,7 +121,13 @@ function loadWorker(fetchImpl: (req: unknown) => Promise<Response>) {
     skipWaiting: () => {},
     location: { origin: O },
   };
-  new Function('self', 'caches', 'fetch', src)(fakeSelf, caches, fetchImpl);
+  new Function('self', 'caches', 'fetch', 'setTimeout', 'clearTimeout', src)(
+    fakeSelf,
+    caches,
+    fetchImpl,
+    timers.setTimeout,
+    timers.clearTimeout,
+  );
   return { listeners, stored, self: fakeSelf };
 }
 
@@ -85,46 +143,156 @@ describe('sw.js shell precache and origin-down fallback', () => {
     expect(urls).toEqual(['/boot.css', '/boot-guard.js', '/assets/index-abc.js', '/assets/vendor-x.js', '/assets/index-y.css']);
   });
 
-  it('install caches index.html and its entry files', async () => {
+  it('install caches index.html, its entry files and the Telegram SDK', async () => {
     const html = '<script type="module" src="/assets/index-abc.js"></script>';
-    const res = new Response(html, { status: 200 });
-    Object.defineProperty(res, 'type', { value: 'basic' });
-    const { listeners, stored } = loadWorker(async () => res);
+    const asked: Array<[unknown, RequestInit | undefined]> = [];
+    const { listeners, stored } = loadWorker(async (req, init) => {
+      asked.push([req, init]);
+      if (req === '/') return basic(html, 'text/html; charset=utf-8');
+      if (req === SDK) return opaque();
+      return basic('js', 'text/javascript');
+    });
     let done: Promise<unknown> = Promise.resolve();
     listeners.install!({ waitUntil: (p: Promise<unknown>) => (done = p) });
     await done;
-    expect([...stored.keys()].sort()).toEqual(['/assets/index-abc.js', '/index.html']);
+    expect([...stored.keys()].sort()).toEqual(['/assets/index-abc.js', '/index.html', SDK]);
+    // As index.html asks for it (no `crossorigin`).
+    expect(asked.find(([req]) => req === SDK)![1]).toEqual({ mode: 'no-cors' });
   });
 
   it('a page load answered 502/503/504 gets the cached shell', async () => {
     for (const status of [502, 503, 504, 530]) {
       const { listeners, stored } = loadWorker(async () => new Response('Bad gateway', { status }));
       stored.set('/index.html', new Response('shell'));
-      let answer: Promise<Response> | null = null;
-      listeners.fetch!({
-        request: { method: 'GET', url: O + '/', mode: 'navigate' },
-        respondWith: (p: Promise<Response>) => (answer = p),
-      });
-      expect(await (await answer!).text()).toBe('shell');
+      const event = fetchEvent({ method: 'GET', url: O + '/', mode: 'navigate' });
+      listeners.fetch!(event);
+      expect(await (await event.answer!).text()).toBe('shell');
     }
   });
 
   it('a 404 page is passed through, and with no cached shell a 502 is too', async () => {
     const notFound = loadWorker(async () => new Response('nf', { status: 404 }));
     notFound.stored.set('/index.html', new Response('shell'));
-    let answer: Promise<Response> | null = null;
-    notFound.listeners.fetch!({
-      request: { method: 'GET', url: O + '/x', mode: 'navigate' },
-      respondWith: (p: Promise<Response>) => (answer = p),
-    });
-    expect((await answer!).status).toBe(404);
+    const missing = fetchEvent({ method: 'GET', url: O + '/x', mode: 'navigate' });
+    notFound.listeners.fetch!(missing);
+    expect((await missing.answer!).status).toBe(404);
 
     const empty = loadWorker(async () => new Response('bad', { status: 502 }));
-    empty.listeners.fetch!({
-      request: { method: 'GET', url: O + '/', mode: 'navigate' },
-      respondWith: (p: Promise<Response>) => (answer = p),
+    const down = fetchEvent({ method: 'GET', url: O + '/', mode: 'navigate' });
+    empty.listeners.fetch!(down);
+    expect((await down.answer!).status).toBe(502);
+  });
+});
+
+// COREWEB1-15 (2026-11-11): what is kept must be what it claims to be, the
+// write is part of the fetch event, and a page load that gets no answer
+// falls back to the cached shell instead of waiting for the browser.
+describe('sw.js cache writes (COREWEB1-15)', () => {
+  const cacheable = loadWorker(async () => new Response('')).self.__compassSwCacheable as (
+    res: Response,
+    kind: string,
+  ) => boolean;
+  const page = '<!doctype html><title>Compass</title>';
+
+  it('keeps a page only as HTML, and a file never as HTML', () => {
+    expect(cacheable(basic(page, 'text/html; charset=utf-8'), 'page')).toBe(true);
+    expect(cacheable(basic('body{}', 'text/css'), 'page')).toBe(false);
+    // index.html with 200 is what the server answers for a path it does
+    // not know, e.g. a stray .png or an old deploy's file.
+    for (const kind of ['asset', 'static']) {
+      expect(cacheable(basic(page, 'text/html; charset=utf-8'), kind)).toBe(false);
+      expect(cacheable(basic('x', 'text/javascript'), kind)).toBe(true);
+      expect(cacheable(basic('nf', 'text/plain', 404), kind)).toBe(false);
+    }
+  });
+
+  it('keeps the SDK’s opaque answer, and nothing opaque from the app’s own origin', () => {
+    expect(cacheable(opaque(), 'sdk')).toBe(true);
+    expect(cacheable(opaque(), 'static')).toBe(false);
+  });
+
+  it('a file answered with the page is passed on but not kept', async () => {
+    const { listeners, stored } = loadWorker(async () => basic(page, 'text/html'));
+    const event = fetchEvent({ method: 'GET', url: O + '/assets/gone-1.js', mode: 'cors' });
+    listeners.fetch!(event);
+    expect(await (await event.answer!).text()).toBe(page);
+    await event.done;
+    expect(stored.size).toBe(0);
+  });
+
+  it('the fresh shell is stored before the event ends', async () => {
+    const { listeners, stored } = loadWorker(async () => basic(page, 'text/html'), {
+      slowPut: true,
     });
-    expect((await answer!).status).toBe(502);
+    const event = fetchEvent({ method: 'GET', url: O + '/order', mode: 'navigate' });
+    listeners.fetch!(event);
+    await event.answer;
+    expect(stored.has('/index.html')).toBe(false); // still being written
+    await event.done;
+    expect(await stored.get('/index.html')!.text()).toBe(page);
+  });
+
+  it('a page load with no answer after 4 s gets the cached shell; the late answer is still kept', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    let arrive: (res: Response) => void = () => {};
+    const { listeners, stored } = loadWorker(
+      () => new Promise<Response>((resolve) => (arrive = resolve)),
+      { timers: { setTimeout: (fn, ms) => timers.push({ fn, ms }), clearTimeout: () => {} } },
+    );
+    stored.set('/index.html', new Response('old shell'));
+    const event = fetchEvent({ method: 'GET', url: O + '/', mode: 'navigate' });
+    listeners.fetch!(event);
+    expect(timers.map((t) => t.ms)).toEqual([4000]);
+    timers[0]!.fn();
+    expect(await (await event.answer!).text()).toBe('old shell');
+    arrive(basic(page, 'text/html'));
+    await event.done;
+    expect(await stored.get('/index.html')!.text()).toBe(page);
+  });
+
+  it('with no cached shell the page load waits for the network', async () => {
+    const timers: Array<() => void> = [];
+    let arrive: (res: Response) => void = () => {};
+    const { listeners } = loadWorker(() => new Promise<Response>((resolve) => (arrive = resolve)), {
+      timers: { setTimeout: (fn) => timers.push(fn), clearTimeout: () => {} },
+    });
+    const event = fetchEvent({ method: 'GET', url: O + '/', mode: 'navigate' });
+    listeners.fetch!(event);
+    timers[0]!();
+    arrive(basic(page, 'text/html'));
+    expect(await (await event.answer!).text()).toBe(page);
+  });
+});
+
+describe('sw.js Telegram SDK (COREWEB1-14)', () => {
+  const request = { method: 'GET', url: SDK, mode: 'no-cors' };
+
+  it('online: telegram.org’s answer, kept for next time', async () => {
+    const { listeners, stored } = loadWorker(async () => opaque('fresh sdk'));
+    const event = fetchEvent(request);
+    listeners.fetch!(event);
+    expect((await event.answer!).type).toBe('opaque');
+    await event.done;
+    expect(await stored.get(SDK)!.text()).toBe('fresh sdk');
+  });
+
+  it('offline: the kept copy', async () => {
+    const { listeners, stored } = loadWorker(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    stored.set(SDK, new Response('kept sdk'));
+    const event = fetchEvent(request);
+    listeners.fetch!(event);
+    expect(await (await event.answer!).text()).toBe('kept sdk');
+  });
+
+  it('offline with no kept copy: the load fails as it would without the worker', async () => {
+    const { listeners } = loadWorker(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const event = fetchEvent(request);
+    listeners.fetch!(event);
+    await expect(event.answer!).rejects.toThrow('Failed to fetch');
   });
 });
 
@@ -182,7 +350,6 @@ function loadWorkerWith(cache: ReturnType<typeof orderedCache>) {
   };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 5));
 const paths = (cache: ReturnType<typeof orderedCache>) =>
   cache.entries.map((e) => new URL(e.url).pathname);
 
@@ -221,13 +388,10 @@ describe('sw.js asset cache trimming (COREWEB1-06)', () => {
     await cache.put('/assets/new.js', new Response('new'));
     const { listeners } = loadWorkerWith(cache);
     const hit = async () => {
-      let answer: Promise<Response> | null = null;
-      listeners.fetch!({
-        request: { method: 'GET', url: `${O}/assets/old.js`, mode: 'cors' },
-        respondWith: (p: Promise<Response>) => (answer = p),
-      });
-      expect(await (await answer!).text()).toBe('old');
-      await settle();
+      const event = fetchEvent({ method: 'GET', url: `${O}/assets/old.js`, mode: 'cors' });
+      listeners.fetch!(event);
+      expect(await (await event.answer!).text()).toBe('old');
+      await event.done;
     };
     const before = cache.puts();
     await hit();

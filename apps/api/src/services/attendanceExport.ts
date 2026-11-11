@@ -10,7 +10,7 @@
  */
 import { SignJWT, jwtVerify } from 'jose';
 import { format, loadCatalog, type CatalogKey, type Locale } from '@compass/i18n';
-import { purposeKey } from '../infra/jwt';
+import { purposeKey, TOKEN_ALG } from '../infra/jwt';
 import { buildXlsx, type Cell, type SheetSpec } from './xlsx';
 
 const AUDIENCE = 'attendance-month-export';
@@ -28,7 +28,7 @@ export interface ExportClaims {
 
 export async function signExportToken(claims: ExportClaims): Promise<string> {
   return new SignJWT({ ...claims })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: TOKEN_ALG })
     .setAudience(AUDIENCE)
     .setIssuedAt()
     .setExpirationTime('5m')
@@ -36,7 +36,10 @@ export async function signExportToken(claims: ExportClaims): Promise<string> {
 }
 
 export async function verifyExportToken(token: string): Promise<ExportClaims> {
-  const { payload } = await jwtVerify(token, secret, { audience: AUDIENCE });
+  const { payload } = await jwtVerify(token, secret, {
+    audience: AUDIENCE,
+    algorithms: [TOKEN_ALG],
+  });
   return payload as unknown as ExportClaims;
 }
 
@@ -316,7 +319,7 @@ export async function monthWorkbook(
   return { bytes: buildXlsx([summary, detail]) };
 }
 
-/** The file's name, e.g. 「考勤-Chilonzor-2026-11.xlsx」, safe for every OS. */
+/** The file's name, e.g. 「考勤-Store A-2026-11.xlsx」, safe for every OS. */
 export async function exportFileName(
   locale: Locale,
   store: string,
@@ -324,6 +327,8 @@ export async function exportFileName(
 ): Promise<string> {
   await Promise.all([loadCatalog(locale), loadCatalog('en')]);
   const safeStore = store
+    // Characters a file name cannot hold, control characters included.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
     .trim()
     .slice(0, 60);

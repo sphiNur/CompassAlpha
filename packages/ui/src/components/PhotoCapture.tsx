@@ -123,7 +123,6 @@ export function PhotoCapture({
       <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">{effectiveLabel}</span>
       {value ? (
         <div className="relative">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={value}
             alt={effectiveLabel}

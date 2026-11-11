@@ -14,6 +14,36 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = 'compass.theme';
 
+interface TgWebApp {
+  colorScheme?: 'light' | 'dark';
+  initData?: string;
+  onEvent?: (name: string, cb: () => void) => void;
+  offEvent?: (name: string, cb: () => void) => void;
+}
+
+/**
+ * Telegram's WebApp when Telegram really hosts the page. The SDK script
+ * loads in a plain browser too and then reports colorScheme 'light' by
+ * default; only signed initData means Telegram (atlas SHL-4).
+ */
+function hostTelegram(): TgWebApp | null {
+  const tg = (window as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
+  return tg?.initData && tg.colorScheme ? tg : null;
+}
+
+/**
+ * The scheme to start with: Telegram's, else the phone's, as the effect
+ * below finds it. COREWEB1-26 (2026-11-11): it started as 'light', and
+ * the first commit wrote that over the 'dark' public/boot-guard.js had
+ * set before the first paint: one light frame on a dark Telegram.
+ */
+function startingScheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'light';
+  const tg = hostTelegram();
+  if (tg?.colorScheme) return tg.colorScheme;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 interface ThemeProviderProps {
   children: ReactNode;
   defaultTheme?: Theme;
@@ -33,7 +63,7 @@ export function ThemeProvider({
     return defaultTheme;
   });
 
-  const [colorScheme, setColorScheme] = useState<'light' | 'dark'>('light');
+  const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(startingScheme);
 
   // Detect color scheme + listen for live changes.
   //   - Inside Telegram: pull colorScheme on mount AND subscribe to
@@ -42,17 +72,8 @@ export function ThemeProvider({
   //   - Outside Telegram (web preview): use the media-query listener.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    interface TgWebApp {
-      colorScheme?: 'light' | 'dark';
-      initData?: string;
-      onEvent?: (name: string, cb: () => void) => void;
-      offEvent?: (name: string, cb: () => void) => void;
-    }
-    const tg = (window as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
-    // The SDK script loads in a plain browser too and then reports
-    // colorScheme 'light' by default; only signed initData means Telegram
-    // is really hosting the page (atlas SHL-4).
-    if (tg?.initData && tg.colorScheme && typeof tg.onEvent === 'function') {
+    const tg = hostTelegram();
+    if (tg && typeof tg.onEvent === 'function') {
       const sync = () => {
         if (tg.colorScheme) setColorScheme(tg.colorScheme);
       };
