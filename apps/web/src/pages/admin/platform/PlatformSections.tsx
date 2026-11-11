@@ -19,7 +19,7 @@ import { SubscriptionStatusSchema, type SubscriptionStatus } from '@compass/cont
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { planName } from '../../../lib/planName';
-import { subscriptionStatusLabel } from '../../../lib/statusLabels';
+import { subscriptionStatusLabel } from '../../../lib/statusLabels/subscription';
 import { useI18n } from '../../../hooks/useI18n';
 import { localDateValue } from '../operations/financeDates';
 

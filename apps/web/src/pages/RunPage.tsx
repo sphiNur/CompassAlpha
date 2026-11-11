@@ -64,7 +64,7 @@ import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
 import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty, formatMoney } from '../lib/format';
-import { runStepLabel } from '../lib/statusLabels';
+import { runStepLabel } from '../lib/statusLabels/run';
 import { useCanSeePrices } from '../hooks/useStorePermission';
 import { itemProgressCounts, pendingExtrasOf } from './runs/lib/runProgress';
 import { otherStoreSkusOf } from './runs/types';

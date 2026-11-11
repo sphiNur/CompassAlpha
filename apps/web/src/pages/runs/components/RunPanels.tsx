@@ -50,7 +50,7 @@ import {
   confirmStatusLabel,
   deliveryStageLabel,
   type DeliveryStage,
-} from '../../../lib/statusLabels';
+} from '../../../lib/statusLabels/delivery';
 import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../lib/telegram';

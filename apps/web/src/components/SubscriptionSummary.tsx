@@ -2,7 +2,7 @@ import { Card, DetailRow } from '@compass/ui';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { planName } from '../lib/planName';
-import { subscriptionStatusLabel } from '../lib/statusLabels';
+import { subscriptionStatusLabel } from '../lib/statusLabels/subscription';
 
 export function SubscriptionSummary() {
   const session = useAuthStore((s) => s.session);

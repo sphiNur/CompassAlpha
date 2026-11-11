@@ -83,7 +83,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
   );
 }
 import { formatQty, formatMoney } from '../lib/format';
-import { orderStatusLabel } from '../lib/statusLabels';
+import { orderStatusLabel } from '../lib/statusLabels/order';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
 import {

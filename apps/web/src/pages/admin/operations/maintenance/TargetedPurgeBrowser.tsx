@@ -19,7 +19,8 @@ import {
 } from '@compass/ui';
 import { PAGE_SIZE } from '../../../../config/timings';
 import { trpc } from '../../../../lib/trpc';
-import { orderStatusLabel, runStatusLabel } from '../../../../lib/statusLabels';
+import { orderStatusLabel } from '../../../../lib/statusLabels/order';
+import { runStatusLabel } from '../../../../lib/statusLabels/run';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useDateFormat, useI18n } from '../../../../hooks/useI18n';

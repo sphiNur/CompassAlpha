@@ -4,14 +4,10 @@ import { ConfirmStatusSchema } from '@compass/contracts/schemas/delivery';
 import { OrderStatusSchema } from '@compass/contracts/schemas/order';
 import { RunStatusSchema } from '@compass/contracts/schemas/run';
 import { createI18n, loadCatalog } from '@compass/i18n';
-import {
-  confirmStatusLabel,
-  deliveryStageLabel,
-  orderStatusLabel,
-  runStatusLabel,
-  runStepLabel,
-  subscriptionStatusLabel,
-} from '../statusLabels';
+import { confirmStatusLabel, deliveryStageLabel } from '../statusLabels/delivery';
+import { orderStatusLabel } from '../statusLabels/order';
+import { runStatusLabel, runStepLabel } from '../statusLabels/run';
+import { subscriptionStatusLabel } from '../statusLabels/subscription';
 
 beforeAll(async () => {
   await Promise.all([loadCatalog('en'), loadCatalog('ru')]);
