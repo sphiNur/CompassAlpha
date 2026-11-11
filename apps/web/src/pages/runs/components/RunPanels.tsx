@@ -12,7 +12,16 @@
  *
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
-import { useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { ComponentProps } from 'react';
 import {
   Badge,
   Banner,
@@ -40,6 +49,7 @@ import { unitLabeller } from '../../../lib/unitLabel';
 import { pickName } from '../../../lib/productName';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
+import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,
   PerVendorView,
@@ -55,6 +65,7 @@ import type {
   PreviewSupplierGroup,
 } from '../types';
 import { otherStoreSkusOf } from '../types';
+import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,
@@ -115,7 +126,34 @@ const SAFE_PHOTO_URL = /^(https?:\/\/|data:image\/)/i;
  * No more stacked menu sheets. Page-level Telegram MainButton still
  * drives Start purchase / Start delivery / Finish run.
  */
-export function ActiveRunPanel({
+export function ActiveRunPanel(props: ComponentProps<typeof ActiveRunPanelBody>) {
+  // Review RUNWEB1-07: RunPage draws again on every keystroke in its
+  // sheets (their drafts live there) and writes these handlers inline, so
+  // the panel and every row in it drew again each time. Handed stand-ins
+  // that keep their identity, the memo()'d body draws only when what it
+  // shows changes.
+  const handlers = useStableCallbacks({
+    onTogglePriceUnit: props.onTogglePriceUnit,
+    onSavePurchaseInline: props.onSavePurchaseInline,
+    onMarkNa: props.onMarkNa,
+    onEditPurchased: props.onEditPurchased,
+    onUnmark: props.onUnmark,
+    onOpenAdvancedPurchase: props.onOpenAdvancedPurchase,
+    onDeliverStore: props.onDeliverStore,
+    onRecallStore: props.onRecallStore,
+    onMarkExtraStatus: props.onMarkExtraStatus,
+    onRecordExtraExpense: props.onRecordExtraExpense,
+    onRemoveExpense: props.onRemoveExpense,
+    onOpenExpense: props.onOpenExpense,
+    onSetPaymentMethod: props.onSetPaymentMethod,
+    onTopUpBuy: props.onTopUpBuy,
+    onTopUpDismiss: props.onTopUpDismiss,
+    onEditPrice: props.onEditPrice,
+  });
+  return <ActiveRunPanelBody {...props} {...handlers} />;
+}
+
+const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   run,
   skuById,
   categoryById,
@@ -244,24 +282,6 @@ export function ActiveRunPanel({
     }
     return m;
   }, [run.perStoreDemand]);
-
-  /**
-   * SKU → its recorded splits, for the same reason as `demandBySku`.
-   *
-   * Every row was calling `run.splits.filter(sp => sp.skuId === ...)`,
-   * so an 87-item run with ~260 splits did ~22,000 comparisons per
-   * render — and the 6-second poll hands back fresh arrays every time,
-   * so this recomputed on a timer even when nothing had changed.
-   */
-  const splitsBySku = useMemo(() => {
-    const m = new Map<string, typeof run.splits>();
-    for (const sp of run.splits) {
-      const arr = m.get(sp.skuId) ?? [];
-      arr.push(sp);
-      m.set(sp.skuId, arr);
-    }
-    return m;
-  }, [run.splits]);
 
   /**
    * Inverse of `demandBySku` — `storeId → [{ skuId, qty }]`. Powers the
@@ -692,12 +712,7 @@ export function ActiveRunPanel({
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
               // row component — so we pass both regardless of status.
-              const actualSplits = (splitsBySku.get(it.skuId) ?? []).map((sp) => ({
-                storeId: sp.storeId,
-                qty: sp.qty,
-                unitPrice: sp.unitPrice,
-                paymentMethod: sp.paymentMethod,
-              }));
+              const actualSplits = rowSplitsOf(run.splits, it.skuId);
               return (
                 <PurchaseRow
                   key={it.skuId}
@@ -707,7 +722,7 @@ export function ActiveRunPanel({
                   skuName={skuName}
                   unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
-                  demand={demandBySku.get(it.skuId) ?? []}
+                  demand={demandBySku.get(it.skuId) ?? NO_DEMAND}
                   storeById={storeById}
                   actualSplits={actualSplits}
                   isMultiStoreRun={demandStoreIds.length > 1}
@@ -1078,7 +1093,7 @@ export function ActiveRunPanel({
           The banner just took up vertical space without adding info. */}
     </div>
   );
-}
+});
 
 /**
  * Per-store view (added 2026-05-05).

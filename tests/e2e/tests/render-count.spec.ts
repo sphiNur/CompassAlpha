@@ -64,9 +64,13 @@ test.beforeAll(async ({ browser, request }) => {
         type?: { displayName?: string; name?: string; render?: { name?: string } } | null;
         child: Fiber | null;
         sibling: Fiber | null;
+        alternate: Fiber | null;
       };
       // Function, class, forwardRef and simple-memo fibers that did work
-      // (PerformedWork = 1) in this commit.
+      // (PerformedWork = 1) in this commit. A subtree React skipped (a
+      // memo() that held) keeps the fibers, flags included, of the commit
+      // that last drew it: its parent still points at the same children
+      // as before, and DevTools does not walk it either.
       const walk = (root: Fiber | null) => {
         const stack: Array<Fiber | null> = [root];
         while (stack.length) {
@@ -77,7 +81,8 @@ test.beforeAll(async ({ browser, request }) => {
             const name = f.type?.displayName || f.type?.name || f.type?.render?.name || '?';
             counts.byComp[name] = (counts.byComp[name] ?? 0) + 1;
           }
-          stack.push(f.sibling, f.child);
+          stack.push(f.sibling);
+          if (!f.alternate || f.child !== f.alternate.child) stack.push(f.child);
         }
       };
       (window as unknown as { __REACT_DEVTOOLS_GLOBAL_HOOK__: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
@@ -134,6 +139,32 @@ test('the purchase screen mounts no closed sheet and sits still when idle', asyn
   // Nothing changes on an idle screen: at most a stray commit (a timer).
   expect(idle.commits, JSON.stringify(idle.byComp)).toBeLessThanOrEqual(2);
   expect(idle.rendered, JSON.stringify(idle.byComp)).toBeLessThanOrEqual(150);
+});
+
+test('typing in a purchase sheet redraws none of the rows behind it', async () => {
+  // Review RUNWEB1-07: the sheets' drafts live in RunPage, so every
+  // keystroke drew the page again, and with it the whole purchase list.
+  const main = page.getByRole('main');
+  // Apple was bought last (main-flow); its row opens the sheet that corrects it.
+  await main.getByRole('button', { name: /^Bought Apple/ }).click();
+  const reason = page.getByRole('dialog').getByRole('textbox', { name: 'Reason for change' });
+  await expect(reason).toBeVisible();
+  await page.waitForTimeout(500);
+  await take();
+
+  await reason.pressSequentially('weighed again', { delay: 30 });
+  await page.waitForTimeout(500);
+  const typing = await take();
+  // Back as it was, so the sheet closes without asking to discard.
+  await reason.fill('');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+
+  // The sheet draws on each key (its draft is the page's state); the
+  // panel behind it, and so every row of the list, does not.
+  expect(rendersOf(typing, 'PurchaseSheet'), JSON.stringify(typing.byComp)).toBeGreaterThan(0);
+  expect(rendersOf(typing, 'ActiveRunPanelBody'), JSON.stringify(typing.byComp)).toBe(0);
+  expect(rendersOf(typing, 'PurchaseRow'), JSON.stringify(typing.byComp)).toBe(0);
 });
 
 test('a realtime push redraws the order list once, without the closed sheets', async ({ request }) => {
