@@ -1,6 +1,6 @@
 /** The organisation's recurring run expenses (expense templates). */
 import { TRPCError } from '@trpc/server';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import {
@@ -13,6 +13,7 @@ import { auditChanges } from '../../../services/auditChanges';
 import { requireAdmin, requireOrgAdmin } from './guards';
 import { broadcastCatalog } from './notify';
 import { auditAdmin } from '../../../services/adminAudit';
+import { readExpenseTemplates } from '../../../services/expenseTemplates';
 
 export const expenseTemplateProcedures = {
   // ============ EXPENSE TEMPLATES (M3.57) ============
@@ -28,28 +29,9 @@ export const expenseTemplateProcedures = {
     .input(z.object({ includeArchived: z.boolean().default(false) }).optional())
     .query(async ({ ctx, input }) => {
       requireAdmin(ctx.session!.permissions);
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const includeArchived = input?.includeArchived ?? false;
-        return tx
-          .select({
-            id: s.expenseTemplates.id,
-            label: s.expenseTemplates.label,
-            unitHint: s.expenseTemplates.unitHint,
-            defaultQty: s.expenseTemplates.defaultQty,
-            defaultUnitPrice: s.expenseTemplates.defaultUnitPrice,
-            defaultPaymentMethod: s.expenseTemplates.defaultPaymentMethod,
-            sortIndex: s.expenseTemplates.sortIndex,
-            isArchived: s.expenseTemplates.isArchived,
-          })
-          .from(s.expenseTemplates)
-          .where(
-            includeArchived
-              ? eq(s.expenseTemplates.orgId, orgId)
-              : and(eq(s.expenseTemplates.orgId, orgId), eq(s.expenseTemplates.isArchived, false)),
-          )
-          .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt);
-      });
+      return ctx.withOrg((tx) =>
+        readExpenseTemplates(tx, ctx.session!, input?.includeArchived ?? false),
+      );
     }),
 
   expenseTemplateCreate: authedProcedure

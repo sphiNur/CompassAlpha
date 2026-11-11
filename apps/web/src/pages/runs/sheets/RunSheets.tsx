@@ -623,7 +623,8 @@ export function AddItemSheet({
     label: string;
     unitHint: string | null;
     defaultQty: string;
-    defaultUnitPrice: string;
+    /** Null for a reader without prices.view. */
+    defaultUnitPrice: string | null;
     defaultPaymentMethod: string;
   }>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
@@ -970,15 +971,17 @@ export function AddItemSheet({
                         key={tpl.id}
                         type="button"
                         onClick={() => {
-                          setPriceInput(
-                            toDisplayPrice(tpl.defaultUnitPrice, priceInThousands),
-                          );
+                          // Without prices.view the template has no price:
+                          // the one typed so far stays (ADM2-01).
+                          if (tpl.defaultUnitPrice !== null) {
+                            setPriceInput(toDisplayPrice(tpl.defaultUnitPrice, priceInThousands));
+                          }
                           onChange({
                             ...draft,
                             label: tpl.label,
                             unitHint: tpl.unitHint ?? '',
                             actualQty: tpl.defaultQty,
-                            unitPrice: tpl.defaultUnitPrice,
+                            unitPrice: tpl.defaultUnitPrice ?? draft.unitPrice,
                             paymentMethod:
                               tpl.defaultPaymentMethod === 'transfer'
                                 ? 'transfer'

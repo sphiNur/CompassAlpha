@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   withoutPrices,
   canSeePrices,
@@ -79,5 +81,29 @@ describe('withoutPrices (staff see no money)', () => {
       qty: '2',
       lastPurchasePriceBySku: {},
     });
+  });
+
+  test('ADM2-01: every money field of an event payload is redacted', () => {
+    // The admin event feed returns payloads through withoutPrices, and the
+    // run totals of RunFinished / RunRefinalized went out as stored. The
+    // payload columns of docs/EVENT_CATALOG.md name every field.
+    const catalog = readFileSync(
+      join(import.meta.dir, '../../../../docs/EVENT_CATALOG.md'),
+      'utf8',
+    );
+    const fields = new Set<string>();
+    for (const [, payload] of catalog.matchAll(/^\| `\w+` \| `(\{[^`]*\})` \|/gm)) {
+      // Quoted values ('eod', 'cash') are not field names.
+      for (const [name] of payload!.replace(/'[^']*'/g, '').matchAll(/\b[a-z]\w*/g)) {
+        fields.add(name);
+      }
+    }
+    const money = [...fields].filter(
+      (f) => /price|total|cash|transfer|amount|cost/i.test(f) && f !== 'priceConfirmed',
+    );
+    // The table was read: the fields this test was written for are there.
+    expect(money).toEqual(expect.arrayContaining(['unitPrice', 'totalActual', 'totalCash']));
+    const out = withoutPrices(Object.fromEntries(money.map((f) => [f, '1.00'])));
+    expect(money.filter((f) => out[f] !== null)).toEqual([]);
   });
 });
