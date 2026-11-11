@@ -47,7 +47,7 @@ export function SalesPage() {
   }
 
   return (
-    <div className="flex flex-col pb-4">
+    <div className="flex flex-col px-4 pb-4 pt-3">
       {/* Keyed by store so a half-picked dish never carries over a switch. */}
       <StoreSalesPanel key={storeCtx.storeId} storeId={storeCtx.storeId} />
     </div>

@@ -2431,6 +2431,8 @@ export const uz = {
   'inventory.errors.countTooLarge': 'Juda katta: koʻpi bilan 99 999 999.',
   'inventory.badge.negative': 'Noldan kam — sanang',
   'sales.toast.recordedNegative': 'Yozildi. {items} qoldigʻi noldan kam boʻldi — sanab chiqing.',
+  'sales.toast.recordedNegativeMore':
+    'Yozildi. {items} va yana {n} ta mahsulot qoldigʻi noldan kam boʻldi — sanab chiqing.',
   'dishes.errors.archivedIngredient':
     'Retseptda arxivdagi mahsulot bor. Boshqa mahsulot tanlang yoki shu qatorni oʻchiring.',
   'dishes.errors.archivedIngredientRow':

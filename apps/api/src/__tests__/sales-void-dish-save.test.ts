@@ -325,6 +325,30 @@ describe('dishes.save', () => {
   });
 });
 
+describe('dishes.list ingredientCount (CONF-24)', () => {
+  test.skipIf(!SHOULD_RUN)('counts the recipe rows, with or without sending them', async () => {
+    const caller = await memberCaller(fix!.dishesRoleId, null);
+    const two = await caller.dishes.save({
+      names: { en: 'Two parts' },
+      ingredients: [
+        { skuId: fix!.skuId, qtyPerServing: '0.1000' },
+        { skuId: fix!.sku2Id, qtyPerServing: '0.2000' },
+      ],
+    });
+    const none = await caller.dishes.save({ names: { en: 'No recipe' }, ingredients: [] });
+
+    const full = await caller.dishes.list();
+    expect(full.dishes.find((d) => d.id === two.dishId)?.ingredientCount).toBe(2);
+    expect(full.dishes.find((d) => d.id === none.dishId)?.ingredientCount).toBe(0);
+    expect(full.ingredients.filter((i) => i.dishId === two.dishId)).toHaveLength(2);
+
+    const counted = await caller.dishes.list({ withIngredients: false });
+    expect(counted.ingredients).toEqual([]);
+    expect(counted.dishes.find((d) => d.id === two.dishId)?.ingredientCount).toBe(2);
+    expect(counted.dishes.find((d) => d.id === none.dishId)?.ingredientCount).toBe(0);
+  });
+});
+
 describe('DX-DSH-1 an archived product in a recipe', () => {
   test.skipIf(!SHOULD_RUN)('is refused on save instead of being kept silently', async () => {
     const caller = await memberCaller(fix!.dishesRoleId, null);

@@ -32,6 +32,7 @@ import { usePageMainButton } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 import { zoneName } from '../lib/dateFormat';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
+import { hasStorePermission } from '../lib/storePermission';
 import { BUSINESS_DATE } from './settlement/draftModel';
 import { AmountField } from './settlement/AmountField';
 import { ExpenseLines } from './settlement/ExpenseLines';
@@ -95,9 +96,9 @@ export function SettlementPage() {
     save,
     refreshRecord,
   } = useSettlementForm();
-  // 2026-10-21 CA-09: sales entry block (see render). The flat session
-  // set is only a hint; sales.record enforces the store-level override.
-  const canRecordSales = session?.permissions.includes('sales.record') ?? false;
+  // 2026-10-21 CA-09: sales entry block (see render). Review CONF-14: as
+  // sales.record holds in this store, overrides included.
+  const canRecordSales = hasStorePermission(session, currentStoreId, 'sales.record');
   const [salesOpen, setSalesOpen] = useState(false);
 
   const mainButtonText = saving
@@ -288,7 +289,7 @@ export function SettlementPage() {
             open={salesOpen}
             onOpenChange={setSalesOpen}
           >
-            <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} className="" />
+            <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} />
           </Disclosure>
         ) : null}
 

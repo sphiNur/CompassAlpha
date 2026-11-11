@@ -5,11 +5,12 @@
  * The day's totals are counted by the server now (sales.summary, review
  * CONF-17): adding up the list missed every sale past its 200 rows.
  */
+import { SALE_VOID_REASON_MAX } from '@compass/contracts/limits';
 
-/** Void reason as the server accepts it (trimmed, 1..300 chars). */
+/** Void reason as the server accepts it (trimmed, 1..SALE_VOID_REASON_MAX chars). */
 export function normalizeVoidReason(raw: string): string | null {
   const reason = raw.trim();
-  return reason.length >= 1 && reason.length <= 300 ? reason : null;
+  return reason.length >= 1 && reason.length <= SALE_VOID_REASON_MAX ? reason : null;
 }
 
 /**

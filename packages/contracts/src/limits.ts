@@ -203,6 +203,40 @@ export const SETTLEMENT_MAX_CENTS = 99_999_999_999_999n;
 /** CONF-08: at most this many expense lines, and wage lines, in one close. */
 export const SETTLEMENT_DETAIL_ITEMS_MAX = 100;
 
+/**
+ * Review CONF-10 (2026-11-11): the rules of a sale, one copy for the API
+ * (schemas/sales.ts) and the sales panel, which had its own regex.
+ */
+/** The most rows sales.list returns, newest first. */
+export const SALES_LIST_CAP = 200;
+
+/** The longest reason a sale is voided with. */
+export const SALE_VOID_REASON_MAX = 300;
+
+export type SaleQtyProblem = 'notNumber' | 'tooLarge' | 'precision';
+
+/**
+ * Why `value` cannot be a sale's servings: it must be a number above 0,
+ * below a million (CLS-19: 1e9 servings overflowed the column) and in
+ * hundredths, at least 0.01 with at most two decimals (RE-CLS-6: 0.001
+ * of a dish deducted 0.000 of every ingredient).
+ */
+export function saleQtyProblem(value: string): SaleQtyProblem | null {
+  const v = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(v) || !(Number(v) > 0)) return 'notNumber';
+  if (Number(v) >= 1_000_000) return 'tooLarge';
+  const [, fraction = ''] = v.split('.');
+  if (fraction.length > 2 || Number(v) < 0.01) return 'precision';
+  return null;
+}
+
+/** The catalog key the API and the sales panel show for each problem. */
+export const SALE_QTY_MESSAGE = {
+  notNumber: 'sales.errors.qtyFormat',
+  tooLarge: 'sales.errors.qtyTooLarge',
+  precision: 'sales.errors.qtyPrecision',
+} as const satisfies Record<SaleQtyProblem, string>;
+
 /** The face-registration consent text the person agreed to. */
 export const ATTENDANCE_FACE_CONSENT_VERSION = 1;
 

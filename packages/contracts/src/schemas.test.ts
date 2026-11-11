@@ -20,6 +20,8 @@ import {
   SettlementWageItemSchema,
   SignedSettlementMoneySchema,
 } from './schemas/settlement';
+import { SaleQtySchema, SaleVoidInputSchema } from './schemas/sales';
+import { SALE_VOID_REASON_MAX, saleQtyProblem } from './limits';
 
 function verdict(schema: ZodTypeAny, value: unknown): string {
   const r = schema.safeParse(value);
@@ -127,6 +129,43 @@ describe('daily-close money', () => {
       'settlement.errors.employeeRequired',
     );
     expect(verdict(SettlementWageItemSchema, wage)).toBe('ok');
+  });
+});
+
+describe('sales (CONF-10)', () => {
+  it('SaleQtySchema: servings in hundredths, below a million', () => {
+    check(SaleQtySchema, {
+      '1': 'ok',
+      '0.5': 'ok',
+      '0.01': 'ok',
+      '999999.99': 'ok',
+      '0.001': 'sales.errors.qtyPrecision',
+      '1.005': 'sales.errors.qtyPrecision',
+      '1000000': 'sales.errors.qtyTooLarge',
+      '0': 'common.errors.positiveDecimal',
+      abc: 'common.errors.positiveDecimal',
+    });
+  });
+
+  it('saleQtyProblem is the rule the panel asks before it sends', () => {
+    expect(saleQtyProblem(' 2 ')).toBeNull();
+    expect(saleQtyProblem('1.25')).toBeNull();
+    expect(saleQtyProblem('')).toBe('notNumber');
+    expect(saleQtyProblem('0')).toBe('notNumber');
+    expect(saleQtyProblem('1,5')).toBe('notNumber');
+    expect(saleQtyProblem('-1')).toBe('notNumber');
+    expect(saleQtyProblem('1.255')).toBe('precision');
+    expect(saleQtyProblem('0.004')).toBe('precision');
+    expect(saleQtyProblem('1000000')).toBe('tooLarge');
+  });
+
+  it('a void needs a reason, at most SALE_VOID_REASON_MAX long', () => {
+    const saleId = '00000000-0000-4000-8000-000000000001';
+    expect(SaleVoidInputSchema.safeParse({ saleId, reason: '  ' }).success).toBe(false);
+    expect(SaleVoidInputSchema.safeParse({ saleId, reason: 'Wrong dish' }).success).toBe(true);
+    const longest = 'x'.repeat(SALE_VOID_REASON_MAX);
+    expect(SaleVoidInputSchema.safeParse({ saleId, reason: longest }).success).toBe(true);
+    expect(SaleVoidInputSchema.safeParse({ saleId, reason: longest + 'x' }).success).toBe(false);
   });
 });
 
