@@ -48,7 +48,7 @@ DATABASE_URL=postgres://…/compass_test_x JWT_SECRET=<≥32 chars> JWT_REFRESH_
 
 ## i18n
 
-Four catalogs in `packages/i18n/src/catalogs/` (`en.ts` defines the key type). Server errors are thrown with the i18n key as the message. `packages/i18n/src/__tests__/catalog-lint.test.ts` is a CI gate: placeholders identical across languages, Uzbek ʻ/ʼ (not ASCII apostrophes), CLDR plurals (ru needs one/few/many/other and `#` in `one`), no developer terms, zh full-width punctuation, and the decided glossary (审核, 验收 / 确认收货, 商品, 采购员, 日结). Product decisions behind these rules are recorded in `../Fine/docs/redesign/16-决策记录.md`.
+Four catalogs in `packages/i18n/src/catalogs/` (`en.ts` defines the key type). Server errors are thrown with the i18n key as the message. `packages/i18n/src/__tests__/catalog-lint.test.ts` is a CI gate (rules in `packages/i18n/src/lint/rules.ts`, their word lists and allow-lists in `lint/terms.ts`): placeholders identical across languages, Uzbek ʻ/ʼ (not ASCII apostrophes), CLDR plurals (ru needs one/few/many/other and `#` in `one`), no developer terms, zh full-width punctuation, and the decided glossary (审核, 验收 / 确认收货, 商品, 采购员, 日结). Product decisions behind these rules are recorded in `../Fine/docs/redesign/16-决策记录.md`.
 
 ## Deploying
 
