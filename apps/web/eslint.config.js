@@ -99,7 +99,6 @@ export default [
       'src/pages/DebugPage.tsx',
       'src/pages/OrderPage.tsx',
       'src/pages/RunPage.tsx',
-      'src/pages/SettlementPage.tsx',
       'src/pages/admin/people/PeopleSections.tsx',
       'src/pages/runs/components/RunPanels.tsx',
       'src/pages/runs/views/RunViews.tsx',
