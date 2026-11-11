@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
+  Card,
   EmptyState,
   Field,
   Input,
@@ -18,6 +19,7 @@ import {
   SectionLabel,
   Sheet,
   isWaitingOffline,
+  rowGroupClass,
   useToast,
   Select,
 } from '@compass/ui';
@@ -215,11 +217,10 @@ export function StoreSalesPanel({
       {!listErrored && sales.length >= SALES_LIST_CAP ? (
         <Banner title={i18n.t('sales.list.capReached', { n: SALES_LIST_CAP })} />
       ) : null}
-      {/* Today summary tile. */}
+      {/* Today summary tile. CONF-11: the kit's Card, not its look typed
+          again. */}
       {listErrored || !summary ? null : (
-        <div
-          className={`grid ${canSeePrices ? 'grid-cols-2' : 'grid-cols-1'} gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline`}
-        >
+        <Card className={`grid ${canSeePrices ? 'grid-cols-2' : 'grid-cols-1'} gap-2 p-3`}>
           <div>
             <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
             <div className="text-old-h2 font-semibold tabular-nums">
@@ -242,12 +243,12 @@ export function StoreSalesPanel({
               </div>
             </div>
           ) : null}
-        </div>
+        </Card>
       )}
 
       {/* Record sale form. */}
       {canRecord ? (
-        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
+        <Card className="flex flex-col gap-2 p-3">
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
           <SectionLabel className="px-0 py-0">{i18n.t('sales.form.recordTitle')}</SectionLabel>
           {/* 2026-10-21 F4-12: while dishes load, don't tell the cashier to
@@ -327,7 +328,7 @@ export function StoreSalesPanel({
               </div>
             </>
           )}
-        </div>
+        </Card>
       ) : null}
 
       {/* Today's sales list. */}
@@ -359,7 +360,9 @@ export function StoreSalesPanel({
             description={canRecordHere ? i18n.t('sales.empty.description') : undefined}
           />
         ) : (
-          <ul className="flex flex-col gap-1" role="list">
+          // CONF-11 / UI-6: one card with rows divided by hairlines; each
+          // sale was a card of its own.
+          <ul className={rowGroupClass} role="list">
             {sales.map((sale) => {
               const dish = dishById.get(sale.dishId);
               const name = dish ? productName({ names: dish.names }) : sale.dishId.slice(0, 8);
@@ -375,10 +378,7 @@ export function StoreSalesPanel({
                 // not faded — 60 % opacity put the void reason at 2.6:1.
                 // The strike stays on the dish and quantity; the reason
                 // reads at full muted contrast.
-                <li
-                  key={sale.id}
-                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
-                >
+                <li key={sale.id} className="flex items-baseline justify-between gap-2 px-3 py-2">
                   <div
                     className={`min-w-0 flex-1 ${voided ? 'text-[var(--c-fg-muted)] line-through' : ''}`}
                   >

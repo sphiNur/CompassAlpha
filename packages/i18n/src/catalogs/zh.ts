@@ -1867,7 +1867,6 @@ export const zh = {
   'settlement.history.created': '首次记录',
   'settlement.history.changed': '改了：{fields}',
   'settlement.history.reason': '原因：{reason}',
-  'settlement.recent.open': '打开记录',
   'settlement.save.new': '保存日结',
   'settlement.save.update': '保存更正',
   'settlement.save.saving': '保存中…',

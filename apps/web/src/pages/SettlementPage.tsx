@@ -16,6 +16,7 @@ import {
   Card,
   CardBody,
   CardMeta,
+  Disclosure,
   EmptyState,
   Field,
   Input,
@@ -280,22 +281,15 @@ export function SettlementPage() {
           // keep tracking the settlement alone. Collapsed by default so
           // the (up to 200-row) list doesn't push the close form away and
           // its queries only run once opened.
-          <section className="flex flex-col gap-2">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2.5 text-left ring-hairline"
-              aria-expanded={salesOpen}
-              onClick={() => setSalesOpen((open) => !open)}
-            >
-              <span className="text-old-body font-semibold">{i18n.t('sales.list.title')}</span>
-              <span aria-hidden className="text-[var(--c-fg-muted)]">
-                {salesOpen ? '▾' : '▸'}
-              </span>
-            </button>
-            {salesOpen ? (
-              <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} className="" />
-            ) : null}
-          </section>
+          // CONF-11: the kit's Disclosure; the open state stays here, as the
+          // form is drawn again from scratch when the day or store changes.
+          <Disclosure
+            title={i18n.t('sales.list.title')}
+            open={salesOpen}
+            onOpenChange={setSalesOpen}
+          >
+            <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} className="" />
+          </Disclosure>
         ) : null}
 
         {closeQuery.isError ? (

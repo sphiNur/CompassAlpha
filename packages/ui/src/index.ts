@@ -49,6 +49,7 @@ export type { BackButtonLike, BackHandlerStack } from './telegramBackStack';
 export { Banner } from './components/Banner';
 export { Spinner } from './components/Spinner';
 export { EmptyState } from './components/EmptyState';
+export { Disclosure } from './components/Disclosure';
 export { LoadingState, type LoadingStateVariant } from './components/LoadingState';
 export { isWaitingOffline, OfflineState, PendingState } from './components/OfflineState';
 export { DataState, QueryErrorBanner } from './components/DataState';

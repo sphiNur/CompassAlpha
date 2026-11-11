@@ -11,6 +11,7 @@ import { formatMoney } from '../../lib/format';
 import { newOperatingExpense, type OperatingExpenseDraft } from './draftModel';
 import {
   DetailLineFrame,
+  DetailLineList,
   DetailListEmpty,
   DetailListHeader,
   LineAmountField,
@@ -118,7 +119,7 @@ export function ExpenseLines({
       {lines.length === 0 ? (
         <DetailListEmpty>{i18n.t('settlement.expenses.empty')}</DetailListEmpty>
       ) : (
-        <div className="flex flex-col gap-3">
+        <DetailLineList>
           {lines.map((expense, index) => {
             const title = i18n.t('settlement.expenses.itemNumber', { n: index + 1 });
             const problems = lineProblems(expense, reveal);
@@ -152,7 +153,7 @@ export function ExpenseLines({
               </DetailLineFrame>
             );
           })}
-        </div>
+        </DetailLineList>
       )}
     </div>
   );

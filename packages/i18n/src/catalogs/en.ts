@@ -2194,7 +2194,6 @@ export const en = {
   'settlement.history.created': 'First recorded',
   'settlement.history.changed': 'Changed: {fields}',
   'settlement.history.reason': 'Reason: {reason}',
-  'settlement.recent.open': 'Open record',
   'settlement.save.new': 'Save daily close',
   'settlement.save.update': 'Save correction',
   'settlement.save.saving': 'Saving…',
