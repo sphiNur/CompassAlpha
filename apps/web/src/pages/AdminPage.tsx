@@ -79,13 +79,14 @@ import {
   ExpenseTemplatesSection,
   DishesSection,
 } from './admin/catalog/CatalogSections';
-import {
-  type AdminSection,
-  type CatalogSub,
-  type OperationsSub,
-  type StoreFocus,
-  type StoreSub,
-} from './admin/shared';
+// Review COREWEB1-11 (2026-11-11): the drill-down's one definition.
+import type {
+  AdminSection,
+  CatalogSub,
+  OperationsSub,
+  StoreFocus,
+  StoreSub,
+} from '../stores/navStore';
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).

@@ -66,6 +66,7 @@ import {
   isTabVisible,
   requestTabChange,
   resolveVisibleTab,
+  TAB_KEYS,
   useNavStore,
   type Tab,
 } from '../stores/navStore';
@@ -121,26 +122,37 @@ type TabDef = {
    */
   shortKey: string;
   Icon: IconComponent;
+  /**
+   * The page works on the selected store (SHL-2), so whether the tab shows
+   * follows what the member may do in that store, not in any store.
+   */
+  storeBound: boolean;
 };
 
-const TABS: TabDef[] = [
-  {
-    key: 'order',
+/**
+ * Each tab's permission, labels and icon, and whether its page works on
+ * the selected store. Review COREWEB1-11 (2026-11-11): keyed by `Tab`, so a
+ * tab added to TAB_KEYS (stores/navStore.ts) needs its entry here; the nav
+ * shows them in TAB_KEYS order.
+ */
+const TAB_DEFS: { [K in Tab]: Omit<TabDef, 'key'> } = {
+  order: {
     permission: 'order.draft',
+    storeBound: true,
     labelKey: 'nav.order',
     shortKey: 'nav.short.order',
     Icon: IconOrder,
   },
-  {
-    key: 'approve',
+  approve: {
     permission: 'order.approve',
+    storeBound: true,
     labelKey: 'nav.approve',
     shortKey: 'nav.short.approve',
     Icon: IconApprove,
   },
-  {
-    key: 'run',
+  run: {
     permission: 'run.purchase',
+    storeBound: false,
     labelKey: 'nav.run',
     shortKey: 'nav.short.run',
     Icon: IconRun,
@@ -152,16 +164,16 @@ const TABS: TabDef[] = [
   // + manager + admin + super_admin) and is the right gate for a
   // price-and-spend record. See HistoryPage.tsx for why this needed no
   // server-side change.
-  {
-    key: 'history',
+  history: {
     permission: 'prices.view',
+    storeBound: false,
     labelKey: 'nav.history',
     shortKey: 'nav.short.history',
     Icon: IconHistory,
   },
-  {
-    key: 'settlement',
+  settlement: {
     permission: 'settlement.record',
+    storeBound: true,
     labelKey: 'nav.settlement',
     shortKey: 'nav.short.settlement',
     Icon: IconSettlement,
@@ -169,50 +181,41 @@ const TABS: TabDef[] = [
   // 2026-10-21: staff hold sales.record but not settlement.record, so
   // the Settlement page's sales block was unreachable for them. Users
   // with settlement.record keep that block and don't get this tab.
-  {
-    key: 'sales',
+  sales: {
     permission: 'sales.record',
     hiddenWith: 'settlement.record',
+    storeBound: true,
     labelKey: 'nav.sales',
     shortKey: 'nav.short.sales',
     Icon: IconCatalog,
   },
-  {
-    key: 'confirm',
+  confirm: {
     permission: 'delivery.confirm',
+    storeBound: true,
     labelKey: 'nav.confirm',
     shortKey: 'nav.short.confirm',
     Icon: IconConfirm,
   },
   // 2026-11-05: clock in / out. `attendance.clock` is switched on per
   // member; managers review attendance under Admin, not here.
-  {
-    key: 'attendance',
+  attendance: {
     permission: 'attendance.clock',
+    storeBound: true,
     labelKey: 'nav.attendance',
     shortKey: 'nav.short.attendance',
     Icon: IconAttendance,
   },
-  {
-    key: 'admin',
+  admin: {
     permission: 'users.manage',
     orPermission: 'reports.view',
+    storeBound: false,
     labelKey: 'nav.admin',
     shortKey: 'nav.short.admin',
     Icon: IconAdmin,
   },
-];
+};
 
-
-/** Tabs whose page works on the selected store (SHL-2). */
-const STORE_BOUND_TABS: ReadonlySet<Tab> = new Set<Tab>([
-  'order',
-  'approve',
-  'settlement',
-  'sales',
-  'confirm',
-  'attendance',
-]);
+const TABS: TabDef[] = TAB_KEYS.map((key) => ({ key, ...TAB_DEFS[key] }));
 
 /**
  * The tabs a member sees. Tabs that work on one store follow what the
@@ -226,7 +229,7 @@ function visibleTabsFor(
 ): TabDef[] {
   return TABS.filter(
     (t) =>
-      isTabVisible(t, storePerms && STORE_BOUND_TABS.has(t.key) ? storePerms : permissions) ||
+      isTabVisible(t, storePerms && t.storeBound ? storePerms : permissions) ||
       (t.key === 'admin' && isPlatformAdmin),
   );
 }
