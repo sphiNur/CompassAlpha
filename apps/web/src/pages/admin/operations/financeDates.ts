@@ -81,9 +81,10 @@ export function financePresetRange(
  * 2026-10-21 FE-07 (F6-01): the maintenance "reset today" / targeted-purge
  * default date. It used `toISOString().slice(0, 10)` (UTC), so between
  * local 00:00 and 05:00 in Tashkent "today" was YESTERDAY — and the purge
- * is irreversible. No server business date is loaded on that page, so
- * this is the device's local calendar date (staff devices run in the
- * org's timezone; the dry-run preview still shows the date before commit).
+ * is irreversible. ADM2-28 (2026-11-11): the page passes the org's time
+ * zone from the session, as Finance does (HIS-13); without one (a session
+ * from an older server) this is the device's calendar date. The dry-run
+ * preview still shows the date before anything is deleted.
  */
 export function maintenanceToday(now: Date = new Date(), timeZone?: string): string {
   return localDateValue(now, timeZone);

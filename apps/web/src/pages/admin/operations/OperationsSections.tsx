@@ -356,8 +356,11 @@ function formatRelative(iso: string, i18n: ReturnType<typeof useI18n>): string {
 
 // 2026-10-21 FE-07: local calendar date — the UTC slice made "reset
 // today" purge YESTERDAY east of UTC before the offset hour.
-function todayIso(): string {
-  return maintenanceToday();
+// ADM2-28 (2026-11-11): and the org's calendar, not the phone's, as in
+// Finance (HIS-13): a phone set to another zone previewed, and purged,
+// the org's yesterday or tomorrow.
+function todayIso(orgTimeZone: string | undefined): string {
+  return maintenanceToday(new Date(), orgTimeZone);
 }
 
 /**
@@ -366,7 +369,8 @@ function todayIso(): string {
  * dry-run preview sheet before committing.
  */
 function TargetedPurgeBrowser() {
-  const [date, setDate] = useState(todayIso());
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const [date, setDate] = useState(() => todayIso(orgTimeZone));
   const [tab, setTab] = useState<'orders' | 'runs'>('orders');
   const sessionsQuery = trpc.admin.sessionList.useQuery({ date, limit: PAGE_SIZE.list });
   const runsQuery = trpc.admin.runList.useQuery({ date, limit: PAGE_SIZE.list });
@@ -1879,13 +1883,14 @@ export function MaintenanceSection() {
   // DX-CAT-17: the wipe is confirmed with the name shown on the workspace
   // page, not the slug nobody sees.
   const orgName = session?.member.orgName ?? '';
+  const orgTimeZone = session?.member.timezone;
   // R2-CAT-3: the live server refuses the bulk purges; don't offer them.
   // Until the config arrives (or from an older server) they stay shown.
   const appConfig = trpc.system.appConfig.useQuery(undefined, { staleTime: Infinity });
   const bulkPurgeAllowed = appConfig.data?.bulkPurgeAllowed !== false;
 
   // ---- by-date purge state ----
-  const [dateInput, setDateInput] = useState<string>(todayIso());
+  const [dateInput, setDateInput] = useState<string>(() => todayIso(orgTimeZone));
   const [datePreview, setDatePreview] = useState<{
     date: string;
     total: number;
@@ -1981,14 +1986,16 @@ export function MaintenanceSection() {
                     {i18n.t('ops.maint.resetTodayTitle')}
                   </div>
                   <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
+                    {i18n.t('ops.maint.resetTodayBody', { date: todayIso(orgTimeZone) })}
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="pearl"
                   loading={datePreviewMut.isPending}
-                  onClick={() => datePreviewMut.mutate({ date: todayIso(), dryRun: true })}
+                  onClick={() =>
+                    datePreviewMut.mutate({ date: todayIso(orgTimeZone), dryRun: true })
+                  }
                 >
                   {i18n.t('ops.maint.resetToday')}
                 </Button>
