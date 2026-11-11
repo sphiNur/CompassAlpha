@@ -4,12 +4,14 @@ import {
   canGrantRole,
   canGrantTo,
   canGrantToMember,
+  canPutKeyInRole,
   canRemoveFromOrg,
   canRename,
   canRevokeRole,
   canSetOverride,
   canSetStatus,
   orgRankOf,
+  overrideEffects,
   rankIn,
   rolePassesOn,
   transferTargets,
@@ -346,5 +348,54 @@ describe('canDetachFromStore', () => {
     };
     const staffP = { userId: 'd', bindings: [st('staff', 10, 'P')], storeIds: ['P'] };
     expect(canDetachFromStore(pausedManager, staffP, 'P')).toBe(true);
+  });
+});
+
+describe('canPutKeyInRole (ADM1-07)', () => {
+  test('a key held organisation-wide goes in; one held in a store only does not', () => {
+    expect(canPutKeyInRole({ passOn: { global: true, storeIds: [] } })).toBe(true);
+    expect(canPutKeyInRole({ passOn: { global: false, storeIds: ['A'] } })).toBe(false);
+  });
+  test('a key from an older server without passOn is left to the server', () => {
+    expect(canPutKeyInRole({})).toBe(true);
+  });
+});
+
+describe('overrideEffects (ADM1-07)', () => {
+  const heldIn = (...storeIds: string[]) => ({ global: false, storeIds });
+  test('an allow passes on only a key the actor holds in that scope; a deny always', () => {
+    const key = { key: 'run.purchase', passOn: heldIn('A') };
+    expect(overrideEffects(manager, key, 'A')).toEqual({ allow: true, deny: true, reason: null });
+    expect(overrideEffects(manager, key, 'B')).toEqual({
+      allow: false,
+      deny: true,
+      reason: 'people.perm.allowOnlyOwn',
+    });
+    expect(overrideEffects(admin, key, null).allow).toBe(false);
+  });
+  test('an organisation-wide key is set only organisation-wide, allow or deny', () => {
+    for (const k of ['org.admin', 'dishes.manage']) {
+      const key = { key: k, passOn: { global: true, storeIds: ['A'] } };
+      expect(overrideEffects(admin, key, 'A')).toEqual({
+        allow: false,
+        deny: false,
+        reason: 'admin.errors.orgAdminMustBeGlobal',
+      });
+    }
+    const dishes = { key: 'dishes.manage', passOn: { global: true, storeIds: [] } };
+    expect(overrideEffects(admin, dishes, null).allow).toBe(true);
+  });
+  test('allowing org.admin takes someone above the admin level', () => {
+    const orgAdmin = { key: 'org.admin', passOn: { global: true, storeIds: [] } };
+    expect(overrideEffects(admin, orgAdmin, null)).toEqual({
+      allow: false,
+      deny: true,
+      reason: 'people.perm.allowAdminTier',
+    });
+    const superAdmin: Actor = { ...admin, userId: 'sam', bindings: [g('super_admin', 100)] };
+    expect(overrideEffects(superAdmin, orgAdmin, null).allow).toBe(true);
+  });
+  test('a key from an older server without passOn is left to the server', () => {
+    expect(overrideEffects(manager, { key: 'run.purchase' }, 'A').allow).toBe(true);
   });
 });

@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
   ADMIN_RANK,
+  ORG_WIDE_PERMISSION_KEYS,
   SUPER_ADMIN_RANK,
   GrantRoleInputSchema,
   MemberInviteRevokeInputSchema,
@@ -46,7 +47,6 @@ import { hub } from '../../realtime/hub';
 import { priceStoreIds, withoutPrices } from '../../services/priceRedaction';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import {
-  ORG_WIDE_PERMISSION_KEYS,
   adminScopeOf,
   adminStoresOf,
   effectiveGlobalPermissions,
@@ -2984,15 +2984,23 @@ export const adminRouter = router({
    */
   permissionList: authedProcedure.query(async ({ ctx }) => {
     requireAdmin(ctx.session!.permissions);
-    return ctx.withOrg((tx) =>
-      tx
+    return ctx.withOrg(async (tx) => {
+      const rows = await tx
         .select({
           key: s.permissions.key,
           description: s.permissions.description,
         })
         .from(s.permissions)
-        .orderBy(s.permissions.key),
-    );
+        .orderBy(s.permissions.key);
+      // ADM1-07: where the actor may pass each key on, as roleList's
+      // `passOn` says for roles.
+      const passOn = await keyPassOnScopes(
+        tx,
+        ctx,
+        rows.map((r) => r.key),
+      );
+      return rows.map((r) => ({ ...r, passOn: passOn.get(r.key)! }));
+    });
   }),
 
   /**
@@ -6187,16 +6195,7 @@ async function rolePassOnScopes(
     for (const r of roles) out.set(r.id, everywhere());
     return out;
   }
-  const global = await effectiveGlobalPermissions(tx, session.memberId);
-  const perStore = await Promise.all(
-    storeIds.map(
-      async (id) =>
-        [
-          id,
-          await effectivePermissionsForStore(tx, session.memberId, id, session.permissions),
-        ] as const,
-    ),
-  );
+  const { global, perStore } = await actorKeySets(tx, ctx, storeIds);
   for (const r of roles) {
     const keys = keysByRole.get(r.id);
     if (!keys) {
@@ -6209,6 +6208,62 @@ async function rolePassOnScopes(
     });
   }
   return out;
+}
+
+/**
+ * Where the signed-in actor holds each key, so may pass it on (ADM1-07):
+ * into a role (roleCreate / roleUpdate add only keys held organisation-
+ * wide) or as an `allow` override (memberPermissionSet: held in that
+ * scope). The super admin and platform admins pass on any key. The key
+ * pickers used to list every key and learn from a 403 which ones the
+ * actor lacked. The rank and scope rules stay on the client
+ * (lib/authority overrideEffects).
+ */
+async function keyPassOnScopes(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  keys: readonly string[],
+): Promise<Map<string, { global: boolean; storeIds: string[] }>> {
+  const session = ctx.session!;
+  const storeIds = await getActorAdminStoreIds(tx, session.orgId, session.userId, {
+    includeInactive: true,
+  });
+  if (await exemptFromKeyCheck(tx, ctx)) {
+    return new Map(keys.map((key) => [key, { global: true, storeIds: [...storeIds] }]));
+  }
+  const { global, perStore } = await actorKeySets(tx, ctx, storeIds);
+  return new Map(
+    keys.map((key) => [
+      key,
+      {
+        global: global.has(key),
+        storeIds: perStore.filter(([, held]) => held.has(key)).map(([id]) => id),
+      },
+    ]),
+  );
+}
+
+/** The keys the signed-in actor holds organisation-wide, and in each of `storeIds`. */
+async function actorKeySets(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  storeIds: readonly string[],
+): Promise<{
+  global: ReadonlySet<string>;
+  perStore: ReadonlyArray<readonly [string, ReadonlySet<string>]>;
+}> {
+  const session = ctx.session!;
+  const global = await effectiveGlobalPermissions(tx, session.memberId);
+  const perStore = await Promise.all(
+    storeIds.map(
+      async (id) =>
+        [
+          id,
+          await effectivePermissionsForStore(tx, session.memberId, id, session.permissions),
+        ] as const,
+    ),
+  );
+  return { global, perStore };
 }
 
 async function assertCanPassOnRole(

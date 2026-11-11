@@ -10,7 +10,11 @@
  * what is shown, and when a rank is unknown (an older server) the action
  * is shown and the server answers as before.
  */
-import { ADMIN_RANK, SUPER_ADMIN_RANK } from '@compass/contracts/schemas/roles';
+import {
+  ADMIN_RANK,
+  ORG_WIDE_PERMISSION_KEYS,
+  SUPER_ADMIN_RANK,
+} from '@compass/contracts/schemas/roles';
 
 /** A role binding as the member list returns it. */
 export interface Binding {
@@ -304,4 +308,45 @@ export function canSetOverride(actor: Actor, target: TargetMember, storeId: stri
   if (storeId === null ? !actor.isOrgAdmin : !administers(actor, storeId)) return false;
   const actorRank = storeId === null ? orgRankOf(actor.bindings) : rankIn(actor.bindings, storeId);
   return outranks(actorRank, rankIn(target.bindings, storeId));
+}
+
+/**
+ * roleCreate / roleUpdate (DX-ADM-2): a key a role does not have yet goes
+ * in only when the actor holds it organisation-wide (permissionList
+ * `passOn.global`); a key the role has may stay. A key from an older
+ * server without `passOn` passes; the server still decides.
+ */
+export function canPutKeyInRole(key: { passOn?: PassOn }): boolean {
+  return key.passOn?.global ?? true;
+}
+
+/** Why an override is not offered: a catalog key the sheet shows. */
+export type OverrideBlock =
+  | 'admin.errors.orgAdminMustBeGlobal'
+  | 'people.perm.allowOnlyOwn'
+  | 'people.perm.allowAdminTier';
+
+/**
+ * memberPermissionSet for one key in a scope the actor may edit
+ * (canSetOverride; `storeId` null is organisation-wide). An
+ * organisation-wide key is set only organisation-wide, allow or deny
+ * (CONF-04). An allow passes on only a key the actor holds in that scope
+ * (D8, permissionList `passOn`), and `org.admin` only from above the
+ * admin rank. A deny takes nothing from the actor.
+ */
+export function overrideEffects(
+  actor: Actor,
+  key: { key: string; passOn?: PassOn },
+  storeId: string | null,
+): { allow: boolean; deny: boolean; reason: OverrideBlock | null } {
+  if (storeId !== null && ORG_WIDE_PERMISSION_KEYS.has(key.key)) {
+    return { allow: false, deny: false, reason: 'admin.errors.orgAdminMustBeGlobal' };
+  }
+  const held =
+    !key.passOn || (storeId === null ? key.passOn.global : key.passOn.storeIds.includes(storeId));
+  if (!held) return { allow: false, deny: true, reason: 'people.perm.allowOnlyOwn' };
+  if (key.key === 'org.admin' && !outranks(orgRankOf(actor.bindings), ADMIN_RANK)) {
+    return { allow: false, deny: true, reason: 'people.perm.allowAdminTier' };
+  }
+  return { allow: true, deny: true, reason: null };
 }

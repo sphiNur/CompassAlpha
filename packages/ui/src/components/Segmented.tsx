@@ -46,6 +46,12 @@ export interface SegmentedOption<V extends string> {
   activeBg?: string;
   /** Per-option active foreground override. Defaults to action-fg. */
   activeFg?: string;
+  /**
+   * The option cannot be chosen; the caller says why next to the control
+   * (ADM1-07: an "Allow" the actor may not give). A chosen option stays
+   * shown as chosen.
+   */
+  disabled?: boolean;
 }
 
 export interface SegmentedProps<V extends string> {
@@ -95,6 +101,7 @@ export function Segmented<V extends string>({
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={opt.disabled}
             onClick={() => {
               if (!active) onChange(opt.value);
             }}
@@ -111,6 +118,8 @@ export function Segmented<V extends string>({
               active
                 ? `${activeBg} ${activeFg} font-semibold`
                 : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
+              opt.disabled && 'cursor-not-allowed',
+              opt.disabled && !active && 'opacity-40',
             )}
           >
             <span className={equalWidth ? 'min-w-0 truncate' : undefined}>{opt.label}</span>

@@ -37,3 +37,22 @@ export const SUPER_ADMIN_RANK = 100;
  * not organization-tier.
  */
 export const MANAGER_RANK = 60;
+
+/**
+ * Keys that mean authority over the whole organisation. Only a global role
+ * binding or a global override yields them; the same key granted in one
+ * store counts nowhere (storeScope.grantCounts in the API), and
+ * memberPermissionSet refuses one in a store. Here since ADM1-07, so the
+ * People screen leaves them out of a store's overrides.
+ *
+ * - `org.admin`: the organisation-admin marker.
+ * - `dishes.manage` (review CONF-04, 2026-11-09): dishes and recipes are
+ *   shared by every store, and each store's sales deduct stock by the same
+ *   recipe. A store-level grant let one store change the menu, the recipes
+ *   and the selling prices of all of them, which M3.2 took away from store
+ *   managers on purpose.
+ */
+export const ORG_WIDE_PERMISSION_KEYS: ReadonlySet<string> = new Set([
+  'org.admin',
+  'dishes.manage',
+]);

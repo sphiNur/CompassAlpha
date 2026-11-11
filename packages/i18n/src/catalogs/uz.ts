@@ -390,6 +390,12 @@ export const uz = {
   'people.perm.fromRole': 'Rol boʻyicha',
   'people.perm.allow': 'Ruxsat berish',
   'people.perm.deny': 'Taqiqlash',
+  'people.perm.allowOnlyOwn':
+    '«Ruxsat berish»ni faqat bu yerda oʻzingizda bor ruxsatlar uchun tanlash mumkin.',
+  'people.perm.allowAdminTier':
+    'Buni faqat darajasi administratordan yuqori boʻlgan kishi bera oladi.',
+  'people.perm.roleNeedsOwn':
+    'Bu ruxsat butun ish maydonida sizda yoʻq, shuning uchun uni rolga qoʻsha olmaysiz.',
   'people.grantInStores': 'Tanlangan doʻkonlarda',
   'stores.codeLabel': 'kod {code}',
   'stores.noCode': 'kodsiz',

@@ -384,6 +384,11 @@ export const ru = {
   'people.perm.fromRole': 'По роли',
   'people.perm.allow': 'Разрешить',
   'people.perm.deny': 'Запретить',
+  'people.perm.allowOnlyOwn':
+    '«Разрешить» можно выбрать только для прав, которые есть здесь у вас самих.',
+  'people.perm.allowAdminTier': 'Дать это право может только тот, чей уровень выше администратора.',
+  'people.perm.roleNeedsOwn':
+    'У вас нет этого права во всём рабочем пространстве, поэтому добавить его в роль нельзя.',
   'people.grantInStores': 'В отдельных магазинах',
   'stores.codeLabel': 'код {code}',
   'stores.noCode': 'без кода',
