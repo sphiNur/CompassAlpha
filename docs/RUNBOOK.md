@@ -114,6 +114,10 @@ warning and the deploy went on (the `.env` check even passed outright).
 - The `.env` check: no override; fix the server.
 - The database role check, which now refuses a superuser as well as
   BYPASSRLS: `--skip-rls-check`.
+- The toolchain check (review OPS-21, 2026-11-10): the bun the units
+  start (`/home/ubuntu/.bun/bin/bun`) must be `.bun-version`, and the
+  pnpm and node on the deploy's PATH must be `packageManager` and meet
+  `engines.node`: `--allow-toolchain-drift`. A rollback only warns.
 
 Since 2026-11 (review OPS-05/OPS-06), `COMPASS_BASE` must be set before a
 deploy starts, and the provenance gates also refuse unless:

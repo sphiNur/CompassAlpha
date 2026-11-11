@@ -32,7 +32,9 @@ import {
   hostName,
   knownHostsFile,
   markIncompleteScript,
+  meetsVersionRange,
   pendingMigrationTags,
+  pinnedToolchain,
   remoteCommand,
   remoteStepError,
   restoreScript,
@@ -41,6 +43,8 @@ import {
   snapshotScript,
   sshOptions,
   stageSeedScript,
+  toolchainProblems,
+  toolchainScript,
 } from '../lib/deployRemote';
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -326,6 +330,82 @@ describe('the database role (OPS-04)', () => {
     expect(rlsRoleProblem('false,true')).toContain('superuser');
     expect(rlsRoleProblem('')).toContain('unexpected');
     expect(rlsRoleProblem('f,f')).toContain('unexpected');
+  });
+});
+
+describe('the server toolchain (OPS-21)', () => {
+  const pinned = { bun: '1.4.4', pnpm: '12.16.1', node: '>=26' };
+  const said = (bun: string, pnpm: string, node: string) =>
+    `bun=${bun}\npnpm=${pnpm}\nnode=${node}\n`;
+
+  test('the script answers one line per tool, also for a tool that is not there', () => {
+    const r = bash(toolchainScript());
+    expect(r.status).toBe(0);
+    const keys = r.stdout
+      .trim()
+      .split('\n')
+      .map((l) => l.split('=')[0]);
+    expect(keys).toEqual(['bun', 'pnpm', 'node']);
+  });
+
+  test("the repository's own pins can be read", () => {
+    const own = pinnedToolchain(
+      readFileSync(join(ROOT, '.bun-version'), 'utf8'),
+      readFileSync(join(ROOT, 'package.json'), 'utf8'),
+    );
+    expect(own.bun).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(own.pnpm).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(meetsVersionRange('v999.0.0', own.node)).toBe(true);
+  });
+
+  test('pins: packageManager may carry a hash; a missing or odd pin is an error', () => {
+    const pkg = (o: object) => JSON.stringify(o);
+    expect(
+      pinnedToolchain(
+        '1.4.4\r\n',
+        pkg({ packageManager: 'pnpm@12.16.1+sha512.abc', engines: { node: '>=26' } }),
+      ),
+    ).toEqual(pinned);
+    expect(() =>
+      pinnedToolchain('latest', pkg({ packageManager: 'pnpm@12.16.1', engines: { node: '>=26' } })),
+    ).toThrow('.bun-version');
+    expect(() =>
+      pinnedToolchain('1.4.4', pkg({ packageManager: 'yarn@4.0.0', engines: { node: '>=26' } })),
+    ).toThrow('packageManager');
+    expect(() => pinnedToolchain('1.4.4', pkg({ packageManager: 'pnpm@12.16.1' }))).toThrow(
+      'engines.node',
+    );
+  });
+
+  test('version ranges: >=N[.M[.P]] or an exact version', () => {
+    expect(meetsVersionRange('v26.13.0', '>=26')).toBe(true);
+    expect(meetsVersionRange('v25.9.1', '>=26')).toBe(false);
+    expect(meetsVersionRange('26.13.0', '>= 26.14')).toBe(false);
+    expect(meetsVersionRange('v26.13.0', '26.13.0')).toBe(true);
+    expect(meetsVersionRange('v26.13.1', '26.13.0')).toBe(false);
+    expect(meetsVersionRange('missing', '>=26')).toBe(false);
+    expect(meetsVersionRange('v26.13.0', '^26')).toBeNull();
+    expect(meetsVersionRange('v26.13.0', '26')).toBeNull();
+  });
+
+  test('a server on the pins passes', () => {
+    expect(toolchainProblems(said('1.4.4', '12.16.1', 'v26.13.0'), pinned)).toEqual([]);
+  });
+
+  test('each tool off its pin, or silent, is named', () => {
+    const out = toolchainProblems(said('1.3.13', 'missing', 'v24.1.0'), pinned);
+    expect(out).toHaveLength(3);
+    expect(out[0]).toContain('1.3.13');
+    expect(out[0]).toContain('.bun-version pins 1.4.4');
+    expect(out[1]).toContain('pnpm is missing');
+    expect(out[2]).toContain('v24.1.0');
+    expect(toolchainProblems('', pinned)).toHaveLength(3);
+    expect(toolchainProblems('', pinned)[0]).toContain('no answer');
+  });
+
+  test('an engines.node this check cannot read is a problem, not a pass', () => {
+    const out = toolchainProblems(said('1.4.4', '12.16.1', 'v26.13.0'), { ...pinned, node: '^26' });
+    expect(out).toEqual([expect.stringContaining('cannot be checked')]);
   });
 });
 
