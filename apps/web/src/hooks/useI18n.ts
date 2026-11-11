@@ -9,7 +9,6 @@ import { makeDateFormatters } from '../lib/dateFormat';
 import { unitLabeller } from '../lib/unitLabel';
 import { roleLabeller } from '../lib/roleLabels';
 import {
-  pickName,
   productName,
   productNameParts,
   vendorLocale,
@@ -204,41 +203,22 @@ export function useProductNameParts() {
 
 export type { ProductNameParts };
 
-export function useVendorName() {
-  const i18n = useI18n();
-  const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
-  return useMemo(
-    () =>
-      (item: { names: Record<string, string> | null | undefined }): string =>
-        pickName(item.names, vendorLocale(i18n.locale, secondaryLocale)),
-    [i18n.locale, secondaryLocale],
-  );
-}
-
 /**
- * Vendor-locale unit-label resolver — companion to useVendorName.
- * Returns the SKU's canonical unit (kg / bunch / pcs / …) localized
- * to the SECONDARY locale when set, else the primary locale.
+ * The strings of text a purchaser sends to a market stall, in the stall's
+ * language (Settings → stall display language), else the interface's.
+ * Its `locale` picks product names (pickName), its `t` the units and
+ * labels (unitLabeller). The catalog is loaded here, so a copy made right
+ * after opening the page is not in another language.
  *
- * Why this exists: the copy-list templates were emitting the RAW
- * canonical unit ("bunch") because they read `sku.unit` directly —
- * which is the storage value, never the display value. Chinese users
- * saw "bunch" instead of "把"; once vendor-language is on, the same
- * leak would show "kg" instead of "kg" (fine for kg, but "bunch" → "bog'lam"
- * was the real ask).
- *
- * Ensures the secondary catalog is loaded so the lookup hits without
- * a first-paint delay.
+ * Review COREWEB2-12 (2026-11-11): useVendorName / useVendorUnitLabel
+ * lost their last caller in a layout refactor (2026-06-26), and the
+ * per-stall copy went out in the purchaser's own language while the
+ * setting still promised the stall's.
  */
-export function useVendorUnitLabel() {
+export function useVendorI18n() {
   const i18n = useI18n();
-  const rawSecondary = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
-  const secondaryLocale = asLocale(rawSecondary);
-  // Pre-load secondary catalog. If null, ensure primary (no-op).
-  useEnsureLocale(secondaryLocale ?? i18n.locale);
-  return useMemo(() => {
-    const effective: Locale = vendorLocale(i18n.locale, secondaryLocale);
-    const t = effective === i18n.locale ? i18n.t : createI18n(effective).t;
-    return unitLabeller(t);
-  }, [i18n, secondaryLocale]);
+  const secondaryLocale = asLocale(useAuthStore((s) => s.session?.user.secondaryLocale ?? null));
+  const locale: Locale = vendorLocale(i18n.locale, secondaryLocale);
+  useEnsureLocale(locale);
+  return useMemo(() => (locale === i18n.locale ? i18n : createI18n(locale)), [i18n, locale]);
 }

@@ -106,8 +106,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onError: errToast('common.errors.actionFailed'),
   });
   // M3.45 (2026-05-22): secondary display language. Drives bilingual
-  // product names + vendor-language copy templates. See useProductName
-  // / useVendorName in hooks/useI18n.ts for the rendering side.
+  // product names + vendor-language copy templates. See
+  // useProductNameParts / useVendorI18n in hooks/useI18n.ts for the
+  // rendering side.
   const setSecondaryLocale = trpc.auth.setSecondaryLocale.useMutation({
     onSuccess: (next) => {
       patchSession(next as never);

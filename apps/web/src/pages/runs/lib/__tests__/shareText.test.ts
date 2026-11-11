@@ -24,9 +24,10 @@
  */
 import { beforeAll, describe, it, expect } from 'bun:test';
 import { createI18n, loadCatalog } from '@compass/i18n';
-import { buildStoreText, buildSupplierText, formatLineForText } from '../shareText';
+import { buildStoreText, buildSupplierText, formatLineForText, shareDepsFor } from '../shareText';
 import type { ShareTextDeps } from '../shareText';
 import type { PreviewLine, PreviewStoreGroup } from '../../types';
+import { unitLabeller } from '../../../../lib/unitLabel';
 import { previewLine as line, previewStore, previewSupplier } from './previewFixtures';
 
 const CATALOG: Record<string, { name: string; unit: string }> = {
@@ -226,5 +227,52 @@ describe('buildSupplierText', () => {
   it('passes a quantity through verbatim rather than summing it', () => {
     const g = supplier([store('s1', 'Store-A', [line({ qty: '0.1' })])]);
     expect(buildSupplierText(g, deps)).toContain('西红柿：0.1 公斤');
+  });
+});
+
+/**
+ * Review COREWEB2-12 (2026-11-11): with a stall display language set, the
+ * per-stall copy went out in the purchaser's own language, although the
+ * setting promises the stall's. The page now writes a stall's list with
+ * the stall's strings and our stores' lists with the interface's.
+ */
+describe('shareDepsFor (COREWEB2-12)', () => {
+  beforeAll(async () => {
+    await loadCatalog('ru');
+  });
+  const skuById = new Map([
+    ['sku-tomato', { names: { zh: '西红柿', ru: 'Помидоры' }, unit: 'kg' }],
+  ]);
+  const depsIn = (locale: 'zh' | 'ru'): ShareTextDeps => {
+    const i18n = createI18n(locale);
+    return shareDepsFor(i18n, unitLabeller(i18n.t), skuById);
+  };
+  const tomato = line({ qty: '2' });
+  const bread = line({ id: 'l2', kind: 'extra', skuId: null, name: '面包', unit: '个', qty: '3' });
+
+  it("writes a stall's list in the stall's language: names, units and labels", () => {
+    const g = supplier([store('s1', 'Store-A', [tomato, bread], 'cold')]);
+    expect(buildSupplierText(g, depsIn('ru'))).toBe(
+      [
+        'Alpha stall',
+        '',
+        'Store-A',
+        'Помидоры: 2 кг',
+        'Прочие позиции · 面包: 3 个',
+        'Комментарий:',
+        'cold',
+      ].join('\n'),
+    );
+  });
+
+  it("keeps the interface's language for our own store", () => {
+    expect(buildStoreText(store('s1', 'Store-A', [tomato]), depsIn('zh'))).toBe(
+      'Store-A\n\n西红柿：2 公斤',
+    );
+  });
+
+  it('takes a product missing from the catalog from the line itself', () => {
+    const gone = line({ skuId: 'sku-gone', name: 'raw', unit: 'u', qty: '1' });
+    expect(formatLineForText(gone, depsIn('ru'))).toBe('raw: 1 u');
   });
 });

@@ -46,8 +46,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
-import { pickName } from '../../../lib/productName';
-import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
@@ -70,8 +69,8 @@ import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,
   buildSupplierText as buildSupplierTextPure,
+  shareDepsFor,
 } from '../lib/shareText';
-import type { ShareTextDeps } from '../lib/shareText';
 import { computePreviewStats } from '../lib/previewStats';
 import { isOpen, pruneOpen, toggleOpen } from '../lib/accordion';
 import {
@@ -1294,11 +1293,9 @@ export function PreviewSummaryCard({
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
   const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
-  const currentSkuName = useCallback(
-    (item: { names: Record<string, string> | null | undefined }): string =>
-      pickName(item.names, i18n.locale),
-    [i18n.locale],
-  );
+  // COREWEB2-12: what is sent to a stall is in the stall's language.
+  const vendorI18n = useVendorI18n();
+  const vendorUnitLabel = useMemo(() => unitLabeller(vendorI18n.t), [vendorI18n]);
   /**
    * Persist only what the user CHOSE, never the computed default.
    *
@@ -1620,26 +1617,19 @@ export function PreviewSummaryCard({
   // state counter instead. A useMemo here would therefore freeze
   // extrasLabel / notesLabel at whatever the fallback catalog said on
   // first render (English, if the user's locale chunk was still in
-  // flight on bazaar LTE) for the entire mount. Rebuilding this small
-  // object each render restores the live read the old inline closures
+  // flight on bazaar LTE) for the entire mount. Rebuilding these small
+  // objects each render restores the live read the old inline closures
   // had; the builders themselves only run on a button tap.
-  const shareDeps: ShareTextDeps = {
-    resolveSku: (skuId: string, qty?: string) => {
-      const sku = skuById.get(skuId);
-      if (!sku) return null;
-      return { name: currentSkuName(sku), unit: currentUnitLabel(sku.unit, qty) };
-    },
-    extrasLabel: i18n.t('order.extras.label'),
-    notesLabel: i18n.t('order.notes.label'),
-    line: (name, qty) => i18n.t('run.share.line', { name, qty }),
-    heading: (label) => i18n.t('run.share.heading', { label }),
-  };
+  // A store's list goes to our own manager, in the interface's language;
+  // a stall's list goes to its holder, in the stall's (COREWEB2-12).
+  const storeShareDeps = shareDepsFor(i18n, currentUnitLabel, skuById);
+  const vendorShareDeps = shareDepsFor(vendorI18n, vendorUnitLabel, skuById);
 
   const buildStoreText = (group: PreviewStoreGroup): string =>
-    buildStoreTextPure(group, shareDeps);
+    buildStoreTextPure(group, storeShareDeps);
 
   const buildSupplierText = (group: PreviewSupplierGroup): string =>
-    buildSupplierTextPure(group, shareDeps);
+    buildSupplierTextPure(group, vendorShareDeps);
 
   const buildAllVendorsText = (): string =>
     bySupplier.map((b) => buildSupplierText(b)).filter(Boolean).join('\n\n');
