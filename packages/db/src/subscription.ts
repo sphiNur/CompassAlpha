@@ -53,7 +53,8 @@ export async function ensureBillingPlans(tx: DB): Promise<void> {
 
 /**
  * Create the subscription row for a newly provisioned tenant. Existing
- * tenants are backfilled by migration 0044.
+ * tenants are backfilled by migration 0044. A tenant that already has a
+ * subscription keeps it, and its plan with it.
  */
 export async function provisionSubscription(
   tx: DB,
@@ -77,7 +78,7 @@ export async function provisionSubscription(
       ? new Date((trialEndsAt ?? now).getTime() + DEFAULT_GRACE_DAYS * 24 * 60 * 60 * 1000)
       : null;
 
-  await tx
+  const created = await tx
     .insert(s.organizationSubscriptions)
     .values({
       orgId,
@@ -88,6 +89,12 @@ export async function provisionSubscription(
       updatedBy: options.createdBy ?? null,
       note: status === 'trialing' ? `Trial: ${trialDays} days` : null,
     })
-    .onConflictDoNothing();
-  await tx.update(s.organizations).set({ plan: planCode }).where(eq(s.organizations.id, orgId));
+    .onConflictDoNothing()
+    .returning({ orgId: s.organizationSubscriptions.orgId });
+  // Review DB-19: only with a new subscription. The plan was written even
+  // when the row already existed, so it could name another plan than the
+  // subscription's.
+  if (created.length > 0) {
+    await tx.update(s.organizations).set({ plan: planCode }).where(eq(s.organizations.id, orgId));
+  }
 }

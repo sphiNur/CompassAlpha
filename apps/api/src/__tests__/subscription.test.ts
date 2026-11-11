@@ -12,9 +12,11 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import {
+  DEFAULT_BILLING_PLANS,
   DEFAULT_GRACE_DAYS,
   DEFAULT_TRIAL_DAYS,
   getDb,
+  provisionSubscription,
   schema as s,
   withOrgContext,
   withSystemContext,
@@ -92,6 +94,44 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
     });
     expect(active.planCode).toBe('pro');
     expect(active.writeAccess).toBe(true);
+  });
+
+  test('DB-19: provisioning again keeps the plan of the subscription the tenant has', async () => {
+    const { orgId, session } = await newTenant();
+    await callerFor(session).platform.updateSubscription({
+      orgId,
+      planCode: 'growth',
+      status: 'active',
+    });
+    const db = getDb();
+    await withSystemContext(db, 'maintenance', (tx) =>
+      provisionSubscription(tx, orgId, { planCode: 'pro' }),
+    );
+    const [org, sub] = await withSystemContext(db, 'maintenance', (tx) =>
+      Promise.all([
+        tx.query.organizations.findFirst({ where: (o, { eq: eq2 }) => eq2(o.id, orgId) }),
+        tx.query.organizationSubscriptions.findFirst({
+          where: (row, { eq: eq2 }) => eq2(row.orgId, orgId),
+        }),
+      ]),
+    );
+    expect(sub?.planCode).toBe('growth');
+    expect(org?.plan).toBe('growth');
+  });
+
+  test('DB-19: the plans in code are the plans the migrations wrote', async () => {
+    const rows = await withSystemContext(getDb(), 'maintenance', (tx) =>
+      tx.query.billingPlans.findMany(),
+    );
+    for (const plan of DEFAULT_BILLING_PLANS) {
+      const row = rows.find((r) => r.code === plan.code);
+      expect(row).toMatchObject({
+        name: plan.name,
+        description: plan.description,
+        limits: plan.limits,
+        sortIndex: plan.sortIndex,
+      });
+    }
   });
 
   test('a read-only tenant cannot add a store', async () => {

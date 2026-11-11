@@ -1,6 +1,7 @@
 import { Banner, Card, DetailRow } from '@compass/ui';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n } from '../hooks/useI18n';
+import { planName } from '../lib/planName';
 
 export function SubscriptionSummary() {
   const session = useAuthStore((s) => s.session);
@@ -22,7 +23,10 @@ export function SubscriptionSummary() {
       ) : null}
       <Card>
         <div className="flex flex-col gap-2 px-4 py-3">
-          <DetailRow label={i18n.t('subscription.plan')} value={sub.planName} />
+          <DetailRow
+            label={i18n.t('subscription.plan')}
+            value={planName(sub.planCode, sub.planName, i18n.locale)}
+          />
           <DetailRow
             label={i18n.t('subscription.status')}
             value={i18n.t(`subscription.status.${sub.status}` as Parameters<typeof i18n.t>[0])}

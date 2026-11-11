@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Hono } from 'hono';
+import { NOT_FOUND_BODY } from '../http/errorBodies';
 import { serveWebApp } from '../http/webApp';
 
 const INDEX = '<!doctype html><title>Compass</title>';
@@ -21,7 +22,7 @@ writeFileSync(join(dist, 'build-id.txt'), 'abc');
 
 const app = new Hono();
 serveWebApp(app, dist);
-app.notFound((c) => c.json({ code: 'NOT_FOUND', i18nKey: 'common.notFound' }, 404));
+app.notFound((c) => c.json(NOT_FOUND_BODY, 404));
 const get = (path: string) => app.request(path);
 
 describe('the web app (OPS-14)', () => {
@@ -48,7 +49,7 @@ describe('the web app (OPS-14)', () => {
     ]) {
       const res = await get(path);
       expect(res.status).toBe(404);
-      expect(await res.json()).toEqual({ code: 'NOT_FOUND', i18nKey: 'common.notFound' });
+      expect(await res.json()).toEqual({ code: 'NOT_FOUND', i18nKey: 'common.errors.notFound' });
     }
   });
 });

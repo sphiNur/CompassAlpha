@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, withSystemContext } from '@compass/db';
 import { isCalendarDate, UuidSchema } from '@compass/contracts';
+import { attendance } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { isPlatformAdmin } from '../../services/platformAdmin';
 import { readSubscriptionState } from '../../services/subscription';
@@ -30,17 +31,32 @@ const SubscriptionUpdateInputSchema = z.object({
  */
 const ISO_TIMESTAMP = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
-function parseDate(value: string | null | undefined): Date | null {
+/**
+ * Review ADM1-32: a bare day is a day of the organisation's own calendar.
+ * An end runs to the end of that day there and a start begins with it.
+ * Both were read in UTC, at the end of the day, so an end in Tashkent fell
+ * five hours into the next day and a start nearly a day late.
+ */
+function parseDate(
+  value: string | null | undefined,
+  timeZone: string,
+  edge: 'start' | 'end',
+): Date | null {
   if (!value) return null;
+  const invalid = () =>
+    new TRPCError({ code: 'BAD_REQUEST', message: 'platform.errors.invalidDate' });
   const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
   const datePart = dayOnly ? value : ISO_TIMESTAMP.exec(value)?.[1];
-  const normalized = dayOnly ? `${value}T23:59:59.999Z` : value;
-  const date = new Date(normalized);
   // AUTH-23 (2026-10-30): "2026-02-30" used to roll over to 2 March.
-  if (!datePart || !isCalendarDate(datePart) || Number.isNaN(date.getTime())) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'platform.errors.invalidDate' });
+  if (!datePart || !isCalendarDate(datePart)) throw invalid();
+  if (!dayOnly) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) throw invalid();
+    return date;
   }
-  return date;
+  const dayStart = (day: string) => attendance.zonedTimeToUtc(day, '00:00', timeZone);
+  if (edge === 'start') return dayStart(value);
+  return new Date(dayStart(attendance.nextDate(value)).getTime() - 1);
 }
 
 /**
@@ -48,9 +64,13 @@ function parseDate(value: string | null | undefined): Date | null {
  * (or an empty string) means "clear". Returns undefined for omitted
  * fields so the upsert's SET clause can skip them.
  */
-function parseOptionalDate(value: string | null | undefined): Date | null | undefined {
+function parseOptionalDate(
+  value: string | null | undefined,
+  timeZone: string,
+  edge: 'start' | 'end' = 'end',
+): Date | null | undefined {
   if (value === undefined) return undefined;
-  return parseDate(value);
+  return parseDate(value, timeZone, edge);
 }
 
 async function requirePlatformAdmin(db: Parameters<typeof isPlatformAdmin>[0], userId: string) {
@@ -93,6 +113,9 @@ export const platformRouter = router({
             orgId: org.id,
             name: org.name,
             slug: org.slug,
+            // Review ADM1-32: the sheet shows and sends the dates as days
+            // of this calendar.
+            timezone: org.timezone,
             createdAt: org.createdAt.toISOString(),
             note: sub?.note ?? null,
             subscription: await readSubscriptionState(tx, org.id),
@@ -124,10 +147,10 @@ export const platformRouter = router({
         // keep their stored value. Previously every omitted date became
         // NULL and the note was overwritten on each save.
         const dates = {
-          trialEndsAt: parseOptionalDate(input.trialEndsAt),
-          currentPeriodStart: parseOptionalDate(input.currentPeriodStart),
-          currentPeriodEnd: parseOptionalDate(input.currentPeriodEnd),
-          graceEndsAt: parseOptionalDate(input.graceEndsAt),
+          trialEndsAt: parseOptionalDate(input.trialEndsAt, org.timezone),
+          currentPeriodStart: parseOptionalDate(input.currentPeriodStart, org.timezone, 'start'),
+          currentPeriodEnd: parseOptionalDate(input.currentPeriodEnd, org.timezone),
+          graceEndsAt: parseOptionalDate(input.graceEndsAt, org.timezone),
         };
         const note = input.note === undefined ? undefined : input.note?.trim() || null;
         const before = await tx.query.organizationSubscriptions.findFirst({

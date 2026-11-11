@@ -259,4 +259,31 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       currentPeriodEnd: '2026-12-31T10:00:00.000Z',
     });
   });
+
+  test("ADM1-32: a bare day is a day of the workspace's calendar", async () => {
+    const { orgId, session } = await newTenant();
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db
+      .update(s.organizations)
+      .set({ timezone: 'Asia/Tashkent' })
+      .where(eq(s.organizations.id, orgId));
+    const listed = await callerFor(session).platform.organizations();
+    expect(listed.find((o) => o.orgId === orgId)?.timezone).toBe('Asia/Tashkent');
+
+    await callerFor(session).platform.updateSubscription({
+      orgId,
+      planCode: 'growth',
+      status: 'active',
+      currentPeriodStart: '2026-12-01',
+      currentPeriodEnd: '2026-12-31',
+      graceEndsAt: '2027-01-07',
+    });
+    const row = await db.query.organizationSubscriptions.findFirst({
+      where: (sub, { eq: eq2 }) => eq2(sub.orgId, orgId),
+    });
+    // Tashkent is UTC+5: a start is its midnight, an end the last instant.
+    expect(row?.currentPeriodStart?.toISOString()).toBe('2026-11-30T19:00:00.000Z');
+    expect(row?.currentPeriodEnd?.toISOString()).toBe('2026-12-31T18:59:59.999Z');
+    expect(row?.graceEndsAt?.toISOString()).toBe('2027-01-07T18:59:59.999Z');
+  });
 });

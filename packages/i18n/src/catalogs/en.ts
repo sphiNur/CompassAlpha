@@ -535,6 +535,7 @@ export const en = {
   'common.errors.idempotencyKeyReused':
     'This request reused the identifier of an earlier one with different content, so it was not saved. Refresh and try again.',
   'common.errors.internal': 'Something went wrong on our side. Please try again.',
+  'common.errors.notFound': 'This address does not exist.',
   // DX-COPY-8 (2026-11-01): the fallback for a write that has no failure
   // sentence of its own — what to do next, not just "something went wrong".
   'common.errors.actionFailed':
@@ -836,6 +837,10 @@ export const en = {
   'subscription.status.past_due': 'Past due',
   'subscription.status.suspended': 'Suspended',
   'subscription.status.canceled': 'Cancelled',
+  'subscription.plans.legacy': 'Legacy / Enterprise',
+  'subscription.plans.starter': 'Starter',
+  'subscription.plans.growth': 'Growth',
+  'subscription.plans.pro': 'Professional',
   'subscription.errors.readOnly': 'This workspace is read-only because its subscription has ended.',
   'subscription.errors.storeLimit':
     "This plan's store limit has been reached. Upgrade or ask the platform admin.",
