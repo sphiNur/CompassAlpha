@@ -7,7 +7,7 @@
 import { and, asc, desc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
-import { milliQty, qtyMilli } from '@compass/contracts';
+import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts';
 import { DomainError } from '@compass/domain';
 import type { RunEvent } from '@compass/domain/run';
 import { readStream } from './eventStore';
@@ -1067,17 +1067,16 @@ async function syncAmendMovements(
     if (c.kind === 'amendAdded') amendAdded.set(`${c.storeId}|${c.skuId}`, c.qty);
   }
 
-  // Thousandths, as integers: qty columns are numeric(12,3).
-  const milli = (v: string) => Math.round(Number(v) * 1000);
+  // Thousandths (qty columns are numeric(12,3)), read as every quantity is.
   const key = (storeId: string, skuId: string) => `${storeId}|${skuId}`;
-  const now = new Map<string, number>();
+  const now = new Map<string, bigint>();
   for (const sp of splits) {
     if (!signedStores.has(sp.storeId)) continue;
     const k = key(sp.storeId, sp.skuId);
-    now.set(k, (now.get(k) ?? 0) + milli(receivedDelta(sp, amendAdded.get(k))));
+    now.set(k, (now.get(k) ?? 0n) + qtyMilliOrZero(receivedDelta(sp, amendAdded.get(k))));
   }
-  const before = new Map<string, number>();
-  for (const b of booked) before.set(key(b.storeId, b.skuId), milli(b.delta));
+  const before = new Map<string, bigint>();
+  for (const b of booked) before.set(key(b.storeId, b.skuId), qtyMilliOrZero(b.delta));
 
   await db
     .delete(s.inventoryMovements)
@@ -1090,14 +1089,14 @@ async function syncAmendMovements(
     );
   const rows = [];
   for (const k of new Set([...now.keys(), ...before.keys()])) {
-    const diff = (now.get(k) ?? 0) - (before.get(k) ?? 0);
-    if (diff === 0) continue;
+    const diff = (now.get(k) ?? 0n) - (before.get(k) ?? 0n);
+    if (diff === 0n) continue;
     const [storeId, skuId] = k.split('|') as [string, string];
     rows.push({
       orgId,
       storeId,
       skuId,
-      delta: (diff / 1000).toFixed(3),
+      delta: milliQty(diff),
       reason: 'adjustment' as const,
       note: null,
       sourceType: 'run_amend' as const,
@@ -1136,8 +1135,7 @@ export function receivedDelta(
     // stock while history said "修改时补记 +2". The recorded shortfall
     // stays: received = what the store counted + what was added later.
     if (amendAdded && Number(amendAdded) > 0) {
-      const milli = (v: string) => Math.round(Number(v) * 1000);
-      return ((milli(split.confirmReceivedQty) + milli(amendAdded)) / 1000).toFixed(3);
+      return milliQty(qtyMilliOrZero(split.confirmReceivedQty) + qtyMilliOrZero(amendAdded));
     }
     return split.confirmReceivedQty;
   }

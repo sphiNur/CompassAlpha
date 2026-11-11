@@ -1,3 +1,5 @@
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
+
 /**
  * DX-DLV-01 (2026-11-01): what a store received on a line it reported a
  * problem with, once a correction of the finished run added quantity.
@@ -24,6 +26,5 @@ export function amendAddedFor(
 
 /** received + added, exact to the thousandth (qty columns are numeric(12,3)). */
 export function receivedTotal(received: string, added: string): string {
-  const milli = (v: string) => Math.round(Number(v) * 1000);
-  return String((milli(received) + milli(added)) / 1000);
+  return milliQty(qtyMilliOrZero(received) + qtyMilliOrZero(added));
 }

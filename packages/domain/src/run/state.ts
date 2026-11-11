@@ -1,4 +1,4 @@
-import { milliQty, storedQtyMilli } from '../shared/quantity';
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 import type { RunEvent, StoreSplitPayload } from './events';
 
 /**
@@ -178,7 +178,7 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         items.set(p.skuId, {
           skuId: p.skuId,
           // RUNAPI-05: older payloads can carry float noise.
-          plannedQty: milliQty(storedQtyMilli(p.qty)),
+          plannedQty: milliQty(qtyMilliOrZero(p.qty)),
           purchasedQty: null,
           supplierId: null,
           unitPrice: null,
@@ -374,8 +374,8 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       // only what was actually added counts against it (RE-BUY-2: a
       // price-only or partial revision used to wipe the whole top-up).
       const boughtMore =
-        storedQtyMilli(event.payload.actualQty) - storedQtyMilli(existing.purchasedQty);
-      const topUpLeft = storedQtyMilli(existing.topUpQty) - (boughtMore > 0n ? boughtMore : 0n);
+        qtyMilliOrZero(event.payload.actualQty) - qtyMilliOrZero(existing.purchasedQty);
+      const topUpLeft = qtyMilliOrZero(existing.topUpQty) - (boughtMore > 0n ? boughtMore : 0n);
       items.set(event.payload.skuId, {
         ...existing,
         topUpQty: topUpLeft > 0n ? milliQty(topUpLeft) : null,
@@ -540,21 +540,21 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
           // row (planned = that demand). Left flagged, undoing the purchase
           // deleted the row and the stores' demand with it.
           const merged = existing.addedByPurchaser
-            ? milliQty(storedQtyMilli(p.qty))
-            : milliQty(storedQtyMilli(existing.plannedQty) + storedQtyMilli(p.qty));
+            ? milliQty(qtyMilliOrZero(p.qty))
+            : milliQty(qtyMilliOrZero(existing.plannedQty) + qtyMilliOrZero(p.qty));
           const decided = existing.status === 'purchased' || existing.status === 'unavailable';
           items.set(p.skuId, {
             ...existing,
             plannedQty: merged,
             addedByPurchaser: false,
             ...(decided
-              ? { topUpQty: milliQty(storedQtyMilli(existing.topUpQty) + storedQtyMilli(p.qty)) }
+              ? { topUpQty: milliQty(qtyMilliOrZero(existing.topUpQty) + qtyMilliOrZero(p.qty)) }
               : {}),
           });
         } else {
           items.set(p.skuId, {
             skuId: p.skuId,
-            plannedQty: milliQty(storedQtyMilli(p.qty)),
+            plannedQty: milliQty(qtyMilliOrZero(p.qty)),
             purchasedQty: null,
             supplierId: null,
             unitPrice: null,
@@ -579,7 +579,7 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       for (const removed of event.payload.removedPlannedItems) {
         const existing = items.get(removed.skuId);
         if (!existing) continue;
-        const remaining = storedQtyMilli(existing.plannedQty) - storedQtyMilli(removed.qty);
+        const remaining = qtyMilliOrZero(existing.plannedQty) - qtyMilliOrZero(removed.qty);
         if (remaining <= 0n) {
           items.delete(removed.skuId);
         } else {

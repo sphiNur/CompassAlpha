@@ -15,6 +15,7 @@
  *   2. `knownTotal` is the opposite — it sums ROWS, because each row is
  *      a real quantity being bought for a real store.
  */
+import { addMoney } from '@compass/contracts/money';
 import type { PreviewStoreGroup } from '../types';
 
 export type PreviewStats = {
@@ -65,8 +66,9 @@ export function computePreviewStats(
       // knownTotal, and the purchaser WILL discover its price at the
       // stall. Hiding it would make "at least X" quietly overconfident,
       // which is the one thing that line must never be.
+      // RUNWEB2-13: rows are added in whole cents (D1), as every total is.
       if (line.total === null) unpriced.add(key);
-      else knownTotal += line.total;
+      else knownTotal = addMoney(knownTotal, line.total);
       // Extras carry no skuId, so they can never hold a preferred
       // supplier link. Counting them would pin this above zero forever
       // and turn the exception chip into wallpaper.

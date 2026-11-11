@@ -7,6 +7,7 @@ import {
   mulQty,
   normalizeQty,
   qtyMilli,
+  qtyMilliOrZero,
   subQty,
   sumQty,
 } from '@compass/contracts';
@@ -47,6 +48,18 @@ describe('quantity arithmetic (RUNAPI-05)', () => {
     expect(sumQty(['1', null, undefined, '', '2'])).toBe('3');
     expect(() => qtyMilli('abc')).toThrow(RangeError);
     expect(() => qtyMilli('1e3')).toThrow(RangeError);
+  });
+
+  it('reads a stored or half-typed quantity without throwing (RUNWEB2-14)', () => {
+    expect(qtyMilliOrZero('2.5')).toBe(2500n);
+    expect(qtyMilliOrZero('0.30000000000000004')).toBe(300n);
+    expect(qtyMilliOrZero(0.1 + 0.2)).toBe(300n);
+    expect(qtyMilliOrZero('-1.5')).toBe(-1500n);
+    // Not a plain decimal: read through Number, as before.
+    expect(qtyMilliOrZero('1e3')).toBe(1_000_000n);
+    for (const value of [null, undefined, '', 'abc', '1,5', 'NaN', Infinity]) {
+      expect(qtyMilliOrZero(value)).toBe(0n);
+    }
   });
 
   it('multiplies exactly and rounds once, half away from zero (CONF-15)', () => {

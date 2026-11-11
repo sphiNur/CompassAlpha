@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { groupStoreBySupplier } from '../previewGrouping';
+import { groupStoreBySupplier, tallyPreviewLine } from '../previewGrouping';
 import type { PreviewLine } from '../../types';
 import { previewLine, previewStore } from './previewFixtures';
 
@@ -36,6 +36,15 @@ describe('groupStoreBySupplier', () => {
     expect(groups[2]!.items.map((item) => item.id)).toEqual(['4', '5']);
   });
 
+  it("adds a stall's subtotal in whole cents, like the store total (RUNWEB1-16)", () => {
+    expect(0.1 + 0.2).not.toBe(0.3); // what float += gave
+    const input = store([
+      line({ id: '1', supplierId: 'alpha', supplierName: 'Alpha', total: 0.1 }),
+      line({ id: '2', supplierId: 'alpha', supplierName: 'Alpha', total: 0.2 }),
+    ]);
+    expect(groupStoreBySupplier(input, 'Unassigned')[0]!.total).toBe(0.3);
+  });
+
   it('sorts stalls in the UI language (RUNWEB2-30)', () => {
     const input = store([
       line({ id: '1', supplierId: 't', supplierName: '土豆摊' }),
@@ -54,5 +63,13 @@ describe('groupStoreBySupplier', () => {
     groupStoreBySupplier(input, 'Unassigned');
 
     expect(input.items.map((item) => item.id)).toEqual(['1', '2']);
+  });
+});
+
+describe('tallyPreviewLine (RUNWEB1-16 / RUNWEB2-13)', () => {
+  it('adds a priced line in cents and counts an unpriced one', () => {
+    const group = { total: 0, unknownCount: 0 };
+    for (const total of [0.1, 0.2, null, 1004.99]) tallyPreviewLine(group, { total });
+    expect(group).toEqual({ total: 1005.29, unknownCount: 1 });
   });
 });

@@ -7,6 +7,7 @@
  * The server now rejects such splits; these helpers keep the UI from
  * offering them in the first place.
  */
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 
 interface RunStoreSource {
   sessions?: ReadonlyArray<{ storeId: string }> | null;
@@ -44,24 +45,20 @@ export function mergeSplitsIntoExistingItem(input: {
   newSplits: ReadonlyArray<Split>;
 }): { splits: Split[]; totalQty: string } {
   const base = input.status === 'pending' ? input.demand : input.existingSplits;
-  const byStore = new Map<string, number>();
+  // In thousandths (RUNWEB2-14), so the splits add up to the total
+  // exactly and the server's split-sum check always holds.
+  const byStore = new Map<string, bigint>();
   for (const sp of [...base, ...input.newSplits]) {
-    const qty = Number(sp.qty);
-    if (!(qty > 0)) continue;
-    byStore.set(sp.storeId, (byStore.get(sp.storeId) ?? 0) + qty);
+    const qty = qtyMilliOrZero(sp.qty);
+    if (qty <= 0n) continue;
+    byStore.set(sp.storeId, (byStore.get(sp.storeId) ?? 0n) + qty);
   }
   const splits = [...byStore.entries()].map(([storeId, qty]) => ({
     storeId,
-    qty: roundQty(qty),
+    qty: milliQty(qty),
   }));
-  // Sum the rounded splits so the server's split-sum check always holds.
-  const total = splits.reduce((s, sp) => s + Number(sp.qty), 0);
-  return { splits, totalQty: roundQty(total) };
-}
-
-/** Three decimals, matching the qty precision used across the run. */
-function roundQty(n: number): string {
-  return String(Math.round(n * 1000) / 1000);
+  const total = [...byStore.values()].reduce((sum, qty) => sum + qty, 0n);
+  return { splits, totalQty: milliQty(total) };
 }
 
 type PaymentMethod = 'cash' | 'transfer';
@@ -129,11 +126,11 @@ export function mergeIntoPurchasedItem(input: {
   const paymentMethod = asPaymentMethod(item.paymentMethod) ?? draft.paymentMethod;
   const byStore = new Map<
     string,
-    { qty: number; unitPrice?: string; paymentMethod?: PaymentMethod }
+    { qty: bigint; unitPrice?: string; paymentMethod?: PaymentMethod }
   >();
   for (const sp of input.existingSplits) {
-    const qty = Number(sp.qty);
-    if (!(qty > 0)) continue;
+    const qty = qtyMilliOrZero(sp.qty);
+    if (qty <= 0n) continue;
     const cur = byStore.get(sp.storeId);
     if (cur) {
       cur.qty += qty;
@@ -149,8 +146,8 @@ export function mergeIntoPurchasedItem(input: {
   const draftPriceDiffers =
     Number(draft.unitPrice) > 0 && Number(draft.unitPrice) !== Number(unitPrice);
   for (const sp of input.newSplits) {
-    const qty = Number(sp.qty);
-    if (!(qty > 0)) continue;
+    const qty = qtyMilliOrZero(sp.qty);
+    if (qty <= 0n) continue;
     const cur = byStore.get(sp.storeId);
     if (cur) {
       cur.qty += qty;
@@ -164,17 +161,17 @@ export function mergeIntoPurchasedItem(input: {
   }
   const storeSplits: RevisionSplit[] = [...byStore.entries()].map(([storeId, v]) => ({
     storeId,
-    qty: roundQty(v.qty),
+    qty: milliQty(v.qty),
     ...(v.unitPrice !== undefined ? { unitPrice: v.unitPrice } : {}),
     ...(v.paymentMethod !== undefined ? { paymentMethod: v.paymentMethod } : {}),
   }));
-  const total = storeSplits.reduce((s, sp) => s + Number(sp.qty), 0);
+  const total = [...byStore.values()].reduce((sum, v) => sum + v.qty, 0n);
   return {
     supplierId: item.supplierId ?? draft.supplierId,
     unitPrice,
     paymentMethod,
     receiptPhotoUrl: draft.receiptPhotoUrl ?? item.receiptPhotoUrl ?? null,
     storeSplits,
-    actualQty: roundQty(total),
+    actualQty: milliQty(total),
   };
 }

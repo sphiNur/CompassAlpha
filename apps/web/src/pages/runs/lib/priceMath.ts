@@ -75,6 +75,26 @@ export function fromDisplayPrice(displayStr: string, inThousands: boolean): stri
 }
 
 /**
+ * What a price field shows once the unit switch flips: the same raw price
+ * in the other unit. Text that is not a plain decimal yet ("", "12,") stays
+ * as typed.
+ *
+ * Review RUNWEB1-15 (2026-11-11): a purchase row did this as `n / 1000`
+ * and `n * 1000` on a float, so about 1.5% of the prices with three
+ * decimals in thousands came back with noise ("1.005" → "1004.9999999999999"),
+ * which the field then refused as a price. The purchase sheet converted
+ * exactly; both now do.
+ */
+export function switchPriceUnit(
+  shown: string,
+  wasInThousands: boolean,
+  inThousands: boolean,
+): string {
+  if (wasInThousands === inThousands) return shown;
+  return toDisplayPrice(fromDisplayPrice(shown, wasInThousands), inThousands);
+}
+
+/**
  * R2-BUY-2 (2026-10-31): the raw price a typed figure stands for, or
  * null while it is not one the server stores (above 0, at most 12
  * digits and 2 decimals — PurchasePriceSchema). A 3rd decimal or a 13th

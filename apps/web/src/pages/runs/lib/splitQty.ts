@@ -1,15 +1,15 @@
 /**
  * Splitting one quantity across several stores.
  *
- * Both helpers here emit strings at 3 decimals because that is the
- * column (`decimal(12,3)`) and because the domain validates
+ * Both helpers work in whole thousandths, the precision of the
+ * `decimal(12,3)` qty columns, because the domain validates
  * `Math.abs(splitSum - qty) <= TOLERANCE` on every command that carries
- * splits. The last store absorbs the rounding remainder so the parts sum
- * to the whole bit-exactly rather than within tolerance.
+ * splits: the parts sum to the whole exactly rather than within
+ * tolerance. Review RUNWEB2-14 (2026-11-11): they read and print
+ * quantities with @compass/contracts/quantity, as every other quantity
+ * is, instead of private copies ("2.500" here, "2.5" elsewhere).
  */
-
-/** Matches the domain's `decimal(12,3)` qty columns. */
-const SCALE = 3;
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 
 /**
  * Equal shares of `totalQty` across `storeIds`.
@@ -39,8 +39,8 @@ export function evenSplitQty(
   const out = new Map<string, string>();
   if (storeIds.length === 0) return out;
 
-  const q = Number(totalQty);
-  if (!Number.isFinite(q) || q <= 0) {
+  const q = qtyMilliOrZero(totalQty);
+  if (q <= 0n) {
     // No usable quantity yet — register each store with a blank so the
     // chips render, and let the caller's canSubmit gate do its job.
     for (const id of storeIds) out.set(id, '');
@@ -48,20 +48,20 @@ export function evenSplitQty(
   }
 
   if (storeIds.length === 1) {
-    // Pass the string through untouched so a hand-typed "2.5" is not
-    // rewritten to "2.500" under the user's cursor.
+    // Pass the string through untouched so a hand-typed "2." is not
+    // rewritten under the user's cursor.
     out.set(storeIds[0]!, totalQty);
     return out;
   }
 
-  const share = q / storeIds.length;
-  let allocated = 0;
-  for (let i = 0; i < storeIds.length - 1; i++) {
-    const s = share.toFixed(SCALE);
-    out.set(storeIds[i]!, s);
-    allocated += Number(s);
-  }
-  out.set(storeIds[storeIds.length - 1]!, (q - allocated).toFixed(SCALE));
+  // Each share is q / n rounded half-up to a thousandth, and the last
+  // store takes what is left. A share so large that the others would
+  // take more than the whole (0.002 across 4) is rounded down instead.
+  const n = BigInt(storeIds.length);
+  let share = (q * 2n + n) / (n * 2n);
+  if (share * (n - 1n) > q) share = q / n;
+  for (let i = 0; i < storeIds.length - 1; i++) out.set(storeIds[i]!, milliQty(share));
+  out.set(storeIds[storeIds.length - 1]!, milliQty(q - share * (n - 1n)));
   return out;
 }
 
@@ -99,26 +99,21 @@ export function proportionalSplitQty(
   step?: string,
 ): Array<{ storeId: string; qty: string }> | null {
   if (demand.length === 0) return null;
-  const actual = Number(actualQtyStr);
-  if (!Number.isFinite(actual) || actual <= 0) return null;
-  const plannedTotal = demand.reduce((s, d) => s + Number(d.qty), 0);
-  if (!Number.isFinite(plannedTotal) || plannedTotal <= 0) return null;
+  const actualM = qtyMilliOrZero(actualQtyStr);
+  if (actualM <= 0n) return null;
+  const planned = demand.map((d) => {
+    const q = qtyMilliOrZero(d.qty);
+    return q > 0n ? q : 0n;
+  });
+  const plannedM = planned.reduce((s, q) => s + q, 0n);
+  if (plannedM <= 0n) return null;
 
   if (demand.length === 1) {
     return [{ storeId: demand[0]!.storeId, qty: actualQtyStr }];
   }
 
-  const toMilli = (v: number) => BigInt(Math.round(v * 10 ** SCALE));
-  const actualM = toMilli(actual);
-  const stepNum = Number(step);
-  const stepM = Number.isFinite(stepNum) && stepNum > 0 ? toMilli(stepNum) : 1n;
+  const stepM = qtyMilliOrZero(step);
   const unit = stepM > 0n ? stepM : 1n;
-  const planned = demand.map((d) => {
-    const q = Number(d.qty);
-    return Number.isFinite(q) && q > 0 ? toMilli(q) : 0n;
-  });
-  const plannedM = planned.reduce((s, q) => s + q, 0n);
-  if (plannedM <= 0n) return null;
 
   const units = actualM / unit;
   // Each store's exact claim is planned × units / plannedTotal steps:
@@ -142,15 +137,9 @@ export function proportionalSplitQty(
   const below = actualM - units * unit;
   if (below > 0n) qtyM[ranked[leftoverUnits % ranked.length]!.index]! += below;
 
-  const out = demand.map((d, i) => ({ storeId: d.storeId, qty: milliText(qtyM[i]!) }));
+  const out = demand.map((d, i) => ({ storeId: d.storeId, qty: milliQty(qtyM[i]!) }));
   // BUY-13: a store left with nothing (a tiny quantity, or rounding to the
   // step) was sent as "0.000" and refused; let the full sheet decide.
   if (qtyM.some((q) => q <= 0n)) return null;
   return out;
-}
-
-function milliText(m: bigint): string {
-  const whole = m / 1000n;
-  const frac = (m % 1000n).toString().padStart(SCALE, '0');
-  return `${whole}.${frac}`;
 }

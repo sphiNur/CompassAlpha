@@ -80,7 +80,7 @@ import {
   filterStoreGroups,
   filterSupplierGroups,
 } from '../lib/previewFilter';
-import { groupStoreBySupplier } from '../lib/previewGrouping';
+import { groupStoreBySupplier, tallyPreviewLine } from '../lib/previewGrouping';
 import { buildStorePickList } from '../lib/storePickList';
 import { normalizeQuery } from '../../../lib/searchMatch';
 import { useAnnounce } from '../../../hooks/useAnnounce';
@@ -91,7 +91,6 @@ import {
   type ItemView,
 } from '../lib/itemList';
 import { moneyLine } from '../../../lib/money';
-import { addMoney } from '@compass/contracts/money';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -1178,8 +1177,7 @@ function previewLineTotal(qty: string, unitPrice: string | null): number | null 
 
 function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
   group.items.push(line);
-  if (line.total === null) group.unknownCount += 1;
-  else group.total = addMoney(group.total, line.total);
+  tallyPreviewLine(group, line);
 }
 
 export function PreviewSummaryCard({
@@ -1212,12 +1210,6 @@ export function PreviewSummaryCard({
       estimatedUnitPrice?: string | null;
     } | null>;
     lastPurchasePriceBySku?: Record<string, string>;
-    perStoreBudgets?: ReadonlyArray<{
-      storeId: string;
-      storeName: string;
-      estimatedTotal: string;
-      unknownPriceCount: number;
-    }>;
     /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
     sessionNotesByStore?: Record<string, string>;
     /** M3.16-C: per-store structured extras. */
@@ -1330,12 +1322,11 @@ export function PreviewSummaryCard({
   const storeNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const row of preview.perStoreDemand) m.set(row.storeId, row.storeName);
-    for (const row of preview.perStoreBudgets ?? []) m.set(row.storeId, row.storeName);
     for (const row of preview.sessions) {
       if (row.storeName) m.set(row.storeId, row.storeName);
     }
     return m;
-  }, [preview.perStoreBudgets, preview.perStoreDemand, preview.sessions]);
+  }, [preview.perStoreDemand, preview.sessions]);
 
   const estimatedPriceForSku = useCallback(
     (skuId: string): string | null =>
@@ -1510,8 +1501,7 @@ export function PreviewSummaryCard({
         );
         const storeBucket = ensureSupplierStore(bucket, store.storeId, store.storeName);
         addPreviewLine(storeBucket, line);
-        if (line.total === null) bucket.unknownCount += 1;
-        else bucket.total += line.total;
+        tallyPreviewLine(bucket, line);
       }
       if (store.legacyNote) {
         const bucket = ensureSupplier(
@@ -1539,11 +1529,12 @@ export function PreviewSummaryCard({
 
   /**
    * Run-wide facts for the header. Derived from the CLIENT byStore memo,
-   * deliberately not from the server's `preview.perStoreBudgets`: that is
-   * built from order_items_v alone, so it cannot see `extrasJson`, while
-   * `addPreviewLine` counts extras as unpriced. The two disagree about
-   * the same store today — one of them had to win, and only the client
-   * number matches what is rendered directly underneath it.
+   * deliberately not from the server's per-store budgets, which this card
+   * does not take (RUNWEB2-12): they are built from order_items_v alone,
+   * so they cannot see `extrasJson`, while `addPreviewLine` counts extras
+   * as unpriced. The two disagree about the same store today — one of
+   * them had to win, and only the client number matches what is rendered
+   * directly underneath it.
    *
    * Counts are of DISTINCT items, not of rows: a SKU three stores want
    * is one thing to buy, and "无摊位 3" meaning one SKU across three

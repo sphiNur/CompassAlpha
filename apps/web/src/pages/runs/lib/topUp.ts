@@ -25,7 +25,7 @@
  * Pure; tests in __tests__/topUp.test.ts.
  */
 import { toCents } from '@compass/contracts/money';
-import { milliQty, qtyMilli } from '@compass/contracts/quantity';
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 
 export type PaymentMethod = 'cash' | 'transfer';
 
@@ -47,13 +47,6 @@ export type TopUpRevision = {
 // field can hold text a number input accepts but a decimal is not
 // ("1e3"); that is read through Number, as before.
 const finite = (v: string): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
-const milli = (v: string): bigint => {
-  try {
-    return qtyMilli(v || '0');
-  } catch {
-    return qtyMilli(finite(v));
-  }
-};
 const cents = (v: string): bigint => {
   try {
     return toCents(v);
@@ -90,8 +83,8 @@ export function topUpRevision(input: {
   const storeSplits: TopUpRevision['storeSplits'] = [];
   for (const storeId of storeIds) {
     const b = baseBy.get(storeId);
-    const baseQty = b ? milli(b.qty) : 0n;
-    const nextQty = milli(next.get(storeId) ?? '0');
+    const baseQty = b ? qtyMilliOrZero(b.qty) : 0n;
+    const nextQty = qtyMilliOrZero(next.get(storeId));
     if (nextQty < baseQty) return null;
     if (nextQty === 0n) continue;
     const add = nextQty - baseQty;
@@ -143,17 +136,17 @@ export function topUpPrefill(input: {
   extra: string | null | undefined;
 }): { splits: Map<string, string>; actualQty: string } {
   const splits = new Map(input.splits);
-  let remaining = milli(input.extra ?? '0');
+  let remaining = qtyMilliOrZero(input.extra);
   for (const dm of input.demand) {
     if (remaining <= 0n) break;
-    const have = milli(splits.get(dm.storeId) ?? '0');
-    const gap = milli(dm.qty) - have;
+    const have = qtyMilliOrZero(splits.get(dm.storeId));
+    const gap = qtyMilliOrZero(dm.qty) - have;
     if (gap <= 0n) continue;
     const add = gap < remaining ? gap : remaining;
     splits.set(dm.storeId, milliQty(have + add));
     remaining -= add;
   }
   let total = remaining > 0n ? remaining : 0n;
-  for (const qty of splits.values()) total += milli(qty);
+  for (const qty of splits.values()) total += qtyMilliOrZero(qty);
   return { splits, actualQty: milliQty(total) };
 }

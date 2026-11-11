@@ -11,6 +11,7 @@
  *
  * Pure: replays the run stream with the aggregate's own reducer.
  */
+import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 import { applyRun, emptyRunState, type RunEvent, type RunState } from '@compass/domain/run';
 
 export type RunCorrection =
@@ -31,9 +32,6 @@ export type RunCorrection =
       to: string;
       reason: string;
     };
-
-/** Thousandths, as integers: qty columns are numeric(12,3). */
-const milli = (v: string) => Math.round(Number(v) * 1000);
 
 function effectivePrice(state: RunState, skuId: string, storeId: string): string | null {
   const item = state.items.get(skuId);
@@ -59,7 +57,8 @@ export function runCorrections(
   const visible = (storeId: string) => visibleStoreIds === null || visibleStoreIds.has(storeId);
   let state = emptyRunState(events[0]?.streamId ?? '');
   // store|sku → qty the store had when it confirmed.
-  const confirmedQty = new Map<string, number>();
+  // Thousandths (qty columns are numeric(12,3)), read as every quantity is.
+  const confirmedQty = new Map<string, bigint>();
   const confirmedStores = new Set<string>();
   const out: RunCorrection[] = [];
 
@@ -113,7 +112,8 @@ export function runCorrections(
       for (const item of state.items.values()) {
         if (item.status !== 'purchased') continue;
         for (const sp of item.storeSplits) {
-          if (sp.storeId === storeId) confirmedQty.set(`${storeId}|${item.skuId}`, milli(sp.qty));
+          if (sp.storeId === storeId)
+            confirmedQty.set(`${storeId}|${item.skuId}`, qtyMilliOrZero(sp.qty));
         }
       }
     }
@@ -123,13 +123,14 @@ export function runCorrections(
     if (item.status !== 'purchased') continue;
     for (const sp of item.storeSplits) {
       if (!confirmedStores.has(sp.storeId) || !visible(sp.storeId)) continue;
-      const added = milli(sp.qty) - (confirmedQty.get(`${sp.storeId}|${item.skuId}`) ?? 0);
-      if (added <= 0) continue;
+      const added =
+        qtyMilliOrZero(sp.qty) - (confirmedQty.get(`${sp.storeId}|${item.skuId}`) ?? 0n);
+      if (added <= 0n) continue;
       out.push({
         kind: 'amendAdded',
         skuId: item.skuId,
         storeId: sp.storeId,
-        qty: String(added / 1000),
+        qty: milliQty(added),
       });
     }
   }

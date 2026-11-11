@@ -59,6 +59,11 @@ describe('evenSplitQty', () => {
     expect([...evenSplitQty(['a', 'b'], 'abc').values()]).toEqual(['', '']);
   });
 
+  it('never leaves the last store a negative share (0.002 across 4)', () => {
+    const out = [...evenSplitQty(['a', 'b', 'c', 'd'], '0.002').values()];
+    expect(out).toEqual(['0', '0', '0', '0.002']);
+  });
+
   it('returns an empty map for no stores', () => {
     expect(evenSplitQty([], '5').size).toBe(0);
   });
@@ -76,7 +81,7 @@ describe('proportionalSplitQty', () => {
     );
     expect(out).toEqual([
       { storeId: 'a', qty: '0.667' },
-      { storeId: 'b', qty: '1.000' },
+      { storeId: 'b', qty: '1' },
       { storeId: 'c', qty: '0.333' },
     ]);
     expect(Math.abs(sum(out!.map((o) => o.qty)) - 2)).toBeLessThanOrEqual(
@@ -107,8 +112,8 @@ describe('proportionalSplitQty', () => {
       '8',
     );
     expect(out).toEqual([
-      { storeId: 'a', qty: '2.000' },
-      { storeId: 'b', qty: '6.000' },
+      { storeId: 'a', qty: '2' },
+      { storeId: 'b', qty: '6' },
     ]);
   });
 
@@ -157,8 +162,8 @@ describe('proportionalSplitQty with a step (BUY-13)', () => {
     // Claims 5.625 and 9.375: A has the larger fraction, so A gets the
     // 15th piece (BUY-13 gave it to whichever store came last).
     expect(proportionalSplitQty(demand, '15', '1')).toEqual([
-      { storeId: 'A', qty: '6.000' },
-      { storeId: 'B', qty: '9.000' },
+      { storeId: 'A', qty: '6' },
+      { storeId: 'B', qty: '9' },
     ]);
   });
   it('gives up (full sheet) rather than send a zero share', () => {
@@ -181,8 +186,8 @@ describe('proportionalSplitQty largest remainder (DX-BUY-3)', () => {
     );
     // Claims 1.071 / 1.429 kg = 2.14 / 2.86 steps: RH has the larger fraction.
     expect(out).toEqual([
-      { storeId: 'CK', qty: '1.000' },
-      { storeId: 'RH', qty: '1.500' },
+      { storeId: 'CK', qty: '1' },
+      { storeId: 'RH', qty: '1.5' },
     ]);
   });
 
@@ -200,9 +205,9 @@ describe('proportionalSplitQty largest remainder (DX-BUY-3)', () => {
     ).toEqual([
       // Claims 0.75 / 0.75 / 1.5: C's fraction (0.5) is the smallest, so
       // A and B (0.75 each) get a step before C does.
-      { storeId: 'A', qty: '1.000' },
-      { storeId: 'B', qty: '1.000' },
-      { storeId: 'C', qty: '1.000' },
+      { storeId: 'A', qty: '1' },
+      { storeId: 'B', qty: '1' },
+      { storeId: 'C', qty: '1' },
     ]);
     expect(
       proportionalSplitQty(
@@ -214,8 +219,8 @@ describe('proportionalSplitQty largest remainder (DX-BUY-3)', () => {
         '0.5',
       ),
     ).toEqual([
-      { storeId: 'A', qty: '1.500' },
-      { storeId: 'B', qty: '1.000' },
+      { storeId: 'A', qty: '1.5' },
+      { storeId: 'B', qty: '1' },
     ]);
   });
 
@@ -243,8 +248,8 @@ describe('proportionalSplitQty largest remainder (DX-BUY-3)', () => {
       '0.5',
     )!;
     expect(out).toEqual([
-      { storeId: 'a', qty: '1.300' },
-      { storeId: 'b', qty: '1.000' },
+      { storeId: 'a', qty: '1.3' },
+      { storeId: 'b', qty: '1' },
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import { addMoney } from '@compass/contracts/money';
 import type { PreviewLine, PreviewStoreGroup } from '../types';
 
 export type PreviewStoreSupplierGroup = {
@@ -7,6 +8,22 @@ export type PreviewStoreSupplierGroup = {
   total: number;
   unknownCount: number;
 };
+
+/**
+ * Count one preview line into a group: its money into `total`, added in
+ * whole cents (D1), or into `unknownCount` when it has no price.
+ *
+ * Review RUNWEB1-16 / RUNWEB2-13 (2026-11-11): the stores' totals were
+ * added with addMoney while the stalls' subtotals beside them, and the
+ * "at least" figure, were float `+=`; one rule for every preview total now.
+ */
+export function tallyPreviewLine(
+  group: { total: number; unknownCount: number },
+  line: Pick<PreviewLine, 'total'>,
+): void {
+  if (line.total === null) group.unknownCount += 1;
+  else group.total = addMoney(group.total, line.total);
+}
 
 /**
  * Build the store -> supplier -> item hierarchy used by the purchase preview.
@@ -40,8 +57,7 @@ export function groupStoreBySupplier(
       buckets.set(supplierId, bucket);
     }
     bucket.items.push(line);
-    if (line.total === null) bucket.unknownCount += 1;
-    else bucket.total += line.total;
+    tallyPreviewLine(bucket, line);
   }
 
   return [...buckets.values()].sort((a, b) => {
