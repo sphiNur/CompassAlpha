@@ -2696,7 +2696,10 @@ export const en = {
   'attendance.sheet.emptyTitle': 'Nobody to show',
   'attendance.sheet.emptyBody':
     'Switch clocking on for people in Settings, or plan shifts in Roster.',
-  'attendance.sheet.summary': 'At work {onDuty} · late {late} · absent {absent}',
+  // ATT-18: one piece per count, each shown only when it is not zero (UI-3).
+  'attendance.sheet.summaryOnDuty': 'At work {n}',
+  'attendance.sheet.summaryLate': 'Late {n}',
+  'attendance.sheet.summaryAbsent': 'Absent {n}',
   'attendance.sheet.planned': 'Shift {times}',
   'attendance.sheet.noShift': 'No shift planned',
   'attendance.sheet.memberDayHint':

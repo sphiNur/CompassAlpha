@@ -2593,7 +2593,9 @@ export const uz = {
   'attendance.sheet.emptyTitle': 'Hozircha hech kim yoʻq',
   'attendance.sheet.emptyBody':
     '«Sozlamalar»da xodimlarga belgilashni yoqing yoki «Smenalar»da smena tuzing.',
-  'attendance.sheet.summary': 'Ishda {onDuty} · kechikdi {late} · kelmadi {absent}',
+  'attendance.sheet.summaryOnDuty': 'Ishda {n}',
+  'attendance.sheet.summaryLate': 'Kechikdi {n}',
+  'attendance.sheet.summaryAbsent': 'Kelmadi {n}',
   'attendance.sheet.planned': 'Smena {times}',
   'attendance.sheet.noShift': 'Smena belgilanmagan',
   'attendance.sheet.memberDayHint':

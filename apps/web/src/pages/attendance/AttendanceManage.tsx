@@ -235,11 +235,20 @@ export function AttendanceSheet({ storeId }: { storeId: string }) {
             if (d.flags.includes('absent')) counts.absent++;
             if (d.flags.includes('onDuty')) counts.onDuty++;
           }
+          // Review ATT-18 (UI-3): only the counts that are not zero, and no
+          // line at all when all three are.
+          const summary = [
+            counts.onDuty > 0 ? i18n.t('attendance.sheet.summaryOnDuty', { n: counts.onDuty }) : '',
+            counts.late > 0 ? i18n.t('attendance.sheet.summaryLate', { n: counts.late }) : '',
+            counts.absent > 0 ? i18n.t('attendance.sheet.summaryAbsent', { n: counts.absent }) : '',
+          ]
+            .filter(Boolean)
+            .join(' · ');
           return (
             <>
-              <p className="px-4 pb-2 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('attendance.sheet.summary', counts)}
-              </p>
+              {summary ? (
+                <p className="px-4 pb-2 text-old-label text-[var(--c-fg-muted)]">{summary}</p>
+              ) : null}
               <ul className="mx-4 flex flex-col gap-2" aria-label={i18n.t('attendance.view.sheet')}>
                 {rows.map((m) => (
                   <MemberDayRow
