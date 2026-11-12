@@ -1944,8 +1944,8 @@ export const zh = {
   'run.money.itemsExpenses': '商品 {items} · 开销 {expenses}',
   'run.money.cashTransfer': '现金 {cash} · 转账 {transfer}',
   'confirm.issue.receivedQty': '实收数量（共 {max} {unit}）',
-  'confirm.issue.receivedQtyRequired': '请填写实际收到的数量',
-  'confirm.issue.receivedQtyRange': '请输入 0 到 {max} 之间的数字',
+  'confirm.issue.receivedQtyRequired': '请填写实际收到的数量。',
+  'confirm.issue.receivedQtyRange': '请输入 0 到 {max} 之间的数字。',
   'confirm.issue.receivedQtyNotShort':
     '实收 {max} 就是全部到齐了，请选「无误」；数量不足时请填少于 {max} 的数。',
   'confirm.receivedOf': '实收 {received} / {qty} {unit}',

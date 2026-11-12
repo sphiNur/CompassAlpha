@@ -2288,10 +2288,10 @@ export const en = {
   'run.money.itemsExpenses': 'Items {items} · expenses {expenses}',
   'run.money.cashTransfer': 'Cash {cash} · transfer {transfer}',
   'confirm.issue.receivedQty': 'Received quantity (of {max} {unit})',
-  'confirm.issue.receivedQtyRequired': 'Enter how much actually arrived',
-  'confirm.issue.receivedQtyRange': 'Enter a number from 0 to {max}',
+  'confirm.issue.receivedQtyRequired': 'Enter how much actually arrived.',
+  'confirm.issue.receivedQtyRange': 'Enter a number from 0 to {max}.',
   'confirm.issue.receivedQtyNotShort':
-    '{max} is everything — choose "OK"; for a shortfall enter less than {max}',
+    '{max} is everything — choose "OK"; for a shortfall enter less than {max}.',
   'confirm.receivedOf': 'received {received} / {qty} {unit}',
   'confirm.receivedPlusAmend':
     'received {received} + added in a correction {added} = {total} / {qty} {unit}',

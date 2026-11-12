@@ -2190,10 +2190,10 @@ export const uz = {
   'run.money.itemsExpenses': 'Mahsulotlar {items} · xarajatlar {expenses}',
   'run.money.cashTransfer': 'Naqd {cash} · oʻtkazma {transfer}',
   'confirm.issue.receivedQty': 'Qabul qilingan miqdor ({max} {unit} dan)',
-  'confirm.issue.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
-  'confirm.issue.receivedQtyRange': '0 dan {max} gacha son kiriting',
+  'confirm.issue.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting.',
+  'confirm.issue.receivedQtyRange': '0 dan {max} gacha son kiriting.',
   'confirm.issue.receivedQtyNotShort':
-    '{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad boʻlsa {max} dan kam kiriting',
+    '{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad boʻlsa {max} dan kam kiriting.',
   'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
   'confirm.receivedPlusAmend':
     'qabul qilindi {received} + tuzatishda {added} = {total} / {qty} {unit}',
