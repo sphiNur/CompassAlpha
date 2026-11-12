@@ -362,7 +362,7 @@ export function ApprovalPage() {
     const m = new Map<string, { names: Record<string, string>; unit: string; step: string }>();
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
-        names: sku.names as Record<string, string>,
+        names: sku.names,
         unit: sku.unit,
         step: sku.step,
       });

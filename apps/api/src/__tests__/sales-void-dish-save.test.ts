@@ -298,7 +298,7 @@ describe('dishes.save', () => {
     });
     const { dishes, ingredients } = await caller.dishes.list();
     const dish = dishes.find((d) => d.id === created.dishId);
-    expect((dish?.names as Record<string, string>).en).toBe('Soup 2');
+    expect(dish?.names.en).toBe('Soup 2');
     expect(ingredients.filter((i) => i.dishId === created.dishId).map((i) => i.skuId)).toEqual([
       fix!.sku2Id,
     ]);
@@ -319,9 +319,7 @@ describe('dishes.save', () => {
     expect(err?.code).toBe('BAD_REQUEST');
     expect(err?.message).toBe('dishes.errors.duplicateIngredient');
     const { dishes } = await caller.dishes.list();
-    expect((dishes.find((d) => d.id === fix!.dishId)?.names as Record<string, string>).en).toBe(
-      'Bread',
-    );
+    expect(dishes.find((d) => d.id === fix!.dishId)?.names.en).toBe('Bread');
   });
 });
 

@@ -118,7 +118,7 @@ export function DishesSection() {
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
         id: sku.id,
-        names: sku.names as Record<string, string>,
+        names: sku.names,
         unit: sku.unit,
         step: sku.step,
         isArchived: sku.isArchived,
@@ -183,8 +183,8 @@ export function DishesSection() {
       dishId,
       expectedUpdatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
       code: d.code ?? '',
-      names: namesForEdit(d.names as Record<string, string>),
-      description: d.description as Record<string, string>,
+      names: namesForEdit(d.names),
+      description: d.description,
       unitPrice: d.unitPrice ?? '',
       ingredients: ing.map((i) => ({
         key: newIngredientKey(),
@@ -269,7 +269,7 @@ export function DishesSection() {
         {(rows) => (
           <ul className={rowGroupClass} role="list">
             {rows.map((d) => {
-              const names = d.names as Record<string, string>;
+              const names = d.names;
               // One line for the archive question; two in the row (UI-4).
               const name = productName({ names });
               const ingCount = (ingredientsByDish.get(d.id) ?? []).length;
@@ -437,7 +437,7 @@ export function DishesSection() {
                               ) : null}
                               {activeSkus.map((skuRow) => (
                                 <option key={skuRow.id} value={skuRow.id}>
-                                  {productName({ names: skuRow.names as Record<string, string> })}
+                                  {productName({ names: skuRow.names })}
                                 </option>
                               ))}
                             </Select>

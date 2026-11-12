@@ -663,7 +663,7 @@ export function RunPage() {
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
         id: sku.id,
-        names: sku.names as Record<string, string>,
+        names: sku.names,
         unit: sku.unit,
         step: sku.step,
         categoryId: sku.categoryId ?? null,
@@ -675,7 +675,7 @@ export function RunPage() {
   const categoryById = useMemo(() => {
     const m = new Map<string, { id: string; names: Record<string, string> }>();
     for (const category of categoriesQuery.data ?? []) {
-      m.set(category.id, { id: category.id, names: category.names as Record<string, string> });
+      m.set(category.id, { id: category.id, names: category.names });
     }
     return m;
   }, [categoriesQuery.data]);

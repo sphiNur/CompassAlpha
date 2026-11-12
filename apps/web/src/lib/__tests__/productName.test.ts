@@ -4,6 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  isNames,
   pickName,
   productName,
   productNameParts,
@@ -147,5 +148,21 @@ describe('rowName', () => {
     const name = rowName(parts, undefined, UNKNOWN);
     expect(name).toEqual({ primary: UNKNOWN, secondary: null });
     expect(rowName(parts, null, UNKNOWN)).toBe(name);
+  });
+});
+
+describe('isNames', () => {
+  test('an object of texts, an empty one included', () => {
+    expect(isNames(BEEF)).toBe(true);
+    expect(isNames({})).toBe(true);
+  });
+
+  test('not a list, not null, not an object holding anything but text', () => {
+    expect(isNames(null)).toBe(false);
+    expect(isNames(undefined)).toBe(false);
+    expect(isNames('Beef')).toBe(false);
+    expect(isNames(['Beef'])).toBe(false);
+    expect(isNames({ en: 'Beef', ru: null })).toBe(false);
+    expect(isNames({ en: { text: 'Beef' } })).toBe(false);
   });
 });

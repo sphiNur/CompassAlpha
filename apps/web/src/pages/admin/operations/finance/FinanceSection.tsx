@@ -125,7 +125,7 @@ export function FinanceSection() {
   const skuById = useMemo(() => {
     const m = new Map<string, { names: Record<string, string>; unit: string }>();
     for (const sku of skusQuery.data ?? []) {
-      m.set(sku.id, { names: sku.names as Record<string, string>, unit: sku.unit });
+      m.set(sku.id, { names: sku.names, unit: sku.unit });
     }
     return m;
   }, [skusQuery.data]);

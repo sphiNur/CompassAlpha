@@ -20,10 +20,10 @@
  * tool; admin.catalogImport requires org.admin in both orgs.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import type { DB } from '@compass/db';
+import type { DB, LocalizedAliases, LocalizedText } from '@compass/db';
 import { schema as s } from '@compass/db';
 
-type Names = Record<string, string>;
+type Names = LocalizedText;
 
 export type SnapshotCategory = {
   id: string;
@@ -48,8 +48,8 @@ export type SnapshotSku = {
   categoryId: string | null;
   code: string | null;
   names: Names;
-  aliases: unknown;
-  description: unknown;
+  aliases: LocalizedAliases;
+  description: LocalizedText;
   unit: string;
   step: string;
   imageUrl: string | null;
@@ -254,9 +254,9 @@ export async function readCatalogSnapshot(tx: DB, orgId: string): Promise<Catalo
           .where(inArray(s.skuSupplierLinks.skuId, skuIds))
       : [];
   return {
-    categories: categories.map((c) => ({ ...c, names: (c.names ?? {}) as Names })),
+    categories: categories.map((c) => ({ ...c, names: c.names ?? {} })),
     suppliers,
-    skus: skus.map((k) => ({ ...k, names: (k.names ?? {}) as Names })),
+    skus: skus.map((k) => ({ ...k, names: k.names ?? {} })),
     links,
   };
 }
@@ -280,7 +280,7 @@ async function readExisting(tx: DB, orgId: string): Promise<ExistingCatalog> {
   return {
     categories,
     suppliers,
-    skus: skus.map((k) => ({ ...k, names: (k.names ?? {}) as Names })),
+    skus: skus.map((k) => ({ ...k, names: k.names ?? {} })),
   };
 }
 

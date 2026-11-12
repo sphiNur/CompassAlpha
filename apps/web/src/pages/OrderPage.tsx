@@ -720,27 +720,22 @@ export function OrderPage() {
   // The catalogue offers active products, plus (DX-ORD-16) archived ones
   // still in my draft, so the line can be seen and taken out.
   const skus = useMemo(() => orderableSkus(allSkus, myQtyBySku), [allSkus, myQtyBySku]);
-  const filteredSkus = useMemo(
-    () => {
-      // Two filters compose: category chip + cross-language search.
-      // Apply category first (cheap object-key compare) then search
-      // (string match across 4 lang fields + code) so we walk the
-      // smaller set on the second pass.
-      let out = activeCategory
-        ? skus.filter((s) => s.categoryId === activeCategory)
-        : skus;
-      // Ranked: best match first, the reader's language breaking ties, typo
-      // matches only when nothing matched literally (lib/searchMatch).
-      out = rankNameLike(
-        out,
-        normalizeQuery(deferredSearch),
-        (s) => ({ names: s.names as Record<string, string> | null, code: s.code }),
-        i18n.locale,
-      );
-      return out;
-    },
-    [skus, activeCategory, deferredSearch, i18n.locale],
-  );
+  const filteredSkus = useMemo(() => {
+    // Two filters compose: category chip + cross-language search.
+    // Apply category first (cheap object-key compare) then search
+    // (string match across 4 lang fields + code) so we walk the
+    // smaller set on the second pass.
+    let out = activeCategory ? skus.filter((s) => s.categoryId === activeCategory) : skus;
+    // Ranked: best match first, the reader's language breaking ties, typo
+    // matches only when nothing matched literally (lib/searchMatch).
+    out = rankNameLike(
+      out,
+      normalizeQuery(deferredSearch),
+      (s) => ({ names: s.names, code: s.code }),
+      i18n.locale,
+    );
+    return out;
+  }, [skus, activeCategory, deferredSearch, i18n.locale]);
   // A11Y-12 (2026-10-31): say how many products the search / category
   // leaves, once typing settles; the list used to change in silence.
   useAnnounce(
@@ -772,7 +767,7 @@ export function OrderPage() {
   const categoryNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of categoriesQuery.data ?? []) {
-      m.set(c.id, productName({ names: c.names as Record<string, string> }));
+      m.set(c.id, productName({ names: c.names }));
     }
     return m;
   }, [categoriesQuery.data, productName]);
@@ -1464,7 +1459,7 @@ export function OrderPage() {
                   selected={activeCategory === c.id}
                   onClick={() => setActiveCategory(c.id)}
                 >
-                  {productName({ names: c.names as Record<string, string> })}
+                  {productName({ names: c.names })}
                 </Chip>
               ))
             }
@@ -2063,13 +2058,17 @@ function ReviewList({
     categoryId: string | null;
     code: string | null;
     sortIndex?: number | null;
-    names: unknown;
+    names: Record<string, string>;
     unit: string;
     step: string;
     isArchived?: boolean;
   }>;
   /** DX-ORD-12: names and order of the category headings. */
-  categories: ReadonlyArray<{ id: string; names?: unknown; sortIndex?: number | null }>;
+  categories: ReadonlyArray<{
+    id: string;
+    names?: Record<string, string>;
+    sortIndex?: number | null;
+  }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   /** 2026-11-05: the review before Submit is editable — each line gets the
    *  same qty control as the list (it sets the viewer's own share, like the
@@ -2153,13 +2152,13 @@ function ReviewList({
       key: g.key,
       heading: g.categoryId
         ? productName({
-            names: categories.find((c) => c.id === g.categoryId)?.names as Record<string, string>,
+            names: categories.find((c) => c.id === g.categoryId)?.names,
           })
         : i18n.t('order.categories.uncategorized'),
       rows: g.skus.map((sku) => ({
         skuId: sku.id,
-        name: productName({ names: sku.names as Record<string, string> }),
-        nameParts: productNameParts({ names: sku.names as Record<string, string> }),
+        name: productName({ names: sku.names }),
+        nameParts: productNameParts({ names: sku.names }),
         qty: sku.qty,
         unit: sku.unit,
         step: sku.step,

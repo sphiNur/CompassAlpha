@@ -277,8 +277,8 @@ export const dishesRouter = router({
           .values({
             orgId,
             code: input.code ?? null,
-            names: input.names as unknown as Record<string, unknown>,
-            description: (input.description ?? {}) as unknown as Record<string, unknown>,
+            names: input.names,
+            description: input.description ?? {},
             unitPrice: input.unitPrice ?? null,
             sortIndex: nextSort,
           })
@@ -366,8 +366,8 @@ export const dishesRouter = router({
       await assertIngredientsValid(tx, orgId, input.ingredients);
       const fields = {
         code: input.code ?? null,
-        names: input.names as unknown as Record<string, unknown>,
-        description: (input.description ?? {}) as unknown as Record<string, unknown>,
+        names: input.names,
+        description: input.description ?? {},
         unitPrice: input.unitPrice ?? null,
       };
       let dishId: string;

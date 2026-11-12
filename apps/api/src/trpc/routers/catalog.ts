@@ -52,7 +52,7 @@ export const catalogRouter = router({
         id: r.id,
         categoryId: r.categoryId,
         code: r.code,
-        names: r.names as Record<string, string>,
+        names: r.names,
         unit: r.unit,
         step: r.step,
         imageUrl: r.imageUrl,

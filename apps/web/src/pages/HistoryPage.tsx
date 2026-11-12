@@ -121,7 +121,7 @@ export function HistoryPage() {
     for (const sku of skusQuery.data ?? []) {
       map.set(sku.id, {
         id: sku.id,
-        names: sku.names as Record<string, string>,
+        names: sku.names,
         unit: sku.unit,
         step: sku.step,
         categoryId: sku.categoryId ?? null,

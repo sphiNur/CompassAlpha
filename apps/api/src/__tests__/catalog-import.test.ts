@@ -133,11 +133,8 @@ describe.skipIf(!SHOULD_RUN)('catalog import between organisations (PG-gated)', 
 
     const db = getDb(undefined, { system: 'maintenance' });
     const skus = await db.select().from(s.skus).where(eq(s.skus.orgId, orgB));
-    expect(skus.map((k) => (k.names as Record<string, string>).en).sort()).toEqual([
-      'Lemon',
-      'onion',
-    ]);
-    const lemon = skus.find((k) => (k.names as Record<string, string>).en === 'Lemon')!;
+    expect(skus.map((k) => k.names.en).sort()).toEqual(['Lemon', 'onion']);
+    const lemon = skus.find((k) => k.names.en === 'Lemon')!;
     expect(lemon.step).toBe('0.500');
     const [veg] = await db.select().from(s.categories).where(eq(s.categories.orgId, orgB));
     expect(lemon.categoryId).toBe(veg!.id);

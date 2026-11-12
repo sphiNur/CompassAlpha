@@ -113,6 +113,21 @@ export function rowName(
   return name;
 }
 
+/**
+ * Whether `value` is a names map: an object whose values are all text.
+ * For names read from JSON nobody typed, such as an audit row's inputs;
+ * catalog rows from the API come typed (2026-11-12: those reads cast
+ * `unknown` before the database columns had a type).
+ */
+export function isNames(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((v) => typeof v === 'string')
+  );
+}
+
 /** The language of text for the vendor (copy lists): the second language when the user set one. */
 export function vendorLocale<L extends string>(locale: L, secondaryLocale: L | null): L {
   return secondaryLocale && secondaryLocale !== locale ? secondaryLocale : locale;

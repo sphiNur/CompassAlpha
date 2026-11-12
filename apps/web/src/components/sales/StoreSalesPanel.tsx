@@ -100,7 +100,7 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
     for (const d of dishesQuery.data?.dishes ?? []) {
       m.set(d.id, {
         id: d.id,
-        names: d.names as Record<string, string>,
+        names: d.names,
         unitPrice: d.unitPrice,
         ingredientCount: d.ingredientCount,
         isArchived: d.isArchived,

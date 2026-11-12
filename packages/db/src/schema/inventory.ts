@@ -249,6 +249,19 @@ export const storeSupplierPrefs = inventorySchema.table(
   }),
 );
 
+/**
+ * A catalog item's text in each language it has, keyed by UI language
+ * (uz, ru, en, zh): the names of categories, products and dishes, and
+ * the descriptions of products and dishes. The API writes only what
+ * CatalogNamesSchema passes, which drops blank entries (CA-40). Typed
+ * here, as the daily close's shapes above, so that every reader, the web
+ * included through tRPC, gets the shape instead of casting `unknown`.
+ */
+export type LocalizedText = Record<string, string>;
+
+/** A product's search aliases in each language: `{ zh: ['纸', …], … }`. */
+export type LocalizedAliases = Record<string, string[]>;
+
 export const categories = inventorySchema.table(
   'categories',
   {
@@ -259,6 +272,7 @@ export const categories = inventorySchema.table(
     slug: varchar('slug', { length: 64 }).notNull(),
     /** i18n names: { zh: '...', en: '...', ru: '...', uz: '...' } */
     names: jsonb('names')
+      .$type<LocalizedText>()
       .notNull()
       .default(sql`'{}'::jsonb`),
     sortIndex: integer('sort_index').notNull().default(0),
@@ -283,16 +297,19 @@ export const skus = inventorySchema.table(
     code: varchar('code', { length: 64 }), // optional internal code
     /** i18n names */
     names: jsonb('names')
+      .$type<LocalizedText>()
       .notNull()
       .default(sql`'{}'::jsonb`),
     /** i18n search aliases (added 0006). Shape: { zh: [...], ru: [...], ... }
      *  Powers OrderPage fuzzy search so "纸" matches every packaging paper. */
     aliases: jsonb('aliases')
+      .$type<LocalizedAliases>()
       .notNull()
       .default(sql`'{}'::jsonb`),
     /** i18n purchase notes (added 0006). Shape: { zh: "...", en: "...", ... }
      *  e.g. "按整包,通常 10 支" for `Sasiska (pochka)`. */
     description: jsonb('description')
+      .$type<LocalizedText>()
       .notNull()
       .default(sql`'{}'::jsonb`),
     /** Unit string (kg, g, L, ml, pcs, pack, pair, bunch, roll). Display
@@ -420,9 +437,11 @@ export const dishes = inventorySchema.table(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     code: varchar('code', { length: 32 }),
     names: jsonb('names')
+      .$type<LocalizedText>()
       .notNull()
       .default(sql`'{}'::jsonb`),
     description: jsonb('description')
+      .$type<LocalizedText>()
       .notNull()
       .default(sql`'{}'::jsonb`),
     /** Selling price per serving in the org's currency. Optional. */

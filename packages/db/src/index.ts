@@ -1,5 +1,6 @@
 export * from './client';
 export * as schema from './schema/index';
+export type { LocalizedAliases, LocalizedText } from './schema/inventory';
 export {
   afterCommit,
   allowEventPurge,

@@ -149,7 +149,7 @@ export function ConfirmPage() {
   const skuById = useMemo(() => {
     const m = new Map<string, { names: Record<string, string>; unit: string }>();
     for (const s of skusQuery.data ?? []) {
-      m.set(s.id, { names: s.names as Record<string, string>, unit: s.unit });
+      m.set(s.id, { names: s.names, unit: s.unit });
     }
     return m;
   }, [skusQuery.data]);

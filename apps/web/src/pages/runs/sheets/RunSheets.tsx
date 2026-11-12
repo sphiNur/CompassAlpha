@@ -682,7 +682,7 @@ export function AddItemSheet({
     return rankNameLike(
       pickable,
       tokens,
-      (sku) => ({ names: sku.names as Record<string, string> | null, code: sku.code ?? null }),
+      (sku) => ({ names: sku.names, code: sku.code ?? null }),
       i18n.locale,
     ).slice(0, 20);
   }, [skus, existingStoreIdsBySku, search, i18n.locale]);

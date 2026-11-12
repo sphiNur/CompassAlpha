@@ -11,6 +11,7 @@
  *
  * Pure: the caller passes the localizers, so this is unit-testable.
  */
+import { isNames } from '../../../lib/productName';
 
 export type AuditCategory = 'people' | 'roles' | 'stores' | 'catalog' | 'other';
 export type AuditTone = 'success' | 'danger' | 'muted';
@@ -290,8 +291,8 @@ export function describeAuditRow(
         ? inputs.name
         : typeof inputs.label === 'string'
           ? inputs.label
-          : inputs.names && typeof inputs.names === 'object'
-            ? loc.localName(inputs.names as Record<string, string>)
+          : isNames(inputs.names)
+            ? loc.localName(inputs.names)
             : null;
     const name = or(l?.targetNames ? loc.localName(l.targetNames) : (l?.targetName ?? fromInputs));
     const key =

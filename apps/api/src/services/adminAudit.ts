@@ -143,7 +143,7 @@ export async function categoryNamesForAudit(
     .select({ names: s.categories.names })
     .from(s.categories)
     .where(eq(s.categories.id, categoryId));
-  return (row?.names as Record<string, string> | undefined) ?? null;
+  return row?.names ?? null;
 }
 
 /** Audit rows scoped to any of `storeIds`, including a transfer's from-store. */
@@ -442,7 +442,7 @@ export async function loadAuditLookups(
     catalogNamesById: new Map(
       [...skus, ...categories]
         .filter((r) => r.names && typeof r.names === 'object')
-        .map((r) => [r.id, r.names as Record<string, string>]),
+        .map((r) => [r.id, r.names]),
     ),
   };
 }
