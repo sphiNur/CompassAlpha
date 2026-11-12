@@ -83,12 +83,7 @@ export function HistorySection() {
                       <span className="block text-old-body-sm text-[var(--c-fg-muted)]">
                         {dates.calendarDay(r.orderDate)}
                         {r.submittedAt
-                          ? ` · ${i18n.t('ops.history.submittedAgo', {
-                              when: formatRelative(r.submittedAt, i18n),
-                            })}`
-                          : ''}
-                        {r.submittedByName
-                          ? ` ${i18n.t('ops.history.byWhom', { name: r.submittedByName })}`
+                          ? ` · ${submittedText(i18n, r.submittedAt, r.submittedByName)}`
                           : ''}
                       </span>
                     </span>
@@ -114,11 +109,13 @@ export function HistorySection() {
                         })}
                       </span>
                     ) : null}
+                    {/* Review ADM2-19 (2026-11-12): the separators are here,
+                        not in the copy (decidedIn / decidedBy had their own). */}
                     {r.reviewMinutes !== null ? (
-                      <span>{i18n.t('ops.history.decidedIn', { n: r.reviewMinutes })}</span>
+                      <span>· {i18n.t('ops.history.decidedIn', { n: r.reviewMinutes })}</span>
                     ) : null}
                     {r.decidedByName ? (
-                      <span>{i18n.t('ops.history.decidedBy', { name: r.decidedByName })}</span>
+                      <span>· {i18n.t('ops.history.decidedBy', { name: r.decidedByName })}</span>
                     ) : null}
                   </div>
                   {isOpen ? (
@@ -158,6 +155,24 @@ export function HistorySection() {
       </DataState>
     </div>
   );
+}
+
+/**
+ * When the order was sent, and by whom when known, as one sentence.
+ * Review ADM2-19 (2026-11-12): "submitted {when}" and "by {name}" were
+ * two keys glued with a space, which put the words in the wrong order in
+ * Chinese (「{when} 提交 由 {name}」) and Uzbek. The projection sets the
+ * time and the sender together, so a sender without a time does not occur.
+ */
+function submittedText(
+  i18n: ReturnType<typeof useI18n>,
+  submittedAt: string,
+  by: string | null,
+): string {
+  const when = formatRelative(submittedAt, i18n);
+  return by
+    ? i18n.t('ops.history.submittedBy', { when, name: by })
+    : i18n.t('ops.history.submittedAgo', { when });
 }
 
 /**
