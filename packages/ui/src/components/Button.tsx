@@ -13,7 +13,12 @@ const button = cva(
     // That needs the button NOT to clip its overflow (a clipped ::after
     // takes no taps); the label span below truncates itself instead.
     'press hit-44 inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-medium select-none',
-    'whitespace-nowrap outline-none transition-[background,color,box-shadow]',
+    // Review UI-31 (2026-11-12): transform is in the list, at .press's
+    // own --t-snap / --easing. Without it this utility (later in the
+    // stylesheet) replaced .press's transition, so the press shrink
+    // jumped instead of easing in.
+    'whitespace-nowrap outline-none transition-[background,color,box-shadow,transform]',
+    'duration-[var(--t-snap)] ease-[var(--easing)]',
     'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
     'focus-visible:ring-offset-[var(--c-ring-offset)]',
     disabledClass,
