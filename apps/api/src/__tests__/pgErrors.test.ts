@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
-import { appendEvents, readStream } from '@compass/streams';
+import { appendEvents, readStream } from '../services/eventStore';
 import {
   isStreamSeqConflict,
   isUniqueViolation,

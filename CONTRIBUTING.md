@@ -61,9 +61,7 @@ becomes the user-facing error).
 
 ### 4. Update the projector
 
-Orders: `packages/streams/src/orderProjection.ts` (the API and the worker
-share it). Runs: `apps/api/src/services/runProjection.ts` (the claim events:
-`packages/streams/src/runClaimProjection.ts`). Add a case for the new
+`apps/api/src/services/<aggregate>Projection.ts`. Add a case for the new
 event type that updates the read_model row(s). The projector runs in the
 same transaction as the event append, so reads after the mutation see the
 new state immediately.

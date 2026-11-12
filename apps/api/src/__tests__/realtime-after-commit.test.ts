@@ -101,7 +101,6 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
   let storeId = '';
   let skuId = '';
   let claimerMemberId = '';
-  let claimerUserId = '';
   let stopRelay: (() => Promise<void>) | null = null;
 
   beforeAll(async () => {
@@ -143,7 +142,6 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
       .values({ orgId, userId: user!.id, status: 'active' })
       .returning();
     claimerMemberId = member!.id;
-    claimerUserId = user!.id;
     await db()
       .insert(s.memberStoreAssignments)
       .values({ memberId: member!.id, storeId, assignedBy: user!.id });
@@ -241,7 +239,6 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
 
   test('APR-12: a claim the worker releases reaches open pages, after commit', async () => {
     const sessionId = randomUUID();
-    const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000);
     await db()
       .insert(s.orderSessionsV)
       .values({
@@ -251,33 +248,9 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
         orderDate: '2026-10-22',
         status: 'submitted',
         claimedByMemberId: claimerMemberId,
-        claimedAt: ago(60),
-        lastSeq: 4,
+        claimedAt: new Date(Date.now() - 60 * 60_000),
+        lastSeq: 0,
       });
-    // ORD-07: the worker decides the release from the session's stream:
-    // started, one line, submitted, and claimed an hour ago.
-    const by = claimerMemberId;
-    const stream: Array<[string, Record<string, unknown>]> = [
-      ['DraftStarted', { orgId, storeId, initiatedByMemberId: by, orderDate: '2026-10-22' }],
-      ['ItemAdjusted', { skuId, qty: '1', prevQty: '0', byMemberId: by, forMemberId: by }],
-      ['Submitted', { itemCount: 1, byMemberId: by }],
-      ['Claimed', { byMemberId: by }],
-    ];
-    await db()
-      .insert(s.events)
-      .values(
-        stream.map(([type, payload], i) => ({
-          id: randomUUID(),
-          orgId,
-          streamType: 'order',
-          streamId: sessionId,
-          seq: i + 1,
-          type,
-          payload,
-          actorId: claimerUserId,
-          occurredAt: ago(64 - i),
-        })),
-      );
     const reads: Array<Promise<unknown>> = [];
     const sink = listen(orgId, (m) => {
       if (m.sessionId !== sessionId) return;
@@ -302,14 +275,14 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
       await waitFor(() => sink.received.some((m) => m.sessionId === sessionId));
       await new Promise((r) => setTimeout(r, 200));
       expect(sink.received.filter((m) => m.sessionId === sessionId)).toEqual([
-        { type: 'order.changed', orgId, sessionId, lastSeq: 5 },
+        { type: 'order.changed', orgId, sessionId, lastSeq: 1 },
       ]);
       const [row] = (await Promise.all(reads)) as Array<{
         claimedByMemberId: string | null;
         lastSeq: number;
       }>;
       expect(row?.claimedByMemberId).toBeNull();
-      expect(Number(row?.lastSeq)).toBe(5);
+      expect(Number(row?.lastSeq)).toBe(1);
     } finally {
       sink.unsubscribe();
     }

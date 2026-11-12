@@ -26,7 +26,8 @@ import {
   type OrderEvent,
 } from '@compass/domain/order';
 import { type RunCommand, type RunEvent } from '@compass/domain/run';
-import { appendEvents, projectOrder, readStream } from '@compass/streams';
+import { appendEvents, readStream } from '../services/eventStore';
+import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
 import { loadSkuPriceStats } from '../services/priceStats';
 import { appRouter } from '../trpc/router';

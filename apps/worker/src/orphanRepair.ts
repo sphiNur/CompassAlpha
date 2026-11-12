@@ -1,6 +1,6 @@
 /**
- * The orphaned-session repair (main.ts repairOrphanedSessions) for one
- * session still `in_run` whose run is already terminal.
+ * What the orphaned-session repair (main.ts repairOrphanedSessions) does
+ * with a session still `in_run` whose run is already terminal.
  *
  * 2026-10-21 audit CA-45: the sweep used to eject every orphan back to
  * `approved`, including sessions of a FINISHED run — whose goods were
@@ -10,51 +10,35 @@
  * the repair now does the same for finished runs, with reason 'repair'.
  * Only a CANCELLED run's sessions go back to `approved`, as run.cancel
  * would have done.
- *
- * Review ORD-07: the domain decides the repair (`RepairOrphan`) from the
- * session's stream and the API's projector writes it; the worker used to
- * build the event and the read-model update itself.
  */
-import { sql } from 'drizzle-orm';
-import { notifyRealtime, type DB } from '@compass/db';
-import { decideSystem, type OrderEvent } from '@compass/domain/order';
-import { loadOrderState, writeOrderEvents } from '@compass/streams';
+export type OrphanRepair =
+  | {
+      eventType: 'Archived';
+      payload: { reason: 'repair' };
+      /** Columns to set on read_model.order_sessions_v (plus last_seq/updated_at). */
+      projection: { status: 'archived' };
+    }
+  | {
+      eventType: 'EjectedFromRun';
+      payload: { runId: string; byMemberId: null; reason: 'repair' };
+      projection: { status: 'approved'; runId: null };
+    };
 
-/**
- * Repair `session` in the caller's transaction. Returns the event written,
- * or null when there was nothing to repair: another transaction may have
- * ejected or archived the session since the candidate scan.
- */
-export async function repairOrphanedSession(
-  tx: DB,
-  session: { id: string; orgId: string },
-): Promise<OrderEvent['type'] | null> {
-  // The run's status is not in the session's stream: read it with the
-  // session row, locked.
-  const [cur] = (await tx.execute(sql`
-    SELECT sess.status, sess.run_id, run.status AS run_status
-    FROM read_model.order_sessions_v sess
-    LEFT JOIN read_model.market_runs_v run ON run.id = sess.run_id
-    WHERE sess.id = ${session.id}
-    FOR UPDATE OF sess
-  `)) as unknown as Array<{ status: string; run_id: string | null; run_status: string | null }>;
-  if (!cur || cur.status !== 'in_run' || !cur.run_id) return null;
-  if (cur.run_status !== 'finished' && cur.run_status !== 'cancelled') return null;
-
-  const events = decideSystem(await loadOrderState(tx, session.id), {
-    type: 'RepairOrphan',
-    runId: cur.run_id,
-    runStatus: cur.run_status,
-  });
-  const repair = events.at(-1);
-  if (!repair) return null;
-  await writeOrderEvents(tx, session.orgId, session.id, events);
-  // Open pages refresh once this commits (B14).
-  await notifyRealtime(tx, {
-    type: 'order.changed',
-    orgId: session.orgId,
-    sessionId: session.id,
-    lastSeq: repair.seq,
-  });
-  return repair.type;
+/** Returns null when the run is not terminal (nothing to repair). */
+export function orphanRepairFor(runStatus: string, runId: string): OrphanRepair | null {
+  if (runStatus === 'finished') {
+    return {
+      eventType: 'Archived',
+      payload: { reason: 'repair' },
+      projection: { status: 'archived' },
+    };
+  }
+  if (runStatus === 'cancelled') {
+    return {
+      eventType: 'EjectedFromRun',
+      payload: { runId, byMemberId: null, reason: 'repair' },
+      projection: { status: 'approved', runId: null },
+    };
+  }
+  return null;
 }

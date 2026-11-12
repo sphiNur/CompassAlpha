@@ -32,7 +32,8 @@ import {
   emptyState as emptyOrderState,
 } from '@compass/domain/order';
 import { applyRun, decideRun, emptyRunState } from '@compass/domain/run';
-import { appendEvents, projectOrder, readStream } from '@compass/streams';
+import { appendEvents, readStream } from '../services/eventStore';
+import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
 import type { OrderEvent } from '@compass/domain/order';
 import { appRouter } from '../trpc/router';
