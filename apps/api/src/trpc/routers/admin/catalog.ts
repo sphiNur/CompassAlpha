@@ -3,7 +3,7 @@
  * another organisation's catalog.
  */
 import { TRPCError } from '@trpc/server';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
@@ -84,6 +84,10 @@ export const catalogProcedures = {
     requireAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
+      // Review ADM2-17 (2026-11-12): the slug, then the id, break ties. New
+      // categories all start at 100, and rows with one sort number came back
+      // in whatever order Postgres found them, so the list could reshuffle
+      // on a refresh. The order page's catalog.skus does this (DX-ORD-6).
       return tx
         .select({
           id: s.categories.id,
@@ -95,7 +99,7 @@ export const catalogProcedures = {
         })
         .from(s.categories)
         .where(eq(s.categories.orgId, orgId))
-        .orderBy(s.categories.sortIndex);
+        .orderBy(asc(s.categories.sortIndex), asc(s.categories.slug), asc(s.categories.id));
     });
   }),
 
@@ -187,6 +191,8 @@ export const catalogProcedures = {
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const includeArchived = input?.includeArchived ?? false;
+        // ADM2-17: as categoryList, by the code (as catalog.skus) and then
+        // the id, since most products have no code.
         return tx
           .select({
             id: s.skus.id,
@@ -206,7 +212,7 @@ export const catalogProcedures = {
               ? eq(s.skus.orgId, orgId)
               : and(eq(s.skus.orgId, orgId), eq(s.skus.isArchived, false)),
           )
-          .orderBy(s.skus.sortIndex);
+          .orderBy(asc(s.skus.sortIndex), asc(s.skus.code), asc(s.skus.id));
       });
     }),
 
