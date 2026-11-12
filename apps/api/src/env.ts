@@ -28,6 +28,8 @@ export const env = createEnv({
     // real client address for rate limiting (AUTH-6). See services/clientIp.ts.
     CLIENT_IP_PROXY_KEY: z.string().min(32).optional(),
     FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+    /** The build's commit when there is no apps/web/dist/build-id.txt. */
+    VITE_BUILD_SHA: z.string().optional(),
     S3_ENDPOINT: z.string().url().optional(),
     S3_BUCKET: z.string().optional(),
     /** Read when signing (services/s3.ts), which takes us-east-1 when unset. */
