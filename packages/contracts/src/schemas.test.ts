@@ -15,7 +15,11 @@ import {
   TimeZoneSchema,
 } from './schemas/common';
 import { CreateMemberInviteInputSchema, InviteMemberByTgIdInputSchema } from './schemas/admin';
-import { AcceptInviteInputSchema, CreateOrganizationInputSchema } from './schemas/auth';
+import {
+  AcceptInviteInputSchema,
+  CreateOrganizationInputSchema,
+  TelegramLoginInputSchema,
+} from './schemas/auth';
 import { CategoryCreateInputSchema } from './schemas/catalog';
 import { SetSessionExtrasInputSchema } from './schemas/order';
 import { PurchaseQtySchema } from './schemas/run';
@@ -225,6 +229,17 @@ describe('identifiers and links', () => {
     expect(verdict(SetSessionExtrasInputSchema, { extras: [] })).toBe(generic);
     check(IdempotencyKeySchema, { 'web:1234': 'ok', 'web:123': generic, 'web 1234': generic });
     expect(verdict(CreateOrganizationInputSchema, { name: 'Acme', slug: '-acme' })).toBe(generic);
+  });
+
+  // Review COREAPI-21: Telegram's sign-in data is refused by its length
+  // before it is parsed and hashed.
+  it('sign-in data longer than Telegram sends is refused unread', () => {
+    const generic = 'common.errors.validation';
+    const initData = (n: number) => 'x'.repeat(n);
+    expect(verdict(TelegramLoginInputSchema, { initData: initData(8192) })).toBe('ok');
+    expect(verdict(TelegramLoginInputSchema, { initData: initData(8193) })).toBe(generic);
+    const token = 'a'.repeat(20);
+    expect(verdict(AcceptInviteInputSchema, { initData: initData(8193), token })).toBe(generic);
   });
 });
 

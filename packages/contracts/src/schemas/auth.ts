@@ -8,8 +8,15 @@ import {
   UuidSchema,
 } from './common';
 
+/**
+ * Telegram's signed sign-in data; a few hundred characters in practice.
+ * Review COREAPI-21 (2026-11-12): it had no upper bound, so any length was
+ * parsed and hashed before the signature check could refuse it.
+ */
+const InitDataSchema = z.string().min(1).max(8192, CLIENT_FAULT_MESSAGE);
+
 export const TelegramLoginInputSchema = z.object({
-  initData: z.string().min(1),
+  initData: InitDataSchema,
   /** Optional locale override; otherwise we use Telegram's user.language_code. */
   locale: LocaleSchema.optional(),
 });
@@ -21,7 +28,7 @@ export const TelegramLoginInputSchema = z.object({
  * the server-side invite snapshot.
  */
 export const AcceptInviteInputSchema = z.object({
-  initData: z.string().min(1),
+  initData: InitDataSchema,
   // 20–128 characters. A cut or mistyped link is, to the person, the
   // same as an invite that does not exist.
   token: z.string().regex(/^[A-Za-z0-9_-]{20,128}$/, 'auth.errors.inviteNotFound'),

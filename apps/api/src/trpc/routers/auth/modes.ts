@@ -4,15 +4,13 @@
  * browser login for remote checks only where the server's switches allow
  * them.
  */
-import { env } from '../../../env';
+import { env, releaseChannelOf } from '../../../env';
 import { isLocalDevPeer } from '../../../services/devLocality';
 import { publicProcedure } from '../../trpc';
 import type { RequestContext } from '../../context';
 
 export function releaseChannel(): 'development' | 'staging' | 'production' {
-  return (
-    env.COMPASS_RELEASE_CHANNEL ?? (env.NODE_ENV === 'production' ? 'production' : 'development')
-  );
+  return releaseChannelOf(env);
 }
 
 export function parseNonTelegramUsers(): Map<string, string> {

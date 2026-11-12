@@ -40,7 +40,20 @@ const LooseLogBatchSchema = z.object({
   events: z.array(z.record(z.unknown())).max(CLIENT_LOG_BATCH_MAX),
 });
 
-const ALLOWED_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+const ALLOWED_LEVELS = new Set<string>(['debug', 'info', 'warn', 'error']);
+
+/**
+ * The level a client's log line is written to the server's journal with.
+ * Review COREAPI-21 (2026-11-12): anyone may send these before signing
+ * in, at any level they like, so an anonymous line could pass for one of
+ * the server's own errors. Without a session it is written at info at
+ * most, marked `anonymous`, with the level it claimed beside it. The rows
+ * in ops.client_logs keep the claimed level.
+ */
+export function journalLevel(level: LogLevel, signedIn: boolean): LogLevel {
+  return signedIn || level === 'debug' ? level : 'info';
+}
 
 function clamp(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
@@ -121,10 +134,13 @@ export const systemRouter = router({
     return {
       status: degraded ? ('degraded' as const) : ('ok' as const),
       db: dbOk,
+      // Review COREAPI-29: no projector runs apart from its writer, so
+      // there is no lag to report; always 0, kept for the clients that
+      // read the field.
       projectorLag: 0,
       outboxPending,
       outboxOldestSec,
-      version: process.env.VITE_BUILD_SHA ?? 'dev',
+      version: env.VITE_BUILD_SHA ?? 'dev',
     };
   }),
 
@@ -135,7 +151,7 @@ export const systemRouter = router({
    * deploys via the version-check toast.
    */
   appConfig: publicProcedure.query(() => ({
-    botUsername: process.env.TELEGRAM_BOT_USERNAME ?? null,
+    botUsername: env.TELEGRAM_BOT_USERNAME ?? null,
     // R2-CAT-3: the maintenance page hides the bulk purges the server
     // would refuse anyway.
     bulkPurgeAllowed: bulkPurgeAllowed(env),
@@ -163,7 +179,7 @@ export const systemRouter = router({
       const sessionId = clamp(raw.sessionId, 64);
       const level =
         typeof raw.level === 'string' && ALLOWED_LEVELS.has(raw.level)
-          ? (raw.level as 'debug' | 'info' | 'warn' | 'error')
+          ? (raw.level as LogLevel)
           : 'info';
       const kind = clamp(raw.kind, 32);
       if (!sessionId || !kind) {
@@ -198,9 +214,11 @@ export const systemRouter = router({
 
     // Mirror to pino so they show in `journalctl -u compass-api`.
     for (const r of rows) {
-      const lvl = r.level as 'debug' | 'info' | 'warn' | 'error';
-      logger[lvl](
+      const lvl = r.level as LogLevel;
+      const signedIn = userId !== null;
+      logger[journalLevel(lvl, signedIn)](
         {
+          ...(signedIn ? {} : { anonymous: true, clientLevel: lvl }),
           kind: r.kind,
           action: r.action,
           target: r.target,

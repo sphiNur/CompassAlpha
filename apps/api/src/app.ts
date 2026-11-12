@@ -12,6 +12,7 @@ import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
 import { attendanceMonthExport } from './http/attendanceExport';
 import { INTERNAL_BODY, NOT_FOUND_BODY } from './http/errorBodies';
+import { readinessHandler } from './http/health';
 import { serveWebApp } from './http/webApp';
 
 /**
@@ -20,7 +21,7 @@ import { serveWebApp } from './http/webApp';
  * env every time, and stays correct across hot deploys without restarting
  * the API. Returns the longest-living valid value among:
  *   1. apps/web/dist/build-id.txt (newest)
- *   2. process.env.VITE_BUILD_SHA
+ *   2. VITE_BUILD_SHA from the environment
  *   3. 'dev' fallback
  */
 function readWebBuildId(): string {
@@ -38,7 +39,7 @@ function readWebBuildId(): string {
       }
     }
   }
-  return process.env.VITE_BUILD_SHA ?? 'dev';
+  return env.VITE_BUILD_SHA ?? 'dev';
 }
 
 export function createApp() {
@@ -72,15 +73,12 @@ export function createApp() {
    *     the path) to third-party origins. Same-origin still gets the
    *     full referrer — needed for our own analytics if we add it.
    *
-   *   Permissions-Policy: deny-all-by-default
-   *     We don't ask for camera/mic/geolocation/etc. Blocking them at
-   *     the header level prevents an injected library from silently
-   *     prompting the user.
+   *   Permissions-Policy
+   *     Everything off except the camera (clock-in photos) and location
+   *     (the clock-in radius), and those for our own page only, so an
+   *     injected library cannot prompt the user for them.
    *
-   * NOT setting CSP yet:
-   *   Vite's HMR + Telegram's WebView + tRPC's eval-free runtime
-   *   together require a precise CSP that has historically broken
-   *   the dev loop. Land in M1 with a tested allow-list.
+   *   Content-Security-Policy: see below (M1.20).
    */
   app.use('*', async (c, next) => {
     // try/finally so headers also land on error responses (a thrown
@@ -209,59 +207,15 @@ export function createApp() {
   );
 
   app.get('/health/live', (c) => c.json({ status: 'ok' }));
-  /**
-   * Readiness probe — meant for load-balancer health checks. Distinguishes
-   * "process alive" (live) from "able to serve real traffic" (ready).
-   *
-   * Hardened 2026-05-05 (audit finding): the previous implementation just
-   * returned `{status:'ok'}` unconditionally, so a load balancer would
-   * happily route traffic to an instance whose Postgres connection had
-   * died. Now we actively check:
-   *   1. DB roundtrip — `SELECT 1`. Must succeed within ~2s.
-   *   2. Projector cursor lag — read read-model `last_seq` vs current
-   *      max event id. If lag > 5s wall-clock, we still return ready
-   *      (read-model is just stale, not broken) but flag it so
-   *      observability surfaces it.
-   *
-   * On any DB failure → 503. The LB treats this as "drain me, route
-   * traffic elsewhere" (in single-replica setups, it just means the
-   * smoke alerts). The 503 body still surfaces what failed so
-   * `scripts/deploy.ts` can pretty-print the cause.
-   */
-  app.get('/health/ready', async (c) => {
-    const dbStart = Date.now();
-    try {
-      await inSystem(getDb(env.DATABASE_URL), 'health', (tx) => tx.execute(sql`SELECT 1`));
-    } catch (err) {
-      logger.error({ err }, '/health/ready DB ping failed');
-      return c.json({ status: 'down', component: 'db', error: (err as Error).message }, 503);
-    }
-    const dbMs = Date.now() - dbStart;
-
-    // Projector lag — non-fatal. Compute "max event time vs latest cursor
-    // last_event_occurred_at" if the cursor table exists. Wrap in
-    // try/catch because the table might be empty in fresh prod.
-    let projectorLagMs: number | null = null;
-    try {
-      const r = await inSystem(getDb(env.DATABASE_URL), 'health', (tx) =>
-        tx.execute(sql`
-        SELECT EXTRACT(EPOCH FROM (NOW() - MAX(last_event_occurred_at))) * 1000 AS lag_ms
-        FROM domain.projector_cursors
-      `),
-      );
-      const lag = (r as unknown as Array<{ lag_ms: number | null }>)[0]?.lag_ms;
-      projectorLagMs = lag != null ? Math.max(0, Math.round(lag)) : null;
-    } catch {
-      /* cursor table empty or missing — not fatal */
-    }
-
-    return c.json({
-      status: 'ok',
-      version: readWebBuildId(),
-      dbMs,
-      projectorLagMs,
-    });
-  });
+  // Readiness: one database round trip (http/health.ts).
+  app.get(
+    '/health/ready',
+    readinessHandler({
+      pingDb: () => inSystem(getDb(env.DATABASE_URL), 'health', (tx) => tx.execute(sql`SELECT 1`)),
+      version: readWebBuildId,
+      onDbError: (err) => logger.error({ err }, '/health/ready DB ping failed'),
+    }),
+  );
   app.get('/health/version', (c) =>
     c.json({
       commit: readWebBuildId(),
