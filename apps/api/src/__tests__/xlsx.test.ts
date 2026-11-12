@@ -137,21 +137,21 @@ describe('xlsx writer', () => {
     const entries = readStoredZip(
       buildXlsx([
         {
-          name: 'Табель — Oʻrinboy 考勤表',
+          name: 'Табель — Smoke Doʻkon 考勤表',
           header: ['Сотрудник', 'Xodim', '员工'],
-          rows: [['Ғайрат Тошматов', 'Oʻrinboy Gʻaniyev', '张伟']],
+          rows: [['Ғалла Ходими', 'Oʻquvchi Gʻaznachi', '测试员工']],
         },
       ]),
     );
-    expect(entries.get('xl/workbook.xml')).toContain('<sheet name="Табель — Oʻrinboy 考勤表"');
+    expect(entries.get('xl/workbook.xml')).toContain('<sheet name="Табель — Smoke Doʻkon 考勤表"');
     const sheet = entries.get('xl/worksheets/sheet1.xml')!;
     for (const text of [
       'Сотрудник',
       'Xodim',
       '员工',
-      'Ғайрат Тошматов',
-      'Oʻrinboy Gʻaniyev',
-      '张伟',
+      'Ғалла Ходими',
+      'Oʻquvchi Gʻaznachi',
+      '测试员工',
     ]) {
       expect(sheet).toContain(`<t xml:space="preserve">${text}</t>`);
     }

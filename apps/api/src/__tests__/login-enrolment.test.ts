@@ -186,16 +186,19 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       .returning();
     noteUser(user!.id);
     await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
-    const initData = signInitData(tgUserId, { firstName: 'Malika' });
+    const initData = signInitData(tgUserId, { firstName: 'Smoke Staff' });
 
     const login = await callerFor(null).auth.telegramLogin({ initData });
-    expect(login.session.user.displayName).toBe('Malika');
+    expect(login.session.user.displayName).toBe('Smoke Staff');
     expect(login.session.user.displayNameLocked).toBe(false);
 
     // A name that is not a placeholder is never replaced.
-    await db.update(s.users).set({ displayName: 'Malika O.' }).where(eq(s.users.id, user!.id));
+    await db
+      .update(s.users)
+      .set({ displayName: 'Smoke Staff, renamed' })
+      .where(eq(s.users.id, user!.id));
     const again = await callerFor(null).auth.telegramLogin({ initData });
-    expect(again.session.user.displayName).toBe('Malika O.');
+    expect(again.session.user.displayName).toBe('Smoke Staff, renamed');
   });
 
   test("Telegram's raw language code is kept as one of the four (COREWEB2-10)", async () => {
