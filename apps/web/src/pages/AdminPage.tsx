@@ -194,6 +194,22 @@ export function AdminPage() {
     ].join('|'),
   );
 
+  // Review ADM1-33 (2026-11-12): a store's page is titled with the name it
+  // has now. The name saved with the navigation stayed after a rename
+  // elsewhere. Same input as the store screens, so their list is reused.
+  const focusedStoreId =
+    section === 'stores' && storeFocus?.kind === 'store' ? storeFocus.storeId : null;
+  const focusStoresQuery = trpc.admin.storeList.useQuery(
+    { includeArchived: isOrgAdmin },
+    { enabled: focusedStoreId !== null && isAdmin },
+  );
+  const focusedStoreName =
+    focusedStoreId === null
+      ? null
+      : (focusStoresQuery.data?.find((st) => st.id === focusedStoreId)?.name ??
+        session?.stores.find((st) => st.id === focusedStoreId)?.name ??
+        null);
+
   // HIS-19 (2026-10-30): someone who reads finance (reports.view) without
   // managing people gets the finance report alone.
   if (readsFinanceOnly(session)) {
@@ -221,8 +237,11 @@ export function AdminPage() {
   // longer lists; fall back to the home list. The state is kept per
   // device, so it can also be another member's (review WALK-07: a
   // platform admin's "platform" section reopened for an org admin, who
-  // got a 403).
+  // got a 403). Review ADM1-33 (2026-11-12): and every section but
+  // Platform needs users.manage, as the home list does; someone who lost
+  // it, or a platform admin without it, reopened Stores or Operations.
   const sectionHidden =
+    (section !== 'platform' && !isAdmin) ||
     ((section === 'organization' || section === 'permissions') && !isOrgAdmin) ||
     (section === 'catalog' && !seesCatalog) ||
     (section === 'attendance' && !seesAttendance) ||
@@ -236,7 +255,7 @@ export function AdminPage() {
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
-        title={titleForSection(section, catalogSub, opsSub, storeFocus, i18n)}
+        title={titleForSection(section, catalogSub, opsSub, storeFocus, focusedStoreName, i18n)}
         rootRef={drill.rootRef}
         onClickCapture={drill.onClickCapture}
         onBack={() => {
@@ -385,11 +404,13 @@ function titleForSection(
   catalogSub: CatalogSub | null,
   opsSub: OperationsSub | null,
   storeFocus: StoreFocus,
+  /** The focused store's current name, when known. */
+  storeName: string | null,
   i18n: ReturnType<typeof useI18n>,
 ): string {
   if (section === 'stores' && storeFocus !== null) {
     if (storeFocus.kind === 'org-level') return i18n.t('admin.label.orgLevel');
-    return storeFocus.storeName;
+    return storeName ?? storeFocus.storeName;
   }
   if (section === 'catalog' && catalogSub === 'categories')
     return i18n.t('admin.subsection.categories');
