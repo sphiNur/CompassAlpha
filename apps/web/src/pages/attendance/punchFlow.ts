@@ -343,6 +343,11 @@ export function punchFlow(deps: PunchFlowDeps) {
         deps.refresh();
         return;
       }
+      case 'busy':
+        // The photos and their key go again when the person asks (ATT-29).
+        deps.haptic('error');
+        setFlow({ ...f, view: failedView(out.key, 'resend') });
+        return;
       case 'retry':
         deps.haptic('error');
         setFlow({ ...f, view: failedView(out.key, 'retry', {}, refusalHint(out.key)) });

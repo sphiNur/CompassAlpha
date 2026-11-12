@@ -265,6 +265,31 @@ describe('punchFlow: a lost answer (ATT-03)', () => {
     expect(t.punches).toHaveLength(RESEND_WAITS_MS.length + 3);
   });
 
+  test('the face check could not run: why, and the same photos again on request (ATT-29)', async () => {
+    const t = setup();
+    (await punching(t)).reject(refusal('attendance.errors.faceCheckUnavailable'));
+    await t.settle();
+    expect(t.view()).toEqual({
+      at: 'failed',
+      title: 'attendance.errors.faceCheckUnavailable',
+      vars: {},
+      body: null,
+      action: 'resend',
+    });
+    // Nothing goes again by itself: the server did answer.
+    await t.wait(RESEND_WAITS_MS[1]!);
+    expect(t.punches).toHaveLength(1);
+    // "Try again": the same photos and key, no new challenge or camera.
+    t.flow.onResend();
+    expect(t.punches).toHaveLength(2);
+    expect(t.punches[1]!.key).toBe('key-1');
+    expect(t.punches[1]!.input).toEqual(t.punches[0]!.input);
+    expect(t.challenges).toHaveLength(1);
+    t.punches[1]!.resolve(RECORDED);
+    await t.settle();
+    expect(t.view()).toMatchObject({ at: 'done' });
+  });
+
   test('a resend due after the sheet was closed is not sent (ATT-04)', async () => {
     const t = setup();
     const sent = await punching(t);
