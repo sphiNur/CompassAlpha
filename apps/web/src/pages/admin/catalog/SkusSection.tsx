@@ -141,12 +141,14 @@ export function SkusSection() {
   });
 
   // ADM2-25: a product without a category says nothing about it (UI-3);
-  // its facts line used to start with "— · ".
+  // its facts line used to start with "— · ". ADM2-26: the category in the
+  // reader's language only, not "primary (secondary)" inline (UI-4), and
+  // its slug when it has no name (the parts read "—" then, never '').
   const categoryName = (id: string | null): string | null => {
     if (!id) return null;
     const c = categoriesQuery.data?.find((x) => x.id === id);
     if (!c) return i18n.t('common.unknownCategory');
-    return productName({ names: c.names }) || c.slug;
+    return hasAnyName(c.names) ? productNameParts({ names: c.names }).primary : c.slug;
   };
 
   const editor = useEditorSheet(
@@ -220,12 +222,15 @@ export function SkusSection() {
                 // The name in the reader's language only; the others list
                 // under it (CategoriesSection, COREWEB2-18).
                 const name = productNameParts({ names });
-                const primary = name.primary || sk.code || i18n.t('common.unknownProduct');
+                // ADM2-26: as the categories, the code takes over only when
+                // there is no name at all.
+                const named = hasAnyName(names);
+                const primary = named ? name.primary : sk.code || i18n.t('common.unknownProduct');
                 return (
                   <li key={sk.id}>
                     <CatalogRowHeader
                       title={primary}
-                      titleLang={name.primary ? name.primaryLang : undefined}
+                      titleLang={named ? name.primaryLang : undefined}
                       names={names}
                       meta={[
                         categoryName(sk.categoryId),
@@ -332,7 +337,7 @@ export function SkusSection() {
                     const n = c.names;
                     return (
                       <option key={c.id} value={c.id}>
-                        {productName({ names: n }) || c.slug}
+                        {hasAnyName(n) ? productName({ names: n }) : c.slug}
                         {c.isArchived ? ` (${i18n.t('common.archived')})` : ''}
                       </option>
                     );

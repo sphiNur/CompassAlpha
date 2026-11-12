@@ -126,12 +126,15 @@ export function CategoriesSection() {
               // "primary (secondary)" for a reader of a second language,
               // and the line below repeated the primary.
               const name = productNameParts({ names });
-              const title = name.primary || c.slug;
+              // Review ADM2-26 (2026-11-12): with no name at all the parts
+              // read "—", never '', so `|| c.slug` never took over.
+              const named = hasAnyName(names);
+              const title = named ? name.primary : c.slug;
               return (
                 <li key={c.id}>
                   <CatalogRowHeader
                     title={title}
-                    titleLang={name.primary ? name.primaryLang : undefined}
+                    titleLang={named ? name.primaryLang : undefined}
                     names={names}
                     meta={i18n.t('catalog.category.meta', { slug: c.slug, sort: c.sortIndex })}
                     archived={c.isArchived}
