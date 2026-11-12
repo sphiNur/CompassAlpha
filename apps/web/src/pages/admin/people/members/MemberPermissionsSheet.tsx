@@ -5,7 +5,6 @@ import {
   EmptyState,
   LoadingState,
   QueryErrorBanner,
-  SectionLabel,
   Segmented,
   Sheet,
   useToast,
@@ -20,6 +19,7 @@ import {
   type TargetMember,
 } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
+import { PermissionGroups } from '../PermissionGroups';
 
 /**
  * Per-member permission overrides editor (added 2026-05-05).
@@ -155,7 +155,7 @@ export function MemberPermissionsSheet({
         [
           ns,
           keys
-            .map((p) => ({ p, effects: overrideEffects(actor, p, scopeStoreId) }))
+            .map((p) => ({ key: p.key, p, effects: overrideEffects(actor, p, scopeStoreId) }))
             .filter(({ p, effects }) => effects.allow || effects.deny || overrideByKey.has(p.key)),
         ] as const,
     )
@@ -266,74 +266,64 @@ export function MemberPermissionsSheet({
               {i18n.t('people.perm.allowOnlyOwn')}
             </p>
           ) : null}
-          {rows.map(([ns, keys]) => (
-            <div key={ns}>
-              {/* CMP-ADM-2: localised group, name and description, not the
-                  English seed text and raw keys. */}
-              <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
-              <ul className="mt-1 flex flex-col gap-1">
-                {keys.map(({ p, effects }) => {
-                  const override = overrideByKey.get(p.key) ?? null;
-                  const fromRole = roleKeys.has(p.key);
-                  const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
-                  // The rarer reasons are said on the row itself.
-                  const rowReason =
-                    scopeEditable && effects.reason !== 'people.perm.allowOnlyOwn'
-                      ? effects.reason
-                      : null;
-                  return (
-                    <li
-                      key={p.key}
-                      className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="min-w-0 text-old-body-sm text-[var(--c-fg)]">
-                          {roleText.permission(p.key, p.description)}
-                        </div>
-                        {fromRole ? (
-                          <Badge tone="muted">{i18n.t('people.perm.fromRoleBadge')}</Badge>
-                        ) : null}
-                      </div>
-                      {/* M3.17 (2026-05-16): migrated from local SegBtn
-                          to the shared <Segmented> primitive. Per-option
-                          activeBg drives the allow=green / deny=red /
-                          inherit=action coloring that the old SegBtn
-                          baked in via a `tone` prop. */}
-                      <Segmented<'role' | 'allow' | 'deny'>
-                        size="sm"
-                        value={mode}
-                        options={[
-                          { value: 'role', label: i18n.t('people.perm.fromRole') },
-                          {
-                            value: 'allow',
-                            label: i18n.t('people.perm.allow'),
-                            activeBg: 'bg-[var(--c-success)]',
-                            disabled: !effects.allow,
-                          },
-                          {
-                            value: 'deny',
-                            label: i18n.t('people.perm.deny'),
-                            activeBg: 'bg-[var(--c-danger)]',
-                            disabled: !effects.deny,
-                          },
-                        ]}
-                        onChange={(next) => handleSet(p.key, next)}
-                        disabled={!scopeEditable || set.isPending || revoke.isPending}
-                        // Each choice is saved at once: arrows only move.
-                        followFocus={false}
-                        ariaLabel={roleText.permission(p.key, p.description)}
-                      />
-                      {rowReason ? (
-                        <p className="text-old-label text-[var(--c-fg-muted)]">
-                          {i18n.t(rowReason)}
-                        </p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+          {/* CMP-ADM-2: localised group, name and description, not the
+              English seed text and raw keys. */}
+          <PermissionGroups
+            groups={rows}
+            renderRow={({ p, effects }) => {
+              const override = overrideByKey.get(p.key) ?? null;
+              const fromRole = roleKeys.has(p.key);
+              const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
+              // The rarer reasons are said on the row itself.
+              const rowReason =
+                scopeEditable && effects.reason !== 'people.perm.allowOnlyOwn'
+                  ? effects.reason
+                  : null;
+              return (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="min-w-0 text-old-body-sm text-[var(--c-fg)]">
+                      {roleText.permission(p.key, p.description)}
+                    </div>
+                    {fromRole ? (
+                      <Badge tone="muted">{i18n.t('people.perm.fromRoleBadge')}</Badge>
+                    ) : null}
+                  </div>
+                  {/* M3.17 (2026-05-16): migrated from local SegBtn to the
+                      shared <Segmented> primitive. Per-option activeBg drives
+                      the allow=green / deny=red / inherit=action coloring
+                      that the old SegBtn baked in via a `tone` prop. */}
+                  <Segmented<'role' | 'allow' | 'deny'>
+                    size="sm"
+                    value={mode}
+                    options={[
+                      { value: 'role', label: i18n.t('people.perm.fromRole') },
+                      {
+                        value: 'allow',
+                        label: i18n.t('people.perm.allow'),
+                        activeBg: 'bg-[var(--c-success)]',
+                        disabled: !effects.allow,
+                      },
+                      {
+                        value: 'deny',
+                        label: i18n.t('people.perm.deny'),
+                        activeBg: 'bg-[var(--c-danger)]',
+                        disabled: !effects.deny,
+                      },
+                    ]}
+                    onChange={(next) => handleSet(p.key, next)}
+                    disabled={!scopeEditable || set.isPending || revoke.isPending}
+                    // Each choice is saved at once: arrows only move.
+                    followFocus={false}
+                    ariaLabel={roleText.permission(p.key, p.description)}
+                  />
+                  {rowReason ? (
+                    <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t(rowReason)}</p>
+                  ) : null}
+                </div>
+              );
+            }}
+          />
         </div>
       )}
     </Sheet>

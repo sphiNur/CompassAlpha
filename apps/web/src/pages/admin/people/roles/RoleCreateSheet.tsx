@@ -22,6 +22,7 @@ import {
 } from '../../../../lib/adminFields';
 import { canPutKeyInRole } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
+import { PermissionGroups } from '../PermissionGroups';
 import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 
@@ -196,25 +197,17 @@ export function RoleCreateSheet({
             // permissions at all.
             <QueryErrorBanner query={permsQuery} />
           ) : (
-            <ul className="flex flex-col gap-3">
-              {grouped.map(([ns, keys]) => (
-                <li key={ns}>
-                  <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
-                  <ul className="mt-1 flex flex-col gap-1">
-                    {keys.map((p) => (
-                      <li key={p.key}>
-                        <PermissionKeyOption
-                          perm={p}
-                          checked={picked.has(p.key)}
-                          blocked={canPutKeyInRole(p) ? null : i18n.t('people.perm.roleNeedsOwn')}
-                          onToggle={() => togglePerm(p.key)}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
+            <PermissionGroups
+              groups={grouped}
+              renderRow={(p) => (
+                <PermissionKeyOption
+                  perm={p}
+                  checked={picked.has(p.key)}
+                  blocked={canPutKeyInRole(p) ? null : i18n.t('people.perm.roleNeedsOwn')}
+                  onToggle={() => togglePerm(p.key)}
+                />
+              )}
+            />
           )}
         </div>
       </div>

@@ -19,6 +19,7 @@ import { nativeConfirm } from '../../shared';
 import { readRank, roleRankRange } from '../../../../lib/adminFields';
 import { canPutKeyInRole, type PassOn } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
+import { PermissionGroups } from '../PermissionGroups';
 import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 import { RoleAssigneesByStore } from './RoleAssigneesByStore';
@@ -319,43 +320,34 @@ export function RolePermissionsSheet({
               {i18n.t('people.noPermsAssigned')}
             </p>
           ) : (
-            <ul className="flex flex-col gap-3">
-              {grouped.map(([ns, keys]) => (
-                <li key={ns}>
-                  <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
-                  <ul className="mt-1 flex flex-col gap-1">
-                    {keys.map((p) => {
-                      if (editing) {
-                        const blocked = !inRole.has(p.key) && !canPutKeyInRole(p);
-                        return (
-                          <li key={p.key}>
-                            <PermissionKeyOption
-                              perm={p}
-                              checked={picked.has(p.key)}
-                              blocked={blocked ? i18n.t('people.perm.roleNeedsOwn') : null}
-                              onToggle={() => togglePerm(p.key)}
-                            />
-                          </li>
-                        );
-                      }
-                      return (
-                        <li
-                          key={p.key}
-                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 text-old-label"
-                        >
-                          {/* ADM-17: what the permission allows, in the UI
-                              language; the key stays as a hint. */}
-                          {roleText.permission(p.key, p.description)}
-                          <span className="ml-1.5 font-mono text-old-tiny text-[var(--c-fg-muted)]">
-                            {p.key}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              ))}
-            </ul>
+            <PermissionGroups
+              groups={grouped}
+              renderRow={(p) => {
+                if (editing) {
+                  const blocked = !inRole.has(p.key) && !canPutKeyInRole(p);
+                  return (
+                    <PermissionKeyOption
+                      perm={p}
+                      checked={picked.has(p.key)}
+                      blocked={blocked ? i18n.t('people.perm.roleNeedsOwn') : null}
+                      onToggle={() => togglePerm(p.key)}
+                    />
+                  );
+                }
+                // ADM-17: what the permission allows, in the UI language;
+                // the key stays as a hint.
+                return (
+                  <>
+                    <span className="block text-old-body text-[var(--c-fg)]">
+                      {roleText.permission(p.key, p.description)}
+                    </span>
+                    <span className="block font-mono text-old-tiny text-[var(--c-fg-muted)]">
+                      {p.key}
+                    </span>
+                  </>
+                );
+              }}
+            />
           )}
           {/* B1 (2026-05-06): assignees grouped by store. Read-only —
               edits go through the existing role chip on the People
