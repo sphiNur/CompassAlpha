@@ -74,6 +74,18 @@ export function errorVars(err: unknown): ErrorVars {
 }
 
 /**
+ * Review ADM1-18 (2026-11-12): a refusal that names a permission sends its
+ * key (`context.permission`, e.g. `prices.view`); the sentence shows the
+ * permission's name in the UI language, not the key.
+ */
+export function withPermissionName(vars: ErrorVars, t: (key: CatalogKey) => string): ErrorVars {
+  const key = vars.permission;
+  if (typeof key !== 'string') return vars;
+  const nameKey = `permission.${key}`;
+  return isCatalogKey(nameKey) ? { ...vars, permission: t(nameKey) } : vars;
+}
+
+/**
  * The catalog key the server named for an error, or null. Prefers the
  * message (a thrown key, or the key inside a zod issue list), then
  * `data.i18nKey`, which a domain error carries even when its message is

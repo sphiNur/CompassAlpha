@@ -1034,6 +1034,12 @@ export const ru = {
     'Эта роль ещё назначена участникам — её уровень не может пересечь отметку {rank}. Сначала отзовите назначения или создайте новую роль.',
   'admin.errors.permissionNotFound': 'Такого права нет.',
   'admin.errors.notAdminOfStore': 'Вы не администрируете этот магазин — операция запрещена.',
+  'admin.errors.targetOutranksYou':
+    'Этот человек вашего уровня или выше, поэтому такое изменение вам недоступно.',
+  'admin.errors.roleOutranksYou':
+    'Эта роль вашего уровня или выше, поэтому изменить или удалить её нельзя.',
+  'admin.errors.roleKeyNotHeld':
+    'У вас нет права «{permission}» во всём рабочем пространстве, поэтому добавить его в роль нельзя.',
   'admin.errors.memberNotInSourceStore':
     'Участника нет в исходном магазине, перевести его оттуда нельзя; просто назначьте его в новый магазин.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

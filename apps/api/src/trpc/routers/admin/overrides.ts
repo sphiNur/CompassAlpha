@@ -222,7 +222,7 @@ export const overrideProcedures = {
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         // An allow may only pass on authority the actor holds in that
@@ -374,7 +374,7 @@ export const overrideProcedures = {
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         const removed = await tx

@@ -1036,6 +1036,12 @@ export const uz = {
     'Bu rol hali aʼzolarga biriktirilgan — darajasi {rank} chegarasidan oʻta olmaydi. Avval ularni qaytarib oling yoki yangi rol yarating.',
   'admin.errors.permissionNotFound': 'Bunday ruxsat yoʻq.',
   'admin.errors.notAdminOfStore': 'Bu doʻkon administratori siz emas — bu amalni bajara olmaysiz.',
+  'admin.errors.targetOutranksYou':
+    'Bu kishi sizning darajangizda yoki undan yuqori, shuning uchun bu oʻzgarishni qila olmaysiz.',
+  'admin.errors.roleOutranksYou':
+    'Bu rol sizning darajangizda yoki undan yuqori, shuning uchun uni oʻzgartira yoki oʻchira olmaysiz.',
+  'admin.errors.roleKeyNotHeld':
+    '«{permission}» ruxsati butun ish maydonida sizda yoʻq, shuning uchun uni rolga qoʻsha olmaysiz.',
   'admin.errors.memberNotInSourceStore':
     'U manba doʻkonida yoʻq, undan oʻtkazib boʻlmaydi; uni toʻgʻridan-toʻgʻri yangi doʻkonga biriktiring.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

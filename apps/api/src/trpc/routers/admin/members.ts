@@ -313,7 +313,7 @@ export const memberProcedures = {
           if (actorRank < SUPER_ADMIN_RANK && targetRank >= actorRank) {
             throw new TRPCError({
               code: 'FORBIDDEN',
-              message: 'auth.errors.cannotRevokeEqualOrHigher',
+              message: 'admin.errors.targetOutranksYou',
             });
           }
         }
@@ -363,7 +363,7 @@ export const memberProcedures = {
       if (targetMaxRank >= actorRank && targetMaxRank > 0) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'auth.errors.cannotRevokeEqualOrHigher',
+          message: 'admin.errors.targetOutranksYou',
         });
       }
       // Last-admin guard. If the target is admin-level and they're

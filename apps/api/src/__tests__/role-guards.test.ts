@@ -103,7 +103,11 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       kate.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
     );
     expect(createErr?.code).toBe('FORBIDDEN');
-    expect(createErr?.message).toBe('auth.errors.missingPermission');
+    // ADM1-18: the refusal says which key.
+    expect(createErr?.message).toBe('admin.errors.roleKeyNotHeld');
+    expect((createErr?.cause as { context?: unknown } | undefined)?.context).toEqual({
+      permission: 'run.amend',
+    });
 
     const managerKeys = (
       await db
@@ -115,7 +119,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       kate.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
     );
     expect(updateErr?.code).toBe('FORBIDDEN');
-    expect(updateErr?.message).toBe('auth.errors.missingPermission');
+    expect(updateErr?.message).toBe('admin.errors.roleKeyNotHeld');
     const after = await db
       .select({ key: s.rolePermissions.permissionKey })
       .from(s.rolePermissions)

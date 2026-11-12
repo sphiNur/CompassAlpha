@@ -272,7 +272,7 @@ export async function assertCanSetMemberStatus(
       getActorMaxGlobalRank(tx, orgId, session.userId),
     ]);
     if (targetRank >= actorRank) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.targetOutranksYou' });
     }
     return;
   }
@@ -323,7 +323,7 @@ export async function assertAdministersEveryTargetStore(
       getActorMaxRankInStore(tx, orgId, session.userId, storeId),
     ]);
     if (targetRank >= actorRank) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.targetOutranksYou' });
     }
   }
 }

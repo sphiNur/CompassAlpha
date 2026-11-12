@@ -1082,6 +1082,12 @@ export const en = {
   'admin.errors.permissionNotFound': 'There is no such permission.',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action.",
+  'admin.errors.targetOutranksYou':
+    'This person is at or above your own level, so you cannot make this change.',
+  'admin.errors.roleOutranksYou':
+    'This role is at or above your own level, so you cannot change or delete it.',
+  'admin.errors.roleKeyNotHeld':
+    'You do not have "{permission}" across the workspace, so it cannot go into a role.',
   'admin.errors.memberNotInSourceStore':
     'They are not in the source store, so they cannot be moved out of it; assign them to the new store instead.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

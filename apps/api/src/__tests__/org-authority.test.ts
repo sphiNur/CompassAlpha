@@ -131,7 +131,8 @@ describe.skipIf(!SHOULD_RUN)(
       ]) {
         const err = await errorOf(act);
         expect(err?.code).toBe('FORBIDDEN');
-        expect(err?.message).toBe('auth.errors.cannotRevokeEqualOrHigher');
+        // ADM1-18: not "cannot revoke a role" for a rename or a suspension.
+        expect(err?.message).toBe('admin.errors.targetOutranksYou');
       }
     });
 
@@ -151,7 +152,7 @@ describe.skipIf(!SHOULD_RUN)(
         }),
       );
       expect(override?.code).toBe('FORBIDDEN');
-      expect(override?.message).toBe('auth.errors.cannotGrantEqualOrHigher');
+      expect(override?.message).toBe('admin.errors.targetOutranksYou');
     });
 
     test('below their global rank everything still works', async () => {

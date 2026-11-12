@@ -94,12 +94,18 @@ export function requireOneOf(perms: ReadonlySet<string>, keys: PermissionKey[]):
  * ADM-4 (2026-10-30): putting a key into a role hands it to everyone the
  * role is granted to, so the actor must hold it, as memberPermissionSet
  * already requires for a single allow. An admin used to be able to mint
- * a role with super-admin keys and grant it to themselves.
+ * a role with super-admin keys and grant it to themselves. Review ADM1-18
+ * (2026-11-12): the refusal names the key (`context.permission`); it was
+ * the bare "you have no permission", which did not say which one.
  */
 export function assertHoldsKeys(perms: ReadonlySet<string>, keys: Iterable<string>): void {
   for (const key of keys) {
     if (!perms.has(key)) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.missingPermission' });
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'admin.errors.roleKeyNotHeld',
+        cause: { context: { permission: key } },
+      });
     }
   }
 }

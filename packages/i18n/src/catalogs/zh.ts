@@ -917,6 +917,9 @@ export const zh = {
     '该角色仍有成员持有，等级不能跨过 {rank}。请先撤销这些授予，或新建一个角色。',
   'admin.errors.permissionNotFound': '不存在这个权限。',
   'admin.errors.notAdminOfStore': '你不是该门店的管理员，无法在此门店执行此操作。',
+  'admin.errors.targetOutranksYou': '此人的等级等于或高于你，不能做这项更改。',
+  'admin.errors.roleOutranksYou': '这个角色的等级等于或高于你，不能修改或删除。',
+  'admin.errors.roleKeyNotHeld': '你在整个工作区没有「{permission}」权限，不能把它放进角色。',
   'admin.errors.memberNotInSourceStore':
     '该成员不在来源门店，没法从那里调出；请直接把该成员分配到新门店。',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

@@ -6,6 +6,7 @@ import {
   errorVars,
   isServerSideFailure,
   networkFailureKey,
+  withPermissionName,
   writeErrorTextOf,
 } from '../errorText';
 
@@ -194,6 +195,33 @@ describe('errorTextOf: placeholders from the server', () => {
       key: 'common.networkError',
       vars: {},
     });
+  });
+});
+
+// Review ADM1-18 (2026-11-12): a refusal naming a permission sends its key.
+describe('withPermissionName', () => {
+  beforeAll(async () => {
+    await Promise.all((['en', 'zh'] as const).map((l) => loadCatalog(l)));
+  });
+
+  test('the sentence names the permission in the UI language, never the key', () => {
+    for (const locale of ['en', 'zh'] as const) {
+      const { t } = createI18n(locale);
+      const err = {
+        message: 'admin.errors.roleKeyNotHeld',
+        data: { context: { permission: 'prices.view' } },
+      };
+      const { key, vars } = errorTextOf(err, 'common.errorUnknown');
+      const text = t(key, withPermissionName(vars, t));
+      expect(text).toContain(t('permission.prices.view'));
+      expect(text).not.toContain('prices.view');
+    }
+  });
+
+  test('a key the catalog does not know, or no permission at all, is left as sent', () => {
+    const { t } = createI18n('en');
+    expect(withPermissionName({ permission: 'not.a.key' }, t)).toEqual({ permission: 'not.a.key' });
+    expect(withPermissionName({ n: 2 }, t)).toEqual({ n: 2 });
   });
 });
 

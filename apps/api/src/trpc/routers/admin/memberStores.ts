@@ -155,7 +155,7 @@ export const memberStoreProcedures = {
         if (targetRankInStore >= actorRankInStore) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotRevokeEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         // SECURITY (2026-05-04): non-admin members must keep at least one
@@ -257,7 +257,7 @@ export const memberStoreProcedures = {
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotRevokeEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         // Last-store guard — same rule as memberUnassignStore so the
@@ -439,7 +439,7 @@ export const memberStoreProcedures = {
         if (fromTargetRank >= fromActorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotRevokeEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         // ADM-23 (2026-10-30): "transferring" someone out of a store they

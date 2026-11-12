@@ -336,7 +336,7 @@ export const roleProcedures = {
         if (role.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.roleOutranksYou',
           });
         }
         if (input.rank !== undefined && input.rank >= actorRank) {
@@ -444,7 +444,7 @@ export const roleProcedures = {
         if (role.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.roleOutranksYou',
           });
         }
         // ADM1-04: lapsed bindings do not keep a role; they go with it
