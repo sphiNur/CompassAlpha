@@ -1,8 +1,8 @@
 /**
  * 2026-10-21: a store-scoped reader revising or undoing a purchase must not
- * erase the splits run.get hid from them (services/scopedRunRevision.ts),
- * and transfer audit rows must be scoped to a store (deriveScopeStoreId).
- * Pure — runs everywhere.
+ * erase the splits run.get hid from them (services/scopedRunRevision.ts).
+ * Pure — runs everywhere. (The audit rows' store, deriveScopeStoreId, is
+ * tested with the rest of the audit in admin-audit-labels.test.ts.)
  */
 import { describe, expect, test } from 'bun:test';
 import { sumQty } from '@compass/contracts/quantity';
@@ -15,7 +15,6 @@ import {
   type ScopedRevisionInput,
   type ScopedRevisionItem,
 } from '../services/scopedRunRevision';
-import { deriveScopeStoreId } from '../services/adminAudit';
 
 const A = 'store-a';
 const B = 'store-b';
@@ -135,24 +134,5 @@ describe('hiddenSplits', () => {
   test('lists only stores outside the scope; none when unrestricted', () => {
     expect(hiddenSplits(item, new Set([A, C])).map((s) => s.storeId)).toEqual([B]);
     expect(hiddenSplits(item, null)).toEqual([]);
-  });
-});
-
-describe('deriveScopeStoreId — member transfers', () => {
-  test('a transfer is scoped to its destination store', () => {
-    expect(
-      deriveScopeStoreId('member', {
-        memberId: 'm-1',
-        fromStoreId: A,
-        toStoreId: B,
-        mirrorRoles: true,
-      }),
-    ).toBe(B);
-  });
-
-  test('existing keys keep their priority', () => {
-    expect(deriveScopeStoreId('member', { storeId: A, toStoreId: B })).toBe(A);
-    expect(deriveScopeStoreId('member', { targetStoreId: C })).toBe(C);
-    expect(deriveScopeStoreId('role', { name: 'r' })).toBeNull();
   });
 });

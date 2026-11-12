@@ -11,7 +11,7 @@ import { SignJWT } from 'jose';
 import type { Locale } from '@compass/i18n';
 import { attendanceMonthExport } from '../http/attendanceExport';
 import { purposeKey } from '../infra/jwt';
-import { monthWorkbook, type MonthSheet } from '../services/attendanceExport';
+import { monthRange, monthWorkbook, type MonthSheet } from '../services/attendanceExport';
 
 const NIGHT = '2026-11-09';
 const MORNING = '2026-11-10';
@@ -175,5 +175,14 @@ describe('a download link that fails (review ATT-15)', () => {
     expect((await open('nope')).text).toBe(
       'This download link has expired. Export again from the app.',
     );
+  });
+});
+
+describe('monthRange', () => {
+  // Moved from xlsx.test.ts (review TEST2-18).
+  test('the first and last day of the month, leap years included', () => {
+    expect(monthRange('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' });
+    expect(monthRange('2028-02')).toEqual({ from: '2028-02-01', to: '2028-02-29' });
+    expect(monthRange('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
   });
 });

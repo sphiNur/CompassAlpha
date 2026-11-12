@@ -1,3 +1,12 @@
+/**
+ * The daily close (日结, settlement router and services/settlement.ts):
+ * the messages and money format without a database; then, PG-gated, who
+ * may read and save a store's close, its itemised outflows and wages,
+ * corrections and their history, archived stores, the 90-day limit on a
+ * new close (CLS-14) and the workspace push after a save.
+ *
+ * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/settlement.test.ts
+ */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { BACKDATE_LIMIT_DAYS, type SettlementSaveInput } from '@compass/contracts';

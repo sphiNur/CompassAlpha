@@ -10,6 +10,7 @@ import {
   auditLabelsAtWrite,
   auditRowRefs,
   buildAuditLabels,
+  deriveScopeStoreId,
   type AuditLookups,
 } from '../services/adminAudit';
 
@@ -201,5 +202,27 @@ describe('buildAuditLabels', () => {
     ).toBe('Race 3');
     expect(auditLabelsAtWrite(null)).toEqual({});
     expect(auditLabelsAtWrite({ labelsAtWrite: 'x' })).toEqual({});
+  });
+});
+
+describe('deriveScopeStoreId — member transfers', () => {
+  // Moved from scoped-run-revision.test.ts (review TEST2-18).
+  const [A, B, C] = ['store-a', 'store-b', 'store-c'];
+
+  test('a transfer is scoped to its destination store', () => {
+    expect(
+      deriveScopeStoreId('member', {
+        memberId: 'm-1',
+        fromStoreId: A,
+        toStoreId: B,
+        mirrorRoles: true,
+      }),
+    ).toBe(B);
+  });
+
+  test('existing keys keep their priority', () => {
+    expect(deriveScopeStoreId('member', { storeId: A, toStoreId: B })).toBe(A);
+    expect(deriveScopeStoreId('member', { targetStoreId: C })).toBe(C);
+    expect(deriveScopeStoreId('role', { name: 'r' })).toBeNull();
   });
 });
