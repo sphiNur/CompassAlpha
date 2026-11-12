@@ -39,7 +39,7 @@ import { rolePassesOn } from '../../../lib/authority';
 import { useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
-import { PeopleSection } from '../people/PeopleSections';
+import { PeopleSection } from '../people';
 import { StoreInventoryTab } from './inventory/StoreInventoryTab';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
 

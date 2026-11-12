@@ -97,7 +97,7 @@ import type {
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
-import { PermissionsSection } from './admin/people/PeopleSections';
+import { PermissionsSection } from './admin/people';
 import { PlatformSection } from './admin/platform/PlatformSections';
 import { AttendanceAdmin } from './attendance/AttendanceAdmin';
 
