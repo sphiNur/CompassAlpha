@@ -85,7 +85,9 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
     <label
       htmlFor={inputId}
       className={cn(
-        'press flex cursor-pointer items-center justify-between gap-3 rounded-[var(--r-utility)] py-2',
+        // UI-36: the row is the tap target, at least 44 px tall (a
+        // one-line row was 36).
+        'press flex min-h-[var(--control-h)] cursor-pointer items-center justify-between gap-3 rounded-[var(--r-utility)] py-2',
         disabled && disabledLook,
         className,
       )}

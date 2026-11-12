@@ -160,6 +160,13 @@ describe('tap areas', () => {
     }
   });
 
+  test('a labelled Checkbox or Switch row is at least 44px tall (review UI-36)', () => {
+    for (const name of ['Checkbox.tsx', 'Switch.tsx']) {
+      const row = read(name).includes('min-h-[var(--control-h)]');
+      expect({ name, row }).toEqual({ name, row: true });
+    }
+  });
+
   test("the search field's clear button carries hit-44 (review UI-30)", () => {
     const clear = /<button[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/.exec(
       read('SearchInput.tsx'),
