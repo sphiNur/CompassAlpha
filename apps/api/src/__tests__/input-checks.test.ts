@@ -52,6 +52,15 @@ beforeAll(async () => {
   owner = callerFor(session);
 });
 
+// Pure: runs in the unit job too, not only where Postgres is (review
+// TEST1-13).
+describe('upload keys (AUTH-24)', () => {
+  test('an upload key takes its extension from the signed content type only', () => {
+    expect(pickExtension('image/png')).toBe('png');
+    expect(pickExtension('image/jpeg')).toBe('jpg');
+  });
+});
+
 describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
   test('impossible dates are refused as input, not a 500', async () => {
     expect(await codeOf(() => owner!.run.changeDate({ runId, runDate: '2026-02-31' }))).toBe('BAD_REQUEST');
@@ -139,11 +148,6 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
     expect(all.rows.length).toBe(1);
     const percent = await owner!.run.history({ dateFrom: '2026-06-01', dateTo: '2026-06-01', search: '%' });
     expect(percent.rows.length).toBe(0);
-  });
-
-  test('an upload key takes its extension from the signed content type only', () => {
-    expect(pickExtension('image/png')).toBe('png');
-    expect(pickExtension('image/jpeg')).toBe('jpg');
   });
 
   test('ADM2-09: dish names follow the product rule; a dish sort order carries its key', async () => {

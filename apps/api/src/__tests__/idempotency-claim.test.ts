@@ -78,6 +78,17 @@ beforeAll(async () => {
   } as unknown as SessionContext;
 });
 
+// Pure: runs in the unit job too, not only where Postgres is (review
+// TEST1-13).
+describe('idempotencyRequestHash', () => {
+  test('BUY-16: the body hash ignores key order and undefined fields', () => {
+    expect(idempotencyRequestHash({ a: 1, b: [1, { c: 2, d: undefined }] })).toBe(
+      idempotencyRequestHash({ b: [1, { c: 2 }], a: 1 }),
+    );
+    expect(idempotencyRequestHash({ a: 1 })).not.toBe(idempotencyRequestHash({ a: 2 }));
+  });
+});
+
 describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
   test('two concurrent requests with one key run the handler once and share its answer', async () => {
     const key = randomUUID();
@@ -127,13 +138,6 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
       message: 'common.errors.idempotencyKeyReused',
     });
     expect(runs).toBe(before);
-  });
-
-  test('BUY-16: the body hash ignores key order and undefined fields', () => {
-    expect(idempotencyRequestHash({ a: 1, b: [1, { c: 2, d: undefined }] })).toBe(
-      idempotencyRequestHash({ b: [1, { c: 2 }], a: 1 }),
-    );
-    expect(idempotencyRequestHash({ a: 1 })).not.toBe(idempotencyRequestHash({ a: 2 }));
   });
 
   // Review COREAPI-31: an empty answer was stored as SQL NULL, which marks
