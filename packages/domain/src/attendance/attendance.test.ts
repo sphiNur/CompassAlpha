@@ -64,9 +64,9 @@ const shift = (id: string, date: string, s: string, e: string, memberId = 'm1'):
   date,
   ...shiftWindow(date, s, e, TZ),
 });
-let n = 0;
+/** A punch, named for what it is: ids no longer count the punches made before (TEST4-21). */
 const punch = (kind: 'in' | 'out', date: string, time: string, memberId = 'm1'): PunchInput => ({
-  id: `p${++n}`,
+  id: `${memberId}-${kind}-${date}T${time}`,
   memberId,
   kind,
   at: at(date, time),
