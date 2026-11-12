@@ -45,5 +45,17 @@ describe('face pipeline', () => {
   test('cosine', () => {
     expect(cosine([1, 0], [1, 0])).toBe(1);
     expect(cosine([1, 0], [0, 1])).toBe(0);
+    expect(cosine([0.6, 0.8], [0.8, 0.6])).toBeCloseTo(0.96, 12);
+  });
+
+  test('cosine is a plain dot product over the shorter feature', () => {
+    // Review TEST1-20. It divides by nothing: it is the cosine only for
+    // features of length 1, which embed() makes them. A longer vector
+    // scores higher.
+    expect(cosine([2, 0], [3, 0])).toBe(6);
+    // Features of different lengths are not refused: the extra values are
+    // left out. An empty feature matches nothing.
+    expect(cosine([1, 0, 5], [1, 0])).toBe(1);
+    expect(cosine([], [1, 0])).toBe(0);
   });
 });

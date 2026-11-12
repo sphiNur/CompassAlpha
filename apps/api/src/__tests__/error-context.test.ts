@@ -33,6 +33,20 @@ const probe = router({
       cause: validation('order.errors.qtyNotMultipleOfStep', { step: '0.500' }),
     });
   }),
+  undefinedValue: publicProcedure.query(() => {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'settlement.errors.dateTooOld',
+      cause: { field: 'date', reason: 'too-old', context: { days: undefined, step: '0.5' } },
+    });
+  }),
+  arrayContext: publicProcedure.query(() => {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'settlement.errors.dateTooOld',
+      cause: { field: 'date', reason: 'too-old', context: [90] },
+    });
+  }),
 });
 
 async function errorData(path: string): Promise<Record<string, unknown>> {
@@ -63,5 +77,18 @@ describe('error context reaches the client', () => {
     const data = await errorData('domain');
     expect(data.i18nKey).toBe('order.errors.qtyNotMultipleOfStep');
     expect(data.context).toEqual({ step: '0.500' });
+  });
+
+  // Review TEST1-20: what the client gets from a context it cannot use.
+  test('a value left undefined does not arrive; the others do', async () => {
+    const data = await errorData('undefinedValue');
+    expect(data.context).toEqual({ step: '0.5' });
+    expect('days' in (data.context as object)).toBe(false);
+  });
+
+  test('a context that is a list, not named values, is not sent', async () => {
+    const data = await errorData('arrayContext');
+    expect(data.message).toBe('settlement.errors.dateTooOld');
+    expect('context' in data).toBe(false);
   });
 });

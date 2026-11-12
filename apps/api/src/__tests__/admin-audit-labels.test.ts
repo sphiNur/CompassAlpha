@@ -2,7 +2,8 @@
  * 2026-10-21 FE-08 (F6-02): adminAuditList resolves readable names per
  * row. These cover the pure halves (which ids a row refers to, and how
  * lookups become labels); the SQL lookups run only against a real
- * Postgres and are covered by the PG-gated adminAuditList suites.
+ * Postgres and are covered by the PG-gated adminAuditList suites
+ * (admin-audit-trail.test.ts reads a renamed and a deleted role back).
  */
 import { describe, expect, test } from 'bun:test';
 import {

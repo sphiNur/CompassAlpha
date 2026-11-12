@@ -7,6 +7,8 @@
  *   - ADM2-06: edits recorded only the new values, not what they replaced.
  *   - ADM2-07: copying a store's roles granted roles to every member with
  *     one counting row in the audit.
+ *   - R2-ADM-3: the list names a target as it is called now, and a
+ *     deleted one as it was called when the row was written.
  *
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/admin-audit-trail.test.ts
  */
@@ -322,5 +324,33 @@ describe.skipIf(!SHOULD_RUN)('a grant from the command line', () => {
       roleSlug: 'manager',
     });
     expect(seen.find((r) => r.actor !== null)?.bySystem).toBe(false);
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('names in the list (R2-ADM-3)', () => {
+  // Review TEST1-20: admin-audit-labels.test.ts covers how the names are
+  // chosen; this is the list reading them from the database.
+  test('a renamed role shows its new name; a deleted one the name it had', async () => {
+    const { db, orgId, owner } = fix!;
+    const ctx = { session: { userId: owner.userId, orgId } };
+    const [role] = await db
+      .insert(s.roles)
+      .values({ orgId, slug: `night-${randomUUID().slice(0, 8)}`, name: 'Night shift', rank: 20 })
+      .returning();
+    const roleId = role!.id;
+    await withOrgContext(db, orgId, (tx) =>
+      auditAdmin(tx, ctx, 'admin.role.update', 'role', roleId, { roleId }),
+    );
+    const listed = async () =>
+      (await owner.as.admin.adminAuditList({ limit: 200 })).find(
+        (r) => r.action === 'admin.role.update' && r.resourceId === roleId,
+      );
+    expect((await listed())?.labels.roleName).toBe('Night shift');
+
+    await db.update(s.roles).set({ name: 'Late shift' }).where(eq(s.roles.id, roleId));
+    expect((await listed())?.labels.roleName).toBe('Late shift');
+
+    await db.delete(s.roles).where(eq(s.roles.id, roleId));
+    expect((await listed())?.labels.roleName).toBe('Night shift');
   });
 });
