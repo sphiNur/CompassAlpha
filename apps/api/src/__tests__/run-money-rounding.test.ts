@@ -9,6 +9,12 @@
  * summary), report.totals and the sum of report.purchaseLines are the
  * same strings.
  *
+ * Except the cash / transfer split, by design: RunFinished's
+ * totalCash / totalTransfer cover the bought items only, the same names
+ * in report.totals (and run.history's actualCash/TransferTotal) cover
+ * everything paid, expenses too. The second test states both (review
+ * TEST2-13).
+ *
  * PG-gated (DATABASE_URL set and SKIP_PG_TESTS !== '1').
  */
 import { describe, expect, test } from 'bun:test';
@@ -173,4 +179,107 @@ describe('run money rounding (PG, D1)', () => {
       expect(sumMoney(listed.storeTotals.map((st) => st.total))).toBe('8.10');
     },
   );
+
+  test.skipIf(!SHOULD_RUN)('the cash / transfer split: items only in RunFinished', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const { orgId, slug, session } = await seedOwnedOrg(db, 'Money Split');
+    const [store] = await db
+      .insert(s.stores)
+      .values({ orgId, name: 'A', code: `A-${slug.slice(-6)}` })
+      .returning();
+    const skus = await db
+      .insert(s.skus)
+      .values(
+        ['RCE', 'OIL'].map((code) => ({
+          orgId,
+          code: `${code}-${slug.slice(-6)}`,
+          names: { en: code },
+          unit: 'kg' as const,
+          step: '1',
+        })),
+      )
+      .returning();
+    const actor: ActorCtx = {
+      userId: session.userId,
+      memberId: session.memberId,
+      permissions: session.permissions,
+    };
+    const storeId = store!.id;
+    const runLog = runStream(orgId, randomUUID());
+    const exec = (cmd: RunCommand) => runLog.exec(cmd);
+    await exec({
+      type: 'PlanRun',
+      orgId,
+      runDate: '2026-10-22',
+      today: '2026-10-22',
+      runIndex: 0,
+      sessionIds: [randomUUID()],
+      plannedItems: skus.map((sku) => ({ skuId: sku.id, qty: '1' })),
+      actor,
+    });
+    await exec({ type: 'StartPurchase', actor });
+    // Rice 3.00 in cash, oil 2.00 by transfer, a porter 1.00 in cash.
+    for (const [sku, price, paymentMethod] of [
+      [skus[0]!, '3.00', 'cash'],
+      [skus[1]!, '2.00', 'transfer'],
+    ] as const) {
+      await exec({
+        type: 'PurchaseItem',
+        skuId: sku.id,
+        supplierId: null,
+        unitPrice: price,
+        actualQty: '1',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId, qty: '1' }],
+        paymentMethod,
+        actor,
+      });
+    }
+    await exec({
+      type: 'AddRunExpense',
+      expenseId: randomUUID(),
+      label: 'porter',
+      qty: '1',
+      unitPrice: '1.00',
+      storeSplits: [{ storeId, qty: '1' }],
+      paymentMethod: 'cash',
+      receiptPhotoUrl: null,
+      reason: 'carry',
+      actor,
+    });
+    await exec({ type: 'StartDelivery', actor });
+    await exec({ type: 'DeliverToStore', storeId, actor });
+    for (const sku of skus) {
+      await exec({
+        type: 'ConfirmStoreItem',
+        storeId,
+        skuId: sku.id,
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+        actor,
+      });
+    }
+    await exec({ type: 'ConfirmStore', storeId, actor });
+    const finished = (await exec({ type: 'FinishRun', actor }))[0];
+    if (finished?.type !== 'RunFinished') throw new Error('expected RunFinished');
+
+    // The event: what the items cost, and how they were paid.
+    expect(finished.payload).toMatchObject({
+      itemsTotal: '5.00',
+      expensesTotal: '1.00',
+      totalCash: '3.00',
+      totalTransfer: '2.00',
+    });
+    // The report and the history: everything paid, the porter in cash.
+    const caller = callerFor(session);
+    const totals = await caller.report.totals({ startDate: '2026-10-22', endDate: '2026-10-22' });
+    expect(totals).toMatchObject({ total: '6.00', totalCash: '4.00', totalTransfer: '2.00' });
+    const history = await caller.run.history({ dateFrom: '2026-10-22', dateTo: '2026-10-22' });
+    expect(history.rows[0]).toMatchObject({
+      actualTotal: '6.00',
+      actualCashTotal: '4.00',
+      actualTransferTotal: '2.00',
+    });
+  });
 });
