@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Avatar, Badge, SectionLabel } from '@compass/ui';
+import { Avatar, Badge, SectionLabel, rowGroupClass } from '@compass/ui';
 import { useI18n } from '../../../../hooks/useI18n';
 
 /**
@@ -67,19 +67,23 @@ export function RoleAssigneesByStore({
             <h4 className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
               {bucket.label} ({bucket.members.length})
             </h4>
-            <ul className="flex flex-col gap-1">
+            {/* Review ADM1-23 / ADM1-24 (2026-11-12): one card, a row per
+                holder (UI-6), and a long name or @username is cut short
+                instead of running past the edge at 320 px. */}
+            <ul className={rowGroupClass} role="list">
               {bucket.members.map((a) => (
-                <li
-                  key={a.bindingId}
-                  className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline px-3 py-1.5"
-                >
+                <li key={a.bindingId} className="flex min-w-0 items-center gap-2 px-3 py-1.5">
                   <Avatar src={a.avatarUrl} name={a.displayName} size={24} />
-                  <span className="text-old-body text-[var(--c-fg)]">{a.displayName}</span>
+                  <span className="min-w-0 truncate text-old-body text-[var(--c-fg)]">
+                    {a.displayName}
+                  </span>
                   {a.tgUsername ? (
-                    <span className="text-old-label text-[var(--c-fg-muted)]">@{a.tgUsername}</span>
+                    <span className="min-w-0 truncate text-old-label text-[var(--c-fg-muted)]">
+                      @{a.tgUsername}
+                    </span>
                   ) : null}
                   {a.status === 'suspended' || a.status === 'invited' ? (
-                    <Badge tone="warn" className="ml-auto">
+                    <Badge tone="warn" className="ml-auto shrink-0">
                       {i18n.t(`people.memberStatus.${a.status}`)}
                     </Badge>
                   ) : null}

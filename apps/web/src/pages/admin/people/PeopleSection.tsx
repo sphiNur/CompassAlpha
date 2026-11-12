@@ -3,7 +3,6 @@ import {
   Avatar,
   Badge,
   Button,
-  Card,
   CardHeader,
   CardMeta,
   CardTitle,
@@ -298,10 +297,12 @@ export function PeopleSection({
             return inactive ? inactiveName(inactive) : null;
           };
           // Filter / group by store context (added 2026-05-05).
-          const renderCard = (m: (typeof rows)[number]) => {
+          // Review ADM1-23 (2026-11-12): one card, a row per member divided
+          // by hairlines (UI-6); it was a card per member.
+          const renderRow = (m: (typeof rows)[number]) => {
             const isSelf = m.userId === session?.user.id;
             return (
-              <Card as="li" key={m.memberId}>
+              <li key={m.memberId} className="min-w-0">
                 <CardHeader>
                   <div className="flex min-w-0 items-center gap-3">
                     <Avatar src={m.avatarUrl} name={m.displayName} size={36} />
@@ -376,16 +377,16 @@ export function PeopleSection({
                         // Revoking was a tap on this 18 px chip, with the verb
                         // only in a tooltip; it now sits in the member's ⋯
                         // sheet as a full-size "Revoke" button per role.
+                        // ADM1-23: the kit's Badge, not a hand-drawn pill.
                         return (
-                          <span
-                            key={r.bindingId}
-                            className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
-                          >
-                            <span className="font-semibold">{roleText.name(r)}</span>
+                          <Badge key={r.bindingId} tone="info" className="max-w-full">
+                            <span className="min-w-0 truncate font-semibold text-[var(--c-fg)]">
+                              {roleText.name(r)}
+                            </span>
                             {scopedStoreName ? (
-                              <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
+                              <span className="min-w-0 truncate">· {scopedStoreName}</span>
                             ) : null}
-                          </span>
+                          </Badge>
                         );
                       })
                     }
@@ -397,7 +398,7 @@ export function PeopleSection({
                     Permissions / Suspend / Reactivate / Remove-store /
                     Remove-org all live in the member-menu sheet at the
                     page level (state: memberMenuFor). */}
-                <div className="mt-2 flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2">
+                <div className="flex items-center gap-2 px-4 pt-2 pb-3">
                   <Button
                     size="sm"
                     variant="pearl"
@@ -474,7 +475,7 @@ export function PeopleSection({
                     ⋯
                   </Button>
                 </div>
-              </Card>
+              </li>
             );
           };
 
@@ -507,8 +508,8 @@ export function PeopleSection({
               );
             }
             return (
-              <ul className="flex flex-col gap-2" role="list">
-                {filtered.map(renderCard)}
+              <ul className={rowGroupClass} role="list">
+                {filtered.map(renderRow)}
               </ul>
             );
           }
@@ -528,8 +529,8 @@ export function PeopleSection({
             );
           }
           return (
-            <ul className="flex flex-col gap-2" role="list">
-              {orgOnly.map(renderCard)}
+            <ul className={rowGroupClass} role="list">
+              {orgOnly.map(renderRow)}
             </ul>
           );
         }}

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Badge,
   Button,
-  Card,
   CardHeader,
   CardMeta,
   CardTitle,
@@ -14,6 +13,7 @@ import {
   Select,
   Sheet,
   useToast,
+  rowGroupClass,
 } from '@compass/ui';
 import { SubscriptionStatusSchema, type SubscriptionStatus } from '@compass/contracts/schemas/auth';
 import { trpc, type RouterOutputs } from '../../../lib/trpc';
@@ -54,7 +54,9 @@ export function PlatformSection() {
         empty={<EmptyState compact title={i18n.t('platform.empty')} />}
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          // Review ADM1-23 (2026-11-12): one card, a row per workspace
+          // (UI-6); it was a card per workspace.
+          <ul className={rowGroupClass} role="list">
             {rows.map((org) => {
               const sub = org.subscription;
               const stores =
@@ -66,7 +68,7 @@ export function PlatformSection() {
                   ? `${sub.usage.members}`
                   : `${sub.usage.members}/${sub.limits.members}`;
               return (
-                <Card as="li" key={org.orgId}>
+                <li key={org.orgId} className="min-w-0">
                   <CardHeader>
                     <div className="min-w-0">
                       <CardTitle>{org.name}</CardTitle>
@@ -84,7 +86,7 @@ export function PlatformSection() {
                       {i18n.t('platform.manage')}
                     </Button>
                   </div>
-                </Card>
+                </li>
               );
             })}
           </ul>
