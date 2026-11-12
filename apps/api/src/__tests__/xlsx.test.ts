@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { crc32 as zlibCrc32 } from 'node:zlib';
-import { buildXlsx, columnName, crc32, zipStored } from '../services/xlsx';
+import { buildXlsx, cellText, columnName, crc32, zipStored } from '../services/xlsx';
 import { monthRange } from '../services/attendanceExport';
 
 const utf8 = new TextDecoder('utf-8', { fatal: true });
@@ -78,6 +78,39 @@ describe('xlsx writer', () => {
     expect(text).toContain('<c r="B2" s="2"><v>123.45</v></c>');
     expect(text).toContain('<sheet name="a b c d e f g with a very long"');
     expect(text).toContain('state="frozen"');
+  });
+
+  test('text that a spreadsheet would read as a formula gets an apostrophe (ATT-26)', () => {
+    expect(['=SUM(A1:A9)', '+998', '-1', '@cmd', '\t=1', '\r=1'].map(cellText)).toEqual([
+      "'=SUM(A1:A9)",
+      "'+998",
+      "'-1",
+      "'@cmd",
+      "'\t=1",
+      "'\r=1",
+    ]);
+    // Only at the start, and plain text stays as typed.
+    expect(['Ali', 'a=b', '09:00–18:00', '—', ''].map(cellText)).toEqual([
+      'Ali',
+      'a=b',
+      '09:00–18:00',
+      '—',
+      '',
+    ]);
+    const sheet = readStoredZip(
+      buildXlsx([
+        {
+          name: 'Days',
+          header: ['Name', 'Reason', 'Worked'],
+          rows: [['=HYPERLINK("x","y")', '\u0001@reason', -15]],
+        },
+      ]),
+    ).get('xl/worksheets/sheet1.xml')!;
+    expect(sheet).toContain(`<t xml:space="preserve">'=HYPERLINK(&quot;x&quot;,&quot;y&quot;)</t>`);
+    // A control character before it is dropped first, then checked.
+    expect(sheet).toContain(`<t xml:space="preserve">'@reason</t>`);
+    // Numbers stay numbers, negative ones too.
+    expect(sheet).toContain('<c r="C2"><v>-15</v></c>');
   });
 
   test('every entry reads back with its own size and checksum', () => {
