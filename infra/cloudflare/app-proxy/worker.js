@@ -195,11 +195,38 @@ function json(body, status = 200) {
   });
 }
 
-async function currentOrigin(env) {
+// The background origin refresh in flight in this isolate, if any.
+let refreshing = null;
+
+/**
+ * The origin to proxy to, or null when none is known.
+ *
+ * Review OPS-28: an isolate that has an origin answers with it at once
+ * and asks ntfy in the background (`ctx.waitUntil`) once it is older than
+ * ORIGIN_CACHE_MS; only an isolate without one waits for ntfy. Every 30 s
+ * one request used to wait for the poll, up to its 2.5 s timeout when
+ * ntfy was slow. A tunnel that changed hostname is picked up by the
+ * refresh, as before at most one cache period late.
+ */
+async function currentOrigin(env, ctx) {
   if (originCache.url && Date.now() - originCache.readAt < ORIGIN_CACHE_MS) {
     return originCache.url;
   }
+  if (originCache.url && ctx?.waitUntil) {
+    if (!refreshing) {
+      refreshing = refreshOrigin(env)
+        .catch((error) => console.warn('origin refresh failed', error))
+        .finally(() => {
+          refreshing = null;
+        });
+      ctx.waitUntil(refreshing);
+    }
+    return originCache.url;
+  }
+  return refreshOrigin(env);
+}
 
+async function refreshOrigin(env) {
   // The server cannot reach workers.dev, so it publishes the current
   // quick-tunnel hostname to a private ntfy topic. This is the primary
   // rendezvous; KV/env remain a manual fallback.
@@ -244,14 +271,17 @@ async function currentOrigin(env) {
 
   // ntfy slow or down (2026-11-06: about one request in three timed out
   // and fell through to a stale KV/env host, a Cloudflare 1016/530). An
-  // origin this isolate already accepted beats KV and wrangler.toml.
+  // origin this isolate already accepted beats KV.
   if (lastAccepted) {
     originCache = { url: lastAccepted, readAt: Date.now() };
     return lastAccepted;
   }
+  // Review OPS-28: wrangler.toml no longer names a fallback host; the one
+  // it named was a quick tunnel long gone, so requests went to a dead
+  // host. ORIGIN_URL still works when set (a fixed origin, a test).
   const stored = await env.COMPASS_ORIGIN.get('url');
-  const url = stored || env.ORIGIN_URL;
-  originCache = { url, readAt: Date.now() };
+  const url = stored || env.ORIGIN_URL || null;
+  if (url) originCache = { url, readAt: Date.now() };
   return url;
 }
 
@@ -306,7 +336,13 @@ export default {
       return json({ ok: true, url: found.url });
     }
 
-    const origin = new URL(await currentOrigin(env));
+    const originUrl = await currentOrigin(env, ctx);
+    if (!originUrl) {
+      // Nothing published yet and nothing in KV: say so instead of
+      // failing on a host that does not exist.
+      return json({ ok: false, error: 'the app server has not announced its address yet' }, 503);
+    }
+    const origin = new URL(originUrl);
     const target = proxyTarget(incoming, origin);
     if (!target) return json({ ok: false, error: 'bad request path' }, 400);
 
@@ -482,4 +518,5 @@ export function resetStateForTests() {
   highestSignedTs = 0;
   lastAccepted = null;
   warnedUnsigned = false;
+  refreshing = null;
 }

@@ -1,0 +1,23 @@
+# The workspace every CI job starts from (review OPS-30: each job used to
+# repeat these steps). Check the repository out first: this action lives
+# in it.
+name: Set up the workspace
+description: pnpm, Node 26, bun from .bun-version, and the workspace dependencies from the lockfile.
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 26
+        cache: pnpm
+
+    - name: Install bun (matches .bun-version)
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .bun-version
+
+    - name: Install workspace deps
+      shell: bash
+      run: pnpm install --frozen-lockfile

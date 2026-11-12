@@ -97,11 +97,15 @@ START=$(date +%s)
 # The password goes through the environment (pg-url.sh): on the command
 # line every local account could read it from ps / /proc for the whole
 # dump, and the backup role bypasses RLS (security scan F11).
+# Review OPS-34: a table someone holds an exclusive lock on (a long
+# migration, a stuck ALTER) fails the dump after a minute, loudly, instead
+# of hanging it; while a run hangs, the timer starts no other.
 pg_url_split "$DUMP_URL"
 pg_dump \
   --format=custom \
   --no-owner \
   --no-privileges \
+  --lock-wait-timeout=60s \
   --file="$DUMP" \
   "$PG_URL_NOPASS"
 

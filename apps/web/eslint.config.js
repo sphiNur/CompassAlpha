@@ -9,14 +9,14 @@
  *
  * CI runs `pnpm lint`. react-hooks/rules-of-hooks and exhaustive-deps
  * are enforced in every file (the baseline of older files that had
- * exhaustive-deps off is gone: review ADM1-29, 2026-11-12). The globals
- * and rules for src/ are shared with packages/ui (eslint.shared.mjs at
- * the repository root, OPS-19).
+ * exhaustive-deps off is gone: review ADM1-29, 2026-11-12). The rules
+ * for src/ are shared with packages/ui (eslint.shared.mjs at the
+ * repository root, OPS-19).
  */
 import js from '@eslint/js';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
-import { BROWSER_GLOBALS, SOURCE_RULES, TEST_RULES } from '../../eslint.shared.mjs';
+import { SOURCE_RULES, TEST_RULES } from '../../eslint.shared.mjs';
 
 /** 4c below: each layer of src and the layers above it, top layer first. */
 const LAYERS = [
@@ -100,7 +100,6 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: BROWSER_GLOBALS,
     },
     plugins: { 'react-hooks': reactHooks },
     rules: SOURCE_RULES,

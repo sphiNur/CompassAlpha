@@ -1,12 +1,8 @@
 [Unit]
 Description=CompassAlpha API (Hono + tRPC on Bun)
-Documentation=https://github.com/<org>/CompassAlpha
+Documentation=https://github.com/sphiNur/CompassAlpha/blob/main/docs/RUNBOOK.md
 After=network-online.target postgresql.service
 Wants=network-online.target
-# Soft requirement: api can start without redis; if redis is down,
-# rate limiting falls back to its in-memory store and bot delivery
-# queues retry. Hard-binding here would create a startup race.
-Wants=redis-server.service
 
 [Service]
 Type=simple

@@ -9,7 +9,8 @@
     "./client": "./src/client.ts",
     "./rls": "./src/rls.ts",
     "./env": "./src/repoEnv.ts",
-    "./seed-data": "./src/seed-data.ts"
+    "./seed-data": "./src/seed-data.ts",
+    "./app-role": "./src/appRole.ts"
   },
   "scripts": {
     "generate": "echo 'Refused: migrations are hand-written (CONTRIBUTING.md section 5). meta/ holds only the 0000 snapshot, so drizzle-kit generate would diff against the first schema and emit a wrong, possibly destructive, migration.' >&2 && exit 1",

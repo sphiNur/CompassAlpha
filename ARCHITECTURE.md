@@ -52,7 +52,7 @@
 | 边缘           | Cloudflare Worker `app-proxy`（TLS、源站地址存 KV）→ cloudflared quick tunnel → nginx :80 → api:3000；nginx 配置还不在仓库（review OPS-23） |
 | 数据库         | PostgreSQL 18，启用 RLS                                                                                                                     |
 | 队列 / Pub-Sub | PostgreSQL outbox 表（**未用 Redis Pub/Sub**）                                                                                              |
-| 缓存 / 限流    | Redis 8（限流目前用进程内 Map，Redis 留作 M2 迁移目标）                                                                                     |
+| 缓存 / 限流    | 进程内 Map（还没有 Redis：M2 迁移目标，review OPS-29）                                                                                      |
 | 对象存储       | S3 兼容（兼容 MinIO / R2 / Tencent COS），自研 SigV4 presigned PUT                                                                          |
 | 后端单元       | systemd: `compass-api`、`compass-worker`、`compass-backup.{service,timer}`、`compass-app-tunnel`、`compass-origin-watch.{service,timer}`    |
 | 备份           | 每日 03:30 UTC `pg_dump -Fc` + 校验 + 14d 轮转 + 可选 S3 上传                                                                               |

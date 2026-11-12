@@ -1,14 +1,15 @@
 # Local development services (review OPS-36, 2026-11).
 #
-#   docker compose -f infra/compose/docker-compose.dev.yml up -d                     # Postgres + Redis
+#   docker compose -f infra/compose/docker-compose.dev.yml up -d                     # Postgres
 #   docker compose -f infra/compose/docker-compose.dev.yml --profile storage up -d   # + MinIO, for photo uploads
 #   docker compose -f infra/compose/docker-compose.dev.yml --profile tools up -d     # + Adminer
 #
-# Postgres and Redis run the production server's exact versions; bump them
-# together with CLAUDE.md and CI. The images are Alpine: its libc (musl)
-# sorts text differently from production's glibc, so an ORDER BY on Russian
-# or Uzbek names can come out in another order here. CI runs the Debian
-# image, which uses glibc like production.
+# Postgres runs the production server's exact version; bump it together
+# with CLAUDE.md and CI. No Redis: no code uses one (review OPS-29). The
+# images are Alpine: its libc (musl) sorts text differently from
+# production's glibc, so an ORDER BY on Russian or Uzbek names can come out
+# in another order here. CI runs the Debian image, which uses glibc like
+# production.
 #
 # Every port listens on this machine only: the passwords are the defaults.
 services:
@@ -25,17 +26,6 @@ services:
       - compass_pgdata:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U compass']
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis:
-    image: redis:8.10.3-alpine
-    container_name: compass-redis
-    ports:
-      - '127.0.0.1:6380:6379'
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
       retries: 5

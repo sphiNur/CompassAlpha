@@ -44,9 +44,11 @@ updates:
           - '@radix-ui/*'
     ignore:
       # Pin Bun via .bun-version — Dependabot doesn't manage that file.
+      # Every package.json names the same exact @types/bun; bump them
+      # with .bun-version (review OPS-35).
       - dependency-name: '@types/bun'
       # The Node types must describe the Node that actually runs the
-      # tooling (20). Newer majors type-check calls to APIs that are not
+      # tooling (26). Newer majors type-check calls to APIs that are not
       # there.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']

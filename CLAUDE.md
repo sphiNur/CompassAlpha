@@ -8,7 +8,7 @@ Read `README.md` (setup, layout), `CONTRIBUTING.md` (the end-to-end feature reci
 
 ## Commands
 
-Bun 1.4.4 (`.bun-version`), pnpm 12.16 (`packageManager`), Node 26 LTS, PostgreSQL 18, Redis 8.10. Production, CI and dev run the same versions; bump them together. Dev compose maps Postgres to 5433 and Redis to 6380. pnpm 12 blocks dependency build scripts unless listed under `allowBuilds` in `pnpm-workspace.yaml`.
+Bun 1.4.4 (`.bun-version`), pnpm 12.16 (`packageManager`), Node 26 LTS, PostgreSQL 18. Production, CI and dev run the same versions; bump them together. Dev compose maps Postgres to 5433. No code uses Redis or OpenTelemetry yet (M2). pnpm 12 blocks dependency build scripts unless listed under `allowBuilds` in `pnpm-workspace.yaml`.
 
 ```bash
 pnpm type-check                      # tsc in every package (CI)

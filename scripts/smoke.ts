@@ -13,7 +13,8 @@
  *   - Static SPA: GET /, /assets/<hashed>.js + .css all 200, html references match dist
  *   - API health: /health/live, /health/version
  *   - tRPC public routes: system.health
- *   - tRPC auth-required routes succeed when authenticated, fail (401) anonymously
+ *   - tRPC auth-required routes refuse an anonymous caller (401); the smoke
+ *     never signs in
  *   - HTML cache headers are no-store (regression check on the iOS WebView fix)
  *   - JS bundle contains expected user-facing strings (catch deploy-of-stale-bundle)
  *   - Realtime: a real WebSocket upgrade through BASE (token-less probe)
@@ -89,9 +90,12 @@ async function checkSpaShell() {
     const jsRes = await get(jsMatch[0]);
     record(`GET ${jsMatch[0]} -> 200`, jsRes.status === 200);
     const jsCC = jsRes.headers.get('cache-control') ?? '';
+    // Review OPS-39: any `max-age` passed, max-age=0 too. The Worker keeps
+    // only `immutable` answers in its edge cache.
+    const maxAge = Math.max(0, ...[...jsCC.matchAll(/max-age=(\d+)/g)].map((m) => Number(m[1])));
     record(
-      'JS asset has long-cache header (immutable)',
-      jsCC.includes('immutable') || jsCC.includes('max-age'),
+      'JS asset has a long-cache header (immutable, max-age of a day or more)',
+      /\bimmutable\b/.test(jsCC) && maxAge >= 86_400,
       `Cache-Control=${jsCC}`,
     );
     const js = await jsRes.text();

@@ -10,11 +10,12 @@
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { APP_SCHEMAS, appRoleSql } from '@compass/db/app-role';
 import postgres from 'postgres';
 import { ADMIN_TG_ID, APP_ROLE, DATABASE_URL } from './env';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const SCHEMAS = ['auth', 'inventory', 'domain', 'read_model', 'ops', 'sync', 'drizzle'];
+const SCHEMAS = [...APP_SCHEMAS, 'drizzle'];
 
 function pnpm(args: string[]): void {
   execFileSync('pnpm', args, {
@@ -51,19 +52,7 @@ export default async function globalSetup(): Promise<void> {
   // The role the api runs as; see APP_DATABASE_URL.
   const owner = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
   try {
-    const schemas = SCHEMAS.filter((name) => name !== 'drizzle').join(', ');
-    await owner.unsafe(`
-      DO $$
-      BEGIN
-        CREATE ROLE ${APP_ROLE} LOGIN PASSWORD '${APP_ROLE}' NOSUPERUSER NOBYPASSRLS;
-      EXCEPTION WHEN duplicate_object THEN
-        ALTER ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_ROLE}' NOSUPERUSER NOBYPASSRLS;
-      END $$;
-      GRANT USAGE ON SCHEMA ${schemas}, public TO ${APP_ROLE};
-      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schemas} TO ${APP_ROLE};
-      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schemas} TO ${APP_ROLE};
-      GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schemas}, public TO ${APP_ROLE};
-    `);
+    await owner.unsafe(appRoleSql(APP_ROLE));
   } finally {
     await owner.end({ timeout: 5 });
   }
