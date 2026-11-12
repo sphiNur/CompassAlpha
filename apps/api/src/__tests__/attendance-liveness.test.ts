@@ -107,6 +107,13 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     ] as const) {
       await expectError(clock(f.staff(), { left, right }), 'attendance.errors.livenessFailed');
     }
+    // What failed comes as one comma-separated string, as for the blink
+    // and the mouth (review ATT-30: the turns sent a list, which the phone
+    // drops: it reads only strings and numbers from the details).
+    const refused = await errorOf(() => clock(f.staff(), { left: 'Bob:left', right: 'Bob:right' }));
+    expect(
+      (refused?.cause as { context?: { failures?: unknown } } | undefined)?.context?.failures,
+    ).toBe('otherPerson');
     expect(await recorded(f.staffId)).toEqual([]);
     expect(await botTemplates()).toEqual(before);
   });

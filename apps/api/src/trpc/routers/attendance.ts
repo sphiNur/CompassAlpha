@@ -475,27 +475,23 @@ async function knownFaces(
 /**
  * Risk signals before a punch: a phone other than the bound one, and the
  * 1-in-3 spot check (keyed on the person, the store's day and how many
- * punches they made there today).
+ * punches they made there today). `recent`: their punches there in the
+ * last two days (recentPunches), which the challenge reads once.
  */
-async function punchRisk(tx: DB, session: Session, store: StoreRow, deviceId: string | null) {
+async function punchRisk(
+  tx: DB,
+  session: Session,
+  store: StoreRow,
+  deviceId: string | null,
+  recent: readonly { at: Date }[],
+  now: Date,
+) {
   const device = await tx.query.attendanceDevices.findFirst({
     where: (d, { eq: eq2 }) => eq2(d.memberId, session.memberId),
   });
   const newDevice = !!device && (!deviceId || device.deviceHash !== hashDeviceId(deviceId));
   const tz = tzOf(store, session);
-  const today = todayInTz(tz);
-  const since = new Date(Date.now() - 2 * DAY);
-  const recent = await tx
-    .select({ at: s.attendancePunches.punchedAt })
-    .from(s.attendancePunches)
-    .where(
-      and(
-        eq(s.attendancePunches.memberId, session.memberId),
-        eq(s.attendancePunches.storeId, store.id),
-        isNull(s.attendancePunches.voidedAt),
-        gte(s.attendancePunches.punchedAt, since),
-      ),
-    );
+  const today = todayInTz(tz, now);
   const punchesToday = recent.filter((r) => dateInTz(r.at, tz) === today).length;
   return { newDevice, spot: spotCheck(session.memberId, today, punchesToday) };
 }
@@ -893,10 +889,15 @@ function latestPunch<T extends { at: Date }>(punches: readonly T[]): T | null {
  * The overtime minutes a clock-out by this member would carry now (0: none,
  * or their next punch is a clock-in). The phone asks why before it opens
  * the camera (2026-11-07); the punch decides again at its own time.
+ * `recent`: their punches there in the last two days (recentPunches).
  */
-async function clockOutOvertime(tx: DB, memberId: string, storeId: string): Promise<number> {
-  const now = new Date();
-  const recent = await recentPunches(tx, memberId, storeId, now);
+async function clockOutOvertime(
+  tx: DB,
+  memberId: string,
+  storeId: string,
+  recent: readonly { kind: 'in' | 'out'; at: Date }[],
+  now: Date,
+): Promise<number> {
   if (rules.nextPunchKind(recent, now) !== 'out') return 0;
   const policy = policyView(await loadPolicy(tx, storeId));
   const overtime = await overtimeFor(tx, memberId, storeId, now, policy.overtimeAfterMinutes);
@@ -1054,15 +1055,18 @@ export const attendanceRouter = router({
       const session = ctx.session!;
       const { turns, overtimeMinutes } = await ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.clock');
+        // Nobody vouches for a borrowed phone: always the turns. Whose
+        // clock-out a colleague's is, only their face says.
+        if (input.identify) return { turns: true, overtimeMinutes: 0 };
+        // Their last two days' punches here, read once for both questions
+        // below (review ATT-30: each read them).
+        const now = new Date();
+        const recent = await recentPunches(tx, session.memberId, store.id, now);
         // A clock-out well past the shift: the phone asks why first, so
-        // the punch goes out straight after the camera. Whose clock-out a
-        // colleague's is, only their face says.
-        const overtimeMinutes = input.identify
-          ? 0
-          : await clockOutOvertime(tx, session.memberId, store.id);
-        // Nobody vouches for a borrowed phone: always the turns.
-        if (input.identify || input.force) return { turns: true, overtimeMinutes };
-        const risk = await punchRisk(tx, session, store, input.deviceId ?? null);
+        // the punch goes out straight after the camera.
+        const overtimeMinutes = await clockOutOvertime(tx, session.memberId, store.id, recent, now);
+        if (input.force) return { turns: true, overtimeMinutes };
+        const risk = await punchRisk(tx, session, store, input.deviceId ?? null, recent, now);
         return { turns: risk.newDevice || risk.spot, overtimeMinutes };
       });
       const challenge = await signLivenessToken({
@@ -1150,17 +1154,24 @@ export const attendanceRouter = router({
     // A borrowed phone always asks for the turns: nobody else vouches for it.
     if (borrowed && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
     let live: LivenessVerdict;
+    // The two turns' photos, decoded once and kept with the punch.
+    let turnPhotos: { left: Buffer; right: Buffer } | null = null;
     if (turnsAsked) {
       if (!input.liveness.left || !input.liveness.right) fail('BAD_REQUEST', 'livenessRequired');
       const leftBytes = photoBytes(input.liveness.left);
       const rightBytes = photoBytes(input.liveness.right);
+      turnPhotos = { left: leftBytes, right: rightBytes };
       const left = await faceFeature(leftBytes);
       const right = await faceFeature(rightBytes);
       live = evaluateLiveness(checked, left, right);
       if (live.result === 'unchecked') fail('CONFLICT', 'faceCheckUnavailable');
-      // Face only: a failed check is refused; the person tries again.
+      // Face only: a failed check is refused; the person tries again. The
+      // failures go as one comma-separated string, as for the blink and
+      // the mouth above (review ATT-30: here they were a list).
       if (live.result === 'fail') {
-        fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
+        fail('BAD_REQUEST', 'livenessFailed', {
+          context: { failures: live.failures.join(',') },
+        });
       }
       if (left?.found && right?.found) {
         prints.push(
@@ -1211,7 +1222,8 @@ export const attendanceRouter = router({
       const now = new Date();
       // The place, where the store asks for it.
       const photos = {
-        face: photoBytes(shots.face),
+        // Decoded once, before the face check (review ATT-30).
+        face: faceBytes,
         // A place photo from a phone still on the old page is not kept.
         scene: null,
       };
@@ -1382,10 +1394,10 @@ export const attendanceRouter = router({
         { kind: 'face', bytes: photos.face },
       ];
       if (photos.scene) frames.push({ kind: 'scene', bytes: photos.scene });
-      if (turnsAsked && input.liveness?.left && input.liveness.right) {
+      if (turnPhotos) {
         frames.push(
-          { kind: 'left', bytes: photoBytes(input.liveness.left) },
-          { kind: 'right', bytes: photoBytes(input.liveness.right) },
+          { kind: 'left', bytes: turnPhotos.left },
+          { kind: 'right', bytes: turnPhotos.right },
         );
       }
       await tx.insert(s.attendancePunchFrames).values(
