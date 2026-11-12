@@ -32,8 +32,8 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
-  useIsOrgAdmin,
 } from './CatalogParts';
+import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import {
   EMPTY_NAMES,
   cleanNames,

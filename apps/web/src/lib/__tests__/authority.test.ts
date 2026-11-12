@@ -99,6 +99,15 @@ describe('canRevokeRole (CMP-ADM-1)', () => {
   test('an admin never removes their own admin role', () => {
     expect(canRevokeRole(admin, 'olga', g('admin', 80))).toBe(false);
   });
+  test('nor their own custom org-tier role: the rank decides, not the slug (ADM1-19)', () => {
+    const owner: Actor = { ...admin, userId: 'sam', bindings: [g('super_admin', 100)] };
+    expect(canRevokeRole(owner, 'sam', g('regional-head', 85))).toBe(false);
+    expect(canRevokeRole(owner, 'sam', g('night-lead', 40))).toBe(true);
+    // An older server sends no rank: the slugs still count.
+    expect(canRevokeRole(owner, 'sam', { slug: 'admin', scopeType: 'global', scopeId: null })).toBe(
+      false,
+    );
+  });
   test('a global binding needs an org admin, whatever the rank (ADM1-17)', () => {
     const legacyStaff = g('staff', 10);
     expect(canRevokeRole(manager, 'dana', legacyStaff)).toBe(false);

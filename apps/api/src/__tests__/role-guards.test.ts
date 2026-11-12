@@ -57,7 +57,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       fix!.admin.admin.roleCreate({ slug: 'amender', name: 'Amender', rank: 70, permissionKeys: ['system.impersonate'] }),
     );
     expect(err?.code).toBe('FORBIDDEN');
-    expect(err?.message).toBe('auth.errors.missingPermission');
+    expect(err?.message).toBe('admin.errors.roleKeyNotHeld');
     expect(
       await errorOf(() =>
         fix!.admin.admin.roleCreate({ slug: 'helper', name: 'Helper', rank: 20, permissionKeys: ['order.draft'] }),
@@ -76,7 +76,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const err = await errorOf(() =>
       admin.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...current, 'system.impersonate'] }),
     );
-    expect(err?.message).toBe('auth.errors.missingPermission');
+    expect(err?.message).toBe('admin.errors.roleKeyNotHeld');
     expect(await errorOf(() => admin.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: current }))).toBeNull();
   });
 
@@ -103,7 +103,11 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       kate.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
     );
     expect(createErr?.code).toBe('FORBIDDEN');
-    expect(createErr?.message).toBe('auth.errors.missingPermission');
+    // ADM1-18: the refusal says which key.
+    expect(createErr?.message).toBe('admin.errors.roleKeyNotHeld');
+    expect((createErr?.cause as { context?: unknown } | undefined)?.context).toEqual({
+      permission: 'run.amend',
+    });
 
     const managerKeys = (
       await db
@@ -115,7 +119,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       kate.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
     );
     expect(updateErr?.code).toBe('FORBIDDEN');
-    expect(updateErr?.message).toBe('auth.errors.missingPermission');
+    expect(updateErr?.message).toBe('admin.errors.roleKeyNotHeld');
     const after = await db
       .select({ key: s.rolePermissions.permissionKey })
       .from(s.rolePermissions)

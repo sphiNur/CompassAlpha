@@ -185,7 +185,6 @@ export const uz = {
   'ops.maint.resetSheetBody': 'Nima oʻchirilishini koʻrib chiqing, keyin tasdiqlang.',
   'ops.maint.confirmPurgeTitle': 'Tozalashni tasdiqlang',
   'people.readOnlyStore': 'Faqat koʻrish',
-  'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Ish maydoni darajasidagi aʼzolar yoʻq',
   'people.orgLevelEmptyBody':
     'Aniq doʻkonga biriktirilmagan administrator va superadminlar shu yerda chiqadi.',
@@ -209,6 +208,7 @@ export const uz = {
     'Bu rol aʼzolarga biriktirilgan, shuning uchun darajasi {rank} chegarasidan oʻta olmaydi: {rank} va undan yuqori rol butun ish maydoniga, undan pasti alohida doʻkonlarga tegishli.',
   'people.roleHasKeysYouLack': 'Bu rolda sizda yoʻq ruxsatlar bor, uni bu yerda bera olmaysiz.',
   'people.roleNameKeysYouLack': '{name} (sizda yoʻq ruxsatlar bor)',
+  'people.roleKeysYouLackBadge': 'sizda yoʻq ruxsatlar bor',
   'people.rolesOfMember': 'Rollar',
   'people.revokeRole': 'Olib tashlash',
   'people.revokeRoleAria': '{name}: «{role}» rolini olib tashlash',
@@ -219,6 +219,10 @@ export const uz = {
     'Telegram ID 4–15 ta raqamdan iborat, telefon raqami yoki @foydalanuvchi_nomi emas.',
   'people.deleteRole': 'Rolni oʻchirish',
   'people.confirmDeleteRole': '«{name}» roli oʻchirilsinmi?',
+  'people.roleChangedElsewhere': 'Bu rolni hozirgina boshqa kishi oʻzgartirdi',
+  'people.roleChangedElsewhereBody':
+    'Hozir saqlasangiz, ularning oʻzgarishlari siznikiga almashtiriladi.',
+  'people.roleLoadLatest': 'Yangilash',
   'people.noRole': 'Rol yoʻq',
   'people.orgLevelLabel': 'Ish maydoni darajasi',
   'people.storeGone': '— doʻkon yoʻq —',
@@ -454,6 +458,7 @@ export const uz = {
   'people.permissionCount': '{n} ta ruxsat',
   'people.permissionsHeading': 'Ruxsatlar ({n})',
   'people.assigneesHeading': 'Tayinlanganlar · {n}',
+  'people.assigneesGroup': '{scope} ({n})',
   'people.effectiveOverridesLine': '{eff} ta amalda · {ov} ta alohida sozlama',
   'ops.history.contributorCount': '{n} ta yuboruvchi',
   'admin.clone.toastCloned': '{n} ta rol biriktirmasi klonlandi',
@@ -1034,8 +1039,13 @@ export const uz = {
     'Bu rol hali aʼzolarga biriktirilgan — avval ularni qaytarib oling.',
   'admin.errors.rankTierChangeHasBindings':
     'Bu rol hali aʼzolarga biriktirilgan — darajasi {rank} chegarasidan oʻta olmaydi. Avval ularni qaytarib oling yoki yangi rol yarating.',
-  'admin.errors.permissionNotFound': 'Bunday ruxsat yoʻq.',
   'admin.errors.notAdminOfStore': 'Bu doʻkon administratori siz emas — bu amalni bajara olmaysiz.',
+  'admin.errors.targetOutranksYou':
+    'Bu kishi sizning darajangizda yoki undan yuqori, shuning uchun bu oʻzgarishni qila olmaysiz.',
+  'admin.errors.roleOutranksYou':
+    'Bu rol sizning darajangizda yoki undan yuqori, shuning uchun uni oʻzgartira yoki oʻchira olmaysiz.',
+  'admin.errors.roleKeyNotHeld':
+    '«{permission}» ruxsati butun ish maydonida sizda yoʻq, shuning uchun uni rolga qoʻsha olmaysiz.',
   'admin.errors.memberNotInSourceStore':
     'U manba doʻkonida yoʻq, undan oʻtkazib boʻlmaydi; uni toʻgʻridan-toʻgʻri yangi doʻkonga biriktiring.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

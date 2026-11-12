@@ -508,7 +508,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
         memberId: peer!.id,
         displayName: 'Hijacked',
       }),
-    ).rejects.toThrow('auth.errors.cannotRevokeEqualOrHigher');
+    ).rejects.toThrow('admin.errors.targetOutranksYou');
     await callerFor(adminSession()).admin.memberSetDisplayName({
       memberId: adminMemberId,
       displayName: 'Admin Renamed Self',

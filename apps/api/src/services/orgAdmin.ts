@@ -6,9 +6,10 @@
  * contain other permissions, but must never turn into an organization-wide
  * bypass when their flat session permissions are assembled.
  */
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import { bindingIsLive, overrideIsLive } from './liveGrants';
 
 /**
  * Resolve one permission strictly from active GLOBAL persisted grants.
@@ -35,7 +36,7 @@ export async function hasGlobalPermission(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'global'),
           eq(s.rolePermissions.permissionKey, permissionKey),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
         ),
       ),
     db
@@ -46,10 +47,7 @@ export async function hasGlobalPermission(
           eq(s.memberPermissionOverrides.memberId, memberId),
           eq(s.memberPermissionOverrides.permissionKey, permissionKey),
           eq(s.memberPermissionOverrides.scopeType, 'global'),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
+          overrideIsLive(now),
         ),
       ),
   ]);

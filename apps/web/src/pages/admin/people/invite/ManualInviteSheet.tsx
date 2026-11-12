@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
-  Checkbox,
   Field,
   FieldGroup,
   Input,
@@ -14,11 +13,12 @@ import {
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { TG_USER_ID_MESSAGE } from '@compass/contracts/limits';
 import { trpc } from '../../../../lib/trpc';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
 import { tgIdProblem } from '../../../../lib/adminFields';
 import { canGrantRole, rolePassesOn, type Actor } from '../../../../lib/authority';
-import { type InviteDraft, StoreName } from '../shared';
+import { type InviteDraft } from '../shared';
+import { StoreCheckList } from '../StoreCheckList';
 
 export function ManualInviteSheet({
   mode = 'tgid',
@@ -46,14 +46,10 @@ export function ManualInviteSheet({
   // (admin / super_admin) get hidden when the actor isn't a global
   // admin — a store-scoped manager has no business creating org-tier
   // members; the server gate would reject anyway.
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   // 2026-10-21 audit CA-16 (A-10): explicit org.admin marker, not the
   // "admin of every visible store" heuristic.
-  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isGlobalAdmin = useIsOrgAdmin();
 
   const eligibleStores = useMemo(
     () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
@@ -102,10 +98,11 @@ export function ManualInviteSheet({
   }, [open]);
   const tgShown = tgProblem === 'notDigits' || (tgTouched && tgProblem === 'length');
   const tgIdValid = draft ? draft.tgUserId.trim() !== '' && tgProblem === null : false;
-  // Adminish roles bypass the store check at the server side, so we
-  // shouldn't force the admin to pick a store for them.
-  const isAdminRole = draft?.roleSlug === 'admin' || draft?.roleSlug === 'super_admin';
-  const requiresStore = !isAdminRole;
+  // Org-tier roles bypass the store check at the server side, so we
+  // shouldn't force the admin to pick a store for them. Review ADM1-19:
+  // by rank, as the server decides (a custom role can be org-tier too).
+  const isOrgTierRole = (pickedRole?.rank ?? 0) >= ADMIN_RANK;
+  const requiresStore = !isOrgTierRole;
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
   const canSubmit = (isLink || tgIdValid) && (!requiresStore || hasStore) && !pickedRoleBlocked;
   // DX-ADM-28: typed id / name or a picked role is input worth asking about.
@@ -172,6 +169,10 @@ export function ManualInviteSheet({
           >
             {rolesQuery.isLoading ? (
               <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
+            ) : rolesQuery.isError && !rolesQuery.data ? (
+              // Review ADM1-22 (2026-11-12): a failed load left only "no
+              // role yet" to pick.
+              <QueryErrorBanner query={rolesQuery} />
             ) : (
               <Select
                 value={draft.roleSlug}
@@ -210,31 +211,28 @@ export function ManualInviteSheet({
                   {i18n.t('admin.banner.noStoresToInviteInto.body')}
                 </Banner>
               ) : (
-                <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                  {eligibleStores.map((st) => {
-                    const checked = draft.storeIds.includes(st.id);
-                    return (
-                      <Checkbox
-                        key={st.id}
-                        className="px-2"
-                        checked={checked}
-                        label={<StoreName store={st} />}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            storeIds: e.target.checked
-                              ? [...draft.storeIds, st.id]
-                              : draft.storeIds.filter((id) => id !== st.id),
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </div>
+                <StoreCheckList
+                  stores={eligibleStores}
+                  isChecked={(st) => draft.storeIds.includes(st.id)}
+                  onChange={(st, checked) =>
+                    setDraft({
+                      ...draft,
+                      storeIds: checked
+                        ? [...draft.storeIds, st.id]
+                        : draft.storeIds.filter((id) => id !== st.id),
+                    })
+                  }
+                />
               )}
               <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('admin.invite.staffNeedStoreHint')}
-                {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
+                {/* ADM1-25: two sentences joined as the language joins them
+                    (no space after 。 in Chinese). */}
+                {isGlobalAdmin
+                  ? i18n.t('admin.invite.staffNeedStoreHint')
+                  : i18n.t('common.twoSentences', {
+                      first: i18n.t('admin.invite.staffNeedStoreHint'),
+                      second: i18n.t('admin.invite.onlyYourStoresHint'),
+                    })}
               </p>
             </FieldGroup>
           ) : (

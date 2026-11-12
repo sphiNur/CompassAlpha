@@ -1,6 +1,6 @@
 /** The organisation's overview and its finance settings. */
 import { TRPCError } from '@trpc/server';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { CLIENT_FAULT_MESSAGE } from '@compass/contracts';
@@ -8,7 +8,9 @@ import { TAX_RATE_MESSAGE, TAX_RATE_RE, taxRateProblem } from '@compass/contract
 import { authedProcedure } from '../../trpc';
 import { requireAdmin, requireOrgAdmin } from './guards';
 import { getAdminReadScope, visibleMemberIds, runTouchesStores } from './scope';
+import { broadcastPeople } from './notify';
 import { auditAdmin } from '../../../services/adminAudit';
+import { orgToday } from '../../../services/timeZone';
 
 export const overviewProcedures = {
   /** Org-level dashboard summary. */
@@ -65,14 +67,18 @@ export const overviewProcedures = {
             ...sessionInScope,
           ),
         );
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      // Review ADM1-35 (2026-11-12): "Orders / 7 days" counts orders
+      // dated in the organisation's last seven days, today included. It
+      // counted orders changed in the last 7×24 hours of the server's
+      // clock, so an old order edited today was one of them.
+      const today = orgToday(ctx.session);
       const [ordersThisWeek] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.orderSessionsV)
         .where(
           and(
             eq(s.orderSessionsV.orgId, orgId),
-            gte(s.orderSessionsV.updatedAt, sevenDaysAgo),
+            sql`${s.orderSessionsV.orderDate} >= (${today}::date - interval '6 days')`,
             ...sessionInScope,
           ),
         );
@@ -91,9 +97,10 @@ export const overviewProcedures = {
   //
   // Read-only `overview` already returns the org name + ID. M1.17
   // adds an editor for the financial trio (currency, tax rate,
-  // prices_include_tax). Gated on users.manage — these are
-  // organization-wide policy levers that should never be touched by
-  // a store manager unilaterally. Effect:
+  // prices_include_tax). Gated on org.admin (requireOrgAdmin; review
+  // ADM1-28: this said users.manage) — these are organization-wide
+  // policy levers that should never be touched by a store manager
+  // unilaterally. Effect:
   //
   //   - Mutating `currency` does NOT re-denominate historical money
   //     columns. It only shifts the suffix the FE renders going
@@ -135,6 +142,10 @@ export const overviewProcedures = {
           })
           .where(eq(s.organizations.id, orgId));
         await auditAdmin(tx, ctx, 'admin.orgFinanceUpdate', 'organization', orgId, input);
+        // Review ADM1-35 (2026-11-12): the currency and tax settings are
+        // in everyone's session. Only the admin who saved re-read theirs;
+        // people.changed makes every open client re-read it.
+        broadcastPeople(orgId);
         return { ok: true as const };
       });
     }),

@@ -42,10 +42,22 @@ export async function planInvite(
 ): Promise<InvitePlan> {
   const orgId = ctx.session!.orgId;
   const storeIds = [...new Set(input.storeIds)];
+  const slug = input.roleSlug;
+  const pickedRole = slug
+    ? await tx.query.roles.findFirst({
+        where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, slug)),
+      })
+    : null;
+  if (slug && !pickedRole) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
+  }
   // SECURITY (2026-05-04): someone without an admin role needs a store, or
   // every store-scoped query comes back empty for them: active, but locked
-  // out. Admins see every store through the admin bypass.
-  const isAdminInvite = input.roleSlug === 'admin' || input.roleSlug === 'super_admin';
+  // out. Admins see every store through the admin bypass. Review ADM1-19
+  // (2026-11-12): an org-tier role is one by its rank, as roleTier and
+  // grantRole decide; the slugs `admin` / `super_admin` stood in for it,
+  // so an invite with a custom org-tier role still had to name a store.
+  const isAdminInvite = !!pickedRole && pickedRole.rank >= ADMIN_RANK;
   if (!isAdminInvite && storeIds.length === 0) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.inviteNeedsStore' });
   }
@@ -68,12 +80,8 @@ export async function planInvite(
     });
   }
 
-  if (input.roleSlug) {
-    const slug = input.roleSlug;
-    const role = await tx.query.roles.findFirst({
-      where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, slug)),
-    });
-    if (!role) throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
+  if (pickedRole) {
+    const role = pickedRole;
     // F8 / C1: an org-tier role is one global binding, and needs a global
     // org admin; any other role is a binding per store, and the actor must
     // be able to hand it on in every one of them (D8).

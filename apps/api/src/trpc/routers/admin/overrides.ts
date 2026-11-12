@@ -222,7 +222,7 @@ export const overrideProcedures = {
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         // An allow may only pass on authority the actor holds in that
@@ -261,16 +261,6 @@ export const overrideProcedures = {
               message: 'auth.errors.cannotGrantEqualOrHigher',
             });
           }
-        }
-        // Validate permission key exists in the dictionary.
-        const perm = await tx.query.permissions.findFirst({
-          where: (p, { eq: eq2 }) => eq2(p.key, input.permissionKey),
-        });
-        if (!perm) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.permissionNotFound',
-          });
         }
         // Upsert by (member, key, scope). Postgres treats NULL as
         // distinct in plain UNIQUE constraints, so we hand-rolled the
@@ -374,7 +364,7 @@ export const overrideProcedures = {
         if (targetRank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.targetOutranksYou',
           });
         }
         const removed = await tx

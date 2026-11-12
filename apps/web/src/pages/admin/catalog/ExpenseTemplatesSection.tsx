@@ -28,8 +28,8 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
-  useIsOrgAdmin,
 } from './CatalogParts';
+import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { moneyLine } from '../../../lib/money';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';

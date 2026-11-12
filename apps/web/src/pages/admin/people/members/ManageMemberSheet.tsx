@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
-  Checkbox,
   Field,
   FieldGroup,
   Input,
   LoadingState,
+  QueryErrorBanner,
   Sheet,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n } from '../../../../hooks/useI18n';
-import { nativeConfirm } from '../../shared';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
+import { confirmThen } from '../../../../lib/confirm';
 import {
   canDetachFromStore,
   canRename,
@@ -22,7 +22,7 @@ import {
   type TargetMember,
 } from '../../../../lib/authority';
 import { TransferStoreSheet } from './TransferStoreSheet';
-import { StoreName } from '../shared';
+import { StoreCheckList } from '../StoreCheckList';
 
 /**
  * Per-member admin panel: rename + per-store assignment.
@@ -56,21 +56,17 @@ export function ManageMemberSheet({
     { enabled: open && !!target },
   );
   // C2 (2026-05-06): a store-scoped admin can only assign/unassign in
-  // the stores they administer. Stores outside `adminStoreIds` are
-  // shown as read-only rows so the operator can see WHO the member
-  // already belongs to (even cross-store), but can only mutate the
-  // stores they actually run.
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  // the stores they administer; storeList lists no other store for them
+  // (CA-17). A listed store is still read-only where taking the member
+  // out needs a rank the actor lacks there (ADM1-07). Review ADM1-28:
+  // this said other stores were listed read-only.
+  const adminStoreIds = useAdminStoreIds();
   // M1.9: gate cross-store moves behind global-admin only. For per-
   // store managers (who post-B1 have users.manage), the unassign +
   // reassign workflow on the checkbox grid is enough; the dedicated
   // Transfer wizard is an org-wide-write surface they shouldn't reach.
   // 2026-10-21 audit CA-16 (A-10): explicit org.admin marker.
-  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isGlobalAdmin = useIsOrgAdmin();
   const [name, setName] = useState(target?.displayName ?? '');
   // Refresh local name field when target changes.
   useEffect(() => {
@@ -111,6 +107,14 @@ export function ManageMemberSheet({
   // member is in, and a higher rank (lib/authority canRename, ADM1-06:
   // ranks, store roles and other organisations count; oneself always).
   const renameAllowed = target ? canRename(actor, target.member) : false;
+  const storeBusy = assignMut.isPending || detachMut.isPending;
+  // A store is ticked here only where the actor administers it; ADM1-07:
+  // and taking someone out of one needs to outrank them there.
+  const storeEditable = (storeId: string) =>
+    !!target &&
+    (assignedIds.has(storeId)
+      ? canDetachFromStore(actor, target.member, storeId)
+      : adminStoreIds.has(storeId));
 
   // D2 (2026-05-06): transfer wizard state. fromStoreId is set when
   // the operator taps "Transfer..." on a particular row. The sheet
@@ -161,85 +165,66 @@ export function ManageMemberSheet({
           <FieldGroup label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
               <LoadingState variant="inline" />
+            ) : storesQuery.isError && !storesQuery.data ? (
+              // Review ADM1-22 (2026-11-12): a failed load read "no stores
+              // in the workspace".
+              <QueryErrorBanner query={storesQuery} />
+            ) : assignmentsQuery.isError && !assignmentsQuery.data ? (
+              <QueryErrorBanner query={assignmentsQuery} />
             ) : (
-              <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                {(storesQuery.data ?? []).map((st) => {
-                  const checked = assignedIds.has(st.id);
-                  const pending = assignMut.isPending || detachMut.isPending;
-                  // C2: stores you don't administer are visible (so
-                  // you see the full picture) but the checkbox is
-                  // disabled. The server would reject anyway. ADM1-07:
-                  // so is taking someone who outranks you there out.
-                  const editable = checked
-                    ? canDetachFromStore(actor, target.member, st.id)
-                    : adminStoreIds.has(st.id);
-                  // UI-01: the kit checkbox names its store itself, and the
-                  // transfer button sits beside it, not inside its <label>
-                  // (a click there had to be kept from ticking the box).
-                  return (
-                    <div
-                      key={st.id}
-                      className="flex items-center gap-2 px-2"
-                      title={adminStoreIds.has(st.id) ? undefined : i18n.t('people.notYourStore')}
+              <StoreCheckList
+                stores={storesQuery.data ?? []}
+                isChecked={(st) => assignedIds.has(st.id)}
+                isDisabled={(st) => storeBusy || !storeEditable(st.id)}
+                // C2: stores you don't administer are visible (so you see
+                // the full picture) but cannot be ticked; the server would
+                // refuse anyway.
+                titleOf={(st) =>
+                  adminStoreIds.has(st.id) ? undefined : i18n.t('people.notYourStore')
+                }
+                onChange={(st, checked) => {
+                  if (checked) {
+                    assignMut.mutate({ memberId: target.memberId, storeId: st.id });
+                  } else {
+                    confirmThen(
+                      i18n.t('admin.confirm.removeFromStore', {
+                        name: target.displayName,
+                        store: st.name,
+                      }),
+                      () => detachMut.mutate({ memberId: target.memberId, storeId: st.id }),
+                    );
+                  }
+                }}
+                trailing={(st) =>
+                  // D2 (2026-05-06): "Transfer..." per assigned row. M1.9
+                  // (2026-05-07): global admins only; store-scoped managers
+                  // untick and tick on this same list.
+                  assignedIds.has(st.id) &&
+                  storeEditable(st.id) &&
+                  isGlobalAdmin &&
+                  transferTargets(actor, target.member, st.id, storesQuery.data ?? []).length >
+                    0 ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="shrink-0"
+                      title={i18n.t('people.transferTooltip')}
+                      onClick={() => setTransferFrom({ storeId: st.id, storeName: st.name })}
                     >
-                      <Checkbox
-                        className="min-w-0 flex-1"
-                        checked={checked}
-                        disabled={pending || !editable}
-                        label={<StoreName store={st} />}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            assignMut.mutate({
-                              memberId: target.memberId,
-                              storeId: st.id,
-                            });
-                          } else {
-                            nativeConfirm(
-                              i18n.t('admin.confirm.removeFromStore', {
-                                name: target.displayName,
-                                store: st.name,
-                              }),
-                              () =>
-                                detachMut.mutate({
-                                  memberId: target.memberId,
-                                  storeId: st.id,
-                                }),
-                            );
-                          }
-                        }}
-                      />
-                      {/* D2 (2026-05-06): "Transfer..." per assigned
-                          row. M1.9 (2026-05-07): gated to global admins
-                          only — store-scoped managers should use the
-                          unassign+reassign workflow on this same grid. */}
-                      {checked &&
-                      editable &&
-                      isGlobalAdmin &&
-                      transferTargets(actor, target.member, st.id, storesQuery.data ?? []).length >
-                        0 ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="shrink-0"
-                          title={i18n.t('people.transferTooltip')}
-                          onClick={() => setTransferFrom({ storeId: st.id, storeName: st.name })}
-                        >
-                          {i18n.t('admin.action.transfer')}
-                        </Button>
-                      ) : !editable ? (
-                        <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
-                          {i18n.t('people.readOnlyStore')}
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                {(storesQuery.data ?? []).length === 0 ? (
+                      {i18n.t('admin.action.transfer')}
+                    </Button>
+                  ) : !storeEditable(st.id) ? (
+                    <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
+                      {i18n.t('people.readOnlyStore')}
+                    </span>
+                  ) : null
+                }
+                empty={
                   <span className="px-2 py-1 text-old-label text-[var(--c-fg-muted)]">
                     {i18n.t('people.noStoresInOrg')}
                   </span>
-                ) : null}
-              </div>
+                }
+              />
             )}
             <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.storeScopeHint')}

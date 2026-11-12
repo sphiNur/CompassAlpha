@@ -83,12 +83,11 @@
 The cashier role is intentionally separate from general staff: cashiers can
 record sales and daily settlement only for stores covered by their role binding.
 Managers and organization administrators can also settle within their effective
-store scope. Operating-expense detail is a stricter store-level action: its
-server-side gate requires an effective role rank of at least manager (60), or a
-persisted global `org.admin` grant. A cashier may record revenue and
-selected-person wages but cannot add, edit, or remove daily operating expenses.
-Total-only closes from before itemization are read-only for every role, so a
-later user can never be recorded as the author of an expense that was not
+store scope. Operating expenses follow the rest of the close (2026-10-22): whoever
+has `settlement.record` effective in the store records its revenue, wages and
+operating expenses; no role rank is required, so a cashier files the day's
+expenses too. Total-only closes from before itemization are read-only for every
+role, so a later user can never be recorded as the author of an expense that was not
 originally entered as a line item.
 A store-specific deny override always wins.
 
@@ -107,6 +106,7 @@ Sales, so cashiers can record sales from their only tab.
 
 `admin.grantRole`, and every other path that hands a role on, applies the same three rules. The other paths are:
 
+- `admin.grantRoleInStores`, one role in several stores: each store is checked as `grantRole` checks it, and if one is refused nothing is granted;
 - an invite by Telegram ID;
 - an invite link;
 - a transfer that mirrors roles;

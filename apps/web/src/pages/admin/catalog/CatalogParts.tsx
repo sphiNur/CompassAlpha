@@ -13,23 +13,18 @@ import { Badge, Button, CardHeader, CardMeta, CardTitle, Field, Input, Switch } 
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { useI18n } from '../../../hooks/useI18n';
-import { useAuthStore } from '../../../stores/authStore';
-import { nativeConfirm } from '../shared';
+import { confirmThen } from '../../../lib/confirm';
 import { CATALOG_LOCALES, type CatalogNames } from './catalogNames';
 import { readSortIndex } from './sortIndex';
 
 /**
- * 2026-10-21 audit CA-16: every catalog write (categories, SKUs,
- * suppliers, expense templates) is `requireOrgAdmin` on the server, but
- * the controls rendered for anyone who could open Admin (`users.manage`),
- * so a store manager got a FORBIDDEN on save. Without `org.admin` the
- * sections are now a read-only list.
+ * Shown above the list when the catalog is read-only. 2026-10-21 audit
+ * CA-16: every catalog write (categories, SKUs, suppliers, expense
+ * templates) is `requireOrgAdmin` on the server, but the controls
+ * rendered for anyone who could open Admin (`users.manage`), so a store
+ * manager got a FORBIDDEN on save. Without `org.admin` (useIsOrgAdmin)
+ * the sections are a read-only list.
  */
-export function useIsOrgAdmin(): boolean {
-  return useAuthStore((s) => s.session?.permissions.includes('org.admin') ?? false);
-}
-
-/** Shown above the list when the catalog is read-only. */
 export function ReadOnlyHint() {
   const i18n = useI18n();
   return (
@@ -187,7 +182,7 @@ export function CatalogRowActions({
         <Button
           size="sm"
           variant="danger-ghost"
-          onClick={() => nativeConfirm(confirmArchive, onArchive)}
+          onClick={() => confirmThen(confirmArchive, onArchive)}
         >
           {i18n.t('common.archive')}
         </Button>

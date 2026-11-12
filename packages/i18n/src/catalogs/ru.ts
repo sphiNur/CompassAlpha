@@ -177,7 +177,6 @@ export const ru = {
   'ops.maint.resetSheetBody': 'Проверьте, что будет удалено, затем подтвердите.',
   'ops.maint.confirmPurgeTitle': 'Подтвердите удаление',
   'people.readOnlyStore': 'Только просмотр',
-  'people.orgLevelGroup': 'Всё рабочее пространство ({n})',
   'people.orgLevelEmptyTitle': 'Нет участников уровня рабочего пространства',
   'people.orgLevelEmptyBody':
     'Здесь появляются администраторы и суперадмины, не привязанные к конкретному магазину.',
@@ -202,6 +201,7 @@ export const ru = {
   'people.roleHasKeysYouLack':
     'В этой роли есть права, которых нет у вас, — здесь её назначить нельзя.',
   'people.roleNameKeysYouLack': '{name} (есть права, которых у вас нет)',
+  'people.roleKeysYouLackBadge': 'есть права, которых у вас нет',
   'people.rolesOfMember': 'Роли',
   'people.revokeRole': 'Снять',
   'people.revokeRoleAria': '{name}: снять роль «{role}»',
@@ -211,6 +211,9 @@ export const ru = {
   'admin.errors.tgIdInvalid': 'Telegram ID — это 4–15 цифр, а не номер телефона или @имя.',
   'people.deleteRole': 'Удалить роль',
   'people.confirmDeleteRole': 'Удалить роль «{name}»?',
+  'people.roleChangedElsewhere': 'Кто-то только что изменил эту роль',
+  'people.roleChangedElsewhereBody': 'Если сохранить сейчас, их изменения заменятся вашими.',
+  'people.roleLoadLatest': 'Обновить',
   'people.noRole': 'Нет роли',
   'people.orgLevelLabel': 'Уровень рабочего пространства',
   'people.storeGone': '— магазина больше нет —',
@@ -457,6 +460,7 @@ export const ru = {
     '{n, plural, one {# право} few {# права} many {# прав} other {# права}}',
   'people.permissionsHeading': 'Права ({n})',
   'people.assigneesHeading': 'Назначены · {n}',
+  'people.assigneesGroup': '{scope} ({n})',
   'people.effectiveOverridesLine':
     '{eff, plural, one {# действует} few {# действуют} many {# действуют} other {# действуют}} · {ov, plural, one {# переопределение} few {# переопределения} many {# переопределений} other {# переопределения}}',
   'ops.history.contributorCount':
@@ -1032,8 +1036,13 @@ export const ru = {
     'Эта роль ещё назначена участникам — сначала отзовите назначения.',
   'admin.errors.rankTierChangeHasBindings':
     'Эта роль ещё назначена участникам — её уровень не может пересечь отметку {rank}. Сначала отзовите назначения или создайте новую роль.',
-  'admin.errors.permissionNotFound': 'Такого права нет.',
   'admin.errors.notAdminOfStore': 'Вы не администрируете этот магазин — операция запрещена.',
+  'admin.errors.targetOutranksYou':
+    'Этот человек вашего уровня или выше, поэтому такое изменение вам недоступно.',
+  'admin.errors.roleOutranksYou':
+    'Эта роль вашего уровня или выше, поэтому изменить или удалить её нельзя.',
+  'admin.errors.roleKeyNotHeld':
+    'У вас нет права «{permission}» во всём рабочем пространстве, поэтому добавить его в роль нельзя.',
   'admin.errors.memberNotInSourceStore':
     'Участника нет в исходном магазине, перевести его оттуда нельзя; просто назначьте его в новый магазин.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

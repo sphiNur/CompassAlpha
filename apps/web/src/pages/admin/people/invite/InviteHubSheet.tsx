@@ -1,4 +1,12 @@
-import { IconChevronRight, IconShare, Sheet } from '@compass/ui';
+import {
+  Banner,
+  IconShare,
+  LoadingState,
+  QueryErrorBanner,
+  SectionRow,
+  Sheet,
+  rowGroupClass,
+} from '@compass/ui';
 import { STALE } from '../../../../config/timings';
 import { trpc } from '../../../../lib/trpc';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -37,69 +45,46 @@ export function InviteHubSheet({
       title={i18n.t('people.inviteTitle')}
       description={i18n.t('people.inviteHint')}
     >
+      {/* Review ADM1-13 (2026-11-12): the kit's rows (UI-16), not three
+          hand-drawn buttons. A link needs the bot: without it (or while
+          the setting loads) the link rows are not offered, and the
+          reason is said once instead of under two greyed-out rows. */}
       <div className="flex flex-col gap-2 py-3">
-        <button
-          type="button"
-          onClick={() => onPickLink('share')}
-          disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
-        >
-          <span className="text-[var(--c-action)]">
-            <IconShare size={20} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
-              {i18n.t('people.inviteViaTelegram')}
-            </span>
-            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {botUsername ? i18n.t('people.inviteViaTelegramHint') : i18n.t('people.inviteNoBot')}
-            </span>
-          </span>
-          <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
-            <IconChevronRight size={16} />
-          </span>
-        </button>
+        {botUsername ? (
+          <>
+            <ul className={rowGroupClass} role="list">
+              <SectionRow
+                icon={<IconShare size={20} />}
+                label={i18n.t('people.inviteViaTelegram')}
+                hint={i18n.t('people.inviteViaTelegramHint')}
+                onClick={() => onPickLink('share')}
+              />
+              <SectionRow
+                icon={<IconShare size={20} />}
+                label={i18n.t('people.inviteCopyLink')}
+                hint={i18n.t('people.inviteCopyLinkHint')}
+                onClick={() => onPickLink('copy')}
+              />
+            </ul>
+            <div className="my-2 text-center text-old-label text-[var(--c-fg-subtle)]">
+              {i18n.t('people.inviteOr')}
+            </div>
+          </>
+        ) : cfgQuery.isLoading ? (
+          <LoadingState variant="compact" />
+        ) : cfgQuery.isError && !cfgQuery.data ? (
+          <QueryErrorBanner query={cfgQuery} />
+        ) : (
+          <Banner tone="warn">{i18n.t('people.inviteNoBot')}</Banner>
+        )}
 
-        <button
-          type="button"
-          onClick={() => onPickLink('copy')}
-          disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
-        >
-          <span className="text-[var(--c-action)]">
-            <IconShare size={20} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
-              {i18n.t('people.inviteCopyLink')}
-            </span>
-            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.inviteCopyLinkHint')}
-            </span>
-          </span>
-        </button>
-
-        <div className="my-2 text-center text-old-label text-[var(--c-fg-subtle)]">
-          {i18n.t('people.inviteOr')}
-        </div>
-
-        <button
-          type="button"
-          onClick={onPickManual}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
-              {i18n.t('people.inviteByTgId')}
-            </span>
-            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.inviteByTgIdHint')}
-            </span>
-          </span>
-          <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
-            <IconChevronRight size={16} />
-          </span>
-        </button>
+        <ul className={rowGroupClass} role="list">
+          <SectionRow
+            label={i18n.t('people.inviteByTgId')}
+            hint={i18n.t('people.inviteByTgIdHint')}
+            onClick={onPickManual}
+          />
+        </ul>
 
         <PendingInvitesList enabled={open} />
       </div>

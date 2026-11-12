@@ -15,7 +15,7 @@ import { newIdempotencyKey, trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { formatQty } from '../../../../lib/format';
 import { useI18n, useProductName, useUnitLabel } from '../../../../hooks/useI18n';
-import { nativeConfirm } from '../../shared';
+import { confirmThen } from '../../../../lib/confirm';
 import {
   inventoryDraftChanged,
   stockAfterWastage,
@@ -212,7 +212,7 @@ export function InventoryActionSheet({
                     readDecimalText,
                   );
                   if (after !== null && Number(after) < 0) {
-                    nativeConfirm(
+                    confirmThen(
                       i18n.t('inventory.confirm.wastageNegative', { after: formatQty(after) }),
                       save,
                     );

@@ -40,6 +40,7 @@ import { haptic } from '../lib/telegram';
 import {
   errorVars,
   serverErrorKey,
+  withPermissionName,
   writeErrorTextOf,
   type WriteFallbackKey,
 } from '../lib/errorText';
@@ -71,7 +72,7 @@ export function useErrToast(): (
       online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
       retrySafe: options?.retrySafe ?? false,
     });
-    toast.error(i18n.t(key, vars));
+    toast.error(i18n.t(key, withPermissionName(vars, i18n.t)));
   };
 }
 
@@ -85,7 +86,7 @@ export function useTranslateError(): (err: unknown, defaultKey: WriteFallbackKey
   const i18n = useI18n();
   return (err, defaultKey) => {
     const key = serverErrorKey(err);
-    if (key) return i18n.t(key, errorVars(err));
+    if (key) return i18n.t(key, withPermissionName(errorVars(err), i18n.t));
     return i18n.t(defaultKey);
   };
 }

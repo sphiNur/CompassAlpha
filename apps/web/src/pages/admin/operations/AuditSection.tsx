@@ -7,6 +7,7 @@ import { Badge, Chip, ChipBar, DataState, EmptyState, rowGroupClass } from '@com
 import { PAGE_SIZE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
+import { useAdminStoreIds } from '../../../hooks/useAdminAuthority';
 import {
   useDateFormat,
   useI18n,
@@ -60,7 +61,7 @@ export function AdminAuditSection() {
   const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   // ADM-16: the server only returns rows for stores the actor administers,
   // so a store they merely work in was a filter that always came up empty.
-  const adminStoreIds = new Set(session?.adminStoreIds ?? []);
+  const adminStoreIds = useAdminStoreIds();
   const filterStores = sessionStores.filter((st) => adminStoreIds.has(st.id));
   // M1.9 (2026-05-07): the raw `JSON.stringify(r.inputs)` payload
   // preview looks like a debugger artifact to a non-technical chain

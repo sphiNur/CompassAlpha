@@ -17,13 +17,8 @@ import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { useI18n } from '../../../hooks/useI18n';
-import {
-  CatalogRowActions,
-  CatalogRowHeader,
-  CatalogToolbar,
-  ReadOnlyHint,
-  useIsOrgAdmin,
-} from './CatalogParts';
+import { CatalogRowActions, CatalogRowHeader, CatalogToolbar, ReadOnlyHint } from './CatalogParts';
+import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { changedFields, hasChanges } from './editPatch';
 

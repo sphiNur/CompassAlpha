@@ -63,6 +63,7 @@ import { useNavStore } from '../stores/navStore';
 import { isInTelegram } from '../lib/telegram';
 import { useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
+import { useIsOrgAdmin } from '../hooks/useAdminAuthority';
 import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
@@ -87,13 +88,7 @@ import {
   DishesSection,
 } from './admin/catalog';
 // Review COREWEB1-11 (2026-11-11): the drill-down's one definition.
-import type {
-  AdminSection,
-  CatalogSub,
-  OperationsSub,
-  StoreFocus,
-  StoreSub,
-} from '../stores/navStore';
+import type { AdminSection, CatalogSub, OperationsSub, StoreFocus } from '../stores/navStore';
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
@@ -164,7 +159,7 @@ export function AdminPage() {
   // A store manager (users.manage without org.admin) only reads Workspace,
   // Roles & permissions and Catalog: every write there needs org.admin
   // (dishes: dishes.manage), so those rows are left out for them.
-  const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isOrgAdmin = useIsOrgAdmin();
   const seesCatalog = isOrgAdmin || (session?.permissions.includes('dishes.manage') ?? false);
   // 2026-11-05: attendance sheet, roster and rules for the stores they manage.
   const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
@@ -179,9 +174,10 @@ export function AdminPage() {
   // CloneRoles, MemberPermissions, embedded DebugPage, audit JSON)
   // aren't appropriate for them — server-side guards exist but we
   // shouldn't let them stumble into a "looks editable" UI that throws
-  // FORBIDDEN. The `isGlobalAdmin` checks live in each sub-component
-  // (PermissionsSection, ManageMemberSheet, StoreSettingsTab,
-  // PeopleSection) so they don't add a re-render dep here.
+  // FORBIDDEN. The org-admin checks live in each sub-component
+  // (ManageMemberSheet, StoreSettingsTab, PeopleSection; the Roles &
+  // permissions section is hidden from them below) so they don't add a
+  // re-render dep here.
 
   // Pull i18n once at the top of AdminPage so the section list, page
   // header and titleForSection helper all read the same strings (M1.6,
@@ -197,6 +193,22 @@ export function AdminPage() {
       storeFocus === null ? '' : storeFocus.kind === 'org-level' ? 'org' : storeFocus.storeId,
     ].join('|'),
   );
+
+  // Review ADM1-33 (2026-11-12): a store's page is titled with the name it
+  // has now. The name saved with the navigation stayed after a rename
+  // elsewhere. Same input as the store screens, so their list is reused.
+  const focusedStoreId =
+    section === 'stores' && storeFocus?.kind === 'store' ? storeFocus.storeId : null;
+  const focusStoresQuery = trpc.admin.storeList.useQuery(
+    { includeArchived: isOrgAdmin },
+    { enabled: focusedStoreId !== null && isAdmin },
+  );
+  const focusedStoreName =
+    focusedStoreId === null
+      ? null
+      : (focusStoresQuery.data?.find((st) => st.id === focusedStoreId)?.name ??
+        session?.stores.find((st) => st.id === focusedStoreId)?.name ??
+        null);
 
   // HIS-19 (2026-10-30): someone who reads finance (reports.view) without
   // managing people gets the finance report alone.
@@ -225,8 +237,11 @@ export function AdminPage() {
   // longer lists; fall back to the home list. The state is kept per
   // device, so it can also be another member's (review WALK-07: a
   // platform admin's "platform" section reopened for an org admin, who
-  // got a 403).
+  // got a 403). Review ADM1-33 (2026-11-12): and every section but
+  // Platform needs users.manage, as the home list does; someone who lost
+  // it, or a platform admin without it, reopened Stores or Operations.
   const sectionHidden =
+    (section !== 'platform' && !isAdmin) ||
     ((section === 'organization' || section === 'permissions') && !isOrgAdmin) ||
     (section === 'catalog' && !seesCatalog) ||
     (section === 'attendance' && !seesAttendance) ||
@@ -240,7 +255,7 @@ export function AdminPage() {
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
-        title={titleForSection(section, catalogSub, opsSub, storeFocus, storeSub, i18n)}
+        title={titleForSection(section, catalogSub, opsSub, storeFocus, focusedStoreName, i18n)}
         rootRef={drill.rootRef}
         onClickCapture={drill.onClickCapture}
         onBack={() => {
@@ -279,7 +294,7 @@ export function AdminPage() {
             }}
           />
         ) : null}
-        {section === 'permissions' ? <PermissionsSection isSuperAdmin={isSuperAdmin} /> : null}
+        {section === 'permissions' ? <PermissionsSection /> : null}
         {section === 'catalog' && !catalogSub ? (
           <CatalogHome onPick={(s) => setCatalogSub(s)} />
         ) : null}
@@ -389,12 +404,13 @@ function titleForSection(
   catalogSub: CatalogSub | null,
   opsSub: OperationsSub | null,
   storeFocus: StoreFocus,
-  _storeSub: StoreSub,
+  /** The focused store's current name, when known. */
+  storeName: string | null,
   i18n: ReturnType<typeof useI18n>,
 ): string {
   if (section === 'stores' && storeFocus !== null) {
     if (storeFocus.kind === 'org-level') return i18n.t('admin.label.orgLevel');
-    return storeFocus.storeName;
+    return storeName ?? storeFocus.storeName;
   }
   if (section === 'catalog' && catalogSub === 'categories')
     return i18n.t('admin.subsection.categories');
@@ -626,7 +642,7 @@ function WorkspaceSection() {
   const pricesIncludeTax = session?.member.pricesIncludeTax ?? true;
   // 2026-10-21 audit CA-16: orgFinanceUpdate is requireOrgAdmin on the
   // server; `users.manage` (store managers) only got a FORBIDDEN on save.
-  const isAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isAdmin = useIsOrgAdmin();
 
   // Local form draft inside the sheet so we can cancel without
   // affecting the source of truth on the auth store.
@@ -639,12 +655,16 @@ function WorkspaceSection() {
   const taxToSend = taxRateToSend(draftTax);
   const taxProblem = taxRateProblem(taxToSend);
   const taxError = draftTax.trim() === '' ? null : taxProblem;
-  useEffect(() => {
-    if (!financeSheetOpen) return;
+  // Review ADM1-21 (2026-11-12): the draft starts from the saved settings
+  // when the sheet opens, and only then. It was reset whenever the session
+  // changed while the sheet was open, and the session refreshes on every
+  // people change in the workspace, dropping what was being typed.
+  const openFinanceSheet = () => {
     setDraftCurrency(currency);
     setDraftTax(taxRatePct);
     setDraftInclTax(pricesIncludeTax);
-  }, [financeSheetOpen, currency, taxRatePct, pricesIncludeTax]);
+    setFinanceSheetOpen(true);
+  };
 
   const orgFinanceUpdate = trpc.admin.orgFinanceUpdate.useMutation({
     onSuccess: (_data, vars) => {
@@ -731,7 +751,7 @@ function WorkspaceSection() {
                 ? i18n.t('admin.workspace.financeRowHint', { currency, tax: taxShown })
                 : currency
             }
-            onClick={() => setFinanceSheetOpen(true)}
+            onClick={openFinanceSheet}
           />
         ) : null}
       </div>

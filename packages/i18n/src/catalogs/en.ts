@@ -206,7 +206,6 @@ export const en = {
   // bad word order in zh/ru/uz — those became whole sentences without
   // emphasis. A correctly-ordered sentence beats a bolded mistranslation.
   'people.readOnlyStore': 'View only',
-  'people.orgLevelGroup': 'Whole workspace ({n})',
   'people.orgLevelEmptyTitle': 'No workspace-level members',
   'people.orgLevelEmptyBody':
     "Admins and super admins who don't belong to any specific store appear here.",
@@ -231,6 +230,7 @@ export const en = {
   'people.roleHasKeysYouLack':
     "This role has permissions you don't have yourself, so you can't give it here.",
   'people.roleNameKeysYouLack': '{name} (has permissions you lack)',
+  'people.roleKeysYouLackBadge': 'has permissions you lack',
   'people.rolesOfMember': 'Roles',
   'people.revokeRole': 'Revoke',
   'people.revokeRoleAria': 'Revoke {role} from {name}',
@@ -240,6 +240,9 @@ export const en = {
   'admin.errors.tgIdInvalid': 'A Telegram ID is 4–15 digits, not a phone number or @username.',
   'people.deleteRole': 'Delete role',
   'people.confirmDeleteRole': 'Delete role "{name}"?',
+  'people.roleChangedElsewhere': 'Someone else just changed this role',
+  'people.roleChangedElsewhereBody': 'Saving now replaces their changes with yours.',
+  'people.roleLoadLatest': 'Load latest',
   'people.noRole': 'No role',
   'people.orgLevelLabel': 'Workspace-level',
   'people.storeGone': '— store gone —',
@@ -481,6 +484,7 @@ export const en = {
   'people.permissionCount': '{n, plural, =1 {1 permission} other {# permissions}}',
   'people.permissionsHeading': 'Permissions ({n})',
   'people.assigneesHeading': 'Assignees · {n}',
+  'people.assigneesGroup': '{scope} ({n})',
   'people.effectiveOverridesLine':
     '{eff} effective · {ov, plural, =1 {1 override} other {# overrides}}',
   'ops.history.contributorCount': '{n, plural, =1 {1 contributor} other {# contributors}}',
@@ -1079,9 +1083,14 @@ export const en = {
     'This role is still assigned to members — revoke those grants first.',
   'admin.errors.rankTierChangeHasBindings':
     "Members hold this role, so its level can't cross {rank}. Revoke it from them first, or create a new role.",
-  'admin.errors.permissionNotFound': 'There is no such permission.',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action.",
+  'admin.errors.targetOutranksYou':
+    'This person is at or above your own level, so you cannot make this change.',
+  'admin.errors.roleOutranksYou':
+    'This role is at or above your own level, so you cannot change or delete it.',
+  'admin.errors.roleKeyNotHeld':
+    'You do not have "{permission}" across the workspace, so it cannot go into a role.',
   'admin.errors.memberNotInSourceStore':
     'They are not in the source store, so they cannot be moved out of it; assign them to the new store instead.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':

@@ -20,6 +20,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
+import { freshTgId } from './helpers/telegram';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
 
 cleanUpAfterAll();
@@ -131,7 +132,8 @@ describe.skipIf(!SHOULD_RUN)(
       ]) {
         const err = await errorOf(act);
         expect(err?.code).toBe('FORBIDDEN');
-        expect(err?.message).toBe('auth.errors.cannotRevokeEqualOrHigher');
+        // ADM1-18: not "cannot revoke a role" for a rename or a suspension.
+        expect(err?.message).toBe('admin.errors.targetOutranksYou');
       }
     });
 
@@ -151,7 +153,7 @@ describe.skipIf(!SHOULD_RUN)(
         }),
       );
       expect(override?.code).toBe('FORBIDDEN');
-      expect(override?.message).toBe('auth.errors.cannotGrantEqualOrHigher');
+      expect(override?.message).toBe('admin.errors.targetOutranksYou');
     });
 
     test('below their global rank everything still works', async () => {
@@ -248,5 +250,47 @@ describe.skipIf(!SHOULD_RUN)('a held role keeps its tier (ADM1-02)', () => {
     const roleId = await createRole('spare', 70);
     expect(await errorOf(() => owner.as.admin.roleUpdate({ roleId, rank: 90 }))).toBeNull();
     expect(await errorOf(() => owner.as.admin.roleUpdate({ roleId, rank: 60 }))).toBeNull();
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('the organisation tier goes by rank (ADM1-19)', () => {
+  const roleIdOf = async (slug: string): Promise<string> => {
+    const role = await fix!.db.query.roles.findFirst({
+      where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, fix!.orgId), eq2(r.slug, slug)),
+    });
+    return role!.id;
+  };
+
+  test('an invite with a custom org-tier role needs no store and binds it globally', async () => {
+    const { owner, db } = fix!;
+    await owner.as.admin.roleCreate({ slug: 'regional-head', name: 'Regional head', rank: 85 });
+    const { memberId } = await owner.as.admin.memberInviteByTgId({
+      tgUserId: freshTgId().toString(),
+      roleSlug: 'regional-head',
+      storeIds: [],
+    });
+    const bindings = await db
+      .select({ roleId: s.memberRoleBindings.roleId, scopeType: s.memberRoleBindings.scopeType })
+      .from(s.memberRoleBindings)
+      .where(eq(s.memberRoleBindings.memberId, memberId));
+    expect(bindings).toEqual([{ roleId: await roleIdOf('regional-head'), scopeType: 'global' }]);
+  });
+
+  test('nobody takes their own custom org-tier role away', async () => {
+    const { owner, db } = fix!;
+    await owner.as.admin.roleCreate({ slug: 'own-org-role', name: 'Own org role', rank: 90 });
+    const [binding] = await db
+      .insert(s.memberRoleBindings)
+      .values({
+        memberId: owner.memberId,
+        roleId: await roleIdOf('own-org-role'),
+        scopeType: 'global',
+        scopeId: null,
+        grantedBy: owner.userId,
+      })
+      .returning({ id: s.memberRoleBindings.id });
+    const err = await errorOf(() => owner.as.admin.revokeRole({ bindingId: binding!.id }));
+    expect(err?.code).toBe('BAD_REQUEST');
+    expect(err?.message).toBe('admin.errors.cannotRevokeSelfAdmin');
   });
 });

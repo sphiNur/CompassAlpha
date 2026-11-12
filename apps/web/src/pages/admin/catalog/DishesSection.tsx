@@ -25,7 +25,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney } from '../../../lib/format';
 import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
-import { nativeConfirm } from '../shared';
+import { confirmThen } from '../../../lib/confirm';
 import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
 import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
 import { checkDishDraft, type DishIngredientDraft } from './dishDraft';
@@ -317,7 +317,7 @@ export function DishesSection() {
                           size="sm"
                           variant="danger-ghost"
                           onClick={() =>
-                            nativeConfirm(i18n.t('dishes.confirm.archive', { name }), () =>
+                            confirmThen(i18n.t('dishes.confirm.archive', { name }), () =>
                               archive.mutate({ dishId: d.id }),
                             )
                           }

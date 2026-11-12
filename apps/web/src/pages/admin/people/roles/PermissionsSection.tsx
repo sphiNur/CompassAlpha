@@ -30,7 +30,7 @@ import { RolePermissionsSheet } from './RolePermissionsSheet';
  * we ship today; a full editable matrix belongs in round 4 (custom
  * roles).
  */
-export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+export function PermissionsSection() {
   const i18n = useI18n();
   const roleText = useRoleLabels();
   const session = useAuthStore((s) => s.session);
@@ -39,15 +39,10 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
   const [drilldownSlug, setDrilldownSlug] = useState<string | null>(null);
   // Custom-role create-mode flag (added 2026-05-05). When true the
   // sheet opens with empty fields and a "Create" footer instead of
-  // the existing role's data.
+  // the existing role's data. Only org admins reach this screen
+  // (AdminPage hides it from everyone else), so the "New role" button
+  // and the edit footer need no check of their own (review ADM1-27).
   const [createOpen, setCreateOpen] = useState(false);
-  // M1.9 (2026-05-07): only global admins can create org-wide roles.
-  // Per-store managers (post-B1 with users.manage) shouldn't see the
-  // "+ New role" button — server-side rank gate would block them
-  // anyway, but a button that always errors is bad UX.
-  // 2026-10-21 audit CA-16 (A-10): "admin of every store in my session"
-  // was true for a single-store manager. Gate on the explicit marker.
-  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
 
   return (
     <div className="px-4 py-3">
@@ -56,11 +51,9 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
       </Banner>
       <div className="mt-3 flex items-center justify-between">
         <SectionLabel padded={false}>{i18n.t('people.rolesHeading')}</SectionLabel>
-        {isGlobalAdmin ? (
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            + {i18n.t('people.newRoleButton')}
-          </Button>
-        ) : null}
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          + {i18n.t('people.newRoleButton')}
+        </Button>
       </div>
       <div className="mt-2">
         <DataState
@@ -118,10 +111,6 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
         open={!!drilldownSlug}
         roleSlug={drilldownSlug}
         onClose={() => setDrilldownSlug(null)}
-        // 2026-10-21 audit CA-16: the server lets org admins edit / delete
-        // roles ranked below them (the sheet applies the rank gate); this
-        // used to be super_admin only.
-        canEdit={isSuperAdmin || isGlobalAdmin}
         myMaxRank={myMaxRank}
       />
       <RoleCreateSheet

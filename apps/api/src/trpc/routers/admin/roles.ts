@@ -2,10 +2,11 @@
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import {
   ADMIN_RANK,
   GrantRoleInputSchema,
+  GrantRoleInStoresInputSchema,
   UuidSchema,
   CONTROL_CHARS_MESSAGE,
   noControlChars,
@@ -13,7 +14,6 @@ import {
 } from '@compass/contracts';
 import { SLUG_MESSAGE, SLUG_RE } from '@compass/contracts/limits';
 import { authedProcedure, withUniqueKey } from '../../trpc';
-import { hub } from '../../../realtime/hub';
 import { effectiveGlobalPermissions } from '../../../services/storeScope';
 import {
   bindingIsLive,
@@ -39,6 +39,230 @@ import {
   PASS_ON_NOWHERE,
 } from './grants';
 import { auditAdmin } from '../../../services/adminAudit';
+import type { RequestContext } from '../../context';
+
+/** The member and the role of a grant: both of this organisation, the member active. */
+async function loadGrantSubjects(
+  tx: DB,
+  orgId: string,
+  input: { userId: string; roleSlug: string },
+) {
+  const member = await tx.query.members.findFirst({
+    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, input.userId)),
+  });
+  if (!member) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
+  }
+  // ADM1-08: as the invite path does (ADM-19), a suspended member is
+  // reactivated before they are given anything.
+  if (member.status !== 'active') {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'admin.errors.memberInactiveReactivateFirst',
+    });
+  }
+  const role = await tx.query.roles.findFirst({
+    where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, input.roleSlug)),
+  });
+  if (!role) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
+  }
+  return { member, role };
+}
+
+type GrantSubjects = Awaited<ReturnType<typeof loadGrantSubjects>>;
+
+/** Where a role is given, as grantRole takes it. */
+interface GrantInput {
+  userId: string;
+  roleSlug: string;
+  scopeType: 'global' | 'store';
+  scopeId?: string | undefined;
+  expiresAt?: string | undefined;
+}
+
+/**
+ * Whether the actor may give the role to the member in one scope, or the
+ * refusal, thrown. grantRole's checks; grantRoleInStores asks them for
+ * each store before it writes anything (ADM1-34).
+ */
+async function assertCanGrantRoleIn(
+  tx: DB,
+  ctx: RequestContext,
+  { member, role }: GrantSubjects,
+  input: GrantInput,
+): Promise<void> {
+  const orgId = ctx.session!.orgId;
+  // Global role bindings are organization-wide authority. Require the
+  // dedicated marker before creating one; `users.manage` also belongs to
+  // store managers and is therefore not sufficient here.
+  if (input.scopeType === 'global') {
+    requireOrgAdmin(ctx.session!.permissions);
+  }
+
+  // Roles at the organization tier must never be attached to one store.
+  // This is the inverse of the pre-existing low-rank rule below and
+  // prevents a scoped admin/super_admin binding from leaking org.admin.
+  if (role.rank >= ADMIN_RANK && input.scopeType !== 'global') {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'admin.errors.orgAdminMustBeGlobal',
+    });
+  }
+
+  // Custom roles can carry org.admin too. Guard by the permission rather
+  // than rank as defense in depth for malformed or legacy role rows.
+  const roleHasOrgAdmin = await tx.query.rolePermissions.findFirst({
+    where: (rp, { eq: eq2, and: and2 }) =>
+      and2(eq2(rp.roleId, role.id), eq2(rp.permissionKey, 'org.admin')),
+  });
+  if (roleHasOrgAdmin && input.scopeType !== 'global') {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'admin.errors.orgAdminMustBeGlobal',
+    });
+  }
+  if (roleHasOrgAdmin) {
+    requireOrgAdmin(ctx.session!.permissions);
+  }
+
+  // STORE-SCOPE REQUIREMENT (added 2026-05-05).
+  //
+  // Roles below admin tier (rank < 80) are inherently per-store —
+  // a manager manages SPECIFIC stores; a purchaser/staff WORKS at
+  // SPECIFIC stores. We refuse to create global bindings for them
+  // because that's the path by which a "manager of everywhere"
+  // accidentally lands in the DB and the Approval queue starts
+  // showing every org's session to every manager (audit found
+  // 2026-05-05 — see docs/role-design-2026-05-05.md). admin (80)
+  // and super_admin (100) stay 'global' since they ARE org-tier.
+  if (role.rank < ADMIN_RANK && input.scopeType !== 'store') {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'admin.errors.scopeStoreIdRequired',
+    });
+  }
+
+  // SECURITY (2026-05-04): if the binding is store-scoped, verify
+  // the store belongs to the actor's org. Without this an admin in
+  // org A could grant a role scoped to a store in org B by passing
+  // its UUID — cross-tenant injection.
+  if (input.scopeType === 'store') {
+    if (!input.scopeId) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'admin.errors.scopeStoreIdRequired',
+      });
+    }
+    const targetStore = await tx.query.stores.findFirst({
+      where: (st, { eq: eq2, and: and2 }) => and2(eq2(st.id, input.scopeId!), eq2(st.orgId, orgId)),
+    });
+    if (!targetStore) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'admin.errors.storeNotFound',
+      });
+    }
+  }
+
+  // C2 (2026-05-06): store-scoped admins can only manage members
+  // of THEIR stores. A "manager of Store A" who tries to grant
+  // "staff of Store B" must be refused: they have no authority
+  // there. Global admins pass through (their adminStoreIds is
+  // the full org list).
+  //
+  // We check this BEFORE the rank gate so the FORBIDDEN message
+  // points at the real problem — if a store-scoped manager is
+  // trying to act on a foreign store, "you don't manage that
+  // store" is more useful than "your rank is too low."
+  if (input.scopeType === 'store' && input.scopeId) {
+    const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+    if (!allowed.includes(input.scopeId)) {
+      throw await notAdminOfStore(tx, orgId, [input.scopeId]);
+    }
+  }
+
+  // C1 (2026-05-06): rank gate — "no equal/higher grants", but
+  // evaluated IN THE SCOPE the binding is being created in.
+  //
+  //   - 'global' grant → getActorMaxGlobalRank: the actor's global
+  //     bindings alone (F8, ADM1-01). Counting their store bindings
+  //     let a legacy store-scoped super_admin grant `admin` org-wide.
+  //   - 'store' grant → use getActorMaxRankInStore: a manager rank-50
+  //     in Store A cannot grant rank-50 INTO Store A, AND cannot
+  //     grant ANYTHING into Store B (where their effective rank is 0
+  //     unless they hold a global binding).
+  //
+  // The earlier code used global rank for both branches, which let
+  // a store-scoped manager smuggle their authority across stores.
+  const actorRank =
+    input.scopeType === 'store' && input.scopeId
+      ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
+      : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
+  if (role.rank >= actorRank) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'auth.errors.cannotGrantEqualOrHigher',
+    });
+  }
+  // ADM1-08: to someone below the actor there, never to themself.
+  await assertCanGrantTo(
+    tx,
+    ctx,
+    member.userId,
+    input.scopeType === 'store' && input.scopeId
+      ? { type: 'store', storeId: input.scopeId }
+      : { type: 'global' },
+  );
+  // D8: and only a role whose keys the actor holds there.
+  await assertCanPassOnRole(
+    tx,
+    ctx,
+    role.id,
+    input.scopeType === 'store' ? (input.scopeId ?? null) : null,
+  );
+}
+
+/**
+ * ADM-7 (2026-10-30): two grants at once (a double tap) both found no
+ * binding and both inserted. Serialise per member + role so the second
+ * sees the first.
+ */
+async function lockGrant(tx: DB, { member, role }: GrantSubjects): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`grant:${member.id}:${role.id}`}))`);
+}
+
+/** Give the role in one scope and audit it; checked and locked by the caller. */
+async function writeGrant(
+  tx: DB,
+  ctx: RequestContext,
+  { member, role }: GrantSubjects,
+  input: GrantInput,
+  expiresAt: Date | null,
+): Promise<{ granted: boolean; bindingId: string }> {
+  // ADM1-04: a lapsed binding of the same role and scope is renewed;
+  // it used to answer "already has this role". RE-ADM-1: the unique
+  // index settles a race with the invite paths, which do not take
+  // this lock.
+  const { outcome, bindingId } = await grantBinding(tx, {
+    memberId: member.id,
+    roleId: role.id,
+    scope:
+      input.scopeType === 'store' && input.scopeId
+        ? { type: 'store', storeId: input.scopeId }
+        : { type: 'global' },
+    grantedBy: ctx.session!.userId,
+    expiresAt,
+  });
+  if (outcome === 'held') return { granted: false, bindingId };
+  await auditAdmin(tx, ctx, 'admin.role.grant', 'member', member.id, {
+    ...input,
+    bindingId,
+    roleRank: role.rank,
+    ...(outcome === 'renewed' ? { renewed: true } : {}),
+  });
+  return { granted: true, bindingId };
+}
 
 export const roleProcedures = {
   // ============ ROLES ============
@@ -336,7 +560,7 @@ export const roleProcedures = {
         if (role.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.roleOutranksYou',
           });
         }
         if (input.rank !== undefined && input.rank >= actorRank) {
@@ -444,7 +668,7 @@ export const roleProcedures = {
         if (role.rank >= actorRank) {
           throw new TRPCError({
             code: 'FORBIDDEN',
-            message: 'auth.errors.cannotGrantEqualOrHigher',
+            message: 'admin.errors.roleOutranksYou',
           });
         }
         // ADM1-04: lapsed bindings do not keep a role; they go with it
@@ -474,168 +698,12 @@ export const roleProcedures = {
     requireOneOf(ctx.session!.permissions, ['users.grant_role', 'users.manage']);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const member = await tx.query.members.findFirst({
-        where: (m, { eq: eq2, and: and2 }) =>
-          and2(eq2(m.orgId, orgId), eq2(m.userId, input.userId)),
-      });
-      if (!member) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
-      }
-      // ADM1-08: as the invite path does (ADM-19), a suspended member is
-      // reactivated before they are given anything.
-      if (member.status !== 'active') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.memberInactiveReactivateFirst',
-        });
-      }
-      const role = await tx.query.roles.findFirst({
-        where: (r, { eq: eq2, and: and2 }) =>
-          and2(eq2(r.orgId, orgId), eq2(r.slug, input.roleSlug)),
-      });
-      if (!role) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
-      }
-
-      // Global role bindings are organization-wide authority. Require the
-      // dedicated marker before creating one; `users.manage` also belongs to
-      // store managers and is therefore not sufficient here.
-      if (input.scopeType === 'global') {
-        requireOrgAdmin(ctx.session!.permissions);
-      }
-
-      // Roles at the organization tier must never be attached to one store.
-      // This is the inverse of the pre-existing low-rank rule below and
-      // prevents a scoped admin/super_admin binding from leaking org.admin.
-      if (role.rank >= ADMIN_RANK && input.scopeType !== 'global') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.orgAdminMustBeGlobal',
-        });
-      }
-
-      // Custom roles can carry org.admin too. Guard by the permission rather
-      // than rank as defense in depth for malformed or legacy role rows.
-      const roleHasOrgAdmin = await tx.query.rolePermissions.findFirst({
-        where: (rp, { eq: eq2, and: and2 }) =>
-          and2(eq2(rp.roleId, role.id), eq2(rp.permissionKey, 'org.admin')),
-      });
-      if (roleHasOrgAdmin && input.scopeType !== 'global') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.orgAdminMustBeGlobal',
-        });
-      }
-      if (roleHasOrgAdmin) {
-        requireOrgAdmin(ctx.session!.permissions);
-      }
-
-      // STORE-SCOPE REQUIREMENT (added 2026-05-05).
-      //
-      // Roles below admin tier (rank < 80) are inherently per-store —
-      // a manager manages SPECIFIC stores; a purchaser/staff WORKS at
-      // SPECIFIC stores. We refuse to create global bindings for them
-      // because that's the path by which a "manager of everywhere"
-      // accidentally lands in the DB and the Approval queue starts
-      // showing every org's session to every manager (audit found
-      // 2026-05-05 — see docs/role-design-2026-05-05.md). admin (80)
-      // and super_admin (100) stay 'global' since they ARE org-tier.
-      if (role.rank < ADMIN_RANK && input.scopeType !== 'store') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.scopeStoreIdRequired',
-        });
-      }
-
-      // SECURITY (2026-05-04): if the binding is store-scoped, verify
-      // the store belongs to the actor's org. Without this an admin in
-      // org A could grant a role scoped to a store in org B by passing
-      // its UUID — cross-tenant injection.
-      if (input.scopeType === 'store') {
-        if (!input.scopeId) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.scopeStoreIdRequired',
-          });
-        }
-        const targetStore = await tx.query.stores.findFirst({
-          where: (st, { eq: eq2, and: and2 }) =>
-            and2(eq2(st.id, input.scopeId!), eq2(st.orgId, orgId)),
-        });
-        if (!targetStore) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'admin.errors.storeNotFound',
-          });
-        }
-      }
-
-      // C2 (2026-05-06): store-scoped admins can only manage members
-      // of THEIR stores. A "manager of Store A" who tries to grant
-      // "staff of Store B" must be refused: they have no authority
-      // there. Global admins pass through (their adminStoreIds is
-      // the full org list).
-      //
-      // We check this BEFORE the rank gate so the FORBIDDEN message
-      // points at the real problem — if a store-scoped manager is
-      // trying to act on a foreign store, "you don't manage that
-      // store" is more useful than "your rank is too low."
-      if (input.scopeType === 'store' && input.scopeId) {
-        const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        if (!allowed.includes(input.scopeId)) {
-          throw await notAdminOfStore(tx, orgId, [input.scopeId]);
-        }
-      }
-
-      // C1 (2026-05-06): rank gate — "no equal/higher grants", but
-      // evaluated IN THE SCOPE the binding is being created in.
-      //
-      //   - 'global' grant → getActorMaxGlobalRank: the actor's global
-      //     bindings alone (F8, ADM1-01). Counting their store bindings
-      //     let a legacy store-scoped super_admin grant `admin` org-wide.
-      //   - 'store' grant → use getActorMaxRankInStore: a manager rank-50
-      //     in Store A cannot grant rank-50 INTO Store A, AND cannot
-      //     grant ANYTHING into Store B (where their effective rank is 0
-      //     unless they hold a global binding).
-      //
-      // The earlier code used global rank for both branches, which let
-      // a store-scoped manager smuggle their authority across stores.
-      const actorRank =
-        input.scopeType === 'store' && input.scopeId
-          ? await getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.scopeId)
-          : await getActorMaxGlobalRank(tx, orgId, ctx.session!.userId);
-      if (role.rank >= actorRank) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'auth.errors.cannotGrantEqualOrHigher',
-        });
-      }
-      // ADM1-08: to someone below the actor there, never to themself.
-      await assertCanGrantTo(
-        tx,
-        ctx,
-        member.userId,
-        input.scopeType === 'store' && input.scopeId
-          ? { type: 'store', storeId: input.scopeId }
-          : { type: 'global' },
-      );
-      // D8: and only a role whose keys the actor holds there.
-      await assertCanPassOnRole(
-        tx,
-        ctx,
-        role.id,
-        input.scopeType === 'store' ? (input.scopeId ?? null) : null,
-      );
-
+      const subjects = await loadGrantSubjects(tx, orgId, input);
+      await assertCanGrantRoleIn(tx, ctx, subjects, input);
       // Idempotency (fixed 2026-05-05): the binding is keyed by member,
       // role and scope, the store included, so "manager of store B" after
       // "manager of store A" is a second binding, not "already exists".
-      // ADM-7 (2026-10-30): two grants at once (a double tap) both found
-      // no binding and both inserted. Serialise per member + role so the
-      // second sees the first.
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${`grant:${member.id}:${role.id}`}))`,
-      );
+      await lockGrant(tx, subjects);
       // 2026-10-21 audit A-23: the contract checks the format; re-check
       // here so a direct caller can't store Invalid Date (→ 500) or an
       // already-expired grant.
@@ -643,33 +711,47 @@ export const roleProcedures = {
       if (expiresAt && !(expiresAt.getTime() > Date.now())) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.invalidExpiresAt' });
       }
-      // ADM1-04: a lapsed binding of the same role and scope is renewed;
-      // it used to answer "already has this role". RE-ADM-1: the unique
-      // index settles a race with the invite paths, which do not take
-      // this lock.
-      const { outcome, bindingId } = await grantBinding(tx, {
-        memberId: member.id,
-        roleId: role.id,
-        scope:
-          input.scopeType === 'store' && input.scopeId
-            ? { type: 'store', storeId: input.scopeId }
-            : { type: 'global' },
-        grantedBy: ctx.session!.userId,
-        expiresAt,
-      });
-      if (outcome === 'held') return { granted: false, bindingId };
-      await auditAdmin(tx, ctx, 'admin.role.grant', 'member', member.id, {
-        ...input,
-        bindingId,
-        roleRank: role.rank,
-        ...(outcome === 'renewed' ? { renewed: true } : {}),
-      });
+      const result = await writeGrant(tx, ctx, subjects, input, expiresAt);
       // Broadcast so other admins viewing the People section see the
       // new binding without manual refresh.
-      hub.publish(orgId, { type: 'people.changed', orgId });
-      return { granted: true, bindingId };
+      if (result.granted) broadcastPeople(orgId);
+      return result;
     });
   }),
+
+  /**
+   * Review ADM1-34 (2026-11-12): one store-tier role in several stores,
+   * every one or none. The grant sheet called grantRole once per store,
+   * one after the other: a refusal in the third store left the first two
+   * granted, and the sheet said only that it had failed. Each store is
+   * checked as grantRole checks it before anything is written. One audit
+   * row per store, as grantRole writes them, so each store's admins see
+   * theirs; one people.changed for the lot.
+   */
+  grantRoleInStores: authedProcedure
+    .input(GrantRoleInStoresInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOneOf(ctx.session!.permissions, ['users.grant_role', 'users.manage']);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const subjects = await loadGrantSubjects(tx, orgId, input);
+        const scopes = [...new Set(input.storeIds)].map((storeId) => ({
+          userId: input.userId,
+          roleSlug: input.roleSlug,
+          scopeType: 'store' as const,
+          scopeId: storeId,
+        }));
+        for (const scope of scopes) await assertCanGrantRoleIn(tx, ctx, subjects, scope);
+        await lockGrant(tx, subjects);
+        const stores: Array<{ storeId: string; granted: boolean }> = [];
+        for (const scope of scopes) {
+          const { granted } = await writeGrant(tx, ctx, subjects, scope, null);
+          stores.push({ storeId: scope.scopeId, granted });
+        }
+        if (stores.some((st) => st.granted)) broadcastPeople(orgId);
+        return { stores };
+      });
+    }),
 
   revokeRole: authedProcedure.input(RevokeRoleInputSchema).mutation(async ({ ctx, input }) => {
     requireOneOf(ctx.session!.permissions, ['users.revoke_role', 'users.manage']);
@@ -697,12 +779,11 @@ export const roleProcedures = {
       const targetRank = binding[0]!.roleRank;
       const bindingScopeType = binding[0]!.scopeType;
       const bindingScopeId = binding[0]!.scopeId;
-      // Self-protection: don't let an admin revoke their own super_admin /
-      // admin roles. The CLI is the escape hatch for true breakage.
-      if (
-        binding[0]!.memberUserId === ctx.session!.userId &&
-        (targetSlug === 'super_admin' || targetSlug === 'admin')
-      ) {
+      // Self-protection: don't let an admin revoke their own org-tier
+      // roles. The CLI is the escape hatch for true breakage. Review
+      // ADM1-19 (2026-11-12): by rank, like every other org-tier rule; the
+      // slugs `super_admin` / `admin` left a custom org-tier role out.
+      if (binding[0]!.memberUserId === ctx.session!.userId && targetRank >= ADMIN_RANK) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'admin.errors.cannotRevokeSelfAdmin',
@@ -767,7 +848,7 @@ export const roleProcedures = {
         scopeType: bindingScopeType,
         scopeId: bindingScopeId,
       });
-      hub.publish(orgId, { type: 'people.changed', orgId });
+      broadcastPeople(orgId);
       return { revoked: true };
     });
   }),

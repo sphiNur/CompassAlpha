@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Banner,
+  Chip,
+  ChipBar,
   EmptyState,
   LoadingState,
   QueryErrorBanner,
-  SectionLabel,
   Segmented,
   Sheet,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
 import {
@@ -21,6 +21,7 @@ import {
   type TargetMember,
 } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
+import { PermissionGroupList } from '../PermissionGroupList';
 
 /**
  * Per-member permission overrides editor (added 2026-05-05).
@@ -60,11 +61,6 @@ export function MemberPermissionsSheet({
   const toast = useToast();
   const utils = trpc.useUtils();
   const errToast = useErrToast();
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
   const open = !!target;
   const detail = trpc.admin.memberPermissionsList.useQuery(
     { memberId: target?.memberId ?? '' },
@@ -73,10 +69,10 @@ export function MemberPermissionsSheet({
   const allPerms = trpc.admin.permissionList.useQuery(undefined, { enabled: open });
 
   /**
-   * Active scope tab. 'global' is always available; store-scoped tabs
-   * appear only for stores the member belongs to AND the actor admins.
-   * (A store-scoped admin shouldn't see — let alone be able to edit —
-   * overrides for a store they don't run; the server enforces too.)
+   * Active scope tab: 'global' or one of the member's stores. A scope
+   * where the actor may not set overrides (canSetOverride: not their
+   * store, or the member outranks them there) is listed but cannot be
+   * chosen; the server refuses it too.
    */
   type Scope = { kind: 'global' } | { kind: 'store'; storeId: string; storeName: string };
   const [scope, setScope] = useState<Scope>({ kind: 'global' });
@@ -95,11 +91,6 @@ export function MemberPermissionsSheet({
         : { kind: 'store', storeId: firstStore.id, storeName: firstStore.name },
     );
   }, [target, actor]);
-
-  const editableStoreTabs = useMemo(
-    () => (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
-    [target, adminStoreIds],
-  );
 
   const set = trpc.admin.memberPermissionSet.useMutation({
     onSuccess: () => {
@@ -166,7 +157,7 @@ export function MemberPermissionsSheet({
         [
           ns,
           keys
-            .map((p) => ({ p, effects: overrideEffects(actor, p, scopeStoreId) }))
+            .map((p) => ({ key: p.key, p, effects: overrideEffects(actor, p, scopeStoreId) }))
             .filter(({ p, effects }) => effects.allow || effects.deny || overrideByKey.has(p.key)),
         ] as const,
     )
@@ -227,45 +218,45 @@ export function MemberPermissionsSheet({
         <EmptyState compact title={i18n.t('common.noData')} />
       ) : (
         <div className="flex flex-col gap-3 py-3">
-          {/* Scope tabs (A2, 2026-05-06). 'Global' is always present;
-              store tabs appear only when the member belongs to that
-              store AND the actor administers it. The little dot on
-              each tab counts overrides scoped to that tab. */}
-          {(editableStoreTabs.length > 0 || (target?.stores ?? []).length > 0) && (
-            <div className="flex flex-wrap gap-1">
-              <ScopeTab
-                active={scope.kind === 'global'}
+          {/* Scope tabs (A2, 2026-05-06): 'Global', then each store the
+              member is in; one where the actor may not set overrides is
+              shown, disabled. The number counts the overrides set there.
+              Review ADM1-13 / ADM1-24 (2026-11-12): the kit's ChipBar (a
+              44 px tap area, the kit's disabled look), not a hand-drawn
+              26 px pill. */}
+          {(target?.stores ?? []).length > 0 && (
+            <ChipBar ariaLabel={i18n.t('admin.field.scope')} className="-mx-4 -my-1.5 px-4 py-1.5">
+              <Chip
+                selected={scope.kind === 'global'}
                 disabled={!canEditScope(null)}
                 onClick={() => setScope({ kind: 'global' })}
-                count={overrideByScopeKey.get('global')?.size ?? 0}
               >
                 {i18n.t('people.scopeGlobal')}
-              </ScopeTab>
+                <OverrideCount
+                  n={overrideByScopeKey.get('global')?.size ?? 0}
+                  selected={scope.kind === 'global'}
+                />
+              </Chip>
               {(target?.stores ?? []).map((st) => {
                 const editable = canEditScope(st.id);
                 const isActive = scope.kind === 'store' && scope.storeId === st.id;
-                const tabCount = overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
                 return (
-                  <ScopeTab
+                  <Chip
                     key={st.id}
-                    active={isActive}
+                    selected={isActive}
                     disabled={!editable}
-                    onClick={() =>
-                      editable &&
-                      setScope({
-                        kind: 'store',
-                        storeId: st.id,
-                        storeName: st.name,
-                      })
-                    }
-                    count={tabCount}
                     title={editable ? undefined : i18n.t('people.notYourStoreReadOnly')}
+                    onClick={() => setScope({ kind: 'store', storeId: st.id, storeName: st.name })}
                   >
                     {st.name}
-                  </ScopeTab>
+                    <OverrideCount
+                      n={overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0}
+                      selected={isActive}
+                    />
+                  </Chip>
                 );
               })}
-            </div>
+            </ChipBar>
           )}
           <Banner tone="info" title={i18n.t('people.overridesHowTitle')}>
             {scope.kind === 'global'
@@ -277,133 +268,85 @@ export function MemberPermissionsSheet({
               {i18n.t('people.perm.allowOnlyOwn')}
             </p>
           ) : null}
-          {rows.map(([ns, keys]) => (
-            <div key={ns}>
-              {/* CMP-ADM-2: localised group, name and description, not the
-                  English seed text and raw keys. */}
-              <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
-              <ul className="mt-1 flex flex-col gap-1">
-                {keys.map(({ p, effects }) => {
-                  const override = overrideByKey.get(p.key) ?? null;
-                  const fromRole = roleKeys.has(p.key);
-                  const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
-                  // The rarer reasons are said on the row itself.
-                  const rowReason =
-                    scopeEditable && effects.reason !== 'people.perm.allowOnlyOwn'
-                      ? effects.reason
-                      : null;
-                  return (
-                    <li
-                      key={p.key}
-                      className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="min-w-0 text-old-body-sm text-[var(--c-fg)]">
-                          {roleText.permission(p.key, p.description)}
-                        </div>
-                        {fromRole ? (
-                          <Badge tone="muted">{i18n.t('people.perm.fromRoleBadge')}</Badge>
-                        ) : null}
-                      </div>
-                      {/* M3.17 (2026-05-16): migrated from local SegBtn
-                          to the shared <Segmented> primitive. Per-option
-                          activeBg drives the allow=green / deny=red /
-                          inherit=action coloring that the old SegBtn
-                          baked in via a `tone` prop. */}
-                      <Segmented<'role' | 'allow' | 'deny'>
-                        size="sm"
-                        value={mode}
-                        options={[
-                          { value: 'role', label: i18n.t('people.perm.fromRole') },
-                          {
-                            value: 'allow',
-                            label: i18n.t('people.perm.allow'),
-                            activeBg: 'bg-[var(--c-success)]',
-                            disabled: !effects.allow,
-                          },
-                          {
-                            value: 'deny',
-                            label: i18n.t('people.perm.deny'),
-                            activeBg: 'bg-[var(--c-danger)]',
-                            disabled: !effects.deny,
-                          },
-                        ]}
-                        onChange={(next) => handleSet(p.key, next)}
-                        disabled={!scopeEditable || set.isPending || revoke.isPending}
-                        // Each choice is saved at once: arrows only move.
-                        followFocus={false}
-                        ariaLabel={roleText.permission(p.key, p.description)}
-                      />
-                      {rowReason ? (
-                        <p className="text-old-label text-[var(--c-fg-muted)]">
-                          {i18n.t(rowReason)}
-                        </p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+          {/* CMP-ADM-2: localised group, name and description, not the
+              English seed text and raw keys. */}
+          <PermissionGroupList
+            groups={rows}
+            renderRow={({ p, effects }) => {
+              const override = overrideByKey.get(p.key) ?? null;
+              const fromRole = roleKeys.has(p.key);
+              const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
+              // The rarer reasons are said on the row itself.
+              const rowReason =
+                scopeEditable && effects.reason !== 'people.perm.allowOnlyOwn'
+                  ? effects.reason
+                  : null;
+              return (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="min-w-0 text-old-body-sm text-[var(--c-fg)]">
+                      {roleText.permission(p.key, p.description)}
+                    </div>
+                    {fromRole ? (
+                      <Badge tone="muted">{i18n.t('people.perm.fromRoleBadge')}</Badge>
+                    ) : null}
+                  </div>
+                  {/* M3.17 (2026-05-16): migrated from local SegBtn to the
+                      shared <Segmented> primitive. Per-option activeBg drives
+                      the allow=green / deny=red / inherit=action coloring
+                      that the old SegBtn baked in via a `tone` prop. */}
+                  <Segmented<'role' | 'allow' | 'deny'>
+                    size="sm"
+                    value={mode}
+                    options={[
+                      { value: 'role', label: i18n.t('people.perm.fromRole') },
+                      {
+                        value: 'allow',
+                        label: i18n.t('people.perm.allow'),
+                        activeBg: 'bg-[var(--c-success)]',
+                        disabled: !effects.allow,
+                      },
+                      {
+                        value: 'deny',
+                        label: i18n.t('people.perm.deny'),
+                        activeBg: 'bg-[var(--c-danger)]',
+                        disabled: !effects.deny,
+                      },
+                    ]}
+                    onChange={(next) => handleSet(p.key, next)}
+                    disabled={!scopeEditable || set.isPending || revoke.isPending}
+                    // Each choice is saved at once: arrows only move.
+                    followFocus={false}
+                    ariaLabel={roleText.permission(p.key, p.description)}
+                  />
+                  {rowReason ? (
+                    <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t(rowReason)}</p>
+                  ) : null}
+                </div>
+              );
+            }}
+          />
         </div>
       )}
     </Sheet>
   );
 }
 
-/**
- * ScopeTab — tab pill for the per-store permission-override tabs (A2,
- * 2026-05-06). Mirrors the visual language of the segmented buttons
- * but in tab-bar form. Shows a small count chip when the tab has at
- * least one override scoped to it. `disabled` greys it out for stores
- * the actor doesn't administer (the tab still renders so the operator
- * sees the full member-store list, but it's read-only-style).
- */
-function ScopeTab({
-  active,
-  disabled,
-  count,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  count?: number;
-  onClick: () => void;
-  title?: string;
-  children: React.ReactNode;
-}) {
-  const base =
-    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-old-label font-medium ring-hairline';
-  const tone = active
-    ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-    : disabled
-      ? 'bg-transparent text-[var(--c-fg-muted)] opacity-60'
-      : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]';
+/** The number of overrides set in a scope, on its tab; nothing for none. */
+function OverrideCount({ n, selected }: { n: number; selected: boolean }) {
+  if (n <= 0) return null;
   return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      title={title}
-      className={`${base} ${tone}`}
+    <span
+      className={
+        'ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
+        // V7: inverted on the selected chip; white-on-white-tint went
+        // unreadable once the dark theme's action fill turned light.
+        (selected
+          ? 'bg-[var(--c-action-fg)] text-[var(--c-action)]'
+          : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
+      }
     >
-      <span>{children}</span>
-      {count && count > 0 ? (
-        <span
-          className={
-            'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
-            // V7: inverted on the active chip; white-on-white-tint went
-            // unreadable once the dark theme's action fill turned light.
-            (active
-              ? 'bg-[var(--c-action-fg)] text-[var(--c-action)]'
-              : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
-          }
-        >
-          {count}
-        </span>
-      ) : null}
-    </button>
+      {n}
+    </span>
   );
 }

@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Field, Input, LoadingState, SectionLabel, Sheet, useToast } from '@compass/ui';
+import {
+  Button,
+  Field,
+  Input,
+  LoadingState,
+  QueryErrorBanner,
+  SectionLabel,
+  Sheet,
+  useToast,
+} from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { SLUG_MESSAGE } from '@compass/contracts/limits';
 import { trpc } from '../../../../lib/trpc';
@@ -13,6 +22,7 @@ import {
 } from '../../../../lib/adminFields';
 import { canPutKeyInRole } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
+import { PermissionGroupList } from '../PermissionGroupList';
 import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 
@@ -182,26 +192,22 @@ export function RoleCreateSheet({
           </SectionLabel>
           {permsQuery.isLoading ? (
             <LoadingState variant="compact" />
+          ) : permsQuery.isError && !permsQuery.data ? (
+            // Review ADM1-22 (2026-11-12): a failed load showed no
+            // permissions at all.
+            <QueryErrorBanner query={permsQuery} />
           ) : (
-            <ul className="flex flex-col gap-3">
-              {grouped.map(([ns, keys]) => (
-                <li key={ns}>
-                  <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
-                  <ul className="mt-1 flex flex-col gap-1">
-                    {keys.map((p) => (
-                      <li key={p.key}>
-                        <PermissionKeyOption
-                          perm={p}
-                          checked={picked.has(p.key)}
-                          blocked={canPutKeyInRole(p) ? null : i18n.t('people.perm.roleNeedsOwn')}
-                          onToggle={() => togglePerm(p.key)}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
+            <PermissionGroupList
+              groups={grouped}
+              renderRow={(p) => (
+                <PermissionKeyOption
+                  perm={p}
+                  checked={picked.has(p.key)}
+                  blocked={canPutKeyInRole(p) ? null : i18n.t('people.perm.roleNeedsOwn')}
+                  onToggle={() => togglePerm(p.key)}
+                />
+              )}
+            />
           )}
         </div>
       </div>

@@ -44,23 +44,11 @@ export function targetOf(m: {
   };
 }
 
-/** A store in a pick list: its name, then its code, muted. */
-export function StoreName({ store }: { store: { name: string; code?: string | null } }) {
-  return (
-    <>
-      {store.name}
-      {store.code ? (
-        <span className="ml-2 text-old-label text-[var(--c-fg-muted)]">{store.code}</span>
-      ) : null}
-    </>
-  );
-}
-
 export interface InviteDraft {
   tgUserId: string;
   displayName: string;
   roleSlug: string;
-  /** At least one store must be picked unless the role is admin/super_admin
-   *  (which auto-bypass via users.manage permission). */
+  /** At least one store must be picked unless the role is org-tier (rank
+   *  ≥ ADMIN_RANK): its holder sees every store through `org.admin`. */
   storeIds: string[];
 }

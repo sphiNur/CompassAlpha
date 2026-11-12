@@ -2,17 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Banner,
-  Checkbox,
   FieldGroup,
+  ListRow,
   LoadingState,
+  QueryErrorBanner,
   Segmented,
   Sheet,
   useToast,
+  rowGroupClass,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
 import {
   canGrantRole,
   canGrantTo,
@@ -22,17 +25,17 @@ import {
   type Actor,
   type TargetMember,
 } from '../../../../lib/authority';
-import { StoreName } from '../shared';
+import { StoreCheckList } from '../StoreCheckList';
 
 /**
  * GrantRoleSheet — two-step picker.
  *
  *   Step 1: pick scope.
- *     - "Globally"     → only org-tier roles (rank ≥ 80). Hidden if the
- *                        actor is a store-scoped admin only (their
- *                        adminStoreIds doesn't cover the whole org).
+ *     - "Globally"     → only org-tier roles (rank ≥ 80). Disabled, with
+ *                        the reason under it, unless the actor holds
+ *                        org.admin (UI-07).
  *     - "In specific store(s)" → store-tier roles (rank < 80). The
- *                        store dropdown is filtered to session.adminStoreIds
+ *                        store list is filtered to session.adminStoreIds
  *                        — a store-scoped admin only sees their own stores.
  *
  *   Step 2: pick role.
@@ -40,12 +43,13 @@ import { StoreName } from '../shared';
  *       the chosen scope. For "store" scope with multiple stores
  *       selected, we use the MIN rank across the selected stores
  *       (because each store-binding is independently gated server-side
- *       — if any one fails, the operation aborts mid-way).
+ *       — if any one is refused, none is granted).
  *
  *   When a role is tapped:
  *     - Global → 1 grantRole call
- *     - Store(s) → N grantRole calls in sequence (one per selected
- *                  store). Server's idempotency check makes re-runs safe.
+ *     - Store(s) → 1 grantRoleInStores call: every selected store or
+ *                  none (review ADM1-34). A store where the member
+ *                  already has the role is counted, not refused.
  *
  * Defaults: if the caller passes `defaultStoreId` (PeopleSection does
  * this when StoreSwitcher is in 'specific' mode), we pre-select store
@@ -66,10 +70,7 @@ export function GrantRoleSheet({
   onClose: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   const i18n = useI18n();
   const roleText = useRoleLabels();
@@ -81,6 +82,10 @@ export function GrantRoleSheet({
   const grant = trpc.admin.grantRole.useMutation({
     onError: errToast('common.errors.actionFailed'),
   });
+  const grantInStores = trpc.admin.grantRoleInStores.useMutation({
+    onError: errToast('common.errors.actionFailed'),
+  });
+  const granting = grant.isPending || grantInStores.isPending;
 
   // Two-step state.
   const [scopeMode, setScopeMode] = useState<'global' | 'store'>('store');
@@ -116,11 +121,11 @@ export function GrantRoleSheet({
   // 2026-10-21 audit CA-16 (A-10): the server requires org.admin for a
   // global binding; the old "admin of every visible store" test was true
   // for a single-store manager.
-  const canGrantGlobal = session?.permissions.includes('org.admin') ?? false;
+  const canGrantGlobal = useIsOrgAdmin();
 
   // Effective rank in the chosen scope: the lowest over the selected
-  // stores, because the grant fans out to one server call per store and
-  // each is gated on its own store rank — the weakest link wins.
+  // stores, because each store is gated on its own store rank — the
+  // weakest link wins.
   // CMP-ADM-1: rank in a store counts global bindings and that store's,
   // as the server does; the old max(myMaxRank, storeRanks[id]) let a
   // manager of A look like a manager of B.
@@ -181,7 +186,7 @@ export function GrantRoleSheet({
   };
 
   const handlePick = async (slug: string) => {
-    if (!target) return;
+    if (!target || granting) return;
     if (scopeMode === 'global') {
       try {
         const data = await grant.mutateAsync({
@@ -199,31 +204,35 @@ export function GrantRoleSheet({
       }
       return;
     }
-    // Store fan-out. We loop sequentially so a mid-run server error
-    // (rank changed, store archived, etc.) leaves the partial result
-    // visible to the user and they can retry the rest.
-    let createdCount = 0;
-    let skipped = 0;
-    for (const storeId of selectedStoreIds) {
-      try {
-        const data = await grant.mutateAsync({
-          userId: target.userId,
-          roleSlug: slug,
-          scopeType: 'store',
-          scopeId: storeId,
-        });
-        if (data.granted) createdCount++;
-        else skipped++;
-      } catch {
-        // first failure: stop here; toast already raised by onError
-        void utils.admin.memberList.invalidate();
-        return;
-      }
+    // Review ADM1-34 (2026-11-12): every chosen store in one call, all
+    // or none. A call per store, one after the other, left the first
+    // stores granted when a later one was refused, and said only that it
+    // had failed. On a refusal the sheet stays open, nothing changed.
+    let stores: Array<{ granted: boolean }>;
+    try {
+      ({ stores } = await grantInStores.mutateAsync({
+        userId: target.userId,
+        roleSlug: slug,
+        storeIds: [...selectedStoreIds],
+      }));
+    } catch {
+      // Toast already shown. The refusal may come from a change made
+      // elsewhere, so the list is read again.
+      void utils.admin.memberList.invalidate();
+      return;
     }
+    const createdCount = stores.filter((st) => st.granted).length;
+    const skipped = stores.length - createdCount;
     if (createdCount > 0) {
       toast.success(
-        i18n.t('people.toastGrantedInStores', { n: createdCount }) +
-          (skipped > 0 ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}` : ''),
+        // ADM1-25: joined as the language joins them (no space before the
+        // full-width bracket in Chinese).
+        skipped > 0
+          ? i18n.t('common.twoSentences', {
+              first: i18n.t('people.toastGrantedInStores', { n: createdCount }),
+              second: i18n.t('people.toastAlreadyHad', { n: skipped }),
+            })
+          : i18n.t('people.toastGrantedInStores', { n: createdCount }),
       );
     } else if (skipped > 0) {
       toast.info(i18n.t('people.toastAlreadyEverywhere'));
@@ -238,7 +247,7 @@ export function GrantRoleSheet({
     <Sheet
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
-      hasChanges={grantChanged && !grant.isPending}
+      hasChanges={grantChanged && !granting}
       title={i18n.t('people.grantRoleTitle')}
       description={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
     >
@@ -278,20 +287,11 @@ export function GrantRoleSheet({
                 {i18n.t('people.noGrantStoresBody')}
               </Banner>
             ) : (
-              <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                {eligibleStores.map((st) => {
-                  const checked = selectedStoreIds.has(st.id);
-                  return (
-                    <Checkbox
-                      key={st.id}
-                      className="px-2"
-                      checked={checked}
-                      label={<StoreName store={st} />}
-                      onChange={() => toggleStore(st.id)}
-                    />
-                  );
-                })}
-              </div>
+              <StoreCheckList
+                stores={eligibleStores}
+                isChecked={(st) => selectedStoreIds.has(st.id)}
+                onChange={(st) => toggleStore(st.id)}
+              />
             )}
           </FieldGroup>
         ) : null}
@@ -303,6 +303,10 @@ export function GrantRoleSheet({
           </p>
         ) : rolesQuery.isLoading ? (
           <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
+        ) : rolesQuery.isError && !rolesQuery.data ? (
+          // Review ADM1-22 (2026-11-12): a failed load read "no role you
+          // can grant here".
+          <QueryErrorBanner query={rolesQuery} />
         ) : grantableRoles.length === 0 ? (
           <Banner tone="warn" title={i18n.t('people.noGrantableTitle')}>
             {scopeMode === 'global'
@@ -310,28 +314,41 @@ export function GrantRoleSheet({
               : i18n.t('people.noGrantableStore', { rank: effectiveRank })}
           </Banner>
         ) : (
-          grantableRoles.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              disabled={grant.isPending || r.keysMissing}
-              onClick={() => handlePick(r.slug)}
-              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
-            >
-              <div>
-                <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                  {roleText.name(r)}
-                </div>
-                <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                  {r.keysMissing
-                    ? i18n.t('people.roleHasKeysYouLack')
-                    : i18n.t('people.rankLine', { rank: r.rank }) +
-                      (roleText.description(r) ? ` · ${roleText.description(r)}` : '')}
-                </div>
-              </div>
-              {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
-            </button>
-          ))
+          // Review ADM1-13 (2026-11-12): the kit's rows (UI-16), not
+          // hand-drawn buttons. A role carrying keys the actor lacks here
+          // (D8) is listed, marked, and not offered; nothing is offered
+          // while a grant is on its way.
+          <ul className={rowGroupClass} role="list">
+            {grantableRoles.map((r) => {
+              const description = roleText.description(r);
+              return (
+                <li key={r.id}>
+                  <ListRow
+                    label={
+                      r.keysMissing ? (
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {roleText.name(r)}
+                          <Badge tone="warn">{i18n.t('people.roleKeysYouLackBadge')}</Badge>
+                        </span>
+                      ) : (
+                        roleText.name(r)
+                      )
+                    }
+                    hint={
+                      i18n.t('people.rankLine', { rank: r.rank }) +
+                      (description ? ` · ${description}` : '')
+                    }
+                    badge={
+                      r.isBuiltIn ? (
+                        <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
+                      ) : null
+                    }
+                    onClick={r.keysMissing || granting ? undefined : () => void handlePick(r.slug)}
+                  />
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </Sheet>

@@ -3,7 +3,6 @@ import {
   Avatar,
   Badge,
   Button,
-  Card,
   CardHeader,
   CardMeta,
   CardTitle,
@@ -23,13 +22,13 @@ import { copyText } from '../../../lib/clipboard';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
+import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { getTg } from '../../../lib/telegram';
-import { useStoreContext } from '../../../hooks/useStoreContext';
 import {
   inviteLink as makeInviteLink,
   shareLink as makeShareLink,
 } from '../../../lib/telegramLinks';
-import { nativeConfirm } from '../shared';
+import { confirmThen } from '../../../lib/confirm';
 import { InviteCopySheet } from './InviteCopySheet';
 import {
   canDetachFromStore,
@@ -49,29 +48,25 @@ import { MemberPermissionsSheet } from './members/MemberPermissionsSheet';
 import { type InviteDraft, targetOf, useActor } from './shared';
 
 /**
- * PeopleSection — directory of org members.
+ * PeopleSection — directory of org members, inside a store's Team tab:
  *
- * Two callers, two behaviors:
+ *   - **`lockMode={ kind: 'store', storeId }`** (M1.4): only members
+ *     of this store. The screen lives inside StoreDetailScreen, so the
+ *     parent establishes the store, not the StoreSwitcher.
  *
- *   - **No `lockMode` (legacy)**: honor the global StoreSwitcher.
- *     `specific` → filter to that store. `all` → grouped view with
- *     "Org-level" header. `none` → unreachable. (Kept for any caller
- *     that still wires this — currently none after M1.4.)
+ *   - **`lockMode={ kind: 'org-level' }`** (M1.4): only members with no
+ *     store (organisation-level operators). Used by the Stores →
+ *     Org-level pseudo-store entry.
  *
- *   - **`lockMode={ kind: 'store', storeId }`** (M1.4 default): only
- *     show members assigned to this specific store. The StoreSwitcher
- *     is bypassed entirely — this screen lives inside StoreDetailScreen,
- *     so the parent already establishes the store context.
- *
- *   - **`lockMode={ kind: 'org-level' }`** (M1.4): show only members
- *     with no store assignments (admin / super_admin org-level
- *     operators). Used by the Stores → Org-level pseudo-store entry.
+ * Review ADM1-27 (2026-11-12): the mode without `lockMode`, which
+ * followed the StoreSwitcher and grouped everyone by store, had no
+ * caller since M1.4 and is gone.
  */
 export function PeopleSection({
   lockMode,
 }: {
-  lockMode?: { kind: 'store'; storeId: string } | { kind: 'org-level' };
-} = {}) {
+  lockMode: { kind: 'store'; storeId: string } | { kind: 'org-level' };
+}) {
   const session = useAuthStore((s) => s.session);
   const membersQuery = trpc.admin.memberList.useQuery();
   const actor = useActor(membersQuery.data);
@@ -88,17 +83,11 @@ export function PeopleSection({
   // organization-wide authority (a single-store manager satisfies that old
   // test). Permission overrides are global-impact tooling, so gate them on
   // the explicit organization marker.
-  const isGlobalAdminPeople = session?.permissions.includes('org.admin') ?? false;
-  // Resolve the effective storeCtx. When `lockMode` is set we bypass
-  // the global StoreSwitcher; otherwise we fall back to it for the
-  // legacy unscoped path.
-  const fallbackCtx = useStoreContext();
+  const isGlobalAdminPeople = useIsOrgAdmin();
   const storeCtx =
-    lockMode?.kind === 'store'
+    lockMode.kind === 'store'
       ? { kind: 'specific' as const, storeId: lockMode.storeId }
-      : lockMode?.kind === 'org-level'
-        ? { kind: 'org-level' as const }
-        : fallbackCtx;
+      : { kind: 'org-level' as const };
   // Note: the previous internal tabs (Members | Roles) are gone — Roles
   // & Permissions is now its own top-level sub-section under People.
   // This screen is purely the members directory.
@@ -308,10 +297,12 @@ export function PeopleSection({
             return inactive ? inactiveName(inactive) : null;
           };
           // Filter / group by store context (added 2026-05-05).
-          const renderCard = (m: (typeof rows)[number]) => {
+          // Review ADM1-23 (2026-11-12): one card, a row per member divided
+          // by hairlines (UI-6); it was a card per member.
+          const renderRow = (m: (typeof rows)[number]) => {
             const isSelf = m.userId === session?.user.id;
             return (
-              <Card as="li" key={m.memberId}>
+              <li key={m.memberId} className="min-w-0">
                 <CardHeader>
                   <div className="flex min-w-0 items-center gap-3">
                     <Avatar src={m.avatarUrl} name={m.displayName} size={36} />
@@ -341,7 +332,9 @@ export function PeopleSection({
                     <Badge tone="warn">
                       {m.status === 'suspended' || m.status === 'invited'
                         ? i18n.t(`people.memberStatus.${m.status}`)
-                        : m.status}
+                        : // UI-2 (ADM1-25): a status this build does not know
+                          // is named as such, never shown raw.
+                          i18n.t('common.unknownStatus')}
                     </Badge>
                   ) : null}
                 </CardHeader>
@@ -386,16 +379,16 @@ export function PeopleSection({
                         // Revoking was a tap on this 18 px chip, with the verb
                         // only in a tooltip; it now sits in the member's ⋯
                         // sheet as a full-size "Revoke" button per role.
+                        // ADM1-23: the kit's Badge, not a hand-drawn pill.
                         return (
-                          <span
-                            key={r.bindingId}
-                            className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
-                          >
-                            <span className="font-semibold">{roleText.name(r)}</span>
+                          <Badge key={r.bindingId} tone="info" className="max-w-full">
+                            <span className="min-w-0 truncate font-semibold text-[var(--c-fg)]">
+                              {roleText.name(r)}
+                            </span>
                             {scopedStoreName ? (
-                              <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
+                              <span className="min-w-0 truncate">· {scopedStoreName}</span>
                             ) : null}
-                          </span>
+                          </Badge>
                         );
                       })
                     }
@@ -407,7 +400,7 @@ export function PeopleSection({
                     Permissions / Suspend / Reactivate / Remove-store /
                     Remove-org all live in the member-menu sheet at the
                     page level (state: memberMenuFor). */}
-                <div className="mt-2 flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2">
+                <div className="flex items-center gap-2 px-4 pt-2 pb-3">
                   <Button
                     size="sm"
                     variant="pearl"
@@ -484,7 +477,7 @@ export function PeopleSection({
                     ⋯
                   </Button>
                 </div>
-              </Card>
+              </li>
             );
           };
 
@@ -517,85 +510,30 @@ export function PeopleSection({
               );
             }
             return (
-              <ul className="flex flex-col gap-2" role="list">
-                {filtered.map(renderCard)}
+              <ul className={rowGroupClass} role="list">
+                {filtered.map(renderRow)}
               </ul>
             );
           }
 
           // M1.4: org-level pseudo-store. Show only members with no
           // store assignments (admin / super_admin operators).
-          if (storeCtx.kind === 'org-level') {
-            const orgOnly = rows.filter(
-              (m) => m.stores.length === 0 && m.inactiveStores.length === 0,
-            );
-            if (orgOnly.length === 0 && tokens) return noMatch;
-            if (orgOnly.length === 0) {
-              return (
-                <EmptyState
-                  title={i18n.t('people.orgLevelEmptyTitle')}
-                  description={i18n.t('people.orgLevelEmptyBody')}
-                />
-              );
-            }
-            return (
-              <ul className="flex flex-col gap-2" role="list">
-                {orgOnly.map(renderCard)}
-              </ul>
-            );
-          }
-
-          // ALL view: group by store. Members appear once per store
-          // they belong to. Members with no stores (admins, super-
-          // admins) get a separate "Org-level" section at the top.
-          const orgLevel = rows.filter(
+          const orgOnly = rows.filter(
             (m) => m.stores.length === 0 && m.inactiveStores.length === 0,
           );
-          // Build store → members map. Every (store, member) pair where
-          // the member is in that store contributes one entry. Paused and
-          // archived stores come after the active ones (ADM1-16).
-          const byStore = new Map<
-            string,
-            { name: string; inactive: boolean; members: typeof rows }
-          >();
-          const addTo = (id: string, name: string, inactive: boolean, m: (typeof rows)[number]) => {
-            const bucket = byStore.get(id) ?? { name, inactive, members: [] };
-            bucket.members.push(m);
-            byStore.set(id, bucket);
-          };
-          for (const m of rows) {
-            for (const st of m.stores) addTo(st.id, st.name, false, m);
-            for (const st of m.inactiveStores) addTo(st.id, inactiveName(st), true, m);
+          if (orgOnly.length === 0 && tokens) return noMatch;
+          if (orgOnly.length === 0) {
+            return (
+              <EmptyState
+                title={i18n.t('people.orgLevelEmptyTitle')}
+                description={i18n.t('people.orgLevelEmptyBody')}
+              />
+            );
           }
-          const storeSections = [...byStore.entries()].sort(
-            (a, b) =>
-              Number(a[1].inactive) - Number(b[1].inactive) ||
-              a[1].name.localeCompare(b[1].name, i18n.locale),
-          );
-          if (rows.length === 0) return noMatch;
           return (
-            <div className="flex flex-col gap-4">
-              {orgLevel.length > 0 ? (
-                <section>
-                  <SectionLabel as="h3" padded={false} className="mb-2">
-                    {i18n.t('people.orgLevelGroup', { n: orgLevel.length })}
-                  </SectionLabel>
-                  <ul className="flex flex-col gap-2" role="list">
-                    {orgLevel.map(renderCard)}
-                  </ul>
-                </section>
-              ) : null}
-              {storeSections.map(([storeId, bucket]) => (
-                <section key={storeId}>
-                  <SectionLabel as="h3" padded={false} className="mb-2">
-                    {bucket.name} ({bucket.members.length})
-                  </SectionLabel>
-                  <ul className="flex flex-col gap-2" role="list">
-                    {bucket.members.map(renderCard)}
-                  </ul>
-                </section>
-              ))}
-            </div>
+            <ul className={rowGroupClass} role="list">
+              {orgOnly.map(renderRow)}
+            </ul>
           );
         }}
       </DataState>
@@ -645,7 +583,7 @@ export function PeopleSection({
                             onClick={() => {
                               const name = memberMenuFor.displayName;
                               setMemberMenuFor(null);
-                              nativeConfirm(
+                              confirmThen(
                                 r.store
                                   ? i18n.t('people.revokeRoleInStoreConfirm', {
                                       role: r.role,
@@ -697,7 +635,7 @@ export function PeopleSection({
                 onClick={() => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  nativeConfirm(i18n.t('admin.confirm.suspend', { name: target.displayName }), () =>
+                  confirmThen(i18n.t('admin.confirm.suspend', { name: target.displayName }), () =>
                     setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
                   );
                 }}
@@ -740,7 +678,7 @@ export function PeopleSection({
                       (st) => st.id === storeCtx.storeId,
                     )?.name ?? i18n.t('admin.label.thisStore');
                   setMemberMenuFor(null);
-                  nativeConfirm(
+                  confirmThen(
                     i18n.t('admin.confirm.removeFromStore', {
                       name: target.displayName,
                       store: storeName,
@@ -765,7 +703,7 @@ export function PeopleSection({
                 onClick={() => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  nativeConfirm(
+                  confirmThen(
                     i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
                     () => remove.mutate({ memberId: target.memberId }),
                   );

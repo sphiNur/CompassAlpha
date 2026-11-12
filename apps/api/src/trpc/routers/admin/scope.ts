@@ -17,7 +17,7 @@ import {
   bindingIsLive,
   getActorMaxGlobalRank,
   getActorMaxRank,
-  getActorMaxRankInStore,
+  loadRanks,
 } from '../../../services/adminAuthority';
 import type { RequestContext } from '../../context';
 
@@ -272,7 +272,7 @@ export async function assertCanSetMemberStatus(
       getActorMaxGlobalRank(tx, orgId, session.userId),
     ]);
     if (targetRank >= actorRank) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.targetOutranksYou' });
     }
     return;
   }
@@ -317,13 +317,15 @@ export async function assertAdministersEveryTargetStore(
   if (targetStoreIds.size === 0 || [...targetStoreIds].some((id) => !allowed.includes(id))) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
   }
+  // Review ADM1-31 (2026-11-12): each person's bindings read once, not
+  // twice for every store.
+  const [targetRanks, actorRanks] = await Promise.all([
+    loadRanks(tx, orgId, target.userId),
+    loadRanks(tx, orgId, session.userId),
+  ]);
   for (const storeId of targetStoreIds) {
-    const [targetRank, actorRank] = await Promise.all([
-      getActorMaxRankInStore(tx, orgId, target.userId, storeId),
-      getActorMaxRankInStore(tx, orgId, session.userId, storeId),
-    ]);
-    if (targetRank >= actorRank) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+    if (targetRanks.inStore(storeId) >= actorRanks.inStore(storeId)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.targetOutranksYou' });
     }
   }
 }
