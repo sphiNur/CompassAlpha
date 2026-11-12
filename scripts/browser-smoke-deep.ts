@@ -13,15 +13,19 @@
  * server-state machine. A tRPC call nothing stubs fails the smoke.
  *
  * What it asserts:
- *   - Order tab: shows 18 SKUs, qty +/− is visible, tapping + shows
- *     row with qty=1, Selected counter increments, "Review Order"
- *     button visible after qty>0.
- *   - Approve tab: shows the (stubbed) pending session card with store
- *     + member info, claim button visible.
- *   - Run tab: shows preview if there are approved sessions, otherwise
- *     empty state.
- *   - Confirm tab: empty-state when no active delivery.
- *   - Debug tab: shows session id, three view tabs (Live/Server/Health).
+ *   - Order tab: the stubbed SKUs with their +/− controls; a + tap counts
+ *     the item on the main action ("Review order (1)"), whose sheet lists
+ *     it and submits it.
+ *   - Review tab: the submitted session card and the Pending / Approved /
+ *     Rejected tabs.
+ *   - Run tab: the empty state (no approved sessions are stubbed).
+ *   - History tab: search and server-filter controls.
+ *   - Close tab: the itemized daily close and its wage picker (filter by
+ *     responsibility, selection written back, cancel removes the blank).
+ *   - Receive tab: the empty state when nothing is being delivered.
+ *   - Admin tab: sections, store detail and its tabs, Operations home,
+ *     Live activity, the Telegram BackButton, Maintenance when the build
+ *     has it.
  *
  * Usage:
  *   COMPASS_BASE=http://localhost:3000 node --experimental-strip-types scripts/browser-smoke-deep.ts
@@ -386,20 +390,32 @@ async function run() {
       record('Order page accepts a + tap (no JS error)', pageErrors.length === 0);
     }
 
-    // Selected indicator: now a single number pill in the header that
-    // only renders when count > 0. After 1 + tap on a 0.5-step SKU the
-    // running aggregate is 1 SKU → pill shows "1".
-    const selectedPillText = await page.evaluate(() => {
-      // Pill is our header's `bg-[var(--c-action)]` element with tabular-nums.
-      const pill = document.querySelector('header [class*="rounded"][class*="action"]');
-      return pill?.textContent ?? document.body.innerText.slice(0, 200);
-    });
+    // Review OPS-39: the count of chosen items rides the main action,
+    // "Review order (N)": the in-page PageMainButton, or Telegram's
+    // MainButton in older builds. (The header pill this used to read is
+    // gone; its fallback, any digit in the page, could not fail.)
+    const reviewLabel = async () =>
+      page.evaluate(() => {
+        const w = window as unknown as {
+          Telegram?: { WebApp?: { MainButton?: { text?: string; isVisible?: boolean } } };
+        };
+        const native = w.Telegram?.WebApp?.MainButton;
+        if (native?.isVisible && native.text) return native.text;
+        const own = [...document.querySelectorAll('button')].filter((b) =>
+          /Review order/.test(b.textContent ?? ''),
+        );
+        return own.at(-1)?.textContent ?? '';
+      });
+    const countOf = (label: string) => Number(/Review order\s*\((\d+)\)/.exec(label)?.[1] ?? 0);
+    let chosenLabel = await reviewLabel();
+    for (let i = 0; i < 10 && countOf(chosenLabel) === 0; i++) {
+      await page.waitForTimeout(300);
+      chosenLabel = await reviewLabel();
+    }
     record(
-      'Order page Selected counter > 0 after + tap',
-      /[1-9]/.test(selectedPillText) ||
-        /Selected\s+\d/.test(selectedPillText) ||
-        /0\.5\s*kg/.test(await page.evaluate(() => document.body.innerText)),
-      selectedPillText.replace(/\s+/g, ' '),
+      'Order page counts the item after a + tap (Review order (N), N > 0)',
+      countOf(chosenLabel) > 0,
+      chosenLabel.replace(/\s+/g, ' ') || 'no Review order action',
     );
 
     // ---- Approve tab ----
@@ -758,7 +774,7 @@ async function run() {
     await waitForText(page, [/Live activity/i, /Order history/i]);
     const opsHomeText = await page.evaluate(() => document.body.innerText);
     record(
-      'Operations home lists Live activity / Order history / Maintenance',
+      'Operations home lists Live activity / Order history',
       /Live activity/i.test(opsHomeText) && /Order history/i.test(opsHomeText),
       opsHomeText.split('\n').slice(0, 8).join(' / '),
     );
@@ -789,8 +805,9 @@ async function run() {
     });
     record('Telegram BackButton wired in admin sub-pages', backed);
     await page.waitForTimeout(200);
-    // Maintenance is super_admin-only and may be hidden for the smoke
-    // user — gate the assertion on whether the link is even present.
+    // Maintenance shows to a super_admin (the smoke user is one) only in a
+    // build made with VITE_ENABLE_MAINTENANCE=1; production builds leave it
+    // out, so the check runs where the entry is there.
     const hasMaint = await page.evaluate(() => /Maintenance/.test(document.body.innerText));
     if (hasMaint) {
       await page.click('button:has-text("Maintenance")');
@@ -807,7 +824,7 @@ async function run() {
       record(
         'Maintenance section visible',
         true,
-        'hidden for non-super-admin smoke user (expected)',
+        'not in this build (VITE_ENABLE_MAINTENANCE is off)',
       );
     }
 

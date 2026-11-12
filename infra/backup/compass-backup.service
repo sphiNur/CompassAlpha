@@ -7,6 +7,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Review OPS-34: a oneshot has no start timeout by default, and the timer
+# starts no other run while one hangs. A dump takes seconds today.
+TimeoutStartSec=30min
 User=ubuntu
 Group=ubuntu
 # Path includes /usr/bin so pg_dump + aws (if installed) resolve.

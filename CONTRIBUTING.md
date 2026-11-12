@@ -23,7 +23,7 @@ packages/
   contracts/   tRPC routes + Zod schemas (frontend + backend share)
   ui/          Concord design system (Sheet, Button, Input, Toast, …)
   i18n/        ICU runtime + 4 catalogs (en/zh/ru/uz)
-  telemetry/   OpenTelemetry SDK + client log buffer
+  telemetry/   client log buffer (ring buffer + batched upload)
   cli/         `compass` command-line tool
 ```
 
@@ -226,8 +226,8 @@ runtime issues, smokes do.
 
 ## Local dev gotchas
 
-- Postgres must be on **port 5433**, Redis on **6380** (the dev compose
-  publishes those, not the defaults). `.env.example` matches.
+- Postgres must be on **port 5433** (the dev compose publishes that, not
+  the default). `.env.example` matches.
 - `pnpm install --frozen-lockfile` is what CI runs; mismatched lockfile
   fails the build.
 - Telegram dev mode: `VITE_DEV_MOCK_INIT_DATA=1` in `.env` skips real HMAC.

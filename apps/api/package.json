@@ -23,7 +23,6 @@
     "@trpc/server": "^11.0.0",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.6.13",
-    "ioredis": "^5.4.1",
     "jose": "^5.9.6",
     "jpeg-js": "0.4.4",
     "onnxruntime-web": "1.20.1",
@@ -33,7 +32,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@types/bun": "latest",
+    "@types/bun": "1.4.4",
     "eslint": "^9.39.4",
     "typescript-eslint": "^8.59.3"
   }

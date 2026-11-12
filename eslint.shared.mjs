@@ -9,56 +9,10 @@
  * does not hoist to the root, and passes them to packageConfig.
  */
 
-/** Browser globals the app and the component library use. */
-export const BROWSER_GLOBALS = {
-  window: 'readonly',
-  document: 'readonly',
-  navigator: 'readonly',
-  location: 'readonly',
-  localStorage: 'readonly',
-  sessionStorage: 'readonly',
-  fetch: 'readonly',
-  Request: 'readonly',
-  Response: 'readonly',
-  Headers: 'readonly',
-  URL: 'readonly',
-  URLSearchParams: 'readonly',
-  crypto: 'readonly',
-  IDBDatabase: 'readonly',
-  IDBOpenDBRequest: 'readonly',
-  console: 'readonly',
-  setTimeout: 'readonly',
-  clearTimeout: 'readonly',
-  setInterval: 'readonly',
-  clearInterval: 'readonly',
-  requestAnimationFrame: 'readonly',
-  cancelAnimationFrame: 'readonly',
-  MessageEvent: 'readonly',
-  WebSocket: 'readonly',
-  AbortController: 'readonly',
-  Event: 'readonly',
-  EventTarget: 'readonly',
-  CustomEvent: 'readonly',
-  HTMLElement: 'readonly',
-  HTMLInputElement: 'readonly',
-  HTMLTextAreaElement: 'readonly',
-  HTMLButtonElement: 'readonly',
-  HTMLDivElement: 'readonly',
-  Element: 'readonly',
-  Node: 'readonly',
-  FormData: 'readonly',
-  File: 'readonly',
-  FileReader: 'readonly',
-  Blob: 'readonly',
-  Image: 'readonly',
-  XMLHttpRequest: 'readonly',
-  MediaQueryListEvent: 'readonly',
-  KeyboardEvent: 'readonly',
-  MouseEvent: 'readonly',
-  TouchEvent: 'readonly',
-  PointerEvent: 'readonly',
-  process: 'readonly',
-};
+// No list of browser globals (review OPS-45): typescript-eslint's
+// recommended config turns `no-undef` off for TypeScript files, where tsc
+// reports an unknown name itself, so a list here changed nothing. The
+// plain scripts in apps/web/public/ keep their own.
 
 /**
  * Rules for React source (src/): turn down rules that bite the existing

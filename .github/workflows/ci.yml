@@ -6,13 +6,13 @@
 #        Migration journal consistency, workspace type-check (a key
 #        missing from a catalog fails here), the i18n and UI guards, all
 #        unit tests EXCEPT the PG-gated integration suite.
-#        Runs on every push + PR; ~45-90s warm.
+#        Runs on pushes to main and on PRs; ~45-90s warm.
 #
 #   2. integration
 #        Spins up a real Postgres 18 service, applies migrations, runs
 #        every PG-gated test in apps/api and apps/worker as a role that
 #        owns nothing and is subject to RLS.
-#        Runs on every push + PR; ~2-3min cold.
+#        Runs on pushes to main and on PRs; ~2-3min cold.
 #
 # Why two jobs:
 #   - unit fails fast on dumb errors (missing key, type drift). Devs
@@ -22,7 +22,7 @@
 #
 #   3. e2e
 #        Drives the real app in Chromium against a real api and database
-#        (tests/e2e). Runs on every push + PR; ~2min.
+#        (tests/e2e). Runs on pushes to main and on PRs; ~2min.
 #
 # What we DON'T run here:
 #   - Browser smokes (browser-smoke.ts, browser-smoke-deep.ts) hit the
@@ -48,11 +48,22 @@ name: CI
 #
 # The concurrency group below already cancels superseded runs per ref,
 # so the marginal cost is roughly one run per branch push.
+#
+# 2026-11-12 (review OPS-30): back to pushes to main plus pull requests.
+# deploy.ts no longer tars a working directory: it ships only the tip of
+# origin/main, from a clean tree, once CI on that commit is green. A
+# branch's own push run guarded nothing its pull request does not, and
+# every push to a pull request ran the whole workflow twice (push and
+# pull_request runs have different refs, so neither cancelled the other).
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
+
+# Every job only reads the repository.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -74,20 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install bun (matches .bun-version)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install workspace deps
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Migration journal consistency
         # `packages/db/src/migrate.ts` runs this check before applying
@@ -212,20 +210,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install bun (matches .bun-version)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install workspace deps
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Every migration is pending on a new database
         # Review OPS-10: the deploy takes a backup first when
@@ -256,26 +241,8 @@ jobs:
         # so it bypasses RLS even when tables FORCE ROW LEVEL SECURITY.
         # Integration tests use this non-owner, non-BYPASSRLS role to
         # exercise the same policy path as the application user.
-        run: |
-          pnpm --filter @compass/db exec bun - <<'EOF'
-          import postgres from 'postgres';
-
-          const db = postgres(process.env.DATABASE_URL, { max: 1, prepare: false });
-          await db.unsafe(`
-            DO $$
-            BEGIN
-              CREATE ROLE compass_ci_app LOGIN PASSWORD 'compass_ci_app' NOSUPERUSER NOBYPASSRLS;
-            EXCEPTION WHEN duplicate_object THEN
-              ALTER ROLE compass_ci_app WITH LOGIN PASSWORD 'compass_ci_app' NOSUPERUSER NOBYPASSRLS;
-            END $$;
-
-            GRANT USAGE ON SCHEMA auth, inventory, domain, read_model, ops, sync, public TO compass_ci_app;
-            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA auth, inventory, domain, read_model, ops, sync TO compass_ci_app;
-            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA auth, inventory, domain, read_model, ops, sync TO compass_ci_app;
-            GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth, inventory, domain, read_model, ops, sync, public TO compass_ci_app;
-          `);
-          await db.end({ timeout: 5 });
-          EOF
+        # The same SQL the e2e run uses (packages/db/src/appRole.ts).
+        run: pnpm --filter @compass/db exec bun run src/create-app-role.ts compass_ci_app
 
       - name: Integration tests
         env:
@@ -355,20 +322,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install bun (matches .bun-version)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install workspace deps
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Browser version
         run: google-chrome --version
@@ -412,20 +366,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install bun (matches .bun-version)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install workspace deps
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Postgres 18 client tools
         # pg_dump refuses a server newer than itself, and the runner's is

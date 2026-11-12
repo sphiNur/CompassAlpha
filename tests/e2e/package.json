@@ -8,6 +8,7 @@
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
+    "@compass/db": "workspace:*",
     "@playwright/test": "1.64.0",
     "@types/node": "^26.6.6",
     "postgres": "^3.4.5",

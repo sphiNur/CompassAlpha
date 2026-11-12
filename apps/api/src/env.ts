@@ -11,7 +11,6 @@ export const env = createEnv({
     PORT: z.coerce.number().int().default(3000),
     HOST: z.string().default('0.0.0.0'),
     DATABASE_URL: z.string().url(),
-    REDIS_URL: z.string().url().optional(),
     JWT_SECRET: z.string().min(32),
     JWT_REFRESH_SECRET: z.string().min(32),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
@@ -36,7 +35,6 @@ export const env = createEnv({
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),
     S3_PUBLIC_BASE: z.string().url().optional(),
-    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     /** D1 (2026-10-30): lets admin.purgeAllTestData / purgeByDate run on
      * production. Set it only for a maintenance window; see
      * services/bulkPurge.ts. */

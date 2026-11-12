@@ -28,11 +28,3 @@ export const RecentLogsInputSchema = z.object({
   kind: z.string().max(32).optional(),
   userId: UuidSchema.optional(),
 });
-
-export const HealthSchema = z.object({
-  status: z.enum(['ok', 'degraded', 'down']),
-  db: z.boolean(),
-  redis: z.boolean(),
-  projectorLag: z.number().int(),
-  version: z.string(),
-});

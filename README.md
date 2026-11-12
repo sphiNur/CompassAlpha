@@ -9,12 +9,11 @@
 ## 快速上手
 
 ```bash
-# 1. 准备环境（要求 Bun 1.4.4, pnpm 12.16, Node 26 LTS, PostgreSQL 18, Redis 8.10 —— 生产、CI、本地三边一致）
+# 1. 准备环境（要求 Bun 1.4.4, pnpm 12.16, Node 26 LTS, PostgreSQL 18 —— 生产、CI、本地三边一致）
 cp .env.example .env
-docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis
+docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG
 # 要测照片上传再加 --profile storage（MinIO），要 Adminer 加 --profile tools；端口只监听本机。
-# 注意：dev compose 把 PG 暴露在 5433，Redis 在 6380（避开本机已有进程）。
-# .env.example 里的 DATABASE_URL/REDIS_URL 已对应这两个端口。
+# 注意：dev compose 把 PG 暴露在 5433（避开本机已有进程），.env.example 里的 DATABASE_URL 已对应这个端口。
 
 # 2. 安装依赖
 pnpm install
@@ -58,7 +57,7 @@ packages/
 ├── contracts/   tRPC 路由 + Zod schema（前后端共用）
 ├── ui/          Concord 设计系统（Native / Apple 双主题）
 ├── i18n/        ICU catalogs (zh, en, ru, uz) — 4 个文件，CI 校验键对齐
-├── telemetry/   OpenTelemetry SDK + 客户端日志
+├── telemetry/   客户端日志（环形缓冲 + 批量上报）
 └── cli/         compass 命令行
 
 infra/
@@ -118,7 +117,7 @@ bun run scripts/deploy.ts --dry   # 只跑 smoke，不部署
 2. **多租户在 DB 强制**：Postgres RLS。即使应用层有 bug 也无法跨租户。
 3. **离线优先**：所有写命令进 IDB outbox，UI 立即应用，网络恢复时按序重放。
 4. **类型贯通到 SQL**：Drizzle SQL-first，前后端 tRPC 类型推断，Zod schema 跨端共用。
-5. **可观测性是一等公民**：OTel trace 从前端点击穿到 DB 查询，根因分析不靠猜。
+5. **可观测性是一等公民**：每个请求带 traceId（前端生成、后端透传），客户端日志批量上报，结构化日志可按它串起来；接 OpenTelemetry 是 M2 的计划。
 6. **i18n 不打折**：所有面向用户的字符串走 Lingui ICU，CI grep 检查 zh/en/ru/uz 全键存在。
 7. **a11y 默认**：Concord 组件全部基于 Radix 原语，键盘可达、ARIA 正确、reduce-motion 尊重。
 

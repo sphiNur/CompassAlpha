@@ -16,7 +16,8 @@ Telegram
   → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
 worker (compass-worker.service): the outbox; bot messages go out
   through the tg-relay Worker (infra/cloudflare/tg-relay/)
-Postgres 18, Redis 8 and S3-compatible storage behind both
+Postgres 18 and S3-compatible storage behind both (no Redis: nothing uses
+one yet, review OPS-29)
 ```
 
 Production runs no containers (`infra/compose/` is the local dev
@@ -34,7 +35,7 @@ Without rsync (or on Windows) the whole tarball is uploaded with scp.
 
 ### Health checks
 - `https://compass.example.com/health/live` — should return `{status:"ok"}` < 100ms.
-- `https://compass.example.com/health/ready` — checks DB + Redis ping. If `degraded`, dig into the JSON.
+- `https://compass.example.com/health/ready` — pings the database (503 when it does not answer) and reports the projector lag. If `degraded`, dig into the JSON.
 - `https://compass.example.com/health/version` — confirms the running commit sha.
 
 ### Log tailing
@@ -389,11 +390,6 @@ sustained CONFLICT in logs:
 2. Find the offender query; cancel with `pg_cancel_backend(pid)`.
 3. `EXPLAIN ANALYZE` it; check if the index it should use is still there.
 4. If a missing index, add a migration; never `CREATE INDEX` ad-hoc on prod (no audit trail).
-
-### Redis OOM
-- Increase `maxmemory` in compose or upgrade plan.
-- Audit which keys are growing. Most likely: BullMQ job history. Set `removeOnComplete`
-  + `removeOnFail` on producers.
 
 ### `/health/ready` says `projectorLag > 60s`
 - Worker process probably crashed. `systemctl status compass-worker`.

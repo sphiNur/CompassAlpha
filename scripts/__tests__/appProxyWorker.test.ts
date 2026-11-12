@@ -523,3 +523,46 @@ const afterEachRestore: Array<() => void> = [];
 afterEach(() => {
   for (const f of afterEachRestore.splice(0)) f();
 });
+
+describe('OPS-28: no wait for ntfy once an origin is known, and no dead fallback host', () => {
+  const host = (call: Call | undefined) => (call ? new URL(call.url).host : null);
+
+  test('a stale origin answers at once and is refreshed in the background', async () => {
+    const pending: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => void pending.push(p) };
+    const e = env({ ORIGIN_TOPIC: 't', ORIGIN_URL: undefined });
+    topic = ndjson(OLD);
+    // A cold isolate has nothing to answer with, so it waits for ntfy.
+    await worker.fetch(new Request(`${PUBLIC}/a`), e, ctx);
+    expect(host(calls.at(-1))).toBe(new URL(OLD).host);
+    expect(pending).toHaveLength(0);
+
+    topic = ndjson(NEW);
+    resetCacheOnly();
+    await worker.fetch(new Request(`${PUBLIC}/b`), e, ctx);
+    // Answered from the origin it had; one refresh queued, not one per request.
+    expect(host(calls.at(-1))).toBe(new URL(OLD).host);
+    await worker.fetch(new Request(`${PUBLIC}/c`), e, ctx);
+    expect(pending).toHaveLength(1);
+
+    await Promise.all(pending);
+    await worker.fetch(new Request(`${PUBLIC}/d`), e, ctx);
+    expect(host(calls.at(-1))).toBe(new URL(NEW).host);
+  });
+
+  test('without ctx (no waitUntil) the refresh happens before the answer, as before', async () => {
+    const e = env({ ORIGIN_TOPIC: 't', ORIGIN_URL: undefined });
+    topic = ndjson(OLD);
+    await worker.fetch(new Request(`${PUBLIC}/a`), e);
+    topic = ndjson(NEW);
+    resetCacheOnly();
+    await worker.fetch(new Request(`${PUBLIC}/b`), e);
+    expect(host(calls.at(-1))).toBe(new URL(NEW).host);
+  });
+
+  test('nothing published, nothing in KV, no ORIGIN_URL: 503 and no upstream request', async () => {
+    const res = await worker.fetch(new Request(`${PUBLIC}/x`), env({ ORIGIN_URL: undefined }));
+    expect(res.status).toBe(503);
+    expect(calls).toHaveLength(0);
+  });
+});
