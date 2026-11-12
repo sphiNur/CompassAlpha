@@ -504,8 +504,8 @@ export function PeopleSection({
             if (filtered.length === 0) {
               return (
                 <EmptyState
-                  title={i18n.t('admin.empty.noStoresInThisStore.title')}
-                  description={i18n.t('admin.empty.noStoresInThisStore.description')}
+                  title={i18n.t('admin.empty.noMembersInThisStore.title')}
+                  description={i18n.t('admin.empty.noMembersInThisStore.description')}
                 />
               );
             }
