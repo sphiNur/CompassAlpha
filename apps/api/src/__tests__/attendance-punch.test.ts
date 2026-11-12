@@ -64,6 +64,83 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
     expect((await f.staff().attendance.me({})).face.status).toBe('approved');
   });
 
+  test('the clock page reads every store at once, each by its own day (ATT-10)', async () => {
+    const f = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
+    // Ali clocks at both stores; the other store is in a far-off time zone,
+    // so its "today" may be another date.
+    const otherTz = TZ === 'Pacific/Kiritimati' ? 'Etc/GMT+10' : 'Pacific/Kiritimati';
+    await db.update(s.stores).set({ timezone: otherTz }).where(eq(s.stores.id, f.otherStoreId));
+    await db.insert(s.memberStoreAssignments).values({
+      memberId: f.staffId,
+      storeId: f.otherStoreId,
+    });
+    await f.manager.attendance.memberSet({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      enabled: true,
+    });
+    const now = Date.now();
+    const shiftAt = async (storeId: string, tz: string, days: number) => {
+      const date = attendance.nextDate(todayInTz(tz), days);
+      const w = attendance.shiftWindow(date, '09:00', '18:00', tz);
+      const [row] = await db
+        .insert(s.attendanceShifts)
+        .values({
+          orgId: f.orgId,
+          storeId,
+          memberId: f.staffId,
+          shiftDate: date,
+          startsAt: w.startsAt,
+          endsAt: w.endsAt,
+          createdByMemberId: f.managerId,
+        })
+        .returning({ id: s.attendanceShifts.id });
+      return row!.id;
+    };
+    const punchAt = async (storeId: string) => {
+      const [row] = await db
+        .insert(s.attendancePunches)
+        .values({
+          orgId: f.orgId,
+          storeId,
+          memberId: f.staffId,
+          kind: 'in',
+          punchedAt: new Date(now - 3600_000),
+          source: 'manual',
+          reason: 'two stores',
+          createdByMemberId: f.managerId,
+        })
+        .returning({ id: s.attendancePunches.id });
+      return row!.id;
+    };
+    const here = { shift: await shiftAt(f.storeId, TZ, 1), punch: await punchAt(f.storeId) };
+    // A week ahead by the other store's own today, and one past it.
+    const there = {
+      shift: await shiftAt(f.otherStoreId, otherTz, 7),
+      late: await shiftAt(f.otherStoreId, otherTz, 8),
+    };
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+
+    const me = await f.staff().attendance.me({});
+    const byStore = new Map(me.stores.map((x) => [x.storeId, x]));
+    expect([...byStore.keys()].sort()).toEqual([f.storeId, f.otherStoreId].sort());
+    const a = byStore.get(f.storeId)!;
+    const b = byStore.get(f.otherStoreId)!;
+    expect([a.today, b.today]).toEqual([todayInTz(TZ), todayInTz(otherTz)]);
+    expect(a.shifts.map((x) => x.id)).toEqual([here.shift]);
+    expect(a.punches.map((x) => x.id)).toEqual([here.punch]);
+    expect(a.nextKind).toBe('out');
+    expect(b.shifts.map((x) => x.id)).toEqual([there.shift]);
+    expect(b.shifts.map((x) => x.id)).not.toContain(there.late);
+    expect(b.punches).toEqual([]);
+    expect(b.nextKind).toBe('in');
+    expect(b.timezone).toBe(otherTz);
+    // Each store's own rules.
+    expect(a.rules.requireDevice).toBe(false);
+    expect(b.rules.requireDevice).toBe(true);
+  });
+
   test('a manager switches only people of their own store', async () => {
     const f = fixture();
     await expectError(

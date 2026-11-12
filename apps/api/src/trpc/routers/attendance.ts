@@ -958,37 +958,58 @@ export const attendanceRouter = router({
         session.memberId,
         mine.map((store) => store.id),
       );
-      for (const store of mine) {
-        if (!permsByStore.get(store.id)?.has('attendance.clock')) continue;
+      const clocking = mine.filter((store) => permsByStore.get(store.id)?.has('attendance.clock'));
+      const ids = clocking.map((store) => store.id);
+      // Each store's today, in its own time zone.
+      const todayOf = new Map(clocking.map((st) => [st.id, todayInTz(tzOf(st, session), now)]));
+      const days = [...todayOf.values()].sort();
+      // Review ATT-10: one read each for every store this member clocks
+      // at. It was three per store, and the page asks every minute.
+      const [policies, shiftRows, punchRows] =
+        ids.length === 0
+          ? [[], [], []]
+          : await Promise.all([
+              tx
+                .select()
+                .from(s.attendanceStorePolicies)
+                .where(inArray(s.attendanceStorePolicies.storeId, ids)),
+              tx
+                .select()
+                .from(s.attendanceShifts)
+                .where(
+                  and(
+                    eq(s.attendanceShifts.memberId, session.memberId),
+                    inArray(s.attendanceShifts.storeId, ids),
+                    gte(s.attendanceShifts.shiftDate, rules.nextDate(days[0]!, -1)),
+                    lte(s.attendanceShifts.shiftDate, rules.nextDate(days.at(-1)!, 7)),
+                  ),
+                )
+                .orderBy(asc(s.attendanceShifts.startsAt)),
+              tx
+                .select()
+                .from(s.attendancePunches)
+                .where(
+                  and(
+                    eq(s.attendancePunches.memberId, session.memberId),
+                    inArray(s.attendancePunches.storeId, ids),
+                    isNull(s.attendancePunches.voidedAt),
+                    gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
+                  ),
+                )
+                .orderBy(asc(s.attendancePunches.punchedAt)),
+            ]);
+      for (const store of clocking) {
         const tz = tzOf(store, session);
-        const today = todayInTz(tz, now);
-        const [policy, shifts, punches] = await Promise.all([
-          loadPolicy(tx, store.id),
-          tx
-            .select()
-            .from(s.attendanceShifts)
-            .where(
-              and(
-                eq(s.attendanceShifts.memberId, session.memberId),
-                eq(s.attendanceShifts.storeId, store.id),
-                gte(s.attendanceShifts.shiftDate, rules.nextDate(today, -1)),
-                lte(s.attendanceShifts.shiftDate, rules.nextDate(today, 7)),
-              ),
-            )
-            .orderBy(asc(s.attendanceShifts.startsAt)),
-          tx
-            .select()
-            .from(s.attendancePunches)
-            .where(
-              and(
-                eq(s.attendancePunches.memberId, session.memberId),
-                eq(s.attendancePunches.storeId, store.id),
-                isNull(s.attendancePunches.voidedAt),
-                gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
-              ),
-            )
-            .orderBy(asc(s.attendancePunches.punchedAt)),
-        ]);
+        const today = todayOf.get(store.id)!;
+        const policy = policies.find((p) => p.storeId === store.id);
+        // From yesterday to a week ahead, by this store's own today.
+        const shifts = shiftRows.filter(
+          (x) =>
+            x.storeId === store.id &&
+            x.shiftDate >= rules.nextDate(today, -1) &&
+            x.shiftDate <= rules.nextDate(today, 7),
+        );
+        const punches = punchRows.filter((p) => p.storeId === store.id);
         const view = policyView(policy);
         out.push({
           storeId: store.id,
