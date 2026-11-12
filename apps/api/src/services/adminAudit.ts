@@ -12,33 +12,6 @@ import { bindingIsLive } from './adminAuthority';
 import { logger } from '../infra/log';
 
 /**
- * Audit log helper for admin CRUD (added 2026-05-05).
- *
- * The order/run domains write to `domain.events` for every state change,
- * so "who edited yesterday" is queryable there. But catalog mutations
- * (SKU/category/store/supplier) wrote to inventory tables ONLY — no
- * audit trail. The pre-launch audit flagged this as a gap: an admin
- * could rename "Beef" to "Toilet paper" and there's no record.
- *
- * Cheapest fix: write a row to `domain.policy_decisions` after every
- * successful catalog mutation, with `decision='allow'` and the input
- * payload as `inputs`. The table was added in 0000 for ABAC tracing
- * but never populated; reusing it here gives admins a queryable
- * history without a new schema migration.
- *
- * Best-effort: if the audit insert throws, we log and continue —
- * the catalog change has already committed. Better to keep a
- * functional system than to roll back over an audit hiccup.
- */
-/**
- * Best-effort audit row writer. `tx` is the per-request drizzle
- * transaction (whose full generic type is too hairy to inline cleanly);
- * we accept it loosely-typed and rely on the single typed insert call
- * below for safety. If the insert throws (e.g. the table is RLS-locked
- * mid-deploy), we swallow and continue — losing an audit row is
- * preferable to losing the catalog write that already committed.
- */
-/**
  * B2 (2026-05-06): derive a store id from action input so the audit
  * row can be indexed by store and the FE can filter by it.
  *
@@ -159,6 +132,28 @@ export function auditTouchesStores(storeIds: string[]) {
   );
 }
 
+/**
+ * Audit log helper for admin CRUD (added 2026-05-05).
+ *
+ * The order/run domains write to `domain.events` for every state change,
+ * so "who edited yesterday" is queryable there. But catalog mutations
+ * (SKU/category/store/supplier) wrote to inventory tables ONLY — no
+ * audit trail. The pre-launch audit flagged this as a gap: an admin
+ * could rename "Beef" to "Toilet paper" and there's no record.
+ *
+ * Cheapest fix: write a row to `domain.policy_decisions` after every
+ * successful admin mutation, with `decision='allow'` and the input
+ * payload as `inputs`. The table was added in 0000 for ABAC tracing
+ * but never populated; reusing it here gives admins a queryable
+ * history without a new schema migration.
+ *
+ * Best-effort: `tx` is the request's transaction, and the row is written
+ * in a savepoint of it. If the insert throws (e.g. the table is
+ * RLS-locked mid-deploy), it is logged and the action stands — losing an
+ * audit row is preferable to losing the change itself — unless `strict`.
+ * Review ADM1-28 (2026-11-12): these notes sat apart from the function,
+ * above deriveScopeStoreId.
+ */
 export async function auditAdmin(
   tx: DB,
   ctx: { session?: { userId: string; orgId: string } | null },

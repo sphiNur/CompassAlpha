@@ -31,11 +31,11 @@ import { StoreCheckList } from '../StoreCheckList';
  * GrantRoleSheet — two-step picker.
  *
  *   Step 1: pick scope.
- *     - "Globally"     → only org-tier roles (rank ≥ 80). Hidden if the
- *                        actor is a store-scoped admin only (their
- *                        adminStoreIds doesn't cover the whole org).
+ *     - "Globally"     → only org-tier roles (rank ≥ 80). Disabled, with
+ *                        the reason under it, unless the actor holds
+ *                        org.admin (UI-07).
  *     - "In specific store(s)" → store-tier roles (rank < 80). The
- *                        store dropdown is filtered to session.adminStoreIds
+ *                        store list is filtered to session.adminStoreIds
  *                        — a store-scoped admin only sees their own stores.
  *
  *   Step 2: pick role.

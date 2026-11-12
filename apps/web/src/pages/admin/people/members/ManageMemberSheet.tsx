@@ -56,10 +56,10 @@ export function ManageMemberSheet({
     { enabled: open && !!target },
   );
   // C2 (2026-05-06): a store-scoped admin can only assign/unassign in
-  // the stores they administer. Stores outside `adminStoreIds` are
-  // shown as read-only rows so the operator can see WHO the member
-  // already belongs to (even cross-store), but can only mutate the
-  // stores they actually run.
+  // the stores they administer; storeList lists no other store for them
+  // (CA-17). A listed store is still read-only where taking the member
+  // out needs a rank the actor lacks there (ADM1-07). Review ADM1-28:
+  // this said other stores were listed read-only.
   const adminStoreIds = useAdminStoreIds();
   // M1.9: gate cross-store moves behind global-admin only. For per-
   // store managers (who post-B1 have users.manage), the unassign +

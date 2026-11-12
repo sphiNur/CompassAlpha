@@ -91,9 +91,10 @@ export const overviewProcedures = {
   //
   // Read-only `overview` already returns the org name + ID. M1.17
   // adds an editor for the financial trio (currency, tax rate,
-  // prices_include_tax). Gated on users.manage — these are
-  // organization-wide policy levers that should never be touched by
-  // a store manager unilaterally. Effect:
+  // prices_include_tax). Gated on org.admin (requireOrgAdmin; review
+  // ADM1-28: this said users.manage) — these are organization-wide
+  // policy levers that should never be touched by a store manager
+  // unilaterally. Effect:
   //
   //   - Mutating `currency` does NOT re-denominate historical money
   //     columns. It only shifts the suffix the FE renders going

@@ -244,9 +244,11 @@ export async function passesOnAnyKey(db: DB, tx: DB, granter: Granter): Promise<
  * global one). The rank gate alone let an admin grant a custom rank-70
  * role carrying super-admin keys. Returns the first missing key, or null.
  *
- * Built-in roles keep the rank rule alone: their keys are fixed by the
- * seed, and a store manager inviting a purchaser (whose run.* keys the
- * manager does not hold) is a live workflow.
+ * Built-in roles keep the rank rule alone: a store manager inviting a
+ * purchaser (whose run.* keys the manager does not hold) is a live
+ * workflow. Their keys can be changed (roleUpdate), but a key added to
+ * one must be held org-wide by whoever adds it, unless that is the super
+ * admin (assertHoldsKeys). Review ADM1-28: this said the seed fixed them.
  */
 export async function missingRoleKey(
   db: DB,
