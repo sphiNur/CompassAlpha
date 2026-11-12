@@ -399,6 +399,43 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
     // Bob's own face is known on Ali's phone.
     expect((await clock(f.staff(), { who: 'Bob', identify: true })).forName).toBe('Att Colleague');
   });
+
+  test("a borrowed phone clocks a colleague by the punch's own rule for the store (ATT-14)", async () => {
+    const f = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
+    await staffReady();
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    // Bob is not switched on: he clocks through a role he has at this store.
+    const [clocker] = await db
+      .insert(s.roles)
+      .values({ orgId: f.orgId, slug: `att-clocker-${f.orgId}`, name: 'Clocker', rank: 10 })
+      .returning();
+    await db
+      .insert(s.rolePermissions)
+      .values({ roleId: clocker!.id, permissionKey: 'attendance.clock' });
+    await db.insert(s.memberRoleBindings).values({
+      memberId: f.colleagueId,
+      roleId: clocker!.id,
+      scopeType: 'store',
+      scopeId: f.storeId,
+    });
+    await enrollApproved(f.colleague(), 'Bob');
+    expect((await clock(f.staff(), { who: 'Bob', identify: true })).forName).toBe('Att Colleague');
+    await resetPunches(f.colleagueId);
+    // Denied at this store: no punch of his own here, and none on Ali's phone.
+    await db.insert(s.memberPermissionOverrides).values({
+      memberId: f.colleagueId,
+      permissionKey: 'attendance.clock',
+      effect: 'deny',
+      scopeType: 'store',
+      scopeId: f.storeId,
+    });
+    await expectError(clock(f.colleague(), { who: 'Bob' }), 'attendance.errors.notEnabled');
+    await expectError(
+      clock(f.staff(), { who: 'Bob', identify: true }),
+      'attendance.errors.notRecognized',
+    );
+  });
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {

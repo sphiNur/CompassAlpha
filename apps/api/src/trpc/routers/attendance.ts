@@ -4,7 +4,9 @@
  *
  * - `attendance.clock` is switched on per member (a global allow override,
  *   `memberSet`); it is checked here for the concrete store, together with
- *   the member's assignment to that store.
+ *   the member's assignment to that store. Clocking a colleague on another
+ *   phone and the shift reminders ask the same per-store rule
+ *   (services/attendanceClockers.ts, review ATT-14).
  * - `attendance.manage` (store managers and up) plans shifts, reads the
  *   sheet, adds or voids punches with a reason and sets the store's rules.
  * - A self punch must pass the store's rules: the bound phone and the
@@ -94,6 +96,7 @@ import type { Act } from '../../services/face/liveness';
 import { dispatch, findRecipientsByPermissionInStore } from '../../services/notify';
 import { linkForStore } from '../../services/notifyForEvent';
 import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
+import { clockingAt } from '../../services/attendanceClockers';
 import type { RequestContext } from '../context';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import { loadWageRoster } from '../../services/wageRoster';
@@ -377,13 +380,14 @@ async function assertInStore(tx: DB, orgId: string, storeId: string, memberId: s
 
 /**
  * Clocking `memberId` in on this member's phone: a colleague at the same
- * store who clocks there (owner decision 2026-11-06: same store only).
+ * store who clocks there (owner decision 2026-11-06: same store only), by
+ * the punch's own rule for that store (clockingAt, review ATT-14).
  */
 async function assertColleague(tx: DB, session: Session, storeId: string, memberId: string) {
   if (memberId === session.memberId) return;
   const roster = await storeRoster(tx, session.orgId, storeId);
-  const enabled = await clockEnabled(tx, [memberId]);
-  if (!roster.some((m) => m.memberId === memberId) || !enabled.has(memberId)) {
+  const clocking = await clockingAt(tx, storeId, [memberId]);
+  if (!roster.some((m) => m.memberId === memberId) || !clocking.has(memberId)) {
     fail('FORBIDDEN', 'notColleague');
   }
 }
@@ -406,8 +410,12 @@ function publish(orgId: string, storeId: string): void {
   hub.publish(orgId, { type: 'attendance.changed', orgId, storeId });
 }
 
-/** Who has `attendance.clock` through the global allow override. */
-async function clockEnabled(tx: DB, memberIds: readonly string[]): Promise<Set<string>> {
+/**
+ * The settings' switch (`memberSet`): who has the organisation-wide allow
+ * of `attendance.clock`, less an organisation-wide deny. Not who may clock
+ * in at a store; that is clockingAt (review ATT-14).
+ */
+async function switchedOn(tx: DB, memberIds: readonly string[]): Promise<Set<string>> {
   if (memberIds.length === 0) return new Set();
   const now = new Date();
   const rows = await tx
@@ -446,7 +454,8 @@ async function hasFaceConsent(tx: DB, memberId: string): Promise<boolean> {
 /**
  * The store's people with a face reference who agreed to its use:
  * candidates for "whose face is this". `colleagues` keeps only those who
- * clock in (a borrowed phone may only clock a colleague).
+ * clock in there (a borrowed phone may only clock a colleague; review
+ * ATT-14: by the punch's own rule, clockingAt).
  */
 async function knownFaces(
   tx: DB,
@@ -457,8 +466,8 @@ async function knownFaces(
   const roster = await storeRoster(tx, orgId, storeId);
   let ids = roster.map((m) => m.memberId).filter((id) => id !== opts.except);
   if (opts.colleagues) {
-    const enabled = await clockEnabled(tx, ids);
-    ids = ids.filter((id) => enabled.has(id));
+    const clocking = await clockingAt(tx, storeId, ids);
+    ids = ids.filter((id) => clocking.has(id));
   }
   if (ids.length === 0) return [];
   const consented = await tx
@@ -652,7 +661,8 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     ...shifts.map((x) => x.memberId),
     ...punches.map((x) => x.memberId),
   ]);
-  const enabled = await clockEnabled(tx, [...memberIds]);
+  // The settings' switch, as `memberSet` writes it (see switchedOn).
+  const enabled = await switchedOn(tx, [...memberIds]);
   const names = new Map(roster.map((m) => [m.memberId, m.displayName]));
   const missingNames = [...memberIds].filter((id) => !names.has(id));
   const actorIds = punches
