@@ -171,15 +171,17 @@ export function ExpenseTemplatesSection() {
                         {/* Default quantity × unit price = the line, and
                             how it is paid, so the manager can spot the
                             transfer-only rows at a glance. Without
-                            prices.view, the quantity alone. */}
+                            prices.view, the quantity alone. ADM2-38:
+                            formatMoney places the currency, as for every
+                            other amount. */}
                         {formatQty(tpl.defaultQty)}
                         {tpl.defaultUnitPrice !== null ? (
                           <>
                             {' × '}
-                            {formatMoney(tpl.defaultUnitPrice)} {currency}
+                            {formatMoney(tpl.defaultUnitPrice, currency)}
                             {' = '}
                             <span className="font-semibold text-[var(--c-fg)]">
-                              {formatMoney(lineTotal)} {currency}
+                              {formatMoney(lineTotal, currency)}
                             </span>
                           </>
                         ) : null}
