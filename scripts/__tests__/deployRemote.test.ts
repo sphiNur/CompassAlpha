@@ -44,9 +44,11 @@ import {
   serverLimitSecs,
   snapshotScript,
   sshOptions,
+  staleWorkspacesScript,
   stageSeedScript,
   toolchainProblems,
   toolchainScript,
+  WORKSPACE_GLOBS,
 } from '../lib/deployRemote';
 
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -201,6 +203,102 @@ describe('a deploy that stopped after extracting', () => {
     expect(bash(clearIncompleteScript(app)).status).toBe(0);
     expect(existsSync(join(app, INCOMPLETE_MARKER))).toBe(false);
     expect(bash(snapshotScript(app, prev)).stdout).toContain('kept aaaaaaaaaaaa');
+  });
+});
+
+// 2026-11-12: the deploy after a revert stopped at its install, and so did
+// putting the previous release back: packages/streams, which only the
+// reverted release had, was still on disk and failed the frozen install.
+describe('workspace packages the release does not have', () => {
+  const LOCK = [
+    "lockfileVersion: '9.0'",
+    '',
+    'importers:',
+    '',
+    '  .:',
+    '    devDependencies: {}',
+    '',
+    '  apps/api:',
+    '    dependencies: {}',
+    '',
+    '  packages/db:',
+    '    dependencies: {}',
+    '',
+    '  tests/e2e:',
+    '    devDependencies: {}',
+    '',
+  ].join('\n');
+
+  /** The live tree after extracting a release that lists apps/api, packages/db and tests/e2e. */
+  function extractedOver() {
+    const { app } = liveTree();
+    put(app, 'pnpm-lock.yaml', LOCK);
+    for (const dir of ['apps/api', 'packages/db', 'tests/e2e'])
+      put(app, `${dir}/package.json`, '{}');
+    put(app, 'packages/old/package.json', '{}');
+    put(app, 'packages/old/src/index.ts', 'only the previous release had this');
+    put(app, 'packages/old/node_modules/dep/index.js', 'dep');
+    return app;
+  }
+
+  test("a package the release's lockfile does not list is removed, node_modules and all", () => {
+    const app = extractedOver();
+    const run = bash(staleWorkspacesScript(app));
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe('removed packages/old: not a workspace package of this release\n');
+    expect(existsSync(join(app, 'packages/old'))).toBe(false);
+    for (const dir of ['apps/api', 'packages/db', 'tests/e2e']) {
+      expect(read(app, `${dir}/package.json`)).toBe('{}');
+    }
+    expect(read(app, 'apps/api/src/main.ts')).toBe('old api');
+    expect(read(app, 'apps/web/dist/index.html')).toBe('old html');
+    expect(read(app, 'node_modules/dep/index.js')).toBe('dep');
+    expect(read(app, '.env')).toBe('DATABASE_URL=server-secret');
+    // Nothing left to remove the second time.
+    expect(bash(staleWorkspacesScript(app)).stdout).toBe('');
+  });
+
+  test('a folder without a package.json is not a package and stays', () => {
+    const app = extractedOver();
+    // What a checkout keeps of a removed package: its ignored node_modules.
+    put(app, 'packages/gone/node_modules/dep/index.js', 'dep');
+    bash(staleWorkspacesScript(app));
+    expect(read(app, 'packages/gone/node_modules/dep/index.js')).toBe('dep');
+  });
+
+  test('without a lockfile that lists importers nothing is removed', () => {
+    const app = extractedOver();
+    put(app, 'pnpm-lock.yaml', 'not a lockfile');
+    expect(bash(staleWorkspacesScript(app)).status).toBe(0);
+    rmSync(join(app, 'pnpm-lock.yaml'));
+    expect(bash(staleWorkspacesScript(app)).status).toBe(0);
+    expect(read(app, 'packages/old/package.json')).toBe('{}');
+    expect(read(app, 'apps/api/package.json')).toBe('{}');
+  });
+
+  test("none of this repository's own packages is removed", () => {
+    const home = mkdtempSync(join(tmpdir(), 'deploy-remote-'));
+    dirs.push(home);
+    const files = spawnSync(
+      'git',
+      ['ls-files', ...WORKSPACE_GLOBS.map((glob) => `:(glob)${glob}/package.json`)],
+      { cwd: ROOT, encoding: 'utf8' },
+    )
+      .stdout.split('\n')
+      .filter(Boolean);
+    expect(files).toContain('apps/api/package.json');
+    put(home, 'pnpm-lock.yaml', readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf8'));
+    for (const file of files) put(home, file, '{}');
+    const run = bash(staleWorkspacesScript(home));
+    expect(run).toMatchObject({ status: 0, stdout: '' });
+    for (const file of files) expect(existsSync(join(home, file))).toBe(true);
+  });
+
+  test("its globs are pnpm-workspace.yaml's", () => {
+    const yaml = readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8');
+    const block = yaml.split('packages:\n')[1]!.split(/\n(?!\s+-)/)[0]!;
+    const globs = [...block.matchAll(/-\s+"([^"]+)"/g)].map((m) => m[1]);
+    expect(globs).toEqual([...WORKSPACE_GLOBS]);
   });
 });
 
