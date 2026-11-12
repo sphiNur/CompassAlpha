@@ -151,6 +151,14 @@ describe('tap areas', () => {
     }
   });
 
+  test("the search field's clear button carries hit-44 (review UI-30)", () => {
+    const clear = /<button[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/.exec(
+      read('SearchInput.tsx'),
+    )![1]!;
+    expect(clear).toContain('hit-44');
+    expect(clear).toContain('w-8');
+  });
+
   test('Button does not clip its own tap area', () => {
     // An overflow-hidden button clips the hit-44 ::after, and clipped
     // areas take no taps.
