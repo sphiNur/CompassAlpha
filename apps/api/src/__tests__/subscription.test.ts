@@ -96,6 +96,41 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
     expect(active.writeAccess).toBe(true);
   });
 
+  test('NEW-PLATFORM-N1: the platform list gives each org its note and its own state', async () => {
+    const { orgId: busy, session } = await newTenant();
+    const { orgId: legacy } = await newTenant();
+    const db = getDb();
+    await withOrgContext(db, busy, (tx) =>
+      tx.insert(s.stores).values({ orgId: busy, name: 'First', code: `S-${Date.now()}` }),
+    );
+    await callerFor(session).platform.updateSubscription({
+      orgId: busy,
+      planCode: 'growth',
+      status: 'suspended',
+      note: 'Paid by transfer',
+    });
+    // A workspace from before subscriptions has no row: the fallback.
+    await withSystemContext(db, 'maintenance', (tx) =>
+      tx.delete(s.organizationSubscriptions).where(eq(s.organizationSubscriptions.orgId, legacy)),
+    );
+
+    const listed = await callerFor(session).platform.organizations();
+    for (const orgId of [busy, legacy]) {
+      const single = await withSystemContext(db, 'maintenance', (tx) =>
+        readSubscriptionState(tx, orgId),
+      );
+      expect(listed.find((o) => o.orgId === orgId)?.subscription).toEqual(single);
+    }
+    expect(listed.find((o) => o.orgId === busy)).toMatchObject({
+      note: 'Paid by transfer',
+      subscription: { planCode: 'growth', status: 'suspended', usage: { stores: 1, members: 1 } },
+    });
+    expect(listed.find((o) => o.orgId === legacy)).toMatchObject({
+      note: null,
+      subscription: { planCode: 'legacy', usage: { stores: 0, members: 1 } },
+    });
+  });
+
   test('DB-19: provisioning again keeps the plan of the subscription the tenant has', async () => {
     const { orgId, session } = await newTenant();
     await callerFor(session).platform.updateSubscription({
