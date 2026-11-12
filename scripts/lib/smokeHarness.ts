@@ -21,6 +21,7 @@ import {
   type BrowserContextOptions,
   type Request,
 } from 'playwright';
+import { lookup } from 'node:dns/promises';
 import type { RouterOutputs } from '../../apps/api/src/trpc/outputs.ts';
 
 /** COMPASS_BASE without a trailing slash; exits 2 when it is not set. */
@@ -72,14 +73,33 @@ export function createReport() {
   };
 }
 
+/**
+ * Chrome's flags for SMOKE_IPV4=1: reach the target over IPv4, without QUIC.
+ * On a machine with no IPv6 route, Chrome's IPv6 and HTTP/3 attempts to
+ * Cloudflare failed (ERR_QUIC_PROTOCOL_ERROR, then ERR_CONNECTION_RESET)
+ * while curl and fetch fell back to IPv4: the server smoke passed and the
+ * deep smoke could not open the page (2026-11-12). Off by default.
+ */
+export async function smokeChromeArgs(
+  env: Record<string, string | undefined> = process.env,
+  resolve4: (host: string) => Promise<string> = async (host) =>
+    (await lookup(host, { family: 4 })).address,
+): Promise<string[]> {
+  if (env.SMOKE_IPV4 !== '1' || !env.COMPASS_BASE) return [];
+  const host = new URL(env.COMPASS_BASE).hostname;
+  return ['--disable-quic', `--host-resolver-rules=MAP ${host} ${await resolve4(host)}`];
+}
+
 /** PLAYWRIGHT_CHANNEL=chrome uses the installed Google Chrome instead of
- *  Playwright's bundled build (e.g. on an OS Playwright has no build for). */
+ *  Playwright's bundled build (e.g. on an OS Playwright has no build for);
+ *  SMOKE_IPV4=1 adds smokeChromeArgs. */
 export async function launchSmoke(
   options: BrowserContextOptions,
 ): Promise<{ browser: Browser; context: BrowserContext }> {
   const browser = await chromium.launch({
     headless: HEADLESS,
     ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+    args: await smokeChromeArgs(),
   });
   return { browser, context: await browser.newContext(options) };
 }
