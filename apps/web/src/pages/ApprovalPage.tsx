@@ -448,8 +448,9 @@ export function ApprovalPage() {
                   <CardHeader className="flex-wrap">
                     <div className="flex min-w-[8rem] flex-1 items-center gap-3">
                       {/* The avatar is the SUBMITTER's photo (`attribAvatarUrl`),
-                          so `name` — which supplies both the alt text and the
-                          initials fallback — has to be the submitter too.
+                          so `name` — which supplies the initials fallback —
+                          has to be the submitter too. (Since UI-24 the
+                          avatar has no alt text: the name is on the card.)
                           2026-07-30: it was the STORE name, so a screen reader
                           announced a person's face as "Store A", and a
                           submitter without a photo got the store's initials. */}

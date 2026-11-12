@@ -65,7 +65,7 @@ Each is theme-agnostic via tokens.
 | `DataState<T>` | Five-state wrapper for `useQuery` data. **Wrap every page in this.** |
 | `Skeleton` | `animate-pulse` placeholder. |
 | `Chip` / `ChipBar` | Sub-nav category chips. |
-| `Avatar` | Initials fallback when `src` missing. |
+| `Avatar` | Initials when `src` is missing or fails to load. Decorative unless given a `label` (the name is beside it). |
 | `QtyControl` | 36 px (`sm` 28 px) circular − / + keys that tap as 44 px, long-press accelerator (350ms hold → 90ms tick). |
 | `Badge` | Status pill: the localized words as children, and a `tone` (UI-2). |
 
