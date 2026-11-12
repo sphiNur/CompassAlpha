@@ -227,8 +227,10 @@ export function describeSnapshotScript(prevTarball = PREV_TARBALL): string {
  * Shell script: put the snapshot back over the live tree. The web bundle
  * is replaced wholesale (the snapshot carries the complete old dist/);
  * everything else is extracted over the tree, the same way a deploy
- * extracts — files only the bad release had stay on disk, unimported.
- * Checked first: an unreadable or bundle-less snapshot changes nothing.
+ * extracts — files only the bad release had stay on disk, unimported (a
+ * workspace package of its own is removed before the install:
+ * staleWorkspacesScript). Checked first: an unreadable or bundle-less
+ * snapshot changes nothing.
  */
 export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): string {
   return [
@@ -246,6 +248,37 @@ export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): str
     // OPS-01: the source tree is the kept release again.
     `rm -f ${INCOMPLETE_MARKER}`,
     `echo "restored $(cat apps/web/dist/build-id.txt 2>/dev/null || echo unknown-build)"`,
+  ].join('\n');
+}
+
+/** pnpm-workspace.yaml's `packages` globs; a test keeps the two the same. */
+export const WORKSPACE_GLOBS = ['apps/*', 'packages/*', 'tests/*'] as const;
+
+/**
+ * Shell script: remove the workspace packages the release on disk does not
+ * have, before its dependencies are installed (2026-11-12). A deploy, and
+ * a rollback, extracts over the live tree, so a package only the previous
+ * release had stays behind. pnpm finds it through the workspace globs, and
+ * `install --frozen-lockfile` then refuses a lockfile that does not list
+ * it: the deploy after a revert stopped on packages/streams that way, and
+ * so did putting the previous release back.
+ *
+ * A package is the release's when its pnpm-lock.yaml has an importer for
+ * it. Without a lockfile that lists importers nothing is removed.
+ */
+export function staleWorkspacesScript(appDir = APP_DIR): string {
+  return [
+    '(',
+    'set -e',
+    `cd "${appDir}"`,
+    "grep -q '^importers:' pnpm-lock.yaml 2>/dev/null || exit 0",
+    `for dir in ${WORKSPACE_GLOBS.join(' ')}; do`,
+    '  [ -f "$dir/package.json" ] || continue',
+    '  grep -qxF "  $dir:" pnpm-lock.yaml && continue',
+    '  rm -rf -- "$dir"',
+    '  echo "removed $dir: not a workspace package of this release"',
+    'done',
+    ')',
   ].join('\n');
 }
 

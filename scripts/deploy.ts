@@ -121,6 +121,7 @@ import {
   rlsRoleProblem,
   serverLimitSecs,
   snapshotScript,
+  staleWorkspacesScript,
   sshOptions,
   stageSeedScript,
   stageTarScript,
@@ -755,6 +756,9 @@ function installScript(): string {
     'set -o pipefail',
     'export PATH=$HOME/.bun/bin:$PATH',
     `cd ${APP_DIR}`,
+    // A workspace package only an earlier release had fails the frozen
+    // install below (2026-11-12).
+    staleWorkspacesScript(),
     // Frozen: the server must install exactly what CI tested, not
     // re-resolve and quietly rewrite the lockfile.
     'pnpm install --frozen-lockfile 2>&1 | tail -5',
