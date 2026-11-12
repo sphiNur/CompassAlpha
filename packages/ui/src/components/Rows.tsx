@@ -143,22 +143,14 @@ export function ListRow({
 export interface DetailRowProps {
   label: ReactNode;
   value: ReactNode;
-  mono?: boolean;
   className?: string;
 }
 
-export function DetailRow({ label, value, mono, className }: DetailRowProps) {
+export function DetailRow({ label, value, className }: DetailRowProps) {
   return (
     <div className={cn('flex min-w-0 items-baseline justify-between gap-3', className)}>
       <span className="min-w-0 text-old-body-sm text-[var(--c-fg-muted)]">{label}</span>
-      <span
-        className={cn(
-          'min-w-0 truncate text-right text-old-body text-[var(--c-fg)]',
-          mono && 'tabular-nums',
-        )}
-      >
-        {value}
-      </span>
+      <span className="min-w-0 truncate text-right text-old-body text-[var(--c-fg)]">{value}</span>
     </div>
   );
 }

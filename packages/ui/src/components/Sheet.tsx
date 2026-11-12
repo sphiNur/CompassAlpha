@@ -363,7 +363,6 @@ export function SheetBody({ children, className }: { children: ReactNode; classN
         'min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--app-inline-x)] pb-4',
         className,
       )}
-      data-scroll-locked
     >
       {children}
     </div>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Banner } from './Banner';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Field } from './Rows';
@@ -226,8 +225,3 @@ export function ConfirmSheet({
     </Sheet>
   );
 }
-
-/** Re-export Banner for convenience — confirm sheets often want
- *  a banner at the top (e.g. summary) and including it from `@compass/ui`
- *  keeps the import paths clean. */
-export { Banner };

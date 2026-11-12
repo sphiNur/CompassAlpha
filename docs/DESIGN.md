@@ -61,14 +61,13 @@ Each is theme-agnostic via tokens.
 | `Sheet` | Bottom sheet via Radix Dialog. Three slots: header / body / footer. |
 | `Banner` | 4 tones: info / success / warn / danger. Optional `action` slot. |
 | `Spinner` | Pure SVG, animates via Tailwind `animate-spin`. |
-| `EmptyState` | Centered icon + title + optional description + action. |
+| `EmptyState` | Centered title + optional description + action; `compact` for a line inside a list. |
 | `DataState<T>` | Five-state wrapper for `useQuery` data. **Wrap every page in this.** |
 | `Skeleton` | `animate-pulse` placeholder. |
-| `Stepper` | Numbered step indicator with done/active/pending styles. |
 | `Chip` / `ChipBar` | Sub-nav category chips. |
 | `Avatar` | Initials fallback when `src` missing. |
 | `QtyControl` | 36 px (`sm` 28 px) circular − / + keys that tap as 44 px, long-press accelerator (350ms hold → 90ms tick). |
-| `Badge` | Status pill. Pass `status` for auto-tone or `tone` directly. |
+| `Badge` | Status pill: the localized words as children, and a `tone` (UI-2). |
 
 ## A11y rules
 

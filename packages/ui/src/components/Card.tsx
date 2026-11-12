@@ -78,29 +78,10 @@ export function CardMeta({ className, children }: { className?: string; children
  * Card body — the canonical padded content region. Exists so consumers
  * STOP hand-rolling `px-4 py-3` (which is why py-2 / py-2.5 / py-3 card
  * bodies coexisted across the app). Compose Card > CardHeader? >
- * CardBody > CardFooter? and never type body padding again.
+ * CardBody and never type body padding again.
  */
 export function CardBody({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div className={cn('px-[var(--card-pad)] py-3', className)}>{children}</div>
-  );
-}
-
-/**
- * Card footer — the bordered action strip at the bottom of a card
- * (Edit / Archive rows in the admin catalog, etc.). One definition of
- * the `border-t divider` + gutter so the strip stops drifting between
- * px-4 py-2 and px-3 py-2 per call site.
- */
-export function CardFooter({ className, children }: { className?: string; children: ReactNode }) {
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-2 border-t border-[var(--c-divider)] px-[var(--card-pad)] py-2',
-        className,
-      )}
-    >
-      {children}
-    </div>
   );
 }

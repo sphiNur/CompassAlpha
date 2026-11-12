@@ -78,16 +78,6 @@ export function IconAdmin(props: IconProps) {
   );
 }
 
-export function IconDebug(props: IconProps) {
-  return (
-    <svg {...svgBase(props)}>
-      <path d="M9 5h6v3a3 3 0 1 1-6 0z" />
-      <path d="M7 10c-1 .8-2 2.4-2 5v2a4 4 0 0 0 4 4h6a4 4 0 0 0 4-4v-2c0-2.6-1-4.2-2-5" />
-      <path d="M3 13h2M19 13h2M3 18h2.5M18.5 18H21" />
-    </svg>
-  );
-}
-
 export function IconWorkspace(props: IconProps) {
   return (
     <svg {...svgBase(props)}>
