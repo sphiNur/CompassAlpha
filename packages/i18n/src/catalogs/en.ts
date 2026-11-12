@@ -1375,7 +1375,6 @@ export const en = {
   'run.filter.noMatch': 'No matching items',
   'run.label.confirmedFraction': '{done}/{total} confirmed',
   'run.label.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',
-  'run.label.skuCountAndQty': '{n, plural, one {# product} other {# products}} · {qty}',
   'run.label.splitsMismatch': 'Splits: {sum} / {target}',
   // M1.9-fix (2026-05-07): delivery store-row stage labels — were
   // hardcoded English on the purchaser's main during-run view.

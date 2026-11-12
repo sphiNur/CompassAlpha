@@ -528,6 +528,9 @@ export function useRunMutations(on: RunMutationEffects) {
       case 'removeExpense':
         removeExpense.mutate(c.input, after);
         break;
+      case 'dismissTopUp':
+        dismissTopUp.mutate(c.input, after);
+        break;
     }
   };
 

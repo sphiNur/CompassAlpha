@@ -36,7 +36,10 @@ export type ConfirmKind =
   | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string }
   // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
   // confirmation or undo.
-  | { kind: 'removeExpense'; expenseId: string; label: string };
+  | { kind: 'removeExpense'; expenseId: string; label: string }
+  // BUY-5: not buying what a newly joined order added. Review RUNWEB1-29:
+  // was the browser's / Telegram's own confirm, unlike every other step.
+  | { kind: 'dismissTopUp'; skuId: string; qty: string };
 
 /** What the run's confirm sheet asks (ConfirmSheet in @compass/ui). */
 export interface ConfirmCopy {
@@ -419,6 +422,14 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
           danger: true,
           requireReason: false,
         };
+      case 'dismissTopUp':
+        return {
+          title: i18n.t('run.topUp.dismiss'),
+          body: i18n.t('run.topUp.dismissConfirm', { qty: formatQty(kind.qty) }),
+          confirmLabel: i18n.t('run.topUp.dismiss'),
+          danger: false,
+          requireReason: false,
+        };
     }
   }
 }
@@ -443,7 +454,8 @@ export type ConfirmCommand =
       procedure: 'ejectSession';
       input: { runId: string; sessionId: string; reason: string | undefined };
     }
-  | { procedure: 'removeExpense'; input: { runId: string; expenseId: string; reason: string } };
+  | { procedure: 'removeExpense'; input: { runId: string; expenseId: string; reason: string } }
+  | { procedure: 'dismissTopUp'; input: { runId: string; skuId: string } };
 
 /** `reason` is what the sheet's reason field holds; the kinds without one send ''. */
 export function confirmCommandFor(
@@ -484,6 +496,8 @@ export function confirmCommandFor(
           procedure: 'removeExpense',
           input: { runId, expenseId: kind.expenseId, reason: '' },
         };
+      case 'dismissTopUp':
+        return { procedure: 'dismissTopUp', input: { runId, skuId: kind.skuId } };
     }
   }
 }

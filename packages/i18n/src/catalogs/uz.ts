@@ -1320,7 +1320,6 @@ export const uz = {
   'run.filter.noMatch': 'Mos mahsulot topilmadi',
   'run.label.confirmedFraction': '{done}/{total} tasdiqlandi',
   'run.label.itemsCount': '{n, plural, =1 {1 ta mahsulot} other {{n} ta mahsulot}}',
-  'run.label.skuCountAndQty': '{n, plural, =1 {1 ta mahsulot} other {{n} ta mahsulot}} · {qty}',
   'run.label.splitsMismatch': 'Taqsimot: {sum} / {target}',
   // Yetkazib berish bosqichi (M1.9 fix)
   'run.deliveryStage.pending': 'Yetkazilmagan',

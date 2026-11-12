@@ -1318,8 +1318,6 @@ export const ru = {
   'run.label.confirmedFraction': 'подтверждено {done}/{total}',
   'run.label.itemsCount':
     '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
-  'run.label.skuCountAndQty':
-    '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty}',
   'run.label.splitsMismatch': 'Распределение: {sum} / {target}',
   // Этапы доставки (M1.9 fix)
   'run.deliveryStage.pending': 'Не доставлено',

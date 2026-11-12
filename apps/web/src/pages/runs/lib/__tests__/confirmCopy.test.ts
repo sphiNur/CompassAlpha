@@ -120,6 +120,12 @@ describe('confirmCommandFor', () => {
       confirmCommandFor({ kind: 'deliverStore', storeId: 's', storeName: 'S' }, 'r1', ''),
     ).toEqual({ procedure: 'deliverToStore', input: { runId: 'r1', storeId: 's' } });
   });
+
+  test('not buying a top-up names the item (RUNWEB1-29)', () => {
+    expect(
+      confirmCommandFor({ kind: 'dismissTopUp', skuId: 'k', qty: '2' }, 'r1', 'typed'),
+    ).toEqual({ procedure: 'dismissTopUp', input: { runId: 'r1', skuId: 'k' } });
+  });
 });
 
 describe('confirmCopyFor', () => {
@@ -148,6 +154,16 @@ describe('confirmCopyFor', () => {
     expect(
       flags({ kind: 'ejectSession', sessionId: 's', storeName: 'S', submitterName: 'W' }),
     ).toEqual([false, true, true, false]);
+  });
+
+  test('not buying a top-up asks, with the quantity, in the run sheet (RUNWEB1-29)', () => {
+    expect(copy({ kind: 'dismissTopUp', skuId: 'k', qty: '2.5' })).toEqual({
+      title: 'run.topUp.dismiss',
+      body: 'run.topUp.dismissConfirm {"qty":"2.5"}',
+      confirmLabel: 'run.topUp.dismiss',
+      danger: false,
+      requireReason: false,
+    });
   });
 
   test('undoing an added row says it is removed', () => {

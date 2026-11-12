@@ -13,7 +13,7 @@
  *
  * All props-driven; mutations stay in RunPage and arrive as callbacks.
  */
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   logPurchaseAbandon,
   logPurchaseEntry,
@@ -65,14 +65,6 @@ import type { PaymentMethod } from '@compass/contracts';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 
 /**
- * GroupCardHeader — the "group title + right-aligned count·qty meta"
- * strip at the top of every grouped run card. Was typed byte-identically
- * in PerStoreView + PerVendorView and divergently in PerCategoryView's
- * <summary> (py-2, count inlined after the name). One copy now; the
- * per-category view renders it inside its <summary> so the collapse
- * affordance is preserved while the chrome matches the other two views.
- */
-/**
  * RE-COPY-2 (2026-10-31): a price in thousands with the catalog's suffix
  * ("98千" / "98 тыс." / "98 ming"), not a Latin K in every language.
  */
@@ -80,12 +72,32 @@ function thousands(i18n: ReturnType<typeof useI18n>, v: string | number | null |
   return formatMoneyThousands(v, i18n.t('common.priceThousands', { n: '{n}' }));
 }
 
-function GroupCardHeader({ title, meta }: { title: ReactNode; meta: ReactNode }) {
+/** A transfer's tint: its chip and its payment toggle (one copy, RUNWEB1-27). */
+const TRANSFER_TINT =
+  'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]';
+
+/**
+ * GroupCardHeader — the "group title + right-aligned count meta" strip at
+ * the top of every grouped run card. Was typed byte-identically in
+ * PerStoreView + PerVendorView and divergently in PerCategoryView. One
+ * copy now; the per-category view draws it inside its collapse button,
+ * as spans (`inButton`), so the chrome matches the other two views.
+ */
+function GroupCardHeader({
+  title,
+  meta,
+  inButton = false,
+}: {
+  title: ReactNode;
+  meta: ReactNode;
+  inButton?: boolean;
+}) {
+  const Box = inButton ? 'span' : 'div';
   return (
-    <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-old-label text-[var(--c-fg-muted)]">
+    <Box className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-old-label text-[var(--c-fg-muted)]">
       <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">{title}</span>
       <span className="tabular-nums">{meta}</span>
-    </div>
+    </Box>
   );
 }
 
@@ -131,16 +143,14 @@ export function PerStoreView({
       {orderedStores.map((storeId) => {
         const store = storeById.get(storeId);
         const rows = skusByStore.get(storeId) ?? [];
-        const totalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
         const storeNote = run.sessionNotesByStore?.[storeId]?.trim();
         return (
           <Card key={storeId}>
             <GroupCardHeader
               title={store?.name ?? i18n.t('common.unknownStore')}
-              meta={i18n.t('run.label.skuCountAndQty', {
-                n: rows.length,
-                qty: formatQty(String(totalQty)),
-              })}
+              // RUNWEB1-29: the count only; kg, pieces and bunches added
+              // up to a number that meant nothing.
+              meta={i18n.t('run.label.itemsCount', { n: rows.length })}
             />
             {/* M3.31 (2026-05-18, A.1): "其他物品" surfaces here in three
                 forms — M3.16-C structured extras (one row per item) +
@@ -229,6 +239,16 @@ export function PerStoreView({
                     >
                       <span aria-hidden className={`shrink-0 text-old-body ${tone}`}>
                         {mark}
+                      </span>
+                      {/* RUNWEB1-28: the mark's meaning for screen readers. */}
+                      <span className="sr-only">
+                        {i18n.t(
+                          status === 'purchased'
+                            ? 'run.extras.status.bought'
+                            : status === 'unavailable'
+                              ? 'run.extras.status.unavailable'
+                              : 'run.extras.status.pending',
+                        )}
                       </span>
                       <NameCell className="flex-1" {...name} primaryClassName="font-normal" />
                       <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
@@ -388,15 +408,11 @@ export function PerVendorView({
   return (
     <div className="flex flex-col gap-2">
       {buckets.map((b) => {
-        const totalQty = b.items.reduce((s, r) => s + Number(r.plannedQty || 0), 0);
         return (
           <Card key={b.supplierId ?? '__unassigned__'}>
             <GroupCardHeader
               title={b.supplierName}
-              meta={i18n.t('run.label.skuCountAndQty', {
-                n: b.items.length,
-                qty: formatQty(String(totalQty)),
-              })}
+              meta={i18n.t('run.label.itemsCount', { n: b.items.length })}
             />
             <ul className="flex flex-col" role="list">
               {b.items
@@ -788,11 +804,8 @@ export function ExpensesCard({
         // below it and the first expense's ✗ reaches 12px above its row,
         // so 8px of gap let a tap below "+ Expense" land on ✗.
         <div className="flex justify-end px-4 pb-4">
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={onOpenExpense}
-          >
+          {/* UI-5 (RUNWEB1-27): quiet, one accent per screen. */}
+          <Button size="sm" variant="secondary" onClick={onOpenExpense}>
             {i18n.t('run.action.addExpense.button')}
           </Button>
         </div>
@@ -839,9 +852,7 @@ export function ExpensesCard({
                 </span>
                 {isTransfer ? (
                   <span
-                    aria-label={i18n.t('run.label.paymentTransfer')}
-                    title={i18n.t('run.label.paymentTransfer')}
-                    className="shrink-0 rounded-[var(--r-pill)] bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] px-1.5 py-0.5 text-old-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+                    className={`shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label ${TRANSFER_TINT}`}
                   >
                     {i18n.t('run.label.paymentTransfer')}
                   </span>
@@ -986,65 +997,88 @@ export function PerCategoryView({
       .sort((a, b) => a.name.localeCompare(b.name, i18n.locale));
   }, [categoryById, i18n, productName, run.items, skuById]);
 
+  // RUNWEB1-27 / RUNWEB1-28: a Card whose header is a button that says
+  // whether the group is open (it was a <details> whose <summary> held a
+  // div and hid its marker); a shut group draws no rows.
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (categoryId: string) =>
+    setShut((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(categoryId)) next.add(categoryId);
+      return next;
+    });
+  const panelIdBase = useId();
+
   return (
     <div className="flex flex-col gap-2">
       {groups.map((group) => {
-        const totalQty = group.items.reduce((s, it) => s + Number(it.plannedQty || 0), 0);
+        const open = !shut.has(group.categoryId);
+        const panelId = `${panelIdBase}-${group.categoryId}`;
         return (
-        <details
-          key={group.categoryId}
-          open
-          className="overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline"
-        >
-          {/* Unified (2026-07-05): the category header now renders the
-              same GroupCardHeader as the per-store / per-vendor views
-              (was px-4 py-2 with the count inlined after the name — a
-              third chrome for the same semantic element). The <summary>
-              wrapper keeps the native collapse affordance. */}
-          <summary className="cursor-pointer list-none">
-            <GroupCardHeader
-              title={group.name}
-              meta={i18n.t('run.label.skuCountAndQty', {
-                n: group.items.length,
-                qty: formatQty(String(totalQty)),
-              })}
-            />
-          </summary>
-          <ul className="flex flex-col" role="list">
-            {group.items.map((item) => {
-              const sku = skuById.get(item.skuId);
-              const name = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
-              const actualSplits = rowSplitsOf(run.splits, item.skuId);
-              return (
-                <PurchaseRow
-                  key={item.skuId}
-                  item={item}
-                  servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
-                  name={name}
-                  unitCode={sku?.unit}
-                  step={sku?.step ?? '0.1'}
-                  demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
-                  storeById={storeById}
-                  actualSplits={actualSplits}
-                  isMultiStoreRun={isMultiStoreRun}
-                  lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
-                  lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
-                  i18n={i18n}
-                  priceInThousands={priceInThousands}
-                  onTogglePriceUnit={onTogglePriceUnit}
-                  saving={savingSkuId === item.skuId}
-                  onSave={onSavePurchaseInline}
-                  onMarkNa={onMarkNa}
-                  onEdit={onEditPurchased}
-                  onUnmark={onUnmark}
-                  onOpenAdvanced={onOpenAdvancedPurchase}
-                  onSetPaymentMethod={onSetPaymentMethod}
-                  paymentBusy={paymentBusySkuId === item.skuId}
-                />
-              );
-            })}
-          </ul>
-        </details>
+          <Card key={group.categoryId} className="overflow-hidden">
+            {/* Unified (2026-07-05): the category header renders the same
+                GroupCardHeader as the per-store / per-vendor views. */}
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={open ? panelId : undefined}
+              onClick={() => toggle(group.categoryId)}
+              className="block w-full text-left"
+            >
+              <GroupCardHeader
+                inButton
+                title={
+                  <>
+                    <span
+                      aria-hidden
+                      className="mr-1 font-mono text-old-label text-[var(--c-fg-muted)]"
+                    >
+                      {open ? '▾' : '▸'}
+                    </span>
+                    {group.name}
+                  </>
+                }
+                // RUNWEB1-29: the count only (units were added up).
+                meta={i18n.t('run.label.itemsCount', { n: group.items.length })}
+              />
+            </button>
+            {open ? (
+              <ul id={panelId} className="flex flex-col" role="list">
+                {group.items.map((item) => {
+                  const sku = skuById.get(item.skuId);
+                  const name = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
+                  const actualSplits = rowSplitsOf(run.splits, item.skuId);
+                  return (
+                    <PurchaseRow
+                      key={item.skuId}
+                      item={item}
+                      servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
+                      name={name}
+                      unitCode={sku?.unit}
+                      step={sku?.step ?? '0.1'}
+                      demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
+                      storeById={storeById}
+                      actualSplits={actualSplits}
+                      isMultiStoreRun={isMultiStoreRun}
+                      lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
+                      lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
+                      i18n={i18n}
+                      priceInThousands={priceInThousands}
+                      onTogglePriceUnit={onTogglePriceUnit}
+                      saving={savingSkuId === item.skuId}
+                      onSave={onSavePurchaseInline}
+                      onMarkNa={onMarkNa}
+                      onEdit={onEditPurchased}
+                      onUnmark={onUnmark}
+                      onOpenAdvanced={onOpenAdvancedPurchase}
+                      onSetPaymentMethod={onSetPaymentMethod}
+                      paymentBusy={paymentBusySkuId === item.skuId}
+                    />
+                  );
+                })}
+              </ul>
+            ) : null}
+          </Card>
         );
       })}
     </div>
@@ -1161,8 +1195,7 @@ const CTRL_COMMIT =
   'bg-[var(--c-action)] font-semibold text-[var(--c-action-fg)] active:opacity-80';
 const CTRL_OFF = 'bg-[var(--c-surface-2)] font-semibold text-[var(--c-fg-muted)]';
 const CTRL_QUIET = 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] active:opacity-70';
-const CTRL_TRANSFER =
-  'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)] active:opacity-70';
+const CTRL_TRANSFER = `${TRANSFER_TINT} active:opacity-70`;
 
 /* px-4 (16) + state cell (20) + gap (6) — lines a second line up with
  * the name's left edge. */
@@ -2100,7 +2133,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                 // moves to the next line instead.
                 'flex h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] px-2 text-old-label font-medium active:opacity-70 ' +
                 (paymentMethod === 'transfer'
-                  ? 'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
+                  ? TRANSFER_TINT
                   : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
               }
             >

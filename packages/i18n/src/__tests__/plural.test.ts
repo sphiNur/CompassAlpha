@@ -55,17 +55,17 @@ describe('plural selection — English', () => {
 
   test('keeps surrounding text and other placeholders intact', () => {
     expect(
-      createI18n('en').t('run.label.skuCountAndQty' as CatalogKey, {
+      createI18n('en').t('ops.maint.rowsFromDate' as CatalogKey, {
         n: 1,
-        qty: '3 kg',
+        date: '2026-11-01',
       }),
-    ).toBe('1 product · 3 kg');
+    ).toBe('1 record from 2026-11-01');
     expect(
-      createI18n('en').t('run.label.skuCountAndQty' as CatalogKey, {
+      createI18n('en').t('ops.maint.rowsFromDate' as CatalogKey, {
         n: 7,
-        qty: '3 kg',
+        date: '2026-11-01',
       }),
-    ).toBe('7 products · 3 kg');
+    ).toBe('7 records from 2026-11-01');
   });
 
   test('a plural block mid-sentence leaves the rest of the sentence alone', () => {

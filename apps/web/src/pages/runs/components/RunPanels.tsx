@@ -24,7 +24,6 @@ import {
 } from 'react';
 import type { ComponentProps } from 'react';
 import {
-  Badge,
   Banner,
   Button,
   Card,
@@ -33,7 +32,9 @@ import {
   Chip,
   ChipBar,
   EmptyState,
+  LoadingState,
   NameCell,
+  QueryErrorBanner,
   SectionLabel,
   Sheet,
   useToast,
@@ -41,6 +42,7 @@ import {
   PickerGroup,
   PickerRow,
   SearchInput,
+  rowListClass,
 } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
@@ -844,7 +846,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               );
               const inner = (
                 <>
-                  <span className="shrink-0 truncate text-old-body font-semibold">{storeName}</span>
+                  {/* RUNWEB1-29: min-w-0, so a long name truncates (it ran
+                      under the deliver button). */}
+                  <span className="min-w-0 truncate text-old-body font-semibold">{storeName}</span>
                   <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                     {i18n.t('run.label.itemsCount', { n: splitsHere.length })} · {subtitle}
                   </span>
@@ -1774,12 +1778,12 @@ export function PreviewSummaryCard({
   const openStoreKey = pruneOpen(openStore, storeKeys);
   const openSupplierKey = pruneOpen(openSupplier, supplierKeys);
 
+  // UI-13 (RUNWEB1-27): rows divided by hairlines (rowListClass on the
+  // list), not striped grey.
   const renderLine = (
     line: PreviewLine,
-    index: number,
     opts?: { editableSupplier?: boolean; showSupplier?: boolean },
   ) => {
-    const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
       line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]';
     // UI-4 (RUNWEB1-09): a product's second-language name on its own
@@ -1817,10 +1821,10 @@ export function PreviewSummaryCard({
         : 'text-[var(--c-warning-fg)]';
       const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
       return (
-        <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
+        <li key={line.id} className="px-2 py-1.5">
           <div className="flex min-w-0 items-baseline gap-2 text-old-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-meta font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1876,14 +1880,11 @@ export function PreviewSummaryCard({
     }
 
     return (
-      <li
-        key={line.id}
-        className={`px-2 py-1.5 ${rowBg}`}
-      >
+      <li key={line.id} className="px-2 py-1.5">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-old-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-meta font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1906,9 +1907,10 @@ export function PreviewSummaryCard({
     // 2026-11-05: no -mx-2 bleed — it sat 8 px wider than the order
     // picker card right above it, so the two edges never lined up.
     <Card className="overflow-hidden">
+      {/* UI-10 (RUNWEB1-29): no order count here; the picker above and the
+          warning below both give it. */}
       <CardHeader className="px-3 pt-3">
         <CardTitle>{i18n.t('run.section.readyToPlan')}</CardTitle>
-        <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
       </CardHeader>
       {/* Segmented control — sticky horizontal pill bar, same visual
           language as ScopeTab in MemberPermissionsSheet. Two taps here
@@ -2124,8 +2126,8 @@ export function PreviewSummaryCard({
                         name={supplier.supplierName}
                         meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
                       />
-                      <ul className="overflow-hidden rounded-[var(--r-utility)]">
-                        {supplier.items.map((line, idx) => renderLine(line, idx))}
+                      <ul className={rowListClass}>
+                        {supplier.items.map((line) => renderLine(line))}
                       </ul>
                     </section>
                   ))}
@@ -2246,10 +2248,8 @@ export function PreviewSummaryCard({
                         name={store.storeName}
                         meta={groupMoneyMeta(store.total, store.unknownCount)}
                       />
-                      <ul className="overflow-hidden rounded-[var(--r-utility)]">
-                        {store.items.map((line, idx) =>
-                          renderLine(line, idx, { editableSupplier: true }),
-                        )}
+                      <ul className={rowListClass}>
+                        {store.items.map((line) => renderLine(line, { editableSupplier: true }))}
                       </ul>
                       {store.legacyNote ? (
                         <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
@@ -2353,19 +2353,12 @@ function VendorPickerSheet({
         <p className="px-1 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('run.previewSupplier.pickVendorHint')}
         </p>
+        {/* UI-15 (RUNWEB1-27): the kit's error with retry, and a spinner
+            while the stalls load (the list was just empty). */}
         {suppliersQuery.isError ? (
-          <div className="flex items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 ring-hairline">
-            <span className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('common.error')}
-            </span>
-            <button
-              type="button"
-              onClick={() => void suppliersQuery.refetch()}
-              className="press text-old-label font-semibold text-[var(--c-action)]"
-            >
-              {i18n.t('common.retry')}
-            </button>
-          </div>
+          <QueryErrorBanner query={suppliersQuery} />
+        ) : suppliersQuery.isPending ? (
+          <LoadingState variant="compact" />
         ) : null}
         <PickerGroup label={i18n.t('run.previewSupplier.pickVendorTitle')}>
           <PickerRow
@@ -2394,13 +2387,14 @@ export function RunSessionsCard({
   sessions,
   storeById,
   i18n,
-  ejecting,
+  ejectingSessionId,
   onEject,
 }: {
   sessions: NonNullable<ActiveRun['sessions']>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
-  ejecting: boolean;
+  /** The order being taken out, while that is on its way (RUNWEB1-29). */
+  ejectingSessionId: string | null;
   onEject: (session: NonNullable<ActiveRun['sessions']>[number]) => void;
 }) {
   // DX-BUY-7 (2026-11-01): collapsed to one line by default. The cards and
@@ -2476,8 +2470,9 @@ export function RunSessionsCard({
                 variant="pearl"
                 size="sm"
                 className="ml-auto"
-                disabled={ejecting}
-                loading={ejecting}
+                disabled={ejectingSessionId !== null}
+                // RUNWEB1-29: only the order being taken out spins.
+                loading={ejectingSessionId === sessionRow.id}
                 onClick={() => onEject(sessionRow)}
               >
                 {i18n.t('run.action.ejectSession')}

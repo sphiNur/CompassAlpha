@@ -1163,7 +1163,6 @@ export const zh = {
   'run.filter.noMatch': '没有匹配的商品',
   'run.label.confirmedFraction': '{done}/{total} 已确认',
   'run.label.itemsCount': '{n} 项',
-  'run.label.skuCountAndQty': '{n} 个商品 · {qty}',
   'run.label.splitsMismatch': '分摊：{sum} / {target}',
   // 配送阶段标签 (M1.9 修)
   'run.deliveryStage.pending': '未配送',
