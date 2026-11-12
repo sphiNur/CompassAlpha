@@ -2,7 +2,7 @@
  * Cancel-run cascade integration test (M1.9, 2026-05-07).
  *
  * The pre-launch readiness audit flagged this as a CRITICAL untested
- * path. Specifically the M1.7-fix at `run.ts:1036` synthesizes the
+ * path. Specifically the M1.7-fix in `run.cancel` (routers/run/plan.ts) synthesizes the
  * `run.eject_session` permission when cascading EjectFromRun events
  * during cancel. Without that synthesis, an actor with `run.create`
  * (the perm gating cancel) but WITHOUT `run.eject_session` would

@@ -319,8 +319,12 @@ apps/api/src/
 │       │       dev / nonTelegram.ts
 │       ├── order.ts            (todaySession / adjustItem / submit /
 │       │                        approve / reject / claim / withdraw / unapprove)
-│       ├── run.ts              (previewCreatable / create / purchaseItem /
-│       │                        markUnavailable / dispatch / confirm / finish)
+│       ├── run/                (采购单，RUNAPI-13 按阶段拆分；路径仍是 run.<name>)
+│       │   ├── index.ts        (把各文件的 procedure 展开成一个 router)
+│       │   ├── command.ts      (命令管线：加载、校验范围、decide、写入、通知、推送)
+│       │   ├── scope.ts        (采购单涉及哪些门店、调用者能看能改哪些)
+│       │   └── preview / plan / read / history / purchase / delivery /
+│       │       close.ts
 │       ├── catalog.ts          (categories / skus / suppliers)
 │       ├── dishes.ts           (recipes / dish-defined orders, M1.16)
 │       ├── inventory.ts        (stock movements, M1.15)
