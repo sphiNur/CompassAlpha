@@ -57,6 +57,7 @@ import {
   purchaseDraftEdits,
   splitsAddUp,
 } from '../lib/purchaseForm';
+import type { SkuLite, StoreLite } from '../types';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -144,11 +145,8 @@ export interface PurchaseDraft {
 
 interface PurchaseSheetProps {
   draft: PurchaseDraft | null;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  skuById: Map<string, SkuLite>;
+  storeById: Map<string, StoreLite>;
   suppliers: Array<{ id: string; name: string }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   photoUploader: import('@compass/ui').PhotoUploader | undefined;
@@ -630,7 +628,7 @@ export function AddItemSheet({
     defaultUnitPrice: string | null;
     defaultPaymentMethod: string;
   }>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   /** M3.44: uploads the receipt photo, offered for an expense or a product
    *  recorded as its own cost. Always optional (see 2026-07-06 below). */

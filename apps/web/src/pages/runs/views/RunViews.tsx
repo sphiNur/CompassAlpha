@@ -54,8 +54,11 @@ import {
   otherStoreSkusOf,
   type ActiveRun,
   type ExtraStatus,
+  type InlinePurchase,
   type MarkExtraStatus,
   type RunExtra,
+  type SkuLite,
+  type StoreLite,
 } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { rowName } from '../../../lib/productName';
@@ -121,11 +124,8 @@ export function PerStoreView({
   run: ActiveRun;
   /** The run's items by product, indexed once by the panel (RUNWEB1-20). */
   itemBySku: ReadonlyMap<string, ActiveRun['items'][number]>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  storeById: Map<string, StoreLite>;
+  skuById: Map<string, SkuLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   skusByStore: Map<string, Array<{ skuId: string; qty: string }>>;
 }) {
@@ -319,11 +319,8 @@ export function PerVendorView({
    * no store label and looked ambiguous).
    */
   isMultiStoreRun: boolean;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  skuById: Map<string, SkuLite>;
+  storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   savingSkuId: string | null;
@@ -337,25 +334,7 @@ export function PerVendorView({
   priceInThousands: boolean;
   onTogglePriceUnit: () => void;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
-  onSavePurchaseInline: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    /**
-     * Where the purchase actually happened. Only the by-stall view can
-     * know this (the purchaser is working one stall at a time), so the
-     * other views omit it and the handler falls back to null rather
-     * than guessing from the SKU's preferred supplier.
-     */
-    supplierId?: string | null;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  onSavePurchaseInline: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
@@ -572,7 +551,7 @@ export function RunExtrasCard({
   purchaseScopeStoreIds?: string[] | null;
   sessionExtrasByStore?: Record<string, RunExtra[]>;
   sessionNotesByStore?: Record<string, string>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   /** M3.37 (Wave2 #5): when true, tap a row to cycle pending → bought
    *  → unavailable → pending. Only true during run.status='purchasing'. */
@@ -783,7 +762,7 @@ export function ExpensesCard({
   /** D9: expenses also split to stores this purchaser does not buy for. */
   otherStoreExpenseIds?: string[];
   expenses: ActiveRun['expenses'];
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
   /** While the run is being bought: "+ Expense", and the ✗ delete on
@@ -943,37 +922,16 @@ export function PerCategoryView({
   run: ActiveRun;
   /** See PerVendorView. */
   isMultiStoreRun: boolean;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  skuById: Map<string, SkuLite>;
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
   onTogglePriceUnit: () => void;
   savingSkuId: string | null;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
-  onSavePurchaseInline: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    /**
-     * Where the purchase actually happened. Only the by-stall view can
-     * know this (the purchaser is working one stall at a time), so the
-     * other views omit it and the handler falls back to null rather
-     * than guessing from the SKU's preferred supplier.
-     */
-    supplierId?: string | null;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  onSavePurchaseInline: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
@@ -1314,7 +1272,7 @@ export const PurchaseRow = memo(function PurchaseRow({
    * across multiple stores ("店A 2kg · 店B 3kg") — they only saw
    * the aggregate qty.
    */
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   /**
    * M3.52: post-purchase per-store actual allocation (from
    * run.splits filtered to this skuId). For pending rows it's empty
@@ -1360,18 +1318,7 @@ export const PurchaseRow = memo(function PurchaseRow({
    */
   onTogglePriceUnit: () => void;
   saving: boolean;
-  onSave: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  onSave: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */

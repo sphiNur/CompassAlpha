@@ -73,11 +73,14 @@ import {
 } from '../views/RunViews';
 import type {
   ActiveRun,
+  InlinePurchase,
   MarkExtraStatus,
   PreviewLine,
   PreviewStoreGroup,
   PreviewSupplierGroup,
   RunExtra,
+  SkuLite,
+  StoreLite,
 } from '../types';
 import { otherStoreSkusOf } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
@@ -202,12 +205,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   /** 2026-10-30: fill in or correct a price after the goods went out. */
   onEditPrice: (item: ActiveRun['items'][number]) => void;
   run: ActiveRun;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  skuById: Map<string, SkuLite>;
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, inline price input + sheet input display `value/1000`
@@ -225,21 +225,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   revealPending: number;
   /** RUNWEB1-35: the actor may deliver (delivery.dispatch in some store). */
   canDispatch: boolean;
-  onSavePurchaseInline: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    /** See the identical field on RunViews' views — only the by-stall
-     *  view supplies it; this panel's aggregate rows send nothing. */
-    supplierId?: string | null;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  /** Only the by-stall view sends supplierId (InlinePurchase). */
+  onSavePurchaseInline: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
@@ -1273,10 +1260,7 @@ export function PreviewSummaryCard({
       Array<{ name: string; qty: string; unit: string; note?: string; sessionId?: string; idx?: number }>
     >;
   };
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  skuById: Map<string, SkuLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   toast: ReturnType<typeof useToast>;
@@ -2370,7 +2354,7 @@ export function RunSessionsCard({
   onEject,
 }: {
   sessions: NonNullable<ActiveRun['sessions']>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   /** The order being taken out, while that is on its way (RUNWEB1-29). */
   ejectingSessionId: string | null;

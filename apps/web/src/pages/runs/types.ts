@@ -164,12 +164,13 @@ export interface ActiveRun {
     unitHint: string | null;
     qty: string;
     unitPrice: string;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
+    /**
+     * Review RUNWEB2-31: a store's share only. Unlike an item's split, an
+     * expense's has no price or method of its own (RunExpenseAdded keeps
+     * {storeId, qty}); the type said it had, inviting money worked out
+     * from fields the server never sends.
+     */
+    storeSplits: Array<{ storeId: string; qty: string }>;
     paymentMethod: string;
     receiptPhotoUrl: string | null;
     reason: string;
@@ -194,6 +195,43 @@ export interface ActiveRun {
     } | null
   >;
 }
+
+/**
+ * Review RUNWEB1-19 (2026-11-12): the shapes the run screens pass around,
+ * once each here (they were typed out at every component's props).
+ */
+/** A product as the run screens use it (catalog.skus by id). */
+export type SkuLite = {
+  id: string;
+  names: Record<string, string>;
+  unit: string;
+  step: string;
+  categoryId?: string | null;
+};
+
+/** A store as the run screens use it (catalog.stores by id). */
+export type StoreLite = { id: string; name: string; code: string | null };
+
+/** What a purchase row's ✓ records (run.purchaseItem). */
+export type InlinePurchase = {
+  skuId: string;
+  actualQty: string;
+  unitPrice: string;
+  /**
+   * Where the purchase actually happened. Only the by-stall view can
+   * know this (the purchaser is working one stall at a time), so the
+   * other views omit it and the handler falls back to null rather
+   * than guessing from the SKU's preferred supplier.
+   */
+  supplierId?: string | null;
+  storeSplits: Array<{
+    storeId: string;
+    qty: string;
+    unitPrice?: string;
+    paymentMethod?: PaymentMethod;
+  }>;
+  paymentMethod: PaymentMethod;
+};
 
 /** An "other item"'s outcome (M3.37); a row without one is pending. */
 export type ExtraStatus = 'pending' | 'bought' | 'unavailable';

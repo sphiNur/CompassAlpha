@@ -52,7 +52,7 @@ import { splitPaymentMethod } from '../lib/settlement';
 import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 import { localDateValue } from '../../../lib/calendarDate';
-import type { RunListRow } from '../types';
+import type { RunListRow, StoreLite } from '../types';
 import { PhotoThumb, PhotoViewerSheet, type ViewedPhoto } from '../../../components/PhotoThumb';
 
 // ====================================================================
@@ -130,7 +130,7 @@ export function RunHistoryPage({
   toolbar?: ReactNode;
   hasSearchOrFilters?: boolean;
   onClearSearchOrFilters?: () => void;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   skuById: Map<
     string,
     {
@@ -453,7 +453,7 @@ function RunHistoryDaySheet({
   onClose,
 }: {
   day: HistoryDay | null;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   currency: string;
   onOpenRun: (target: HistoryDetailTarget) => void;
@@ -647,7 +647,7 @@ export function RunHistoryDetailSheet({
       categoryId?: string | null;
     }
   >;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   productNameParts: ReturnType<typeof useProductNameParts>;
   i18n: ReturnType<typeof useI18n>;
   onClose: () => void;
