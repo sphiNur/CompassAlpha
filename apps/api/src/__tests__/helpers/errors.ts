@@ -12,6 +12,7 @@
  * Separate HTTP requests always get that boundary. Suites used to add
  * the pause by hand after some failures and not others.
  */
+import { ZodError } from 'zod';
 
 async function failureOf(fn: () => Promise<unknown>): Promise<{ err: unknown } | null> {
   try {
@@ -43,6 +44,21 @@ export async function errorOf(fn: () => Promise<unknown>): Promise<CallError | n
 export async function codeOf(fn: () => Promise<unknown>): Promise<string | null> {
   const err = await errorOf(fn);
   return err ? (err.code ?? 'unknown') : null;
+}
+
+/**
+ * The catalog key of what `fn` threw; null if it succeeded (review
+ * TEST1-06, 2026-11). A refusal carries its key as the message, except an
+ * input the schema refused: tRPC hands the ZodError over as the cause, and
+ * the key is its first issue's message, which the server sends the client
+ * in `fieldErrors` (trpc.ts). The message of such an error is zod's own
+ * JSON of the issues, which a suite used to parse to find the key.
+ */
+export async function keyOf(fn: () => Promise<unknown>): Promise<string | null> {
+  const err = await errorOf(fn);
+  if (!err) return null;
+  if (err.cause instanceof ZodError) return err.cause.issues[0]?.message ?? err.message;
+  return err.message;
 }
 
 export interface PgError {
