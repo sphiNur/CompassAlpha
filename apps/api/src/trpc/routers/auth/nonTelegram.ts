@@ -13,6 +13,7 @@ import { publicProcedure } from '../../trpc';
 import { logger } from '../../../infra/log';
 import { enforceRate } from './limits';
 import { isNonTelegramLoginAvailable, parseNonTelegramUsers } from './modes';
+import { pickActiveMember } from './identity';
 import { issueLoginResult } from './loginResult';
 
 function digestSecret(value: string): Buffer {
@@ -68,19 +69,7 @@ export const nonTelegramProcedures = {
         });
       }
 
-      const member = await inSystem(ctx.db, 'auth', async (tx) => {
-        if (user.lastOrgId) {
-          const remembered = await tx.query.members.findFirst({
-            where: (m, { eq: eq2, and: and2 }) =>
-              and2(eq2(m.userId, user.id), eq2(m.orgId, user.lastOrgId!), eq2(m.status, 'active')),
-          });
-          if (remembered) return remembered;
-        }
-        return tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
-        });
-      });
+      const member = await inSystem(ctx.db, 'auth', (tx) => pickActiveMember(tx, user));
       if (!member) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
       }

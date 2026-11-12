@@ -313,6 +313,7 @@ apps/api/src/
 │       │   ├── index.ts        (把各文件的 procedure 展开成一个 router)
 │       │   ├── limits.ts       (各登录入口按地址限频)
 │       │   ├── modes.ts        (本服务器开放哪些登录方式：loginModes / nonTelegramStatus)
+│       │   ├── identity.ts     (校验 initData、写用户行、登录进哪个组织)
 │       │   ├── loginResult.ts  (登录返回的令牌和会话；换组织时结束旧的刷新链)
 │       │   └── telegram / invite / refresh / organizations / account /
 │       │       dev / nonTelegram.ts

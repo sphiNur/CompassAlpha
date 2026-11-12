@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { sql } from 'drizzle-orm';
 import { inSystem, type DB } from '@compass/db';
 import { publicProcedure } from '../../trpc';
-import { signAccess } from '../../../infra/jwt';
+import { accessTokenExpiry, signAccess } from '../../../infra/jwt';
 import { logger } from '../../../infra/log';
 import { executeRows } from '../../../services/sqlRows';
 import { buildSessionPayload } from '../../../services/sessionPayload';
@@ -167,7 +167,7 @@ async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginId
 async function issueDevBypassLoginResult(db: DB, userId: string, memberId: string, orgId: string) {
   const session = await buildSessionPayload(db, userId, memberId, orgId);
   const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
-  const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const accessExpiresAt = accessTokenExpiry().toISOString();
   return {
     tokens: {
       accessToken,

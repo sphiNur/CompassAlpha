@@ -9,8 +9,6 @@ import { inSystem, schema as s, withSystemContext } from '@compass/db';
 import { AcceptInviteInputSchema } from '@compass/contracts';
 import { detectLocale } from '@compass/i18n';
 import { publicProcedure } from '../../trpc';
-import { verifyInitData, type TelegramUser } from '../../../services/telegramAuth';
-import { env } from '../../../env';
 import { hub } from '../../../realtime/hub';
 import {
   grantBinding,
@@ -24,7 +22,12 @@ import {
   readSubscriptionState,
 } from '../../../services/subscription';
 import { enforceRate } from './limits';
-import { DEV_MOCK_INIT_DATA, DEV_MOCK_TG_USER, isDevMockLoginAvailable } from './modes';
+import {
+  createTelegramUser,
+  findTelegramUser,
+  telegramUserOf,
+  touchTelegramUser,
+} from './identity';
 import { issueLoginResult } from './loginResult';
 
 export const inviteProcedures = {
@@ -38,26 +41,7 @@ export const inviteProcedures = {
    */
   acceptInvite: publicProcedure.input(AcceptInviteInputSchema).mutation(async ({ ctx, input }) => {
     enforceRate('acceptInvite', ctx.trustedIp);
-    const isDevMock = input.initData === DEV_MOCK_INIT_DATA && isDevMockLoginAvailable();
-    let tg: TelegramUser;
-    if (isDevMock) {
-      tg = DEV_MOCK_TG_USER;
-    } else {
-      if (!env.TELEGRAM_BOT_TOKEN) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'auth.errors.botTokenMissing',
-        });
-      }
-      const verified = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
-      if (!verified.ok || !verified.user) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'auth.errors.invalidInitData',
-        });
-      }
-      tg = verified.user;
-    }
+    const { tg } = telegramUserOf(input.initData);
 
     const tokenHash = createHash('sha256').update(input.token).digest('hex');
     const identity = await withSystemContext(ctx.db, 'auth', async (tx) => {
@@ -85,50 +69,23 @@ export const inviteProcedures = {
         });
       }
 
-      let user = await tx.query.users.findFirst({
-        where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
-      });
-      if (!user) {
-        const [created] = await tx
-          .insert(s.users)
-          .values({
-            tgUserId: BigInt(tg.id),
-            tgUsername: tg.username ?? null,
-            displayName:
-              [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
-              tg.username ||
-              `user-${tg.id}`,
-            avatarUrl: tg.photo_url ?? null,
-            locale: detectLocale(input.locale ?? tg.language_code),
-            displayNameLocked: false,
-          })
-          .returning();
-        user = created;
-      } else {
-        const known = user;
-        await tx
-          .update(s.users)
-          .set({
-            tgUsername: tg.username ?? known.tgUsername,
-            avatarUrl: tg.photo_url ?? known.avatarUrl,
-            // Review COREWEB1-28 (2026-11-12): the language the user has
-            // already (set in Settings, or at their first sign-in) wins
-            // over the device's, which the web sends with the invite. A
-            // row an administrator made has none yet and takes it.
-            locale: detectLocale(known.locale ?? input.locale ?? tg.language_code),
-            lastSeenAt: new Date(),
-            ...(known.displayName.startsWith('tg:')
-              ? {
-                  displayName:
-                    [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
-                    tg.username ||
-                    known.displayName,
-                }
-              : {}),
-          })
-          .where(eq(s.users.id, known.id));
+      const found = await findTelegramUser(tx, tg);
+      const user =
+        found ??
+        (await createTelegramUser(tx, tg, {
+          locale: detectLocale(input.locale ?? tg.language_code),
+          displayNameLocked: false,
+        }));
+      if (found) {
+        await touchTelegramUser(tx, found, tg, {
+          // Review COREWEB1-28 (2026-11-12): the language the user has
+          // already (set in Settings, or at their first sign-in) wins
+          // over the device's, which the web sends with the invite. A
+          // row an administrator made has none yet and takes it.
+          locale: detectLocale(found.locale ?? input.locale ?? tg.language_code),
+          adoptName: true,
+        });
       }
-      if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
       if (invite.acceptedAt) {
         if (invite.acceptedByUserId !== user.id || !invite.acceptedByMemberId) {
@@ -187,7 +144,7 @@ export const inviteProcedures = {
       assertWriteAccess(await readSubscriptionState(tx, invite.orgId));
       let member = await tx.query.members.findFirst({
         where: (m, { eq: eq2, and: and2 }) =>
-          and2(eq2(m.orgId, invite.orgId), eq2(m.userId, user!.id)),
+          and2(eq2(m.orgId, invite.orgId), eq2(m.userId, user.id)),
       });
       if (member?.status === 'suspended') {
         throw new TRPCError({

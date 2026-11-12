@@ -8,10 +8,14 @@ import { inSystem, schema as s, withOrgContext, type DB } from '@compass/db';
 import { TelegramLoginInputSchema } from '@compass/contracts';
 import { detectLocale } from '@compass/i18n';
 import { publicProcedure } from '../../trpc';
-import { verifyInitData, type TelegramUser } from '../../../services/telegramAuth';
-import { env } from '../../../env';
 import { enforceRate } from './limits';
-import { DEV_MOCK_INIT_DATA, DEV_MOCK_TG_USER, isDevMockLoginAvailable } from './modes';
+import {
+  createTelegramUser,
+  findTelegramUser,
+  pickActiveMember,
+  telegramUserOf,
+  touchTelegramUser,
+} from './identity';
 import { issueLoginResult } from './loginResult';
 
 function ensureDevMockAdminAccess(db: DB, memberId: string, orgId: string): Promise<void> {
@@ -55,96 +59,37 @@ export const telegramProcedures = {
     .input(TelegramLoginInputSchema)
     .mutation(async ({ ctx, input }) => {
       enforceRate('login', ctx.trustedIp);
-      const isDevMock = input.initData === DEV_MOCK_INIT_DATA && isDevMockLoginAvailable();
-      let tg: TelegramUser;
-      if (isDevMock) {
-        tg = DEV_MOCK_TG_USER;
-      } else {
-        if (!env.TELEGRAM_BOT_TOKEN) {
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'auth.errors.botTokenMissing',
-          });
-        }
-        const result = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
-        if (!result.ok || !result.user) {
-          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidInitData' });
-        }
-        tg = result.user;
-      }
+      const { tg, isDevMock } = telegramUserOf(input.initData);
 
-      // Upsert user.
-      let user = await inSystem(ctx.db, 'auth', (tx) =>
-        tx.query.users.findFirst({
-          where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
-        }),
-      );
+      const found = await inSystem(ctx.db, 'auth', (tx) => findTelegramUser(tx, tg));
       // A valid Telegram signature only proves who is asking, not that
       // they belong here. Membership comes from an invite
       // (admin.memberInviteByTgId) or `compass user grant`, both of which
       // create the user row up front — so an unknown Telegram id is a
       // stranger, and gets neither a user row nor a membership.
-      if (!user && !isDevMock) {
+      if (!found && !isDevMock) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
       }
-      if (!user) {
-        const [created] = await inSystem(ctx.db, 'auth', (tx) =>
-          tx
-            .insert(s.users)
-            .values({
-              tgUserId: BigInt(tg.id),
-              tgUsername: tg.username ?? null,
-              displayName:
-                [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
-                tg.username ||
-                `user-${tg.id}`,
-              avatarUrl: tg.photo_url ?? null,
-              locale: detectLocale(input.locale ?? tg.language_code),
-              // A local mock is not a person who needs onboarding. Marking it
-              // locked avoids creating an otherwise invisible first-run form
-              // in browser automation.
-              displayNameLocked: isDevMock,
-            })
-            .returning(),
-        );
-        user = created;
-      } else {
-        // Read through a constant: `user` is reassigned above, so inside the
-        // callback the compiler no longer knows it is set.
-        const known = user;
+      const user =
+        found ??
+        (await inSystem(ctx.db, 'auth', (tx) =>
+          createTelegramUser(tx, tg, {
+            locale: detectLocale(input.locale ?? tg.language_code),
+            // A local mock is not a person who needs onboarding. Marking it
+            // locked avoids creating an otherwise invisible first-run form
+            // in browser automation.
+            displayNameLocked: isDevMock,
+          }),
+        ));
+      if (found) {
         await inSystem(ctx.db, 'auth', (tx) =>
-          tx
-            .update(s.users)
-            .set({
-              tgUsername: tg.username ?? known.tgUsername,
-              avatarUrl: tg.photo_url ?? known.avatarUrl,
-              locale: detectLocale(input.locale ?? known.locale ?? tg.language_code),
-              lastSeenAt: new Date(),
-            })
-            .where(eq(s.users.id, known.id)),
+          touchTelegramUser(tx, found, tg, {
+            locale: detectLocale(input.locale ?? found.locale ?? tg.language_code),
+          }),
         );
       }
-      if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      const findActiveMember = () =>
-        inSystem(ctx.db, 'auth', async (tx) => {
-          if (user!.lastOrgId) {
-            const remembered = await tx.query.members.findFirst({
-              where: (m, { eq: eq2, and: and2 }) =>
-                and2(
-                  eq2(m.userId, user!.id),
-                  eq2(m.orgId, user!.lastOrgId!),
-                  eq2(m.status, 'active'),
-                ),
-            });
-            if (remembered) return remembered;
-          }
-          return tx.query.members.findFirst({
-            where: (m, { eq: eq2, and: and2 }) =>
-              and2(eq2(m.userId, user!.id), eq2(m.status, 'active')),
-          });
-        });
-      let ensuredMember = await findActiveMember();
+      let ensuredMember = await inSystem(ctx.db, 'auth', (tx) => pickActiveMember(tx, user));
       if (!ensuredMember) {
         // Only the local dev mock self-enrols. This used to run for every
         // caller, which made the bot's audience the org's membership and
@@ -155,7 +100,7 @@ export const telegramProcedures = {
           const suspended = await inSystem(ctx.db, 'auth', (tx) =>
             tx.query.members.findFirst({
               where: (m, { eq: eq2, and: and2 }) =>
-                and2(eq2(m.userId, user!.id), eq2(m.status, 'suspended')),
+                and2(eq2(m.userId, user.id), eq2(m.status, 'suspended')),
               columns: { id: true },
             }),
           );

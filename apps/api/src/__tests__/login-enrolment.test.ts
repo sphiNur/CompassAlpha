@@ -9,7 +9,7 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { env } from '../env';
 import { loadSession } from '../trpc/context';
@@ -208,5 +208,55 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
     expect(again.session.user.locale).toBe('ru');
     const kept = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, old!.id) });
     expect(kept?.locale).toBe('ru');
+  });
+
+  test('with no organisation to go back to, sign-in opens the one joined first (COREAPI-34)', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const tgUserId = freshTgId();
+    const [user] = await db
+      .insert(s.users)
+      .values({ tgUserId, displayName: `tg:${tgUserId}` })
+      .returning();
+    noteUser(user!.id);
+    const orgs: string[] = [];
+    for (const label of ['a', 'b', 'c']) {
+      const [org] = await db
+        .insert(s.organizations)
+        .values({
+          slug: `first-joined-${tgUserId}-${label}`,
+          name: `First joined ${label}`,
+          localeDefault: 'en',
+          timezone: 'UTC',
+        })
+        .returning({ id: s.organizations.id });
+      orgs.push(noteOrg(org!.id));
+    }
+    // Read without an order, the memberships come back by organisation id
+    // (members_org_user_unique), so the one joined first has the largest.
+    const [second, third, first] = [...orgs].sort() as [string, string, string];
+    const day = 86_400_000;
+    const start = Date.now() - 10 * day;
+    await db.insert(s.members).values([
+      { orgId: second, userId: user!.id, status: 'active', joinedAt: new Date(start + day) },
+      { orgId: first, userId: user!.id, status: 'active', joinedAt: new Date(start) },
+      { orgId: third, userId: user!.id, status: 'active', joinedAt: new Date(start + 2 * day) },
+    ]);
+    const initData = signInitData(tgUserId);
+
+    const login = await callerFor(null).auth.telegramLogin({ initData });
+    expect(login.session.member.orgId).toBe(first);
+
+    // The organisation they were last in opens while they are active there,
+    await db.update(s.users).set({ lastOrgId: third }).where(eq(s.users.id, user!.id));
+    const back = await callerFor(null).auth.telegramLogin({ initData });
+    expect(back.session.member.orgId).toBe(third);
+
+    // and once they are not, the first one they joined does again.
+    await db
+      .update(s.members)
+      .set({ status: 'suspended' })
+      .where(and(eq(s.members.userId, user!.id), eq(s.members.orgId, third)));
+    const again = await callerFor(null).auth.telegramLogin({ initData });
+    expect(again.session.member.orgId).toBe(first);
   });
 });

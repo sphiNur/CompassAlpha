@@ -6,7 +6,6 @@
  */
 import { env } from '../../../env';
 import { isLocalDevPeer } from '../../../services/devLocality';
-import type { TelegramUser } from '../../../services/telegramAuth';
 import { publicProcedure } from '../../trpc';
 import type { RequestContext } from '../../context';
 
@@ -36,26 +35,12 @@ export function parseNonTelegramUsers(): Map<string, string> {
   return users;
 }
 
-export function isNonTelegramLoginAvailable(): boolean {
-  if (env.NON_TELEGRAM_LOGIN_ENABLED !== 'true') return false;
-  if (releaseChannel() === 'production') return false;
-  return parseNonTelegramUsers().size > 0;
-}
-
-export const DEV_MOCK_INIT_DATA = '1';
-export const DEV_MOCK_TG_USER: TelegramUser = {
-  id: 9_000_000_001,
-  first_name: 'Local Developer',
-  username: 'compass_local_dev',
-  language_code: 'en',
-};
-
 /**
  * Browser automation needs a real authenticated session so it can exercise
  * the same tRPC, permission, and realtime paths as Telegram. This route is
  * intentionally narrower than the diagnostic browser login above:
  *
- * - only the literal local mock initData value is accepted;
+ * - only the literal local mock initData value is accepted (identity.ts);
  * - the server must opt in with DEV_MOCK_LOGIN_ENABLED=true;
  * - both NODE_ENV and release channel must be development;
  * - production release builds cannot carry VITE_DEV_MOCK_INIT_DATA.
@@ -93,6 +78,10 @@ function nonTelegramUnavailableReason(): string | null {
     return 'auth.errors.nonTelegramAllowlistEmpty';
   }
   return null;
+}
+
+export function isNonTelegramLoginAvailable(): boolean {
+  return nonTelegramUnavailableReason() === null;
 }
 
 export const loginModeProcedures = {

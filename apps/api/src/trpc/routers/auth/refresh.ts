@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { inSystem, schema as s } from '@compass/db';
 import { RefreshInputSchema } from '@compass/contracts';
 import { publicProcedure } from '../../trpc';
-import { signAccess, verifyRefresh } from '../../../infra/jwt';
+import { verifyRefresh } from '../../../infra/jwt';
 import { logger } from '../../../infra/log';
 import {
   rotateRefresh,
@@ -17,6 +17,8 @@ import {
 } from '../../../services/refreshTokens';
 import { buildSessionPayload } from '../../../services/sessionPayload';
 import { enforceRate } from './limits';
+import { pickActiveMember } from './identity';
+import { loginResultFor } from './loginResult';
 
 export const refreshProcedures = {
   /**
@@ -85,18 +87,9 @@ export const refreshProcedures = {
             ),
         });
       }
-      // Refresh tokens from before tenant claims. Reopen the last
-      // workspace, then any active membership.
-      if (user.lastOrgId) {
-        const remembered = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.userId, user.id), eq2(m.orgId, user.lastOrgId!), eq2(m.status, 'active')),
-        });
-        if (remembered) return remembered;
-      }
-      return tx.query.members.findFirst({
-        where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
-      });
+      // Refresh tokens from before tenant claims: the membership a
+      // sign-in would open.
+      return pickActiveMember(tx, user);
     });
     if (!member) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
@@ -147,22 +140,6 @@ export const refreshProcedures = {
     await inSystem(ctx.db, 'auth', (tx) =>
       tx.update(s.users).set({ lastOrgId: member.orgId }).where(eq(s.users.id, user.id)),
     );
-    const accessToken = await signAccess({
-      sub: user.id,
-      org: session.member.orgId,
-      mid: member.id,
-      fam: issued.family,
-    });
-    const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const refreshExpiresAt = issued.expiresAt.toISOString();
-    return {
-      tokens: {
-        accessToken,
-        refreshToken: issued.token,
-        accessExpiresAt,
-        refreshExpiresAt,
-      },
-      session,
-    };
+    return loginResultFor(user.id, member.id, session, issued);
   }),
 };

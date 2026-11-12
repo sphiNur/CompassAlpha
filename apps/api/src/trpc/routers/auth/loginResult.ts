@@ -3,7 +3,8 @@
  * session), and ending the refresh chain a session moves away from.
  */
 import type { DB } from '@compass/db';
-import { signAccess } from '../../../infra/jwt';
+import type { Session } from '@compass/contracts';
+import { accessTokenExpiry, signAccess } from '../../../infra/jwt';
 import { issueRefresh, revokeFamilyForUser } from '../../../services/refreshTokens';
 import { buildSessionPayload } from '../../../services/sessionPayload';
 import type { RequestContext } from '../../context';
@@ -24,18 +25,31 @@ export async function issueLoginResult(
     ip,
     userAgent,
   });
+  return loginResultFor(userId, memberId, session, issued);
+}
+
+/**
+ * What a sign-in or a refresh answers: a login token on the refresh chain
+ * `issued` belongs to, that refresh token, when each runs out, and the
+ * session.
+ */
+export async function loginResultFor(
+  userId: string,
+  memberId: string,
+  session: Session,
+  issued: { token: string; family: string; expiresAt: Date },
+) {
   const accessToken = await signAccess({
     sub: userId,
     org: session.member.orgId,
     mid: memberId,
     fam: issued.family,
   });
-
   return {
     tokens: {
       accessToken,
       refreshToken: issued.token,
-      accessExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      accessExpiresAt: accessTokenExpiry().toISOString(),
       refreshExpiresAt: issued.expiresAt.toISOString(),
     },
     session,
