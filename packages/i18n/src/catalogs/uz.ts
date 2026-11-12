@@ -173,7 +173,7 @@ export const uz = {
   'ops.maint.wipeTitle': 'Butun ish maydonini tozalash',
   'ops.maint.wipeBody':
     'Pastdagi tugma bu ish maydoni yaratgan barcha hodisa, xarid, buyurtma va bildirishnomalarni (hali yuborilmaganlarini ham) oʻchiradi — kundan qatʼi nazar. Faqat noldan boshlash kerak boʻlganda ishlating.',
-  'ops.maint.purgeAllTitle': 'BARCHA test maʼlumotlarini tozalash',
+  'ops.maint.purgeAllTitle': 'Barcha test maʼlumotlarini tozalash',
   'ops.maint.purgeAllBody':
     '1-qadam nechta yozuv oʻchishini koʻrsatadi. 2-qadam siz ish maydoni nomini kiritganingizdan keyin oʻchiradi.',
   'ops.maint.previewEverything': 'Hammasini oldindan koʻrish',

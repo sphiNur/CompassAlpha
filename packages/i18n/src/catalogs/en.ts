@@ -1112,9 +1112,10 @@ export const en = {
   'admin.toast.supplierCreated': 'Supplier created',
   'admin.toast.supplierUpdated': 'Supplier updated',
   'admin.toast.supplierArchived': 'Supplier archived',
-  'admin.toast.sessionDeleted': 'Deleted order — {n, plural, one {# row} other {# rows}} removed',
-  'admin.toast.runDeleted': 'Deleted run — {n, plural, one {# row} other {# rows}} removed',
-  'admin.toast.dateReset': 'Reset {date}: {n, plural, one {# row} other {# rows}} deleted',
+  'admin.toast.sessionDeleted':
+    'Deleted order — {n, plural, one {# record} other {# records}} removed',
+  'admin.toast.runDeleted': 'Deleted run — {n, plural, one {# record} other {# records}} removed',
+  'admin.toast.dateReset': 'Reset {date}: {n, plural, one {# record} other {# records}} deleted',
   'admin.toast.dataPurged': 'Deleted {n, plural, one {# record} other {# records}}',
 
   // ── 7. Upload errors ───────────────────────────────────────────
