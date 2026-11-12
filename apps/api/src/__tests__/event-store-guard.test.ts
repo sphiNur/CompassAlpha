@@ -24,6 +24,15 @@ import {
 } from '@compass/db';
 import { SHOULD_RUN } from './helpers/pg';
 import { pgErrorOf } from './helpers/errors';
+import { rlsSuiteRuns } from './helpers/rls';
+
+/**
+ * Whether the role is subject to row-level security. A superuser or
+ * BYPASSRLS role (a local run as the database's owner) sees every row
+ * whatever app_is_system() says, so what D3 shows through RLS is skipped
+ * for one, not reported as a failure (review TEST1-14).
+ */
+const RLS_APPLIES = await rlsSuiteRuns('event-store-guard');
 
 describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
   const fixtures = () => getDb(undefined, { system: 'maintenance' });
@@ -182,8 +191,11 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
     }
   });
 
-  test("D3: a made-up system context sees no tenant's rows; a real one sees them all", async () => {
-    expect(await seen('anything-i-like')).toEqual({ system: false, n: 0 });
-    expect(await seen('worker')).toEqual({ system: true, n: 3 });
-  });
+  test.skipIf(!RLS_APPLIES)(
+    "D3: a made-up system context sees no tenant's rows; a real one sees them all",
+    async () => {
+      expect(await seen('anything-i-like')).toEqual({ system: false, n: 0 });
+      expect(await seen('worker')).toEqual({ system: true, n: 3 });
+    },
+  );
 });
