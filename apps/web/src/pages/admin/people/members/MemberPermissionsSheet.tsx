@@ -21,7 +21,7 @@ import {
   type TargetMember,
 } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
-import { PermissionGroups } from '../PermissionGroups';
+import { PermissionGroupList } from '../PermissionGroupList';
 
 /**
  * Per-member permission overrides editor (added 2026-05-05).
@@ -270,7 +270,7 @@ export function MemberPermissionsSheet({
           ) : null}
           {/* CMP-ADM-2: localised group, name and description, not the
               English seed text and raw keys. */}
-          <PermissionGroups
+          <PermissionGroupList
             groups={rows}
             renderRow={({ p, effects }) => {
               const override = overrideByKey.get(p.key) ?? null;

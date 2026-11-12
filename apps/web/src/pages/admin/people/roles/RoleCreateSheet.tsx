@@ -22,7 +22,7 @@ import {
 } from '../../../../lib/adminFields';
 import { canPutKeyInRole } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
-import { PermissionGroups } from '../PermissionGroups';
+import { PermissionGroupList } from '../PermissionGroupList';
 import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 
@@ -197,7 +197,7 @@ export function RoleCreateSheet({
             // permissions at all.
             <QueryErrorBanner query={permsQuery} />
           ) : (
-            <PermissionGroups
+            <PermissionGroupList
               groups={grouped}
               renderRow={(p) => (
                 <PermissionKeyOption

@@ -6,7 +6,7 @@ import { useRoleLabels } from '../../../../hooks/useI18n';
  * (2026-11-05): the plain-language name first, as on the role page; the
  * key under it, small. ADM1-07: a key the actor may not put in the role
  * is disabled, with the reason under it. The kit's Checkbox (ADM1-13: two
- * hand-written copies of this row), as a row of PermissionGroups' list.
+ * hand-written copies of this row), as a row of PermissionGroupList.
  */
 export function PermissionKeyOption({
   perm,

@@ -19,7 +19,7 @@ import { confirmThen } from '../../../../lib/confirm';
 import { readRank, roleRankRange } from '../../../../lib/adminFields';
 import { canPutKeyInRole, type PassOn } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
-import { PermissionGroups } from '../PermissionGroups';
+import { PermissionGroupList } from '../PermissionGroupList';
 import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 import { RoleAssigneesByStore } from './RoleAssigneesByStore';
@@ -320,7 +320,7 @@ export function RolePermissionsSheet({
               {i18n.t('people.noPermsAssigned')}
             </p>
           ) : (
-            <PermissionGroups
+            <PermissionGroupList
               groups={grouped}
               renderRow={(p) => {
                 if (editing) {
