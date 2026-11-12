@@ -2710,6 +2710,8 @@ export const en = {
   // was made on, when that is not the row's day: an overnight shift's
   // clock-out.
   'attendance.sheet.madeOn': '{label} ({date})',
+  // ATT-16: a punch a manager added, in the day sheet's row (it was a bare "*").
+  'attendance.sheet.manualMark': '{time} (manual)',
   'attendance.sheet.selfAt': 'Own punch, {m} m from the store',
   'attendance.sheet.voidedBy': 'voided by {name}: {reason}',
   'attendance.void.action': 'Void',

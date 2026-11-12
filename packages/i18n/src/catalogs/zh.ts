@@ -2316,6 +2316,7 @@ export const zh = {
   'attendance.sheet.noPunches': '这天没有打卡记录。',
   'attendance.sheet.manualBy': '{name} 补录：{reason}',
   'attendance.sheet.madeOn': '{label}（{date}）',
+  'attendance.sheet.manualMark': '{time}（补录）',
   'attendance.sheet.selfAt': '本人打卡，距门店 {m} 米',
   'attendance.sheet.voidedBy': '已由 {name} 作废：{reason}',
   'attendance.void.action': '作废',

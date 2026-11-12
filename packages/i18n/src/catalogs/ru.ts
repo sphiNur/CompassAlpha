@@ -2619,6 +2619,7 @@ export const ru = {
   'attendance.sheet.noPunches': 'В этот день отметок нет.',
   'attendance.sheet.manualBy': 'Добавил {name}: {reason}',
   'attendance.sheet.madeOn': '{label} ({date})',
+  'attendance.sheet.manualMark': '{time} (вручную)',
   'attendance.sheet.selfAt': 'Отметился сам, {m} м от магазина',
   'attendance.sheet.voidedBy': 'аннулировал {name}: {reason}',
   'attendance.void.action': 'Аннулировать',

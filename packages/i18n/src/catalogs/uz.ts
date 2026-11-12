@@ -2603,6 +2603,7 @@ export const uz = {
   'attendance.sheet.noPunches': 'Bu kuni belgilar yoʻq.',
   'attendance.sheet.manualBy': '{name} qoʻshgan: {reason}',
   'attendance.sheet.madeOn': '{label} ({date})',
+  'attendance.sheet.manualMark': '{time} (qoʻlda)',
   'attendance.sheet.selfAt': 'Oʻzi belgiladi, doʻkondan {m} m',
   'attendance.sheet.voidedBy': '{name} yaroqsiz qildi: {reason}',
   'attendance.void.action': 'Yaroqsiz qilish',

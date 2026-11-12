@@ -328,8 +328,12 @@ function MemberDayRow({
           <span className="flex flex-wrap gap-x-3 text-old-body-sm tabular-nums text-[var(--c-fg)]">
             {punches.map((p) => (
               <span key={p.id}>
-                {i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')} {p.time}
-                {p.source === 'manual' ? '*' : ''}
+                {i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')}{' '}
+                {/* Review ATT-16: a punch a manager added says so in words; a
+                    bare "*" explained nothing. */}
+                {p.source === 'manual'
+                  ? i18n.t('attendance.sheet.manualMark', { time: p.time })
+                  : p.time}
               </span>
             ))}
           </span>
