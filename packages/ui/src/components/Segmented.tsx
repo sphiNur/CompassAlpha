@@ -4,17 +4,15 @@ import { useRovingRadio } from '../rovingRadio';
 
 /**
  * Segmented control — a compact N-option toggle where exactly ONE
- * option is active at a time. Sibling of `Tabs` / `Chip` but tuned
- * for the "swap a small piece of UI state" role:
+ * option is active at a time. The kit's two "pick one" controls
+ * (UI_STANDARDS UI-16; review UI-32 removed a third, Tabs):
  *
- *   - Tabs: switches BETWEEN content panels. Roving-tabindex, aria
- *     `role="tablist"`, owned per page.
- *   - Chip + ChipBar: filter pills with optional multi-select.
- *     Horizontally scrolls when the row overflows.
- *   - Segmented: a tight bounded set (2-4 options) that drives one
- *     piece of state. NEVER scrolls — overflow is a contract bug.
- *     Used for form-field toggles (kg vs lb, 0.5 vs 1) and for
- *     "compact filter" rows where Tabs would feel too heavy.
+ *   - Chip + ChipBar: filtering a list by category. Pills that
+ *     scroll sideways when the row overflows.
+ *   - Segmented: switching between views, or a tight bounded set
+ *     (2-4 options) that drives one piece of state. NEVER scrolls —
+ *     overflow is a contract bug. Also used for form-field toggles
+ *     (kg vs lb, 0.5 vs 1).
  *
  * Added M3.16 (2026-05-16) to consolidate three inline segmented
  * patterns that had drifted across AdminPage (Finance range preset,
