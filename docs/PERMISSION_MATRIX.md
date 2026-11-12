@@ -106,6 +106,7 @@ Sales, so cashiers can record sales from their only tab.
 
 `admin.grantRole`, and every other path that hands a role on, applies the same three rules. The other paths are:
 
+- `admin.grantRoleInStores`, one role in several stores: each store is checked as `grantRole` checks it, and if one is refused nothing is granted;
 - an invite by Telegram ID;
 - an invite link;
 - a transfer that mirrors roles;

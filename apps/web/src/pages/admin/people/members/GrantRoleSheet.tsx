@@ -43,12 +43,13 @@ import { StoreCheckList } from '../StoreCheckList';
  *       the chosen scope. For "store" scope with multiple stores
  *       selected, we use the MIN rank across the selected stores
  *       (because each store-binding is independently gated server-side
- *       — if any one fails, the operation aborts mid-way).
+ *       — if any one is refused, none is granted).
  *
  *   When a role is tapped:
  *     - Global → 1 grantRole call
- *     - Store(s) → N grantRole calls in sequence (one per selected
- *                  store). Server's idempotency check makes re-runs safe.
+ *     - Store(s) → 1 grantRoleInStores call: every selected store or
+ *                  none (review ADM1-34). A store where the member
+ *                  already has the role is counted, not refused.
  *
  * Defaults: if the caller passes `defaultStoreId` (PeopleSection does
  * this when StoreSwitcher is in 'specific' mode), we pre-select store
@@ -81,6 +82,10 @@ export function GrantRoleSheet({
   const grant = trpc.admin.grantRole.useMutation({
     onError: errToast('common.errors.actionFailed'),
   });
+  const grantInStores = trpc.admin.grantRoleInStores.useMutation({
+    onError: errToast('common.errors.actionFailed'),
+  });
+  const granting = grant.isPending || grantInStores.isPending;
 
   // Two-step state.
   const [scopeMode, setScopeMode] = useState<'global' | 'store'>('store');
@@ -119,8 +124,8 @@ export function GrantRoleSheet({
   const canGrantGlobal = useIsOrgAdmin();
 
   // Effective rank in the chosen scope: the lowest over the selected
-  // stores, because the grant fans out to one server call per store and
-  // each is gated on its own store rank — the weakest link wins.
+  // stores, because each store is gated on its own store rank — the
+  // weakest link wins.
   // CMP-ADM-1: rank in a store counts global bindings and that store's,
   // as the server does; the old max(myMaxRank, storeRanks[id]) let a
   // manager of A look like a manager of B.
@@ -181,7 +186,7 @@ export function GrantRoleSheet({
   };
 
   const handlePick = async (slug: string) => {
-    if (!target || grant.isPending) return;
+    if (!target || granting) return;
     if (scopeMode === 'global') {
       try {
         const data = await grant.mutateAsync({
@@ -199,27 +204,25 @@ export function GrantRoleSheet({
       }
       return;
     }
-    // Store fan-out. We loop sequentially so a mid-run server error
-    // (rank changed, store archived, etc.) leaves the partial result
-    // visible to the user and they can retry the rest.
-    let createdCount = 0;
-    let skipped = 0;
-    for (const storeId of selectedStoreIds) {
-      try {
-        const data = await grant.mutateAsync({
-          userId: target.userId,
-          roleSlug: slug,
-          scopeType: 'store',
-          scopeId: storeId,
-        });
-        if (data.granted) createdCount++;
-        else skipped++;
-      } catch {
-        // first failure: stop here; toast already raised by onError
-        void utils.admin.memberList.invalidate();
-        return;
-      }
+    // Review ADM1-34 (2026-11-12): every chosen store in one call, all
+    // or none. A call per store, one after the other, left the first
+    // stores granted when a later one was refused, and said only that it
+    // had failed. On a refusal the sheet stays open, nothing changed.
+    let stores: Array<{ granted: boolean }>;
+    try {
+      ({ stores } = await grantInStores.mutateAsync({
+        userId: target.userId,
+        roleSlug: slug,
+        storeIds: [...selectedStoreIds],
+      }));
+    } catch {
+      // Toast already shown. The refusal may come from a change made
+      // elsewhere, so the list is read again.
+      void utils.admin.memberList.invalidate();
+      return;
     }
+    const createdCount = stores.filter((st) => st.granted).length;
+    const skipped = stores.length - createdCount;
     if (createdCount > 0) {
       toast.success(
         // ADM1-25: joined as the language joins them (no space before the
@@ -244,7 +247,7 @@ export function GrantRoleSheet({
     <Sheet
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
-      hasChanges={grantChanged && !grant.isPending}
+      hasChanges={grantChanged && !granting}
       title={i18n.t('people.grantRoleTitle')}
       description={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
     >
@@ -340,9 +343,7 @@ export function GrantRoleSheet({
                         <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
                       ) : null
                     }
-                    onClick={
-                      r.keysMissing || grant.isPending ? undefined : () => void handlePick(r.slug)
-                    }
+                    onClick={r.keysMissing || granting ? undefined : () => void handlePick(r.slug)}
                   />
                 </li>
               );

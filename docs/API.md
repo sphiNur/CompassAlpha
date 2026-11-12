@@ -109,7 +109,7 @@ All authed; broad ranks of perms (`users.manage`, `inventory.*.manage`, `org.set
 Per-store admin scope enforced via `getActorAdminStoreIds` (C2). Selected:
 
 - **Members**: `memberList`, `memberInviteCreate` (shareable one-time link), `memberInviteByTgId`, `memberSetStatus`, `memberSetDisplayName`, `memberAssignStore` / `memberUnassignStore` / `memberDetachFromStore` / `memberTransferStore`, `memberRemove`, `memberPermissionsList` / `memberPermissionSet` / `memberPermissionRevoke`.
-- **Roles**: `roleList`, `roleDetail`, `roleCreate`, `roleUpdate`, `roleDelete`, `permissionList`, `grantRole`, `revokeRole`.
+- **Roles**: `roleList`, `roleDetail`, `roleCreate`, `roleUpdate`, `roleDelete`, `permissionList`, `grantRole`, `grantRoleInStores` (one role in several stores, every one or none), `revokeRole`.
 - **Stores**: `storeList`, `storeCreate`, `storeUpdate`, `storeDelete`, `storeCloneRoles` (D4), `memberStoreAssignments`.
 - **Catalog**: `categoryList/Create/Update/Delete`, `skuList/Create/Update/Delete`, `supplierList/Create/Update/Delete`.
 - **Audit / overview**: `overview`, `recentEvents`, `submissionHistory`, `runList`, `sessionList`, `adminAuditList`.

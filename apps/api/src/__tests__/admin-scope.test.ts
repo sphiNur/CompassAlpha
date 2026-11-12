@@ -2170,3 +2170,61 @@ describe('ADM1-07 permissionList says where the actor may pass each key on', () 
     },
   );
 });
+
+// ---------- ADM1-34: one role in several stores, every one or none ----------
+
+describe('ADM1-34 grantRoleInStores', () => {
+  const staffStoresOf = async (memberId: string): Promise<string[]> =>
+    (
+      await getDb(undefined, { system: 'maintenance' })
+        .select({ storeId: s.memberRoleBindings.scopeId })
+        .from(s.memberRoleBindings)
+        .where(
+          and(
+            eq(s.memberRoleBindings.memberId, memberId),
+            eq(s.memberRoleBindings.roleId, fixture().staffRoleId),
+          ),
+        )
+    )
+      .map((r) => r.storeId ?? '')
+      .sort();
+
+  test.skipIf(!SHOULD_RUN)(
+    'a refusal in one store grants nothing; otherwise each store, a held one counted',
+    async () => {
+      const fx = fixture();
+      const storeA = await makeStore(`InStoresA-${Math.random()}`);
+      const storeB = await makeStore(`InStoresB-${Math.random()}`);
+      const storeC = await makeStore(`InStoresC-${Math.random()}`);
+      const managerUser = await makeUser('InStores Manager');
+      const managerMember = await makeMember(managerUser.id);
+      await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeB.id });
+      const targetUser = await makeUser('InStores Target');
+      const targetMember = await makeMember(targetUser.id);
+      await bindRole(targetMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      const caller = callerFor(await sessionFor(managerMember, managerUser.id));
+
+      // Store C is not the manager's: A, checked first, is not granted either.
+      await expect(
+        caller.admin.grantRoleInStores({
+          userId: targetUser.id,
+          roleSlug: 'staff',
+          storeIds: [storeA.id, storeC.id],
+        }),
+      ).rejects.toThrow('notAdminOfStore');
+      expect(await staffStoresOf(targetMember)).toEqual([storeB.id]);
+
+      const result = await caller.admin.grantRoleInStores({
+        userId: targetUser.id,
+        roleSlug: 'staff',
+        storeIds: [storeA.id, storeB.id, storeA.id],
+      });
+      expect(result.stores).toEqual([
+        { storeId: storeA.id, granted: true },
+        { storeId: storeB.id, granted: false },
+      ]);
+      expect(await staffStoresOf(targetMember)).toEqual([storeA.id, storeB.id].sort());
+    },
+  );
+});

@@ -30,6 +30,17 @@ export const GrantRoleInputSchema = z.object({
     .optional(),
 });
 
+/**
+ * Review ADM1-34 (2026-11-12): one store-tier role in several stores,
+ * every one or none (admin.grantRoleInStores). As many stores as an
+ * invitation takes.
+ */
+export const GrantRoleInStoresInputSchema = z.object({
+  userId: UuidSchema,
+  roleSlug: z.string(),
+  storeIds: z.array(UuidSchema).min(1).max(50),
+});
+
 export const RevokeRoleInputSchema = z.object({
   bindingId: UuidSchema,
 });
