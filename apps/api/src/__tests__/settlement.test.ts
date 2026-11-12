@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import type { SettlementSaveInput } from '@compass/contracts';
+import { BACKDATE_LIMIT_DAYS, type SettlementSaveInput } from '@compass/contracts';
 import { getDb, schema as s } from '@compass/db';
-import { todayInTz } from '@compass/domain';
+import { nextDate, todayInTz } from '@compass/domain';
 import { hub } from '../realtime/hub';
 import { appRouter } from '../trpc/router';
 import type { SessionContext } from '../trpc/context';
@@ -13,6 +13,7 @@ import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
 
@@ -446,11 +447,12 @@ beforeAll(async () => {
  * reads every close in a store or places closes by their distance from
  * today (review TEST2-09): the shared stores hold the other tests' closes.
  * The wage employee works there too, so saveInput's wages are valid.
+ * Without a `timezone` of its own it runs on the organisation's (UTC).
  */
-async function storeOfItsOwn(name: string): Promise<string> {
+async function storeOfItsOwn(name: string, timezone?: string): Promise<string> {
   const fx = fixture!;
   const db = getDb(undefined, { system: 'maintenance' });
-  const [store] = await db.insert(s.stores).values({ orgId: fx.orgId, name }).returning();
+  const [store] = await db.insert(s.stores).values({ orgId: fx.orgId, name, timezone }).returning();
   await db.insert(s.memberRoleBindings).values({
     memberId: fx.memberId,
     roleId: fx.managerRoleId,
@@ -466,12 +468,16 @@ async function storeOfItsOwn(name: string): Promise<string> {
 describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
   test('returns the selected store authoritative business date and timezone', async () => {
     const fx = fixture!;
+    // Read on both sides of the call: midnight in Kiritimati may fall
+    // between the server's reading and the test's (review TEST2-14).
+    const before = todayInTz('Pacific/Kiritimati');
     const businessDate = await fx.caller.settlement.businessDate({
       storeId: fx.ownStoreId,
     });
+    expect([before, todayInTz('Pacific/Kiritimati')]).toContain(businessDate.date);
     expect(businessDate).toEqual({
       storeId: fx.ownStoreId,
-      date: todayInTz('Pacific/Kiritimati'),
+      date: businessDate.date,
       timezone: 'Pacific/Kiritimati',
       canRecordOperatingExpenses: true,
     });
@@ -1229,6 +1235,20 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(error?.message).toBe('settlement.errors.dateTooOld');
     const recent = await fx.caller.settlement.save(saveInput(storeId, dayBack(60), 0));
     expect(recent.version).toBe(1);
+  });
+
+  test('CLS-14: exactly 90 days back is the oldest new close', async () => {
+    // Review TEST2-14: the edge, in a store where it is midday, so its
+    // today is the server's while the test runs.
+    const fx = fixture!;
+    const zone = middayZone(new Date());
+    const storeId = await storeOfItsOwn('CLS-14 edge store', zone);
+    const today = todayInTz(zone);
+    const tooOld = nextDate(today, -(BACKDATE_LIMIT_DAYS + 1));
+    const error = await errorOf(() => fx.caller.settlement.save(saveInput(storeId, tooOld, 0)));
+    expect(error?.message).toBe('settlement.errors.dateTooOld');
+    const oldest = nextDate(today, -BACKDATE_LIMIT_DAYS);
+    expect((await fx.caller.settlement.save(saveInput(storeId, oldest, 0))).version).toBe(1);
   });
 
   test('recent is date-descending and beforeDate is an exclusive cursor', async () => {
