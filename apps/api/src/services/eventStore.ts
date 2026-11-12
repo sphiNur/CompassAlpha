@@ -3,7 +3,7 @@
  * optimistic concurrency. Keeps DB access in one place so the order/run
  * routers stay focused on decision flow.
  */
-import { and, asc, eq, gt } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { randomUUID } from 'node:crypto';
@@ -26,11 +26,11 @@ export interface PersistedEvent {
   actorMemberId: string | null;
 }
 
+/** A stream's events, oldest first. */
 export async function readStream(
   db: DB,
   streamType: string,
   streamId: string,
-  fromSeq = 0,
 ): Promise<PersistedEvent[]> {
   const rows = await db
     .select({ event: s.events, actorMemberId: s.members.id })
@@ -39,13 +39,7 @@ export async function readStream(
       s.members,
       and(eq(s.members.orgId, s.events.orgId), eq(s.members.userId, s.events.actorId)),
     )
-    .where(
-      and(
-        eq(s.events.streamType, streamType),
-        eq(s.events.streamId, streamId),
-        gt(s.events.seq, fromSeq),
-      ),
-    )
+    .where(and(eq(s.events.streamType, streamType), eq(s.events.streamId, streamId)))
     .orderBy(asc(s.events.seq));
   return rows.map(({ event: r, actorMemberId }) => ({
     id: r.id,

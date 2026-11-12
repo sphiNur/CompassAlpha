@@ -568,14 +568,22 @@ export const planProcedures = {
         throw err;
       }
 
-      // Emit EjectedFromRun on the order stream in the same tx.
+      // Emit EjectedFromRun on the order stream in the same tx. A refusal
+      // here (the order changed since the run was read) is the client's
+      // answer, not a server error (review RUNAPI-20).
       const oState = await loadOrderState(tx, input.sessionId);
-      const ev = decideOrder(oState, {
-        type: 'EjectFromRun',
-        runId: input.runId,
-        reason: input.reason,
-        actor: orderActorFromCtx(ctx, oState, effectivePerms),
-      });
+      let ev: OrderEvent[];
+      try {
+        ev = decideOrder(oState, {
+          type: 'EjectFromRun',
+          runId: input.runId,
+          reason: input.reason,
+          actor: orderActorFromCtx(ctx, oState, effectivePerms),
+        });
+      } catch (err) {
+        if (err instanceof DomainError) rethrowDomainError(err);
+        throw err;
+      }
       await writeOrderEvents(tx, ctx.session!.orgId, input.sessionId, ev);
       hub.publish(ctx.session!.orgId, {
         type: 'run.changed',

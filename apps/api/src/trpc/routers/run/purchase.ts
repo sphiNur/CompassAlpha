@@ -42,11 +42,9 @@ export const purchaseProcedures = {
   }),
 
   /**
-   * C.2 (M3.38, 2026-05-19): claim a run so other purchasers can't
-   * mutate it concurrently. Mirrors `order.claim`. The FE calls this
-   * on RunPage mount when status ∈ {purchasing, delivering}. The
-   * domain layer's `assertClaimOwnership` is what actually enforces
-   * the lock; this endpoint just announces "I'm taking it".
+   * C.2 (M3.38, 2026-05-19): mark a run as one purchaser's. Nothing
+   * checks the claim: runs are collaborative, and the domain's claim
+   * check was an empty function, removed in review RUNAPI-17.
    *
    * @deprecated BUY-20 (2026-10-30): the web app stopped calling it in
    * UIUX-B1 and Fine never did; logged when called so it can be removed.
@@ -325,11 +323,11 @@ export const purchaseProcedures = {
    * replays of the same X-Idempotency-Key short-circuit cleanly.
    *
    * The domain layer enforces:
-   *   - claim ownership (C.2)
    *   - actor has `run.purchase`
-   *   - status NOT in {finished, cancelled}
+   *   - status NOT in {finished, cancelled}; amending needs `run.amend`
+   *   - a label and a reason; splits that add up to the quantity
    *   - all storeSplits within run scope
-   *   - receipt photo when total > 200,000 UZS
+   * The receipt photo is optional (the 200,000 UZS rule went 2026-07-06).
    */
   addExpense: idempotentMutation.input(AddRunExpenseInputSchema).mutation(async ({ ctx, input }) =>
     runSimpleCommand(

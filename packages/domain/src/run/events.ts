@@ -319,9 +319,8 @@ export type RunEvent =
        * always references an existing SKU id.
        *
        * Guards (enforced in commands.ts):
-       *   - status ∈ {planned, purchasing}
+       *   - status ∈ {planned, purchasing}, or amending with run.amend
        *   - actor has run.purchase
-       *   - claim ownership (C.2)
        *   - SKU not already in state.items (use RevisePurchase to grow
        *     an existing row instead)
        *   - all storeSplits.storeId already involved in the run (no
@@ -400,10 +399,10 @@ export type RunEvent =
   // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
   // Mirrors the order-session claim (M3.19 + M3.22). A run can be
   // claimed by exactly one purchaser at a time during the planned →
-  // purchasing → delivering window. The FE auto-claims on page mount
-  // and releases on page-hide; the worker auto-releases stale claims
-  // after CLAIM_TIMEOUT_MINUTES. Every mutating command checks claim
-  // ownership and rejects cross-claim writes.
+  // purchasing → delivering window. The worker auto-releases stale
+  // claims after CLAIM_TIMEOUT_MINUTES. No command checks the claim:
+  // runs are collaborative (review RUNAPI-17), and no client claims a
+  // run any more (BUY-20). The events stay readable for old streams.
   | (BaseEvent & {
       type: 'RunClaimed';
       payload: { byMemberId: string };

@@ -133,9 +133,8 @@ export interface RunState {
   /**
    * Run-level claim — C.2 (M3.38, 2026-05-19). Holds the purchaser who
    * has the run "open" right now. Null when unclaimed (the default for
-   * a fresh run, and after self/timeout release). Mutations during
-   * planned/purchasing/delivering require either no claim or claim
-   * ownership.
+   * a fresh run, and after self/timeout release). No command checks it:
+   * runs are collaborative (review RUNAPI-17).
    */
   claimedByMemberId: string | null;
   claimedAt: Date | null;

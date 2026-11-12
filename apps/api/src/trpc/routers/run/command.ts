@@ -7,7 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
 import type { RunEvent, RunState } from '@compass/domain/run';
-import { decide as decideOrder, type OrderState } from '@compass/domain/order';
+import { decide as decideOrder, type OrderEvent, type OrderState } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { rethrowDomainError } from '../../trpc';
 import type { RequestContext } from '../../context';
@@ -74,11 +74,19 @@ export async function attachSessionsToRun(
   const attached: Array<{ sessionId: string; lastSeq: number }> = [];
   for (const sessionId of sessionIds) {
     const session = await loadOrderState(tx, sessionId);
-    const events = decideOrder(session, {
-      type: 'AttachToRun',
-      runId,
-      actor: orderActorFromCtx(ctx, session),
-    });
+    // An order unapproved since the read model said `approved` is refused
+    // by the domain: the client's answer, not a server error (RUNAPI-20).
+    let events: OrderEvent[];
+    try {
+      events = decideOrder(session, {
+        type: 'AttachToRun',
+        runId,
+        actor: orderActorFromCtx(ctx, session),
+      });
+    } catch (err) {
+      if (err instanceof DomainError) rethrowDomainError(err);
+      throw err;
+    }
     await writeOrderEvents(tx, ctx.session!.orgId, sessionId, events);
     attached.push({ sessionId, lastSeq: events[events.length - 1]?.seq ?? session.seq });
   }
