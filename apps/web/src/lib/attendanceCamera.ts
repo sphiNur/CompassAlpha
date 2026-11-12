@@ -90,7 +90,3 @@ export async function fileToJpeg(file: File): Promise<string> {
     URL.revokeObjectURL(url);
   }
 }
-
-export function jpegSrc(b64: string): string {
-  return `data:image/jpeg;base64,${b64}`;
-}

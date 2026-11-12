@@ -140,8 +140,10 @@ function ClockPanel({ storeId }: { storeId: string }) {
     { deviceId: deviceId ?? undefined },
     { enabled: deviceId !== null, refetchInterval: 60_000 },
   );
-  // The face-check consent, asked before enrolling or the first face punch.
-  const [consentFor, setConsentFor] = useState<{ identify: boolean } | 'enroll' | null>(null);
+  // The face-check consent, asked before enrolling; agreeing goes on to the
+  // enrollment. (Review ATT-22: a branch for agreeing before a colleague's
+  // punch was never reached; a colleague agrees on their own phone.)
+  const [consentOpen, setConsentOpen] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const consentGive = trpc.attendance.faceConsentGive.useMutation({
@@ -167,7 +169,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
   /** Agree first, then the ring. */
   const startEnroll = (consented = false) => {
     if (!consented && !me.data?.faceConsent) {
-      setConsentFor('enroll');
+      setConsentOpen(true);
       return;
     }
     setEnrolling(true);
@@ -177,7 +179,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const flow = usePunchFlow({
     storeId,
     deviceId,
-    onConsent: () => setConsentFor('enroll'),
+    onConsent: () => setConsentOpen(true),
     onEnroll: () => setEnrolling(true),
     onAgain: (identify, notice) => void begin(identify, notice),
   });
@@ -390,18 +392,16 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 </Button>
               ) : null}
               <FaceConsentSheet
-                open={consentFor !== null}
+                open={consentOpen}
                 pending={consentGive.isPending}
-                onCancel={() => setConsentFor(null)}
+                onCancel={() => setConsentOpen(false)}
                 onAgree={() => {
-                  const next = consentFor;
                   consentGive.mutate(
                     { version: ATTENDANCE_FACE_CONSENT_VERSION },
                     {
                       onSuccess: () => {
-                        setConsentFor(null);
-                        if (next === 'enroll') startEnroll(true);
-                        else if (next) void begin(next.identify);
+                        setConsentOpen(false);
+                        startEnroll(true);
                       },
                       onError: errToast('attendance.errors.punchFailed'),
                     },

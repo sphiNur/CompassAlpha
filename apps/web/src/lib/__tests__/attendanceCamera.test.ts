@@ -4,14 +4,7 @@
  * person what to do about each), and which frames are not worth sending.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import {
-  fileToJpeg,
-  grabFrame,
-  isCameraError,
-  jpegSrc,
-  startCamera,
-  stopCamera,
-} from '../attendanceCamera';
+import { fileToJpeg, grabFrame, isCameraError, startCamera, stopCamera } from '../attendanceCamera';
 
 const g = globalThis as Record<string, unknown>;
 const saved = {
@@ -218,8 +211,4 @@ describe('fileToJpeg', () => {
     expect(await reason(() => fileToJpeg(new File(['x'], 'notes.txt')))).toBe('unavailable');
     expect(urls).toEqual(['blob:photo', 'revoked blob:photo']);
   });
-});
-
-test('jpegSrc makes the base64 picture an image source', () => {
-  expect(jpegSrc('AAAA')).toBe('data:image/jpeg;base64,AAAA');
 });
