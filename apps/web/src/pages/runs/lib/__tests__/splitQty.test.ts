@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'bun:test';
+import { normalizeQty, sumQty } from '@compass/contracts/quantity';
 
 import { evenSplitQty, proportionalSplitQty } from '../splitQty';
 
-/** The domain's tolerance in packages/domain/src/run/commands.ts. */
-const TOLERANCE = 1e-6;
-
-const sum = (values: Iterable<string>): number => {
-  let total = 0;
-  for (const v of values) total += Number(v);
-  return total;
-};
+// Shares are checked to add up to the whole exactly, in thousandths, as
+// quantities are added everywhere else (@compass/contracts/quantity).
+// Review TEST3-17: they were added as floats, within a tolerance copied
+// by hand from the domain's commands.ts.
 
 describe('evenSplitQty', () => {
   it('splits a shared cost of 1 across 3 stores instead of flooring to zero', () => {
@@ -34,9 +31,7 @@ describe('evenSplitQty', () => {
       const ids = Array.from({ length: n }, (_, i) => `s${i}`);
       const out = evenSplitQty(ids, qty);
       expect(out.size).toBe(n);
-      expect(Math.abs(sum(out.values()) - Number(qty))).toBeLessThanOrEqual(
-        TOLERANCE,
-      );
+      expect(sumQty(out.values())).toBe(normalizeQty(qty));
     }
   });
 
@@ -84,9 +79,7 @@ describe('proportionalSplitQty', () => {
       { storeId: 'b', qty: '1' },
       { storeId: 'c', qty: '0.333' },
     ]);
-    expect(Math.abs(sum(out!.map((o) => o.qty)) - 2)).toBeLessThanOrEqual(
-      TOLERANCE,
-    );
+    expect(sumQty(out!.map((o) => o.qty))).toBe('2');
   });
 
   it('sums to the actual quantity for awkward ratios', () => {
@@ -98,9 +91,7 @@ describe('proportionalSplitQty', () => {
       ],
       '10',
     );
-    expect(Math.abs(sum(out!.map((o) => o.qty)) - 10)).toBeLessThanOrEqual(
-      TOLERANCE,
-    );
+    expect(sumQty(out!.map((o) => o.qty))).toBe('10');
   });
 
   it('scales up as well as down', () => {
@@ -235,7 +226,7 @@ describe('proportionalSplitQty largest remainder (DX-BUY-3)', () => {
       '0.5',
     )!;
     for (const o of out) expect((Number(o.qty) * 2) % 1).toBe(0);
-    expect(sum(out.map((o) => o.qty))).toBe(9);
+    expect(sumQty(out.map((o) => o.qty))).toBe('9');
   });
 
   it('a remainder below one step goes to the next store in line', () => {
