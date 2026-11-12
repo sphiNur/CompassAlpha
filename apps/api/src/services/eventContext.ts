@@ -114,7 +114,7 @@ export async function recentEventContext(
       orderDate: order?.orderDate ?? null,
       runDate: run?.runDate ?? null,
       runIndex: run ? run.runIndex : null,
-      skuNames: (skuRow?.names as Record<string, string> | undefined) ?? null,
+      skuNames: skuRow?.names ?? null,
       skuUnit: skuRow?.unit ?? null,
       qty: payloadString(r.payload, 'qty'),
     });

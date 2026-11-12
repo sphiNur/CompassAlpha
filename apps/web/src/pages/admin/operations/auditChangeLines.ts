@@ -6,6 +6,8 @@
  *
  * Pure: the caller passes the localizers, so this is unit-testable.
  */
+import { isNames } from '../../../lib/productName';
+
 export type ChangeFieldKey =
   | 'admin.field.address'
   | 'admin.field.category'
@@ -94,9 +96,7 @@ function show(field: string, value: unknown, fmt: ChangeFormat): string {
   if (value === null || value === undefined || value === '') return fmt.empty;
   if (typeof value === 'boolean') return fmt.active(value);
   if (typeof value === 'object') {
-    return Array.isArray(value)
-      ? fmt.empty
-      : fmt.localName(value as Record<string, string>) || fmt.empty;
+    return isNames(value) ? fmt.localName(value) || fmt.empty : fmt.empty;
   }
   const text = String(value);
   if (field === 'unit') return fmt.unit(text);

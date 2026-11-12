@@ -100,12 +100,8 @@ export function SkusSection() {
   const matchCount = useMemo(
     () =>
       tokens && skusQuery.data
-        ? skusQuery.data.filter((sk) =>
-            matchesNameLike(
-              { names: sk.names as Record<string, string> | null, code: sk.code },
-              tokens,
-            ),
-          ).length
+        ? skusQuery.data.filter((sk) => matchesNameLike({ names: sk.names, code: sk.code }, tokens))
+            .length
         : null,
     [tokens, skusQuery.data],
   );
@@ -145,7 +141,7 @@ export function SkusSection() {
     if (!id) return '—';
     const c = categoriesQuery.data?.find((x) => x.id === id);
     if (!c) return i18n.t('common.unknownCategory');
-    return productName({ names: c.names as Record<string, string> }) || c.slug;
+    return productName({ names: c.names }) || c.slug;
   };
 
   const editor = useEditorSheet(
@@ -201,12 +197,7 @@ export function SkusSection() {
       >
         {(rows) => {
           const filtered = tokens
-            ? rows.filter((sk) =>
-                matchesNameLike(
-                  { names: sk.names as Record<string, string> | null, code: sk.code },
-                  tokens,
-                ),
-              )
+            ? rows.filter((sk) => matchesNameLike({ names: sk.names, code: sk.code }, tokens))
             : rows;
           return (
             <ul className={rowGroupClass} role="list">
@@ -219,7 +210,7 @@ export function SkusSection() {
                 </li>
               ) : null}
               {filtered.map((sk) => {
-                const names = sk.names as Record<string, string>;
+                const names = sk.names;
                 // The name in the reader's language only; the others list
                 // under it (CategoriesSection, COREWEB2-18).
                 const name = productNameParts({ names });
@@ -329,7 +320,7 @@ export function SkusSection() {
                 {(categoriesQuery.data ?? [])
                   .filter((c) => !c.isArchived || c.id === draft.categoryId)
                   .map((c) => {
-                    const n = c.names as Record<string, string>;
+                    const n = c.names;
                     return (
                       <option key={c.id} value={c.id}>
                         {productName({ names: n }) || c.slug}

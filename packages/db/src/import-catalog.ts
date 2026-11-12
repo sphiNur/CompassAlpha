@@ -145,7 +145,12 @@ async function importInto(db: Tx, orgId: string) {
   console.log(`  ${c.red('-')} archive: ${catArchive.length}`);
   for (const cat of catInsert) console.log(c.dim(`    + ${cat.slug.padEnd(14)} ${cat.names.zh}`));
   for (const cat of catUpdate) console.log(c.dim(`    ~ ${cat.slug.padEnd(14)} ${cat.names.zh}`));
-  for (const cat of catArchive) console.log(c.dim(`    - ${printable(cat.slug).padEnd(14)} (was: ${printable((cat.names as { zh?: string }).zh ?? cat.slug)})`));
+  for (const cat of catArchive)
+    console.log(
+      c.dim(
+        `    - ${printable(cat.slug).padEnd(14)} (was: ${printable(cat.names.zh ?? cat.slug)})`,
+      ),
+    );
 
   // --- Apply categories -----------------------------------------------------
   if (APPLY) {
@@ -242,9 +247,7 @@ async function importInto(db: Tx, orgId: string) {
   for (const [cs, n] of insertByCat) console.log(c.dim(`    + ${cs.padEnd(12)} +${n}`));
   for (const k of skuArchive)
     console.log(
-      c.dim(
-        `    - ${printable(k.code ?? 'no-code').padEnd(20)} ${printable((k.names as { en?: string }).en)}`,
-      ),
+      c.dim(`    - ${printable(k.code ?? 'no-code').padEnd(20)} ${printable(k.names.en)}`),
     );
 
   // --- Apply SKUs -----------------------------------------------------------

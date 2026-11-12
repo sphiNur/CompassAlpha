@@ -116,7 +116,7 @@ export function CategoriesSection() {
         {(rows) => (
           <ul className={rowGroupClass} role="list">
             {rows.map((c) => {
-              const names = c.names as Record<string, string>;
+              const names = c.names;
               // The name in the reader's language; the others show below
               // it (CatalogRowHeader). Review COREWEB2-18: the title was
               // "primary (secondary)" for a reader of a second language,

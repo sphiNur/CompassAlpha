@@ -79,7 +79,7 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
         id: sku.id,
-        names: sku.names as Record<string, string>,
+        names: sku.names,
         unit: sku.unit,
         step: sku.step,
         isArchived: sku.isArchived,
