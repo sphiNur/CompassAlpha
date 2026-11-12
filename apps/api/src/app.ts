@@ -259,9 +259,9 @@ export function createApp() {
    * SPA's client-side router can take over (deep-linked URLs like
    * /order, /admin, /run all work on a hard refresh).
    *
-   * The path resolution tolerates two layouts:
-   *   - bun-built monorepo: apps/api/dist/main.js + apps/web/dist/
-   *   - dev: apps/api/src/main.ts run with apps/web at sibling
+   * The api runs from its source (apps/api/src/main.ts, in production
+   * too; review COREAPI-28 removed the unused dist build), and the web
+   * bundle is apps/web/dist beside it.
    *
    * If neither path exists (e.g., api running standalone in CI), we
    * skip and let notFound() handle it — the existing dev workflow
