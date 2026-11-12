@@ -636,7 +636,10 @@ export const maintenanceProcedures = {
         // the admin's stores; naming a store outside them is refused.
         const historyScope = await getAdminReadScope(tx, ctx.session!);
         if (historyScope !== null && input?.storeId && !historyScope.has(input.storeId)) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.notAssignedToStore' });
+          // Review ADM2-31 (2026-11-12): the admin refusal. It said "you are
+          // not assigned to this store", which is not why: the scope holds
+          // the stores they administer, paused and archived ones included.
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
         }
         const historyStoreFilter =
           historyScope === null

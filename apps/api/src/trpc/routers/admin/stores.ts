@@ -300,13 +300,20 @@ export const storeProcedures = {
    * it manually means: list store A's people → for each, grant the
    * same role in store C. Tedious and error-prone.
    *
-   * What the clone does:
-   *   - For every store-scoped role binding in `sourceStoreId`, create
-   *     an equivalent binding in `targetStoreId` (same member, same
-   *     role). Existing bindings are skipped (idempotent re-runs).
-   *   - When `includeMembers=true`, also assign each source member to
-   *     the target store via MSA. Off by default — most chain expansion
-   *     wants the SHAPE replicated, staffed by different people.
+   * What the clone does (review ADM2-31, 2026-11-12: this said the
+   * bindings were always copied, and `includeMembers` only added the
+   * store assignments):
+   *   - The source's default role for newcomers becomes the target's,
+   *     when the actor could grant it there (D7 / RE-ADM-2). Roles are
+   *     org-wide, so that default is the store's role "shape". Without
+   *     `includeMembers` this is all that is copied.
+   *   - With `includeMembers`, the source's active members come along:
+   *     each live store-scoped role binding in `sourceStoreId` gets an
+   *     equivalent binding in `targetStoreId` (same member, role and
+   *     expiry), and each assignment to the source store is copied to
+   *     the target. Existing ones are skipped (idempotent re-runs). Off
+   *     by default — most chain expansion wants the SHAPE replicated,
+   *     staffed by different people.
    *   - Per-binding rank gate: skip (don't fail the whole op) any
    *     binding whose role outranks the actor's rank in the target.
    *     Counted separately and returned so the operator knows.
@@ -346,12 +353,13 @@ export const storeProcedures = {
         // shape AND writing into the target both qualify as admin
         // actions.
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        if (!allowed.includes(input.sourceStoreId) || !allowed.includes(input.targetStoreId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
-        }
+        const outside = [input.sourceStoreId, input.targetStoreId].filter(
+          (id) => !allowed.includes(id),
+        );
+        // ADM2-31: a paused or archived store is outside every admin's
+        // list; say that (ADM-16) rather than "not this store's admin",
+        // which an org admin got for a paused store.
+        if (outside.length > 0) throw await notAdminOfStore(tx, orgId, outside);
         const targetActorRank = await getActorMaxRankInStore(
           tx,
           orgId,
@@ -468,10 +476,18 @@ export const storeProcedures = {
             });
           }
           // Also populate the target's store assignments from the source's.
+          // ADM2-31: active members only, as with the bindings above; an
+          // invited or suspended member was assigned to the new store too.
           const sourceMsa = await tx
             .select({ memberId: s.memberStoreAssignments.memberId })
             .from(s.memberStoreAssignments)
-            .where(eq(s.memberStoreAssignments.storeId, input.sourceStoreId));
+            .innerJoin(s.members, eq(s.members.id, s.memberStoreAssignments.memberId))
+            .where(
+              and(
+                eq(s.memberStoreAssignments.storeId, input.sourceStoreId),
+                eq(s.members.status, 'active'),
+              ),
+            );
           for (const r of sourceMsa) {
             const inserted = await tx
               .insert(s.memberStoreAssignments)

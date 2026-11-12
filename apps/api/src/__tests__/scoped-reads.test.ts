@@ -115,6 +115,8 @@ describe.skipIf(!SHOULD_RUN)('reads scoped to permitted stores (PG-gated)', () =
   test('HIS-2: order history for that store is refused, and unfiltered history stays in A', async () => {
     const err = await errorOf(() => fix!.mixed.admin.submissionHistory({ storeId: fix!.storeB }));
     expect(err?.code).toBe('FORBIDDEN');
+    // ADM2-31: the admin refusal, not "you are not assigned to this store".
+    expect(err?.message).toBe('admin.errors.notAdminOfStore');
     // B has a submission too; only A's are listed.
     const rows = await fix!.mixed.admin.submissionHistory({});
     expect(rows.map((r) => r.sessionId)).toContain(fix!.submittedSessionId);

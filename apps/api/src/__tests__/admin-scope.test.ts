@@ -660,6 +660,55 @@ describe('D4 storeCloneRoles', () => {
       expect(second.skippedExisting).toBe(2);
     },
   );
+
+  test.skipIf(!SHOULD_RUN)(
+    'ADM2-31: only active members are assigned to the new store; a paused store is named as such',
+    async () => {
+      const fx = fixture();
+      const db = getDb(undefined, { system: 'maintenance' });
+      const storeA = await makeStore(`CloneA-${Math.random()}`);
+      const storeB = await makeStore(`CloneB-${Math.random()}`);
+      const member = async (name: string, status: 'active' | 'invited' | 'suspended') => {
+        const memberId = await makeMember((await makeUser(name)).id);
+        await db.update(s.members).set({ status }).where(eq(s.members.id, memberId));
+        await db
+          .insert(s.memberStoreAssignments)
+          .values({ memberId, storeId: storeA.id, assignedBy: fx.superAdminUserId });
+        return memberId;
+      };
+      const active = await member('Clone Active', 'active');
+      await member('Clone Invited', 'invited');
+      await member('Clone Suspended', 'suspended');
+      const caller = appRouter.createCaller(fx.superAdminCtx);
+
+      const result = await caller.admin.storeCloneRoles({
+        sourceStoreId: storeA.id,
+        targetStoreId: storeB.id,
+        includeMembers: true,
+      });
+      expect(result.assigned).toBe(1);
+      const inB = await db
+        .select({ memberId: s.memberStoreAssignments.memberId })
+        .from(s.memberStoreAssignments)
+        .where(eq(s.memberStoreAssignments.storeId, storeB.id));
+      expect(inB.map((r) => r.memberId)).toEqual([active]);
+
+      // An org admin copying into a paused store: the store is not open,
+      // not "you are not this store's admin".
+      await caller.admin.storeUpdate({ storeId: storeB.id, isActive: false });
+      const err = await errorOf(() =>
+        caller.admin.storeCloneRoles({
+          sourceStoreId: storeA.id,
+          targetStoreId: storeB.id,
+          includeMembers: false,
+        }),
+      );
+      expect(err).toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        message: 'auth.errors.storeArchived',
+      });
+    },
+  );
 });
 
 // ---------- D8: granting passes on only keys the actor holds -------------
