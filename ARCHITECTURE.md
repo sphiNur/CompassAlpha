@@ -339,6 +339,7 @@ apps/api/src/
 │   ├── eventStore.ts           # appendEvents + readStream
 │   ├── orderProjection.ts      # 事件 → read_model.order_*
 │   ├── runProjection.ts        # 事件 → read_model.run_* / run_item_*
+│   ├── runSessionCascade.ts    # 采购单对所带订单的级联：附加、移出、归档，及其推送（RUNAPI-13）
 │   ├── notify.ts               # In-App 通知投递
 │   ├── notifyForEvent.ts       # 事件 → 通知模板路由
 │   ├── refreshTokens.ts        # issueRefresh / consumeRefresh / 家族吊销

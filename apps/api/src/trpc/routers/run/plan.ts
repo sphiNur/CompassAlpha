@@ -16,20 +16,21 @@ import {
   resolveRunCreateStoreScope,
 } from '../../../services/storeScope';
 import { applyRun, decideRun, emptyRunState, sumDemand, type RunEvent } from '@compass/domain/run';
-import { decide as decideOrder, type OrderEvent } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError } from '../../trpc';
 import { isUniqueViolation } from '../../../services/pgErrors';
 import { loadRunState } from '../../../services/runStream';
-import { loadOrderState } from '../../../services/orderStream';
-import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
-import { hub } from '../../../realtime/hub';
+import { writeRunEvents } from '../../../services/streamWrite';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
+import {
+  attachSessionsToRun,
+  ejectSessionFromRun,
+  ejectSessionsOfCancelledRun,
+  publishRunAndSessions,
+} from '../../../services/runSessionCascade';
 import { orgToday } from '../../../services/timeZone';
 import {
   actorFromCtx,
-  orderActorFromCtx,
-  attachSessionsToRun,
   isRunSlotConflict,
   runCreateRetryable,
   withRunStreamRetry,
@@ -212,7 +213,13 @@ export const planProcedures = {
         }
 
         // Emit AttachedToRun on each session stream.
-        const attachedSessions = await attachSessionsToRun(tx, ctx, runId, input.sessionIds);
+        const attachedSessions = await attachSessionsToRun(
+          tx,
+          ctx.session!.orgId,
+          actorFromCtx(ctx),
+          runId,
+          input.sessionIds,
+        ).catch(rethrowDomainError);
 
         // 2026-07-26: run.create was the only run mutation that broadcast
         // nothing — compare attachSessions / ejectSession / purchaseItem,
@@ -229,20 +236,12 @@ export const planProcedures = {
         // that sends real Telegram messages, and "should creating a run
         // notify everyone" is a product decision, not a missing-broadcast
         // bug. Left for whoever wants that behaviour to choose it.
-        hub.publish(ctx.session!.orgId, {
-          type: 'run.changed',
-          orgId: ctx.session!.orgId,
+        publishRunAndSessions(
+          ctx.session!.orgId,
           runId,
-          lastSeq: events[events.length - 1]?.seq ?? 0,
-        });
-        for (const a of attachedSessions) {
-          hub.publish(ctx.session!.orgId, {
-            type: 'order.changed',
-            orgId: ctx.session!.orgId,
-            sessionId: a.sessionId,
-            lastSeq: a.lastSeq,
-          });
-        }
+          events[events.length - 1]?.seq ?? 0,
+          attachedSessions,
+        );
 
         return {
           runId,
@@ -332,33 +331,22 @@ export const planProcedures = {
         await writeRunEvents(tx, ctx.session!.orgId, runState, producedEvents);
 
         // Move each attached session's stream from approved → in_run.
-        const attachedSessions = await attachSessionsToRun(tx, ctx, run.id, dedupedNewIds);
+        const attachedSessions = await attachSessionsToRun(
+          tx,
+          ctx.session!.orgId,
+          actorFromCtx(ctx),
+          run.id,
+          dedupedNewIds,
+        ).catch(rethrowDomainError);
 
         // 2026-10-21 audit CA-31: same broadcast as `create` — without it
         // other purchasers' Run page and the attached sessions' Order /
         // Approval screens stayed stale and kept offering actions the
         // server now rejects. (Notifications stay off, as in `create`.)
         const runLastSeq = producedEvents[producedEvents.length - 1]?.seq ?? runState.seq;
-        hub.publish(ctx.session!.orgId, {
-          type: 'run.changed',
-          orgId: ctx.session!.orgId,
-          runId: run.id,
-          lastSeq: runLastSeq,
-        });
-        for (const a of attachedSessions) {
-          hub.publish(ctx.session!.orgId, {
-            type: 'order.changed',
-            orgId: ctx.session!.orgId,
-            sessionId: a.sessionId,
-            lastSeq: a.lastSeq,
-          });
-        }
+        publishRunAndSessions(ctx.session!.orgId, run.id, runLastSeq, attachedSessions);
 
-        return {
-          runId: run.id,
-          attached: dedupedNewIds,
-          lastSeq: producedEvents[producedEvents.length - 1]?.seq ?? runState.seq,
-        };
+        return { runId: run.id, attached: dedupedNewIds, lastSeq: runLastSeq };
       });
     }),
 
@@ -426,69 +414,28 @@ export const planProcedures = {
         );
       }
 
-      // Step 2 — eject every attached session. Sessions that are still
-      // `in_run` get `EjectedFromRun` (status → approved). Sessions that
-      // somehow drifted out of `in_run` already (defensive) just no-op.
+      // Step 2 — every session still in this run goes back to approved
+      // (services/runSessionCascade.ts: with run.eject_session granted for
+      // the cascade, and a refused session left in_run and reported).
       const sessionIds = runState.sessionIds;
-      const ejectionFailures: Array<{ sessionId: string; reason: string }> = [];
-      for (const sessionId of sessionIds) {
-        const oState = await loadOrderState(tx, sessionId);
+      const ejectionFailures = await ejectSessionsOfCancelledRun(
+        tx,
+        ctx.session!.orgId,
+        actorFromCtx(ctx),
+        run.id,
+        sessionIds,
+        input.reason,
+        ctx.log,
+      );
 
-        // Only eject if still attached to THIS run. If the session was
-        // already manually ejected earlier, skip silently.
-        if (oState.status !== 'in_run' || oState.runId !== run.id) continue;
-
-        // M1.7-fix (2026-05-07, audit CRITICAL #2): eject the session
-        // with a synthesized `run.eject_session` permission. The cancel-
-        // run authorization (run.create) already proved the actor has
-        // the right to dismantle this run — if they didn't have
-        // run.eject_session in their original permission set, the
-        // per-session EjectFromRun would silently fail and leave the
-        // run "cancelled" with N orphaned in_run sessions. Granting
-        // the perm at this synthesis layer is safe because we're
-        // already inside an authorized cancel; we're not letting the
-        // actor eject sessions outside of this cancellation.
-        const ejectPerms = new Set([...ctx.session!.permissions, 'run.eject_session']);
-        let ev: OrderEvent[] = [];
-        try {
-          ev = decideOrder(oState, {
-            type: 'EjectFromRun',
-            runId: run.id,
-            reason: input.reason,
-            actor: orderActorFromCtx(ctx, oState, ejectPerms),
-          });
-        } catch (err) {
-          // Don't let a single session's failure abort the entire cancel
-          // (which would leave the run in a half-cancelled state). Log
-          // and continue; the operator can manually re-eject if needed.
-          if (err instanceof DomainError) {
-            ejectionFailures.push({ sessionId, reason: err.message });
-            ctx.log.warn(
-              { sessionId, runId: run.id, err: err.message },
-              'cancel: failed to eject session — left in_run',
-            );
-            continue;
-          }
-          throw err;
-        }
-        await writeOrderEvents(tx, ctx.session!.orgId, sessionId, ev);
-      }
-
-      // Realtime ping so connected clients refresh both pages.
-      hub.publish(ctx.session!.orgId, {
-        type: 'run.changed',
-        orgId: ctx.session!.orgId,
-        runId: run.id,
-        lastSeq: runState.seq,
-      });
-      for (const sessionId of sessionIds) {
-        hub.publish(ctx.session!.orgId, {
-          type: 'order.changed',
-          orgId: ctx.session!.orgId,
-          sessionId,
-          lastSeq: -1, // we don't track per-session seq here — clients refetch
-        });
-      }
+      // Realtime ping so connected clients refresh both pages; the
+      // sessions' seqs are not tracked here (-1), clients refetch.
+      publishRunAndSessions(
+        ctx.session!.orgId,
+        run.id,
+        runState.seq,
+        sessionIds.map((sessionId) => ({ sessionId, lastSeq: -1 })),
+      );
 
       return {
         lastSeq: runState.seq,
@@ -571,33 +518,16 @@ export const planProcedures = {
       // Emit EjectedFromRun on the order stream in the same tx. A refusal
       // here (the order changed since the run was read) is the client's
       // answer, not a server error (review RUNAPI-20).
-      const oState = await loadOrderState(tx, input.sessionId);
-      let ev: OrderEvent[];
-      try {
-        ev = decideOrder(oState, {
-          type: 'EjectFromRun',
-          runId: input.runId,
-          reason: input.reason,
-          actor: orderActorFromCtx(ctx, oState, effectivePerms),
-        });
-      } catch (err) {
-        if (err instanceof DomainError) rethrowDomainError(err);
-        throw err;
-      }
-      await writeOrderEvents(tx, ctx.session!.orgId, input.sessionId, ev);
-      hub.publish(ctx.session!.orgId, {
-        type: 'run.changed',
-        orgId: ctx.session!.orgId,
-        runId: runState.streamId,
-        lastSeq: runState.seq,
-      });
-      hub.publish(ctx.session!.orgId, {
-        type: 'order.changed',
-        orgId: ctx.session!.orgId,
-        sessionId: input.sessionId,
-        lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
-      });
-      return { lastSeq: runState.seq, orderLastSeq: ev[ev.length - 1]?.seq ?? oState.seq };
+      const ejected = await ejectSessionFromRun(
+        tx,
+        ctx.session!.orgId,
+        actorFromCtx(ctx, effectivePerms),
+        input.runId,
+        input.sessionId,
+        input.reason,
+      ).catch(rethrowDomainError);
+      publishRunAndSessions(ctx.session!.orgId, runState.streamId, runState.seq, [ejected]);
+      return { lastSeq: runState.seq, orderLastSeq: ejected.lastSeq };
     });
   }),
 };

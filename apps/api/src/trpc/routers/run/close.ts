@@ -2,29 +2,23 @@
  * Closing a run: finishing it, reopening it to amend, moving its date,
  * and finishing it again after an amendment.
  */
-import { TRPCError } from '@trpc/server';
 import {
   ChangeRunDateInputSchema,
   RunReasonOnlyInputSchema,
   SimpleRunCommandSchema,
 } from '@compass/contracts';
 import { decideRun, type RunEvent } from '@compass/domain/run';
-import { decide as decideOrder, type OrderEvent } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError } from '../../trpc';
 import { loadRunState } from '../../../services/runStream';
-import { loadOrderState } from '../../../services/orderStream';
-import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
-import { hub } from '../../../realtime/hub';
+import { writeRunEvents } from '../../../services/streamWrite';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
-import { orgToday } from '../../../services/timeZone';
 import {
-  actorFromCtx,
-  orderActorFromCtx,
-  withRunStreamRetry,
-  runSimpleCommand,
-  loadRun,
-} from './command';
+  archiveSessionsOfFinishedRun,
+  publishRunAndSessions,
+} from '../../../services/runSessionCascade';
+import { orgToday } from '../../../services/timeZone';
+import { actorFromCtx, withRunStreamRetry, runSimpleCommand, loadRun } from './command';
 import { assertCanAmendRun, assertRunPermissionForAllStores } from './scope';
 
 export const closeProcedures = {
@@ -60,9 +54,9 @@ export const closeProcedures = {
    *   A database error ends the transaction at once (RUNAPI-09): a
    *   sequence race is decided again by withRunStreamRetry.
    *
-   *   Re-running `finish` on a partially-archived state is safe
-   *   thanks to the `if (oState.status === 'archived') continue`
-   *   skip at line ~906 — already-archived sessions become no-ops.
+   *   Re-running `finish` on a partially-archived state is safe:
+   *   already-archived sessions are skipped (the cascade lives in
+   *   services/runSessionCascade.ts, review RUNAPI-13).
    *   Combined with idempotentMutation, the whole flow tolerates
    *   network retries without producing duplicate events.
    */
@@ -101,75 +95,26 @@ export const closeProcedures = {
         );
       }
 
-      // Step 2 — Archive every attached session.
-      //
-      // M3.4: collect failures, do NOT continue silently. If any
-      // session can't be archived, the whole tx (including the
-      // RunFinished event committed in Step 1) rolls back so we
-      // never end up with run.status='finished' AND session.status
-      // ='in_run' on the same data.
-      const archiveFailures: Array<{ sessionId: string; reason: string }> = [];
-      for (const sessionId of runState.sessionIds) {
-        const oState = await loadOrderState(tx, sessionId);
-        if (oState.status === 'archived') continue; // already archived → no-op
-
-        let ev: OrderEvent[] = [];
-        try {
-          ev = decideOrder(oState, {
-            type: 'Archive',
-            reason: 'run_finished',
-            actor: orderActorFromCtx(ctx, oState),
-          });
-        } catch (err) {
-          if (err instanceof DomainError) {
-            archiveFailures.push({ sessionId, reason: err.message });
-            ctx.log.warn(
-              { sessionId, runId: run.id, err: err.message },
-              'finish: failed to archive session — will roll back the run-finish',
-            );
-            continue;
-          }
-          throw err;
-        }
-        // RUNAPI-09 (2026-11-09): a database error here is not collected.
-        // It aborts the transaction, so the next session's read failed
-        // anyway, and a sequence race (someone marking an extra at that
-        // moment) answered 500 instead of being decided again. It goes
-        // out as it is: withRunStreamRetry runs the whole finish again
-        // on the fresh streams, and anything else rolls it back.
-        await writeOrderEvents(tx, ctx.session!.orgId, sessionId, ev);
-      }
-
-      // M3.4 atomicity bar — if the domain refused any session, abort
-      // the whole tx by throwing. ctx.withOrg's transaction roll-back
-      // undoes the Step-1 RunFinished event AND the archives written in
-      // this loop before it.
-      if (archiveFailures.length > 0) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'run.errors.archiveCascadeFailed',
-          cause: {
-            runId: run.id,
-            archiveFailures,
-          },
-        });
-      }
+      // Step 2 — Archive every attached session. M3.4: a session the
+      // domain refuses throws run.errors.archiveCascadeFailed, which
+      // rolls back the whole tx, the Step-1 RunFinished event included,
+      // so a run never ends finished with a session still in_run.
+      await archiveSessionsOfFinishedRun(
+        tx,
+        ctx.session!.orgId,
+        actorFromCtx(ctx),
+        run.id,
+        runState.sessionIds,
+        ctx.log,
+      );
 
       // Realtime nudge so connected order/approve clients refresh.
-      hub.publish(ctx.session!.orgId, {
-        type: 'run.changed',
-        orgId: ctx.session!.orgId,
-        runId: run.id,
-        lastSeq: runState.seq,
-      });
-      for (const sessionId of runState.sessionIds) {
-        hub.publish(ctx.session!.orgId, {
-          type: 'order.changed',
-          orgId: ctx.session!.orgId,
-          sessionId,
-          lastSeq: -1,
-        });
-      }
+      publishRunAndSessions(
+        ctx.session!.orgId,
+        run.id,
+        runState.seq,
+        runState.sessionIds.map((sessionId) => ({ sessionId, lastSeq: -1 })),
+      );
 
       // archiveFailures is always empty on success (any non-empty
       // list would have thrown above). Kept in the response shape
