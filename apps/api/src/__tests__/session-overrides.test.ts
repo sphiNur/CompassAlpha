@@ -50,6 +50,18 @@ describe('flatEffectivePermissions', () => {
     expect(flatEffectivePermissions([global('org.admin')], []).has('org.admin')).toBe(true);
   });
 
+  // Review COREAPI-23: a request's session takes org.admin from this set
+  // alone, as the global lookup it replaced did.
+  test('org.admin follows the global rows, their overrides included', () => {
+    const has = (flat: Set<string>) => flat.has('org.admin');
+    const allow = { ...global('org.admin'), effect: 'allow' };
+    const deny = { ...global('org.admin'), effect: 'deny' };
+    const denyInStore = { ...store('org.admin', 'A'), effect: 'deny' };
+    expect(has(flatEffectivePermissions([global('org.admin')], [deny]))).toBe(false);
+    expect(has(flatEffectivePermissions([global('org.admin')], [denyInStore]))).toBe(true);
+    expect(has(flatEffectivePermissions([store('users.manage', 'A')], [allow]))).toBe(true);
+  });
+
   // Review CONF-04 (2026-11-09): dishes and recipes belong to every store.
   test('dishes.manage only ever comes from a global row', () => {
     const has = (flat: Set<string>) => flat.has('dishes.manage');
