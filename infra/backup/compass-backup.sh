@@ -31,6 +31,9 @@ trap 'rc=$?; echo "[backup] FAILED (exit $rc) at line $LINENO: $BASH_COMMAND" >&
 # F11: credentials go to pg_dump through PGPASSWORD, not argv.
 # shellcheck source=pg-url.sh
 source "$(dirname "${BASH_SOURCE[0]}")/pg-url.sh"
+# env_get (review OPS-32).
+# shellcheck source=../lib/env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 
 ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
 BACKUP_DIR=${BACKUP_DIR:-/home/ubuntu/compass-backups}
@@ -44,7 +47,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 # Read DATABASE_URL (and optional BACKUP_S3_* vars) without exporting
 # every line — `.env` may contain secrets we don't want in our shell env.
-DATABASE_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/')
+DATABASE_URL=$(env_get DATABASE_URL)
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "[backup] ERROR: DATABASE_URL not found in $ENV_FILE" >&2
   exit 1
@@ -71,7 +74,7 @@ fi
 # The fallback keeps the script working on a box that has no dedicated
 # role yet (a dev machine with RLS effectively unused), where the app
 # role can still dump fine.
-BACKUP_DATABASE_URL=$(grep -E '^BACKUP_DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
+BACKUP_DATABASE_URL=$(env_get BACKUP_DATABASE_URL)
 DUMP_URL="${BACKUP_DATABASE_URL:-$DATABASE_URL}"
 if [[ -n "${BACKUP_DATABASE_URL:-}" ]]; then
   echo "[backup] using dedicated backup role from BACKUP_DATABASE_URL"
@@ -79,9 +82,9 @@ else
   echo "[backup] WARNING: BACKUP_DATABASE_URL unset — dumping as the app role." >&2
   echo "[backup]          If that role is subject to RLS, pg_dump will refuse." >&2
 fi
-BACKUP_S3_BUCKET=$(grep -E '^BACKUP_S3_BUCKET=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
-BACKUP_S3_PREFIX=$(grep -E '^BACKUP_S3_PREFIX=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
-BACKUP_S3_ENDPOINT=$(grep -E '^BACKUP_S3_ENDPOINT=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
+BACKUP_S3_BUCKET=$(env_get BACKUP_S3_BUCKET)
+BACKUP_S3_PREFIX=$(env_get BACKUP_S3_PREFIX)
+BACKUP_S3_ENDPOINT=$(env_get BACKUP_S3_ENDPOINT)
 
 # --- Prep dir ---------------------------------------------------------------
 mkdir -p "$BACKUP_DIR"
