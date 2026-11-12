@@ -903,3 +903,42 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
     ).toEqual([{ unitPrice: '900.00', observedAt: earlierBought }]);
   });
 });
+
+// Review RUNAPI-29 (2026-11-12): the store commands read the actor's
+// standing in the store inside the command's own transaction now. The
+// store's assignment and its own overrides still decide.
+describe.skipIf(!SHOULD_RUN)('store commands (PG-gated)', () => {
+  test('RUNAPI-29: a store command needs an assignment there, and its overrides count', async () => {
+    const { db, buyerA, deniedB, storeA, storeB, skuIds } = fix!;
+    const { runId } = await seedRun('delivered');
+    expect(
+      await errorOf(() => buyerA.caller.run.confirmStore({ runId, storeId: storeB })),
+    ).toMatchObject({
+      code: 'FORBIDDEN',
+      message: 'auth.errors.notAssignedToStore',
+    });
+    const [deny] = await db
+      .insert(s.memberPermissionOverrides)
+      .values({
+        memberId: deniedB.memberId,
+        permissionKey: 'delivery.confirm',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: storeB,
+      })
+      .returning();
+    try {
+      const markOk = (storeId: string, skuId: string) =>
+        errorOf(() => deniedB.caller.run.markStoreItemsOk({ runId, storeId, skuIds: [skuId] }));
+      expect(await markOk(storeB, skuIds[1])).toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'run.errors.cannotConfirm',
+      });
+      expect(await markOk(storeA, skuIds[0])).toBeNull();
+    } finally {
+      await db
+        .delete(s.memberPermissionOverrides)
+        .where(eq(s.memberPermissionOverrides.id, deny!.id));
+    }
+  });
+});

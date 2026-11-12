@@ -278,7 +278,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       if (state.status !== 'planned') {
         throw preconditionFailed('run.errors.cannotStartPurchase', { status: state.status });
       }
@@ -289,7 +288,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       // M3.33 (2026-05-18, Wave1 #12): block PurchaseItem in `delivering`
       // status too — before this fix the dispatcher could start delivery
       // while the purchaser kept recording buys, producing split rows
@@ -371,7 +369,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       // Same phase gate as PurchaseItem — adding mid-delivering would
       // race the store-split bake-in. After delivering, the operator
       // can still RevisePurchase existing rows, but creating new ones
@@ -463,7 +460,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       assertEditablePhase(state, command.actor);
       // Idempotent — replay of same expenseId is a no-op (the reducer
       // also detects this defensively but we short-circuit to avoid
@@ -526,7 +522,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       assertEditablePhase(state, command.actor);
       // Idempotent — removing what's already gone is a no-op.
       const target = state.expenses.find((e) => e.id === command.expenseId);
@@ -551,7 +546,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
 
       // Marking an item unavailable is a purchasing decision, not a generic
       // item-state toggle. In particular, a terminal run must not accept a
@@ -594,9 +588,9 @@ export function decideRun(
     case 'StartDelivery': {
       assertActive(state);
       // 2026-07-26: this transition had NO permission check at all.
-      // The comment below says claim ownership gates it, but
-      // assertClaimOwnership has an empty body (runs are deliberately
-      // collaborative), so the only barrier was the tRPC layer's
+      // A run claim gates nothing (runs are deliberately collaborative:
+      // concurrent purchasers record their own rows, the event stream
+      // serialises them), so the only barrier was the tRPC layer's
       // assertRunStoreVisible — a STORE-SCOPE check, not a permission
       // one. Any member with a store in the run, including shop staff
       // whose entire permission set is order.draft / order.submit /
@@ -615,7 +609,6 @@ export function decideRun(
       }
       // C.2 (M3.38): kept for symmetry with the other purchaser
       // transitions — currently a no-op by design (see the function).
-      assertClaimOwnership(state, command.actor);
       if (state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.notReadyToDeliver', { status: state.status });
       }
@@ -810,7 +803,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.finish')) {
         throw forbidden('run.errors.cannotFinish');
       }
-      assertClaimOwnership(state, command.actor);
       if (state.status !== 'delivering') {
         throw preconditionFailed('run.errors.notFinishable', { status: state.status });
       }
@@ -980,7 +972,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       assertEditablePhase(state, command.actor);
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
@@ -1057,7 +1048,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       assertEditablePhase(state, command.actor);
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
@@ -1117,7 +1107,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       assertEditablePhase(state, command.actor);
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
@@ -1277,7 +1266,6 @@ export function decideRun(
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      assertClaimOwnership(state, command.actor);
       if (state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.notPurchasing', { status: state.status });
       }
@@ -1300,7 +1288,6 @@ export function decideRun(
       if (!command.actor.permissions.has('delivery.dispatch')) {
         throw forbidden('run.errors.cannotDispatch');
       }
-      assertClaimOwnership(state, command.actor);
       if (state.status !== 'delivering') {
         throw preconditionFailed('run.errors.notDelivering', { status: state.status });
       }
@@ -1317,10 +1304,10 @@ export function decideRun(
     }
 
     case 'ClaimRun': {
-      // C.2 (M3.38): a purchaser claims the run so other purchasers
-      // can't write conflicting events. Allowed during the active
-      // window (planned/purchasing/delivering). Terminal states have
-      // no claim concept.
+      // C.2 (M3.38): a purchaser marks the run as theirs. Nothing checks
+      // the claim since runs became collaborative (review RUNAPI-17); no
+      // client sends this any more (run.claim is deprecated). Allowed
+      // during the active window (planned/purchasing/delivering).
       assertActive(state);
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
@@ -1506,13 +1493,7 @@ export function computeRunTotals(state: RunState): {
   };
 }
 
-/**
- * Post-finish amendment gate (2026-07-06). A finished run reopened to
- * `amending` unlocks the normal edit commands, but ONLY for actors
- * holding `run.amend` (super-admin). Everyone else still hits the frozen
- * wall. Cancelled stays permanently frozen. Returns nothing; throws the
- * appropriate precondition/forbidden on a blocked edit.
- */
+/** A line's top-up still to buy (0 when it has none). */
 function topUpOf(item: { topUpQty?: string | null }): number {
   return Number(item.topUpQty ?? 0);
 }
@@ -1548,6 +1529,13 @@ function assertListOpen(state: RunState): void {
   }
 }
 
+/**
+ * Post-finish amendment gate (2026-07-06). A finished run reopened to
+ * `amending` unlocks the normal edit commands, but ONLY for actors
+ * holding `run.amend` (super-admin). Everyone else still hits the frozen
+ * wall. Cancelled stays permanently frozen. Returns nothing; throws the
+ * appropriate precondition/forbidden on a blocked edit.
+ */
 function assertEditablePhase(state: RunState, actor: ActorCtx): void {
   if (state.status === 'cancelled') {
     throw preconditionFailed('run.errors.runFrozen', { status: state.status });
@@ -1559,17 +1547,6 @@ function assertEditablePhase(state: RunState, actor: ActorCtx): void {
   if (state.status === 'amending' && !actor.permissions.has('run.amend')) {
     throw forbidden('run.errors.cannotAmend');
   }
-}
-
-/**
- * Runs are intentionally collaborative. Concurrent purchasers can record
- * independent rows or expenses; event-stream serialization protects the
- * ledger from stale writes and each event still records its actor.
- */
-function assertClaimOwnership(_state: RunState, _actor: ActorCtx): void {
-  // Runs are collaborative: separate purchasers may record separate
-  // SKU rows or expenses concurrently. Event-stream serialization and
-  // per-event actor auditing still protect the ledger from stale writes.
 }
 
 /**

@@ -2,15 +2,15 @@
  * Seed for local development. Idempotent: re-running won't duplicate.
  *
  * Creates:
- *   - default-org organization
+ *   - the organisation with slug `default`
  *   - permissions catalog (full PERMISSIONS list)
- *   - 5 built-in roles (super_admin, admin, manager, purchaser, staff)
+ *   - 6 built-in roles (BUILTIN_ROLES: super_admin, admin, manager,
+ *     purchaser, cashier, staff)
  *   - 2 stores (Kitchen, Hotel)
  *   - 3 suppliers
- *   - 6 categories (i18n)
+ *   - 7 categories (i18n)
  *   - 18 SKUs (i18n)
  */
-import { sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { getDb, closeDb, schema as s } from './index';
 import { PERMISSIONS, BUILTIN_ROLES, DEV_CATEGORIES, DEV_SKUS } from './seed-data';
@@ -177,6 +177,3 @@ main().catch((err) => {
   console.error('[seed] FAILED:', err);
   void closeDb().finally(() => process.exit(1));
 });
-
-// Re-export so type-checkers don't complain about the unused import.
-export const _ = sql;

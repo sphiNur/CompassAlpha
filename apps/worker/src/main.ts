@@ -17,13 +17,15 @@
  *   - reports.daily              daily 01:00 org-tz
  *   - priceAlert.detect          daily 01:30
  *
- * Config via env (loaded server-side from compass-alpha/.env):
+ * Config via env (loaded server-side from compass-alpha/.env), checked at
+ * start by config.ts:
  *   DATABASE_URL          required
  *   TELEGRAM_BOT_TOKEN    optional; needed only for direct grammY transport
  *   TG_RELAY_URL          optional; CF Worker relay URL (see infra/cloudflare/)
  *   COMPASS_RELAY_KEY     optional; shared secret matching the relay
  *   BOT_DELIVERY_ENABLED  optional override; see bot dispatch block
- *   FRONTEND_URL          optional; used as base for deep-link buttons
+ *   FRONTEND_URL          optional; https base for the messages' buttons
+ *   CLAIM_TIMEOUT_MINUTES, CLAIM_TIMEOUT_SCAN_MINUTES  see the claim sweep
  */
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
@@ -55,8 +57,10 @@ import {
   staleClaimCandidatesSql,
 } from './claimTimeout';
 import { loadRepoEnv } from '@compass/db/env';
+import { readWorkerConfig } from './config';
 
 loadRepoEnv(import.meta.url);
+const config = readWorkerConfig(process.env);
 
 const FLUSH_INTERVAL_MS = 5_000;
 /**
@@ -65,7 +69,7 @@ const FLUSH_INTERVAL_MS = 5_000;
  */
 const SHUTDOWN_GRACE_MS = 20_000;
 
-const db = getDb(process.env.DATABASE_URL);
+const db = getDb(config.databaseUrl);
 
 /**
  * Bot dispatch — two transports, configured by env.
@@ -93,14 +97,12 @@ const db = getDb(process.env.DATABASE_URL);
  * Mini App in-product UX is unaffected when delivery is off — operators
  * just don't get Telegram pushes.
  */
-const relayUrl = process.env.TG_RELAY_URL;
-const relayKey = process.env.COMPASS_RELAY_KEY;
+const relayUrl = config.relayUrl;
+const relayKey = config.relayKey;
 const relayConfigured = !!(relayUrl && relayKey);
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
+const botToken = config.botToken;
 
-const explicitDeliveryToggle = process.env.BOT_DELIVERY_ENABLED?.toLowerCase();
-const botDeliveryEnabled =
-  explicitDeliveryToggle === undefined ? relayConfigured : explicitDeliveryToggle === 'true';
+const botDeliveryEnabled = config.botDeliveryEnabled ?? relayConfigured;
 
 // grammY only when no relay is configured — relay path uses plain fetch.
 const bot = botDeliveryEnabled && !relayConfigured && botToken ? new Bot(botToken) : null;
@@ -119,6 +121,11 @@ if (!botDeliveryEnabled) {
       '(need either TG_RELAY_URL+COMPASS_RELAY_KEY or TELEGRAM_BOT_TOKEN). ' +
       'Outbox bot rows will be marked sent without delivery.',
   );
+}
+// COREAPI-27: Telegram refuses a button without an https address, so
+// without one the messages go out without their button (outbox.ts).
+if (botDeliveryEnabled && !config.frontendUrl?.startsWith('https://')) {
+  console.warn('[worker] FRONTEND_URL is not an https address; bot messages will have no button.');
 }
 
 /**
@@ -234,12 +241,21 @@ async function handleNextRow(
         .where(eq(s.outbox.id, row.id));
       return 'failed' as const;
     }
-    const ok = await deliverBot(row.payload as OutboxPayload);
-    if (ok) {
+    const delivery = await deliverBot(tx, row.payload as OutboxPayload);
+    if (delivery.outcome === 'sent') {
       await tx.update(s.outbox).set({ sentAt: now }).where(eq(s.outbox.id, row.id));
       return 'sent' as const;
     }
-    await deferOutboxTx(tx, row.id, row.retries);
+    if (delivery.outcome === 'failed') {
+      // COREAPI-24: closed with the reason, so a message that can never
+      // be delivered is not mistaken for one that was.
+      await tx
+        .update(s.outbox)
+        .set({ sentAt: now, lastError: delivery.reason })
+        .where(eq(s.outbox.id, row.id));
+      return 'failed' as const;
+    }
+    await deferOutboxTx(tx, row.id, row.retries, delivery.error);
     return 'deferred' as const;
   }
   if (row.channel === 'webpush') {
@@ -256,20 +272,32 @@ async function handleNextRow(
   return 'failed' as const;
 }
 
-async function deliverBot(payload: OutboxPayload): Promise<boolean> {
-  if (!botDeliveryEnabled) return false;
-  const user = await inSystem(db, 'worker', (tx) =>
-    tx.query.users.findFirst({
-      where: (u, { eq: eq2 }) => eq2(u.id, payload.recipientUserId),
-    }),
-  );
+/**
+ * What became of one message: sent; failed for good (`reason` goes into
+ * last_error); or to be tried again later.
+ */
+type Delivery =
+  | { outcome: 'sent' }
+  | { outcome: 'failed'; reason: string }
+  | { outcome: 'retry'; error: string };
+
+/**
+ * Send one bot message. The recipient is read in the row's own
+ * transaction (review COREAPI-25: it took a second connection from the
+ * pool while the row's lock was held).
+ */
+async function deliverBot(tx: Tx, payload: OutboxPayload): Promise<Delivery> {
+  const user = await tx.query.users.findFirst({
+    where: (u, { eq: eq2 }) => eq2(u.id, payload.recipientUserId),
+  });
   if (!user || !user.tgUserId) {
+    // Without a Telegram id it can never be delivered; don't loop.
     console.warn('[worker] bot dispatch: no tgUserId for user', payload.recipientUserId);
-    return true; // mark sent — without a TG id we can never deliver, don't loop.
+    return { outcome: 'failed', reason: 'recipient has no Telegram id' };
   }
 
   const chatId = Number(user.tgUserId);
-  const { text, opts } = botMessage(payload, process.env.FRONTEND_URL);
+  const { text, opts } = botMessage(payload, config.frontendUrl);
 
   try {
     if (relayConfigured) {
@@ -277,24 +305,27 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
     } else if (bot) {
       await bot.api.sendMessage(chatId, text, opts);
     } else {
-      return false;
+      return { outcome: 'retry', error: 'no bot transport' };
     }
-    return true;
+    return { outcome: 'sent' };
   } catch (err) {
-    // Permanent errors (user blocked bot, invalid id, bad request) → mark
-    // sent so we don't retry endlessly. Anything else is transient.
+    // A refusal by the Bot API (the user blocked the bot, a wrong id, a
+    // bad request) is final; anything else is tried again. COREAPI-24: a
+    // 400 can also be ours (a message Telegram cannot parse), so it is
+    // logged as an error, with Telegram's description, and kept in
+    // last_error.
     if (err instanceof RelayError) {
       if (err.permanent) {
-        console.warn('[worker] permanent relay error', err.errorCode, err.description);
-        return true;
+        console.error('[worker] permanent relay error', err.errorCode, err.description);
+        return { outcome: 'failed', reason: `telegram ${err.errorCode}: ${err.description}` };
       }
       console.warn('[worker] transient relay error', err.message);
-      return false;
+      return { outcome: 'retry', error: errorText(err) };
     }
     if (err instanceof GrammyError) {
       if (err.error_code === 403 || err.error_code === 400) {
-        console.warn('[worker] permanent bot error', err.error_code, err.description);
-        return true;
+        console.error('[worker] permanent bot error', err.error_code, err.description);
+        return { outcome: 'failed', reason: `telegram ${err.error_code}: ${err.description}` };
       }
     }
     if (err instanceof HttpError) {
@@ -302,7 +333,7 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
     } else {
       console.error('[worker] unknown bot error', err);
     }
-    return false;
+    return { outcome: 'retry', error: errorText(err) };
   }
 }
 
@@ -339,12 +370,10 @@ async function sendViaRelay(
   assertRelayDelivered(res.status, await res.text());
 }
 
-/**
- * Tx-scoped variant — used inside processOnce's per-row transaction
- * (M1.22). Same logic as the original; just takes a tx handle instead
- * of using the module-level db.
- */
+/** The row's transaction, typed as a DB handle as everywhere (packages/db rls.ts). */
 type Tx = DB;
+
+/** Push a failed row back with the next backoff, or give it up. */
 async function deferOutboxTx(
   tx: Tx,
   id: string,
@@ -411,8 +440,8 @@ let lastIdempotencyCleanup = Date.now();
 //                                   for stale claims (default 5)
 //
 // Set CLAIM_TIMEOUT_MINUTES=0 to disable the auto-release task.
-const CLAIM_TIMEOUT_MINUTES = parseInt(process.env.CLAIM_TIMEOUT_MINUTES ?? '30', 10);
-const CLAIM_TIMEOUT_SCAN_MS = parseInt(process.env.CLAIM_TIMEOUT_SCAN_MINUTES ?? '5', 10) * 60_000;
+const CLAIM_TIMEOUT_MINUTES = config.claimTimeoutMinutes;
+const CLAIM_TIMEOUT_SCAN_MS = config.claimTimeoutScanMinutes * 60_000;
 let lastClaimTimeoutScan = Date.now();
 
 if (CLAIM_TIMEOUT_MINUTES > 0) {
@@ -642,38 +671,51 @@ async function repairOrphanedSessions(): Promise<number> {
   return repaired;
 }
 
+/**
+ * Delete the expired idempotency keys. The index idem_expires_idx makes
+ * this O(matches) not O(table). Review COREAPI-22 (2026-11-12): in
+ * batches, each its own transaction, like the retention below; one
+ * DELETE took every expired row at once and returned all their keys.
+ */
 async function cleanupIdempotencyKeys(): Promise<number> {
-  // Delete every row whose expires_at is in the past. The index
-  // idem_expires_idx makes this O(matches) not O(table). The DELETE
-  // returns deleted rows so we can log a one-line summary.
-  const r = (await inSystem(db, 'worker', (tx) =>
-    tx.execute(sql`
-    DELETE FROM sync.idempotency_keys
-    WHERE expires_at < NOW()
-    RETURNING key
-  `),
-  )) as unknown as Array<{ key: string }>;
-  return r.length;
+  const r = await deleteInBatches(async (limit) => {
+    const rows = (await inSystem(db, 'worker', (tx) =>
+      tx.execute(sql`
+      DELETE FROM sync.idempotency_keys
+      WHERE key IN (
+        SELECT key FROM sync.idempotency_keys WHERE expires_at < NOW() LIMIT ${limit}::int
+      )
+      RETURNING key
+    `),
+    )) as unknown as Array<{ key: string }>;
+    return rows.length;
+  });
+  return r.deleted;
 }
 
 /**
- * 2026-10-21 audit F-14: expired refresh tokens were never deleted
- * (apps/api/src/services/refreshTokens.ts purgeExpiredRefreshTokens was
- * written but not wired). Same DELETE and the same 7-day grace, done here
- * because importing the api service would pull in the api's env/JWT
- * module. The grace keeps rows long enough for replay detection on a
- * just-expired family to still find them.
+ * 2026-10-21 audit F-14: expired refresh tokens were never deleted. Done
+ * here, hourly and in batches (COREAPI-22), with a 7-day grace that keeps
+ * the rows long enough for replay detection on a just-expired family to
+ * still find them.
  */
 const REFRESH_TOKEN_PURGE_GRACE_DAYS = 7;
 async function purgeExpiredRefreshTokens(): Promise<number> {
-  const r = (await inSystem(db, 'worker', (tx) =>
-    tx.execute(sql`
-    DELETE FROM auth.refresh_tokens
-    WHERE expires_at < NOW() - (${REFRESH_TOKEN_PURGE_GRACE_DAYS}::int * interval '1 day')
-    RETURNING id
-  `),
-  )) as unknown as Array<{ id: string }>;
-  return r.length;
+  const r = await deleteInBatches(async (limit) => {
+    const rows = (await inSystem(db, 'worker', (tx) =>
+      tx.execute(sql`
+      DELETE FROM auth.refresh_tokens
+      WHERE id IN (
+        SELECT id FROM auth.refresh_tokens
+        WHERE expires_at < NOW() - (${REFRESH_TOKEN_PURGE_GRACE_DAYS}::int * interval '1 day')
+        LIMIT ${limit}::int
+      )
+      RETURNING id
+    `),
+    )) as unknown as Array<{ id: string }>;
+    return rows.length;
+  });
+  return r.deleted;
 }
 
 /**

@@ -5,6 +5,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { hasGlobalOrgAdmin } from '../../../services/orgAdmin';
+import type { PermissionKey } from '@compass/db';
 import type { RequestContext } from '../../context';
 
 export function requireAdmin(perms: ReadonlySet<string>): void {
@@ -76,7 +77,7 @@ export async function requireGlobalOrgAdmin(ctx: RequestContext): Promise<void> 
  * `users.manage` or the specific key, so roles that carry only
  * `users.manage` keep working where a granular key now exists.
  */
-export function requireOneOf(perms: ReadonlySet<string>, keys: string[]): void {
+export function requireOneOf(perms: ReadonlySet<string>, keys: PermissionKey[]): void {
   for (const k of keys) {
     if (perms.has(k)) return;
   }

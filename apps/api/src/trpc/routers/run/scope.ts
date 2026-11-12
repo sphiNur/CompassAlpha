@@ -5,7 +5,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { schema as s, type DB } from '@compass/db';
+import { schema as s, type DB, type PermissionKey } from '@compass/db';
 import {
   effectivePermissionsForStores,
   getActorStoreIds,
@@ -18,12 +18,10 @@ import type { RequestContext } from '../../context';
 /**
  * Resolve every storeId touched by a run's sessions (DISTINCT). Used by
  * run.get / run.list / ejectSession store-scope checks (M3.33 Wave1 #2+#3).
- * The session_ids_json column is the source of truth; sessions can be
- * eject-removed but we deliberately do NOT drop them from the JSON
- * (sessionIds remains the historical attachment ledger). For scope
- * checking we treat both still-attached and historically-attached
- * sessions as "involved" — eject doesn't revoke the operator's right
- * to see what they previously planned for.
+ * The session_ids_json column is the source of truth. An ejected session
+ * leaves it (the projection and the run state both drop it), so its store
+ * no longer counts here unless another session of the run is from it
+ * (review RUNAPI-17).
  */
 export async function runInvolvedStoreIds(
   db: DB,
@@ -141,7 +139,7 @@ export async function assertRunPermissionForAllStores(
   db: DB,
   ctx: RequestContext,
   run: RunStores,
-  permissionKey: string,
+  permissionKey: PermissionKey,
   item?: {
     skuId: string;
     splitStoreIds?: readonly string[];

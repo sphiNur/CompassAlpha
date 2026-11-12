@@ -2,9 +2,9 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { createHash } from 'node:crypto';
 import { ZodError } from 'zod';
-import { and, eq, gt, isNull, lte } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte, sql } from 'drizzle-orm';
 import { DomainError } from '@compass/domain';
-import { schema as s, withOrgContext } from '@compass/db';
+import { schema as s, withOrgContext, type PermissionKey } from '@compass/db';
 import type { RequestContext } from './context';
 import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
@@ -169,21 +169,15 @@ export const publicProcedure = t.procedure.use(errorLogMiddleware);
  * Subscriptions (`opts.type === 'subscription'`) are connection-level,
  * limited at the WebSocket layer.
  *
- * Exempt routes:
- *   - `system.log` — already has IP-level rate limit at the handler,
- *     and legitimate batched telemetry can spike above the user-level
- *     cap for short windows.
+ * Only the signed-in chain (`authedProcedure`) has it. `system.log` is a
+ * public procedure with its own limit per client address (system.ts).
  *
  * Key shape: `{userId}:{path}` so a user can't starve themselves
  * across paths, and one chatty path can't starve quieter ones.
  */
-const MUTATION_RATE_EXEMPT = new Set<string>(['system.log']);
 const mutationRateMiddleware = t.middleware(async (opts) => {
   if (opts.type !== 'mutation') return opts.next();
-  if (MUTATION_RATE_EXEMPT.has(opts.path)) return opts.next();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctx = opts.ctx as any;
-  const userId: string | null = ctx?.session?.userId ?? null;
+  const userId = opts.ctx.session?.userId ?? null;
   if (!userId) return opts.next(); // unauth mutations (rare) — let
   // the auth check do its own throwing.
   const ok = checkRate(`mut:${opts.path}`, userId, { window: 60_000, max: 120 });
@@ -255,7 +249,10 @@ export const authedProcedure = t.procedure
  *   3. On miss, the handler runs. If it succeeds, we cache the
  *      result for 24 hours. If it throws, we DON'T cache — the
  *      next retry should be allowed (server-side error might be
- *      transient).
+ *      transient). A SQL NULL `response` is a claim still running;
+ *      a handler that answered nothing is cached as JSON `null`
+ *      (review COREAPI-31: it read as running, so each retry waited
+ *      and was refused as in flight for the next 24 hours).
  *
  * Opt-in: routers use `idempotentMutation` (defined below) instead
  * of `authedProcedure` for the small set of risky mutations.
@@ -312,16 +309,14 @@ export function cacheHitResult(response: unknown, ctx: unknown) {
 }
 
 const idempotencyMiddleware = t.middleware(async (opts) => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctx = opts.ctx as any;
-  const key: string | null = ctx?.idempotencyKey ?? null;
-  const userId: string | null = ctx?.session?.userId ?? null;
-  const orgId: string | null = ctx?.session?.orgId ?? null;
+  const key = opts.ctx.idempotencyKey;
+  const userId = opts.ctx.session?.userId ?? null;
+  const orgId = opts.ctx.session?.orgId ?? null;
   // No key = no dedupe. Mutation runs normally.
   if (!key || !userId || !orgId || opts.type !== 'mutation') {
     return opts.next();
   }
-  const db = ctx.db as RequestContext['db'];
+  const db = opts.ctx.db;
   // A procedure without input (attendance.faceConsentWithdraw) gets an
   // empty body over HTTP, which getRawInput cannot parse as JSON; that
   // failed every such call (2026-11-07). No input hashes as null, and a
@@ -377,18 +372,28 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
     });
     return rows.length > 0;
   };
-  const readOwn = () =>
-    withOrgContext(db, orgId, (tx) =>
-      tx.query.idempotencyKeys.findFirst({
-        where: (k, { eq: eq2, and: and2, gt: gt2 }) =>
-          and2(
-            eq2(k.key, key),
-            eq2(k.route, opts.path),
-            eq2(k.userId, userId),
-            gt2(k.expiresAt, new Date()),
+  const readOwn = async () => {
+    const [row] = await withOrgContext(db, orgId, (tx) =>
+      tx
+        .select({
+          response: s.idempotencyKeys.response,
+          requestHash: s.idempotencyKeys.requestHash,
+          // SQL NULL: the claim's request is still running (COREAPI-31).
+          running: sql<boolean>`${s.idempotencyKeys.response} IS NULL`,
+        })
+        .from(s.idempotencyKeys)
+        .where(
+          and(
+            eq(s.idempotencyKeys.key, key),
+            eq(s.idempotencyKeys.route, opts.path),
+            eq(s.idempotencyKeys.userId, userId),
+            gt(s.idempotencyKeys.expiresAt, new Date()),
           ),
-      }),
+        )
+        .limit(1),
     );
+    return row;
+  };
   const cachedResult = (response: unknown) =>
     cacheHitResult(response, opts.ctx) as unknown as Awaited<ReturnType<typeof opts.next>>;
 
@@ -408,7 +413,7 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
         return opts.next();
       }
       refuseIfOtherBody(existing);
-      if (existing.response !== null && existing.response !== undefined) {
+      if (!existing.running) {
         // M3.9: debug, not info — cache hits are the good path.
         logger.debug(
           { path: opts.path, userId, key },
@@ -427,19 +432,16 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
   // We hold the claim: run the handler, then cache its answer or let go.
   // A failure comes back as `{ ok: false }` (tRPC v11 does not throw it).
   const result = await opts.next();
-  // tRPC v11 middleware return shape: { ok: true, data, ctx, marker } | { ok: false, error }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const r = result as any;
-  if (capturedMiddlewareMarker === undefined && r && typeof r === 'object' && 'marker' in r) {
-    capturedMiddlewareMarker = r.marker;
-  }
-  if (r?.ok === true) {
+  if (capturedMiddlewareMarker === undefined) capturedMiddlewareMarker = result.marker;
+  if (result.ok) {
+    const data = result.data;
     try {
       await withOrgContext(db, orgId, (tx) =>
         tx
           .update(s.idempotencyKeys)
           .set({
-            response: (r.data ?? null) as unknown as Record<string, unknown>,
+            // No answer is stored as JSON null: SQL NULL means running.
+            response: data === undefined || data === null ? sql`'null'::jsonb` : data,
             expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
           })
           .where(
@@ -498,10 +500,9 @@ async function releaseClaim(
  * action (NOT per retry). Without the header, the middleware passes
  * through unchanged — older clients keep working.
  *
- * Current consumers (M1.20):
- *   run.create, run.purchaseItem, run.revisePurchase,
- *   run.markUnavailable, run.deliverToStore, run.confirmStore,
- *   run.finish, run.cancel, order.submit, sales.record
+ * The procedures that use it are listed once, in IDEMPOTENT_ROUTES
+ * (packages/contracts/src/idempotency.ts); a test fails when the two
+ * differ.
  *
  * Anything that ONLY reads, OR that has natural-key dedupe through
  * an event-store unique seq, can stay on plain authedProcedure.
@@ -510,17 +511,14 @@ export const idempotentMutation = authedProcedure
   .use(idempotencyMiddleware)
   .meta({ idempotent: true });
 
-// Suppress unused-import diagnostics for drizzle helpers brought in
-// only for the idempotency middleware's lookup query.
-void and;
-void eq;
-void gt;
-
 /**
- * Permission-checking procedure. Loads `storeIdField` (if given) from the
- * input and validates it belongs to ctx.orgId before invoking the handler.
+ * A signed-in procedure that needs `permissionKey` in the session's
+ * permissions: the keys the member holds organisation-wide or in at
+ * least one store (services/storeScope.ts, flatEffectivePermissions). It
+ * looks at no store in the input; a procedure that acts on one store
+ * checks that store's permissions itself.
  */
-export function permissionProcedure(permissionKey: string) {
+export function permissionProcedure(permissionKey: PermissionKey) {
   return authedProcedure.use(async (opts) => {
     if (!opts.ctx.session.permissions.has(permissionKey)) {
       // M1.9-extra (P7): bare key + cause; no colon-suffix.

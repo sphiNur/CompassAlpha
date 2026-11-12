@@ -309,12 +309,16 @@ export const memberInvites = authSchema.table(
 export const memberStoreAssignments = authSchema.table(
   'member_store_assignments',
   {
-    memberId: uuid('member_id').notNull(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    /** References inventory.stores ON DELETE CASCADE (migration 0003); not
+     *  declared here, as inventory.ts already imports this file. */
     storeId: uuid('store_id').notNull(),
     assignedAt: timestamp('assigned_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
-    assignedBy: uuid('assigned_by'),
+    assignedBy: uuid('assigned_by').references(() => users.id),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.memberId, t.storeId] }),

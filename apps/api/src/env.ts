@@ -20,18 +20,20 @@ export const env = createEnv({
     DEV_MOCK_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
     NON_TELEGRAM_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
     NON_TELEGRAM_LOGIN_USERS: z.string().optional(),
-    // Cloudflare Worker relay for outbound Bot API calls — used when the
-    // host network blocks api.telegram.org. See infra/cloudflare/README.md.
-    TG_RELAY_URL: z.string().url().optional(),
-    COMPASS_RELAY_KEY: z.string().min(32).optional(),
-    BOT_DELIVERY_ENABLED: z.enum(['true', 'false']).optional(),
+    // Review COREAPI-27 (2026-11-12): the Bot API relay settings
+    // (TG_RELAY_URL, COMPASS_RELAY_KEY, BOT_DELIVERY_ENABLED) are the
+    // worker's, checked by apps/worker/src/config.ts; the api sends nothing
+    // to Telegram. REDIS_URL and OTEL_EXPORTER_OTLP_ENDPOINT were never read.
     // Shared with the app-proxy Worker: requests carrying it may name the
     // real client address for rate limiting (AUTH-6). See services/clientIp.ts.
     CLIENT_IP_PROXY_KEY: z.string().min(32).optional(),
     FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+    /** The build's commit when there is no apps/web/dist/build-id.txt. */
+    VITE_BUILD_SHA: z.string().optional(),
     S3_ENDPOINT: z.string().url().optional(),
     S3_BUCKET: z.string().optional(),
-    S3_REGION: z.string().default('auto'),
+    /** Read when signing (services/s3.ts), which takes us-east-1 when unset. */
+    S3_REGION: z.string().optional(),
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),
     S3_PUBLIC_BASE: z.string().url().optional(),
@@ -59,5 +61,32 @@ export function assertDistinctTokenKeys(
   }
 }
 assertDistinctTokenKeys(env);
+
+/**
+ * Which release this server is: COMPASS_RELEASE_CHANNEL, else production
+ * exactly when NODE_ENV is.
+ */
+export function releaseChannelOf(
+  e: Pick<Env, 'COMPASS_RELEASE_CHANNEL' | 'NODE_ENV'>,
+): 'development' | 'staging' | 'production' {
+  return e.COMPASS_RELEASE_CHANNEL ?? (e.NODE_ENV === 'production' ? 'production' : 'development');
+}
+
+/**
+ * Review COREAPI-27 (2026-11-12): without TELEGRAM_BOT_TOKEN a production
+ * server started, then failed every sign-in with a server error. The
+ * production channel signs in only through Telegram, so it now refuses to
+ * start instead.
+ */
+export function assertProductionLogin(
+  e: Pick<Env, 'COMPASS_RELEASE_CHANNEL' | 'NODE_ENV' | 'TELEGRAM_BOT_TOKEN'>,
+): void {
+  if (releaseChannelOf(e) === 'production' && !e.TELEGRAM_BOT_TOKEN) {
+    throw new Error(
+      'Invalid environment variables: TELEGRAM_BOT_TOKEN is required on the production channel',
+    );
+  }
+}
+assertProductionLogin(env);
 
 export type Env = typeof env;

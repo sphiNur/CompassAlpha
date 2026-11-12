@@ -16,3 +16,4 @@ export * from './money';
 export * from './quantity';
 export * from './schemas/attendance';
 export * from './schemas/upload';
+export * from './schemas/nav';

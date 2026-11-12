@@ -21,7 +21,7 @@ import {
   withOrgContext,
   withSystemContext,
 } from '@compass/db';
-import type { SessionContext } from '../trpc/context';
+import { loadSession, type SessionContext } from '../trpc/context';
 import {
   assertCanAddStore,
   computeWriteAccess,
@@ -218,6 +218,37 @@ describe.skipIf(!SHOULD_RUN)('subscriptions (PG-gated)', () => {
     expect(await writeAccess()).toBe(false);
     await setTrial(new Date(now + 60_000), null);
     expect(await writeAccess()).toBe(true);
+  });
+
+  // Review COREAPI-23: a request's session reads the tenant in one query,
+  // and must agree with the full state.
+  test('the session has the tenant’s write access and time zone', async () => {
+    const { orgId, session } = await newTenant();
+    const db = getDb();
+    const maintain = (fn: Parameters<typeof withSystemContext>[2]) =>
+      withSystemContext(db, 'maintenance', fn);
+    const bySubscription = eq(s.organizationSubscriptions.orgId, orgId);
+    await maintain((tx) =>
+      tx
+        .update(s.organizations)
+        .set({ timezone: 'Asia/Tashkent' })
+        .where(eq(s.organizations.id, orgId)),
+    );
+    const loaded = async () => {
+      const state = await withOrgContext(db, orgId, (tx) => readSubscriptionState(tx, orgId));
+      const own = await loadSession(db, session.userId, orgId, session.memberId);
+      expect(own?.writeAccess).toBe(state.writeAccess);
+      return { writeAccess: own?.writeAccess, orgTimezone: own?.orgTimezone };
+    };
+
+    expect(await loaded()).toEqual({ writeAccess: true, orgTimezone: 'Asia/Tashkent' });
+    await maintain((tx) =>
+      tx.update(s.organizationSubscriptions).set({ status: 'suspended' }).where(bySubscription),
+    );
+    expect(await loaded()).toEqual({ writeAccess: false, orgTimezone: 'Asia/Tashkent' });
+    // A tenant from before subscriptions has no row, and may write.
+    await maintain((tx) => tx.delete(s.organizationSubscriptions).where(bySubscription));
+    expect(await loaded()).toEqual({ writeAccess: true, orgTimezone: 'Asia/Tashkent' });
   });
 });
 

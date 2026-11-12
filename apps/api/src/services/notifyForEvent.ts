@@ -176,8 +176,8 @@ export async function dispatchOrderEventNotifications(
         break;
       }
       // Order events still without notifications:
-      //   DraftStarted, ItemAdjusted, ItemNoteSet, Claimed, ClaimReleased,
-      //   EjectedFromRun, Archived
+      //   DraftStarted, ItemAdjusted, ItemNoteSet, Claimed, EjectedFromRun,
+      //   Archived; ClaimReleased only when another reviewer took over
       default:
         break;
     }
@@ -438,13 +438,6 @@ async function notifyInvolvedStoreStaff(
   await dispatch(db, orgId, [...allUserIds], envelope);
 }
 
-/**
- * Notify "the people waiting on this decision". In the per-store model
- * the right recipients are everyone who contributed a line to the order:
- * the submitter plus anyone whose line is still in the bag. We ping
- * each distinct member exactly once. Falls back to the initiator if no
- * line authorship is available.
- */
 /** D13: one in-app notification to the member who lost a claim. */
 async function notifyClaimLost(
   db: DB,
@@ -459,6 +452,13 @@ async function notifyClaimLost(
   await dispatch(db, orgId, [member.userId], envelope, ['inapp']);
 }
 
+/**
+ * Notify "the people waiting on this decision". In the per-store model
+ * the right recipients are everyone who contributed a line to the order:
+ * the submitter plus anyone whose line is still in the bag. We ping
+ * each distinct member exactly once. Falls back to the initiator if no
+ * line authorship is available.
+ */
 async function notifyOwner(
   db: DB,
   orgId: string,

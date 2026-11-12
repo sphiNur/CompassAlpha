@@ -8,8 +8,15 @@ import {
   UuidSchema,
 } from './common';
 
+/**
+ * Telegram's signed sign-in data; a few hundred characters in practice.
+ * Review COREAPI-21 (2026-11-12): it had no upper bound, so any length was
+ * parsed and hashed before the signature check could refuse it.
+ */
+const InitDataSchema = z.string().min(1).max(8192, CLIENT_FAULT_MESSAGE);
+
 export const TelegramLoginInputSchema = z.object({
-  initData: z.string().min(1),
+  initData: InitDataSchema,
   /** Optional locale override; otherwise we use Telegram's user.language_code. */
   locale: LocaleSchema.optional(),
 });
@@ -21,7 +28,7 @@ export const TelegramLoginInputSchema = z.object({
  * the server-side invite snapshot.
  */
 export const AcceptInviteInputSchema = z.object({
-  initData: z.string().min(1),
+  initData: InitDataSchema,
   // 20–128 characters. A cut or mistyped link is, to the person, the
   // same as an invite that does not exist.
   token: z.string().regex(/^[A-Za-z0-9_-]{20,128}$/, 'auth.errors.inviteNotFound'),
@@ -79,6 +86,36 @@ export const SubscriptionStatusSchema = z.enum([
   'canceled',
 ]);
 export type SubscriptionStatus = z.infer<typeof SubscriptionStatusSchema>;
+
+/**
+ * `platform.updateSubscription` (platform admins only). A date is a day,
+ * "YYYY-MM-DD", of the organisation's own calendar, or an ISO timestamp
+ * with a zone; the router reads and checks it (platform.errors.invalidDate).
+ */
+export const SubscriptionUpdateInputSchema = z.object({
+  orgId: UuidSchema,
+  planCode: z.string().min(1).max(32),
+  status: SubscriptionStatusSchema,
+  trialEndsAt: z.string().nullable().optional(),
+  currentPeriodStart: z.string().nullable().optional(),
+  currentPeriodEnd: z.string().nullable().optional(),
+  graceEndsAt: z.string().nullable().optional(),
+  // 2026-10-21 audit CA-39: optional (not default(false)) so an omitted
+  // flag keeps the stored value instead of silently clearing it.
+  cancelAtPeriodEnd: z.boolean().optional(),
+  note: z.string().max(500).nullable().optional(),
+});
+
+/** `auth.setLocale`: the person's interface language. */
+export const SetLocaleInputSchema = z.object({ locale: LocaleSchema });
+
+/** `auth.setSecondaryLocale`: a second language for product names; null for none. */
+export const SetSecondaryLocaleInputSchema = z.object({
+  secondaryLocale: LocaleSchema.nullable(),
+});
+
+/** `auth.devPersonaLogin`, development only. */
+export const DevPersonaLoginInputSchema = z.object({ memberId: UuidSchema });
 
 export const SubscriptionSummarySchema = z.object({
   planCode: z.string(),
@@ -210,16 +247,4 @@ export const CreateOrganizationInputSchema = z.object({
     .optional(),
   locale: LocaleSchema.optional(),
   timezone: TimeZoneSchema.optional(),
-});
-
-export const AuthTokensSchema = z.object({
-  accessToken: z.string(),
-  refreshToken: z.string(),
-  accessExpiresAt: z.string(),
-  refreshExpiresAt: z.string(),
-});
-
-export const LoginOutputSchema = z.object({
-  tokens: AuthTokensSchema,
-  session: SessionSchema,
 });

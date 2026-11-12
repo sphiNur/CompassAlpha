@@ -5,9 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts",
-    "./client": "./src/client.ts",
-    "./rls": "./src/rls.ts",
     "./env": "./src/repoEnv.ts",
     "./seed-data": "./src/seed-data.ts",
     "./app-role": "./src/appRole.ts"
@@ -22,8 +19,7 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.45.3",
-    "postgres": "^3.4.5",
-    "ulid": "^2.3.0"
+    "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@compass/contracts": "workspace:*",

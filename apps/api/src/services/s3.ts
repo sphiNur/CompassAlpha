@@ -91,8 +91,9 @@ export function presignPut(input: PresignPutInput): PresignedPut {
   const key = stripLeadingSlash(input.key);
   const encodedKey = key.split('/').map(encodeURIComponent).join('/');
 
-  // Determine endpoint host + path style. Path-style for MinIO/local
-  // dev (no DNS magic for buckets); virtual-hosted for AWS/R2/COS.
+  // Host and addressing style (resolveEndpoint): a configured endpoint
+  // (MinIO, R2, COS) is addressed path-style unless its host already
+  // starts with `<bucket>.`; without one, AWS virtual-hosted style.
   const { host, protocol, basePath } = resolveEndpoint(bucket, cfg.endpoint, cfg.region);
 
   const canonicalUri = `${basePath}${encodedKey}`;

@@ -14,6 +14,10 @@ import { readRunEvents } from './runStream';
 import { runCorrections } from './runCorrections';
 
 export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Promise<void> {
+  // Review RUNAPI-21: the run's seq is written once, after the events
+  // (marking 500 items received wrote the run row 500 times).
+  const seqs = new Map<string, number>();
+  const bump = (e: RunEvent) => seqs.set(e.streamId, Math.max(seqs.get(e.streamId) ?? 0, e.seq));
   for (const e of events) {
     switch (e.type) {
       case 'RunPlanned': {
@@ -113,7 +117,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         await restoreAmendedVerdicts(db, e, run, purchasedStoreIds);
         // Append a price_history row for analytics — runs in same tx so RLS context applies.
         await insertPriceObservations(db, orgId, e, run);
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       }
       case 'PurchaserItemAdded': {
@@ -168,7 +172,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           e.payload.storeSplits.map((sp) => sp.storeId),
         );
         await insertPriceObservations(db, orgId, e, run);
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       }
       case 'ItemUnavailable':
@@ -176,7 +180,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .update(s.runItemsV)
           .set({ status: 'unavailable', unavailableNote: e.payload.note, updatedAt: new Date() })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       case 'RunExpenseAdded': {
         // M3.44 (2026-05-22): insert a row into run_expenses_v. The
@@ -221,7 +225,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             .limit(1);
           if (!own) throw new DomainError('VALIDATION', 'run.errors.expenseIdTaken');
         }
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       }
       case 'RunExpenseRemoved': {
@@ -242,7 +246,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               eq(s.runExpensesV.runId, e.streamId),
             ),
           );
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       }
       case 'DeliveryStarted':
@@ -261,7 +265,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               eq(s.runItemStoresV.storeId, e.payload.storeId),
             ),
           );
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       case 'StoreItemConfirmed':
         await db
@@ -280,7 +284,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               eq(s.runItemStoresV.storeId, e.payload.storeId),
             ),
           );
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       case 'StoreConfirmed': {
         await db
@@ -340,7 +344,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             )
             .onConflictDoNothing();
         }
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       }
       case 'RunFinished':
@@ -562,7 +566,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         // truth. (Per-row reason isn't stored on price_history; it's in
         // the event log as PurchaseRevised.payload.reason.)
         await insertPriceObservations(db, orgId, e, run);
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
       }
 
@@ -608,7 +612,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)),
           );
         await supersedePriceObservations(db, orgId, e.streamId, e.payload.skuId, e.occurredAt);
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
 
       case 'UnavailableUndone':
@@ -622,12 +626,12 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             updatedAt: new Date(),
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
 
       case 'TopUpDismissed':
         // BUY-5: domain-state only (see run.get); nothing to project.
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
 
       case 'StoreDeliveryUndone':
@@ -650,7 +654,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               eq(s.runItemStoresV.storeId, e.payload.storeId),
             ),
           );
-        await bumpSeq(db, e.streamId, e.seq);
+        bump(e);
         break;
 
       case 'PurchaseStartUndone':
@@ -774,12 +778,14 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
       }
     }
   }
+  for (const [streamId, seq] of seqs) await bumpSeq(db, streamId, seq);
 }
 
+/** Never back: an event later in the batch may have set a higher seq itself. */
 async function bumpSeq(db: DB, streamId: string, seq: number): Promise<void> {
   await db
     .update(s.marketRunsV)
-    .set({ lastSeq: seq, updatedAt: new Date() })
+    .set({ lastSeq: sql`GREATEST(${s.marketRunsV.lastSeq}, ${seq})`, updatedAt: new Date() })
     .where(eq(s.marketRunsV.id, streamId));
 }
 

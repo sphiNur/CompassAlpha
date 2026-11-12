@@ -5,7 +5,8 @@
  *   bun apps/api/scripts/repair-duplicate-purchases.ts
  *
  *   # 2. Do it. The undo file is mandatory and is written BEFORE any row
- *   #    is touched; the changes commit only if all of them succeed.
+ *   #    is touched; the changes commit only if all of them succeed, and
+ *   #    when they roll back the file is removed again.
  *   bun apps/api/scripts/repair-duplicate-purchases.ts --apply --undo-file d1-undo.json
  *
  *   # 3. Put everything back exactly as it was.
@@ -19,7 +20,9 @@
  *   - sets a split row's qty to the history's where they differ;
  *   - for each stock receipt a store got for goods it was never sent,
  *     APPENDS a compensating movement (negated delta, reason
- *     'adjustment'). The original movement stays in the ledger.
+ *     'adjustment', no note: the ledger shows notes to admins as they
+ *     are, in no language of theirs; the undo file names the movement it
+ *     reverses). The original movement stays in the ledger.
  *
  * It does not touch domain.events, does not create split rows the
  * history has but the read model lacks (those carry delivery and
@@ -29,7 +32,8 @@
  * Needs a role that can write to read_model and inventory: the app role.
  * Take a database backup before --apply regardless of the undo file.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { and, eq, sql } from 'drizzle-orm';
 import { closeDb, getDb, schema as s, type DB } from '@compass/db';
 import {
@@ -58,8 +62,12 @@ interface UndoFile {
   /** Full rows as they were, so a revert restores delivery/confirm state too. */
   deletedSplits: Array<typeof s.runItemStoresV.$inferSelect>;
   qtyBefore: Array<SplitKey & { qty: string }>;
-  /** (run, store, sku) of each compensating movement appended. */
-  compensations: SplitKey[];
+  /**
+   * Each compensating movement appended: its id and the movement it
+   * reverses. Review COREAPI-38 (2026-11-12): files written before had
+   * only (run, store, sku), and a revert deleted every correction there.
+   */
+  compensations: Array<SplitKey & { id?: string; reverses?: string }>;
 }
 
 function buildPlan(findings: LocatedFindings[]): Plan {
@@ -100,7 +108,11 @@ async function apply(db: DB, undoPath: string): Promise<void> {
   if (existsSync(undoPath)) {
     throw new Error(`${undoPath} already exists. Refusing to overwrite an undo file.`);
   }
-  await db.transaction(async (rawTx) => {
+  // Review COREAPI-38 (2026-11-12): a run that rolled back left its undo
+  // file behind, which describes nothing and refused the next run.
+  let wrote = false;
+  let committing = false;
+  const repair = db.transaction(async (rawTx) => {
     const tx = rawTx as unknown as DB;
     const plan = buildPlan((await loadRunFindings(tx)).findings);
     describe(plan);
@@ -108,6 +120,7 @@ async function apply(db: DB, undoPath: string): Promise<void> {
       console.log('\nNothing to repair.');
       return;
     }
+    const compensate = plan.compensate.map((c) => ({ ...c, id: randomUUID() }));
 
     const undo: UndoFile = {
       createdAt: new Date().toISOString(),
@@ -118,18 +131,22 @@ async function apply(db: DB, undoPath: string): Promise<void> {
         storeId: r.storeId,
         qty: r.from,
       })),
-      compensations: plan.compensate.map(({ runId, skuId, storeId }) => ({
+      compensations: compensate.map(({ runId, skuId, storeId, id, movementId }) => ({
         runId,
         skuId,
         storeId,
+        id,
+        reverses: movementId,
       })),
     };
     for (const key of plan.deleteSplits) {
       undo.deletedSplits.push(...(await tx.select().from(s.runItemStoresV).where(splitIs(key))));
     }
-    // On disk before the first write: if the process dies mid-way the
-    // transaction rolls back and the file is merely unused.
+    // On disk before the first write. It is removed below when the
+    // transaction rolls back; when the process dies first it stays, and
+    // the next run refuses until someone has checked and deleted it.
     writeFileSync(undoPath, JSON.stringify(undo, null, 2));
+    wrote = true;
 
     for (const key of plan.deleteSplits) {
       await tx.delete(s.runItemStoresV).where(splitIs(key));
@@ -137,14 +154,14 @@ async function apply(db: DB, undoPath: string): Promise<void> {
     for (const row of plan.setSplitQty) {
       await tx.update(s.runItemStoresV).set({ qty: row.to }).where(splitIs(row));
     }
-    for (const c of plan.compensate) {
+    for (const c of compensate) {
       await tx.insert(s.inventoryMovements).values({
+        id: c.id,
         orgId: c.orgId,
         storeId: c.storeId,
         skuId: c.skuId,
         delta: sql`-(${c.delta}::numeric)`,
         reason: 'adjustment',
-        note: `Reverses movement ${c.movementId}: this store was never sent this item in run ${c.runId}`,
         sourceType: CORRECTION_SOURCE,
         sourceId: c.runId,
       });
@@ -157,8 +174,16 @@ async function apply(db: DB, undoPath: string): Promise<void> {
         `${left} finding(s) remain after the repair — rolling back, nothing changed.`,
       );
     }
-    console.log(`\nRepaired. Undo record: ${undoPath}`);
+    committing = true;
   });
+  try {
+    await repair;
+  } catch (err) {
+    if (wrote && !committing) rmSync(undoPath, { force: true });
+    else if (wrote) console.error(`The commit failed and may have landed: ${undoPath} is kept.`);
+    throw err;
+  }
+  if (committing) console.log(`\nRepaired. Undo record: ${undoPath}`);
 }
 
 async function revert(db: DB, undoPath: string): Promise<void> {
@@ -179,16 +204,19 @@ async function revert(db: DB, undoPath: string): Promise<void> {
       await tx.update(s.runItemStoresV).set({ qty: row.qty }).where(splitIs(row));
     }
     for (const c of undo.compensations) {
-      await tx
-        .delete(s.inventoryMovements)
-        .where(
-          and(
-            eq(s.inventoryMovements.sourceType, CORRECTION_SOURCE),
-            eq(s.inventoryMovements.sourceId, c.runId),
-            eq(s.inventoryMovements.storeId, c.storeId),
-            eq(s.inventoryMovements.skuId, c.skuId),
-          ),
-        );
+      await tx.delete(s.inventoryMovements).where(
+        and(
+          eq(s.inventoryMovements.sourceType, CORRECTION_SOURCE),
+          // By id; a file from before the ids by (run, store, sku).
+          ...(c.id
+            ? [eq(s.inventoryMovements.id, c.id)]
+            : [
+                eq(s.inventoryMovements.sourceId, c.runId),
+                eq(s.inventoryMovements.storeId, c.storeId),
+                eq(s.inventoryMovements.skuId, c.skuId),
+              ]),
+        ),
+      );
     }
   });
   console.log(

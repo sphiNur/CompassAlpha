@@ -32,8 +32,12 @@ export interface OutboxPayload {
 /** The button's label when the payload carries none. */
 export const DEFAULT_BUTTON_TEXT = 'Open Compass';
 
+/** Tries after the first one before a row is given up. */
 export const MAX_RETRIES = 8;
-/** Waits before the next try: 5 s, 10 s, 30 s, 1 min, 5 min, 15 min, 1 h, 3 h. */
+/**
+ * The wait before each of those tries: 5 s, 10 s, 30 s, 1 min, 5 min,
+ * 15 min, 1 h, 3 h.
+ */
 export const BACKOFF_SECONDS = [5, 10, 30, 60, 300, 900, 3600, 10_800] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -58,7 +62,7 @@ export function outboxPayloadProblem(payload: unknown): string | null {
 }
 
 /** The link behind the message's button. */
-export function resolveDeepLink(path: string, frontendUrl: string | undefined): string {
+export function resolveDeepLink(path: string, frontendUrl: string | null | undefined): string {
   const base = frontendUrl?.replace(/\/$/, '') ?? '';
   if (path.startsWith('http')) return path;
   if (!base) return path;
@@ -75,27 +79,29 @@ function buttonLabel(payload: OutboxPayload): string {
   return label || DEFAULT_BUTTON_TEXT;
 }
 
-/** The Telegram message for a payload that passed `outboxPayloadProblem`. */
+/**
+ * The Telegram message for a payload that passed `outboxPayloadProblem`.
+ *
+ * Review COREAPI-27 (2026-11-12): Telegram opens only an https address
+ * from a button, and refuses the whole message (400) when the button has
+ * another one. Without FRONTEND_URL the link stayed a bare path, and every
+ * message with a button was given up as undeliverable. Such a message now
+ * goes out without its button.
+ */
 export function botMessage(
   payload: OutboxPayload,
-  frontendUrl: string | undefined,
+  frontendUrl: string | null | undefined,
 ): { text: string; opts: Record<string, unknown> } {
   const text = payload.body
     ? `*${escapeMd(payload.title)}*\n${escapeMd(payload.body)}`
     : `*${escapeMd(payload.title)}*`;
+  const link = payload.deepLink ? resolveDeepLink(payload.deepLink, frontendUrl) : '';
   const opts: Record<string, unknown> = {
     parse_mode: 'MarkdownV2',
-    ...(payload.deepLink
+    ...(link.startsWith('https://')
       ? {
           reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: buttonLabel(payload),
-                  web_app: { url: resolveDeepLink(payload.deepLink, frontendUrl) },
-                },
-              ],
-            ],
+            inline_keyboard: [[{ text: buttonLabel(payload), web_app: { url: link } }]],
           },
         }
       : {}),
@@ -103,15 +109,21 @@ export function botMessage(
   return { text, opts };
 }
 
-/** After a failed try: when to try again, or give up. */
+/**
+ * After a failed try, with `retries` tries already made after the first:
+ * when to try again, or give up.
+ *
+ * Review COREAPI-24 (2026-11-12): the wait was read one place on, so the
+ * first retry came after 10 s and the 5 s wait was never used, and a row
+ * was given up after seven retries while its error said eight.
+ */
 export function nextAttempt(
   retries: number,
 ): { giveUp: true } | { giveUp: false; retries: number; delaySeconds: number } {
-  const next = retries + 1;
-  if (next >= MAX_RETRIES) return { giveUp: true };
+  if (retries >= MAX_RETRIES) return { giveUp: true };
   return {
     giveUp: false,
-    retries: next,
-    delaySeconds: BACKOFF_SECONDS[Math.min(next, BACKOFF_SECONDS.length - 1)]!,
+    retries: retries + 1,
+    delaySeconds: BACKOFF_SECONDS[Math.min(retries, BACKOFF_SECONDS.length - 1)]!,
   };
 }

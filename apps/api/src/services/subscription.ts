@@ -126,6 +126,39 @@ export async function readSubscriptionState(db: DB, orgId: string): Promise<Subs
 }
 
 /**
+ * What every signed-in request needs of its tenant: whether it may write
+ * (as readSubscriptionState decides) and its time zone, in one query.
+ * Review COREAPI-23 (2026-11-12): the session read the full state, two
+ * counts included, and the organisation row on its own, on every request.
+ */
+export async function readSessionTenant(
+  db: DB,
+  orgId: string,
+): Promise<{ writeAccess: boolean; timezone: string }> {
+  const [row] = await db
+    .select({
+      timezone: s.organizations.timezone,
+      status: s.organizationSubscriptions.status,
+      trialEndsAt: s.organizationSubscriptions.trialEndsAt,
+      currentPeriodEnd: s.organizationSubscriptions.currentPeriodEnd,
+      graceEndsAt: s.organizationSubscriptions.graceEndsAt,
+    })
+    .from(s.organizations)
+    .leftJoin(
+      s.organizationSubscriptions,
+      eq(s.organizationSubscriptions.orgId, s.organizations.id),
+    )
+    .where(eq(s.organizations.id, orgId))
+    .limit(1);
+  // No subscription row: the legacy fallback, which may write.
+  const writeAccess =
+    row?.status == null
+      ? true
+      : computeWriteAccess(row.status, row.trialEndsAt, row.currentPeriodEnd, row.graceEndsAt);
+  return { writeAccess, timezone: row?.timezone ?? 'UTC' };
+}
+
+/**
  * readSubscriptionState for many orgs in three queries. The lookup it
  * returns gives each org passed the state readSubscriptionState would.
  *

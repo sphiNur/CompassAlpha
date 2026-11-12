@@ -108,6 +108,12 @@ export const policyDecisions = domainSchema.table(
   (t) => ({
     actorIdx: index('policy_dec_actor_idx').on(t.actorId, t.occurredAt),
     actionIdx: index('policy_dec_action_idx').on(t.action, t.occurredAt),
+    // The admin audit list, newest first in one organisation (0071).
+    orgIdx: index('policy_dec_org_idx').on(t.orgId, t.occurredAt),
+    // The same list for one store (0009).
+    storeIdx: index('policy_dec_store_idx')
+      .on(t.orgId, t.scopeStoreId, t.occurredAt)
+      .where(sql`scope_store_id IS NOT NULL`),
   }),
 );
 

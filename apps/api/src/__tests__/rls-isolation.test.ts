@@ -41,8 +41,15 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
-import { closeDb, getDb, schema as s, withOrgContext } from '@compass/db';
+import { eq, inArray, sql } from 'drizzle-orm';
+import {
+  closeDb,
+  getDb,
+  schema as s,
+  withOrgContext,
+  withSystemContext,
+  type DB,
+} from '@compass/db';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { pgErrorOf } from './helpers/errors';
@@ -800,5 +807,27 @@ describe.skipIf(!RUN_RLS)('RLS cross-org isolation (PG-gated)', () => {
     }>;
     expect(rows).toHaveLength(3);
     for (const row of rows) expect([row.t, row.on, row.forced]).toEqual([row.t, true, true]);
+  });
+
+  // Review DB-16: a context opened inside a tenant's transaction (a
+  // savepoint) kept its settings after it ended, so a system context left
+  // the rest of the tenant's transaction seeing every organisation.
+  test('a context nested in a tenant transaction ends with its block', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const { orgA, orgB } = fix;
+    const orgs = async (tx: DB) =>
+      (
+        await tx
+          .select({ id: s.organizations.id })
+          .from(s.organizations)
+          .where(inArray(s.organizations.id, [orgA.id, orgB.id]))
+      ).length;
+    await withOrgContext(getDb(), orgA.id, async (tx) => {
+      expect(await withSystemContext(tx, 'maintenance', orgs)).toBe(2);
+      expect(await orgs(tx)).toBe(1);
+      expect(await withOrgContext(tx, orgB.id, orgs)).toBe(1);
+      const [own] = await tx.select({ id: s.organizations.id }).from(s.organizations);
+      expect(own?.id).toBe(orgA.id);
+    });
   });
 });

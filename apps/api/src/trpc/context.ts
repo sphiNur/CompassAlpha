@@ -5,9 +5,8 @@ import { verifyAccess, type AccessClaims } from '../infra/jwt';
 import { logger } from '../infra/log';
 import { env } from '../env';
 import { ulid } from 'ulid';
-import { hasGlobalOrgAdmin } from '../services/orgAdmin';
 import { flatEffectivePermissions } from '../services/storeScope';
-import { readSubscriptionState } from '../services/subscription';
+import { readSessionTenant } from '../services/subscription';
 import { trustedClientIp } from '../services/clientIp';
 
 export interface SessionContext {
@@ -179,7 +178,9 @@ async function readSession(
       and(eq2(m.id, memberId), eq2(m.userId, userId), eq2(m.orgId, orgId)),
   });
   if (!member || member.status !== 'active') return null;
-  const subscription = await readSubscriptionState(db, orgId);
+  // Write access and the org's time zone (D.1, M3.39), so routers resolve
+  // "today" correctly: one query (review COREAPI-23).
+  const tenant = await readSessionTenant(db, orgId);
 
   const bindings = await db
     .select({ role: s.roles, binding: s.memberRoleBindings })
@@ -218,8 +219,11 @@ async function readSession(
   const keysByRole = new Map<string, string[]>();
   for (const p of perms)
     keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
-  const isGlobalOrgAdmin = await hasGlobalOrgAdmin(db, member.id);
-  // Keys effective in at least one scope, overrides applied (ADM-1).
+  // Keys effective in at least one scope, overrides applied (ADM-1). An
+  // organisation-wide key (org.admin) counts from global rows only, so a
+  // store-scoped role or override never makes anyone an org admin. The
+  // separate org.admin lookup that stood here gave the same answer with
+  // two more queries (review COREAPI-23).
   const permissions = flatEffectivePermissions(
     bindings.flatMap((b) =>
       (keysByRole.get(b.role.id) ?? []).map((key) => ({
@@ -230,28 +234,13 @@ async function readSession(
     ),
     overrides,
   );
-  // The flat set is used by many legacy permission gates. Preserve its
-  // compatibility for ordinary store-scoped permissions, but never let a
-  // store-scoped role manufacture the organization-wide marker.
-  if (isGlobalOrgAdmin) permissions.add('org.admin');
-  else permissions.delete('org.admin');
-
-  // D.1 (M3.39, 2026-05-20): pull the org's timezone alongside the
-  // member/perms lookup so routers can resolve "today" correctly. The
-  // organizations row is cached at the db driver level for this
-  // request; a single round-trip in addition to the member fetch.
-  const org = await db.query.organizations.findFirst({
-    where: (o, { eq: eq2 }) => eq2(o.id, orgId),
-    columns: { timezone: true },
-  });
-  const orgTimezone = org?.timezone ?? 'UTC';
 
   return {
     userId,
     memberId,
     orgId,
-    writeAccess: subscription.writeAccess,
-    orgTimezone,
+    writeAccess: tenant.writeAccess,
+    orgTimezone: tenant.timezone,
     // A few destructive maintenance endpoints use this legacy slug gate.
     // Treat `super_admin` as global-only for the same reason as org.admin.
     roleSlugs: new Set(

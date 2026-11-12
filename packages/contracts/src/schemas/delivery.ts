@@ -48,8 +48,3 @@ export const MarkStoreItemsOkInputSchema = z.object({
   skuIds: z.array(UuidSchema).min(1).max(500),
   expectedSeq: z.number().int().optional(),
 });
-
-export const DeliveryViewInputSchema = z.object({
-  runId: UuidSchema,
-  storeId: UuidSchema.optional(),
-});

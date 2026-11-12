@@ -162,10 +162,10 @@ export const readProcedures = {
             COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0)::text AS items_total,
             COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0)::text AS expenses_total,
             COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0)::text AS transfer,
-            COALESCE(SUM(amount) FILTER (WHERE payment_method <> 'transfer'), 0)::text AS cash,
+            COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0)::text AS cash,
             COALESCE(SUM(amount) FILTER (WHERE kind = 'item' AND payment_method = 'transfer'), 0)::text
               AS items_transfer,
-            COALESCE(SUM(amount) FILTER (WHERE kind = 'item' AND payment_method <> 'transfer'), 0)::text
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'item' AND payment_method = 'cash'), 0)::text
               AS items_cash,
             (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
           FROM money_lines

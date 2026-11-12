@@ -133,8 +133,16 @@ export const historyProcedures = {
                 ${splitScopeSql}
                 AND (
                   COALESCE(sku.code, '') ILIKE ${pattern}
-                  OR sku.names::text ILIKE ${pattern}
-                  OR sku.aliases::text ILIKE ${pattern}
+                  -- RUNAPI-22: the names and aliases themselves, not their
+                  -- JSON text ("en" or "ru" matched every product).
+                  OR EXISTS (
+                    SELECT 1 FROM jsonb_path_query(sku.names, 'lax $.*') AS name(value)
+                    WHERE name.value #>> '{}' ILIKE ${pattern}
+                  )
+                  OR EXISTS (
+                    SELECT 1 FROM jsonb_path_query(sku.aliases, 'lax $.*[*]') AS alias(value)
+                    WHERE alias.value #>> '{}' ILIKE ${pattern}
+                  )
                   OR COALESCE(supplier.name, '') ILIKE ${pattern}
                 )
             )
@@ -222,36 +230,6 @@ export const historyProcedures = {
           )
         `;
 
-        type SummaryDbRow = {
-          total_count: number;
-          total: string;
-          items_total: string;
-          expenses_total: string;
-          cash: string;
-          transfer: string;
-        };
-        const summaryRows = executeRows<SummaryDbRow>(
-          await tx.execute(sql`
-          ${historyCte}
-          SELECT
-            COUNT(*)::int AS total_count,
-            COALESCE(SUM(actual_total), 0)::text AS total,
-            COALESCE(SUM(items_total), 0)::text AS items_total,
-            COALESCE(SUM(expenses_total), 0)::text AS expenses_total,
-            COALESCE(SUM(actual_cash_total), 0)::text AS cash,
-            COALESCE(SUM(actual_transfer_total), 0)::text AS transfer
-          FROM filtered
-        `),
-        );
-        const summary = summaryRows[0] ?? {
-          total_count: 0,
-          total: '0',
-          items_total: '0',
-          expenses_total: '0',
-          cash: '0',
-          transfer: '0',
-        };
-
         type PageDbRow = {
           id: string;
           run_date: string;
@@ -291,13 +269,41 @@ export const historyProcedures = {
             FROM day_started d
           )
         `;
-        const pageCountRows = executeRows<{ pages: number }>(
+        // The totals and the page count in one pass over the runs (review
+        // RUNAPI-21: each was a pass of its own, three with the page).
+        type SummaryDbRow = {
+          total_count: number;
+          total: string;
+          items_total: string;
+          expenses_total: string;
+          cash: string;
+          transfer: string;
+          pages: number;
+        };
+        const summaryRows = executeRows<SummaryDbRow>(
           await tx.execute(sql`
           ${pagedCte}
-          SELECT COALESCE(MAX(page_no), 0)::int AS pages FROM paged
+          SELECT
+            COUNT(*)::int AS total_count,
+            COALESCE(SUM(actual_total), 0)::text AS total,
+            COALESCE(SUM(items_total), 0)::text AS items_total,
+            COALESCE(SUM(expenses_total), 0)::text AS expenses_total,
+            COALESCE(SUM(actual_cash_total), 0)::text AS cash,
+            COALESCE(SUM(actual_transfer_total), 0)::text AS transfer,
+            COALESCE(MAX(page_no), 0)::int AS pages
+          FROM paged
         `),
         );
-        const totalPages = Number(pageCountRows[0]?.pages ?? 0);
+        const summary = summaryRows[0] ?? {
+          total_count: 0,
+          total: '0',
+          items_total: '0',
+          expenses_total: '0',
+          cash: '0',
+          transfer: '0',
+          pages: 0,
+        };
+        const totalPages = Number(summary.pages ?? 0);
         const pageRows = executeRows<PageDbRow & { pos: number }>(
           await tx.execute(sql`
           ${pagedCte}

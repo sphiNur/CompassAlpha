@@ -41,6 +41,9 @@ const testRouter = router({
       runs += 1;
       return { bought: input.item, n: runs };
     }),
+  answersNothing: idempotentMutation.mutation(async () => {
+    runs += 1;
+  }),
 });
 
 function caller(key: string) {
@@ -131,6 +134,18 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
       idempotencyRequestHash({ b: [1, { c: 2 }], a: 1 }),
     );
     expect(idempotencyRequestHash({ a: 1 })).not.toBe(idempotencyRequestHash({ a: 2 }));
+  });
+
+  // Review COREAPI-31: an empty answer was stored as SQL NULL, which marks
+  // a request still running, so every retry waited 8 s and was refused.
+  test('a handler that answers nothing is cached, not taken for one still running', async () => {
+    const key = randomUUID();
+    await caller(key).answersNothing();
+    const before = runs;
+    const started = Date.now();
+    expect(await caller(key).answersNothing()).toBeNull();
+    expect(runs).toBe(before);
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test('different keys still each run', async () => {

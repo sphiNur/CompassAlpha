@@ -4,6 +4,15 @@
  */
 export type PermissionDef = { key: string; description: string };
 
+/**
+ * Review DB-15 (2026-11-12): no server or web check reads
+ * prices.alert.configure, inventory.skus.manage,
+ * inventory.suppliers.manage, inventory.stores.manage,
+ * users.assign_store, org.settings.manage, system.test_data.purge or
+ * system.impersonate, so granting them changes nothing. They stay while
+ * roles in existing organisations hold them: removing them is a
+ * migration over role_permissions.
+ */
 export const PERMISSIONS = [
   { key: 'order.draft', description: 'Create or edit own order draft' },
   { key: 'order.submit', description: 'Submit own draft for approval' },
@@ -70,10 +79,10 @@ export const PERMISSIONS = [
   },
 
   { key: 'users.manage', description: 'Manage members, roles, and bindings' },
-  // Granular split of users.manage (added 2026-05-03). Servers
-  // accept either the granular key OR the legacy users.manage; new
-  // custom roles can use the finer keys to allow e.g. "manager can
-  // assign staff to my store but cannot grant manager+".
+  // Granular split of users.manage (added 2026-05-03): granting and
+  // revoking a role accept users.grant_role and users.revoke_role in
+  // place of users.manage (routers/admin/roles.ts). users.assign_store
+  // is checked nowhere; assigning a store needs users.manage.
   { key: 'users.grant_role', description: 'Grant a role to a member (rank-gated)' },
   { key: 'users.revoke_role', description: 'Revoke a role from a member' },
   { key: 'users.assign_store', description: 'Assign a member to a store' },
@@ -96,13 +105,22 @@ export const PERMISSIONS = [
 export const ALL_PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];
 
+/** A built-in role. Its permissions are checked against the catalog (review DB-15). */
+type BuiltinRole = {
+  slug: string;
+  name: string;
+  description: string;
+  rank: number;
+  permissions: readonly PermissionKey[];
+};
+
 export const BUILTIN_ROLES = [
   {
     slug: 'super_admin',
     name: 'Super Admin',
     description: 'Full access including impersonation and test-data purge',
     rank: 100,
-    permissions: ALL_PERMISSION_KEYS.filter((k) => k !== 'attendance.clock') as readonly string[],
+    permissions: ALL_PERMISSION_KEYS.filter((k) => k !== 'attendance.clock'),
   },
   {
     slug: 'admin',
@@ -118,7 +136,7 @@ export const BUILTIN_ROLES = [
         // financial records.
         k !== 'run.amend' &&
         k !== 'attendance.clock',
-    ) as readonly string[],
+    ),
   },
   {
     slug: 'manager',
@@ -164,7 +182,7 @@ export const BUILTIN_ROLES = [
       // DLV-13 (2026-10-30): a manager signs for deliveries at their own
       // store when no staff is on shift (existing orgs: migration 0054).
       'delivery.confirm',
-    ] as readonly string[],
+    ],
   },
   {
     slug: 'purchaser',
@@ -178,14 +196,14 @@ export const BUILTIN_ROLES = [
       'run.finish',
       'delivery.dispatch',
       'prices.view',
-    ] as readonly string[],
+    ],
   },
   {
     slug: 'cashier',
     name: 'Cashier',
     description: 'Records store sales and completes the daily settlement',
     rank: 30,
-    permissions: ['sales.record', 'settlement.record'] as readonly string[],
+    permissions: ['sales.record', 'settlement.record'],
   },
   {
     slug: 'staff',
@@ -199,9 +217,9 @@ export const BUILTIN_ROLES = [
       // General staff can record sales. Cash handling and financial close
       // belong to the dedicated cashier role instead.
       'sales.record',
-    ] as readonly string[],
+    ],
   },
-] as const;
+] as const satisfies readonly BuiltinRole[];
 
 /** A name in the four interface languages. */
 export type SeedNames = { en: string; zh: string; ru: string; uz: string };

@@ -498,6 +498,13 @@
       "when": 1792540000018,
       "tag": "0070_members_user_index",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792540000019,
+      "tag": "0071_outbox_notifications_audit_indexes",
+      "breakpoints": true
     }
   ]
 }

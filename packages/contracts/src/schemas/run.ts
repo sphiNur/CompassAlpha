@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateStringSchema, DecimalStringSchema, PhotoUrlSchema, UuidSchema } from './common';
+import { DateStringSchema, PhotoUrlSchema, UuidSchema } from './common';
 import { PURCHASE_PRICE_RE } from '../limits';
 
 export const RunStatusSchema = z.enum([
@@ -160,10 +160,8 @@ export const AddPurchaserItemInputSchema = z.object({
  * FE knows it before save (no roundtrip) and the same logical add
  * replays idempotently.
  *
- * Receipt photo is mandatory at the server when qty*unitPrice exceeds
- * a fixed threshold (200,000 UZS — see commands.ts:RECEIPT_THRESHOLD);
- * the FE shows the upload affordance from `receiptOptional` value
- * onwards so the user is never surprised at submit.
+ * The receipt photo is optional: the rule that required one above
+ * 200,000 UZS was removed on 2026-07-06 (the reason is the audit trail).
  */
 export const AddRunExpenseInputSchema = z.object({
   runId: UuidSchema,
@@ -284,30 +282,4 @@ export const RunReasonOnlyInputSchema = z.object({
 export const RunCancelInputSchema = z.object({
   runId: UuidSchema,
   reason: z.string().trim().max(500).optional().default(''),
-});
-
-export const RunItemViewSchema = z.object({
-  skuId: UuidSchema,
-  plannedQty: DecimalStringSchema,
-  purchasedQty: DecimalStringSchema.nullable(),
-  supplierId: UuidSchema.nullable(),
-  unitPrice: DecimalStringSchema.nullable(),
-  status: z.enum(['pending', 'purchased', 'unavailable']),
-  unavailableNote: z.string().nullable(),
-  receiptPhotoUrl: z.string().nullable(),
-});
-
-export const RunViewSchema = z.object({
-  id: UuidSchema,
-  runDate: DateStringSchema,
-  runIndex: z.number().int(),
-  status: RunStatusSchema,
-  plannedTotal: DecimalStringSchema.nullable(),
-  actualTotal: DecimalStringSchema.nullable(),
-  purchaserMemberId: UuidSchema.nullable(),
-  sessionIds: z.array(UuidSchema),
-  startedAt: z.string().nullable(),
-  finishedAt: z.string().nullable(),
-  lastSeq: z.number().int(),
-  items: z.array(RunItemViewSchema),
 });

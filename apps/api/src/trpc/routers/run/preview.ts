@@ -19,6 +19,7 @@ import {
 } from '../../../services/runSessionsView';
 import { inUuids } from '../../../services/sqlIn';
 import { executeRows } from '../../../services/sqlRows';
+import { hub } from '../../../realtime/hub';
 import { orgToday } from '../../../services/timeZone';
 
 export const previewProcedures = {
@@ -466,6 +467,9 @@ export const previewProcedures = {
               set: { isPreferred: true, lastSeenAt: new Date() },
             });
         }
+        // Review RUNAPI-28: the choice is the organisation's, so other
+        // screens showing the product's suppliers refetch (after commit).
+        hub.publish(orgId, { type: 'catalog.changed', orgId, entity: 'sku' });
         return { ok: true };
       });
     }),

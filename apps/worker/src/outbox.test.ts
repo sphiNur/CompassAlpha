@@ -65,6 +65,17 @@ describe('botMessage', () => {
     });
   });
 
+  test('COREAPI-27: no button unless its link is https, the message still goes', () => {
+    // Telegram refuses the whole message for a button it cannot open.
+    for (const base of [undefined, null, 'http://localhost:5173']) {
+      const { text, opts } = botMessage(OK, base);
+      expect(text).toBe('*New order*\nStore A · 12 items');
+      expect(opts.reply_markup).toBeUndefined();
+    }
+    const full = botMessage({ ...OK, deepLink: 'https://t.me/x' }, undefined);
+    expect(full.opts.reply_markup).toBeDefined();
+  });
+
   test("COREAPI-19: the button carries the label the API wrote, in the recipient's language", () => {
     const label = (payload: unknown) =>
       (
@@ -94,17 +105,27 @@ describe('resolveDeepLink', () => {
 });
 
 describe('nextAttempt', () => {
-  test('backs off, then gives up after MAX_RETRIES tries', () => {
-    expect(nextAttempt(0)).toEqual({
+  test('COREAPI-24: each retry waits its own step, the first one 5 s', () => {
+    expect(nextAttempt(0)).toEqual({ giveUp: false, retries: 1, delaySeconds: 5 });
+    expect(nextAttempt(1)).toEqual({ giveUp: false, retries: 2, delaySeconds: 10 });
+    const waits: number[] = [];
+    for (let retries = 0; ; retries++) {
+      const next = nextAttempt(retries);
+      if (next.giveUp) break;
+      expect(next.retries).toBe(retries + 1);
+      waits.push(next.delaySeconds);
+    }
+    // MAX_RETRIES retries after the first try, every wait used once.
+    expect(waits).toEqual([...BACKOFF_SECONDS]);
+    expect(waits).toHaveLength(MAX_RETRIES);
+  });
+
+  test('gives up once MAX_RETRIES retries have failed', () => {
+    expect(nextAttempt(MAX_RETRIES - 1)).toEqual({
       giveUp: false,
-      retries: 1,
-      delaySeconds: BACKOFF_SECONDS[1]!,
-    });
-    expect(nextAttempt(MAX_RETRIES - 2)).toEqual({
-      giveUp: false,
-      retries: MAX_RETRIES - 1,
+      retries: MAX_RETRIES,
       delaySeconds: BACKOFF_SECONDS[MAX_RETRIES - 1]!,
     });
-    expect(nextAttempt(MAX_RETRIES - 1)).toEqual({ giveUp: true });
+    expect(nextAttempt(MAX_RETRIES)).toEqual({ giveUp: true });
   });
 });

@@ -97,10 +97,16 @@ Since 2026-11-09 (review OPS-01/OPS-02):
   timer is stopped, the last run failed, or the newest dump is more than
   26 hours old. `--allow-stale-backup` overrides; `--rollback` skips it.
 - If any step between the extract and the restart fails (extract,
-  install, web build, migrate, units, bundle swap), the deploy puts the
-  release kept in step 2.5 back, with its own dependencies and units, and
-  restarts nothing. The disk then matches what runs again. Migrations
-  that already ran stay applied.
+  install, worker settings, web build, migrate, units, bundle swap), the
+  deploy puts the release kept in step 2.5 back, with its own dependencies
+  and units, and restarts nothing. The disk then matches what runs again.
+  Migrations that already ran stay applied.
+- Right after the install (review COREAPI-27, 2026-11-12), the new
+  release's worker reads the server's `.env` with its own rules
+  (`apps/worker/src/config.ts`). The worker refuses to start on a setting
+  it cannot read, so such a setting stops the deploy there, before the
+  migrations; the step prints the names of the wrong settings, never
+  their values.
 - From the extract until a successful restart,
   `/home/ubuntu/compass-alpha/.deploy-incomplete` names the release. If it
   is still there (the undo failed too, or the api did not come up), the

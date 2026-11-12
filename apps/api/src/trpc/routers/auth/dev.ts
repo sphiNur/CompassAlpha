@@ -6,8 +6,8 @@
  * deploy smoke checks that production refuses them.
  */
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
 import { sql } from 'drizzle-orm';
+import { DevPersonaLoginInputSchema } from '@compass/contracts';
 import { inSystem, type DB } from '@compass/db';
 import { publicProcedure } from '../../trpc';
 import { accessTokenExpiry, signAccess } from '../../../infra/jwt';
@@ -43,10 +43,6 @@ type DevPersonaIdentityRow = {
   member_id: string;
   org_id: string;
 };
-
-const DevPersonaLoginInputSchema = z.object({
-  memberId: z.string().uuid(),
-});
 
 function assertDevLoginAvailable(ctx: RequestContext): void {
   const reason = devLoginUnavailableReason(ctx);

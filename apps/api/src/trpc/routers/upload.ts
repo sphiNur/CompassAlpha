@@ -18,8 +18,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
-import { PHOTO_KINDS } from '@compass/contracts';
+import { RequestPresignInputSchema, UPLOAD_MAX_BYTES } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { isS3Configured, presignPut, S3NotConfiguredError } from '../../services/s3';
 
@@ -29,17 +28,6 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'image/png',
   'image/webp',
 ]);
-
-const RequestPresignInputSchema = z.object({
-  kind: z.enum(PHOTO_KINDS),
-  contentType: z.string().min(1).max(64),
-  /** Caller's hint at file size in bytes. We cap at 8 MB. */
-  contentLength: z.number().int().min(1).max(8 * 1024 * 1024).optional(),
-  /** Optional original filename. Accepted for older clients and ignored:
-   *  AUTH-24 (2026-10-30) — the key's extension came from it, so a signed
-   *  image/png upload could land under "….html". */
-  filename: z.string().max(200).optional(),
-});
 
 export const uploadRouter = router({
   requestPresign: authedProcedure
@@ -88,7 +76,7 @@ export const uploadRouter = router({
    */
   config: authedProcedure.query(() => ({
     enabled: isS3Configured(),
-    maxBytes: 8 * 1024 * 1024,
+    maxBytes: UPLOAD_MAX_BYTES,
     allowedContentTypes: Array.from(ALLOWED_CONTENT_TYPES),
   })),
 });
