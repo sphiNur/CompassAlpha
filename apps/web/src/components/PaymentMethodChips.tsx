@@ -1,4 +1,5 @@
 import { Segmented } from '@compass/ui';
+import type { PaymentMethod } from '@compass/contracts';
 import { useI18n } from '../hooks/useI18n';
 
 /**
@@ -19,8 +20,8 @@ import { useI18n } from '../hooks/useI18n';
  * the same thing).
  */
 export interface PaymentMethodChipsProps {
-  value: 'cash' | 'transfer';
-  onChange: (method: 'cash' | 'transfer') => void;
+  value: PaymentMethod;
+  onChange: (method: PaymentMethod) => void;
   className?: string;
 }
 

@@ -26,10 +26,10 @@
  */
 import { toCents } from '@compass/contracts/money';
 import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
+import type { PaymentMethod } from '@compass/contracts';
 import type { PurchaseDraft } from '../sheets/RunSheets';
 import { editPricingFromSplits } from './purchaseOverrides';
-
-export type PaymentMethod = 'cash' | 'transfer';
+import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 
 type BaseSplit = { storeId: string; qty: string; unitPrice: string; paymentMethod: PaymentMethod };
 
@@ -158,9 +158,6 @@ export type TopUpBase = {
   base: BaseSplit[];
 };
 
-const asMethod = (m: string | null | undefined): PaymentMethod =>
-  m === 'transfer' ? 'transfer' : 'cash';
-
 /**
  * The row as bought before the top-up, for topUpRevision: its price and
  * method, and each store's earlier quantity with its effective price and
@@ -187,7 +184,7 @@ export function topUpBaseOf(
           storeId: sp.storeId,
           qty: sp.qty,
           unitPrice: sp.unitPrice ?? baseItemPrice,
-          paymentMethod: asMethod(sp.paymentMethod ?? item.paymentMethod),
+          paymentMethod: paymentMethodOrCash(sp.paymentMethod ?? item.paymentMethod),
         })),
       }
     : undefined;

@@ -6,6 +6,7 @@
  * Moved verbatim out of RunPage.tsx so runs/views can import it without
  * reaching back into the god-file.
  */
+import type { PaymentMethod } from '@compass/contracts';
 import type { ProductNameParts } from '../../lib/productName';
 
 /**
@@ -167,7 +168,7 @@ export interface ActiveRun {
       storeId: string;
       qty: string;
       unitPrice?: string;
-      paymentMethod?: 'cash' | 'transfer';
+      paymentMethod?: PaymentMethod;
     }>;
     paymentMethod: string;
     receiptPhotoUrl: string | null;
@@ -204,4 +205,37 @@ export function otherStoreSkusOf(run: Pick<ActiveRun, 'otherStoreSkuIds'>): Read
     otherCache.set(ids, set);
   }
   return set;
+}
+
+/** A row of run.history: one finished or cancelled run and its totals. */
+export interface RunListRow {
+  id: string;
+  runDate: string;
+  runIndex: number;
+  status: string;
+  actualTotal: string | null;
+  /** M1.14: cash + transfer breakdown of actualTotal. Both NULL on
+   *  legacy finished runs that pre-date the field; FE falls back to
+   *  showing only the lump-sum total in that case. */
+  actualCashTotal?: string | null;
+  actualTransferTotal?: string | null;
+  /**
+   * 2026-10-21 CA-11: run.history's actualTotal is items + expenses; these
+   * are its two parts (one money definition everywhere — items / expenses
+   * / total). Optional so other row shapes still fit.
+   */
+  itemsTotal?: string | null;
+  expensesTotal?: string | null;
+  finishedAt: Date | string | null;
+  storeTotals?: RunListStoreTotal[];
+}
+
+export interface RunListStoreTotal {
+  storeId: string;
+  total: string;
+  itemsTotal?: string;
+  expensesTotal?: string;
+  cash: string;
+  transfer: string;
+  itemCount: number;
 }

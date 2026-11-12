@@ -37,7 +37,7 @@
  *   (< 5000 rows × ~200 bytes = 1 MB). When that bites, paginate.
  */
 import { sql } from 'drizzle-orm';
-import { PurchaseLinesInputSchema, dateRangeInOrder } from '@compass/contracts';
+import { PurchaseLinesInputSchema, dateRangeInOrder, type PaymentMethod } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { FINANCE_KEYS, financeStoreIds } from '../../services/storeScope';
@@ -178,7 +178,7 @@ export const reportRouter = router({
           /** Expense lines only. */
           expenseId: r.expense_id,
           label: r.label,
-          paymentMethod: r.payment_method as 'cash' | 'transfer',
+          paymentMethod: r.payment_method as PaymentMethod,
           supplierId: r.supplier_id,
           /** Effective price: the per-store override when one exists.
            *  Null without prices.view for this line's store (D6). */

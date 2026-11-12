@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { PaymentMethod } from '@compass/contracts';
 import { stepDraftChange } from '../../../../hooks/useDraftChanged';
 import {
   addItemDraftEdits,
@@ -153,7 +154,7 @@ describe('purchaseDraftEdits: what counts as an edit (RUNWEB2-07)', () => {
         ['store-a', '12000'],
         ['store-b', '12000'],
       ]),
-      splitPaymentMethods: new Map<string, 'cash' | 'transfer'>([
+      splitPaymentMethods: new Map<string, PaymentMethod>([
         ['store-a', 'cash'],
         ['store-b', 'cash'],
       ]),
@@ -171,7 +172,7 @@ describe('purchaseDraftEdits: what counts as an edit (RUNWEB2-07)', () => {
     expect(
       changed({
         ...perStore,
-        splitPaymentMethods: new Map<string, 'cash' | 'transfer'>([
+        splitPaymentMethods: new Map<string, PaymentMethod>([
           ['store-a', 'cash'],
           ['store-b', 'transfer'],
         ]),

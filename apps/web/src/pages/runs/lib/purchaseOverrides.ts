@@ -20,9 +20,9 @@
  *
  * Pure; tests in __tests__/purchaseOverrides.test.ts.
  */
+import type { PaymentMethod } from '@compass/contracts';
 import type { MutationInput } from '../../../lib/trpcPaths';
-
-export type PaymentMethod = 'cash' | 'transfer';
+import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 
 type SplitIn = {
   storeId: string;
@@ -33,9 +33,6 @@ type SplitIn = {
 
 const samePrice = (a: string | null | undefined, b: string | null | undefined) =>
   Number(a || 0) === Number(b || 0);
-
-const asMethod = (m: string | null | undefined): PaymentMethod =>
-  m === 'transfer' ? 'transfer' : 'cash';
 
 /**
  * Sheet state for editing a purchased line, from what money actually
@@ -55,7 +52,7 @@ export function editPricingFromSplits(
   const eff = live.map((sp) => ({
     storeId: sp.storeId,
     price: sp.unitPrice ?? item.unitPrice ?? '',
-    method: asMethod(sp.paymentMethod ?? item.paymentMethod),
+    method: paymentMethodOrCash(sp.paymentMethod ?? item.paymentMethod),
   }));
   const first = eff[0];
   const uniform =
@@ -63,7 +60,7 @@ export function editPricingFromSplits(
   if (uniform) {
     return {
       unitPrice: first?.price || item.unitPrice || '',
-      paymentMethod: first?.method ?? asMethod(item.paymentMethod),
+      paymentMethod: first?.method ?? paymentMethodOrCash(item.paymentMethod),
       splitPrices: new Map(),
       splitPaymentMethods: new Map(),
       perStorePricing: false,
@@ -71,7 +68,7 @@ export function editPricingFromSplits(
   }
   return {
     unitPrice: item.unitPrice ?? '',
-    paymentMethod: asMethod(item.paymentMethod),
+    paymentMethod: paymentMethodOrCash(item.paymentMethod),
     splitPrices: new Map(eff.map((e) => [e.storeId, e.price])),
     splitPaymentMethods: new Map(eff.map((e) => [e.storeId, e.method])),
     perStorePricing: true,
@@ -135,9 +132,12 @@ export function paidPerStore(
   item: { paymentMethod?: string | null },
   splits: readonly SplitIn[],
 ): boolean {
-  const itemMethod = asMethod(item.paymentMethod);
+  const itemMethod = paymentMethodOrCash(item.paymentMethod);
   return splits.some(
-    (sp) => Number(sp.qty) > 0 && sp.paymentMethod != null && asMethod(sp.paymentMethod) !== itemMethod,
+    (sp) =>
+      Number(sp.qty) > 0 &&
+      sp.paymentMethod != null &&
+      paymentMethodOrCash(sp.paymentMethod) !== itemMethod,
   );
 }
 

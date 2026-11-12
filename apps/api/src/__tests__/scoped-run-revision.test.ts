@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { sumQty } from '@compass/contracts/quantity';
+import type { PaymentMethod } from '@compass/contracts';
 import {
   hiddenSplits,
   mergeScopedRevision,
@@ -38,7 +39,7 @@ const visibleOnlyInput: ScopedRevisionInput & {
   skuId: string;
   reason: string;
   unitPrice: string;
-  paymentMethod: 'cash' | 'transfer';
+  paymentMethod: PaymentMethod;
 } = {
   runId: 'run-1',
   skuId: 'sku-1',

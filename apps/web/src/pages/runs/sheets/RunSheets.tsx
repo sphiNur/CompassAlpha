@@ -48,6 +48,7 @@ import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { lineAmountNumber } from '@compass/contracts/money';
+import type { PaymentMethod } from '@compass/contracts';
 import { useDraftChanged } from '../../../hooks/useDraftChanged';
 import {
   addItemDraftEdits,
@@ -64,11 +65,11 @@ import {
  *   - `mode: 'expense'` → AddRunExpense mutation (free-text label,
  *     multi-store auto-split, target porter/taxi/off-catalog buys).
  *
- * Both modes share the qty/price/split/payment/reason fields so the
- * sheet can switch modes without losing what the user has typed. The
- * mode-specific fields (skuId/supplierId vs expenseId/label/unitHint)
- * stay populated either way; the renderer + submit handler only
- * reads the ones relevant to the active mode.
+ * Both modes share the quantity, price, payment and reason fields, and
+ * switching modes keeps them. The switch clears the store split (each
+ * mode picks stores its own way) and the identity field of the mode it
+ * goes to (skuId or label). The renderer and the submit read only the
+ * active mode's fields.
  *
  * expenseId is pre-generated when the sheet opens so the FE owns the
  * id from the start — enables an instant local "saved!" indicator
@@ -98,9 +99,9 @@ export interface AddItemDraft {
   /** storeId → qty. Only stores in the run's existing scope are valid. */
   splits: Map<string, string>;
   splitPrices: Map<string, string>;
-  splitPaymentMethods: Map<string, 'cash' | 'transfer'>;
+  splitPaymentMethods: Map<string, PaymentMethod>;
   perStorePricing: boolean;
-  paymentMethod: 'cash' | 'transfer';
+  paymentMethod: PaymentMethod;
   receiptPhotoUrl: string | null;
   reason: string;
 }
@@ -116,7 +117,7 @@ export interface PurchaseDraft {
   supplierId: string | null;
   splits: Map<string, string>; // storeId -> qty
   splitPrices: Map<string, string>;
-  splitPaymentMethods: Map<string, 'cash' | 'transfer'>;
+  splitPaymentMethods: Map<string, PaymentMethod>;
   perStorePricing: boolean;
   receiptPhotoUrl: string | null;
   reason: string;
@@ -125,17 +126,17 @@ export interface PurchaseDraft {
   qtyLocked?: boolean;
   /** M1.14: cash | transfer. Defaults to 'cash' for new purchases (the
    *  common case at the market). Edit pre-fills from the existing item. */
-  paymentMethod: 'cash' | 'transfer';
+  paymentMethod: PaymentMethod;
   /** DX-BUY-2 (2026-11-01): set when the sheet buys the extra a newly
    *  attached order asks for. The row as bought before; the price and
    *  method in the sheet are this batch's only (lib/topUp.ts). */
   topUp?: {
-    item: { unitPrice: string; paymentMethod: 'cash' | 'transfer' };
+    item: { unitPrice: string; paymentMethod: PaymentMethod };
     base: Array<{
       storeId: string;
       qty: string;
       unitPrice: string;
-      paymentMethod: 'cash' | 'transfer';
+      paymentMethod: PaymentMethod;
     }>;
   };
 }
@@ -629,8 +630,8 @@ export function AddItemSheet({
   }>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  /** M3.44: PhotoUploader for receipt capture. SKU mode doesn't use it
-   *  today; expense mode requires it when total > 200,000 UZS. */
+  /** M3.44: uploads the receipt photo, offered for an expense or a product
+   *  recorded as its own cost. Always optional (see 2026-07-06 below). */
   photoUploader: import('@compass/ui').PhotoUploader | undefined;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
@@ -751,9 +752,9 @@ export function AddItemSheet({
     !submitting
   );
 
-  // M3.44: helper — auto-split actualQty evenly across selected stores,
-  // rounded to integers, remainder to the last store. Matches the
-  // domain TOLERANCE check. E.g. 70k / 3 = 23k, 23k, 24k.
+  // M3.44: helper — split actualQty evenly across the selected stores to
+  // three decimals, the last store taking the remainder, so the parts add
+  // up exactly (evenSplitQty). E.g. 1 / 3 = 0.333, 0.333, 0.334.
   //
   // M3.51 (2026-05-23): when qty hasn't been entered yet, STILL register
   // every selected store in the map (with empty values). Without this,
@@ -1215,8 +1216,8 @@ export function AddItemSheet({
                       const qty = e.target.value;
                       // M3.44: in expense mode multi-store, re-divide
                       // the new qty across the SAME stores via
-                      // evenSplit (integer rounding, last absorbs
-                      // remainder). SKU mode is single-store, so the
+                      // evenSplit (three decimals, the last store takes
+                      // the remainder). SKU mode is single-store, so the
                       // lone store gets the full qty.
                       const storeIds = [...draft.splits.keys()];
                       const next =
@@ -1302,8 +1303,9 @@ export function AddItemSheet({
                 />
               </Field>
 
-              {/* Receipt photo — expense mode only, always optional
-                  (2026-07-06: dropped the >200k mandatory gate). */}
+              {/* Receipt photo — for an expense, or a product recorded as
+                  its own cost; always optional (2026-07-06: dropped the
+                  >200k mandatory gate). */}
               {draft.mode === 'expense' || skuRecordsAsExpense ? (
                 <PhotoCapture
                   label={i18n.t('run.action.receiptPhoto')}

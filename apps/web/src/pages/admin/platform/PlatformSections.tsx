@@ -20,7 +20,7 @@ import { useErrToast } from '../../../hooks/useErrToast';
 import { planName } from '../../../lib/planName';
 import { subscriptionStatusLabel } from '../../../lib/statusLabels/subscription';
 import { useI18n } from '../../../hooks/useI18n';
-import { localDateValue } from '../operations/financeDates';
+import { localDateValue } from '../../../lib/calendarDate';
 
 /**
  * A workspace as the platform list returns it. Review ADM1-29 (2026-11-12):

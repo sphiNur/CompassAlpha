@@ -47,6 +47,8 @@ import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { rowName } from '../../../lib/productName';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 import { isPositiveQty } from '@compass/contracts/limits';
+import type { PaymentMethod } from '@compass/contracts';
+import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -301,9 +303,9 @@ export function PerVendorView({
       storeId: string;
       qty: string;
       unitPrice?: string;
-      paymentMethod?: 'cash' | 'transfer';
+      paymentMethod?: PaymentMethod;
     }>;
-    paymentMethod: 'cash' | 'transfer';
+    paymentMethod: PaymentMethod;
   }) => void;
   onMarkNa: (skuId: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
@@ -331,10 +333,7 @@ export function PerVendorView({
       sessionSeq?: number;
     },
   ) => void;
-  onSetPaymentMethod: (
-    item: ActiveRun['items'][number],
-    next: 'cash' | 'transfer',
-  ) => void;
+  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
@@ -986,19 +985,16 @@ export function PerCategoryView({
       storeId: string;
       qty: string;
       unitPrice?: string;
-      paymentMethod?: 'cash' | 'transfer';
+      paymentMethod?: PaymentMethod;
     }>;
-    paymentMethod: 'cash' | 'transfer';
+    paymentMethod: PaymentMethod;
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
   onUnmark?: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
-  onSetPaymentMethod: (
-    item: ActiveRun['items'][number],
-    next: 'cash' | 'transfer',
-  ) => void;
+  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
   const productNameParts = useProductNameParts();
@@ -1369,9 +1365,9 @@ export const PurchaseRow = memo(function PurchaseRow({
       storeId: string;
       qty: string;
       unitPrice?: string;
-      paymentMethod?: 'cash' | 'transfer';
+      paymentMethod?: PaymentMethod;
     }>;
-    paymentMethod: 'cash' | 'transfer';
+    paymentMethod: PaymentMethod;
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
@@ -1394,10 +1390,7 @@ export const PurchaseRow = memo(function PurchaseRow({
    * `unitPrice: split.unitPrice ?? null`, silently erasing per-store
    * price overrides. The caller routes this through `revisePurchase`.
    */
-  onSetPaymentMethod: (
-    item: ActiveRun['items'][number],
-    next: 'cash' | 'transfer',
-  ) => void;
+  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusy: boolean;
 }) {
   // Labels and tooltips name the product once, in the interface's language.
@@ -1428,8 +1421,8 @@ export const PurchaseRow = memo(function PurchaseRow({
   // M1.14: per-item payment method. Default cash (the common case at
   // the market). User taps the chip to flip cash ↔ transfer before
   // pressing ✓. Edit-existing uses the persisted value.
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>(
-    (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    paymentMethodOrCash(item.paymentMethod),
   );
   // M1.21: pull the org-wide currency from session so the inline
   // suffix shows RUB / KZT / USD for non-UZS tenants. Hardcoded "UZS"

@@ -4,6 +4,7 @@
  * view with its own copy of the same loop.
  */
 import { addMoney } from '@compass/contracts/money';
+import type { PaymentMethod } from '@compass/contracts';
 
 export type FinanceView = 'daily' | 'bySupplier' | 'byStore';
 
@@ -13,7 +14,7 @@ export interface FinanceLineLike {
   storeId: string;
   supplierId: string | null;
   kind: 'item' | 'expense';
-  paymentMethod: 'cash' | 'transfer';
+  paymentMethod: PaymentMethod;
   /** Null without prices.view for the line's store (D6). */
   lineTotal: string | null;
 }

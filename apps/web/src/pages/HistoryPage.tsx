@@ -15,16 +15,17 @@ import {
   Select,
   Sheet,
 } from '@compass/ui';
+import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../lib/trpc';
 import { useI18n, useProductNameParts } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
-// 2026-10-21 audit CA-23: shared with the Finance presets (one local-
-// calendar date helper instead of two copies).
 import { useAuthStore } from '../stores/authStore';
 import { useReportStore } from '../hooks/useReportStore';
+// 2026-10-21 audit CA-23: shared with the Finance presets (one local-
+// calendar date helper instead of two copies).
 import { localDateValue } from '../lib/calendarDate';
 
-type PaymentFilter = 'all' | 'cash' | 'transfer' | 'mixed';
+type PaymentFilter = 'all' | PaymentMethod | 'mixed';
 type SortOrder = 'newest' | 'oldest';
 
 interface HistoryFilters {

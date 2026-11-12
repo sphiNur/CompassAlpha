@@ -17,8 +17,9 @@
  *
  * Pure; tests in __tests__/purchaseForm.test.ts.
  */
+import type { PaymentMethod } from '@compass/contracts';
 import { isStorablePrice } from './priceMath';
-import { splitOverridesFor, type PaymentMethod } from './purchaseOverrides';
+import { splitOverridesFor } from './purchaseOverrides';
 
 /** How far the store quantities' sum may be from the quantity bought, as the server allows. */
 export const SPLIT_SUM_TOLERANCE = 1e-6;

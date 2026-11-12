@@ -14,7 +14,7 @@
  * on screen.
  */
 import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
-import { estimateOrder, type OrderEstimate } from '@compass/contracts';
+import { estimateOrder, type OrderEstimate, type PaymentMethod } from '@compass/contracts';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 
@@ -168,8 +168,6 @@ export async function loadSkuPriceStats(
   }
   return out;
 }
-
-export type PaymentMethod = 'cash' | 'transfer';
 
 /** How each product was paid for the last time it was bought. */
 export interface SkuUsualPayment {

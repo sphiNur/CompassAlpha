@@ -16,6 +16,7 @@ import {
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
+import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney, formatQty } from '../../../lib/format';
@@ -30,6 +31,7 @@ import {
 } from './CatalogParts';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { moneyLine } from '../../../lib/money';
+import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 
 // ============ Expense Templates (M3.57) ============
 //
@@ -50,7 +52,7 @@ interface ExpenseTemplateDraft {
   /** Null when the saved price is hidden from this reader (no prices.view):
    *  it is not sent, so it stays as saved. */
   defaultUnitPrice: string | null;
-  defaultPaymentMethod: 'cash' | 'transfer';
+  defaultPaymentMethod: PaymentMethod;
   sortIndex: number;
   isArchived: boolean;
 }
@@ -176,8 +178,7 @@ export function ExpenseTemplatesSection() {
                           unitHint: tpl.unitHint ?? '',
                           defaultQty: tpl.defaultQty,
                           defaultUnitPrice: tpl.defaultUnitPrice,
-                          defaultPaymentMethod:
-                            tpl.defaultPaymentMethod === 'transfer' ? 'transfer' : 'cash',
+                          defaultPaymentMethod: paymentMethodOrCash(tpl.defaultPaymentMethod),
                           sortIndex: tpl.sortIndex,
                           isArchived: tpl.isArchived,
                         })

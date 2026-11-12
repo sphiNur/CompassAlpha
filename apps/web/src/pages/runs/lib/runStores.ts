@@ -8,6 +8,7 @@
  * offering them in the first place.
  */
 import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
+import type { PaymentMethod } from '@compass/contracts';
 
 interface RunStoreSource {
   sessions?: ReadonlyArray<{ storeId: string }> | null;
@@ -61,7 +62,6 @@ export function mergeSplitsIntoExistingItem(input: {
   return { splits, totalQty: milliQty(total) };
 }
 
-type PaymentMethod = 'cash' | 'transfer';
 type RevisionSplit = {
   storeId: string;
   qty: string;

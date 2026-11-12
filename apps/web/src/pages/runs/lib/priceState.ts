@@ -33,7 +33,7 @@
  * that mixes changed and unchanged prices.
  */
 
-/** Reference prices go stale; a fortnight-old market price is a guess. */
+/** Reference prices go stale; a week-old market price is a guess. */
 export const STALE_PRICE_DAYS = 7;
 
 /**

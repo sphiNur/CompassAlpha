@@ -8,7 +8,8 @@
  * mutating process.env.TZ (unreliable once Date has been used in-process).
  */
 import { describe, expect, test } from 'bun:test';
-import { financePresetRange, localDateValue, maintenanceToday } from '../financeDates';
+import { localDateValue } from '../../../../lib/calendarDate';
+import { financePresetRange, maintenanceToday } from '../financeDates';
 
 /** The module under test, for the child processes below. */
 const MODULE = new URL('../financeDates.ts', import.meta.url).pathname;
