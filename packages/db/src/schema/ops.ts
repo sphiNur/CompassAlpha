@@ -40,6 +40,8 @@ export const notifications = opsSchema.table(
   },
   (t) => ({
     recipientIdx: index('notif_recipient_idx').on(t.recipientUserId, t.createdAt),
+    // The hourly retention deletes by age (0071).
+    createdIdx: index('notif_created_idx').on(t.createdAt),
     dedupUnique: uniqueIndex('notif_dedup_unique').on(t.dedupKey).where(sql`dedup_key IS NOT NULL`),
   }),
 );

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -36,6 +37,10 @@ export const outbox = syncSchema.table(
   (t) => ({
     pendingIdx: index('outbox_pending_idx').on(t.nextAttemptAt),
     eventIdx: index('outbox_event_idx').on(t.eventId),
+    // The worker takes the oldest unsent row; health counts them (0071).
+    unsentIdx: index('outbox_unsent_idx')
+      .on(t.createdAt)
+      .where(sql`sent_at IS NULL`),
   }),
 );
 
