@@ -23,6 +23,38 @@ import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 import { RoleAssigneesByStore } from './RoleAssigneesByStore';
 
+/** What the edit form holds of a role, to notice a save from elsewhere. */
+interface RoleFields {
+  name: string;
+  description: string;
+  rank: number;
+  permissions: string[];
+}
+
+function fieldsOf(role: {
+  name: string;
+  description: string | null;
+  rank: number;
+  permissions: readonly string[];
+}): RoleFields {
+  return {
+    name: role.name,
+    description: role.description ?? '',
+    rank: role.rank,
+    permissions: [...role.permissions].sort(),
+  };
+}
+
+function sameFields(a: RoleFields, b: RoleFields): boolean {
+  return (
+    a.name === b.name &&
+    a.description === b.description &&
+    a.rank === b.rank &&
+    a.permissions.length === b.permissions.length &&
+    a.permissions.every((key, i) => key === b.permissions[i])
+  );
+}
+
 /** Sheet showing the explicit permission keys for one role. Read-only
  *  for now; the canEdit prop reserves space for the editable matrix. */
 export function RolePermissionsSheet({
@@ -57,16 +89,31 @@ export function RolePermissionsSheet({
   const [description, setDescription] = useState('');
   const [rankText, setRankText] = useState('');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  // The saved role the form started from.
+  const [base, setBase] = useState<RoleFields | null>(null);
 
-  // Hydrate local state when role data lands or sheet re-opens.
+  // Review ADM1-21 (2026-11-12): the form is filled from the role when
+  // editing starts, and again only when the editor asks for the latest.
+  // It was refilled, and edit mode left, whenever the role's data changed:
+  // a grant or revoke of the role anywhere in the workspace refetches it
+  // (people.changed), and what was being typed was silently put back.
+  const startEditing = () => {
+    const role = detail.data;
+    if (!role) return;
+    setName(role.name);
+    setDescription(role.description ?? '');
+    setRankText(String(role.rank));
+    setPicked(new Set(role.permissions));
+    setBase(fieldsOf(role));
+    setEditing(true);
+  };
+  // Closed, or another role: back to the read view.
   useEffect(() => {
-    if (!detail.data) return;
-    setName(detail.data.name);
-    setDescription(detail.data.description ?? '');
-    setRankText(String(detail.data.rank));
-    setPicked(new Set(detail.data.permissions));
     setEditing(false);
-  }, [detail.data, open]);
+  }, [open, roleSlug]);
+  // Someone else saved this role while it was being edited here.
+  const changedElsewhere =
+    editing && !!base && !!detail.data && !sameFields(base, fieldsOf(detail.data));
 
   // Below-rank gate — only roles strictly below actor's rank are editable.
   const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
@@ -81,12 +128,12 @@ export function RolePermissionsSheet({
   // DX-ADM-28: the edit form asks before its changes are thrown away.
   const editChanged =
     editing &&
-    !!detail.data &&
-    (name !== detail.data.name ||
-      description !== (detail.data.description ?? '') ||
-      rankText !== String(detail.data.rank) ||
-      picked.size !== detail.data.permissions.length ||
-      detail.data.permissions.some((k) => !picked.has(k)));
+    !!base &&
+    (name !== base.name ||
+      description !== base.description ||
+      rankText !== String(base.rank) ||
+      picked.size !== base.permissions.length ||
+      base.permissions.some((k) => !picked.has(k)));
 
   const update = trpc.admin.roleUpdate.useMutation({
     onSuccess: () => {
@@ -169,7 +216,7 @@ export function RolePermissionsSheet({
           </div>
         ) : isEditable && detail.data ? (
           <div className="flex flex-col gap-2">
-            <Button block onClick={() => setEditing(true)}>
+            <Button block onClick={startEditing}>
               {i18n.t('common.edit')}
             </Button>
             {!isBuiltIn ? (
@@ -211,6 +258,19 @@ export function RolePermissionsSheet({
         <div className="flex flex-col gap-3 py-3">
           {editing ? (
             <>
+              {changedElsewhere ? (
+                <Banner
+                  tone="warn"
+                  title={i18n.t('people.roleChangedElsewhere')}
+                  action={
+                    <Button size="sm" variant="pearl" onClick={startEditing}>
+                      {i18n.t('people.roleLoadLatest')}
+                    </Button>
+                  }
+                >
+                  {i18n.t('people.roleChangedElsewhereBody')}
+                </Banner>
+              ) : null}
               <Field label={i18n.t('admin.field.name')} required>
                 <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
               </Field>

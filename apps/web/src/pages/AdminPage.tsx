@@ -639,12 +639,16 @@ function WorkspaceSection() {
   const taxToSend = taxRateToSend(draftTax);
   const taxProblem = taxRateProblem(taxToSend);
   const taxError = draftTax.trim() === '' ? null : taxProblem;
-  useEffect(() => {
-    if (!financeSheetOpen) return;
+  // Review ADM1-21 (2026-11-12): the draft starts from the saved settings
+  // when the sheet opens, and only then. It was reset whenever the session
+  // changed while the sheet was open, and the session refreshes on every
+  // people change in the workspace, dropping what was being typed.
+  const openFinanceSheet = () => {
     setDraftCurrency(currency);
     setDraftTax(taxRatePct);
     setDraftInclTax(pricesIncludeTax);
-  }, [financeSheetOpen, currency, taxRatePct, pricesIncludeTax]);
+    setFinanceSheetOpen(true);
+  };
 
   const orgFinanceUpdate = trpc.admin.orgFinanceUpdate.useMutation({
     onSuccess: (_data, vars) => {
@@ -731,7 +735,7 @@ function WorkspaceSection() {
                 ? i18n.t('admin.workspace.financeRowHint', { currency, tax: taxShown })
                 : currency
             }
-            onClick={() => setFinanceSheetOpen(true)}
+            onClick={openFinanceSheet}
           />
         ) : null}
       </div>

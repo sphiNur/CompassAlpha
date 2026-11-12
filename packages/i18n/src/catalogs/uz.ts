@@ -219,6 +219,10 @@ export const uz = {
     'Telegram ID 4–15 ta raqamdan iborat, telefon raqami yoki @foydalanuvchi_nomi emas.',
   'people.deleteRole': 'Rolni oʻchirish',
   'people.confirmDeleteRole': '«{name}» roli oʻchirilsinmi?',
+  'people.roleChangedElsewhere': 'Bu rolni hozirgina boshqa kishi oʻzgartirdi',
+  'people.roleChangedElsewhereBody':
+    'Hozir saqlasangiz, ularning oʻzgarishlari siznikiga almashtiriladi.',
+  'people.roleLoadLatest': 'Yangilash',
   'people.noRole': 'Rol yoʻq',
   'people.orgLevelLabel': 'Ish maydoni darajasi',
   'people.storeGone': '— doʻkon yoʻq —',
