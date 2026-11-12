@@ -6,6 +6,7 @@ import { TRPCError } from '@trpc/server';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { schema as s } from '@compass/db';
 import {
+  RunStoreProgressInputSchema,
   SimpleRunCommandSchema,
   centsToMoney,
   lineAmount,
@@ -724,6 +725,75 @@ export const readProcedures = {
         ]);
         const priceStores = await priceStoreIds(tx, ctx.session!);
         return pricesVisibleFor(priceStores, shownStoreIds) ? payload : withoutPrices(payload);
+      });
+    }),
+
+  /**
+   * Review ORD-26 (2026-11): how far one store's part of a run has got,
+   * for the order page's banner on an order in a run (InRunBanner). It
+   * read the whole of run.get (items, demand, prices, suppliers, events)
+   * for this. The checks are run.get's: a reader limited to some stores
+   * sees a run only when it serves one of them, and of a store outside
+   * that scope sees nothing (run.get leaves its splits and recall out).
+   * The shape is the part of run.get the banner reads, for that store.
+   */
+  storeProgress: runReadProcedure
+    .input(RunStoreProgressInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+        const allowedStoreIds = await resolveRunReadStoreScope(tx, ctx);
+        if (allowedStoreIds !== null) {
+          const involvedStoreIds = await runInvolvedStoreIds(tx, run);
+          if (!involvedStoreIds.some((storeId) => allowedStoreIds.includes(storeId))) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+          }
+        }
+        const progress = {
+          status: run.status,
+          splits: [] as Array<{
+            storeId: string;
+            deliveredAt: string | null;
+            confirmedAt: string | null;
+          }>,
+          recalledStoreIds: [] as string[],
+        };
+        if (allowedStoreIds !== null && !allowedStoreIds.includes(input.storeId)) {
+          return progress;
+        }
+        const splits = await tx
+          .select({
+            deliveredAt: s.runItemStoresV.deliveredAt,
+            confirmedAt: s.runItemStoresV.confirmedAt,
+          })
+          .from(s.runItemStoresV)
+          .where(
+            and(eq(s.runItemStoresV.runId, run.id), eq(s.runItemStoresV.storeId, input.storeId)),
+          );
+        progress.splits = splits.map((split) => ({
+          storeId: input.storeId,
+          deliveredAt: split.deliveredAt?.toISOString() ?? null,
+          confirmedAt: split.confirmedAt?.toISOString() ?? null,
+        }));
+        // DX-DLV-13: recalled when the store's last delivery event undid
+        // its delivery, as run.get works it out from the whole stream.
+        const [lastDelivery] = await tx
+          .select({ type: s.events.type })
+          .from(s.events)
+          .where(
+            and(
+              eq(s.events.streamType, 'run'),
+              eq(s.events.streamId, run.id),
+              inArray(s.events.type, ['StoreDelivered', 'StoreDeliveryUndone']),
+              sql`${s.events.payload}->>'storeId' = ${input.storeId}`,
+            ),
+          )
+          .orderBy(desc(s.events.seq))
+          .limit(1);
+        if (lastDelivery?.type === 'StoreDeliveryUndone') {
+          progress.recalledStoreIds = [input.storeId];
+        }
+        return progress;
       });
     }),
 };
