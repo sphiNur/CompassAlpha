@@ -55,19 +55,21 @@ function sameFields(a: RoleFields, b: RoleFields): boolean {
   );
 }
 
-/** Sheet showing the explicit permission keys for one role. Read-only
- *  for now; the canEdit prop reserves space for the editable matrix. */
+/**
+ * One role: its permissions and who holds it. Roles below the viewer's
+ * rank can be edited (and custom ones deleted) here; the Roles &
+ * permissions screen is for org admins only (AdminPage), who may do so
+ * (2026-10-21 audit CA-16).
+ */
 export function RolePermissionsSheet({
   open,
   roleSlug,
   onClose,
-  canEdit,
   myMaxRank,
 }: {
   open: boolean;
   roleSlug: string | null;
   onClose: () => void;
-  canEdit: boolean;
   myMaxRank: number;
 }) {
   const utils = trpc.useUtils();
@@ -79,9 +81,7 @@ export function RolePermissionsSheet({
     { roleSlug: roleSlug ?? '' },
     { enabled: !!roleSlug },
   );
-  const permsQuery = trpc.admin.permissionList.useQuery(undefined, {
-    enabled: open && canEdit,
-  });
+  const permsQuery = trpc.admin.permissionList.useQuery(undefined, { enabled: open });
 
   // Edit-mode: false (read view) by default. Toggle on Edit click.
   const [editing, setEditing] = useState(false);
@@ -116,7 +116,7 @@ export function RolePermissionsSheet({
     editing && !!base && !!detail.data && !sameFields(base, fieldsOf(detail.data));
 
   // Below-rank gate — only roles strictly below actor's rank are editable.
-  const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
+  const isEditable = (detail.data?.rank ?? 100) < myMaxRank;
   const isBuiltIn = detail.data?.isBuiltIn ?? false;
   // ADM1-20: every binding counts, suspended holders and lapsed grants
   // too, as the server counts them (older servers: the listed holders).

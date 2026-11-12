@@ -31,14 +31,6 @@ export const ADMIN_RANK = 80;
 export const SUPER_ADMIN_RANK = 100;
 
 /**
- * Store-manager threshold. Roles at or above this rank may record and
- * correct operating-expense details for the concrete store where the role is
- * effective. Keep this separate from ADMIN_RANK: a manager is store-tier,
- * not organization-tier.
- */
-export const MANAGER_RANK = 60;
-
-/**
  * Keys that mean authority over the whole organisation. Only a global role
  * binding or a global override yields them; the same key granted in one
  * store counts nowhere (storeScope.grantCounts in the API), and

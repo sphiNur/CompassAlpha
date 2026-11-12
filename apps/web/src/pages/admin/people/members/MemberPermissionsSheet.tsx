@@ -13,7 +13,6 @@ import {
 import { trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
-import { useAdminStoreIds } from '../../../../hooks/useAdminAuthority';
 import {
   canSetOverride,
   overrideEffects,
@@ -60,7 +59,6 @@ export function MemberPermissionsSheet({
   const toast = useToast();
   const utils = trpc.useUtils();
   const errToast = useErrToast();
-  const adminStoreIds = useAdminStoreIds();
   const open = !!target;
   const detail = trpc.admin.memberPermissionsList.useQuery(
     { memberId: target?.memberId ?? '' },
@@ -91,11 +89,6 @@ export function MemberPermissionsSheet({
         : { kind: 'store', storeId: firstStore.id, storeName: firstStore.name },
     );
   }, [target, actor]);
-
-  const editableStoreTabs = useMemo(
-    () => (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
-    [target, adminStoreIds],
-  );
 
   const set = trpc.admin.memberPermissionSet.useMutation({
     onSuccess: () => {
@@ -227,7 +220,7 @@ export function MemberPermissionsSheet({
               store tabs appear only when the member belongs to that
               store AND the actor administers it. The little dot on
               each tab counts overrides scoped to that tab. */}
-          {(editableStoreTabs.length > 0 || (target?.stores ?? []).length > 0) && (
+          {(target?.stores ?? []).length > 0 && (
             <div className="flex flex-wrap gap-1">
               <ScopeTab
                 active={scope.kind === 'global'}

@@ -167,7 +167,6 @@ export const zh = {
   'ops.maint.resetSheetBody': '先看清会删掉什么，再确认。',
   'ops.maint.confirmPurgeTitle': '确认清除',
   'people.readOnlyStore': '只能查看',
-  'people.orgLevelGroup': '整个工作区（{n}）',
   'people.orgLevelEmptyTitle': '没有工作区级成员',
   'people.orgLevelEmptyBody': '不属于任何具体门店的管理员和超级管理员会出现在这里。',
   'people.permsHowTitle': '权限是怎么运作的',

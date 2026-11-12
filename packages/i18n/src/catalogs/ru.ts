@@ -177,7 +177,6 @@ export const ru = {
   'ops.maint.resetSheetBody': 'Проверьте, что будет удалено, затем подтвердите.',
   'ops.maint.confirmPurgeTitle': 'Подтвердите удаление',
   'people.readOnlyStore': 'Только просмотр',
-  'people.orgLevelGroup': 'Всё рабочее пространство ({n})',
   'people.orgLevelEmptyTitle': 'Нет участников уровня рабочего пространства',
   'people.orgLevelEmptyBody':
     'Здесь появляются администраторы и суперадмины, не привязанные к конкретному магазину.',

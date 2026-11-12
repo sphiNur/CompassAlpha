@@ -88,13 +88,7 @@ import {
   DishesSection,
 } from './admin/catalog';
 // Review COREWEB1-11 (2026-11-11): the drill-down's one definition.
-import type {
-  AdminSection,
-  CatalogSub,
-  OperationsSub,
-  StoreFocus,
-  StoreSub,
-} from '../stores/navStore';
+import type { AdminSection, CatalogSub, OperationsSub, StoreFocus } from '../stores/navStore';
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
@@ -180,9 +174,10 @@ export function AdminPage() {
   // CloneRoles, MemberPermissions, embedded DebugPage, audit JSON)
   // aren't appropriate for them — server-side guards exist but we
   // shouldn't let them stumble into a "looks editable" UI that throws
-  // FORBIDDEN. The `isGlobalAdmin` checks live in each sub-component
-  // (PermissionsSection, ManageMemberSheet, StoreSettingsTab,
-  // PeopleSection) so they don't add a re-render dep here.
+  // FORBIDDEN. The org-admin checks live in each sub-component
+  // (ManageMemberSheet, StoreSettingsTab, PeopleSection; the Roles &
+  // permissions section is hidden from them below) so they don't add a
+  // re-render dep here.
 
   // Pull i18n once at the top of AdminPage so the section list, page
   // header and titleForSection helper all read the same strings (M1.6,
@@ -241,7 +236,7 @@ export function AdminPage() {
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
-        title={titleForSection(section, catalogSub, opsSub, storeFocus, storeSub, i18n)}
+        title={titleForSection(section, catalogSub, opsSub, storeFocus, i18n)}
         rootRef={drill.rootRef}
         onClickCapture={drill.onClickCapture}
         onBack={() => {
@@ -280,7 +275,7 @@ export function AdminPage() {
             }}
           />
         ) : null}
-        {section === 'permissions' ? <PermissionsSection isSuperAdmin={isSuperAdmin} /> : null}
+        {section === 'permissions' ? <PermissionsSection /> : null}
         {section === 'catalog' && !catalogSub ? (
           <CatalogHome onPick={(s) => setCatalogSub(s)} />
         ) : null}
@@ -390,7 +385,6 @@ function titleForSection(
   catalogSub: CatalogSub | null,
   opsSub: OperationsSub | null,
   storeFocus: StoreFocus,
-  _storeSub: StoreSub,
   i18n: ReturnType<typeof useI18n>,
 ): string {
   if (section === 'stores' && storeFocus !== null) {

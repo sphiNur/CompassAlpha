@@ -185,7 +185,6 @@ export const uz = {
   'ops.maint.resetSheetBody': 'Nima oʻchirilishini koʻrib chiqing, keyin tasdiqlang.',
   'ops.maint.confirmPurgeTitle': 'Tozalashni tasdiqlang',
   'people.readOnlyStore': 'Faqat koʻrish',
-  'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Ish maydoni darajasidagi aʼzolar yoʻq',
   'people.orgLevelEmptyBody':
     'Aniq doʻkonga biriktirilmagan administrator va superadminlar shu yerda chiqadi.',

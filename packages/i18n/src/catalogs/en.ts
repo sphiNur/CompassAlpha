@@ -206,7 +206,6 @@ export const en = {
   // bad word order in zh/ru/uz — those became whole sentences without
   // emphasis. A correctly-ordered sentence beats a bolded mistranslation.
   'people.readOnlyStore': 'View only',
-  'people.orgLevelGroup': 'Whole workspace ({n})',
   'people.orgLevelEmptyTitle': 'No workspace-level members',
   'people.orgLevelEmptyBody':
     "Admins and super admins who don't belong to any specific store appear here.",

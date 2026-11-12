@@ -62,11 +62,7 @@ import { logger } from '../infra/log';
  * Returns null when none of those resolve to a UUID — global ops like
  * `admin.role.create` legitimately have no store scope.
  */
-export function deriveScopeStoreId(
-  _action: string,
-  resourceType: string,
-  inputs: unknown,
-): string | null {
+export function deriveScopeStoreId(resourceType: string, inputs: unknown): string | null {
   // resourceType='store' implies the action targets a store directly.
   if (resourceType === 'store') {
     const o = inputs as Record<string, unknown> | null;
@@ -184,7 +180,7 @@ export async function auditAdmin(
     // "best effort" — the admin action itself then failed. A nested
     // transaction rolls back only this insert.
     await tx.transaction(async (sp) => {
-      const scopeStoreId = deriveScopeStoreId(action, resourceType, inputs);
+      const scopeStoreId = deriveScopeStoreId(resourceType, inputs);
       // R2-ADM-3 (2026-10-31): the list resolves names when it is read,
       // so a role deleted or a member removed since showed as "(unknown)".
       // Keep the names as they are now; the list falls back to them.

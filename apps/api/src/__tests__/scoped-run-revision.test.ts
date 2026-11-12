@@ -141,7 +141,7 @@ describe('hiddenSplits', () => {
 describe('deriveScopeStoreId — member transfers', () => {
   test('a transfer is scoped to its destination store', () => {
     expect(
-      deriveScopeStoreId('admin.memberTransferStore', 'member', {
+      deriveScopeStoreId('member', {
         memberId: 'm-1',
         fromStoreId: A,
         toStoreId: B,
@@ -151,8 +151,8 @@ describe('deriveScopeStoreId — member transfers', () => {
   });
 
   test('existing keys keep their priority', () => {
-    expect(deriveScopeStoreId('x', 'member', { storeId: A, toStoreId: B })).toBe(A);
-    expect(deriveScopeStoreId('x', 'member', { targetStoreId: C })).toBe(C);
-    expect(deriveScopeStoreId('x', 'role', { name: 'r' })).toBeNull();
+    expect(deriveScopeStoreId('member', { storeId: A, toStoreId: B })).toBe(A);
+    expect(deriveScopeStoreId('member', { targetStoreId: C })).toBe(C);
+    expect(deriveScopeStoreId('role', { name: 'r' })).toBeNull();
   });
 });
