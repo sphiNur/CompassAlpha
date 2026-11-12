@@ -8,6 +8,7 @@
 import type { SettlementWageItem } from '@compass/contracts';
 import { addMoney, centsToMoney, toCents } from '@compass/contracts/money';
 import { SETTLEMENT_MAX_CENTS, settlementMoneyProblem } from '@compass/contracts/limits';
+import { newClientId } from '../../lib/clientId';
 
 export type MoneyField =
   | 'onlineRevenue'
@@ -110,12 +111,6 @@ export function emptyDraft(): SettlementDraft {
   };
 }
 
-export function newDetailId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 /** Keep database decimal strings safe for a number input without rounding. */
 export function toMoneyInput(value: string | null | undefined): string {
   const raw = String(value ?? '0').trim();
@@ -136,14 +131,14 @@ export function draftFromRecord(record: SettlementRecord): SettlementDraft {
     note: record.note ?? '',
     correctionReason: '',
     operatingExpenseItems: (record.operatingExpenseItems ?? []).map((item) => ({
-      id: newDetailId(),
+      id: newClientId(),
       persistedId: item.id,
       amount: toMoneyInput(item.amount),
       reason: item.reason,
       isHistorical: item.isHistorical,
     })),
     wageItems: (record.wageItems ?? []).map((item) => ({
-      id: newDetailId(),
+      id: newClientId(),
       persistedId: item.id,
       memberId: item.memberId,
       personName: item.personName,
@@ -298,11 +293,11 @@ export function sameDetailItems(left: unknown, right: unknown): boolean {
 
 /** An empty expense line. */
 export function newOperatingExpense(): OperatingExpenseDraft {
-  return { id: newDetailId(), persistedId: null, amount: '', reason: '', isHistorical: false };
+  return { id: newClientId(), persistedId: null, amount: '', reason: '', isHistorical: false };
 }
 
 /** An empty wage line: paid, no employee chosen yet. */
-export function newWageItem(id: string = newDetailId()): WageItemDraft {
+export function newWageItem(id: string = newClientId()): WageItemDraft {
   return {
     id,
     persistedId: null,

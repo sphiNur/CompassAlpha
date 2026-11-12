@@ -12,7 +12,8 @@ import { useI18n } from '../../hooks/useI18n';
 import { confirmThen } from '../../lib/confirm';
 import { useErrToast } from '../../hooks/useErrToast';
 import { formatMoney } from '../../lib/format';
-import { newDetailId, newWageItem, type WageItemDraft } from './draftModel';
+import { newClientId } from '../../lib/clientId';
+import { newWageItem, type WageItemDraft } from './draftModel';
 import {
   DetailLineFrame,
   DetailLineList,
@@ -87,7 +88,7 @@ export function WageLines({
       toast.error(i18n.t('settlement.errors.detailLimit', { count: MAX_DETAIL_ITEMS }));
       return;
     }
-    const id = newDetailId();
+    const id = newClientId();
     haptic('light');
     update((current) => [...current, newWageItem(id)]);
     setNewPickerFor(id);
@@ -121,7 +122,7 @@ export function WageLines({
       }
       const room = MAX_DETAIL_ITEMS - lines.length;
       const added = payable.slice(0, Math.max(0, room)).map((r) => ({
-        id: newDetailId(),
+        id: newClientId(),
         persistedId: null,
         memberId: r.memberId,
         personName: r.name,

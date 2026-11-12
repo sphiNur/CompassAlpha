@@ -12,7 +12,7 @@
  * held the app-level hook.
  */
 import type { trpc } from '../trpc';
-import type { ClientProcedure } from '../trpcPaths';
+import type { MutationInput } from '../trpcPaths';
 import type { ReplayFn } from './engine';
 
 /** Every procedure a page may put in the outbox. */
@@ -40,11 +40,7 @@ type Utils = ReturnType<typeof trpc.useUtils>;
  * list above that is not a mutation of the API gives `never`, which no
  * input matches (lib/outbox/__tests__/replayHandlers.test.ts checks).
  */
-export type ReplayedInput<P extends ReplayedProcedure> = [ClientProcedure<P>] extends [never]
-  ? never
-  : ClientProcedure<P> extends { mutate: (input: infer I, ...rest: never[]) => unknown }
-    ? I
-    : never;
+export type ReplayedInput<P extends ReplayedProcedure> = MutationInput<P>;
 
 /**
  * One replay: send the queued input — with the idempotency key the first

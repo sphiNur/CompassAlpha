@@ -20,6 +20,8 @@
  *
  * Pure; tests in __tests__/purchaseOverrides.test.ts.
  */
+import type { MutationInput } from '../../../lib/trpcPaths';
+
 export type PaymentMethod = 'cash' | 'transfer';
 
 type SplitIn = {
@@ -137,4 +139,71 @@ export function paidPerStore(
   return splits.some(
     (sp) => Number(sp.qty) > 0 && sp.paymentMethod != null && asMethod(sp.paymentMethod) !== itemMethod,
   );
+}
+
+/**
+ * A bought row's 现金 / 转账 switch: the revision that changes only the
+ * method, or null when the row opens the purchase sheet instead.
+ *
+ * Correcting the method of an ALREADY purchased row goes through
+ * revisePurchase, NOT the inline purchase path.
+ *
+ * purchaseItem reaches PurchaseItem, which has no already-purchased guard
+ * and emits a fresh ItemPurchased. The projection then appends an
+ * UNDEDUPED price_history row per tap (insertPriceObservations does a bare
+ * insert) and upserts run_item_stores_v with
+ * `unitPrice: split.unitPrice ?? null`, so a single tap on a row carrying
+ * per-store price overrides would erase them. revisePurchase is the
+ * command that exists for this; its schema requires a reason, hence the
+ * canned localized one.
+ */
+export function paymentFlipRevision(input: {
+  runId: string;
+  item: {
+    skuId: string;
+    unitPrice: string | null;
+    purchasedQty: string | null;
+    supplierId?: string | null;
+    receiptPhotoUrl?: string | null;
+    paymentMethod?: string | null;
+  };
+  /** The run's splits; this row's are picked out. */
+  splits: ReadonlyArray<SplitIn & { skuId: string }>;
+  next: PaymentMethod;
+  /** i18n.t('run.reason.paymentMethodChanged') */
+  reason: string;
+}): MutationInput<'run.revisePurchase'> | null {
+  const { item } = input;
+  const rows = input.splits.filter((sp) => sp.skuId === item.skuId);
+  // A row with per-store payment overrides has no single
+  // method to flip — send it to the sheet, where those fields
+  // exist. (The row already opens the sheet in that case; this
+  // is defence in depth.) DX-BUY-1: a split that only repeats
+  // the item's method is not an override.
+  if (paidPerStore(item, rows) || !item.unitPrice || !item.purchasedQty) return null;
+  const storeSplits = rows
+    .filter((sp) => Number(sp.qty) > 0)
+    // Preserve per-store PRICE overrides; omit paymentMethod
+    // so the projection writes null: every store follows the
+    // item's new method. A split price equal to the item's is
+    // not an override (store-scoped readers get it resolved).
+    .map((sp) => ({
+      storeId: sp.storeId,
+      qty: sp.qty,
+      ...(sp.unitPrice && Number(sp.unitPrice) !== Number(item.unitPrice)
+        ? { unitPrice: sp.unitPrice }
+        : {}),
+    }));
+  if (storeSplits.length === 0) return null;
+  return {
+    runId: input.runId,
+    skuId: item.skuId,
+    supplierId: item.supplierId ?? null,
+    unitPrice: item.unitPrice,
+    actualQty: item.purchasedQty,
+    receiptPhotoUrl: item.receiptPhotoUrl ?? null,
+    storeSplits,
+    paymentMethod: input.next,
+    reason: input.reason,
+  };
 }

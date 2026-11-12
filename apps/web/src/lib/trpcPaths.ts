@@ -24,3 +24,13 @@ export type QueryPath = {
     [N in keyof Client[R] & string]: Client[R][N] extends { query: unknown } ? `${R}.${N}` : never;
   }[keyof Client[R] & string];
 }[keyof Client & string];
+
+/**
+ * The input a mutation of the API takes, as `router.procedure`; never for
+ * a name that is not a mutation of the API.
+ */
+export type MutationInput<P extends string> = [ClientProcedure<P>] extends [never]
+  ? never
+  : ClientProcedure<P> extends { mutate: (input: infer I, ...rest: never[]) => unknown }
+    ? I
+    : never;
