@@ -11,9 +11,6 @@
  * Run with: DATABASE_URL=… bun test apps/api/src/__tests__/event-store-guard.test.ts
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -27,21 +24,6 @@ import {
 } from '@compass/db';
 import { SHOULD_RUN } from './helpers/pg';
 import { pgErrorOf } from './helpers/errors';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-describe('D3: the database and the code agree on the system reasons', () => {
-  test('app_is_system() lists exactly SYSTEM_REASONS', () => {
-    const policies = readFileSync(
-      resolve(HERE, '../../../../packages/db/migrations/sql/900_rls_policies.sql'),
-      'utf8',
-    );
-    const body = /FUNCTION app_is_system\(\)[\s\S]*?IN \(([^)]*)\)/.exec(policies);
-    expect(body).toBeTruthy();
-    const listed = [...body![1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
-    expect(listed).toEqual([...SYSTEM_REASONS].sort());
-  });
-});
 
 describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
   const fixtures = () => getDb(undefined, { system: 'maintenance' });
@@ -178,15 +160,29 @@ describe.skipIf(!SHOULD_RUN)('event store guards (PG-gated)', () => {
     expect(row?.actorId).toBeNull();
   });
 
-  test('D3: a made-up system context sees nothing; a real one sees all tenants', async () => {
-    const seen = (reason: string) =>
-      withOrgContext(app(), null, async (tx) => {
-        await tx.execute(sql`SELECT set_config('app.system_context', ${reason}, true)`);
-        const rows = (await tx.execute(
-          sql`SELECT app_is_system() AS system, count(*)::int AS n FROM domain.events WHERE stream_id = ${ids.streamId}`,
-        )) as unknown as Array<{ system: boolean; n: number }>;
-        return rows[0]!;
-      });
+  /** With no tenant and app.system_context set to `reason`: what
+   *  app_is_system() says, and how many of the shared stream's events show. */
+  const seen = (reason: string) =>
+    withOrgContext(app(), null, async (tx) => {
+      await tx.execute(sql`SELECT set_config('app.system_context', ${reason}, true)`);
+      const rows = (await tx.execute(
+        sql`SELECT app_is_system() AS system, count(*)::int AS n FROM domain.events WHERE stream_id = ${ids.streamId}`,
+      )) as unknown as Array<{ system: boolean; n: number }>;
+      return rows[0]!;
+    });
+
+  test('D3: app_is_system() accepts each SystemReason and nothing else', async () => {
+    // packages/db checks that the migration lists exactly these; this is
+    // what a database migrated from it does with them (review TEST1-16).
+    for (const reason of SYSTEM_REASONS) {
+      expect({ reason, system: (await seen(reason)).system }).toEqual({ reason, system: true });
+    }
+    for (const reason of ['anything-i-like', 'Worker', '']) {
+      expect({ reason, system: (await seen(reason)).system }).toEqual({ reason, system: false });
+    }
+  });
+
+  test("D3: a made-up system context sees no tenant's rows; a real one sees them all", async () => {
     expect(await seen('anything-i-like')).toEqual({ system: false, n: 0 });
     expect(await seen('worker')).toEqual({ system: true, n: 3 });
   });
