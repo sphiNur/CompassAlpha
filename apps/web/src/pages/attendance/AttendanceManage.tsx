@@ -468,9 +468,10 @@ function MemberDaySheet({
                       {p.voided
                         ? ` · ${i18n.t('attendance.sheet.voidedBy', {
                             name: p.voided.byName ?? '—',
-                            // "Not them" on a colleague's phone is stored as a key (2026-11-07).
+                            // "Not them" on a colleague's phone has no written
+                            // reason; the server says which kind it was (ATT-13).
                             reason:
-                              p.voided.reason === 'attendance.voidReason.wrongPerson'
+                              p.voided.kind === 'wrongPerson'
                                 ? i18n.t('attendance.voidReason.wrongPerson')
                                 : p.voided.reason,
                           })}`

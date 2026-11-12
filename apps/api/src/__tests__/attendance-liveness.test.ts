@@ -483,10 +483,8 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       'attendance.errors.alreadyVoided',
     );
     const row = (await sheet()).punches.find((p) => p.id === out.id)!;
-    expect([row.voided?.reason, row.voided?.byName]).toEqual([
-      'attendance.voidReason.wrongPerson',
-      'Att Staff',
-    ]);
+    // Review ATT-13: a kind, not the stored marker passed off as a reason.
+    expect(row.voided).toMatchObject({ kind: 'wrongPerson', reason: null, byName: 'Att Staff' });
     // Its overtime is no longer waiting for anyone.
     expect(await pendingOvertime()).toEqual([]);
     expect(await botRecipients('attendance.punchUndone')).toEqual([f.managerUserId]);

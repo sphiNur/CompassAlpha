@@ -295,7 +295,10 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
       'attendance.errors.alreadyVoided',
     );
     const after = await f.manager.attendance.sheet({ storeId: f.storeId, from: today, to: today });
-    expect(after.punches.find((p) => p.id === manual.id)!.voided?.reason).toBe('Wrong person');
+    expect(after.punches.find((p) => p.id === manual.id)!.voided).toMatchObject({
+      kind: 'manual',
+      reason: 'Wrong person',
+    });
     expect(after.days.find((d) => d.memberId === f.staffId)!.punchIds).not.toContain(manual.id);
 
     await expectError(

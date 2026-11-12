@@ -114,7 +114,13 @@ const MAX_SHEET_DAYS = 62;
 /** How far back 待核对 looks, and how many punches it lists at most. */
 const REVIEW_DAYS = 14;
 const REVIEW_LIMIT = 200;
-/** What a "not them" punch is voided with; the sheet shows it translated. */
+/**
+ * What a "not them" punch is voided with, in void_reason. It stays in this
+ * file: the sheet hands such a void on as `kind: 'wrongPerson'` with no
+ * reason, and a manager's void as `kind: 'manual'` with the reason they
+ * wrote (review ATT-13: the client was given the marker as the reason and
+ * translated it in one place).
+ */
 const WRONG_PERSON_REASON = 'attendance.voidReason.wrongPerson';
 /** How long a colleague taken back as "not them" stays out of that phone's face look. */
 const TAKEN_BACK_LEFT_OUT_MS = 5 * 60_000;
@@ -785,7 +791,9 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         ? {
             at: p.voidedAt.toISOString(),
             byName: p.voidedByMemberId ? (names.get(p.voidedByMemberId) ?? null) : null,
-            reason: p.voidReason ?? '',
+            ...(p.voidReason === WRONG_PERSON_REASON
+              ? { kind: 'wrongPerson' as const, reason: null }
+              : { kind: 'manual' as const, reason: p.voidReason ?? '' }),
           }
         : null,
     })),
