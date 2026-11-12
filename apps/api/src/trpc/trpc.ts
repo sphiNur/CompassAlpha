@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import { and, eq, gt, isNull, lte, sql } from 'drizzle-orm';
 import { DomainError } from '@compass/domain';
-import { schema as s, withOrgContext } from '@compass/db';
+import { schema as s, withOrgContext, type PermissionKey } from '@compass/db';
 import type { RequestContext } from './context';
 import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
@@ -518,7 +518,7 @@ export const idempotentMutation = authedProcedure
  * looks at no store in the input; a procedure that acts on one store
  * checks that store's permissions itself.
  */
-export function permissionProcedure(permissionKey: string) {
+export function permissionProcedure(permissionKey: PermissionKey) {
   return authedProcedure.use(async (opts) => {
     if (!opts.ctx.session.permissions.has(permissionKey)) {
       // M1.9-extra (P7): bare key + cause; no colon-suffix.

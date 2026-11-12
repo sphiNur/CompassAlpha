@@ -25,7 +25,7 @@
  */
 import { eq, and, inArray, or, isNull, gt } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { DB } from '@compass/db';
+import type { DB, PermissionKey } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
   effectivePermissionsForStore,
@@ -80,7 +80,7 @@ export interface NotifyEnvelope {
 export async function findRecipientsByPermission(
   db: DB,
   orgId: string,
-  permissionKey: string,
+  permissionKey: PermissionKey,
 ): Promise<string[]> {
   const candidates = await permissionCandidates(db, orgId, permissionKey, null);
   if (candidates.length === 0) return [];
@@ -118,7 +118,7 @@ export async function findRecipientsByPermission(
 export async function findRecipientsByPermissionInStore(
   db: DB,
   orgId: string,
-  permissionKey: string,
+  permissionKey: PermissionKey,
   storeId: string,
 ): Promise<string[]> {
   const candidates = await permissionCandidates(db, orgId, permissionKey, storeId);
@@ -360,7 +360,7 @@ export async function dispatch(
 export async function notifyOthersWithPermission(
   db: DB,
   orgId: string,
-  permissionKey: string,
+  permissionKey: PermissionKey,
   excludeUserId: string | null,
   envelope: NotifyEnvelope,
   options?: { storeId?: string },

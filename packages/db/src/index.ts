@@ -19,6 +19,7 @@ export {
   provisionOrganization,
 } from './provision-organization';
 export type { ProvisionOrganizationInput } from './provision-organization';
+export type { PermissionKey } from './seed-data';
 export {
   DEFAULT_BILLING_PLANS,
   DEFAULT_GRACE_DAYS,

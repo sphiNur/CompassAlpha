@@ -8,7 +8,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
-import type { DB } from '@compass/db';
+import type { DB, PermissionKey } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { ORG_WIDE_PERMISSION_KEYS } from '@compass/contracts';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from './orgAdmin';
@@ -108,7 +108,7 @@ export async function getActorMaxActiveRoleRankInStore(
 export async function getActorStoreIdsForPermission(
   db: DB,
   memberId: string,
-  permissionKey: string,
+  permissionKey: PermissionKey,
   permissions: ReadonlySet<string>,
 ): Promise<string[] | null> {
   const now = new Date();
@@ -428,7 +428,7 @@ export async function effectiveGlobalPermissions(db: DB, memberId: string): Prom
 export async function assertHasPermissionInStore(
   db: DB,
   memberId: string,
-  permKey: string,
+  permKey: PermissionKey,
   storeId: string,
   permissions: ReadonlySet<string>,
 ): Promise<void> {

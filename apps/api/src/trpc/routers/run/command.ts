@@ -5,7 +5,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { and, eq, ne, sql } from 'drizzle-orm';
-import { schema as s, type DB } from '@compass/db';
+import { schema as s, type DB, type PermissionKey } from '@compass/db';
 import type { RunEvent, RunState } from '@compass/domain/run';
 import { decide as decideOrder, type OrderEvent, type OrderState } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
@@ -152,7 +152,7 @@ export async function runSimpleCommand(
   produce: (state: RunState, scope: RunCommandScope) => RunEvent[],
   options?: {
     requireGlobalAmend?: boolean;
-    requiredPermission?: string;
+    requiredPermission?: PermissionKey;
     skipRunPermissionScope?: boolean;
     /**
      * 2026-10-21 audit CA-29: resolve the run's session stores and hand

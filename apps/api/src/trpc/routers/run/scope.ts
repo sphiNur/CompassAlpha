@@ -5,7 +5,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { schema as s, type DB } from '@compass/db';
+import { schema as s, type DB, type PermissionKey } from '@compass/db';
 import {
   effectivePermissionsForStores,
   getActorStoreIds,
@@ -139,7 +139,7 @@ export async function assertRunPermissionForAllStores(
   db: DB,
   ctx: RequestContext,
   run: RunStores,
-  permissionKey: string,
+  permissionKey: PermissionKey,
   item?: {
     skuId: string;
     splitStoreIds?: readonly string[];
