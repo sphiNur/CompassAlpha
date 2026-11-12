@@ -732,20 +732,23 @@ function StoreCloneRolesSheet({
 
   const [sourceStoreId, setSourceStoreId] = useState('');
   const [includeMembers, setIncludeMembers] = useState(false);
+  const targetStoreId = target?.targetStoreId ?? null;
 
+  // Review ADM2-23 (2026-11-12): start over only when the target store
+  // changes. The parent passes a new `target` object on every render, so
+  // a refetch or a realtime push cleared the source store and "also
+  // members" the person had just picked.
   useEffect(() => {
-    if (target) {
+    if (targetStoreId) {
       setSourceStoreId('');
       setIncludeMembers(false);
     }
-  }, [target]);
+  }, [targetStoreId]);
 
   const sourceCandidates = useMemo(() => {
-    if (!target) return [];
-    return sessionStores.filter(
-      (st) => adminStoreIds.has(st.id) && st.id !== target.targetStoreId,
-    );
-  }, [sessionStores, adminStoreIds, target]);
+    if (!targetStoreId) return [];
+    return sessionStores.filter((st) => adminStoreIds.has(st.id) && st.id !== targetStoreId);
+  }, [sessionStores, adminStoreIds, targetStoreId]);
 
   const cloneMut = trpc.admin.storeCloneRoles.useMutation({
     onSuccess: (data) => {
