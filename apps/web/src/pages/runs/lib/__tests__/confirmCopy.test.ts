@@ -167,12 +167,16 @@ describe('confirmCopyFor', () => {
           A: [
             { name: 'Napkins', qty: '1', unit: 'pack' },
             { name: 'Ice', qty: '2', unit: 'kg', status: 'bought' },
+            { name: 'Soap', qty: '1', unit: 'pcs' },
           ],
         },
       }),
     ).body;
     expect(body).toContain('run.confirm.startDelivery.body');
-    expect(body).toContain('run.confirm.startDelivery.pendingExtras {"n":1,"names":"Napkins"}');
+    // The names are a list in the screen's language (RUNWEB1-22).
+    expect(body).toContain(
+      'run.confirm.startDelivery.pendingExtras {"n":2,"names":"Napkinscommon.listSeparatorSoap"}',
+    );
     expect(copy('startDelivery').body).toBe('run.confirm.startDelivery.body');
   });
 
@@ -186,7 +190,9 @@ describe('confirmCopyFor', () => {
       }),
     ).body;
     expect(body).toBe(
-      'run.label.itemsCount {"n":1} · run.label.itemsTotal 200 UZS\nrun.confirm.deliver.body',
+      'run.label.itemsCount {"n":1} · ' +
+        'common.labelValue {"label":"run.label.itemsTotal","value":"200 UZS"}\n' +
+        'run.confirm.deliver.body',
     );
   });
 
@@ -224,7 +230,7 @@ describe('confirmCopyFor', () => {
     );
     expect(body).toContain(
       '\n\nrun.confirm.finish.perStoreHeading\n' +
-        'common.labelValue {"label":"store:B","value":"130 · run.label.paymentCash 100 · run.label.paymentTransfer 30"}\n' +
+        'common.labelValue {"label":"store:B","value":"130 · run.money.cashTransfer {\\"cash\\":\\"100\\",\\"transfer\\":\\"30\\"}"}\n' +
         'common.labelValue {"label":"store:A","value":"100"}',
     );
     expect(body).toContain(

@@ -1618,9 +1618,13 @@ export function PreviewSummaryCard({
     [byStore, preview.supplierBySku],
   );
 
+  // RUNWEB1-22: label and amount through the catalog (「合计：…」).
   const groupMoneyMeta = (total: number, unknownCount: number): string => {
     const parts = [
-      `${i18n.t('run.preview.groupTotal')} ${formatMoney(total)} ${currency}`,
+      i18n.t('common.labelValue', {
+        label: i18n.t('run.preview.groupTotal'),
+        value: formatMoney(total, currency),
+      }),
     ];
     if (unknownCount > 0) {
       parts.push(i18n.t('run.preview.unknownPrices', { n: unknownCount }));
@@ -1634,7 +1638,7 @@ export function PreviewSummaryCard({
       // UIUX-B1: state "price unknown" once, not twice in one formula.
       return `${qtyUnit} · ${i18n.t('run.preview.priceUnknown')}`;
     }
-    return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
+    return `${qtyUnit} × ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
   };
 
   const shareOrCopyText = async (text: string): Promise<void> => {
@@ -2410,7 +2414,7 @@ export function RunSessionsCard({
       const name = storeById.get(storeId)?.name ?? i18n.t('common.unknownStore');
       return n > 1 ? `${name} ×${n}` : name;
     })
-    .join(i18n.t('run.sessions.storeJoiner'));
+    .join(i18n.t('common.listSeparator'));
   return (
     <Card>
       <button

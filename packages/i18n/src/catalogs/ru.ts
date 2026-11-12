@@ -2466,7 +2466,6 @@ export const ru = {
   'run.gauge.notFound': 'не найдено {n}',
   'run.sessions.collapsed':
     '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
-  'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras':
     'Не отмечено — прочие товары от магазинов ({n}): {names}. После начала доставки они пропадут со страницы закупки.',
   'approval.changed.title': 'Заказ изменился после того, как вы его открыли',

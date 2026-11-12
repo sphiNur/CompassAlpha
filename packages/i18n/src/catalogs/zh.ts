@@ -2183,7 +2183,6 @@ export const zh = {
   'run.gauge.progressLabel': '采购进度',
   'run.gauge.notFound': '缺货 {n}',
   'run.sessions.collapsed': '{n} 份订单',
-  'run.sessions.storeJoiner': '、',
   'run.confirm.startDelivery.pendingExtras':
     '还有 {n} 项「其他物品」没处理：{names}。开始配送后，采购页上就不再显示它们。',
   'approval.changed.title': '这份订单在你打开后有变化',

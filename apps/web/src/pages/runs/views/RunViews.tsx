@@ -812,7 +812,7 @@ export function ExpensesCard({
           // was archived after the expense landed.
           const storeNames = e.storeSplits
             .map((sp) => storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore'))
-            .join(' · ');
+            .join(i18n.t('common.listSeparator'));
           const unitPriceDisplay =
             total === null
               ? null
@@ -2183,7 +2183,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                   (sp) =>
                     `${storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore')} ${formatQty(sp.qty)} ${unitFor(sp.qty)}`,
                 )
-                .join(' · '),
+                .join(i18n.t('common.listSeparator')),
             })}
           </p>
         ) : null}

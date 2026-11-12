@@ -2446,7 +2446,6 @@ export const uz = {
   'run.gauge.progressLabel': 'Xarid jarayoni',
   'run.gauge.notFound': 'topilmadi {n}',
   'run.sessions.collapsed': '{n} ta buyurtma',
-  'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras':
     'Hali belgilanmagan — doʻkonlar soʻragan boshqa narsalar ({n}): {names}. Yetkazish boshlangach, ular xarid sahifasida koʻrinmaydi.',
   'approval.changed.title': 'Buyurtma siz ochganingizdan keyin oʻzgardi',

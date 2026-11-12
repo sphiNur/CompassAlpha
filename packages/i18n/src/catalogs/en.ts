@@ -2551,7 +2551,6 @@ export const en = {
   'run.gauge.progressLabel': 'Purchase progress',
   'run.gauge.notFound': 'not found {n}',
   'run.sessions.collapsed': '{n, plural, one {# order} other {# orders}}',
-  'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras':
     'Not handled yet — other items the stores asked for ({n}): {names}. Once delivery starts they no longer show on the purchase page.',
   'approval.changed.title': 'This order changed after you opened it',
