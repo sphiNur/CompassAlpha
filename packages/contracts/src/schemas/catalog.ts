@@ -77,10 +77,13 @@ export const SupplierListInputSchema = z
 
 /**
  * catalog.skuPriceStats: price statistics for these products, or for every
- * product priced in the last 30 days when `skuIds` is absent.
+ * product ever priced when `skuIds` is absent. Review ORD-26 (2026-11): an
+ * empty list asks for none and gets an empty answer; it used to mean every
+ * product, so a screen with nothing to price read the whole history.
  */
 export const SkuPriceStatsInputSchema = z
   .object({
+    /** Absent: every product. Empty: none. */
     skuIds: z.array(UuidSchema).max(500).optional(),
     /** D6: the store the estimate is shown for (order page). */
     storeId: UuidSchema.optional(),

@@ -42,9 +42,13 @@ export interface SkuLastPrice {
 }
 
 /**
- * Aggregate price observations for `skuIds` (or every SKU in the org when
- * omitted / empty). Returns a Map keyed by skuId; SKUs with no
- * observations in the last 30 days are simply absent.
+ * Aggregate price observations for `skuIds`, or for every SKU in the org
+ * when `skuIds` is omitted. Returns a Map keyed by skuId: the last price
+ * of each product ever bought, with the averages of the last 30 days.
+ *
+ * Review ORD-26 (2026-11): an empty list asks for no product and gets
+ * none. It used to mean every product, so a caller with nothing to price
+ * read the organisation's whole price history.
  *
  * `now` is injectable so callers under test can pin the window instead of
  * racing the wall clock.
@@ -55,6 +59,7 @@ export async function loadSkuPriceStats(
   skuIds?: string[],
   now: Date = new Date(),
 ): Promise<Map<string, SkuPriceStat>> {
+  if (skuIds !== undefined && skuIds.length === 0) return new Map();
   const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const since7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
@@ -74,7 +79,7 @@ export async function loadSkuPriceStats(
         // inArray (not `= ANY(...)`): Drizzle's tagged template binds a JS
         // array as ONE parameter and PG then rejects it with "op ANY/ALL
         // (array) requires array on right side". See M3.23-fix.
-        skuIds && skuIds.length > 0 ? inArray(s.priceHistory.skuId, skuIds) : undefined,
+        skuIds ? inArray(s.priceHistory.skuId, skuIds) : undefined,
       ),
     )
     .orderBy(s.priceHistory.skuId, s.priceHistory.observedAt);
@@ -151,7 +156,8 @@ export async function loadSkuLastPrices(
 }
 
 /**
- * The last price paid for `skuIds` (every product when omitted or empty).
+ * The last price paid for `skuIds` (every product when omitted; none for
+ * an empty list, ORD-26).
  *
  * 2026-10-11: the last price is what a budget is made of (see
  * estimateLines), so it must not stop existing after 30 days, and it must
@@ -167,32 +173,43 @@ export async function loadSkuLastPrices(
  * estimated a cent apart.
  */
 async function latestPrices(db: DB, orgId: string, skuIds?: string[]): Promise<SkuLastPrice[]> {
+  if (skuIds !== undefined && skuIds.length === 0) return [];
+  // Review ORD-26 (2026-11): each product's newest instant is read from
+  // price_hist_sku_idx (sku_id, observed_at), one row per product, and
+  // only that instant's rows are weighed. A window over every row of the
+  // products took the whole purchase history: on two years of daily
+  // trips, 40 products read 24,140 rows (43 ms, 1.6 ms now) and every
+  // product 181,040, sorted on disk (310-530 ms, 10-16 ms now).
+  const products = skuIds
+    ? sql`(VALUES ${sql.join(
+        [...new Set(skuIds)].map((id) => sql`(${id}::uuid)`),
+        sql`, `,
+      )}) AS k(sku_id)`
+    : sql`(SELECT id AS sku_id FROM inventory.skus WHERE org_id = ${orgId}) AS k`;
   const latest = (await db.execute(sql`
     SELECT
-      t.sku_id::text AS sku_id,
-      t.observed_at  AS observed_at,
+      k.sku_id::text       AS sku_id,
+      newest.observed_at   AS observed_at,
       ROUND(
-        COALESCE(SUM(t.unit_price * t.qty) / NULLIF(SUM(t.qty), 0), AVG(t.unit_price)),
+        COALESCE(SUM(ph.unit_price * ph.qty) / NULLIF(SUM(ph.qty), 0), AVG(ph.unit_price)),
         2
       )::text AS unit_price
-    FROM (
-      SELECT
-        ph.sku_id, ph.unit_price, ph.qty, ph.observed_at,
-        MAX(ph.observed_at) OVER (PARTITION BY ph.sku_id) AS newest
-      FROM inventory.price_history ph
-      WHERE ph.org_id = ${orgId}
-        AND ph.superseded_at IS NULL
-        ${
-          skuIds && skuIds.length > 0
-            ? sql`AND ph.sku_id IN (${sql.join(
-                skuIds.map((id) => sql`${id}::uuid`),
-                sql`, `,
-              )})`
-            : sql``
-        }
-    ) t
-    WHERE t.observed_at = t.newest
-    GROUP BY t.sku_id, t.observed_at
+    FROM ${products}
+    CROSS JOIN LATERAL (
+      SELECT p.observed_at
+      FROM inventory.price_history p
+      WHERE p.org_id = ${orgId}
+        AND p.sku_id = k.sku_id
+        AND p.superseded_at IS NULL
+      ORDER BY p.observed_at DESC
+      LIMIT 1
+    ) newest
+    JOIN inventory.price_history ph
+      ON ph.org_id = ${orgId}
+     AND ph.sku_id = k.sku_id
+     AND ph.observed_at = newest.observed_at
+     AND ph.superseded_at IS NULL
+    GROUP BY k.sku_id, newest.observed_at
   `)) as unknown as Array<{ sku_id: string; observed_at: Date | string; unit_price: string }>;
   const prices: SkuLastPrice[] = [];
   for (const r of latest) {
