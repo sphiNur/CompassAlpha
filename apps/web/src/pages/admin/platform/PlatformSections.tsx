@@ -214,13 +214,11 @@ function SubscriptionSheet({
         <Field label={i18n.t('platform.field.graceEnds')}>
           <Input type="date" value={graceEndsAt} onChange={(e) => setGraceEndsAt(e.target.value)} />
         </Field>
-        <label className="flex items-center gap-2 text-old-body">
-          <Checkbox
-            checked={cancelAtPeriodEnd}
-            onChange={(e) => setCancelAtPeriodEnd(e.target.checked)}
-          />
-          {i18n.t('platform.field.cancelAtPeriodEnd')}
-        </label>
+        <Checkbox
+          checked={cancelAtPeriodEnd}
+          onChange={(e) => setCancelAtPeriodEnd(e.target.checked)}
+          label={i18n.t('platform.field.cancelAtPeriodEnd')}
+        />
         <Field label={i18n.t('platform.field.note')}>
           <Input value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} />
         </Field>

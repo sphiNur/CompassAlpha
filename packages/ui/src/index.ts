@@ -21,6 +21,8 @@ export { Textarea } from './components/Textarea';
 export type { TextareaProps } from './components/Textarea';
 export { Select } from './components/Select';
 export type { SelectProps } from './components/Select';
+export { PickerButton } from './components/PickerButton';
+export type { PickerButtonProps } from './components/PickerButton';
 export { Checkbox } from './components/Checkbox';
 export type { CheckboxProps } from './components/Checkbox';
 export { Switch } from './components/Switch';

@@ -131,6 +131,18 @@ function targetOf(m: {
   };
 }
 
+/** A store in a pick list: its name, then its code, muted. */
+function StoreName({ store }: { store: { name: string; code?: string | null } }) {
+  return (
+    <>
+      {store.name}
+      {store.code ? (
+        <span className="ml-2 text-old-label text-[var(--c-fg-muted)]">{store.code}</span>
+      ) : null}
+    </>
+  );
+}
+
 // ============ People ============
 
 interface InviteDraft {
@@ -2074,26 +2086,20 @@ function ManualInviteSheet({
                   {eligibleStores.map((st) => {
                     const checked = draft.storeIds.includes(st.id);
                     return (
-                      <label
+                      <Checkbox
                         key={st.id}
-                        className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onChange={(e) =>
-                            setDraft({
-                              ...draft,
-                              storeIds: e.target.checked
-                                ? [...draft.storeIds, st.id]
-                                : draft.storeIds.filter((id) => id !== st.id),
-                            })
-                          }
-                        />
-                        <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
-                        {st.code ? (
-                          <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
-                        ) : null}
-                      </label>
+                        className="px-2"
+                        checked={checked}
+                        label={<StoreName store={st} />}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            storeIds: e.target.checked
+                              ? [...draft.storeIds, st.id]
+                              : draft.storeIds.filter((id) => id !== st.id),
+                          })
+                        }
+                      />
                     );
                   })}
                 </div>
@@ -2263,18 +2269,20 @@ function ManageMemberSheet({
                   const editable = checked
                     ? canDetachFromStore(actor, target.member, st.id)
                     : adminStoreIds.has(st.id);
+                  // UI-01: the kit checkbox names its store itself, and the
+                  // transfer button sits beside it, not inside its <label>
+                  // (a click there had to be kept from ticking the box).
                   return (
-                    <label
+                    <div
                       key={st.id}
-                      className={
-                        'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
-                        (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
-                      }
+                      className="flex items-center gap-2 px-2"
                       title={adminStoreIds.has(st.id) ? undefined : i18n.t('people.notYourStore')}
                     >
                       <Checkbox
+                        className="min-w-0 flex-1"
                         checked={checked}
                         disabled={pending || !editable}
+                        label={<StoreName store={st} />}
                         onChange={(e) => {
                           if (e.target.checked) {
                             assignMut.mutate({
@@ -2296,10 +2304,6 @@ function ManageMemberSheet({
                           }
                         }}
                       />
-                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
-                      {st.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
-                      ) : null}
                       {/* D2 (2026-05-06): "Transfer..." per assigned
                           row. M1.9 (2026-05-07): gated to global admins
                           only — store-scoped managers should use the
@@ -2309,24 +2313,21 @@ function ManageMemberSheet({
                       isGlobalAdmin &&
                       transferTargets(actor, target.member, st.id, storesQuery.data ?? []).length >
                         0 ? (
-                        <button
-                          type="button"
-                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-old-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
-                          onClick={(ev) => {
-                            ev.preventDefault();
-                            ev.stopPropagation();
-                            setTransferFrom({ storeId: st.id, storeName: st.name });
-                          }}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="shrink-0"
                           title={i18n.t('people.transferTooltip')}
+                          onClick={() => setTransferFrom({ storeId: st.id, storeName: st.name })}
                         >
-                          → {i18n.t('admin.action.transfer')}
-                        </button>
+                          {i18n.t('admin.action.transfer')}
+                        </Button>
                       ) : !editable ? (
-                        <span className="ml-auto text-old-label text-[var(--c-fg-muted)]">
+                        <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
                           {i18n.t('people.readOnlyStore')}
                         </span>
                       ) : null}
-                    </label>
+                    </div>
                   );
                 })}
                 {(storesQuery.data ?? []).length === 0 ? (
@@ -2462,15 +2463,12 @@ function TransferStoreSheet({
     >
       {target ? (
         <div className="flex flex-col gap-3 py-3">
-          {/* M1.21-C: this TransferSheet uses From/To as spatial
-              labels (source store / destination store), not date
-              range. Leave English here until the sheet gets its
-              own dedicated i18n pass with all the other admin
-              transfer copy. */}
+          {/* UI-01: the store they leave, in a read-only field, so that the
+              label names it. It was a box drawn to look like a field. Out
+              of the tab order like that box: the sheet still opens on the
+              store to move to, not on this text, selected. */}
           <Field label={i18n.t('people.transferFrom')}>
-            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-old-h3 ring-hairline">
-              {target.fromStoreName}
-            </div>
+            <Input value={target.fromStoreName} readOnly tabIndex={-1} />
           </Field>
           <Field label={i18n.t('people.transferTo')} required>
             {destinationStores.length === 0 ? (
@@ -2488,22 +2486,14 @@ function TransferStoreSheet({
               </Select>
             )}
           </Field>
-          <label className="press flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-5 w-5"
-              checked={mirrorRoles}
-              onChange={(e) => setMirrorRoles(e.target.checked)}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                {i18n.t('people.mirrorRoles')}
-              </div>
-              <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('people.mirrorRolesHint', { store: target.fromStoreName })}
-              </p>
-            </div>
-          </label>
+          {/* As in the clone sheet (ADM2-12 / ADM2-33): the kit checkbox,
+              not a native box with a <div> inside its <label>. */}
+          <Checkbox
+            checked={mirrorRoles}
+            onChange={(e) => setMirrorRoles(e.target.checked)}
+            label={i18n.t('people.mirrorRoles')}
+            hint={i18n.t('people.mirrorRolesHint', { store: target.fromStoreName })}
+          />
           {/* ADM-23: without mirrored roles the member arrives with no
               permissions at all; say so in warning colours. */}
           <Banner tone={mirrorRoles ? 'info' : 'warn'} title={i18n.t('people.transferWhatTitle')}>
@@ -3176,16 +3166,13 @@ function GrantRoleSheet({
                 {eligibleStores.map((st) => {
                   const checked = selectedStoreIds.has(st.id);
                   return (
-                    <label
+                    <Checkbox
                       key={st.id}
-                      className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
-                    >
-                      <Checkbox checked={checked} onChange={() => toggleStore(st.id)} />
-                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
-                      {st.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
-                      ) : null}
-                    </label>
+                      className="px-2"
+                      checked={checked}
+                      label={<StoreName store={st} />}
+                      onChange={() => toggleStore(st.id)}
+                    />
                   );
                 })}
               </div>

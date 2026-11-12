@@ -10,7 +10,7 @@ import { joinIds, useFieldControl } from './fieldControl';
  * rounded pill shape, same surface + ring tokens. (Was h-11/44px and
  * drifted 4px above Input after M3.15 lowered Input to 40 — now both
  * read from the one token.) Visual difference: the right edge carries a
- * chevron via background-image + appearance-none.
+ * chevron, drawn in a span over the native control (appearance-none).
  *
  * Native `<select>` is the right choice for the Telegram Mini App
  * launch — opens the platform-native picker (iOS wheel / Android
@@ -26,12 +26,6 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   /** When set, prepends a disabled option with this text + value="". */
   placeholder?: string;
 }
-
-// Chevron icon as inline SVG → data URL. Kept as a const so we don't
-// re-encode it on every render.
-const CHEVRON =
-  "data-[slot=chevron] url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%2399a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\")";
-void CHEVRON; // (reserved; we render the chevron via a sibling span)
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
   { className, invalid, placeholder, children, ...rest },
@@ -57,6 +51,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         )}
         {...rest}
         // After the spread: what the caller passed adds to the field's own.
+        id={rest.id ?? field?.id}
         aria-invalid={marked || rest['aria-invalid'] || undefined}
         aria-required={field?.required || rest['aria-required'] || undefined}
         aria-describedby={joinIds(field?.describedBy, rest['aria-describedby'])}

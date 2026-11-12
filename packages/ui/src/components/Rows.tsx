@@ -204,15 +204,20 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
 /**
  * Form field: the label, the control, then why its value is refused and
  * a hint. Pair with the kit's `<Input>` (also `type="number"`),
- * `<Select>` or `<Textarea>`.
+ * `<Select>`, `<Textarea>` or `<PickerButton>`; several controls under
+ * one title are a FieldGroup.
  *
  * Review UI-02 (2026-11-11): `error` and `required` live here, and the
  * control is tied to the error and hint lines (aria-describedby,
  * aria-invalid, aria-required) through FieldControlContext. Pages used
  * to wire ids by hand or put the error inside the `<label>`, which made
- * it part of the field's name. Only the label and the control sit in the
- * `<label>` now. A number field's "not one number" line shows in the
- * same place as `error`; a page's own `error` wins.
+ * it part of the field's name. A number field's "not one number" line
+ * shows in the same place as `error`; a page's own `error` wins.
+ *
+ * Review UI-01 (2026-11-12): the label is a `<label for>` naming the
+ * control by the id the Field gives it. It used to wrap the content, so
+ * it named whatever control came first (a Save button beside the input
+ * was inside the label too), and a `<label>` may not hold a `<div>`.
  */
 export interface FieldProps {
   label: ReactNode;
@@ -230,6 +235,8 @@ const shown = (node: ReactNode) =>
 
 export function Field({ label, hint, error, required = false, children, className }: FieldProps) {
   const labels = useUiLabels();
+  const controlId = useId();
+  const labelId = useId();
   const errorId = useId();
   const hintId = useId();
   const [badFormat, setBadFormat] = useState<ReadonlySet<string>>(() => new Set());
@@ -250,21 +257,33 @@ export function Field({ label, hint, error, required = false, children, classNam
   // render and would redraw each control in the field.
   const control = useMemo<FieldControl>(
     () => ({
+      id: controlId,
+      labelId,
       describedBy: joinIds(hasMessage && errorId, hasHint && hintId),
       invalid: hasError,
       required,
       reportFormatError,
     }),
-    [hasMessage, errorId, hasHint, hintId, hasError, required, reportFormatError],
+    [
+      controlId,
+      labelId,
+      hasMessage,
+      errorId,
+      hasHint,
+      hintId,
+      hasError,
+      required,
+      reportFormatError,
+    ],
   );
   return (
     <div className={cn('block', className)}>
-      <label className="block">
-        <FieldLabel required={required}>{label}</FieldLabel>
-        <FieldControlContext.Provider value={control}>
-          <div className="mt-1">{children}</div>
-        </FieldControlContext.Provider>
-      </label>
+      <FieldLabel id={labelId} htmlFor={controlId} required={required}>
+        {label}
+      </FieldLabel>
+      <FieldControlContext.Provider value={control}>
+        <div className="mt-1">{children}</div>
+      </FieldControlContext.Provider>
       {hasMessage ? <FieldError id={errorId}>{message}</FieldError> : null}
       {hasHint ? (
         <span id={hintId} className="mt-1 block text-old-label text-[var(--c-fg-muted)]">
@@ -279,11 +298,12 @@ export function Field({ label, hint, error, required = false, children, classNam
  * A titled set of controls (checkboxes, a segmented choice, a switch
  * with its own label), drawn like Field.
  *
- * UI-01 (2026-11-09): Field wraps its content in a `<label>`, which hands
- * a click on the title, or on the gaps of a list, to the first control
- * inside. Tapping "Assigned stores" ticked the first store and assigned
- * the member there. A label may not hold another label either. A group is
- * titled, not labelled: use Field for one input, FieldGroup for several.
+ * UI-01 (2026-11-09): Field wrapped its content in a `<label>`, which
+ * handed a click on the title, or on the gaps of a list, to the first
+ * control inside. Tapping "Assigned stores" ticked the first store and
+ * assigned the member there. A label may not hold another label either.
+ * A group is titled, not labelled: use Field for one control, FieldGroup
+ * for several.
  */
 /** A group has no aria-required; a required choice says so in its label. */
 export type FieldGroupProps = Omit<FieldProps, 'required'>;
@@ -315,14 +335,12 @@ export function FieldGroup({ label, hint, error, children, className }: FieldGro
 
 /**
  * Field label — the one definition of a form-field label (sentence
- * case, `text-old-label font-semibold text-fg-muted`). Field uses it; call
- * sites that re-inlined the same span (e.g. ConfirmSheet's reason
- * label) should adopt it so "how a field label looks" lives in one
- * place. Deliberately sentence-case: uppercase eyebrows are
- * `SectionLabel`, a different role.
+ * case, `text-old-label font-semibold text-fg-muted`): Field, FieldGroup
+ * and PhotoCapture draw theirs with it. Deliberately sentence-case:
+ * uppercase eyebrows are `SectionLabel`, a different role.
  *
- * With `htmlFor` it is the `<label>` of a control it does not wrap
- * (review CONF-21: the receiving sheet drew its own).
+ * With `htmlFor` it is the `<label>` of that control (Field's, UI-01);
+ * without, a title the caller ties to its content by `id`.
  */
 export function FieldLabel({
   className,
