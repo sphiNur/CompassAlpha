@@ -394,6 +394,9 @@ export const uz = {
   'ops.purge.kind.history': 'Tarix yozuvlari',
   'ops.purge.kind.appLogs': 'Ilova jurnallari',
   'ops.purge.kind.other': 'Boshqa',
+  'ops.purge.count.orders': '{n} ta buyurtma',
+  'ops.purge.count.runs': '{n} ta xarid',
+  'ops.purge.purchaser': 'Xaridor: {name}',
   'ops.maint.confirmResetBody':
     'Tasdiqlash uchun {date} sanasini kiriting. Buni ortga qaytarib boʻlmaydi.',
   'ops.maint.confirmResetLabel': 'Tozalanadigan sana',
@@ -2078,7 +2081,6 @@ export const uz = {
   'settlement.details.historicalReadOnlyBody':
     'Bu kun yakuni tafsilotlar joriy etilishidan oldin yozilgan. Tarixiy jami saqlanadi va uni qismlarga ajratib yoki oʻzgartirib boʻlmaydi.',
   'settlement.expenses.remove': 'Oʻchirish',
-  'settlement.expenseCategory.other': 'Boshqa',
   'settlement.wages.title': 'Ish haqi tafsiloti',
   'settlement.wages.totals': 'Toʻlangan {paid} · Toʻlanmagan {unpaid}',
   'settlement.wages.add': '+ Ish haqi qoʻshish',
@@ -2293,6 +2295,9 @@ export const uz = {
   'run.action.addItem.mergePurchasedHint':
     'Doʻkonni mavjud xarid mahsulotiga qoʻshish: narx, yetkazib beruvchi va chek saqlanadi; bu yerdagi boshqa narx faqat shu doʻkon uchun qoʻllanadi.',
   'ops.audit.filterLabel': 'Turi boʻyicha filtr',
+  'ops.audit.filter.all': 'Hammasi',
+  'ops.audit.filter.people': 'Aʼzolar',
+  'ops.audit.filter.other': 'Boshqa',
   'ops.audit.emptyTitle': 'Hozircha admin amallari yoʻq',
   'ops.audit.emptyBody': 'Katalog va rol oʻzgarishlari shu yerda koʻrinadi.',
   'ops.audit.emptyStoreTitle': '{store} doʻkonida amallar yoʻq',

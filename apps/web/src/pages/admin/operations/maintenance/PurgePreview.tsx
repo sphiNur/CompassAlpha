@@ -5,8 +5,8 @@
  */
 import type { ReactNode } from 'react';
 import { Card } from '@compass/ui';
+import { purgeCountsByKind } from '@compass/contracts/limits';
 import { useI18n } from '../../../../hooks/useI18n';
-import { purgeCountsByKind } from '../purgeCounts';
 
 /**
  * What a purge would delete: a headline, then the counts by kind. Review

@@ -279,10 +279,10 @@ export function MaintenanceSection() {
               <p>
                 {i18n.t('ops.maint.scopeSameDay', {
                   date: dates.calendarDay(datePreview.date),
-                  orders: i18n.t('run.label.sessionsCount', {
+                  orders: i18n.t('ops.purge.count.orders', {
                     n: datePreview.scope.sameDay.orders,
                   }),
-                  runs: i18n.t('finance.count.runs', { n: datePreview.scope.sameDay.runs }),
+                  runs: i18n.t('ops.purge.count.runs', { n: datePreview.scope.sameDay.runs }),
                 })}
               </p>
               {datePreview.scope.linkedOrders.length > 0 ||
@@ -302,7 +302,7 @@ export function MaintenanceSection() {
                         {i18n.t('ops.maint.scopeLinkedOrders', {
                           date: dates.calendarDay(o.orderDate),
                           store: o.storeName ?? i18n.t('common.unknownStore'),
-                          orders: i18n.t('run.label.sessionsCount', { n: o.count }),
+                          orders: i18n.t('ops.purge.count.orders', { n: o.count }),
                         })}
                       </li>
                     ))}

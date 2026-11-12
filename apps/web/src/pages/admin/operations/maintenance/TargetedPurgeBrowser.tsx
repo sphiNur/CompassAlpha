@@ -242,12 +242,10 @@ export function TargetedPurgeBrowser() {
                       <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                         {i18n.t('ops.purge.runMeta', {
                           status: runStatusLabel(i18n, r.status),
-                          sessions: i18n.t('run.label.sessionsCount', {
-                            n: r.sessionCount,
-                          }),
+                          sessions: i18n.t('ops.purge.count.orders', { n: r.sessionCount }),
                         })}
                         {r.purchaserDisplayName
-                          ? ` ${i18n.t('ops.history.decidedBy', { name: r.purchaserDisplayName })}`
+                          ? ` · ${i18n.t('ops.purge.purchaser', { name: r.purchaserDisplayName })}`
                           : ''}
                       </div>
                     </div>

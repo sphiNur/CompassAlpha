@@ -416,6 +416,11 @@ export const en = {
   'ops.purge.kind.history': 'History records',
   'ops.purge.kind.appLogs': 'App logs',
   'ops.purge.kind.other': 'Other',
+  // Review ADM2-34 (2026-11-12): the cleanup screens' own words; they borrowed
+  // the purchasing and finance counts and order history's "by {name}".
+  'ops.purge.count.orders': '{n, plural, one {# order} other {# orders}}',
+  'ops.purge.count.runs': '{n, plural, one {# run} other {# runs}}',
+  'ops.purge.purchaser': 'Purchaser: {name}',
   'ops.maint.confirmResetBody': 'Type the date {date} to confirm. This cannot be undone.',
   'ops.maint.confirmResetLabel': 'Date to reset',
   'ops.purge.deleteRows': 'Delete {n, plural, one {# record} other {# records}}',
@@ -2188,7 +2193,6 @@ export const en = {
   'settlement.details.historicalReadOnlyBody':
     'This daily close predates detailed entries. Its total is preserved and cannot be itemized or edited.',
   'settlement.expenses.remove': 'Remove',
-  'settlement.expenseCategory.other': 'Other',
   'settlement.wages.title': 'Wage details',
   'settlement.wages.totals': 'Paid {paid} · Unpaid {unpaid}',
   'settlement.wages.add': '+ Add wage',
@@ -2396,6 +2400,11 @@ export const en = {
   'run.action.addItem.mergePurchasedHint':
     'Add this store to the existing purchase item. Its price, supplier and receipt stay as recorded; a different price here is kept for this store only.',
   'ops.audit.filterLabel': 'Filter by type',
+  // Review ADM2-34: the audit filters' own words (they borrowed the order page's
+  // "All", the home tile's "Members" and an expense category's "Other").
+  'ops.audit.filter.all': 'All',
+  'ops.audit.filter.people': 'Members',
+  'ops.audit.filter.other': 'Other',
   'ops.audit.emptyTitle': 'No admin actions yet',
   'ops.audit.emptyBody': 'Catalog edits and role changes will appear here as they happen.',
   'ops.audit.emptyStoreTitle': 'No actions in {store}',

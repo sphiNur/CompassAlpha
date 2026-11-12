@@ -82,13 +82,15 @@ export function AdminAuditSection() {
     () => new Map(sessionStores.map((s) => [s.id, s.name])),
     [sessionStores],
   );
+  // ADM2-34: "All", "Members" and "Other" are the filter's own words; the
+  // rest name the admin sections the actions belong to.
   const categoryLabel: Record<AuditCategory | 'all', string> = {
-    all: i18n.t('order.categories.all'),
-    people: i18n.t('admin.tile.members'),
+    all: i18n.t('ops.audit.filter.all'),
+    people: i18n.t('ops.audit.filter.people'),
     roles: i18n.t('admin.section.permissions'),
     stores: i18n.t('admin.section.stores'),
     catalog: i18n.t('admin.section.catalog'),
-    other: i18n.t('settlement.expenseCategory.other'),
+    other: i18n.t('ops.audit.filter.other'),
   };
   // Catalog rows get a per-kind badge (SKUs / Suppliers …) instead of
   // the generic "Catalog"; one without a kind (an import) keeps it.

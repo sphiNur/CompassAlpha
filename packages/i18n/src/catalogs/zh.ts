@@ -363,6 +363,9 @@ export const zh = {
   'ops.purge.kind.history': '历史记录',
   'ops.purge.kind.appLogs': '应用日志',
   'ops.purge.kind.other': '其他',
+  'ops.purge.count.orders': '{n} 份订单',
+  'ops.purge.count.runs': '{n} 次采购',
+  'ops.purge.purchaser': '采购员：{name}',
   'ops.maint.confirmResetBody': '输入日期 {date} 确认。删除后无法恢复。',
   'ops.maint.confirmResetLabel': '要重置的日期',
   'ops.purge.deleteRows': '删除 {n} 条记录',
@@ -1851,7 +1854,6 @@ export const zh = {
   'settlement.details.historicalReadOnlyBody':
     '该日结记录创建时尚无明细功能；历史总额会保留，不能补录明细或修改。',
   'settlement.expenses.remove': '删除',
-  'settlement.expenseCategory.other': '其他',
   'settlement.wages.title': '工资明细',
   'settlement.wages.totals': '已发 {paid} · 未发 {unpaid}',
   'settlement.wages.add': '+ 添加工资',
@@ -2036,6 +2038,9 @@ export const zh = {
   'run.action.addItem.mergePurchasedHint':
     '追加到现有采购行：原有单价、供应商和收据保持不变；此处填写的不同价格只用于该店。',
   'ops.audit.filterLabel': '按类型筛选',
+  'ops.audit.filter.all': '全部',
+  'ops.audit.filter.people': '成员',
+  'ops.audit.filter.other': '其他',
   'ops.audit.emptyTitle': '暂无管理操作',
   'ops.audit.emptyBody': '目录修改和角色变更会显示在这里。',
   'ops.audit.emptyStoreTitle': '{store} 暂无操作',

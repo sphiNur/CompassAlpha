@@ -388,6 +388,11 @@ export const ru = {
   'ops.purge.kind.history': 'Записи истории',
   'ops.purge.kind.appLogs': 'Журналы приложения',
   'ops.purge.kind.other': 'Прочее',
+  'ops.purge.count.orders':
+    '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
+  'ops.purge.count.runs':
+    '{n, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}}',
+  'ops.purge.purchaser': 'Закупщик: {name}',
   'ops.maint.confirmResetBody': 'Введите дату {date} для подтверждения. Это нельзя отменить.',
   'ops.maint.confirmResetLabel': 'Дата сброса',
   'ops.purge.deleteRows':
@@ -2094,7 +2099,6 @@ export const ru = {
   'settlement.details.historicalReadOnlyBody':
     'Это закрытие дня сделано до появления детализации. Историческая сумма сохранена и не может быть разбита на строки или изменена.',
   'settlement.expenses.remove': 'Удалить',
-  'settlement.expenseCategory.other': 'Другое',
   'settlement.wages.title': 'Детали зарплаты',
   'settlement.wages.totals': 'Выплачено {paid} · Не выплачено {unpaid}',
   'settlement.wages.add': '+ Добавить зарплату',
@@ -2308,6 +2312,9 @@ export const ru = {
   'run.action.addItem.mergePurchasedHint':
     'Добавить магазин в существующую позицию закупки: цена, поставщик и чек сохраняются; другая цена здесь применится только к этому магазину.',
   'ops.audit.filterLabel': 'Фильтр по типу',
+  'ops.audit.filter.all': 'Все',
+  'ops.audit.filter.people': 'Участники',
+  'ops.audit.filter.other': 'Другое',
   'ops.audit.emptyTitle': 'Действий администраторов пока нет',
   'ops.audit.emptyBody': 'Здесь появятся изменения каталога и ролей.',
   'ops.audit.emptyStoreTitle': 'В «{store}» нет действий',
