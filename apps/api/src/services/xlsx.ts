@@ -90,17 +90,18 @@ export function zipStored(files: readonly { name: string; data: Uint8Array }[]):
   return out;
 }
 
+/** Control characters are not allowed in XML 1.0. */
+function withoutControl(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+}
+
 function esc(text: string): string {
-  return (
-    text
-      // Control characters are not allowed in XML 1.0.
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-  );
+  return withoutControl(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 export function columnName(index: number): string {
@@ -119,14 +120,28 @@ function sheetName(name: string): string {
   return name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31).trim() || 'Sheet';
 }
 
+/** What a spreadsheet reads as the start of a formula (OWASP CSV injection). */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+/**
+ * Text as it is written into a cell. An inline string is text in the
+ * .xlsx itself, but saved as CSV (as payroll imports want) and opened
+ * again, "=…", "+…", "-…" or "@…" becomes a formula, and names and
+ * overtime reasons are typed by staff. Such text gets a leading
+ * apostrophe, which keeps it text there too (review ATT-26).
+ */
+export function cellText(value: string): string {
+  return FORMULA_START.test(value) ? `'${value}` : value;
+}
+
 // Style ids: 0 plain, 1 bold header, 2 money (0.00).
 function cellXml(ref: string, value: Cell, style: number): string {
   if (value === null || value === '') return style ? `<c r="${ref}" s="${style}"/>` : '';
   const s = style ? ` s="${style}"` : '';
   if (typeof value === 'number' && Number.isFinite(value))
     return `<c r="${ref}"${s}><v>${value}</v></c>`;
-  const text = esc(String(value));
-  // Text that starts with = must not turn into a formula on re-save.
+  // Checked once the control characters are gone: "\u0001=…" is "=…" then.
+  const text = esc(cellText(withoutControl(String(value))));
   return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${text}</t></is></c>`;
 }
 

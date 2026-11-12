@@ -4,7 +4,9 @@
  *
  * - `attendance.clock` is switched on per member (a global allow override,
  *   `memberSet`); it is checked here for the concrete store, together with
- *   the member's assignment to that store.
+ *   the member's assignment to that store. Clocking a colleague on another
+ *   phone and the shift reminders ask the same per-store rule
+ *   (services/attendanceClockers.ts, review ATT-14).
  * - `attendance.manage` (store managers and up) plans shifts, reads the
  *   sheet, adds or voids punches with a reason and sets the store's rules.
  * - A self punch must pass the store's rules: the bound phone and the
@@ -94,6 +96,7 @@ import type { Act } from '../../services/face/liveness';
 import { dispatch, findRecipientsByPermissionInStore } from '../../services/notify';
 import { linkForStore } from '../../services/notifyForEvent';
 import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
+import { clockingAt } from '../../services/attendanceClockers';
 import type { RequestContext } from '../context';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import { loadWageRoster } from '../../services/wageRoster';
@@ -114,7 +117,13 @@ const MAX_SHEET_DAYS = 62;
 /** How far back 待核对 looks, and how many punches it lists at most. */
 const REVIEW_DAYS = 14;
 const REVIEW_LIMIT = 200;
-/** What a "not them" punch is voided with; the sheet shows it translated. */
+/**
+ * What a "not them" punch is voided with, in void_reason. It stays in this
+ * file: the sheet hands such a void on as `kind: 'wrongPerson'` with no
+ * reason, and a manager's void as `kind: 'manual'` with the reason they
+ * wrote (review ATT-13: the client was given the marker as the reason and
+ * translated it in one place).
+ */
 const WRONG_PERSON_REASON = 'attendance.voidReason.wrongPerson';
 /** How long a colleague taken back as "not them" stays out of that phone's face look. */
 const TAKEN_BACK_LEFT_OUT_MS = 5 * 60_000;
@@ -371,13 +380,14 @@ async function assertInStore(tx: DB, orgId: string, storeId: string, memberId: s
 
 /**
  * Clocking `memberId` in on this member's phone: a colleague at the same
- * store who clocks there (owner decision 2026-11-06: same store only).
+ * store who clocks there (owner decision 2026-11-06: same store only), by
+ * the punch's own rule for that store (clockingAt, review ATT-14).
  */
 async function assertColleague(tx: DB, session: Session, storeId: string, memberId: string) {
   if (memberId === session.memberId) return;
   const roster = await storeRoster(tx, session.orgId, storeId);
-  const enabled = await clockEnabled(tx, [memberId]);
-  if (!roster.some((m) => m.memberId === memberId) || !enabled.has(memberId)) {
+  const clocking = await clockingAt(tx, storeId, [memberId]);
+  if (!roster.some((m) => m.memberId === memberId) || !clocking.has(memberId)) {
     fail('FORBIDDEN', 'notColleague');
   }
 }
@@ -400,8 +410,12 @@ function publish(orgId: string, storeId: string): void {
   hub.publish(orgId, { type: 'attendance.changed', orgId, storeId });
 }
 
-/** Who has `attendance.clock` through the global allow override. */
-async function clockEnabled(tx: DB, memberIds: readonly string[]): Promise<Set<string>> {
+/**
+ * The settings' switch (`memberSet`): who has the organisation-wide allow
+ * of `attendance.clock`, less an organisation-wide deny. Not who may clock
+ * in at a store; that is clockingAt (review ATT-14).
+ */
+async function switchedOn(tx: DB, memberIds: readonly string[]): Promise<Set<string>> {
   if (memberIds.length === 0) return new Set();
   const now = new Date();
   const rows = await tx
@@ -440,7 +454,8 @@ async function hasFaceConsent(tx: DB, memberId: string): Promise<boolean> {
 /**
  * The store's people with a face reference who agreed to its use:
  * candidates for "whose face is this". `colleagues` keeps only those who
- * clock in (a borrowed phone may only clock a colleague).
+ * clock in there (a borrowed phone may only clock a colleague; review
+ * ATT-14: by the punch's own rule, clockingAt).
  */
 async function knownFaces(
   tx: DB,
@@ -451,8 +466,8 @@ async function knownFaces(
   const roster = await storeRoster(tx, orgId, storeId);
   let ids = roster.map((m) => m.memberId).filter((id) => id !== opts.except);
   if (opts.colleagues) {
-    const enabled = await clockEnabled(tx, ids);
-    ids = ids.filter((id) => enabled.has(id));
+    const clocking = await clockingAt(tx, storeId, ids);
+    ids = ids.filter((id) => clocking.has(id));
   }
   if (ids.length === 0) return [];
   const consented = await tx
@@ -475,27 +490,23 @@ async function knownFaces(
 /**
  * Risk signals before a punch: a phone other than the bound one, and the
  * 1-in-3 spot check (keyed on the person, the store's day and how many
- * punches they made there today).
+ * punches they made there today). `recent`: their punches there in the
+ * last two days (recentPunches), which the challenge reads once.
  */
-async function punchRisk(tx: DB, session: Session, store: StoreRow, deviceId: string | null) {
+async function punchRisk(
+  tx: DB,
+  session: Session,
+  store: StoreRow,
+  deviceId: string | null,
+  recent: readonly { at: Date }[],
+  now: Date,
+) {
   const device = await tx.query.attendanceDevices.findFirst({
     where: (d, { eq: eq2 }) => eq2(d.memberId, session.memberId),
   });
   const newDevice = !!device && (!deviceId || device.deviceHash !== hashDeviceId(deviceId));
   const tz = tzOf(store, session);
-  const today = todayInTz(tz);
-  const since = new Date(Date.now() - 2 * DAY);
-  const recent = await tx
-    .select({ at: s.attendancePunches.punchedAt })
-    .from(s.attendancePunches)
-    .where(
-      and(
-        eq(s.attendancePunches.memberId, session.memberId),
-        eq(s.attendancePunches.storeId, store.id),
-        isNull(s.attendancePunches.voidedAt),
-        gte(s.attendancePunches.punchedAt, since),
-      ),
-    );
+  const today = todayInTz(tz, now);
   const punchesToday = recent.filter((r) => dateInTz(r.at, tz) === today).length;
   return { newDevice, spot: spotCheck(session.memberId, today, punchesToday) };
 }
@@ -650,7 +661,8 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     ...shifts.map((x) => x.memberId),
     ...punches.map((x) => x.memberId),
   ]);
-  const enabled = await clockEnabled(tx, [...memberIds]);
+  // The settings' switch, as `memberSet` writes it (see switchedOn).
+  const enabled = await switchedOn(tx, [...memberIds]);
   const names = new Map(roster.map((m) => [m.memberId, m.displayName]));
   const missingNames = [...memberIds].filter((id) => !names.has(id));
   const actorIds = punches
@@ -789,7 +801,9 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         ? {
             at: p.voidedAt.toISOString(),
             byName: p.voidedByMemberId ? (names.get(p.voidedByMemberId) ?? null) : null,
-            reason: p.voidReason ?? '',
+            ...(p.voidReason === WRONG_PERSON_REASON
+              ? { kind: 'wrongPerson' as const, reason: null }
+              : { kind: 'manual' as const, reason: p.voidReason ?? '' }),
           }
         : null,
     })),
@@ -893,10 +907,15 @@ function latestPunch<T extends { at: Date }>(punches: readonly T[]): T | null {
  * The overtime minutes a clock-out by this member would carry now (0: none,
  * or their next punch is a clock-in). The phone asks why before it opens
  * the camera (2026-11-07); the punch decides again at its own time.
+ * `recent`: their punches there in the last two days (recentPunches).
  */
-async function clockOutOvertime(tx: DB, memberId: string, storeId: string): Promise<number> {
-  const now = new Date();
-  const recent = await recentPunches(tx, memberId, storeId, now);
+async function clockOutOvertime(
+  tx: DB,
+  memberId: string,
+  storeId: string,
+  recent: readonly { kind: 'in' | 'out'; at: Date }[],
+  now: Date,
+): Promise<number> {
   if (rules.nextPunchKind(recent, now) !== 'out') return 0;
   const policy = policyView(await loadPolicy(tx, storeId));
   const overtime = await overtimeFor(tx, memberId, storeId, now, policy.overtimeAfterMinutes);
@@ -957,37 +976,58 @@ export const attendanceRouter = router({
         session.memberId,
         mine.map((store) => store.id),
       );
-      for (const store of mine) {
-        if (!permsByStore.get(store.id)?.has('attendance.clock')) continue;
+      const clocking = mine.filter((store) => permsByStore.get(store.id)?.has('attendance.clock'));
+      const ids = clocking.map((store) => store.id);
+      // Each store's today, in its own time zone.
+      const todayOf = new Map(clocking.map((st) => [st.id, todayInTz(tzOf(st, session), now)]));
+      const days = [...todayOf.values()].sort();
+      // Review ATT-10: one read each for every store this member clocks
+      // at. It was three per store, and the page asks every minute.
+      const [policies, shiftRows, punchRows] =
+        ids.length === 0
+          ? [[], [], []]
+          : await Promise.all([
+              tx
+                .select()
+                .from(s.attendanceStorePolicies)
+                .where(inArray(s.attendanceStorePolicies.storeId, ids)),
+              tx
+                .select()
+                .from(s.attendanceShifts)
+                .where(
+                  and(
+                    eq(s.attendanceShifts.memberId, session.memberId),
+                    inArray(s.attendanceShifts.storeId, ids),
+                    gte(s.attendanceShifts.shiftDate, rules.nextDate(days[0]!, -1)),
+                    lte(s.attendanceShifts.shiftDate, rules.nextDate(days.at(-1)!, 7)),
+                  ),
+                )
+                .orderBy(asc(s.attendanceShifts.startsAt)),
+              tx
+                .select()
+                .from(s.attendancePunches)
+                .where(
+                  and(
+                    eq(s.attendancePunches.memberId, session.memberId),
+                    inArray(s.attendancePunches.storeId, ids),
+                    isNull(s.attendancePunches.voidedAt),
+                    gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
+                  ),
+                )
+                .orderBy(asc(s.attendancePunches.punchedAt)),
+            ]);
+      for (const store of clocking) {
         const tz = tzOf(store, session);
-        const today = todayInTz(tz, now);
-        const [policy, shifts, punches] = await Promise.all([
-          loadPolicy(tx, store.id),
-          tx
-            .select()
-            .from(s.attendanceShifts)
-            .where(
-              and(
-                eq(s.attendanceShifts.memberId, session.memberId),
-                eq(s.attendanceShifts.storeId, store.id),
-                gte(s.attendanceShifts.shiftDate, rules.nextDate(today, -1)),
-                lte(s.attendanceShifts.shiftDate, rules.nextDate(today, 7)),
-              ),
-            )
-            .orderBy(asc(s.attendanceShifts.startsAt)),
-          tx
-            .select()
-            .from(s.attendancePunches)
-            .where(
-              and(
-                eq(s.attendancePunches.memberId, session.memberId),
-                eq(s.attendancePunches.storeId, store.id),
-                isNull(s.attendancePunches.voidedAt),
-                gte(s.attendancePunches.punchedAt, new Date(now.getTime() - 2 * DAY)),
-              ),
-            )
-            .orderBy(asc(s.attendancePunches.punchedAt)),
-        ]);
+        const today = todayOf.get(store.id)!;
+        const policy = policies.find((p) => p.storeId === store.id);
+        // From yesterday to a week ahead, by this store's own today.
+        const shifts = shiftRows.filter(
+          (x) =>
+            x.storeId === store.id &&
+            x.shiftDate >= rules.nextDate(today, -1) &&
+            x.shiftDate <= rules.nextDate(today, 7),
+        );
+        const punches = punchRows.filter((p) => p.storeId === store.id);
         const view = policyView(policy);
         out.push({
           storeId: store.id,
@@ -1054,15 +1094,18 @@ export const attendanceRouter = router({
       const session = ctx.session!;
       const { turns, overtimeMinutes } = await ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.clock');
+        // Nobody vouches for a borrowed phone: always the turns. Whose
+        // clock-out a colleague's is, only their face says.
+        if (input.identify) return { turns: true, overtimeMinutes: 0 };
+        // Their last two days' punches here, read once for both questions
+        // below (review ATT-30: each read them).
+        const now = new Date();
+        const recent = await recentPunches(tx, session.memberId, store.id, now);
         // A clock-out well past the shift: the phone asks why first, so
-        // the punch goes out straight after the camera. Whose clock-out a
-        // colleague's is, only their face says.
-        const overtimeMinutes = input.identify
-          ? 0
-          : await clockOutOvertime(tx, session.memberId, store.id);
-        // Nobody vouches for a borrowed phone: always the turns.
-        if (input.identify || input.force) return { turns: true, overtimeMinutes };
-        const risk = await punchRisk(tx, session, store, input.deviceId ?? null);
+        // the punch goes out straight after the camera.
+        const overtimeMinutes = await clockOutOvertime(tx, session.memberId, store.id, recent, now);
+        if (input.force) return { turns: true, overtimeMinutes };
+        const risk = await punchRisk(tx, session, store, input.deviceId ?? null, recent, now);
         return { turns: risk.newDevice || risk.spot, overtimeMinutes };
       });
       const challenge = await signLivenessToken({
@@ -1150,17 +1193,24 @@ export const attendanceRouter = router({
     // A borrowed phone always asks for the turns: nobody else vouches for it.
     if (borrowed && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
     let live: LivenessVerdict;
+    // The two turns' photos, decoded once and kept with the punch.
+    let turnPhotos: { left: Buffer; right: Buffer } | null = null;
     if (turnsAsked) {
       if (!input.liveness.left || !input.liveness.right) fail('BAD_REQUEST', 'livenessRequired');
       const leftBytes = photoBytes(input.liveness.left);
       const rightBytes = photoBytes(input.liveness.right);
+      turnPhotos = { left: leftBytes, right: rightBytes };
       const left = await faceFeature(leftBytes);
       const right = await faceFeature(rightBytes);
       live = evaluateLiveness(checked, left, right);
       if (live.result === 'unchecked') fail('CONFLICT', 'faceCheckUnavailable');
-      // Face only: a failed check is refused; the person tries again.
+      // Face only: a failed check is refused; the person tries again. The
+      // failures go as one comma-separated string, as for the blink and
+      // the mouth above (review ATT-30: here they were a list).
       if (live.result === 'fail') {
-        fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
+        fail('BAD_REQUEST', 'livenessFailed', {
+          context: { failures: live.failures.join(',') },
+        });
       }
       if (left?.found && right?.found) {
         prints.push(
@@ -1211,7 +1261,8 @@ export const attendanceRouter = router({
       const now = new Date();
       // The place, where the store asks for it.
       const photos = {
-        face: photoBytes(shots.face),
+        // Decoded once, before the face check (review ATT-30).
+        face: faceBytes,
         // A place photo from a phone still on the old page is not kept.
         scene: null,
       };
@@ -1382,10 +1433,10 @@ export const attendanceRouter = router({
         { kind: 'face', bytes: photos.face },
       ];
       if (photos.scene) frames.push({ kind: 'scene', bytes: photos.scene });
-      if (turnsAsked && input.liveness?.left && input.liveness.right) {
+      if (turnPhotos) {
         frames.push(
-          { kind: 'left', bytes: photoBytes(input.liveness.left) },
-          { kind: 'right', bytes: photoBytes(input.liveness.right) },
+          { kind: 'left', bytes: turnPhotos.left },
+          { kind: 'right', bytes: turnPhotos.right },
         );
       }
       await tx.insert(s.attendancePunchFrames).values(

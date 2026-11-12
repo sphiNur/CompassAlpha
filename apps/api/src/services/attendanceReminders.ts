@@ -1,8 +1,9 @@
 /**
  * Attendance reminders over the bot (2026-11-05), scanned every few
  * minutes by the API process:
- *   - a member switched on for clocking who has not clocked in after the
- *     grace minutes of a planned shift → remind them;
+ *   - a member who may clock in at the store (the punch's own rule,
+ *     clockingAt; review ATT-14) and has not clocked in after the grace
+ *     minutes of a planned shift → remind them;
  *   - still nothing 30 minutes in → tell the store's managers;
  *   - clocked in but not out 30 minutes after the shift → remind them.
  * The rule is `attendance.dueReminders`; `dispatch` dedups per shift, so
@@ -14,6 +15,7 @@ import { attendance as rules } from '@compass/domain';
 import { storeTimeZone } from './timeZone';
 import { dispatch, findRecipientsByPermissionInStore } from './notify';
 import { linkForStore } from './notifyForEvent';
+import { clockingAt } from './attendanceClockers';
 
 type Row = {
   shift_id: string;
@@ -22,6 +24,7 @@ type Row = {
   store_name: string;
   store_tz: string | null;
   org_tz: string;
+  member_id: string;
   user_id: string;
   member_name: string;
   starts_at: Date | string;
@@ -49,7 +52,7 @@ export async function scanAttendanceReminders(
   const rows = await inSystem(db, 'worker', (tx) =>
     tx.execute<Row>(sql`
       SELECT sh.id AS shift_id, sh.org_id, sh.store_id, st.name AS store_name,
-             st.timezone AS store_tz, o.timezone AS org_tz, m.user_id,
+             st.timezone AS store_tz, o.timezone AS org_tz, sh.member_id, m.user_id,
              u.display_name AS member_name, sh.starts_at, sh.ends_at,
              coalesce(p.grace_minutes, 5) AS grace_minutes,
              (SELECT ap.kind FROM inventory.attendance_punches ap
@@ -66,11 +69,22 @@ export async function scanAttendanceReminders(
         LEFT JOIN inventory.attendance_store_policies p ON p.store_id = sh.store_id
        WHERE (sh.starts_at BETWEEN ${nowIso}::timestamptz - interval '3 hours' AND ${nowIso}::timestamptz
               OR sh.ends_at BETWEEN ${nowIso}::timestamptz - interval '6 hours' AND ${nowIso}::timestamptz)
-         AND EXISTS (
-           SELECT 1 FROM auth.member_permission_overrides o2
-            WHERE o2.member_id = sh.member_id AND o2.permission_key = 'attendance.clock'
-              AND o2.effect = 'allow' AND o2.scope_type = 'global'
-              AND (o2.expires_at IS NULL OR o2.expires_at > ${nowIso}::timestamptz))
+         -- Only a first cut: someone with a live grant of the key there, by an
+         -- allow or a role. remindShift asks the punch's own rule (ATT-14).
+         AND (EXISTS (
+               SELECT 1 FROM auth.member_permission_overrides o2
+                WHERE o2.member_id = sh.member_id AND o2.permission_key = 'attendance.clock'
+                  AND o2.effect = 'allow'
+                  AND (o2.scope_type = 'global'
+                       OR (o2.scope_type = 'store' AND o2.scope_id = sh.store_id))
+                  AND (o2.expires_at IS NULL OR o2.expires_at > ${nowIso}::timestamptz))
+              OR EXISTS (
+               SELECT 1 FROM auth.member_role_bindings b
+                 JOIN auth.role_permissions rp ON rp.role_id = b.role_id
+                WHERE b.member_id = sh.member_id AND rp.permission_key = 'attendance.clock'
+                  AND (b.scope_type = 'global'
+                       OR (b.scope_type = 'store' AND b.scope_id = sh.store_id))
+                  AND (b.expires_at IS NULL OR b.expires_at > ${nowIso}::timestamptz)))
     `),
   );
   let sent = 0;
@@ -104,6 +118,11 @@ async function remindShift(db: DB, r: Row, now: Date): Promise<number> {
     end: rules.localTime(endsAt, tz),
   };
   return inSystem(db, 'worker', async (tx) => {
+    // Review ATT-14: whoever the punch would let clock in there, by role or
+    // by allow, and not someone denied there. Only the organisation-wide
+    // allow counted: a deny was still reminded, a role never was.
+    const clocking = await clockingAt(tx, r.store_id, [r.member_id]);
+    if (!clocking.has(r.member_id)) return 0;
     let sent = 0;
     for (const action of due) {
       if (action === 'remindIn' || action === 'remindOut') {

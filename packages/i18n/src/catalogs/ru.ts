@@ -2609,7 +2609,9 @@ export const ru = {
   'attendance.sheet.emptyTitle': 'Пока некого показать',
   'attendance.sheet.emptyBody':
     'Включите отметку для сотрудников в «Настройках» или составьте смены в «Сменах».',
-  'attendance.sheet.summary': 'На работе {onDuty} · опоздали {late} · не пришли {absent}',
+  'attendance.sheet.summaryOnDuty': 'На работе {n}',
+  'attendance.sheet.summaryLate': 'Опоздали {n}',
+  'attendance.sheet.summaryAbsent': 'Не пришли {n}',
   'attendance.sheet.planned': 'Смена {times}',
   'attendance.sheet.noShift': 'Смена не назначена',
   'attendance.sheet.memberDayHint':
@@ -2617,6 +2619,7 @@ export const ru = {
   'attendance.sheet.noPunches': 'В этот день отметок нет.',
   'attendance.sheet.manualBy': 'Добавил {name}: {reason}',
   'attendance.sheet.madeOn': '{label} ({date})',
+  'attendance.sheet.manualMark': '{time} (вручную)',
   'attendance.sheet.selfAt': 'Отметился сам, {m} м от магазина',
   'attendance.sheet.voidedBy': 'аннулировал {name}: {reason}',
   'attendance.void.action': 'Аннулировать',

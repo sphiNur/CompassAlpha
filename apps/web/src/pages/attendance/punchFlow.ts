@@ -22,7 +22,7 @@
  */
 import { ATTENDANCE_UNDO_WINDOW_MS } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
-import { errorTextOf } from '../../lib/errorText';
+import { errorTextOf, type WriteFallbackKey } from '../../lib/errorText';
 import type { Act } from './faceActs';
 import type { PunchPhotos, Turn } from './PunchCamera';
 import { punchOutcome, refusalHint, type PunchKind } from './punchOutcome';
@@ -118,8 +118,12 @@ export interface PunchFlowDeps {
   haptic(kind: 'success' | 'warning' | 'error'): void;
   /** Re-reads what is recorded for the page underneath. */
   refresh(): void;
-  /** A punch that could not start, or an undo refused: the error toast. */
-  failed(err: unknown): void;
+  /**
+   * A punch that could not start, or an undo refused: the error toast,
+   * with `fallback` when the server named no reason (review ATT-17: the
+   * undo said "could not clock in").
+   */
+  failed(err: unknown, fallback: WriteFallbackKey): void;
   /** The phone's person agrees to the face check first. */
   onConsent(): void;
   /** The phone's person has no approved face yet. */
@@ -218,7 +222,7 @@ export function punchFlow(deps: PunchFlowDeps) {
             : cameraView(attempt, 1, notice ?? null),
       });
     } catch (err) {
-      deps.failed(err);
+      deps.failed(err, 'attendance.errors.punchFailed');
     } finally {
       set({ preparing: false });
     }
@@ -339,6 +343,11 @@ export function punchFlow(deps: PunchFlowDeps) {
         deps.refresh();
         return;
       }
+      case 'busy':
+        // The photos and their key go again when the person asks (ATT-29).
+        deps.haptic('error');
+        setFlow({ ...f, view: failedView(out.key, 'resend') });
+        return;
       case 'retry':
         deps.haptic('error');
         setFlow({ ...f, view: failedView(out.key, 'retry', {}, refusalHint(out.key)) });
@@ -450,7 +459,7 @@ export function punchFlow(deps: PunchFlowDeps) {
         deps.refresh();
         deps.onAgain(true, 'attendance.punch.undone');
       },
-      (err: unknown) => deps.failed(err),
+      (err: unknown) => deps.failed(err, 'common.errors.actionFailed'),
     );
   };
 

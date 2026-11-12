@@ -74,7 +74,7 @@ function setup(opts: { deviceId?: string | null } = {}) {
     },
     haptic: (kind) => void log.push(`haptic ${kind}`),
     refresh: () => void log.push('refresh'),
-    failed: (err) => void log.push(`toast ${(err as Error).message}`),
+    failed: (err, fallback) => void log.push(`toast ${(err as Error).message} | ${fallback}`),
     onConsent: () => void log.push('consent'),
     onEnroll: () => void log.push('enroll'),
     onAgain: (identify, notice) => void log.push(`again ${identify} ${notice ?? '-'}`),
@@ -150,7 +150,7 @@ describe('punchFlow: a punch', () => {
     const t = setup();
     t.answerChallenges(refusal('attendance.errors.notEnabled'));
     await t.flow.start(false, HERE, 'in');
-    expect(t.log).toEqual(['toast attendance.errors.notEnabled']);
+    expect(t.log).toEqual(['toast attendance.errors.notEnabled | attendance.errors.punchFailed']);
     expect(t.flow.getState()).toMatchObject({ flow: null, preparing: false });
   });
 
@@ -263,6 +263,31 @@ describe('punchFlow: a lost answer (ATT-03)', () => {
     await t.settle();
     await t.wait(RESEND_WAITS_MS[0]!);
     expect(t.punches).toHaveLength(RESEND_WAITS_MS.length + 3);
+  });
+
+  test('the face check could not run: why, and the same photos again on request (ATT-29)', async () => {
+    const t = setup();
+    (await punching(t)).reject(refusal('attendance.errors.faceCheckUnavailable'));
+    await t.settle();
+    expect(t.view()).toEqual({
+      at: 'failed',
+      title: 'attendance.errors.faceCheckUnavailable',
+      vars: {},
+      body: null,
+      action: 'resend',
+    });
+    // Nothing goes again by itself: the server did answer.
+    await t.wait(RESEND_WAITS_MS[1]!);
+    expect(t.punches).toHaveLength(1);
+    // "Try again": the same photos and key, no new challenge or camera.
+    t.flow.onResend();
+    expect(t.punches).toHaveLength(2);
+    expect(t.punches[1]!.key).toBe('key-1');
+    expect(t.punches[1]!.input).toEqual(t.punches[0]!.input);
+    expect(t.challenges).toHaveLength(1);
+    t.punches[1]!.resolve(RECORDED);
+    await t.settle();
+    expect(t.view()).toMatchObject({ at: 'done' });
   });
 
   test('a resend due after the sheet was closed is not sent (ATT-04)', async () => {
@@ -548,7 +573,9 @@ describe('punchFlow: "Not <name>"', () => {
     t.flow.undo();
     t.undos[0]!.reject(refusal('attendance.errors.undoTooLate'));
     await t.settle();
-    expect(t.log.at(-1)).toBe('toast attendance.errors.undoTooLate');
+    // Review ATT-17: a refusal with no reason of its own is not "could not
+    // clock in"; the undo falls back to the generic sentence.
+    expect(t.log.at(-1)).toBe('toast attendance.errors.undoTooLate | common.errors.actionFailed');
     expect(t.flow.getState().last?.id).toBe('p1');
   });
 

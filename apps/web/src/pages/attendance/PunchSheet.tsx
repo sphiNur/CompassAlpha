@@ -301,13 +301,16 @@ function Done({
           {i18n.t('attendance.live.flaggedNote')}
         </p>
       ) : null}
-      <div className="mt-3 flex w-full gap-2">
+      {/* Review ATT-28: one above the other, each the sheet's width. Side by
+          side each had half of a 320 px screen, and "Это не {name}" with a
+          long name was cut, on the button that must say whose punch it was. */}
+      <div className="mt-3 flex w-full flex-col gap-2">
         {canUndo ? (
-          <Button variant="secondary" className="flex-1" loading={undoPending} onClick={onUndo}>
+          <Button variant="secondary" block loading={undoPending} onClick={onUndo}>
             {i18n.t('attendance.punch.notThem', { name: result.forName! })}
           </Button>
         ) : null}
-        <Button className="flex-1" disabled={undoPending} onClick={onClose}>
+        <Button block disabled={undoPending} onClick={onClose}>
           {i18n.t('attendance.punch.done')}
         </Button>
       </div>

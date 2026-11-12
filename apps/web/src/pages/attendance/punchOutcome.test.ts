@@ -1,5 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { loadCatalog } from '@compass/i18n';
 import { punchOutcome, refusalHint } from './punchOutcome';
+
+// A key is taken for the server's only when this build's catalog has it
+// (errorText.isErrorKey), so the catalog is loaded here, not left to
+// whichever test file ran before.
+beforeAll(async () => {
+  await loadCatalog('en');
+});
 
 /** A tRPC error as the client sees it: the key as message, placeholders in data.context. */
 const refused = (message: string, context?: Record<string, unknown>) =>
@@ -80,6 +88,13 @@ describe('punch outcome', () => {
     );
     expect(other).toEqual({ next: 'retry', key: 'attendance.errors.livenessOtherFace' });
     expect(refusalHint('attendance.errors.livenessOtherFace')).toBe('attendance.face.refusedBody');
+  });
+
+  test('the face check could not run: the same photos again, when asked (ATT-29)', () => {
+    expect(punchOutcome(refused('attendance.errors.faceCheckUnavailable'), 'in')).toEqual({
+      next: 'busy',
+      key: 'attendance.errors.faceCheckUnavailable',
+    });
   });
 
   test('consent and enrollment go to their own sheets', () => {

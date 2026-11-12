@@ -76,10 +76,19 @@ export function AttendanceAdmin() {
             { value: 'sheet', label: i18n.t('attendance.view.sheet') },
             {
               value: 'review',
+              // Review ATT-16: the count stays whole beside the word. As one
+              // string, four segments at 320 px in Russian or Uzbek cut the
+              // number off first. The space keeps the two apart for a
+              // screen reader.
               label:
-                toReview > 0
-                  ? `${i18n.t('attendance.view.review')} ${toReview}`
-                  : i18n.t('attendance.view.review'),
+                toReview > 0 ? (
+                  <span className="flex min-w-0 items-center justify-center gap-1">
+                    <span className="min-w-0 truncate">{i18n.t('attendance.view.review')}</span>{' '}
+                    <span className="shrink-0 tabular-nums">{toReview}</span>
+                  </span>
+                ) : (
+                  i18n.t('attendance.view.review')
+                ),
             },
             { value: 'roster', label: i18n.t('attendance.view.roster') },
             { value: 'settings', label: i18n.t('attendance.view.settings') },

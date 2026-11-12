@@ -195,7 +195,11 @@ export function PunchCamera({
         </>
       ) : (
         <>
-          <div className="relative overflow-hidden rounded-[var(--r-card)] bg-black">
+          <div
+            // UI-8 exception: the camera picture looks the same in both
+            // themes; the frame behind it stays black.
+            className="relative overflow-hidden rounded-[var(--r-card)] bg-black"
+          >
             <video
               ref={cam.setVideo}
               playsInline
@@ -242,7 +246,11 @@ export function FaceOverlay({
 }) {
   const i18n = useI18n();
   return (
-    <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-center text-white">
+    <div
+      // UI-8 exception: text over the camera picture, white on a dark fade
+      // in both themes, so it reads on any picture.
+      className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-center text-white"
+    >
       <span className="text-old-h3 font-semibold">
         {arrow} {title}
       </span>
@@ -252,6 +260,8 @@ export function FaceOverlay({
             {i18n.t('attendance.live.preparingPercent', { percent })}
           </span>
           <span
+            // UI-8 exception: the progress bar over the camera picture, as
+            // the text above it.
             className="h-1.5 w-full overflow-hidden rounded-full bg-white/30"
             role="progressbar"
             aria-label={i18n.t('attendance.live.preparingPercent', { percent })}
@@ -260,6 +270,7 @@ export function FaceOverlay({
             aria-valuenow={percent}
           >
             <span
+              // UI-8 exception: as the bar around it.
               className="block h-full rounded-full bg-white transition-[width]"
               style={{ width: `${percent}%` }}
             />

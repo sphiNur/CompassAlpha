@@ -2696,7 +2696,10 @@ export const en = {
   'attendance.sheet.emptyTitle': 'Nobody to show',
   'attendance.sheet.emptyBody':
     'Switch clocking on for people in Settings, or plan shifts in Roster.',
-  'attendance.sheet.summary': 'At work {onDuty} · late {late} · absent {absent}',
+  // ATT-18: one piece per count, each shown only when it is not zero (UI-3).
+  'attendance.sheet.summaryOnDuty': 'At work {n}',
+  'attendance.sheet.summaryLate': 'Late {n}',
+  'attendance.sheet.summaryAbsent': 'Absent {n}',
   'attendance.sheet.planned': 'Shift {times}',
   'attendance.sheet.noShift': 'No shift planned',
   'attendance.sheet.memberDayHint':
@@ -2707,6 +2710,8 @@ export const en = {
   // was made on, when that is not the row's day: an overnight shift's
   // clock-out.
   'attendance.sheet.madeOn': '{label} ({date})',
+  // ATT-16: a punch a manager added, in the day sheet's row (it was a bare "*").
+  'attendance.sheet.manualMark': '{time} (manual)',
   'attendance.sheet.selfAt': 'Own punch, {m} m from the store',
   'attendance.sheet.voidedBy': 'voided by {name}: {reason}',
   'attendance.void.action': 'Void',
@@ -2760,7 +2765,8 @@ export const en = {
   'attendance.settings.graceHint':
     'Clocking in this many minutes after the start is not counted as late.',
   'attendance.settings.saved': 'Clock-in rules saved',
-  'attendance.errors.punchFailed': 'Could not clock in. Try again.',
+  // I18N1-08: a clock-out falls back to this too; it said "clock in".
+  'attendance.errors.punchFailed': 'Could not record the punch. Try again.',
   'attendance.errors.saveFailed': 'Could not save. Try again.',
   'attendance.errors.notEnabled': 'Clocking in is not switched on for you at this store.',
   'attendance.errors.otherDevice':

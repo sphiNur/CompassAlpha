@@ -14,7 +14,17 @@ import {
   settlementMoneyProblem,
   wholeNumberIn,
 } from '@compass/contracts/limits';
-import { Button, DataState, Field, Input, Switch, useToast } from '@compass/ui';
+import {
+  Button,
+  Card,
+  DataState,
+  Field,
+  Input,
+  SectionLabel,
+  Switch,
+  rowGroupClass,
+  useToast,
+} from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
@@ -64,23 +74,21 @@ function PeopleBlock({ storeId }: { storeId: string }) {
 
   return (
     <section>
-      <h2 className="mb-1 text-old-h3 font-semibold text-[var(--c-fg)]">
+      <SectionLabel as="h2" padded={false} className="mb-1">
         {i18n.t('attendance.settings.people')}
-      </h2>
+      </SectionLabel>
       <p className="mb-2 text-old-label text-[var(--c-fg-muted)]">
         {i18n.t('attendance.settings.peopleHint')}
       </p>
       <DataState query={sheet}>
         {(data) => (
-          <ul className="flex flex-col gap-2">
+          // Review ATT-07 (UI-6): one card of rows, not a card per person.
+          <ul className={rowGroupClass} role="list">
             {data.members
               .filter((m) => m.inStore)
               .sort(sheetMemberOrder(i18n.locale))
               .map((m) => (
-                <li
-                  key={m.memberId}
-                  className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline"
-                >
+                <li key={m.memberId} className="px-4 py-3">
                   <Switch
                     label={m.name}
                     hint={
@@ -335,29 +343,29 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+      <SectionLabel as="h2" padded={false}>
         {i18n.t('attendance.settings.rules')}
-      </h2>
+      </SectionLabel>
 
-      <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
+      <Card className="px-4 py-3">
         <Switch
           label={i18n.t('attendance.settings.requireDevice')}
           hint={i18n.t('attendance.settings.requireDeviceHint')}
           checked={requireDevice}
           onChange={(e) => setRequireDevice(e.target.checked)}
         />
-      </div>
+      </Card>
 
-      <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
+      <Card className="px-4 py-3">
         <p className="text-old-body font-semibold text-[var(--c-fg)]">
           {i18n.t('attendance.settings.faceOnly')}
         </p>
         <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('attendance.settings.faceOnlyHint')}
         </p>
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
+      <Card className="flex flex-col gap-2 px-4 py-3">
         <Switch
           label={i18n.t('attendance.settings.requireGeo')}
           hint={i18n.t('attendance.settings.requireGeoHint')}
@@ -412,9 +420,9 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             </Field>
           </>
         ) : null}
-      </div>
+      </Card>
 
-      <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
+      <Card className="px-4 py-3">
         <Field
           label={i18n.t('attendance.settings.grace')}
           hint={i18n.t('attendance.settings.graceHint')}
@@ -440,7 +448,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             onChange={(e) => setOvertimeAfter(e.target.value)}
           />
         </Field>
-      </div>
+      </Card>
 
       <Button
         block

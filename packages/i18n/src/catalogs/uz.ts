@@ -2593,7 +2593,9 @@ export const uz = {
   'attendance.sheet.emptyTitle': 'Hozircha hech kim yoʻq',
   'attendance.sheet.emptyBody':
     '«Sozlamalar»da xodimlarga belgilashni yoqing yoki «Smenalar»da smena tuzing.',
-  'attendance.sheet.summary': 'Ishda {onDuty} · kechikdi {late} · kelmadi {absent}',
+  'attendance.sheet.summaryOnDuty': 'Ishda {n}',
+  'attendance.sheet.summaryLate': 'Kechikdi {n}',
+  'attendance.sheet.summaryAbsent': 'Kelmadi {n}',
   'attendance.sheet.planned': 'Smena {times}',
   'attendance.sheet.noShift': 'Smena belgilanmagan',
   'attendance.sheet.memberDayHint':
@@ -2601,6 +2603,7 @@ export const uz = {
   'attendance.sheet.noPunches': 'Bu kuni belgilar yoʻq.',
   'attendance.sheet.manualBy': '{name} qoʻshgan: {reason}',
   'attendance.sheet.madeOn': '{label} ({date})',
+  'attendance.sheet.manualMark': '{time} (qoʻlda)',
   'attendance.sheet.selfAt': 'Oʻzi belgiladi, doʻkondan {m} m',
   'attendance.sheet.voidedBy': '{name} yaroqsiz qildi: {reason}',
   'attendance.void.action': 'Yaroqsiz qilish',

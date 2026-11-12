@@ -107,6 +107,13 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     ] as const) {
       await expectError(clock(f.staff(), { left, right }), 'attendance.errors.livenessFailed');
     }
+    // What failed comes as one comma-separated string, as for the blink
+    // and the mouth (review ATT-30: the turns sent a list, which the phone
+    // drops: it reads only strings and numbers from the details).
+    const refused = await errorOf(() => clock(f.staff(), { left: 'Bob:left', right: 'Bob:right' }));
+    expect(
+      (refused?.cause as { context?: { failures?: unknown } } | undefined)?.context?.failures,
+    ).toBe('otherPerson');
     expect(await recorded(f.staffId)).toEqual([]);
     expect(await botTemplates()).toEqual(before);
   });
@@ -392,6 +399,43 @@ describe.skipIf(!SHOULD_RUN)('attendance review fixes (2026-11-07)', () => {
     // Bob's own face is known on Ali's phone.
     expect((await clock(f.staff(), { who: 'Bob', identify: true })).forName).toBe('Att Colleague');
   });
+
+  test("a borrowed phone clocks a colleague by the punch's own rule for the store (ATT-14)", async () => {
+    const f = fixture();
+    const db = getDb(undefined, { system: 'maintenance' });
+    await staffReady();
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    // Bob is not switched on: he clocks through a role he has at this store.
+    const [clocker] = await db
+      .insert(s.roles)
+      .values({ orgId: f.orgId, slug: `att-clocker-${f.orgId}`, name: 'Clocker', rank: 10 })
+      .returning();
+    await db
+      .insert(s.rolePermissions)
+      .values({ roleId: clocker!.id, permissionKey: 'attendance.clock' });
+    await db.insert(s.memberRoleBindings).values({
+      memberId: f.colleagueId,
+      roleId: clocker!.id,
+      scopeType: 'store',
+      scopeId: f.storeId,
+    });
+    await enrollApproved(f.colleague(), 'Bob');
+    expect((await clock(f.staff(), { who: 'Bob', identify: true })).forName).toBe('Att Colleague');
+    await resetPunches(f.colleagueId);
+    // Denied at this store: no punch of his own here, and none on Ali's phone.
+    await db.insert(s.memberPermissionOverrides).values({
+      memberId: f.colleagueId,
+      permissionKey: 'attendance.clock',
+      effect: 'deny',
+      scopeType: 'store',
+      scopeId: f.storeId,
+    });
+    await expectError(clock(f.colleague(), { who: 'Bob' }), 'attendance.errors.notEnabled');
+    await expectError(
+      clock(f.staff(), { who: 'Bob', identify: true }),
+      'attendance.errors.notRecognized',
+    );
+  });
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => {
@@ -476,10 +520,8 @@ describe.skipIf(!SHOULD_RUN)('attendance straight-on punch (2026-11-07)', () => 
       'attendance.errors.alreadyVoided',
     );
     const row = (await sheet()).punches.find((p) => p.id === out.id)!;
-    expect([row.voided?.reason, row.voided?.byName]).toEqual([
-      'attendance.voidReason.wrongPerson',
-      'Att Staff',
-    ]);
+    // Review ATT-13: a kind, not the stored marker passed off as a reason.
+    expect(row.voided).toMatchObject({ kind: 'wrongPerson', reason: null, byName: 'Att Staff' });
     // Its overtime is no longer waiting for anyone.
     expect(await pendingOvertime()).toEqual([]);
     expect(await botRecipients('attendance.punchUndone')).toEqual([f.managerUserId]);

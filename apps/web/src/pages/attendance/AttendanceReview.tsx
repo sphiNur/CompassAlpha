@@ -9,7 +9,17 @@
  * with a reason. Nobody approves their own.
  */
 import { useState } from 'react';
-import { Badge, Banner, Button, DataState, EmptyState, Field, Input } from '@compass/ui';
+import {
+  Badge,
+  Banner,
+  Button,
+  DataState,
+  EmptyState,
+  Field,
+  Input,
+  SectionLabel,
+  rowGroupClass,
+} from '@compass/ui';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { useErrToast } from '../../hooks/useErrToast';
@@ -58,10 +68,11 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
             ) : null}
             {data.enrollments.length > 0 ? (
               <section className="flex flex-col gap-2">
-                <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+                <SectionLabel as="h2" padded={false}>
                   {i18n.t('attendance.review.enrollTitle')}
-                </h2>
-                <ul className="flex flex-col gap-2">
+                </SectionLabel>
+                {/* Review ATT-07 (UI-6): one card of rows, not a card each. */}
+                <ul className={rowGroupClass} role="list">
                   {data.enrollments.map((e) => (
                     <EnrollItem key={e.id} storeId={storeId} enrollment={e} />
                   ))}
@@ -74,12 +85,13 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
                 description={i18n.t('attendance.review.emptyBody')}
               />
             ) : data.punches.length === 0 ? null : (
-              <ul className="flex flex-col gap-2" aria-label={i18n.t('attendance.view.review')}>
+              <ul
+                className={rowGroupClass}
+                role="list"
+                aria-label={i18n.t('attendance.view.review')}
+              >
                 {data.punches.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline"
-                  >
+                  <li key={p.id} className="flex flex-col gap-2 px-4 py-3">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-old-body font-semibold text-[var(--c-fg)]">
                         {p.name}
@@ -212,7 +224,7 @@ function EnrollItem({
   const waiting = photos.data?.find((x) => x.id === enrollment.id);
   const inUse = photos.data?.find((x) => x.status === 'approved');
   return (
-    <li className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
+    <li className="flex flex-col gap-2 px-4 py-3">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-old-body font-semibold text-[var(--c-fg)]">{enrollment.name}</span>
         <span className="tabular-nums text-old-label text-[var(--c-fg-muted)]">

@@ -27,7 +27,15 @@
  * minutes (attendance/usePunchFlow.ts, attendance/PunchSheet.tsx).
  */
 import { useEffect, useState } from 'react';
-import { Banner, Button, ConfirmSheet, DataState, EmptyState } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  Card,
+  ConfirmSheet,
+  DataState,
+  EmptyState,
+  SectionLabel,
+} from '@compass/ui';
 import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
 import { haptic } from '../lib/telegram';
@@ -140,19 +148,23 @@ function ClockPanel({ storeId }: { storeId: string }) {
     { deviceId: deviceId ?? undefined },
     { enabled: deviceId !== null, refetchInterval: 60_000 },
   );
-  // The face-check consent, asked before enrolling or the first face punch.
-  const [consentFor, setConsentFor] = useState<{ identify: boolean } | 'enroll' | null>(null);
+  // The face-check consent, asked before enrolling; agreeing goes on to the
+  // enrollment. (Review ATT-22: a branch for agreeing before a colleague's
+  // punch was never reached; a colleague agrees on their own phone.)
+  const [consentOpen, setConsentOpen] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const consentGive = trpc.attendance.faceConsentGive.useMutation({
     onSuccess: () => void utils.attendance.me.invalidate(),
   });
+  // Review ATT-17: agreeing or withdrawing is not a punch; a failure the
+  // server names no reason for said "could not clock in".
   const consentWithdraw = trpc.attendance.faceConsentWithdraw.useMutation({
     onSuccess: () => {
       setWithdrawOpen(false);
       void utils.attendance.me.invalidate();
     },
-    onError: errToast('attendance.errors.punchFailed'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
@@ -167,7 +179,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
   /** Agree first, then the ring. */
   const startEnroll = (consented = false) => {
     if (!consented && !me.data?.faceConsent) {
-      setConsentFor('enroll');
+      setConsentOpen(true);
       return;
     }
     setEnrolling(true);
@@ -177,7 +189,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const flow = usePunchFlow({
     storeId,
     deviceId,
-    onConsent: () => setConsentFor('enroll'),
+    onConsent: () => setConsentOpen(true),
     onEnroll: () => setEnrolling(true),
     onAgain: (identify, notice) => void begin(identify, notice),
   });
@@ -228,7 +240,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
             />
           ) : (
             <>
-              <section className="rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 ring-hairline">
+              {/* Review ATT-07: the kit's Card, not its classes typed out. */}
+              <Card as="section" className="p-4">
                 <p className="text-old-label text-[var(--c-fg-muted)]">
                   {dates.weekdayLong(store.today)}
                 </p>
@@ -257,7 +270,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                     ))}
                   </ul>
                 ) : null}
-              </section>
+              </Card>
 
               {me.data?.device.bound &&
               me.data.device.matches === false &&
@@ -390,20 +403,18 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 </Button>
               ) : null}
               <FaceConsentSheet
-                open={consentFor !== null}
+                open={consentOpen}
                 pending={consentGive.isPending}
-                onCancel={() => setConsentFor(null)}
+                onCancel={() => setConsentOpen(false)}
                 onAgree={() => {
-                  const next = consentFor;
                   consentGive.mutate(
                     { version: ATTENDANCE_FACE_CONSENT_VERSION },
                     {
                       onSuccess: () => {
-                        setConsentFor(null);
-                        if (next === 'enroll') startEnroll(true);
-                        else if (next) void begin(next.identify);
+                        setConsentOpen(false);
+                        startEnroll(true);
                       },
-                      onError: errToast('attendance.errors.punchFailed'),
+                      onError: errToast('common.errors.actionFailed'),
                     },
                   );
                 }}
@@ -476,7 +487,7 @@ function WhereAmI({ area }: { area: GeoArea }) {
       : null;
   const inside = verdict === 'inside';
   return (
-    <section className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
+    <Card as="section" className="flex flex-col gap-2 p-3">
       <GeoMap
         area={area}
         points={
@@ -522,7 +533,7 @@ function WhereAmI({ area }: { area: GeoArea }) {
       <Button variant="secondary" size="sm" loading={locating} onClick={() => void locate()}>
         {i18n.t('attendance.map.whereAmI')}
       </Button>
-    </section>
+    </Card>
   );
 }
 
@@ -540,7 +551,7 @@ function EnrollCard({
 }) {
   const i18n = useI18n();
   return (
-    <section className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 ring-hairline">
+    <Card as="section" className="flex flex-col gap-3 p-4">
       <div>
         <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]">
           {i18n.t(`attendance.enroll.card.${status}.title`)}
@@ -563,7 +574,7 @@ function EnrollCard({
       >
         {i18n.t(status === 'pending' ? 'attendance.enroll.redo' : 'attendance.enroll.start')}
       </Button>
-    </section>
+    </Card>
   );
 }
 
@@ -617,9 +628,9 @@ function UpcomingShifts({ shifts, today }: { shifts: ShiftView[]; today: string 
   if (next.length === 0) return null;
   return (
     <section className="mt-2">
-      <h2 className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
+      <SectionLabel as="h2" padded={false} className="mb-1">
         {i18n.t('attendance.clock.upcoming')}
-      </h2>
+      </SectionLabel>
       <ul className="flex flex-col gap-1">
         {next.map((x) => (
           <li key={x.id} className="flex items-center justify-between text-old-body">

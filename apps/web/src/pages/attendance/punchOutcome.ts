@@ -47,6 +47,11 @@ export type PunchOutcome =
   | { next: 'forSelf'; key: CatalogKey }
   /** The request did not get through or got no answer: the same punch again, same key. */
   | { next: 'resend' }
+  /**
+   * The server could not check the face just now (its face checker busy
+   * or restarting): why, and "Try again" with the same photos and key.
+   */
+  | { next: 'busy'; key: CatalogKey }
   /** Anything else: why, and close. */
   | { next: 'stop'; key: CatalogKey; vars: ErrorVars };
 
@@ -73,6 +78,12 @@ export function punchOutcome(err: unknown, attempted: PunchKind | null): PunchOu
       return { next: 'turns' };
     case 'attendance.errors.livenessExpired':
       return { next: 'restart' };
+    // Review ATT-29: it was a stop ("Got it"), and the person did the whole
+    // face check again. The server refuses it before it writes anything, the
+    // challenge stays unused and the key is let go, so the same photos with
+    // the same key are safe to send again.
+    case 'attendance.errors.faceCheckUnavailable':
+      return { next: 'busy', key };
     case 'attendance.errors.overtimeReasonRequired':
       return { next: 'reason', minutes: Number(vars.minutes ?? 0), name: text('name') };
     case 'attendance.errors.consentRequired':
