@@ -18,6 +18,10 @@ import {
   withStreamConflictRetry,
 } from '../../../services/pgErrors';
 import { loadRunState } from '../../../services/runStream';
+import {
+  assertActorAssignedToStore,
+  effectivePermissionsForStore,
+} from '../../../services/storeScope';
 import { loadOrderState } from '../../../services/orderStream';
 import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
 import { hub } from '../../../realtime/hub';
@@ -133,17 +137,19 @@ export async function withRunStreamRetry<T>(
   }
 }
 
+/** What runSimpleCommand resolved for `produce`, by the options asked. */
+export interface RunCommandScope {
+  runStoreIds?: string[];
+  readStoreIds?: ReadonlySet<string> | null;
+  nextRunIndex?: number;
+  /** The actor's effective permissions in `options.store` (overrides applied). */
+  storePermissions?: ReadonlySet<string>;
+}
+
 export async function runSimpleCommand(
   ctx: RequestContext,
   runId: string,
-  produce: (
-    state: RunState,
-    scope: {
-      runStoreIds?: string[];
-      readStoreIds?: ReadonlySet<string> | null;
-      nextRunIndex?: number;
-    },
-  ) => RunEvent[],
+  produce: (state: RunState, scope: RunCommandScope) => RunEvent[],
   options?: {
     requireGlobalAmend?: boolean;
     requiredPermission?: string;
@@ -175,9 +181,25 @@ export async function runSimpleCommand(
      * recorded ones when removing).
      */
     expense?: { expenseId: string; splitStoreIds?: readonly string[] };
+    /**
+     * The command acts for one store: resolve the actor's effective
+     * permissions there (`scope.storePermissions`), first, and with
+     * `assigned` require the actor to be assigned to it (the receiving
+     * side). Review RUNAPI-29: the store commands did this in a
+     * transaction of their own, so the permissions were not read with the
+     * run, and a retry after a lost race did not read them again.
+     */
+    store?: { storeId: string; assigned?: boolean };
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return withRunStreamRetry(ctx, async (tx) => {
+    let storePermissions: ReadonlySet<string> | undefined;
+    if (options?.store) {
+      const { memberId, permissions } = ctx.session!;
+      const { storeId, assigned } = options.store;
+      if (assigned) await assertActorAssignedToStore(tx, memberId, storeId, permissions);
+      storePermissions = await effectivePermissionsForStore(tx, memberId, storeId, permissions);
+    }
     const loaded = await loadRun(tx, ctx.session!.orgId, runId);
     let state = await loadRunState(tx, loaded.id);
     const runStoreIds = options?.withRunStoreIds
@@ -186,12 +208,9 @@ export async function runSimpleCommand(
     // Review RUNAPI-12 (2026-11-12): the permission checks below reuse the
     // stores read here instead of reading them again.
     const run = runStoreIds ? { ...loaded, involvedStoreIds: runStoreIds } : loaded;
-    const scope: {
-      runStoreIds?: string[];
-      readStoreIds?: ReadonlySet<string> | null;
-      nextRunIndex?: number;
-    } = {
+    const scope: RunCommandScope = {
       ...(runStoreIds ? { runStoreIds } : {}),
+      ...(storePermissions ? { storePermissions } : {}),
     };
     if (options?.nextRunIndexOn) {
       const [row] = await tx
