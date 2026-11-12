@@ -97,6 +97,13 @@ function maxRank(bindings: readonly Binding[], counts: (b: Binding) => boolean):
   return max;
 }
 
+/** An organisation-tier role: by rank, by slug when the rank is unknown. */
+function isOrgTier(binding: Binding): boolean {
+  return binding.rank === undefined
+    ? binding.slug === 'super_admin' || binding.slug === 'admin'
+    : binding.rank >= ADMIN_RANK;
+}
+
 /** Actor strictly outranks the target in the scope; unknown ranks pass. */
 function outranks(actorRank: number, targetRank: number): boolean {
   if (actorRank === UNKNOWN || targetRank === UNKNOWN) return true;
@@ -118,14 +125,13 @@ function governs(actor: Actor, storeId: string): boolean {
 }
 
 /**
- * revokeRole: not one's own admin roles; a store binding by the store's
- * admin who outranks it there, a global one by an organisation admin who
- * outranks it organisation-wide (ADM1-17).
+ * revokeRole: not one's own org-tier roles (rank ≥ ADMIN_RANK, ADM1-19;
+ * by slug when an older server sends no rank); a store binding by the
+ * store's admin who outranks it there, a global one by an organisation
+ * admin who outranks it organisation-wide (ADM1-17).
  */
 export function canRevokeRole(actor: Actor, targetUserId: string, binding: Binding): boolean {
-  if (targetUserId === actor.userId && (binding.slug === 'super_admin' || binding.slug === 'admin')) {
-    return false;
-  }
+  if (targetUserId === actor.userId && isOrgTier(binding)) return false;
   const storeId = binding.scopeType === 'store' ? binding.scopeId : null;
   if (storeId ? !governs(actor, storeId) : !actor.isOrgAdmin) return false;
   if (binding.rank === undefined) return true;

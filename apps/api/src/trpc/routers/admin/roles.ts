@@ -697,12 +697,11 @@ export const roleProcedures = {
       const targetRank = binding[0]!.roleRank;
       const bindingScopeType = binding[0]!.scopeType;
       const bindingScopeId = binding[0]!.scopeId;
-      // Self-protection: don't let an admin revoke their own super_admin /
-      // admin roles. The CLI is the escape hatch for true breakage.
-      if (
-        binding[0]!.memberUserId === ctx.session!.userId &&
-        (targetSlug === 'super_admin' || targetSlug === 'admin')
-      ) {
+      // Self-protection: don't let an admin revoke their own org-tier
+      // roles. The CLI is the escape hatch for true breakage. Review
+      // ADM1-19 (2026-11-12): by rank, like every other org-tier rule; the
+      // slugs `super_admin` / `admin` left a custom org-tier role out.
+      if (binding[0]!.memberUserId === ctx.session!.userId && targetRank >= ADMIN_RANK) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'admin.errors.cannotRevokeSelfAdmin',

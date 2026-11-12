@@ -102,10 +102,11 @@ export function ManualInviteSheet({
   }, [open]);
   const tgShown = tgProblem === 'notDigits' || (tgTouched && tgProblem === 'length');
   const tgIdValid = draft ? draft.tgUserId.trim() !== '' && tgProblem === null : false;
-  // Adminish roles bypass the store check at the server side, so we
-  // shouldn't force the admin to pick a store for them.
-  const isAdminRole = draft?.roleSlug === 'admin' || draft?.roleSlug === 'super_admin';
-  const requiresStore = !isAdminRole;
+  // Org-tier roles bypass the store check at the server side, so we
+  // shouldn't force the admin to pick a store for them. Review ADM1-19:
+  // by rank, as the server decides (a custom role can be org-tier too).
+  const isOrgTierRole = (pickedRole?.rank ?? 0) >= ADMIN_RANK;
+  const requiresStore = !isOrgTierRole;
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
   const canSubmit = (isLink || tgIdValid) && (!requiresStore || hasStore) && !pickedRoleBlocked;
   // DX-ADM-28: typed id / name or a picked role is input worth asking about.
