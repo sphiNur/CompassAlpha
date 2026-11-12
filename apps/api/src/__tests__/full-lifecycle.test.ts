@@ -181,6 +181,7 @@ describe('full lifecycle (PG)', () => {
       type: 'PlanRun',
       orgId: org.id,
       runDate: '2026-05-01',
+      today: '2026-05-01',
       runIndex: 0,
       sessionIds: [sessionId],
       plannedItems: [{ skuId: sku.id, qty: '5' }],

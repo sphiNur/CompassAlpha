@@ -107,6 +107,7 @@ describe('run money consistency (PG)', () => {
         type: 'PlanRun',
         orgId,
         runDate: '2026-10-20',
+        today: '2026-10-20',
         runIndex: 0,
         sessionIds: [randomUUID()],
         plannedItems: [{ skuId: sku.id, qty: '4' }],

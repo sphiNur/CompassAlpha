@@ -528,6 +528,7 @@ describe('run.decide', () => {
 
   test('ChangeRunDate moves the booking date without touching money', () => {
     const sa = runActor('sa', ['run.amend']);
+    const today = '2026-07-31';
     let s = planAndPurchase();
     const before = s.runDate;
     const pricesBefore = [...s.items.values()].map((i) => i.unitPrice);
@@ -535,18 +536,26 @@ describe('run.decide', () => {
 
     // Permission gate.
     expect(() =>
-      decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: purchaser() }, clock),
+      decideRun(
+        s,
+        { type: 'ChangeRunDate', runDate: '2026-07-23', today, actor: purchaser() },
+        clock,
+      ),
     ).toThrow('run.errors.cannotAmend');
 
     // Garbage and impossible dates are rejected (2026-02-31 would roll
     // over to March 3 and silently book the spend in the wrong month).
     for (const bad of ['not-a-date', '2026-13-01', '2026-02-31', '26-01-01']) {
-      expect(() => decideRun(s, { type: 'ChangeRunDate', runDate: bad, actor: sa }, clock)).toThrow(
-        'run.errors.invalidRunDate',
-      );
+      expect(() =>
+        decideRun(s, { type: 'ChangeRunDate', runDate: bad, today, actor: sa }, clock),
+      ).toThrow('run.errors.invalidRunDate');
     }
 
-    const evs = decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: sa }, clock);
+    const evs = decideRun(
+      s,
+      { type: 'ChangeRunDate', runDate: '2026-07-23', today, actor: sa },
+      clock,
+    );
     const ev = evs[0];
     if (ev?.type !== 'RunDateChanged') throw new Error('expected RunDateChanged');
     expect(ev.payload.previousRunDate).toBe(before);
@@ -559,17 +568,18 @@ describe('run.decide', () => {
 
     // Re-applying the same date is a no-op that must not forge an audit entry.
     expect(() =>
-      decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: sa }, clock),
+      decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', today, actor: sa }, clock),
     ).toThrow('run.errors.runDateUnchanged');
   });
 
   test('ChangeRunDate carries the run number on the new day (2026-10-23)', () => {
     const sa = runActor('sa', ['run.amend']);
+    const today = '2026-07-31';
     let s = planAndPurchase();
     expect(s.runIndex).toBe(0);
     const evs = decideRun(
       s,
-      { type: 'ChangeRunDate', runDate: '2026-07-22', runIndex: 1, actor: sa },
+      { type: 'ChangeRunDate', runDate: '2026-07-22', today, runIndex: 1, actor: sa },
       clock,
     );
     const ev = evs[0];
@@ -579,7 +589,11 @@ describe('run.decide', () => {
     expect(s.runIndex).toBe(1);
 
     // Older events carry no runIndex: the number is kept.
-    const legacy = decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-25', actor: sa }, clock);
+    const legacy = decideRun(
+      s,
+      { type: 'ChangeRunDate', runDate: '2026-07-25', today, actor: sa },
+      clock,
+    );
     expect('runIndex' in legacy[0]!.payload).toBe(false);
     expect(legacy.reduce(applyRun, s).runIndex).toBe(1);
   });

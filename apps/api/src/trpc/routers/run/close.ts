@@ -215,20 +215,18 @@ export const closeProcedures = {
     runSimpleCommand(
       ctx,
       input.runId,
-      (state, { nextRunIndex }) => {
+      (state, { nextRunIndex }) =>
         // HIS-7 (2026-10-30): the same rule as creating a run — never a
-        // day that has not come yet in the org's time zone. Checked after
-        // the amend gate so a caller without it hears about that first.
-        if (input.runDate > orgToday(ctx.session)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
-        }
-        return decideRun(state, {
+        // day that has not come yet in the org's time zone; the domain
+        // checks it, after the amend gate, so a caller without that gate
+        // hears about it first.
+        decideRun(state, {
           type: 'ChangeRunDate',
           runDate: input.runDate,
+          today: orgToday(ctx.session),
           runIndex: nextRunIndex,
           actor: actorFromCtx(ctx),
-        });
-      },
+        }),
       // 2026-10-23: runs are numbered per day (unique org + date + index);
       // moving a run onto a day that already has a run #0 hit that index
       // and surfaced as "edited by someone else". It now becomes that

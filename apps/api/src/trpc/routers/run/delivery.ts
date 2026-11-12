@@ -2,7 +2,6 @@
  * Delivery: sending the goods to each store, and each store confirming
  * what it received.
  */
-import { TRPCError } from '@trpc/server';
 import {
   ConfirmStoreInputSchema,
   ConfirmStoreItemInputSchema,
@@ -16,7 +15,7 @@ import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
 } from '../../../services/storeScope';
-import { applyRun, decideRun, type RunEvent } from '@compass/domain/run';
+import { decideRun } from '@compass/domain/run';
 import { authedProcedure, idempotentMutation } from '../../trpc';
 import { actorFromCtx, runSimpleCommand } from './command';
 
@@ -164,60 +163,19 @@ export const deliveryProcedures = {
           ctx.session!.permissions,
         );
       });
-      const skuIds = [...new Set(input.skuIds)];
+      // Review RUNAPI-13: the domain decides the whole request, with the
+      // checks ConfirmStoreItem makes; this router looped over that
+      // command itself.
       const result = await runSimpleCommand(
         ctx,
         input.runId,
-        (state) => {
-          // 2026-10-21 audit CA-30: same receipt-phase guard as the
-          // domain's ConfirmStoreItem, checked up front so a request whose
-          // SKUs are all already decided still fails before delivery /
-          // after the store has signed.
-          const target = state.stores.get(input.storeId);
-          if (!target?.deliveredAt) {
-            throw new TRPCError({
-              code: 'PRECONDITION_FAILED',
-              message: 'run.errors.storeNotDelivered',
-            });
-          }
-          if (target.confirmedAt) {
-            throw new TRPCError({
-              code: 'PRECONDITION_FAILED',
-              message: 'run.errors.storeAlreadyConfirmed',
-            });
-          }
-          const expected = new Set<string>();
-          for (const item of state.items.values()) {
-            if (item.status !== 'purchased') continue;
-            for (const split of item.storeSplits) {
-              if (split.storeId === input.storeId) expected.add(item.skuId);
-            }
-          }
-
-          let current = state;
-          const events: RunEvent[] = [];
-          for (const skuId of skuIds) {
-            if (!expected.has(skuId)) {
-              throw new TRPCError({
-                code: 'BAD_REQUEST',
-                message: 'run.errors.itemNotInRun',
-              });
-            }
-            if (current.stores.get(input.storeId)?.itemConfirms.has(skuId)) continue;
-            const out = decideRun(current, {
-              type: 'ConfirmStoreItem',
-              storeId: input.storeId,
-              skuId,
-              status: 'ok',
-              note: null,
-              photoUrl: null,
-              actor: actorFromCtx(ctx, effectivePerms),
-            });
-            events.push(...out);
-            current = out.reduce(applyRun, current);
-          }
-          return events;
-        },
+        (state) =>
+          decideRun(state, {
+            type: 'ConfirmStoreItemsOk',
+            storeId: input.storeId,
+            skuIds: input.skuIds,
+            actor: actorFromCtx(ctx, effectivePerms),
+          }),
         { skipRunPermissionScope: true },
       );
       return { marked: result.eventCount, lastSeq: result.lastSeq };
