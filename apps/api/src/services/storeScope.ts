@@ -7,11 +7,12 @@
  * hold it to manage staff in their own stores.
  */
 import { TRPCError } from '@trpc/server';
-import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import type { DB, PermissionKey } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { ORG_WIDE_PERMISSION_KEYS } from '@compass/contracts';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from './orgAdmin';
+import { bindingIsLive, overrideIsLive } from './liveGrants';
 
 /**
  * Throw FORBIDDEN unless the actor is allowed to act on `storeId`.
@@ -77,34 +78,12 @@ export async function getActorStoreIdsForPermission(
   permissionKey: PermissionKey,
   permissions: ReadonlySet<string>,
 ): Promise<string[] | null> {
-  const now = new Date();
-  const [globalRoleRows, globalOverrides, storeOverrides] = await Promise.all([
-    db
-      .select({ permissionKey: s.rolePermissions.permissionKey })
-      .from(s.memberRoleBindings)
-      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
-      .where(
-        and(
-          eq(s.memberRoleBindings.memberId, memberId),
-          eq(s.memberRoleBindings.scopeType, 'global'),
-          eq(s.rolePermissions.permissionKey, permissionKey),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
-        ),
-      ),
-    db
-      .select({ effect: s.memberPermissionOverrides.effect })
-      .from(s.memberPermissionOverrides)
-      .where(
-        and(
-          eq(s.memberPermissionOverrides.memberId, memberId),
-          eq(s.memberPermissionOverrides.scopeType, 'global'),
-          eq(s.memberPermissionOverrides.permissionKey, permissionKey),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
-        ),
-      ),
+  // Review ADM1-30 (2026-11-12): the global half is hasGlobalPermission
+  // (global grants and allows, then denies), of which this was a copy. A
+  // global deny makes it false, and the member's stores below then resolve
+  // without the key too: that deny applies inside every store.
+  const [globallyAllowed, storeOverrides] = await Promise.all([
+    hasGlobalPermission(db, memberId, permissionKey),
     db
       .select({ scopeId: s.memberPermissionOverrides.scopeId })
       .from(s.memberPermissionOverrides)
@@ -113,19 +92,10 @@ export async function getActorStoreIdsForPermission(
           eq(s.memberPermissionOverrides.memberId, memberId),
           eq(s.memberPermissionOverrides.scopeType, 'store'),
           eq(s.memberPermissionOverrides.permissionKey, permissionKey),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
+          overrideIsLive(),
         ),
       ),
   ]);
-
-  let globallyAllowed = globalRoleRows.length > 0;
-  if (globalOverrides.some((row) => row.effect === 'allow')) globallyAllowed = true;
-  // A global deny applies inside every store and therefore defeats both
-  // global and store-scoped allows (same deny-wins rule as the resolver).
-  if (globalOverrides.some((row) => row.effect === 'deny')) return [];
 
   // A clean global grant is the only safe unrestricted fast path. If a
   // store override exists, enumerate every store in the member's org and
@@ -197,7 +167,7 @@ async function loadAssignedStoreIds(db: DB, memberId: string): Promise<string[]>
         and(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'store'),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
         ),
       ),
   ]);
@@ -271,7 +241,7 @@ export async function effectivePermissionsForStores(
               inArray(s.memberRoleBindings.scopeId, ids),
             ),
           ),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
         ),
       ),
     db
@@ -292,10 +262,7 @@ export async function effectivePermissionsForStores(
               inArray(s.memberPermissionOverrides.scopeId, ids),
             ),
           ),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
+          overrideIsLive(now),
         ),
       ),
   ]);
@@ -354,7 +321,7 @@ export async function effectiveGlobalPermissions(db: DB, memberId: string): Prom
         and(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'global'),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
         ),
       ),
     db
@@ -364,15 +331,7 @@ export async function effectiveGlobalPermissions(db: DB, memberId: string): Prom
         scopeType: s.memberPermissionOverrides.scopeType,
       })
       .from(s.memberPermissionOverrides)
-      .where(
-        and(
-          eq(s.memberPermissionOverrides.memberId, memberId),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
-        ),
-      ),
+      .where(and(eq(s.memberPermissionOverrides.memberId, memberId), overrideIsLive(now))),
   ]);
   const effective = new Set(roleRows.map((row) => row.permissionKey));
   for (const o of overrides) {
@@ -608,12 +567,7 @@ export async function loadScopedPermissions(
       })
       .from(s.memberRoleBindings)
       .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
-      .where(
-        and(
-          eq(s.memberRoleBindings.memberId, memberId),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
-        ),
-      ),
+      .where(and(eq(s.memberRoleBindings.memberId, memberId), bindingIsLive(now))),
     db
       .select({
         key: s.memberPermissionOverrides.permissionKey,
@@ -622,15 +576,7 @@ export async function loadScopedPermissions(
         scopeId: s.memberPermissionOverrides.scopeId,
       })
       .from(s.memberPermissionOverrides)
-      .where(
-        and(
-          eq(s.memberPermissionOverrides.memberId, memberId),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
-        ),
-      ),
+      .where(and(eq(s.memberPermissionOverrides.memberId, memberId), overrideIsLive(now))),
   ]);
   return { grants, overrides };
 }

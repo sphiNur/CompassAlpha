@@ -10,7 +10,7 @@ import { trpc } from '../../../../lib/trpc';
 import { formatList } from '../../../../lib/listFormat';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../../hooks/useI18n';
-import { nativeConfirm } from '../../shared';
+import { confirmThen } from '../../../../lib/confirm';
 
 /**
  * 2026-10-21 CA-19: pending invite links (not accepted / revoked /
@@ -93,7 +93,7 @@ export function PendingInvitesList({ enabled }: { enabled: boolean }) {
                   variant="danger"
                   disabled={revoke.isPending}
                   onClick={() =>
-                    nativeConfirm(i18n.t('people.confirmRevokeInvite'), () =>
+                    confirmThen(i18n.t('people.confirmRevokeInvite'), () =>
                       revoke.mutate({ inviteId: inv.id }),
                     )
                   }

@@ -28,7 +28,7 @@ import {
   inviteLink as makeInviteLink,
   shareLink as makeShareLink,
 } from '../../../lib/telegramLinks';
-import { nativeConfirm } from '../shared';
+import { confirmThen } from '../../../lib/confirm';
 import { InviteCopySheet } from './InviteCopySheet';
 import {
   canDetachFromStore,
@@ -583,7 +583,7 @@ export function PeopleSection({
                             onClick={() => {
                               const name = memberMenuFor.displayName;
                               setMemberMenuFor(null);
-                              nativeConfirm(
+                              confirmThen(
                                 r.store
                                   ? i18n.t('people.revokeRoleInStoreConfirm', {
                                       role: r.role,
@@ -635,7 +635,7 @@ export function PeopleSection({
                 onClick={() => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  nativeConfirm(i18n.t('admin.confirm.suspend', { name: target.displayName }), () =>
+                  confirmThen(i18n.t('admin.confirm.suspend', { name: target.displayName }), () =>
                     setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
                   );
                 }}
@@ -678,7 +678,7 @@ export function PeopleSection({
                       (st) => st.id === storeCtx.storeId,
                     )?.name ?? i18n.t('admin.label.thisStore');
                   setMemberMenuFor(null);
-                  nativeConfirm(
+                  confirmThen(
                     i18n.t('admin.confirm.removeFromStore', {
                       name: target.displayName,
                       store: storeName,
@@ -703,7 +703,7 @@ export function PeopleSection({
                 onClick={() => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  nativeConfirm(
+                  confirmThen(
                     i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
                     () => remove.mutate({ memberId: target.memberId }),
                   );

@@ -13,7 +13,7 @@ import { Badge, Button, CardHeader, CardMeta, CardTitle, Field, Input, Switch } 
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { useI18n } from '../../../hooks/useI18n';
-import { nativeConfirm } from '../shared';
+import { confirmThen } from '../../../lib/confirm';
 import { CATALOG_LOCALES, type CatalogNames } from './catalogNames';
 import { readSortIndex } from './sortIndex';
 
@@ -182,7 +182,7 @@ export function CatalogRowActions({
         <Button
           size="sm"
           variant="danger-ghost"
-          onClick={() => nativeConfirm(confirmArchive, onArchive)}
+          onClick={() => confirmThen(confirmArchive, onArchive)}
         >
           {i18n.t('common.archive')}
         </Button>

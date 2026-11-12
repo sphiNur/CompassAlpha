@@ -17,11 +17,12 @@
  *   - the person acted on is ranked by every live binding they hold
  *     (getActorMaxRank): the strongest protection.
  */
-import { and, eq, gt, gte, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte } from 'drizzle-orm';
 import { ADMIN_RANK } from '@compass/contracts';
 import { schema as s, type DB } from '@compass/db';
 import { hasGlobalOrgAdmin } from './orgAdmin';
 import { isPlatformAdmin } from './platformAdmin';
+import { bindingIsLive } from './liveGrants';
 import {
   adminScopeOf,
   effectiveGlobalPermissions,
@@ -29,10 +30,8 @@ import {
   loadScopedPermissions,
 } from './storeScope';
 
-/** A binding with an expiry in the past grants nothing. */
-export function bindingIsLive() {
-  return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
-}
+/** A binding with an expiry in the past grants nothing (liveGrants). */
+export { bindingIsLive };
 
 /**
  * Review ADM1-04 (2026-11-10): give a member a role in one scope. A lapsed

@@ -1083,7 +1083,6 @@ export const en = {
     'This role is still assigned to members — revoke those grants first.',
   'admin.errors.rankTierChangeHasBindings':
     "Members hold this role, so its level can't cross {rank}. Revoke it from them first, or create a new role.",
-  'admin.errors.permissionNotFound': 'There is no such permission.',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action.",
   'admin.errors.targetOutranksYou':

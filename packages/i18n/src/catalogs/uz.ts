@@ -1039,7 +1039,6 @@ export const uz = {
     'Bu rol hali aʼzolarga biriktirilgan — avval ularni qaytarib oling.',
   'admin.errors.rankTierChangeHasBindings':
     'Bu rol hali aʼzolarga biriktirilgan — darajasi {rank} chegarasidan oʻta olmaydi. Avval ularni qaytarib oling yoki yangi rol yarating.',
-  'admin.errors.permissionNotFound': 'Bunday ruxsat yoʻq.',
   'admin.errors.notAdminOfStore': 'Bu doʻkon administratori siz emas — bu amalni bajara olmaysiz.',
   'admin.errors.targetOutranksYou':
     'Bu kishi sizning darajangizda yoki undan yuqori, shuning uchun bu oʻzgarishni qila olmaysiz.',

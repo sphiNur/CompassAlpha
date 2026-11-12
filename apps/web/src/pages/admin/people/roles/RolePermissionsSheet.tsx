@@ -15,7 +15,7 @@ import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
-import { nativeConfirm } from '../../shared';
+import { confirmThen } from '../../../../lib/confirm';
 import { readRank, roleRankRange } from '../../../../lib/adminFields';
 import { canPutKeyInRole, type PassOn } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
@@ -229,7 +229,7 @@ export function RolePermissionsSheet({
                   loading={remove.isPending}
                   disabled={held}
                   onClick={() => {
-                    nativeConfirm(
+                    confirmThen(
                       i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
                       () => remove.mutate({ roleId: detail.data!.id }),
                     );

@@ -38,7 +38,7 @@ import { useRefreshSession } from '../../../hooks/useRefreshSession';
 import { rolePassesOn } from '../../../lib/authority';
 import { useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
-import { nativeConfirm } from '../shared';
+import { confirmThen } from '../../../lib/confirm';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people';
 import { StoreInventoryTab } from './inventory/StoreInventoryTab';
@@ -675,7 +675,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
                 .fetch({ storeId })
                 .catch(() => null);
               const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
-              nativeConfirm(
+              confirmThen(
                 busy
                   ? i18n.t('admin.store.confirmArchiveBusy', {
                       name: store.name,

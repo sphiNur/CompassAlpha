@@ -13,7 +13,6 @@ import {
 } from '@compass/contracts';
 import { SLUG_MESSAGE, SLUG_RE } from '@compass/contracts/limits';
 import { authedProcedure, withUniqueKey } from '../../trpc';
-import { hub } from '../../../realtime/hub';
 import { effectiveGlobalPermissions } from '../../../services/storeScope';
 import {
   bindingIsLive,
@@ -666,7 +665,7 @@ export const roleProcedures = {
       });
       // Broadcast so other admins viewing the People section see the
       // new binding without manual refresh.
-      hub.publish(orgId, { type: 'people.changed', orgId });
+      broadcastPeople(orgId);
       return { granted: true, bindingId };
     });
   }),
@@ -766,7 +765,7 @@ export const roleProcedures = {
         scopeType: bindingScopeType,
         scopeId: bindingScopeId,
       });
-      hub.publish(orgId, { type: 'people.changed', orgId });
+      broadcastPeople(orgId);
       return { revoked: true };
     });
   }),

@@ -13,7 +13,7 @@ import { trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
-import { nativeConfirm } from '../../shared';
+import { confirmThen } from '../../../../lib/confirm';
 import {
   canDetachFromStore,
   canRename,
@@ -186,7 +186,7 @@ export function ManageMemberSheet({
                   if (checked) {
                     assignMut.mutate({ memberId: target.memberId, storeId: st.id });
                   } else {
-                    nativeConfirm(
+                    confirmThen(
                       i18n.t('admin.confirm.removeFromStore', {
                         name: target.displayName,
                         store: st.name,

@@ -262,16 +262,6 @@ export const overrideProcedures = {
             });
           }
         }
-        // Validate permission key exists in the dictionary.
-        const perm = await tx.query.permissions.findFirst({
-          where: (p, { eq: eq2 }) => eq2(p.key, input.permissionKey),
-        });
-        if (!perm) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.permissionNotFound',
-          });
-        }
         // Upsert by (member, key, scope). Postgres treats NULL as
         // distinct in plain UNIQUE constraints, so we hand-rolled the
         // unique index in the migration. The query plan still matches
