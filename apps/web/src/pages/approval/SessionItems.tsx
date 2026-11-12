@@ -16,6 +16,7 @@ import { rowName } from '../../lib/productName';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useErrToast } from '../../hooks/useErrToast';
 import { useOrderEstimate } from '../../hooks/useOrderEstimate';
+import { useStableCallbacks } from '../../hooks/useStableCallbacks';
 import { extrasChanged, submittedDiff } from '../order/submittedDiff';
 import { formatQty, formatMoney } from '../../lib/format';
 import { sessionItemsView } from './sessionItemsView';
@@ -96,34 +97,39 @@ export function SessionItems({
   const [originalOpen, setOriginalOpen] = useState(true);
   /** The seq of our own last write; the first copy at or past it is the new baseline. */
   const rebaselineAt = useRef<number | null>(null);
-  const adjustRef = useRef(adjust);
-  adjustRef.current = adjust;
-  const editCtx = useRef({ date: undefined as string | undefined, claimOnEditSeq });
-  editCtx.current = { date: detail.data?.orderDate, claimOnEditSeq };
+  // Review ORD-31 (2026-11): a quantity goes out with the order's date and
+  // version from the latest render (useStableCallbacks); refs were
+  // written while rendering for it.
+  const { sendQty } = useStableCallbacks({
+    sendQty: (line: {
+      storeId: string;
+      sessionId: string;
+      skuId: string;
+      targetMemberId: string;
+      qty: string;
+    }) =>
+      adjust.mutateAsync({
+        ...line,
+        // 2026-07-30 (flow review): pass the SESSION's date. Omitting
+        // it made the server default to today, so adjusting a session
+        // submitted on an earlier day looked up the wrong row.
+        date: detail.data?.orderDate,
+        expectedSeq: claimOnEditSeq,
+      }),
+  });
   const drafts = useMemo(
     () =>
       new QtyDrafts(async (key, value) => {
         const [skuId, targetMemberId] = key.split('|') as [string, string];
         try {
-          await adjustRef.current.mutateAsync({
-            storeId,
-            // 2026-07-30 (flow review): pass the SESSION's date. Omitting
-            // it made the server default to today, so adjusting a session
-            // submitted on an earlier day looked up the wrong row.
-            date: editCtx.current.date,
-            skuId,
-            qty: String(value),
-            targetMemberId,
-            // APR-1: name the batch being reviewed; the server used to
-            // guess it and could edit the same person's other batch.
-            sessionId,
-            expectedSeq: editCtx.current.claimOnEditSeq,
-          });
+          // APR-1: `sessionId` names the batch being reviewed; the server
+          // used to guess it and could edit the same person's other batch.
+          await sendQty({ storeId, sessionId, skuId, targetMemberId, qty: String(value) });
         } catch {
           /* onError shows it and refreshes the order */
         }
       }, rerender),
-    [sessionId, storeId],
+    [sendQty, sessionId, storeId],
   );
   // Review ORD-02 (2026-11-09): leaving the card sends the taps still
   // waiting instead of dropping them, and 「通过」 stays held until they

@@ -13,6 +13,7 @@ import {
   type ExtraLine,
 } from './extraRows';
 import { useI18n, useUnitLabel } from '../../hooks/useI18n';
+import { useStableCallbacks } from '../../hooks/useStableCallbacks';
 import { formatQty } from '../../lib/format';
 import { CANONICAL_UNITS, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '@compass/contracts/limits';
 
@@ -63,37 +64,49 @@ export function SessionExtrasEditor({
   // Adopt server array when local is clean. Compare via JSON string
   // (cheap; arrays are short ≤50 rows). If our local copy doesn't
   // match what we last saved, the user is mid-edit — let them win.
+  // Review ORD-31 (2026-11): this and the reset below run when the
+  // server's list, or the session, changes; what else they read comes
+  // from the latest render (useStableCallbacks) instead of past a
+  // silenced dependency lint.
+  const serverJson = JSON.stringify(initialValue);
+  const { adoptServerRows } = useStableCallbacks({
+    adoptServerRows: () => {
+      if (JSON.stringify(rows) === lastSavedRef.current) {
+        lastSavedRef.current = serverJson;
+        setRows(initialValue.map((r) => ({ ...r })));
+      }
+    },
+  });
   useEffect(() => {
-    const serverJson = JSON.stringify(initialValue);
-    if (JSON.stringify(rows) === lastSavedRef.current) {
-      lastSavedRef.current = serverJson;
-      setRows(initialValue.map((r) => ({ ...r })));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(initialValue)]);
+    adoptServerRows();
+  }, [adoptServerRows, serverJson]);
 
   // Reset on session swap (different store → different session).
   // 2026-10-21 audit CA-27: NOT when the id merely appears (no session
   // → the draft our own first save / tap just lazy-created, same store)
   // — that reset wiped the rows the user was still typing.
   const resetKeyRef = useRef({ storeId, sessionId });
+  const { resetForSession } = useStableCallbacks({
+    resetForSession: () => {
+      const prev = resetKeyRef.current;
+      resetKeyRef.current = { storeId, sessionId };
+      if (prev.storeId === storeId && (prev.sessionId === sessionId || prev.sessionId === null)) {
+        return;
+      }
+      const next = initialValue.map((r) => ({ ...r }));
+      lastSavedRef.current = JSON.stringify(next);
+      setRows(next);
+      setSavingState('idle');
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      pendingFireRef.current = null;
+    },
+  });
   useEffect(() => {
-    const prev = resetKeyRef.current;
-    resetKeyRef.current = { storeId, sessionId };
-    if (prev.storeId === storeId && (prev.sessionId === sessionId || prev.sessionId === null)) {
-      return;
-    }
-    const next = initialValue.map((r) => ({ ...r }));
-    lastSavedRef.current = JSON.stringify(next);
-    setRows(next);
-    setSavingState('idle');
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    pendingFireRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, storeId]);
+    resetForSession();
+  }, [resetForSession, sessionId, storeId]);
 
   // CA-25: the save waiting out its 700 ms debounce, so unmount /
   // pagehide can send it instead of dropping it.

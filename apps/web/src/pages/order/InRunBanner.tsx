@@ -8,7 +8,7 @@ import { Banner, Button } from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import { useI18n } from '../../hooks/useI18n';
 import { requestTabChange, useNavStore } from '../../stores/navStore';
-import { useAuthStore } from '../../stores/authStore';
+import { useStorePermission } from '../../hooks/useStorePermission';
 import { inRunState } from './inRunState';
 
 export function InRunBanner({
@@ -26,10 +26,8 @@ export function InRunBanner({
     { enabled: !!runId, retry: false },
   );
   const setTab = useNavStore((s) => s.setTab);
-  const canConfirm = useAuthStore((s) => {
-    const perms = s.session?.storePermissions?.[storeId] ?? s.session?.permissions ?? [];
-    return perms.includes('delivery.confirm');
-  });
+  // Review ORD-28 (2026-11): the shared per-store check (hasStorePermission).
+  const canConfirm = useStorePermission('delivery.confirm', storeId);
   const state = inRunState(runQuery.data, storeId);
   if (state === 'buying') {
     return (
