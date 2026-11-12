@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb, schema as s, type DB } from '@compass/db';
 import { decide, emptyState } from '@compass/domain/order';
 import { appRouter } from '../trpc/router';
-import { writeOrderEvents } from '@compass/streams';
+import { writeOrderEvents } from '../services/streamWrite';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';

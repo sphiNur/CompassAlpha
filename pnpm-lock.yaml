@@ -202,9 +202,6 @@ importers:
       '@compass/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
-      '@compass/streams':
-        specifier: workspace:*
-        version: link:../../packages/streams
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.16)
@@ -370,12 +367,6 @@ importers:
       '@compass/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@compass/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@compass/streams':
-        specifier: workspace:*
-        version: link:../../packages/streams
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.4(bun-types@1.4.4)(postgres@3.4.9)
@@ -508,31 +499,6 @@ importers:
       '@eslint/js':
         specifier: ^9.39.4
         version: 9.39.4
-      eslint:
-        specifier: ^9.39.4
-        version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)
-      typescript-eslint:
-        specifier: ^8.59.3
-        version: 8.59.3(eslint@9.39.4(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
-
-  packages/streams:
-    dependencies:
-      '@compass/db':
-        specifier: workspace:*
-        version: link:../db
-      '@compass/domain':
-        specifier: workspace:*
-        version: link:../domain
-      drizzle-orm:
-        specifier: ^0.45.3
-        version: 0.45.4(bun-types@1.4.4)(postgres@3.4.9)
-    devDependencies:
-      '@eslint/js':
-        specifier: ^9.39.4
-        version: 9.39.4
-      '@types/bun':
-        specifier: latest
-        version: 1.4.4
       eslint:
         specifier: ^9.39.4
         version: 9.39.4(jiti@1.21.7)(supports-color@7.2.0)

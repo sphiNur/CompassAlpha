@@ -2,9 +2,7 @@
  * Inline projector for run events. Runs in the same tx that appends events,
  * so the read model is always at lockstep with the event log.
  *
- * Same pattern as the order projector (@compass/streams). The run claim
- * columns are projected there too, by projectRunClaim, which the worker
- * shares for its timed-out release (review ORD-07).
+ * Same pattern as orderProjection.ts.
  */
 import { and, asc, desc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
@@ -12,7 +10,7 @@ import { schema as s } from '@compass/db';
 import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts';
 import { DomainError } from '@compass/domain';
 import type { RunEvent } from '@compass/domain/run';
-import { projectRunClaim, readRunEvents } from '@compass/streams';
+import { readRunEvents } from './runStream';
 import { runCorrections } from './runCorrections';
 
 export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Promise<void> {
@@ -431,10 +429,43 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         await syncAmendMovements(db, orgId, e);
         break;
       case 'RunClaimed':
-      case 'RunClaimReleased':
-        // C.2 (M3.38): the claim columns, shared with the worker.
-        await projectRunClaim(db, e);
+        // C.2 (M3.38): claim grab. The reducer mirrors this exactly —
+        // sets claimer + ts. We don't clear previousClaimerMemberId
+        // here so the next reviewer's banner can still show "X → Y"
+        // even after the new claim lands (cleared only on
+        // self-release / pagehide / terminal).
+        await db
+          .update(s.marketRunsV)
+          .set({
+            claimedByMemberId: e.payload.byMemberId,
+            claimedAt: e.occurredAt,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
         break;
+      case 'RunClaimReleased': {
+        // C.2 (M3.38): mirror of OrderProjection's ClaimReleased path —
+        // forced releases (override / timeout) snapshot the prior
+        // claimer into previous_claimer_member_id for the next
+        // purchaser's banner. Self-releases (manual / pagehide) clear
+        // both columns so the next claim starts fresh.
+        const remembersOverride =
+          e.payload.reason === 'override' || e.payload.reason === 'timeout';
+        await db
+          .update(s.marketRunsV)
+          .set({
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: remembersOverride
+              ? sql`claimed_by_member_id`
+              : null,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
+        break;
+      }
 
       // ---- Reversal events (added 2026-05-03) ---------------------------
       case 'PurchaseRevised': {

@@ -24,7 +24,8 @@ import {
   type RunEvent,
   type RunState,
 } from '@compass/domain/run';
-import { appendEvents, projectOrder } from '@compass/streams';
+import { appendEvents } from '../../services/eventStore';
+import { projectOrder } from '../../services/orderProjection';
 import { projectRun } from '../../services/runProjection';
 
 export interface Stream<Command, Event, State> {
