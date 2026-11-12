@@ -93,6 +93,23 @@ describe('a real sequence collision in the event store (PG)', () => {
     expect(isStreamSeqConflict(thrown)).toBe(true);
   });
 
+  /**
+   * A wait that ends once `n` writers have called it: the writers of one
+   * round each read the stream, then wait here for the others.
+   */
+  const allRead = (n: number) => {
+    let arrived = 0;
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return () => {
+      arrived += 1;
+      if (arrived === n) open();
+      return opened;
+    };
+  };
+
   test.skipIf(!SHOULD_RUN)(
     'R2: writers racing on one stream all land once each decision is retried',
     async () => {
@@ -105,12 +122,13 @@ describe('a real sequence collision in the event store (PG)', () => {
       noteOrg(org.id);
       const streamId = randomUUID();
 
-      // One "command": read the stream, take a moment (as deciding does),
-      // append the next sequence number — all in one transaction.
-      const command = () =>
+      // One "command": read the stream, decide, append the next sequence
+      // number — all in one transaction. `decided` stands for the
+      // deciding: it waits until every writer of the round has read.
+      const command = (decided?: () => Promise<void>) =>
         db.transaction(async (tx) => {
           const seen = await readStream(tx as unknown as typeof db, 'order', streamId);
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await decided?.();
           await appendEvents(tx as unknown as typeof db, {
             streamType: 'order',
             streamId,
@@ -128,16 +146,25 @@ describe('a real sequence collision in the event store (PG)', () => {
           });
         });
 
-      // Without retries the race really happens and is recognised.
-      const once = await Promise.allSettled([command(), command(), command()]);
+      // Without retries the race really happens and is recognised: all
+      // three read the empty stream before any appends, so two lose (review
+      // TEST1-19: a 25 ms nap and the pool's size used to decide whether
+      // they overlapped at all).
+      const firstRound = allRead(3);
+      const once = await Promise.allSettled([1, 2, 3].map(() => command(firstRound)));
       const lost = once.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-      expect(lost.length).toBeGreaterThan(0);
+      expect(lost.length).toBe(2);
       for (const r of lost) expect(isStreamSeqConflict(r.reason)).toBe(true);
 
-      // With retries every writer lands, on consecutive sequence numbers.
+      // With retries every writer lands, on consecutive sequence numbers:
+      // the four first tries race as above, the retries go as they come.
       const before = (await readStream(db, 'order', streamId)).length;
+      const firstTries = allRead(4);
       await Promise.all(
-        [1, 2, 3, 4].map(() => withStreamConflictRetry(command, 8)),
+        [1, 2, 3, 4].map(() => {
+          let tries = 0;
+          return withStreamConflictRetry(() => command(tries++ === 0 ? firstTries : undefined), 8);
+        }),
       );
       const seqs = (await readStream(db, 'order', streamId)).map((e) => e.seq);
       expect(seqs.length).toBe(before + 4);
