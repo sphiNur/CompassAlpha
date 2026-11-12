@@ -12,9 +12,13 @@ import type { CatalogKey, Locale } from '../index';
 
 describe('catalog registry', () => {
   test('imports no catalog statically (each locale is its own chunk)', () => {
+    // Review TEST4-16: what a bundler sees (type-only imports dropped,
+    // `export … from` and require included), not a regex over the source.
     const src = readFileSync(join(import.meta.dir, '../catalogs/index.ts'), 'utf8');
-    const staticImports = src.match(/^import\s+(?!type\b)[^;]*from\s+'\.\/(en|zh|ru|uz)'/gm);
-    expect(staticImports).toBeNull();
+    const imports = new Bun.Transpiler({ loader: 'ts' }).scanImports(src);
+    const catalogs = imports.filter((i) => /^\.\/(en|zh|ru|uz)$/.test(i.path));
+    expect(catalogs.filter((i) => i.kind !== 'dynamic-import')).toEqual([]);
+    expect(catalogs.map((i) => i.path).sort()).toEqual(['./en', './ru', './uz', './zh']);
   });
 
   test('ensureCatalog resolves to the locale it loaded', async () => {
