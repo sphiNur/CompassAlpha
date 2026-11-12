@@ -11,9 +11,9 @@ import {
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
+import { useAdminStoreIds } from '../../../../hooks/useAdminAuthority';
 import {
   canSetOverride,
   overrideEffects,
@@ -60,11 +60,7 @@ export function MemberPermissionsSheet({
   const toast = useToast();
   const utils = trpc.useUtils();
   const errToast = useErrToast();
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   const open = !!target;
   const detail = trpc.admin.memberPermissionsList.useQuery(
     { memberId: target?.memberId ?? '' },

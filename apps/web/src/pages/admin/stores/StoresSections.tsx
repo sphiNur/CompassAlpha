@@ -37,6 +37,7 @@ import { useErrToast } from '../../../hooks/useErrToast';
 import { useRefreshSession } from '../../../hooks/useRefreshSession';
 import { rolePassesOn } from '../../../lib/authority';
 import { useI18n, useRoleLabels } from '../../../hooks/useI18n';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { nativeConfirm } from '../shared';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people';
@@ -87,9 +88,7 @@ export function StoresHomeSection({
   // org.admin-only server-side, so gate the UI on the same flag. An
   // org.admin also lists paused stores (badge below) so one switched
   // off by mistake can be found and reactivated.
-  const isOrgAdmin = useAuthStore(
-    (s) => s.session?.permissions.includes('org.admin') ?? false,
-  );
+  const isOrgAdmin = useIsOrgAdmin();
   const storesQuery = trpc.admin.storeList.useQuery({ includeArchived: isOrgAdmin });
   const membersQuery = trpc.admin.memberList.useQuery();
   const utils = trpc.useUtils();
@@ -423,7 +422,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
   // 2026-10-21 audit CA-08/CA-16: pause/reactivate, archive and clone-
   // roles are org.admin-only server-side. Replaces the isGlobalAdmin
   // heuristic, which counted a single-store manager as global.
-  const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isOrgAdmin = useIsOrgAdmin();
   // Same input as StoresHomeSection so a paused store (org.admin only)
   // resolves here instead of spinning on "Loading store…".
   const storesQuery = trpc.admin.storeList.useQuery({ includeArchived: isOrgAdmin });
@@ -434,10 +433,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
   const i18n = useI18n();
   const roleText = useRoleLabels();
   const refreshSession = useRefreshSession();
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
 
   const store = useMemo(
     () => (storesQuery.data ?? []).find((s) => s.id === storeId) ?? null,
@@ -736,10 +732,7 @@ function StoreCloneRolesSheet({
   const errToast = useErrToast();
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   const open = !!target;
 

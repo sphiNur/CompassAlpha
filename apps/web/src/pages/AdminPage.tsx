@@ -63,6 +63,7 @@ import { useNavStore } from '../stores/navStore';
 import { isInTelegram } from '../lib/telegram';
 import { useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
+import { useIsOrgAdmin } from '../hooks/useAdminAuthority';
 import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
@@ -164,7 +165,7 @@ export function AdminPage() {
   // A store manager (users.manage without org.admin) only reads Workspace,
   // Roles & permissions and Catalog: every write there needs org.admin
   // (dishes: dishes.manage), so those rows are left out for them.
-  const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isOrgAdmin = useIsOrgAdmin();
   const seesCatalog = isOrgAdmin || (session?.permissions.includes('dishes.manage') ?? false);
   // 2026-11-05: attendance sheet, roster and rules for the stores they manage.
   const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
@@ -626,7 +627,7 @@ function WorkspaceSection() {
   const pricesIncludeTax = session?.member.pricesIncludeTax ?? true;
   // 2026-10-21 audit CA-16: orgFinanceUpdate is requireOrgAdmin on the
   // server; `users.manage` (store managers) only got a FORBIDDEN on save.
-  const isAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isAdmin = useIsOrgAdmin();
 
   // Local form draft inside the sheet so we can cancel without
   // affecting the source of truth on the auth store.

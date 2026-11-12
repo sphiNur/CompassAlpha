@@ -11,9 +11,9 @@ import {
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
 import { nativeConfirm } from '../../shared';
 import {
   canDetachFromStore,
@@ -61,17 +61,13 @@ export function ManageMemberSheet({
   // shown as read-only rows so the operator can see WHO the member
   // already belongs to (even cross-store), but can only mutate the
   // stores they actually run.
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   // M1.9: gate cross-store moves behind global-admin only. For per-
   // store managers (who post-B1 have users.manage), the unassign +
   // reassign workflow on the checkbox grid is enough; the dedicated
   // Transfer wizard is an org-wide-write surface they shouldn't reach.
   // 2026-10-21 audit CA-16 (A-10): explicit org.admin marker.
-  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isGlobalAdmin = useIsOrgAdmin();
   const [name, setName] = useState(target?.displayName ?? '');
   // Refresh local name field when target changes.
   useEffect(() => {

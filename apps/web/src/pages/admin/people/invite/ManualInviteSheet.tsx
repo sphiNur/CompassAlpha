@@ -14,8 +14,8 @@ import {
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { TG_USER_ID_MESSAGE } from '@compass/contracts/limits';
 import { trpc } from '../../../../lib/trpc';
-import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
 import { tgIdProblem } from '../../../../lib/adminFields';
 import { canGrantRole, rolePassesOn, type Actor } from '../../../../lib/authority';
 import { type InviteDraft, StoreName } from '../shared';
@@ -46,14 +46,10 @@ export function ManualInviteSheet({
   // (admin / super_admin) get hidden when the actor isn't a global
   // admin — a store-scoped manager has no business creating org-tier
   // members; the server gate would reject anyway.
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   // 2026-10-21 audit CA-16 (A-10): explicit org.admin marker, not the
   // "admin of every visible store" heuristic.
-  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
+  const isGlobalAdmin = useIsOrgAdmin();
 
   const eligibleStores = useMemo(
     () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),

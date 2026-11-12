@@ -23,6 +23,7 @@ import { copyText } from '../../../lib/clipboard';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
+import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { getTg } from '../../../lib/telegram';
 import { useStoreContext } from '../../../hooks/useStoreContext';
 import {
@@ -88,7 +89,7 @@ export function PeopleSection({
   // organization-wide authority (a single-store manager satisfies that old
   // test). Permission overrides are global-impact tooling, so gate them on
   // the explicit organization marker.
-  const isGlobalAdminPeople = session?.permissions.includes('org.admin') ?? false;
+  const isGlobalAdminPeople = useIsOrgAdmin();
   // Resolve the effective storeCtx. When `lockMode` is set we bypass
   // the global StoreSwitcher; otherwise we fall back to it for the
   // legacy unscoped path.

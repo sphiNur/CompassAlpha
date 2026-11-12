@@ -14,6 +14,7 @@ import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
+import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
 import {
   canGrantRole,
   canGrantTo,
@@ -67,10 +68,7 @@ export function GrantRoleSheet({
   onClose: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
+  const adminStoreIds = useAdminStoreIds();
   const sessionStores = useMemo(() => session?.stores ?? [], [session?.stores]);
   const i18n = useI18n();
   const roleText = useRoleLabels();
@@ -117,7 +115,7 @@ export function GrantRoleSheet({
   // 2026-10-21 audit CA-16 (A-10): the server requires org.admin for a
   // global binding; the old "admin of every visible store" test was true
   // for a single-store manager.
-  const canGrantGlobal = session?.permissions.includes('org.admin') ?? false;
+  const canGrantGlobal = useIsOrgAdmin();
 
   // Effective rank in the chosen scope: the lowest over the selected
   // stores, because the grant fans out to one server call per store and
