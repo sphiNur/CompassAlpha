@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
 import type { CatalogKey } from '@compass/i18n';
-import { Banner, Button, Sheet } from '@compass/ui';
+import { Banner, Button, Sheet, Spinner } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { errorTextOf, serverErrorKey, type ErrorVars } from '../../lib/errorText';
@@ -347,11 +347,19 @@ function FaceRing({
       <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden>
         {ticks}
       </svg>
-      <div className="absolute inset-[13%] overflow-hidden rounded-full bg-black">
+      <div
+        // UI-8 exception: behind the camera picture, black in both themes.
+        className="absolute inset-[13%] overflow-hidden rounded-full bg-black"
+      >
         {children}
         {busy ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-            <span className="h-10 w-10 animate-spin rounded-full border-4 border-white/40 border-t-white" />
+          <div
+            // UI-8 exception: a dimmed camera picture with a white spinner
+            // reads the same in both themes.
+            className="absolute inset-0 flex items-center justify-center bg-black/40 text-white"
+          >
+            {/* Review ATT-20 (UI-15): the kit's Spinner, not a hand-drawn ring. */}
+            <Spinner size={40} />
           </div>
         ) : null}
         {done ? (
@@ -360,7 +368,9 @@ function FaceRing({
               <path
                 d="M5 12.5l4.5 4.5L19 7.5"
                 fill="none"
-                stroke="white"
+                // On the success fill, as the kit's Stepper draws its tick
+                // (white was faint on the dark theme's lighter green).
+                style={{ stroke: 'var(--c-fg-inverse)' }}
                 strokeWidth={2.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
