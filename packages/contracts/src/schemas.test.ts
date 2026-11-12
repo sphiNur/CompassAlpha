@@ -12,12 +12,15 @@ import {
   IdempotencyKeySchema,
   OrderQtySchema,
   PositiveDecimalStringSchema,
+  RequestPresignInputSchema,
   TimeZoneSchema,
 } from './schemas/common';
 import { CreateMemberInviteInputSchema, InviteMemberByTgIdInputSchema } from './schemas/admin';
 import {
   AcceptInviteInputSchema,
   CreateOrganizationInputSchema,
+  SetLocaleInputSchema,
+  SetSecondaryLocaleInputSchema,
   TelegramLoginInputSchema,
 } from './schemas/auth';
 import { CategoryCreateInputSchema } from './schemas/catalog';
@@ -30,6 +33,7 @@ import {
   SignedSettlementMoneySchema,
 } from './schemas/settlement';
 import { SaleQtySchema, SaleVoidInputSchema } from './schemas/sales';
+import { UPLOAD_MAX_BYTES } from './schemas/upload';
 import { SALE_VOID_REASON_MAX, saleQtyProblem } from './limits';
 
 function verdict(schema: ZodTypeAny, value: unknown): string {
@@ -257,5 +261,28 @@ describe('invitations', () => {
       const takes = (n: number) => schema.safeParse({ ...rest, storeIds: stores(n) }).success;
       expect({ kind, 50: takes(50), 51: takes(51) }).toEqual({ kind, 50: true, 51: false });
     }
+  });
+});
+
+// Review COREAPI-32 (2026-11-12): these inputs were written in their
+// routers, and the photo size limit twice there.
+describe('inputs from the routers', () => {
+  it('a photo may be as large as upload.config says, and no larger', () => {
+    const photo = (contentLength: number) =>
+      RequestPresignInputSchema.safeParse({
+        kind: 'receipt',
+        contentType: 'image/jpeg',
+        contentLength,
+      }).success;
+    expect({ at: photo(UPLOAD_MAX_BYTES), over: photo(UPLOAD_MAX_BYTES + 1) }).toEqual({
+      at: true,
+      over: false,
+    });
+  });
+
+  it('a language is one of the four', () => {
+    expect(SetLocaleInputSchema.safeParse({ locale: 'uz' }).success).toBe(true);
+    expect(SetLocaleInputSchema.safeParse({ locale: 'de' }).success).toBe(false);
+    expect(SetSecondaryLocaleInputSchema.safeParse({ secondaryLocale: null }).success).toBe(true);
   });
 });

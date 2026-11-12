@@ -87,6 +87,36 @@ export const SubscriptionStatusSchema = z.enum([
 ]);
 export type SubscriptionStatus = z.infer<typeof SubscriptionStatusSchema>;
 
+/**
+ * `platform.updateSubscription` (platform admins only). A date is a day,
+ * "YYYY-MM-DD", of the organisation's own calendar, or an ISO timestamp
+ * with a zone; the router reads and checks it (platform.errors.invalidDate).
+ */
+export const SubscriptionUpdateInputSchema = z.object({
+  orgId: UuidSchema,
+  planCode: z.string().min(1).max(32),
+  status: SubscriptionStatusSchema,
+  trialEndsAt: z.string().nullable().optional(),
+  currentPeriodStart: z.string().nullable().optional(),
+  currentPeriodEnd: z.string().nullable().optional(),
+  graceEndsAt: z.string().nullable().optional(),
+  // 2026-10-21 audit CA-39: optional (not default(false)) so an omitted
+  // flag keeps the stored value instead of silently clearing it.
+  cancelAtPeriodEnd: z.boolean().optional(),
+  note: z.string().max(500).nullable().optional(),
+});
+
+/** `auth.setLocale`: the person's interface language. */
+export const SetLocaleInputSchema = z.object({ locale: LocaleSchema });
+
+/** `auth.setSecondaryLocale`: a second language for product names; null for none. */
+export const SetSecondaryLocaleInputSchema = z.object({
+  secondaryLocale: LocaleSchema.nullable(),
+});
+
+/** `auth.devPersonaLogin`, development only. */
+export const DevPersonaLoginInputSchema = z.object({ memberId: UuidSchema });
+
 export const SubscriptionSummarySchema = z.object({
   planCode: z.string(),
   planName: z.string(),

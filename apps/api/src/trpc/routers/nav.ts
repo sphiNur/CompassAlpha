@@ -12,7 +12,7 @@
  * misleading 0.
  */
 import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { z } from 'zod';
+import { NavCountsInputSchema } from '@compass/contracts';
 import { schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
@@ -23,11 +23,6 @@ import {
   resolveRunCreateStoreScope,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
-
-const NavCountsInputSchema = z.object({
-  /** The store chosen in the header; omitted for 「全部门店」. */
-  storeId: z.string().uuid().optional(),
-});
 
 /** No store can have this id; keeps `inArray` from meeting an empty list. */
 const NO_STORE = '00000000-0000-0000-0000-000000000000';

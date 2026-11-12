@@ -3,10 +3,13 @@
  * once, their two languages, and signing out everywhere.
  */
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
 import { eq, sql } from 'drizzle-orm';
 import { inSystem, schema as s } from '@compass/db';
-import { CompleteOnboardingInputSchema } from '@compass/contracts';
+import {
+  CompleteOnboardingInputSchema,
+  SetLocaleInputSchema,
+  SetSecondaryLocaleInputSchema,
+} from '@compass/contracts';
 import { authedProcedure } from '../../trpc';
 import { revokeAllForUser } from '../../../services/refreshTokens';
 import { buildSessionPayload } from '../../../services/sessionPayload';
@@ -88,29 +91,22 @@ export const accountProcedures = {
    * Persists to `auth.users.locale`. The 4 valid codes match the
    * 4-language SKU contract — anything else is rejected.
    */
-  setLocale: authedProcedure
-    .input(z.object({ locale: z.enum(['en', 'zh', 'ru', 'uz']) }))
-    .mutation(async ({ ctx, input }) => {
-      await inSystem(ctx.db, 'auth', (tx) =>
-        tx
-          .update(s.users)
-          .set({
-            locale: input.locale,
-            // AUTH-14 (2026-10-30): a second language equal to the new
-            // primary one left no stall-language row selected (not even
-            // "off"); it adds nothing, so it is cleared.
-            secondaryLocale: sql`CASE WHEN ${s.users.secondaryLocale} = ${input.locale} THEN NULL ELSE ${s.users.secondaryLocale} END`,
-            updatedAt: new Date(),
-          })
-          .where(eq(s.users.id, ctx.session.userId)),
-      );
-      return buildSessionPayload(
-        ctx.db,
-        ctx.session.userId,
-        ctx.session.memberId,
-        ctx.session.orgId,
-      );
-    }),
+  setLocale: authedProcedure.input(SetLocaleInputSchema).mutation(async ({ ctx, input }) => {
+    await inSystem(ctx.db, 'auth', (tx) =>
+      tx
+        .update(s.users)
+        .set({
+          locale: input.locale,
+          // AUTH-14 (2026-10-30): a second language equal to the new
+          // primary one left no stall-language row selected (not even
+          // "off"); it adds nothing, so it is cleared.
+          secondaryLocale: sql`CASE WHEN ${s.users.secondaryLocale} = ${input.locale} THEN NULL ELSE ${s.users.secondaryLocale} END`,
+          updatedAt: new Date(),
+        })
+        .where(eq(s.users.id, ctx.session.userId)),
+    );
+    return buildSessionPayload(ctx.db, ctx.session.userId, ctx.session.memberId, ctx.session.orgId);
+  }),
 
   /**
    * M3.45 (2026-05-22): set the user's secondary display language. When
@@ -124,11 +120,7 @@ export const accountProcedures = {
    * gets rejected at the input boundary.
    */
   setSecondaryLocale: authedProcedure
-    .input(
-      z.object({
-        secondaryLocale: z.enum(['en', 'zh', 'ru', 'uz']).nullable(),
-      }),
-    )
+    .input(SetSecondaryLocaleInputSchema)
     .mutation(async ({ ctx, input }) => {
       await inSystem(ctx.db, 'auth', (tx) =>
         tx

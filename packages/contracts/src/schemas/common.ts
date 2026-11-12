@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ORDER_QTY_MAX, QTY_TEXT_RE } from '../limits';
+import { PHOTO_KINDS, UPLOAD_MAX_BYTES } from './upload';
 
 // Zod-free limits live in ../limits so the web can import them without
 // pulling zod into its main chunk (P-5); re-exported for the barrel.
@@ -25,6 +26,18 @@ export const PhotoUrlSchema = z
   .string()
   .max(300_000)
   .regex(/^(https?:\/\/|data:image\/)/i, 'common.errors.invalidPhotoUrl');
+
+/** `upload.requestPresign`: where to put one photo. */
+export const RequestPresignInputSchema = z.object({
+  kind: z.enum(PHOTO_KINDS),
+  contentType: z.string().min(1).max(64),
+  /** Caller's hint at file size in bytes, at most UPLOAD_MAX_BYTES. */
+  contentLength: z.number().int().min(1).max(UPLOAD_MAX_BYTES).optional(),
+  /** Optional original filename. Accepted for older clients and ignored:
+   *  AUTH-24 (2026-10-30) — the key's extension came from it, so a signed
+   *  image/png upload could land under "….html". */
+  filename: z.string().max(200).optional(),
+});
 
 /**
  * True when the text holds a C0/C1 control character (U+0000–U+001F,
