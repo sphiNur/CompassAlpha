@@ -6,6 +6,7 @@ import {
   cleanExtraRows,
   extraLinesToSave,
   isInvalidExtraRow,
+  otherSuggestions,
   unlistedUnit,
   wholeNumberRequired,
   type ExtraDraft,
@@ -298,9 +299,7 @@ function ExtraRowEditor({
     { storeId, search: row.name },
     { enabled: focusing && storeId.length > 0, staleTime: 30_000 },
   );
-  const suggestions = (suggestionsQuery.data ?? []).filter(
-    (s) => s.name.length > 0 && s.name !== row.name.trim().toLowerCase(),
-  );
+  const suggestions = otherSuggestions(suggestionsQuery.data ?? [], row.name);
 
   return (
     <div
@@ -337,9 +336,12 @@ function ExtraRowEditor({
               if (e.key === 'Enter') onNameCommit();
             }}
           />
+          {/* Review ORD-23 (2026-11): a plain list of buttons. It was marked
+              a listbox, whose items must be options the field points at
+              (combobox), which these are not. */}
           {focusing && suggestions.length > 0 ? (
             <ul
-              role="listbox"
+              role="list"
               className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-[var(--r-card)] bg-[var(--c-surface-elevated)] py-1 shadow-product ring-hairline"
             >
               {suggestions.slice(0, 6).map((s) => (
@@ -364,7 +366,10 @@ function ExtraRowEditor({
                     className="press flex min-h-11 w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
                   >
                     <span className="text-[var(--c-fg)]">{s.name}</span>
-                    <span className="text-old-label text-[var(--c-fg-muted)]">×{s.count}</span>
+                    {/* ORD-23: "×3" read as "times 3" and looked like a quantity. */}
+                    <span className="text-old-label text-[var(--c-fg-muted)]">
+                      {i18n.t('order.extras.usedCount', { n: s.count })}
+                    </span>
                   </button>
                 </li>
               ))}

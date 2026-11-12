@@ -1468,7 +1468,10 @@ export function OrderPage() {
           <EmptyState
             title={i18n.t('order.catalogEmpty.title')}
             description={i18n.t('order.catalogEmpty.description', {
-              path: `${i18n.t('nav.admin')} › ${i18n.t('admin.section.catalog')}`,
+              path: i18n.t('common.navPath', {
+                parent: i18n.t('nav.admin'),
+                child: i18n.t('admin.section.catalog'),
+              }),
             })}
           />
         }
@@ -1600,10 +1603,15 @@ export function OrderPage() {
         title={i18n.t('order.review.title')}
         description={
           // DX-ORD-12: "7 items + 1 other item" — other items are not products.
+          // ORD-20: the "+" is the catalog's (order.batches.itemsAndExtras).
           dateLabel +
           ' · ' +
-          i18n.t('order.review.itemsCount', { n: totals.length }) +
-          (extrasCount > 0 ? ' + ' + i18n.t('order.batches.extras', { n: extrasCount }) : '')
+          (extrasCount > 0
+            ? i18n.t('order.batches.itemsAndExtras', {
+                items: i18n.t('order.review.itemsCount', { n: totals.length }),
+                extras: i18n.t('order.batches.extras', { n: extrasCount }),
+              })
+            : i18n.t('order.review.itemsCount', { n: totals.length }))
         }
         footer={
           // M3.49: in-page PageMainButton sits behind any open sheet —

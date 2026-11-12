@@ -1160,6 +1160,9 @@ export const en = {
   'order.batches.newBatch': 'Place another order',
   'order.batches.viewing': 'selected',
   'order.batches.extras': '{n, plural, one {# other item} other {# other items}}',
+  // Review ORD-20 (2026-11): "7 items + 1 other item"; {items} and {extras}
+  // are order.review.itemsCount / approval.itemsCount and order.batches.extras.
+  'order.batches.itemsAndExtras': '{items} + {extras}',
   'order.batches.rejectedTitle': 'Batch {n} was rejected',
   'order.batches.open': 'Open',
   'order.batches.backToCurrent': 'Back to the current batch',
@@ -1226,6 +1229,9 @@ export const en = {
   'order.categories.uncategorized': 'Uncategorized',
   'order.batches.backToReceipt': "Back to today's batches",
   'order.extras.remove': 'Remove',
+  // Review ORD-23 (2026-11): how many orders of the last 30 days had the
+  // suggested name; it read "×3", which a screen reader says as "times 3".
+  'order.extras.usedCount': '{n, plural, one {used once} other {used # times}}',
   'order.toast.extrasSaveFailed': 'Could not save the other items. Try again.',
 
   // ── ApprovalPage (the manager-side) ─────────────────────────────
@@ -1470,6 +1476,8 @@ export const en = {
   'run.action.finishBlocked.otherStores': 'Finishing needs someone who buys for all stores',
   'run.action.finishBlocked.noPermission': 'You do not have permission to finish',
   'common.listSeparator': ', ',
+  // Review ORD-20 (2026-11): where something is, as "Admin › Catalog".
+  'common.navPath': '{parent} › {child}',
   // A name that is not at hand: its list is still loading, or the thing left
   // it (review RUNWEB1-38 and others: the id's first characters showed).
   'common.unknownStore': 'Unknown store',

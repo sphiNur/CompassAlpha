@@ -60,7 +60,8 @@ export function BatchStrip({
                 onClick={() => onSelect?.(b.id)}
                 className={
                   // V4: min-h-11 — a stacked list row is tapped across its whole height.
-                  'flex min-h-11 w-full items-center justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
+                  // ORD-25: wraps, so the counts go under the name when both do not fit.
+                  'flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
                   (onSelect && !isCurrent ? 'press ' : '') +
                   (isCurrent
                     ? 'bg-[color:color-mix(in_oklch,var(--c-action)_10%,transparent)] ring-1 ring-[var(--c-action)]'
@@ -83,11 +84,18 @@ export function BatchStrip({
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 whitespace-nowrap tabular-nums text-[var(--c-fg-muted)]">
-                  {i18n.t('approval.itemsCount', { n: b.itemCount })}
+                {/* Review ORD-25 (2026-11): this part kept to one line and
+                    would not shrink, so on a narrow phone in Russian or
+                    Uzbek it squeezed the batch's name to nothing or ran
+                    off the row. It moves under the name and may wrap. */}
+                <span className="ml-auto tabular-nums text-[var(--c-fg-muted)]">
+                  {/* ORD-20: the "+" is the catalog's. */}
                   {b.extrasCount > 0
-                    ? ` + ${i18n.t('order.batches.extras', { n: b.extrasCount })}`
-                    : ''}
+                    ? i18n.t('order.batches.itemsAndExtras', {
+                        items: i18n.t('approval.itemsCount', { n: b.itemCount }),
+                        extras: i18n.t('order.batches.extras', { n: b.extrasCount }),
+                      })
+                    : i18n.t('approval.itemsCount', { n: b.itemCount })}
                   {b.estimatedTotal ? ` · ~${formatMoney(b.estimatedTotal, currency)}` : ''}
                 </span>
               </button>

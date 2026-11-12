@@ -1105,6 +1105,7 @@ export const uz = {
   'order.batches.newBatch': 'Yana buyurtma berish',
   'order.batches.viewing': 'tanlangan',
   'order.batches.extras': '{n} ta boshqa narsa',
+  'order.batches.itemsAndExtras': '{items} + {extras}',
   'order.batches.rejectedTitle': '{n}-partiya rad etildi',
   'order.batches.open': 'Ochish',
   'order.batches.backToCurrent': 'Joriy partiyaga qaytish',
@@ -1171,6 +1172,7 @@ export const uz = {
   'order.categories.uncategorized': 'Kategoriyasiz',
   'order.batches.backToReceipt': 'Bugungi partiyalarga qaytish',
   'order.extras.remove': 'Oʻchirish',
+  'order.extras.usedCount': '{n} marta ishlatilgan',
   'order.toast.extrasSaveFailed': 'Boshqa narsalarni saqlab boʻlmadi. Qayta urinib koʻring.',
 
   // ── ApprovalPage ────────────────────────────────────────────────
@@ -1408,6 +1410,7 @@ export const uz = {
   'run.action.finishBlocked.otherStores': 'Yakunlashni barcha doʻkonlar xaridori bajaradi',
   'run.action.finishBlocked.noPermission': 'Xaridni yakunlashga ruxsatingiz yoʻq',
   'common.listSeparator': ', ',
+  'common.navPath': '{parent} › {child}',
   'common.unknownStore': 'Nomaʼlum doʻkon',
   'common.unknownProduct': 'Nomaʼlum mahsulot',
   'common.unknownSupplier': 'Nomaʼlum yetkazib beruvchi',

@@ -1103,6 +1103,7 @@ export const ru = {
   'order.batches.newBatch': 'Оформить ещё заказ',
   'order.batches.viewing': 'выбрана',
   'order.batches.extras': 'прочее: {n}',
+  'order.batches.itemsAndExtras': '{items} + {extras}',
   'order.batches.rejectedTitle': 'Партия {n} отклонена',
   'order.batches.open': 'Открыть',
   'order.batches.backToCurrent': 'К текущей партии',
@@ -1168,6 +1169,8 @@ export const ru = {
   'order.categories.uncategorized': 'Без категории',
   'order.batches.backToReceipt': 'К партиям за сегодня',
   'order.extras.remove': 'Удалить',
+  'order.extras.usedCount':
+    '{n, plural, one {использовано # раз} few {использовано # раза} many {использовано # раз} other {использовано # раза}}',
   'order.toast.extrasSaveFailed': 'Не удалось сохранить прочие позиции. Попробуйте ещё раз.',
 
   // ── ApprovalPage ────────────────────────────────────────────────
@@ -1415,6 +1418,7 @@ export const ru = {
   'run.action.finishBlocked.otherStores': 'Завершить может только закупщик всех магазинов',
   'run.action.finishBlocked.noPermission': 'У вас нет права завершать закупку',
   'common.listSeparator': ', ',
+  'common.navPath': '{parent} › {child}',
   'common.unknownStore': 'Неизвестный магазин',
   'common.unknownProduct': 'Неизвестный товар',
   'common.unknownSupplier': 'Неизвестный поставщик',
