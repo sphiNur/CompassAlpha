@@ -6,14 +6,21 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
+  Card,
+  CardHeader,
   DataState,
   EmptyState,
   Field,
   Input,
+  ListRow,
+  SectionLabel,
   Segmented,
   Select,
   Sheet,
   Textarea,
+  cn,
+  rowGroupClass,
+  rowListClass,
   useToast,
 } from '@compass/ui';
 import { locationVerdict } from '@compass/contracts/limits';
@@ -249,7 +256,12 @@ export function AttendanceSheet({ storeId }: { storeId: string }) {
               {summary ? (
                 <p className="px-4 pb-2 text-old-label text-[var(--c-fg-muted)]">{summary}</p>
               ) : null}
-              <ul className="mx-4 flex flex-col gap-2" aria-label={i18n.t('attendance.view.sheet')}>
+              {/* Review ATT-07 (UI-6): one card of rows, not a card per person. */}
+              <ul
+                className={cn('mx-4', rowGroupClass)}
+                role="list"
+                aria-label={i18n.t('attendance.view.sheet')}
+              >
                 {rows.map((m) => (
                   <MemberDayRow
                     key={m.memberId}
@@ -299,7 +311,7 @@ function MemberDayRow({
       <button
         type="button"
         onClick={onOpen}
-        className="press flex w-full flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
+        className="press flex w-full flex-col gap-1 px-4 py-3 text-left"
       >
         <span className="flex w-full items-baseline justify-between gap-2">
           <span className="min-w-0 truncate text-old-h3 font-semibold text-[var(--c-fg)]">
@@ -432,12 +444,10 @@ function MemberDaySheet({
             {i18n.t('attendance.sheet.noPunches')}
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          // ATT-07 (UI-6): rows of one card; they were grey boxes.
+          <ul className={rowGroupClass} role="list">
             {punches.map((p) => (
-              <li
-                key={p.id}
-                className="flex flex-col gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2"
-              >
+              <li key={p.id} className="flex flex-col gap-2 px-4 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <span
                     className={
@@ -515,7 +525,7 @@ function MemberDaySheet({
 
         <PayLine day={day} />
         {overtime.map((o) => (
-          <div key={o.id} className="flex flex-col gap-2 rounded-[var(--r-card)] p-3 ring-hairline">
+          <Card key={o.id} className="flex flex-col gap-2 p-3">
             <span className="text-old-body font-semibold text-[var(--c-fg)]">
               {i18n.t(`attendance.overtime.badge.${o.status}`, {
                 duration: minutesText(i18n, o.minutes),
@@ -557,10 +567,10 @@ function MemberDaySheet({
                 </Button>
               </div>
             ) : null}
-          </div>
+          </Card>
         ))}
         {voiding && punches.some((p) => p.id === voiding.id) ? (
-          <div className="flex flex-col gap-2 rounded-[var(--r-card)] p-3 ring-hairline">
+          <Card className="flex flex-col gap-2 p-3">
             <Field label={i18n.t('attendance.void.reasonLabel', { time: voiding.time })}>
               <Input
                 value={voidReason}
@@ -584,7 +594,7 @@ function MemberDaySheet({
                 {i18n.t('attendance.void.confirm')}
               </Button>
             </div>
-          </div>
+          </Card>
         ) : null}
 
         {own ? (
@@ -626,9 +636,9 @@ function ManualPunchForm(props: {
   const { kind, setKind, time, setTime, reason, setReason } = props;
   return (
     <>
-      <h3 className="mt-2 text-old-h3 font-semibold text-[var(--c-fg)]">
+      <SectionLabel as="h3" padded={false} className="mt-2">
         {i18n.t('attendance.manual.title')}
-      </h3>
+      </SectionLabel>
       <Segmented<'in' | 'out'>
         value={kind}
         onChange={setKind}
@@ -727,11 +737,10 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
                 {week.map((date) => {
                   const shifts = data.shifts.filter((x) => x.date === date);
                   return (
-                    <section
-                      key={date}
-                      className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline"
-                    >
-                      <div className="flex items-center justify-between gap-2">
+                    // Review ATT-07: a Card per day, its shifts kit rows with
+                    // the 44 px tap height (the text buttons were about 32 px).
+                    <Card as="section" key={date}>
+                      <CardHeader className="items-center">
                         <h3
                           className={
                             'text-old-h3 font-semibold ' +
@@ -748,18 +757,26 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
                         >
                           {i18n.t('attendance.roster.add')}
                         </Button>
-                      </div>
+                      </CardHeader>
                       {shifts.length === 0 ? (
-                        <p className="text-old-label text-[var(--c-fg-subtle)]">
+                        <p className="px-4 pb-3 text-old-label text-[var(--c-fg-subtle)]">
                           {i18n.t('attendance.roster.none')}
                         </p>
                       ) : (
-                        <ul className="mt-1 flex flex-col">
+                        <ul className={rowListClass} role="list">
                           {shifts.map((x) => (
                             <li key={x.id}>
-                              <button
-                                type="button"
-                                className="press flex w-full items-center justify-between gap-2 py-1.5 text-left"
+                              <ListRow
+                                label={name(x.memberId)}
+                                hint={x.note || undefined}
+                                trailing={
+                                  <span className="tabular-nums text-old-body text-[var(--c-fg-muted)]">
+                                    {x.start}–{x.end}
+                                    {x.end <= x.start
+                                      ? ` ${i18n.t('attendance.roster.nextDay')}`
+                                      : ''}
+                                  </span>
+                                }
                                 onClick={() =>
                                   setDraft({
                                     shiftId: x.id,
@@ -770,28 +787,12 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
                                     note: x.note ?? '',
                                   })
                                 }
-                              >
-                                <span className="min-w-0 truncate text-old-body text-[var(--c-fg)]">
-                                  {name(x.memberId)}
-                                  {x.note ? (
-                                    <span className="text-old-label text-[var(--c-fg-muted)]">
-                                      {' '}
-                                      · {x.note}
-                                    </span>
-                                  ) : null}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-old-body text-[var(--c-fg-muted)]">
-                                  {x.start}–{x.end}
-                                  {x.end <= x.start
-                                    ? ` ${i18n.t('attendance.roster.nextDay')}`
-                                    : ''}
-                                </span>
-                              </button>
+                              />
                             </li>
                           ))}
                         </ul>
                       )}
-                    </section>
+                    </Card>
                   );
                 })}
               </div>
@@ -965,9 +966,9 @@ function PunchMap({ data, punches }: { data: SheetData; punches: readonly Punch[
   const area = data.geo;
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+      <SectionLabel as="h3" padded={false}>
         {i18n.t('attendance.map.punches')}
-      </h3>
+      </SectionLabel>
       <GeoMap
         area={area}
         points={placed.map((p) => {

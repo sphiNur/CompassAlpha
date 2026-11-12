@@ -3,7 +3,7 @@
  * the file opens in Telegram's download dialog (or the browser).
  */
 import { useState } from 'react';
-import { Button } from '@compass/ui';
+import { Button, Card, SectionLabel } from '@compass/ui';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { useErrToast } from '../../hooks/useErrToast';
@@ -50,36 +50,42 @@ export function AttendanceExport({ storeId }: { storeId: string }) {
   };
 
   return (
-    <section className="mx-4 mt-5 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
-      <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+    // Review ATT-07: the heading is a SectionLabel over the kit's Card, as
+    // the settings' sections are.
+    <section className="mt-5 flex flex-col gap-2 px-4">
+      <SectionLabel as="h2" padded={false}>
         {i18n.t('attendance.export.title')}
-      </h2>
-      <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('attendance.export.hint')}</p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="utility"
-          size="sm"
-          onClick={() => setMonth(shiftMonth(month, -1))}
-          aria-label={i18n.t('attendance.nav.prev')}
-        >
-          ‹
+      </SectionLabel>
+      <Card className="flex flex-col gap-2 px-4 py-3">
+        <p className="text-old-label text-[var(--c-fg-muted)]">
+          {i18n.t('attendance.export.hint')}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="utility"
+            size="sm"
+            onClick={() => setMonth(shiftMonth(month, -1))}
+            aria-label={i18n.t('attendance.nav.prev')}
+          >
+            ‹
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-center font-semibold text-[var(--c-fg)]">
+            {dates.monthYear(`${month}-01T12:00:00`)}
+          </span>
+          <Button
+            variant="utility"
+            size="sm"
+            disabled={month >= current}
+            onClick={() => setMonth(shiftMonth(month, 1))}
+            aria-label={i18n.t('attendance.nav.next')}
+          >
+            ›
+          </Button>
+        </div>
+        <Button block variant="secondary" loading={saving} onClick={() => void exportMonth()}>
+          {i18n.t('attendance.export.button')}
         </Button>
-        <span className="min-w-0 flex-1 truncate text-center font-semibold text-[var(--c-fg)]">
-          {dates.monthYear(`${month}-01T12:00:00`)}
-        </span>
-        <Button
-          variant="utility"
-          size="sm"
-          disabled={month >= current}
-          onClick={() => setMonth(shiftMonth(month, 1))}
-          aria-label={i18n.t('attendance.nav.next')}
-        >
-          ›
-        </Button>
-      </div>
-      <Button block variant="secondary" loading={saving} onClick={() => void exportMonth()}>
-        {i18n.t('attendance.export.button')}
-      </Button>
+      </Card>
     </section>
   );
 }
