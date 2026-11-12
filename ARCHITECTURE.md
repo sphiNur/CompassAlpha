@@ -533,7 +533,7 @@ apps/web/src/
 ### 5.5 国际化
 
 - 用户语言来源优先级：`auth.users.locale` > `Telegram.initDataUnsafe.user.language_code` > `navigator.language`
-- 4 catalog 静态/动态导入：en 静态，zh/ru/uz 动态（`preloadCatalog`）
+- 4 个 catalog 都是动态导入，按需加载（`loadCatalog` / `ensureCatalog`；en 也是，DX-PFE-2）
 - CI 检查 4 个 catalog key 数对齐
 
 ### 5.6 离线同步

@@ -21,8 +21,8 @@
  *   - loadCatalog(locale) — Promise that resolves the catalog object;
  *     returns the cached one if already loaded.
  *   - ensureCatalog(locale) — loads it, or en when it fails to load.
- *   - getLoadedCatalog(locale) — synchronous accessor; returns
- *     undefined until loadCatalog has resolved.
+ *   - getLoadedCatalog(locale) — synchronous accessor for the lookup in
+ *     ../index.ts; returns undefined until loadCatalog has resolved.
  *
  * Lookups walk locale → en → any other loaded catalog, so a key missing
  * from one catalog still reads in a language once en is loaded.
@@ -124,31 +124,3 @@ export async function ensureCatalog(locale: Locale): Promise<Locale | null> {
     }
   }
 }
-
-/**
- * Eagerly preload a locale without awaiting. Fire-and-forget — used
- * by the auth gate so the user's locale starts loading the moment
- * we know it, even before any t() call runs.
- */
-export function preloadCatalog(locale: Locale): void {
-  loadCatalog(locale).catch(() => {
-    /* offline or a removed chunk: the caller's own load reports it */
-  });
-}
-
-/** Compatibility shim for the old static `catalogs` shape. New code
- *  should use getLoadedCatalog(locale) directly. */
-export const catalogs = {
-  get en() {
-    return loaded.get('en');
-  },
-  get zh() {
-    return loaded.get('zh');
-  },
-  get ru() {
-    return loaded.get('ru');
-  },
-  get uz() {
-    return loaded.get('uz');
-  },
-};
