@@ -34,6 +34,7 @@ import {
   QueryErrorBanner,
   SectionLabel,
   Sheet,
+  surfaceClass,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
@@ -179,8 +180,14 @@ export function RunHistoryPage({
               ? undefined
               : // HIS-17 (2026-10-31): the rows are days, the count is trips —
                 // say "3 trips" so a day holding two doesn't read as missing.
-                `${i18n.t('run.history.tripCount', { n: count })} · ${formatMoney(total)} ${currency}${
-                  hasSearchOrFilters ? ' ' + i18n.t('run.history.matchedRunsTotal') : ''
+                // RUNWEB2-24: the amount sits in the catalog's sentence
+                // (「…（符合条件的合计）」), not glued before it.
+                `${i18n.t('run.history.tripCount', { n: count })} · ${
+                  hasSearchOrFilters
+                    ? i18n.t('run.history.matchedRunsTotal', {
+                        total: formatMoney(total, currency),
+                      })
+                    : formatMoney(total, currency)
                 }`
           }
         >
@@ -374,7 +381,9 @@ export function RunHistoryPage({
         )}
       </Card>
       {pagination && pagination.totalCount > 0 ? (
-        <div className="flex items-center justify-between gap-2 px-1">
+        // RUNWEB2-33: wraps on a narrow phone (the Russian page buttons are
+        // long) instead of running off the screen.
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-3 px-1">
           <span className="min-w-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
             {i18n.t('run.history.tripRange', {
               from: firstResult,
@@ -382,7 +391,7 @@ export function RunHistoryPage({
               total: pagination.totalCount,
             })}
           </span>
-          <div className="flex shrink-0 gap-2">
+          <div className="ml-auto flex flex-wrap justify-end gap-x-2 gap-y-3">
             <Button
               variant="secondary"
               size="sm"
@@ -477,7 +486,7 @@ function RunHistoryDaySheet({
     >
       {!day ? null : (
         <div className="flex flex-col gap-4 py-3">
-          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+          <div className={`flex flex-col gap-2 px-4 py-3 ${surfaceClass}`}>
             <SectionLabel padded={false}>{i18n.t('run.history.totalLabel')}</SectionLabel>
             <div className="text-old-h2 font-semibold tabular-nums">
               {formatMoney(day.total)} {currency}
@@ -511,7 +520,7 @@ function RunHistoryDaySheet({
               <SectionLabel padded={false} className="mb-2">
                 {i18n.t('run.history.storesHeading')}
               </SectionLabel>
-              <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+              <ul className={`flex flex-col ${surfaceClass}`}>
                 {stores.map((st) => {
                   const body = (
                     <>
@@ -580,7 +589,7 @@ function RunHistoryDaySheet({
             <SectionLabel padded={false} className="mb-2">
               {i18n.t('run.history.tripsHeading')}
             </SectionLabel>
-            <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+            <ul className={`flex flex-col ${surfaceClass}`}>
               {trips.map((run) => (
                 <li key={run.id}>
                   <button type="button" onClick={() => open(run)} className={rowClass}>
@@ -593,7 +602,9 @@ function RunHistoryDaySheet({
                       </span>
                     </div>
                     <span className="truncate text-old-label text-[var(--c-fg-muted)]">
-                      {(run.storeTotals ?? []).map((st) => storeName(st.storeId)).join(' · ')}
+                      {(run.storeTotals ?? [])
+                        .map((st) => storeName(st.storeId))
+                        .join(i18n.t('common.listSeparator'))}
                     </span>
                   </button>
                 </li>
@@ -769,8 +780,8 @@ export function RunHistoryDetailSheet({
    * split; across stores, a line paid both ways says how much of each.
    */
   const linePayment = (item: HistoryItem, itemSplits: readonly HistorySplit[]): string => {
-    const cashLabel = i18n.t('run.label.paymentCash') as string;
-    const transferLabel = i18n.t('run.label.paymentTransfer') as string;
+    const cashLabel = i18n.t('run.label.paymentCash');
+    const transferLabel = i18n.t('run.label.paymentTransfer');
     if (activeStoreId) {
       const split = itemSplits[0];
       const method = split ? splitPaymentMethod(split, item) : item.paymentMethod;
@@ -779,7 +790,10 @@ export function RunHistoryDetailSheet({
     const cash = item.cashAmount ?? '0';
     const transfer = item.transferAmount ?? '0';
     if (toCents(cash) > 0n && toCents(transfer) > 0n) {
-      return `${cashLabel} ${formatMoney(cash)} · ${transferLabel} ${formatMoney(transfer)}`;
+      return i18n.t('run.money.cashTransfer', {
+        cash: formatMoney(cash),
+        transfer: formatMoney(transfer),
+      });
     }
     // 2026-10-25: the label follows the money. It used to say transfer
     // whenever the ITEM said so, even where the split paid in cash and
@@ -888,7 +902,7 @@ export function RunHistoryDetailSheet({
       ) : (
         <div className="flex flex-col gap-4 py-3">
           {/* Top summary */}
-          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+          <div className={`flex flex-col gap-2 px-4 py-3 ${surfaceClass}`}>
             <div className="flex items-baseline justify-between gap-3">
               <div>
                 <SectionLabel padded={false}>{i18n.t('run.history.totalLabel')}</SectionLabel>
@@ -955,7 +969,8 @@ export function RunHistoryDetailSheet({
             // 26px segments the area was cut to 36.
             <ChipBar
               variant="radio"
-              ariaLabel={i18n.t('run.history.allStores')}
+              // RUNWEB2-32: the group's name, not its first option's.
+              ariaLabel={i18n.t('run.history.storeFilter')}
             >
               <Chip selected={!activeStoreId} onClick={() => setSelectedStoreId(null)}>
                 {i18n.t('run.history.allStores')}
@@ -991,7 +1006,7 @@ export function RunHistoryDetailSheet({
                 ? i18n.t('run.history.storeItemsHeading', { store: activeStoreName })
                 : i18n.t('run.history.itemsHeading')}
             </SectionLabel>
-            <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+            <ul className={`flex flex-col ${surfaceClass}`}>
               {visibleHistoryRows.length === 0 ? (
                 <li className="px-4 py-3 text-center text-old-label text-[var(--c-fg-muted)]">
                   {activeStoreName
@@ -1190,7 +1205,7 @@ export function RunHistoryDetailSheet({
               <SectionLabel padded={false} className="mb-2">
                 {i18n.t('run.history.storesHeading')}
               </SectionLabel>
-              <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+              <ul className={`flex flex-col ${surfaceClass}`}>
                 {[...breakdown.perStore.values()]
                   .filter((ps) => !activeStoreId || ps.storeId === activeStoreId)
                   .map((ps) => {
@@ -1232,13 +1247,11 @@ export function RunHistoryDetailSheet({
                           </span>
                         </div>
                         {mixed ? (
-                          <div className="flex items-baseline gap-3 text-old-label text-[var(--c-fg-muted)]">
-                            <span>
-                              {i18n.t('run.label.paymentCash')} {formatMoney(ps.cash)}
-                            </span>
-                            <span>
-                              {i18n.t('run.label.paymentTransfer')} {formatMoney(ps.transfer)}
-                            </span>
+                          <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                            {i18n.t('run.money.cashTransfer', {
+                              cash: formatMoney(ps.cash),
+                              transfer: formatMoney(ps.transfer),
+                            })}
                           </div>
                         ) : null}
                       </li>
@@ -1255,7 +1268,7 @@ export function RunHistoryDetailSheet({
               <SectionLabel padded={false} className="mb-2">
                 {i18n.t('run.history.expensesHeading')}
               </SectionLabel>
-              <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+              <ul className={`flex flex-col ${surfaceClass}`}>
                 {breakdown.expenses
                   .filter(
                     (ex) =>
@@ -1313,7 +1326,7 @@ export function RunHistoryDetailSheet({
               booked is not an edit to what was bought, so it neither
               needs nor triggers the amend cycle. */}
           {canAmend && target ? (
-            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+            <div className={`flex flex-col gap-2 px-4 py-3 ${surfaceClass}`}>
               <SectionLabel padded={false}>{i18n.t('run.date.label')}</SectionLabel>
               <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('run.date.hint')}</p>
               {/* HIS-7 (2026-10-31): the server refuses a date after the

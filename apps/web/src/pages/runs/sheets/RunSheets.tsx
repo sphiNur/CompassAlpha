@@ -28,6 +28,7 @@ import {
   Select,
   Sheet,
   pillButtonClass,
+  surfaceClass,
   useToast,
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
@@ -386,8 +387,10 @@ export function PurchaseSheet({
               }
             />
           </div>
-          <button
-            type="button"
+          {/* RUNWEB2-23: the kit's button (was a hand-made pill). */}
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => {
               if (!draft.perStorePricing) {
                 const splitPrices = new Map(draft.splitPrices);
@@ -408,21 +411,20 @@ export function PurchaseSheet({
                 onChange({ ...draft, perStorePricing: false });
               }
             }}
-            // DX-VIS-6 (2026-11-01): 31px tall; hit-44 makes it a 44px tap.
-            className="press hit-44 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label font-semibold text-[var(--c-fg)] ring-hairline"
           >
             {/* 2026-07-26: both labels were hard-coded Chinese. */}
             {draft.perStorePricing
               ? i18n.t('run.purchase.pricingUniform')
               : i18n.t('run.purchase.pricingPerStore')}
-          </button>
+          </Button>
           {suppliers.length > 0 ? (
             <Field label={i18n.t('run.action.supplier')}>
               <Select
                 value={draft.supplierId ?? ''}
                 onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
               >
-                <option value="">—</option>
+                {/* RUNWEB2-32: read out as words, not "dash". */}
+                <option value="">{i18n.t('run.action.supplierNone')}</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -454,11 +456,15 @@ export function PurchaseSheet({
                   : '—'}
               </span>
             </div>
-            <ul className="flex flex-col gap-2">
+            {/* RUNWEB2-22: one list with dividers (UI-6), not a card per store. */}
+            <ul className={`flex flex-col ${surfaceClass}`}>
               {candidateStores.map((store) => {
                 const splitQty = draft.splits.get(store.id) ?? '';
                 return (
-                  <li key={store.id} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+                  <li
+                    key={store.id}
+                    className="border-b border-[var(--c-divider)] p-2 last:border-b-0"
+                  >
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-old-body">{store.name}</span>
                       <Input
@@ -496,21 +502,17 @@ export function PurchaseSheet({
                           className="text-right"
                         />
                         {/* DX-VIS-6 / DX-VIS-7 (2026-11-01): was a hand-rolled
-                            pair of 31px buttons, selected by colour only. */}
-                        <Segmented
+                            pair of 31px buttons, selected by colour only.
+                            RUNWEB2-23: the same picker as the line's, smaller. */}
+                        <PaymentMethodChips
                           size="sm"
                           equalWidth={false}
-                          ariaLabel={i18n.t('run.label.paymentMethod')}
                           value={draft.splitPaymentMethods.get(store.id) ?? draft.paymentMethod}
                           onChange={(method) => {
                             const next = new Map(draft.splitPaymentMethods);
                             next.set(store.id, method);
                             onChange({ ...draft, splitPaymentMethods: next });
                           }}
-                          options={[
-                            { value: 'cash', label: i18n.t('run.label.paymentCash') },
-                            { value: 'transfer', label: i18n.t('run.label.paymentTransfer') },
-                          ]}
                         />
                       </div>
                     ) : null}
@@ -966,11 +968,15 @@ export function AddItemSheet({
               </Field>
               {expenseTemplates.length > 0 ? (
                 <FieldGroup label={i18n.t('run.action.addExpense.templates')}>
-                  <div className="flex flex-wrap gap-1.5">
+                  {/* RUNWEB2-23: kit buttons with a 44px tap (the pills were
+                      22px tall); 12px between wrapped rows keeps the taps
+                      apart (DX-VIS-8). */}
+                  <div className="flex flex-wrap gap-x-1.5 gap-y-3">
                     {expenseTemplates.map((tpl) => (
-                      <button
+                      <Button
                         key={tpl.id}
-                        type="button"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => {
                           // Without prices.view the template has no price:
                           // the one typed so far stays (ADM2-01).
@@ -993,10 +999,9 @@ export function AddItemSheet({
                                 : draft.splits,
                           });
                         }}
-                        className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1 text-old-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-70"
                       >
                         {tpl.label}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </FieldGroup>
@@ -1085,10 +1090,10 @@ export function AddItemSheet({
                 <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
                 {storeChoices.map((st) => (
                   <option key={st.id} value={st.id}>
-                    {st.name}
+                    {/* RUNWEB2-24: brackets from the catalog (「（已有）」). */}
                     {selectedSkuExisting?.storeIds.has(st.id)
-                      ? ` (${i18n.t('run.action.addItem.storeAlreadyHasSkuShort')})`
-                      : ''}
+                      ? i18n.t('run.action.addItem.storeAlreadyHasSkuShort', { store: st.name })
+                      : st.name}
                   </option>
                 ))}
               </Select>

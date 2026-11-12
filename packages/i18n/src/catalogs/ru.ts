@@ -1564,6 +1564,7 @@ export const ru = {
   'run.price.check.confirm': 'Да, сохранить',
   'run.price.check.fix': 'Изменить цену',
   'run.action.supplier': 'Поставщик',
+  'run.action.supplierNone': 'Не указан',
   'run.action.receiptPhoto': 'Фото чека (необязательно)',
   'run.action.allocateAcrossStores': 'Распределить по магазинам',
   'run.action.actualQtyAriaLabel': 'фактическое количество',
@@ -1642,7 +1643,7 @@ export const ru = {
   'run.toast.startDeliveryUndone': 'Назад к закупке',
   'run.toast.runFinished': 'Закупка завершена',
   'run.history.title': 'История',
-  'run.history.matchedRunsTotal': '(по найденным)',
+  'run.history.matchedRunsTotal': '{total} (по найденным)',
   'run.history.allStores': 'Все магазины',
   // M3.9: отменённые run больше не показываются в истории — 4 ключа удалены.
   'run.cancel.reasonPlaceholder': 'Почему отменяете? (необязательно — поможет команде разобраться)',
@@ -2004,7 +2005,7 @@ export const ru = {
   'sales.errors.storeNotFound':
     'Магазин не найден — возможно, его только что архивировали. Обновите страницу.',
   'sales.errors.dishHasNoRecipe': 'Сначала задайте рецепт для этого блюда.',
-  'run.action.addItem.storeAlreadyHasSkuShort': 'уже есть',
+  'run.action.addItem.storeAlreadyHasSkuShort': '{store} (уже есть)',
   'run.action.addItem.costModeTitle': 'Цена того же товара',
   'run.action.addItem.costModeMerge': 'Объединить',
   'run.action.addItem.costModeSeparate': 'Отдельная цена',
@@ -2036,6 +2037,7 @@ export const ru = {
   'run.history.filters': 'Фильтры ({n})',
   'run.history.activeFilters': 'Активные фильтры: {n}',
   'run.history.clearAll': 'Очистить всё',
+  'run.history.removeFilter': 'Убрать фильтр: {label}',
   'run.history.filterTitle': 'Фильтры истории',
   'run.history.filterDescription': 'Отберите результаты по магазину, дате и способу оплаты.',
   'run.history.resetFilters': 'Сбросить фильтры',
