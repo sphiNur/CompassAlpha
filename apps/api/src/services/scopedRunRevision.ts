@@ -24,18 +24,19 @@
  * `scope === null` means unrestricted: the input is returned untouched.
  */
 import { sumQty } from '@compass/contracts/quantity';
+import type { PaymentMethod } from '@compass/contracts';
 
 export type ScopedSplit = {
   storeId: string;
   qty: string;
   unitPrice?: string;
-  paymentMethod?: 'cash' | 'transfer';
+  paymentMethod?: PaymentMethod;
 };
 
 export type ScopedRevisionItem = {
   supplierId: string | null;
   unitPrice: string | null;
-  paymentMethod: 'cash' | 'transfer' | null;
+  paymentMethod: PaymentMethod | null;
   receiptPhotoUrl: string | null;
   storeSplits: ScopedSplit[];
 };

@@ -50,7 +50,8 @@ import { rowName } from '../../../lib/productName';
 import { splitPaymentMethod } from '../lib/settlement';
 import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
-import { localDateValue } from '../../admin/operations/financeDates';
+import { localDateValue } from '../../../lib/calendarDate';
+import type { RunListRow } from '../types';
 
 // ====================================================================
 // HISTORY VIEW
@@ -60,42 +61,10 @@ import { localDateValue } from '../../admin/operations/financeDates';
 // confirmation, sessions should be archived; we need to see daily
 // purchase history, quantities, prices.
 //
-// Implementation: the existing run.list endpoint already returns the
-// last 50 runs (any status). We filter for finished+cancelled here and
-// render them in a card. Tapping a row opens the detail sheet which
-// fetches run.get for the full breakdown (items, prices, store splits).
-
-export interface RunListRow {
-  id: string;
-  runDate: string;
-  runIndex: number;
-  status: string;
-  actualTotal: string | null;
-  /** M1.14: cash + transfer breakdown of actualTotal. Both NULL on
-   *  legacy finished runs that pre-date the field; FE falls back to
-   *  showing only the lump-sum total in that case. */
-  actualCashTotal?: string | null;
-  actualTransferTotal?: string | null;
-  /**
-   * 2026-10-21 CA-11: run.history's actualTotal is items + expenses; these
-   * are its two parts (one money definition everywhere — items / expenses
-   * / total). Optional so other row shapes still fit.
-   */
-  itemsTotal?: string | null;
-  expensesTotal?: string | null;
-  finishedAt: Date | string | null;
-  storeTotals?: RunListStoreTotal[];
-}
-
-export interface RunListStoreTotal {
-  storeId: string;
-  total: string;
-  itemsTotal?: string;
-  expensesTotal?: string;
-  cash: string;
-  transfer: string;
-  itemCount: number;
-}
+// Implementation: run.history returns the finished and cancelled runs,
+// filtered and paged on the server. Tapping a row opens the detail sheet,
+// which fetches run.historyDetail for the full breakdown (items, prices,
+// store splits).
 
 export interface HistoryDetailTarget {
   runId: string;
@@ -644,8 +613,8 @@ function RunHistoryDaySheet({
  *   - Per-item rows: name, qty bought, unit price, line total, supplier
  *   - Per-store breakdown: items received, store-level subtotal
  *
- * Receipt photos are shown inline (clickable to expand to full size — TODO
- * once we have a lightbox component).
+ * Receipt photos show as thumbnails; tapping one opens it large in a
+ * sheet (DX-HIS-6).
  */
 export function RunHistoryDetailSheet({
   target,

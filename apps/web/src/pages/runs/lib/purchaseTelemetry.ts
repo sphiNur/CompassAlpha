@@ -1,4 +1,5 @@
 import { getLogger } from '@compass/telemetry';
+import type { PaymentMethod } from '@compass/contracts';
 
 /**
  * Purchaser-screen telemetry (2026-11-05).
@@ -23,7 +24,7 @@ export function logPurchaseEntry(d: {
   qtyChanged: boolean;
   hadLastPrice: boolean;
   inThousands: boolean;
-  method: 'cash' | 'transfer';
+  method: PaymentMethod;
   multiStore: boolean;
 }): void {
   getLogger().log('info', 'purchase.entry', {

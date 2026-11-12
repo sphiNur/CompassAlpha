@@ -40,6 +40,7 @@ import {
   PickerGroup,
   PickerRow,
 } from '@compass/ui';
+import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
 import { copyText } from '../../../lib/clipboard';
 import { useErrToast } from '../../../hooks/useErrToast';
@@ -218,9 +219,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
       storeId: string;
       qty: string;
       unitPrice?: string;
-      paymentMethod?: 'cash' | 'transfer';
+      paymentMethod?: PaymentMethod;
     }>;
-    paymentMethod: 'cash' | 'transfer';
+    paymentMethod: PaymentMethod;
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
@@ -253,10 +254,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
-  onSetPaymentMethod: (
-    item: ActiveRun['items'][number],
-    next: 'cash' | 'transfer',
-  ) => void;
+  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
   // 2026-07-26: the AGGREGATE view — the default screen during an

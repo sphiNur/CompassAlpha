@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { RunListRow } from '../../history/RunHistory';
+import type { RunListRow } from '../../types';
 import { dayStoreSummaries, groupRunsByDay } from '../historyGroups';
 
 const run = (id: string, runDate: string, runIndex: number, extra: Partial<RunListRow> = {}) =>

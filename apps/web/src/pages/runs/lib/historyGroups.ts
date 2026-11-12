@@ -15,7 +15,7 @@
  * Pure; tests in __tests__/historyGroups.test.ts.
  */
 import { addMoney } from '@compass/contracts/money';
-import type { RunListRow, RunListStoreTotal } from '../history/RunHistory';
+import type { RunListRow, RunListStoreTotal } from '../types';
 
 export type HistoryStoreLine = RunListStoreTotal & {
   run: RunListRow;

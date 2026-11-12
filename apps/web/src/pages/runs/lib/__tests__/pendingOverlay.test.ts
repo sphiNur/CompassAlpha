@@ -75,6 +75,50 @@ describe('overlayPendingWrites (R2-INT-1 / RE-DLV-1 / RE-DLV-4 / R2-DLV-3)', () 
     ]);
   });
 
+  test('an unavailable item bought offline shows bought, as the server will record it (RUNWEB2-11)', () => {
+    const marked: OverlayRun = {
+      ...run,
+      items: [{ ...run.items[0]!, status: 'unavailable', unavailableNote: 'sold out' }],
+    };
+    const out = overlayPendingWrites(marked, [
+      entry('run.purchaseItem', {
+        runId: 'run-1',
+        skuId: 'rice',
+        actualQty: '1',
+        unitPrice: '9000',
+        storeSplits: [{ storeId: 'A', qty: '1' }],
+      }),
+    ])!;
+    expect(out.items[0]).toMatchObject({
+      status: 'purchased',
+      purchasedQty: '1',
+      paymentMethod: 'cash',
+      pendingSync: true,
+    });
+    expect(out.splits.filter((sp) => sp.skuId === 'rice')).toEqual([
+      expect.objectContaining({ storeId: 'A', qty: '1', pendingSync: true }),
+    ]);
+  });
+
+  test('a queued buy of an item already bought changes nothing; the server refuses it', () => {
+    const bought: OverlayRun = {
+      ...run,
+      items: [{ ...run.items[0]!, status: 'purchased', purchasedQty: '2', unitPrice: '100' }],
+      splits: [{ ...run.splits[0]!, skuId: 'rice' }],
+    };
+    const out = overlayPendingWrites(bought, [
+      entry('run.purchaseItem', {
+        runId: 'run-1',
+        skuId: 'rice',
+        actualQty: '5',
+        unitPrice: '1',
+        storeSplits: [{ storeId: 'B', qty: '5' }],
+      }),
+    ])!;
+    expect(out.items[0]).toEqual(bought.items[0]!);
+    expect(out.splits).toEqual(bought.splits);
+  });
+
   test('a queued "unavailable" marks the item', () => {
     const out = overlayPendingWrites(run, [
       entry('run.markUnavailable', { runId: 'run-1', skuId: 'salt', note: 'sold out' }),

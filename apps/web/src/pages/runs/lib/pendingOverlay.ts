@@ -12,6 +12,7 @@
  * and once the queue replays (or drops) the entry the server copy is
  * simply shown again.
  */
+import type { PaymentMethod } from '@compass/contracts';
 import type { PendingWrite } from '../../../lib/outbox/policy';
 
 type Split = {
@@ -67,7 +68,7 @@ type StoreSplitInput = {
   storeId: string;
   qty: string;
   unitPrice?: string;
-  paymentMethod?: 'cash' | 'transfer';
+  paymentMethod?: PaymentMethod;
 };
 
 /** Procedures whose queued writes these overlays understand. */
@@ -113,8 +114,11 @@ export function overlayPendingWrites<T extends OverlayRun>(
       case 'run.purchaseItem': {
         const skuId = String(input.skuId);
         const storeSplits = (input.storeSplits ?? []) as StoreSplitInput[];
+        // Review RUNWEB2-11 (2026-11-12): the server records a purchase of
+        // any item not bought yet, an unavailable one too (decide refuses
+        // only a second buy), so the queued one shows on the same items.
         items = items.map((item) =>
-          item.skuId === skuId && item.status === 'pending'
+          item.skuId === skuId && item.status !== 'purchased'
             ? {
                 ...item,
                 status: 'purchased',

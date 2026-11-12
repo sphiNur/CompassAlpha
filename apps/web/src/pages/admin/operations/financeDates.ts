@@ -3,11 +3,8 @@
  *
  * The calendar helpers they are built on, and why they read the calendar
  * directly (CA-23), live in lib/calendarDate.ts (COREWEB2-21).
- * `localDateValue` is re-exported for the callers that import it from here.
  */
 import { calendarParts, isoDate, localDateValue } from '../../../lib/calendarDate';
-
-export { localDateValue };
 
 export type FinanceRangePreset = 'today' | 'yesterday' | 'thisMonth' | 'lastMonth';
 
