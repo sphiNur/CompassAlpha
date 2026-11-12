@@ -22,7 +22,7 @@ import { authedProcedure } from '../../trpc';
 import {
   canSeePrices,
   priceStoreIds,
-  pricesVisibleFor,
+  redactMoneyFor,
   withoutPrices,
 } from '../../../services/priceRedaction';
 import { readRunEvents } from '../../../services/runStream';
@@ -208,7 +208,7 @@ export const readProcedures = {
       return visibleRuns.map((run) => {
         const storeIds = runStoreIds(run);
         const row = { ...listRow(run), storeIds };
-        return pricesVisibleFor(priceStores, storeIds) ? row : withoutPrices(row);
+        return redactMoneyFor(priceStores, storeIds, row);
       });
 
       function listRow(run: (typeof visibleRuns)[number]) {
@@ -724,7 +724,7 @@ export const readProcedures = {
           ...expenses.flatMap((expense) => expense.storeSplits.map((split) => split.storeId)),
         ]);
         const priceStores = await priceStoreIds(tx, ctx.session!);
-        return pricesVisibleFor(priceStores, shownStoreIds) ? payload : withoutPrices(payload);
+        return redactMoneyFor(priceStores, shownStoreIds, payload);
       });
     }),
 
