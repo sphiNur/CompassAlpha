@@ -56,10 +56,6 @@ interface StoreDraft {
   defaultRoleSlug: string;
 }
 
-// EMPTY_STORE was used by the old combined create/edit sheet; the
-// store list now uses a small create-only sheet inline (just name +
-// code + address + timezone — defaults set later in Settings tab).
-
 // ============ Stores (M1.4 store-first) ============
 
 /**

@@ -385,5 +385,3 @@ export function MaintenanceSection() {
     </div>
   );
 }
-
-// Field helper removed — imported from @compass/ui.

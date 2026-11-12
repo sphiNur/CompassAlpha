@@ -96,16 +96,16 @@ export const auditProcedures = {
   /**
    * Recent ADMIN actions — distinct from `recentEvents`, which is the
    * order/run domain stream. This pulls from `domain.policy_decisions`
-   * (populated by `auditAdmin()` on every catalog/role/permission
-   * mutation) so an admin can answer:
+   * (one row per `auditAdmin()` call) so an admin can answer:
    *   - Who renamed this SKU last week?
    *   - Who promoted Ali to manager?
    *   - When did Aziz get the order.approve override?
    *
-   * Includes:
-   *   - admin.store.* / admin.category.* / admin.sku.* / admin.supplier.*
-   *   - admin.role.* (D1)
-   *   - admin.memberPermission.* (D2)
+   * The actions cover the catalog, stores, roles, members with their
+   * permissions and invites, purges, catalog imports and the workspace's
+   * finance settings. Review ADM2-40 (2026-11-12): the list kept here
+   * named six objects and missed the rest; the auditAdmin calls are the
+   * list.
    *
    * 50 rows by default; up to 200 for deeper digs.
    */
