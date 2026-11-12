@@ -44,6 +44,26 @@ function startingScheme(): 'light' | 'dark' {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+/**
+ * The theme saved on this device, else `fallback`. Review UI-27
+ * (2026-11-12): storage can throw when it is blocked or disabled (on
+ * reading `localStorage` itself, or on getItem); that threw out of
+ * ThemeProvider's first render, and the whole app showed its error page.
+ * Exported for tests.
+ */
+export function savedTheme(
+  storage: () => Pick<Storage, 'getItem'> | null | undefined,
+  fallback: Theme,
+): Theme {
+  try {
+    const stored = storage()?.getItem(STORAGE_KEY);
+    if (stored === 'native' || stored === 'apple' || stored === 'dark') return stored;
+  } catch {
+    // Storage blocked: the default theme.
+  }
+  return fallback;
+}
+
 interface ThemeProviderProps {
   children: ReactNode;
   defaultTheme?: Theme;
@@ -56,12 +76,11 @@ export function ThemeProvider({
   defaultTheme = 'native',
   onChange,
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return defaultTheme;
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === 'native' || stored === 'apple' || stored === 'dark') return stored;
-    return defaultTheme;
-  });
+  const [theme, setThemeState] = useState<Theme>(() =>
+    typeof window === 'undefined'
+      ? defaultTheme
+      : savedTheme(() => window.localStorage, defaultTheme),
+  );
 
   const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(startingScheme);
 
@@ -100,7 +119,11 @@ export function ThemeProvider({
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
-    if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, next);
+    try {
+      if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Not saved (storage blocked or full): it applies until a reload (UI-27).
+    }
   }, []);
 
   const value = useMemo<ThemeContextValue>(
