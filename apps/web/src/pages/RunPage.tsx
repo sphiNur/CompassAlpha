@@ -231,6 +231,12 @@ export function RunPage() {
     sendConfirm,
     sendAddItem,
   } = mutations;
+  // Review RUNWEB1-31: the memos below depend on these, not on the
+  // mutation results, which are new objects on every render (so the
+  // memos ran every time). useMutation's `mutate` keeps its identity.
+  const { mutate: createRun, isPending: creatingRun } = create;
+  const purchase = purchaseItem.mutate;
+  const revise = revisePurchase.mutate;
 
   // ---- Derived state --------------------------------------------------
   const skuById = useMemo(() => {
@@ -462,12 +468,20 @@ export function RunPage() {
     return allStoresConfirmedOf(runDetailQuery.data.splits);
   }, [runDetailQuery.data]);
 
+  /**
+   * Review RUNWEB1-35 (2026-11-12): delivering to a store, recalling it
+   * and stepping back from delivery need delivery.dispatch (in some
+   * store); without it they were offered and then refused. Stores denied
+   * one by one come from the server (dispatchDeniedStoreIds).
+   */
+  const canDispatch = session?.permissions.includes('delivery.dispatch') ?? false;
+
   /** "We can still un-Start delivery" — true iff status=delivering AND
    *  no store has been delivered to. */
   const canUndoStartDelivery = useMemo(() => {
-    if (activeRun?.status !== 'delivering') return false;
+    if (activeRun?.status !== 'delivering' || !canDispatch) return false;
     return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.deliveredAt);
-  }, [activeRun?.status, runDetailQuery.data]);
+  }, [activeRun?.status, canDispatch, runDetailQuery.data]);
 
   /** M3.29 (2026-05-18): re-exposed. Lifted the "no items touched"
    *  gate (commands.ts:503); purchases survive the revert and the
@@ -548,7 +562,7 @@ export function RunPage() {
           : null;
       if (topUp) {
         withPriceCheck(d.skuId, [d.unitPrice], (confirmed) => {
-          revisePurchase.mutate({
+          revise({
             runId: d.runId,
             skuId: d.skuId,
             supplierId: d.supplierId,
@@ -580,14 +594,14 @@ export function RunPage() {
         (confirmed) => {
           const sent = confirmed ? { ...payload, priceConfirmed: true } : payload;
           if (d.isEdit) {
-            revisePurchase.mutate({ ...sent, reason: d.reason });
+            revise({ ...sent, reason: d.reason });
           } else {
-            purchaseItem.mutate(sent);
+            purchase(sent);
           }
         },
       );
     },
-    [purchaseItem, revisePurchase, withPriceCheck],
+    [purchase, revise, withPriceCheck],
   );
 
   // ---- MainButton -----------------------------------------------------
@@ -687,15 +701,15 @@ export function RunPage() {
                   i18n.t('run.errors.runDateInFuture')
                 : i18n.t('run.action.startPurchase'),
           onClick: () => {
-            if (offline || sessionIds.length === 0 || !dateOk || create.isPending) return;
-            create.mutate({
+            if (offline || sessionIds.length === 0 || !dateOk || creatingRun) return;
+            createRun({
               sessionIds,
               startImmediately: true,
               ...(runDate ? { date: runDate } : {}),
             });
           },
           visible: true,
-          active: !offline && sessionIds.length > 0 && dateOk && !create.isPending,
+          active: !offline && sessionIds.length > 0 && dateOk && !creatingRun,
         };
       }
       return { text: '', onClick: () => {}, visible: false, active: false };
@@ -861,7 +875,8 @@ export function RunPage() {
     chosenSessionIds,
     runDateChoice,
     previewToday,
-    create,
+    createRun,
+    creatingRun,
   ]);
 
   // ---- Confirm-sheet wiring --------------------------------------------
@@ -996,10 +1011,10 @@ export function RunPage() {
         BottomNav) is the app frame, and per-page actions ("Undo
         start purchase", "Cancel run") now live in the gear ⚙️ on the
         right side of Telegram's chrome (registered via usePageMenu
-        below). What remains in-body is a one-line context strip
-        showing the current store and, when a run is active, a small
-        "#3 · purchasing" tag so the user sees both store-scope and
-        run state without losing 60+ px to a redundant header bar. */
+        below). What remains in-body is a one-line strip, while a run
+        is active, naming it ("#3 · purchasing"), so the user sees the
+        run state without losing 60+ px to a redundant header bar. (It
+        named the store too until M3.5; RUNWEB1-30.) */
     <div className="flex flex-col pb-24">
       {/* M3.5: store-switcher pill moved to SettingsSheet. Sticky strip
          now only renders when there's an active run to label.
@@ -1030,12 +1045,12 @@ export function RunPage() {
               user is looking when the setting matters, the suffix states
               the current unit rather than naming an operation, and the
               sticky bar gets its width back for the run identity. */}
-          {/* M3.41 (2026-05-21): "+ add item" — only shown during
-              purchasing AND when I hold the run claim (C.2 gate). The
-              domain layer enforces the same constraints; gating the UI
-              hides the affordance to avoid a confusing tap-then-fail.
-              The button opens AddItemSheet which collects SKU + qty +
-              price + store split + reason. */}
+          {/* M3.41 (2026-05-21): "+ add item" — only shown while the run
+              is being bought (the claim gate went with the claim UI,
+              UIUX-B1). The domain layer enforces the same constraints;
+              gating the UI hides the affordance to avoid a confusing
+              tap-then-fail. The button opens AddItemSheet which collects
+              SKU + qty + price + store split + reason. */}
           {/* RUNWEB1-27: the kit's small button (was a hand-made pill). */}
           {editing ? (
             <Button
@@ -1368,6 +1383,7 @@ export function RunPage() {
             onTogglePriceUnit={togglePriceInThousands}
             savingSkuId={inlineSavingSkuId}
             revealPending={revealPending}
+            canDispatch={canDispatch}
             onSavePurchaseInline={({
               skuId,
               actualQty,

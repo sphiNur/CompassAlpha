@@ -108,9 +108,8 @@ import {
 } from '../lib/itemList';
 import { moneyLine } from '../../../lib/money';
 
-// formatQty / formatMoney are imported from `../lib/format` —
-// thousand-separator + max-1-decimal display rule applied everywhere.
-
+/** The in-run list offers search and filter from this many items (RUNWEB1-32). */
+const ITEM_SEARCH_FROM = 8;
 
 /**
  * Active-run panel — INLINE-EDIT list rows.
@@ -178,6 +177,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   onTogglePriceUnit,
   savingSkuId,
   revealPending,
+  canDispatch,
   onSavePurchaseInline,
   onMarkNa,
   onEditPurchased,
@@ -223,6 +223,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
    * the first such row.
    */
   revealPending: number;
+  /** RUNWEB1-35: the actor may deliver (delivery.dispatch in some store). */
+  canDispatch: boolean;
   onSavePurchaseInline: (payload: {
     skuId: string;
     actualQty: string;
@@ -689,7 +691,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           {/* Search + filter, only once the list is long enough to need
               them. Below that threshold the whole list is on one screen
               and the controls would cost more rows than they save. */}
-          {run.items.length >= 8 ? (
+          {run.items.length >= ITEM_SEARCH_FROM ? (
             <>
               {/* RUNWEB1-13: the kit's search field, with its clear button. */}
               <div className="px-4 pb-1.5">
@@ -825,7 +827,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               // purchaser's main during-run view; non-English users were
               // seeing English on every store row.
               const dispatchDenied =
-                stage !== 'confirmed' && (run.dispatchDeniedStoreIds ?? []).includes(storeId);
+                stage !== 'confirmed' &&
+                (!canDispatch || (run.dispatchDeniedStoreIds ?? []).includes(storeId));
               // RE-DLV-1 (2026-10-31): a delivery saved offline shows as
               // delivered and waiting to sync; it cannot be recalled (or
               // delivered again) until the server has it.
@@ -1119,29 +1122,11 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
 });
 
 /**
- * Per-store view (added 2026-05-05).
+ * PreviewSummaryCard — the "ready to plan" summary on RunPage, in two
+ * views (M1.5, 2026-05-06; the third, "Overall", was dropped 2026-07-26,
+ * see PreviewView below):
  *
- * Read-only planning aid for multi-store runs. Groups SKUs by store
- * so a purchaser can mentally tally "Store A wants 2kg apples, Store
- * B wants 3kg apples" before walking the market. The actual purchase
- * recording happens in the Aggregate view — keeping a single source
- * of truth avoids the "did I already buy these?" footgun the agent
- * flagged in the audit.
- *
- * Each store card shows:
- *   - Store name + a 12px "X SKUs · total Y units" line
- *   - One row per SKU: name + qty for that store
- *
- * Sort: stores by name; SKUs within store by sortIndex (which
- * mirrors the catalog order in OrderPage).
- */
-
-/**
- * PreviewSummaryCard — the "ready to plan" summary on RunPage with
- * three views (M1.5, 2026-05-06):
- *
- *   - Overall    : flat SKU list (legacy behavior, unchanged shape).
- *   - By store   : each store's combined order list, with a "Copy
+ *   - By store   : each store's combined order list, with a "Copy"
  *                  list" button per store.
  *   - By supplier: each preferred-vendor's preparation list, with a
  *                  per-store breakdown under each item and a "Copy →
@@ -1693,15 +1678,9 @@ export function PreviewSummaryCard({
    * component so the vendor-vs-store disclosure boundary is unit-tested
    * (see runs/lib/__tests__/shareText.test.ts) rather than eyeballed.
    */
-  // Deliberately NOT memoized. `useI18n` returns a memo keyed on the
-  // resolved locale, so its identity does NOT change when a lazily
-  // imported catalog chunk lands — `useEnsureLocale` re-renders via a
-  // state counter instead. A useMemo here would therefore freeze
-  // extrasLabel / notesLabel at whatever the fallback catalog said on
-  // first render (English, if the user's locale chunk was still in
-  // flight on bazaar LTE) for the entire mount. Rebuilding these small
-  // objects each render restores the live read the old inline closures
-  // had; the builders themselves only run on a button tap.
+  // Not memoized: small objects, and the builders only run on a button
+  // tap. (Review RUNWEB1-30: the reason given here was that useI18n kept
+  // its identity when a catalog arrived; it no longer does.)
   // A store's list goes to our own manager, in the interface's language;
   // a stall's list goes to its holder, in the stall's (COREWEB2-12).
   const storeShareDeps = shareDepsFor(i18n, currentUnitLabel, skuById);

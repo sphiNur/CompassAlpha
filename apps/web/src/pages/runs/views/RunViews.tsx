@@ -63,6 +63,7 @@ import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 import { isPositiveQty } from '@compass/contracts/limits';
 import type { PaymentMethod } from '@compass/contracts';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
+import { RUN_PAGE } from '../../../config/timings';
 
 /**
  * RE-COPY-2 (2026-10-31): a price in thousands with the catalog's suffix
@@ -101,6 +102,14 @@ function GroupCardHeader({
   );
 }
 
+/**
+ * Per-store view (2026-05-05): what each store of a multi-store run asked
+ * for, read-only — "Store A wants 2kg apples, Store B 3kg" before walking
+ * the market. Buying happens in the item list. Each card: the store, its
+ * item count, then one row per item with that store's quantity and a
+ * mark for bought / not available. (Its description used to sit, orphaned,
+ * in RunPanels; review RUNWEB1-30.)
+ */
 export function PerStoreView({
   run,
   storeById,
@@ -266,7 +275,7 @@ export function PerStoreView({
 }
 
 /**
- * Per-vendor read-only view for an ACTIVE run (M3.27, 2026-05-18).
+ * Per-vendor view for an ACTIVE run (M3.27, 2026-05-18).
  *
  * Mirrors `PerStoreView`'s look-and-feel but groups by the preferred
  * supplier resolved server-side (`run.supplierBySku`). SKUs with no
@@ -275,9 +284,9 @@ export function PerStoreView({
  * view uses, so the purchaser can see at a glance which stalls still
  * have outstanding work.
  *
- * Read-only: actual purchase recording happens in the aggregate view.
- * Switching to per-vendor at the bazaar is for "what do I still need
- * from stall X" planning, not for editing.
+ * Its rows are the item list's purchase rows, so an item can be bought
+ * from here too; the view answers "what do I still need from stall X".
+ * (Review RUNWEB1-30: this said read-only, which it no longer is.)
  */
 export function PerVendorView({
   run,
@@ -754,7 +763,8 @@ export function RunExtrasCard({
  * (admin reports can still see the add → remove timeline).
  *
  * Display per row:
- *   {label} · {qty} {unitHint} × {unitPrice} = {total} · 💵/🏦 · [✗ del?]
+ *   {label} · [transfer] · {stores} · [✗ del?]
+ *   {qty} {unit} × {unitPrice} = {total} · {reason}
  *
  * The card's section header summarizes total expense count + sum so
  * the manager glancing at the run page has the off-plan number front
@@ -776,8 +786,8 @@ export function ExpensesCard({
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
-  /** When true (status='purchasing' + claim is mine), show the ✗ delete
-   *  button on each row. Read-only otherwise. */
+  /** While the run is being bought: "+ Expense", and the ✗ delete on
+   *  each row this purchaser may remove. Read-only otherwise. */
   editable: boolean;
   onRemove: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
@@ -1126,9 +1136,11 @@ export function PerCategoryView({
  * qty AND price as the only compressible thing on the row. A long name
  * deleted both numbers and then overflowed the button.
  *
- * Money floor is honest about the worst case: '1,250,000' is 10 glyphs,
- * ui-monospace advances 0.6em, so at text-old-label (11px) that is 66px and
- * fits in 68. No money string is ever clipped.
+ * Money floor is honest about the worst case: '1,250,000' is 10 glyphs;
+ * at 0.6em a glyph (ui-monospace, which amounts used when this was sized;
+ * the body font's tabular figures are no wider) that is 66px at
+ * text-old-label (11px), and it fits in 68. No money string is ever
+ * clipped.
  *
  * Classes, not an inline style, so the narrow layout can replace them.
  * Its two lines are packed together in the middle of the row.
@@ -1502,9 +1514,6 @@ export const PurchaseRow = memo(function PurchaseRow({
    * conditions. Now it only fires when the explicit ✓ Save button
    * is tapped. After save, the row flips to read-only "purchased"
    * state — no more accidental edits.
-   *
-   * Returns true on success so the caller can update local "saved"
-   * state before the server roundtrip lands.
    */
   /**
    * Inline save with proportional auto-split.
@@ -1606,7 +1615,10 @@ export const PurchaseRow = memo(function PurchaseRow({
     // DX-IX-4 (2026-11-01): the editor closes once the line is bought;
     // keyboard focus moves on to the next line still to buy (or the page)
     // instead of dropping to <body>.
-    focusAfter(() => document.querySelector<HTMLElement>('[data-run-item-pending] button'), 3000);
+    focusAfter(
+      () => document.querySelector<HTMLElement>('[data-run-item-pending] button'),
+      RUN_PAGE.nextRowFocusWaitMs,
+    );
   };
 
   // Live "total = qty × price" hint shown below the inputs. Helps the
@@ -2338,10 +2350,8 @@ export const PurchaseRow = memo(function PurchaseRow({
             <button
               type="button"
               // aria-pressed so the control announces that it IS a
-              // toggle and which way it currently sits. The CONTAINER
-              // carries the visual state, not the emoji: colour emoji
-              // ignore the ink token, so 💵 vs 🏦 alone is a weak signal
-              // at arm's length in sunlight.
+              // toggle and which way it currently sits. The word says
+              // which method; the container's tint backs it up.
               aria-pressed={isTransfer}
               aria-label={paymentAria}
               title={paymentLabel}
