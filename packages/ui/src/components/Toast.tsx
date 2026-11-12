@@ -9,7 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { cn } from '../cn';
-import { useSheetCount } from './Sheet';
+import { TOP_CHROME, useSheetCount } from './Sheet';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
@@ -123,10 +123,20 @@ export function remainingAfterPause(dueAt: number, now: number, minMs = 2000): n
   return Math.max(dueAt - now, minMs);
 }
 
-function cssPx(name: string): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
-  const n = parseFloat(raw);
-  return Number.isFinite(n) ? n : 0;
+/**
+ * Review UI-26 (2026-11-12): the top chrome's height in px (TOP_CHROME:
+ * Telegram's button row and the safe area). It read --app-safe-top with
+ * parseFloat, but that is a max() expression, so it was always 0 and a
+ * toast could sit in Telegram's button row above a sheet. Measured
+ * through an element instead.
+ */
+function topChromePx(): number {
+  const probe = document.createElement('div');
+  probe.style.cssText = `position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;height:${TOP_CHROME}`;
+  document.body.appendChild(probe);
+  const height = probe.getBoundingClientRect().height;
+  probe.remove();
+  return height;
 }
 
 let counter = 0;
@@ -168,6 +178,7 @@ export function ToastProvider({
     // Followed every frame while a sheet is open under toasts: it slides
     // in, grows with its content and moves with the keyboard.
     let frame = 0;
+    const topChrome = topChromePx();
     const follow = () => {
       const sheets = document.querySelectorAll<HTMLElement>(
         '[data-sheet-content][data-state="open"]',
@@ -181,7 +192,7 @@ export function ToastProvider({
             viewportH: window.innerHeight,
             sheetTop: sheet.getBoundingClientRect().top,
             footerTop: footer ? footer.getBoundingClientRect().top : null,
-            safeTop: cssPx('--app-safe-top'),
+            safeTop: topChrome,
             stackH: stackRef.current?.offsetHeight ?? 48,
           }),
         );

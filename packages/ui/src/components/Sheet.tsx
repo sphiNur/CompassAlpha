@@ -181,6 +181,23 @@ export function guardedClose(
     });
 }
 
+/**
+ * Review UI-26 (2026-11-12): the top chrome a sheet or a toast keeps clear
+ * of. In Telegram that is its Close / ⋯ row over the page with the safe
+ * area above it (--app-chrome-reserve, which the host measures and sets;
+ * TopBar reserves the same strip); elsewhere the safe area alone.
+ */
+export const TOP_CHROME = 'var(--app-chrome-reserve, var(--app-safe-top))';
+
+/**
+ * A sheet is at most 90% of the screen, and its top stays 8 px below the
+ * top chrome when the keyboard leaves a short viewport. That second term
+ * subtracted only --app-safe-top (16 px on Android, where env() is 0), so
+ * a tall sheet's handle and title could slide under Telegram's buttons
+ * (UI-26). Exported for tests.
+ */
+export const SHEET_MAX_HEIGHT = `min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - ${TOP_CHROME} - 8px))`;
+
 /** A flick: let go while moving down at least this fast (px per ms)… */
 const SHEET_FLICK_SPEED = 0.5;
 /** …after a pull of at least this much (px), so a tap's jitter is none. */
@@ -429,10 +446,7 @@ function OpenedSheet({
             // later one replaced the whole property and the lift was lost.
             'pb-[var(--app-safe-bottom)] outline-none shadow-sheet',
           )}
-          style={{
-            maxHeight:
-              'min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - var(--app-safe-top) - 8px))',
-          }}
+          style={{ maxHeight: SHEET_MAX_HEIGHT }}
           aria-describedby={description ? descriptionId : undefined}
           tabIndex={-1}
           onOpenAutoFocus={focus.onOpenAutoFocus}

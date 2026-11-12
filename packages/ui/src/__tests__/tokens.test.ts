@@ -95,9 +95,10 @@ describe.each([
 
 /**
  * Custom properties the host app sets at run time, which the components
- * read with a fallback: the MainButton height (Toast keeps clear of it).
+ * read with a fallback: the MainButton height (Toast keeps clear of it)
+ * and Telegram's top chrome (sheets and toasts keep below it, UI-26).
  */
-const HOST_VARS = ['--app-main-btn-h'];
+const HOST_VARS = ['--app-main-btn-h', '--app-chrome-reserve'];
 
 /** Set by a component on its own element while it runs: a pulled sheet (UI-25). */
 const RUNTIME_VARS = ['--sheet-drag'];
