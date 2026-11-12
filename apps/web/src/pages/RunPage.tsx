@@ -95,6 +95,7 @@ import { newClientId } from '../lib/clientId';
 import { useRunMutations } from './runs/hooks/useRunMutations';
 import { finishSummaryOf } from './runs/lib/finishSummary';
 import { confirmCommandFor, confirmCopyFor, type ConfirmKind } from './runs/lib/confirmCopy';
+import { RunConfirmSummary } from './runs/sheets/RunConfirmSummary';
 import { newAddItemDraft, planAddItemSubmit } from './runs/lib/addItem';
 
 
@@ -1747,6 +1748,10 @@ export function RunPage() {
       <ConfirmSheet
         open={!!confirmCopy}
         title={confirmCopy?.title ?? ''}
+        // RUNWEB1-08: the finish and correction figures, as rows above the text.
+        banner={
+          confirmCopy?.summary ? <RunConfirmSummary summary={confirmCopy.summary} /> : undefined
+        }
         body={confirmCopy?.body}
         confirmLabel={confirmCopy?.confirmLabel ?? ''}
         danger={confirmCopy?.danger}

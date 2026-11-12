@@ -504,6 +504,7 @@ export const uz = {
   'common.clear': 'Tozalash',
   'common.optional': 'Ixtiyoriy',
   'common.labelValue': '{label}: {value}',
+  'common.amountWithCurrency': '{amount} {currency}',
   'common.empty': 'Boʻsh',
   'unit.kg': 'kg',
   'unit.g': 'g',
@@ -1371,7 +1372,7 @@ export const uz = {
   'run.toast.runAlreadyOpen': 'Xarid allaqachon ochiq — oʻsha ochildi',
   'run.price.daysAgo': '{n} kun oldin',
   'run.finish.carriedOver': '{n} ta oldingi narxda',
-  'run.finish.carriedOverStale': 'shundan {n} tasi {days} kundan eski',
+  'run.finish.carriedOverStale': 'Shundan {n} tasi {days} kundan eski',
   'run.purchase.pricingUniform': 'Yagona narx / toʻlov',
   'run.purchase.pricingPerStore': 'Doʻkon boʻyicha narx / toʻlov',
   'run.previewSupplier.changeVendor': 'Sotuvchini almashtirish',
@@ -1514,8 +1515,7 @@ export const uz = {
     'masalan, Oshpaz qoʻngʻiroq qildi / Bozorda chegirma / Sotuvchi bonusi',
   'run.action.addItem.save': 'Saqlash',
   'run.label.addedByPurchaser': 'Xaridor xarid davomida qoʻshgan',
-  'run.confirm.finish.addedByPurchaser':
-    'Buyurtmadan tashqari {n} ta mahsulot qoʻshildi · {total} {currency}',
+  'run.confirm.finish.addedCount': 'Buyurtmadan tashqari {n} ta mahsulot qoʻshildi',
   'run.toast.itemAdded': 'Mahsulot qoʻshildi',
   'run.toast.couldNotAddItem': 'Mahsulotni qoʻshib boʻlmadi. Qayta urinib koʻring.',
   'run.errors.alreadyInRun': 'Bu mahsulot xaridda allaqachon bor — mavjud mahsulotni tahrirlang.',
@@ -1543,7 +1543,7 @@ export const uz = {
   'run.toast.couldNotAddExpense':
     'Xarajatni saqlab boʻlmadi. Summani tekshirib, qayta urinib koʻring.',
   'run.confirm.finish.expenses': '{n} ta katalogdan tashqari / xarajat · {total} {currency}',
-  'run.confirm.finish.perStoreHeading': 'Doʻkonlar boʻyicha taqsimot:',
+  'run.confirm.finish.expensesCount': '{n} ta katalogdan tashqari / xarajat',
   'run.confirm.finish.receiptIssues':
     'Qabulda muammo boʻlgan mahsulot: {n} ta; taxminan {amount} {currency} qabul qilinmagan. Doʻkon hisoblari hali ham taqsimlangan miqdor boʻyicha.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: qabul {received}/{qty}',
@@ -1585,8 +1585,7 @@ export const uz = {
   'run.confirm.finish.title': 'Xaridni yakunlaymizmi?',
   'run.confirm.finish.body':
     'Narx, miqdor va yetkazishlar qulflanadi. Keyin tuzatish uchun xaridni faqat superadmin qayta ocha oladi.',
-  'run.confirm.finish.summary':
-    '{items} ta mahsulot · {stores} ta doʻkon · jami {total} {currency}',
+  'run.confirm.finish.counts': '{items} ta mahsulot · {stores} ta doʻkon',
   'run.label.paymentMethod': 'Toʻlov usuli',
   'run.label.paymentCash': 'Naqd',
   'run.label.paymentTransfer': 'Oʻtkazma',
@@ -1594,7 +1593,6 @@ export const uz = {
   'run.label.splitPreview': 'Doʻkonlarga: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Yana mavjud deb belgilash: {name}',
   'run.reason.paymentMethodChanged': 'Roʻyxatda toʻlov usuli tuzatildi',
-  'run.confirm.finish.paymentBreakdown': 'naqd {cash} · oʻtkazma {transfer}',
   'run.confirm.cancel.title': 'Butun xaridni bekor qilamizmi?',
   'run.confirm.cancel.body':
     'Xarid bekor qilinadi. Barcha buyurtmalar «Maʼqullangan»ga qaytadi va ularni qayta rejalashtirish mumkin. Yozilgan xaridlar saqlanadi, lekin yetkazilmaydi.',
@@ -1685,8 +1683,7 @@ export const uz = {
   'run.action.refinalize': 'Oʻzgarishlarni saqlash',
   'run.toast.amendSaved': 'Oʻzgarishlar saqlandi, qayta hisoblandi',
   'run.confirm.refinalize.title': 'Oʻzgarishlarni saqlaysizmi?',
-  'run.confirm.refinalize.body':
-    'Xarid tuzatilgan maʼlumot boʻyicha qayta hisoblanadi. Yangi jami: {total}.',
+  'run.confirm.refinalize.body': 'Xarid tuzatilgan maʼlumot boʻyicha qayta hisoblanadi.',
   'run.amend.banner': 'Tuzatish rejimi (superadmin)',
   'run.amend.bannerHint':
     'Yakunlangan xarid tahrirlanmoqda. Tugagach pastdagi «Oʻzgarishlarni saqlash» tugmasini bosing.',
@@ -2235,8 +2232,6 @@ export const uz = {
   'run.switcher.newRun': '+ Yangi xarid',
   'run.switcher.option': '#{n} · {date} · {step}',
   'run.titleWithIndex': 'Xarid #{n}',
-  'run.confirm.finish.money':
-    'Mahsulotlar {items} · xarajatlar {expenses} · jami {total} {currency}',
   'run.errors.runDateInFuture': 'Xarid sanasi kelajakda boʻlishi mumkin emas.',
   'run.errors.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting.',
   'run.errors.receivedQtyInvalid':

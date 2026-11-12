@@ -10,13 +10,14 @@
 import type { I18n } from '@compass/i18n';
 import { formatMoney, formatQty } from '../../../lib/format';
 import type { ActiveRun } from '../types';
-import { receiptShortfall, type FinishSummary } from './finishSummary';
-import { STALE_PRICE_DAYS } from './priceState';
+import {
+  finishConfirmSummary,
+  refinalizeConfirmSummary,
+  type ConfirmSummary,
+} from './confirmSummary';
+import type { FinishSummary } from './finishSummary';
 import { pendingExtrasOf } from './runProgress';
 import { buildStorePickList } from './storePickList';
-
-/** Lines signed short or wrong listed in the finish sheet; the rest are counted (RUNWEB1-32). */
-const RECEIPT_ISSUES_LISTED = 5;
 
 /** A pending reason-prompt confirm. The keys here are the ONLY transitions
  *  that need a confirmation; trivial actions (Buy, mark N/A) keep their
@@ -45,6 +46,8 @@ export type ConfirmKind =
 export interface ConfirmCopy {
   title: string;
   body: string;
+  /** The finish and correction sheets' figures, shown above `body` (RUNWEB1-08). */
+  summary?: ConfirmSummary;
   confirmLabel: string;
   danger: boolean;
   irreversible?: boolean;
@@ -66,7 +69,7 @@ export interface ConfirmCopyContext {
 }
 
 export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): ConfirmCopy {
-  const { i18n, run, summary: finishSummary, currency } = ctx;
+  const { i18n, run, currency } = ctx;
   if (typeof kind === 'string') {
     switch (kind) {
       case 'startPurchase':
@@ -99,178 +102,19 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
           requireReason: false,
         };
       }
-      case 'finish': {
-        // M1.14: include cash / transfer breakdown when the run mixed
-        // both methods. Single-method runs see only the lump sum.
-        // M2.1 (2026-05-08): route the three confirm-body numbers
-        // through formatMoney() so thousand separators + the
-        // one-decimal cap match every other money display in the
-        // app. Was `.toFixed(0)` which produced a raw integer
-        // string with no separators (e.g. "1234567").
-        const showBreakdown = finishSummary.totalCash > 0 && finishSummary.totalTransfer > 0;
-        const breakdownLine = showBreakdown
-          ? '\n' +
-            i18n.t('run.confirm.finish.paymentBreakdown', {
-              cash: formatMoney(finishSummary.totalCash),
-              transfer: formatMoney(finishSummary.totalTransfer),
-            })
-          : '';
-        // M3.41 (2026-05-21): when the purchaser added items mid-run,
-        // call them out separately in the finish body so the manager
-        // can see "X items added beyond the original order, total Y"
-        // at the same glance as the canonical total. The line is
-        // omitted when nothing was added (the normal case) to avoid
-        // cluttering 90% of finishes with a zeroed-out row.
-        const addedLine =
-          finishSummary.addedSkus > 0
-            ? '\n' +
-              i18n.t('run.confirm.finish.addedByPurchaser', {
-                n: finishSummary.addedSkus,
-                total: formatMoney(finishSummary.addedTotal),
-                currency,
-              })
-            : '';
-        // M3.44 (2026-05-22): off-catalog expenses line. Skipped
-        // when there are none to keep the common-case confirm
-        // body concise.
-        const expensesLine =
-          finishSummary.expensesCount > 0
-            ? '\n' +
-              i18n.t('run.confirm.finish.expenses', {
-                n: finishSummary.expensesCount,
-                total: formatMoney(finishSummary.money.expenses),
-                currency,
-              })
-            : '';
-        // 2026-10-21 CA-11: always items / expenses / total.
-        const moneyLine =
-          '\n' +
-          i18n.t('run.confirm.finish.money', {
-            items: formatMoney(finishSummary.money.items),
-            expenses: formatMoney(finishSummary.money.expenses),
-            total: formatMoney(finishSummary.money.total),
-            currency,
-          });
-        /**
-         * Q7(b) safety net (2026-07-26).
-         *
-         * Hiding the price editor is only defensible if closing a run
-         * says how much of it was billed at a price nobody re-checked.
-         * Otherwise "most prices don't change" quietly becomes "we
-         * charged three shops last month's number", and every accepted
-         * price also writes a fresh price_history row that becomes the
-         * NEXT trip's reference — the error compounds daily.
-         *
-         * Derived by comparing each saved price to its reference
-         * rather than by tracking taps: a tap flag is per-device state
-         * a reload loses, and it answers the wrong question. What the
-         * manager needs is not "did someone tap" but "which of these
-         * numbers is just last week's number again".
-         */
-        const carriedLine =
-          finishSummary.carriedOver > 0
-            ? '\n' +
-              i18n.t('run.finish.carriedOver', { n: finishSummary.carriedOver }) +
-              (finishSummary.carriedOverStale > 0
-                ? ' · ' +
-                  i18n.t('run.finish.carriedOverStale', {
-                    n: finishSummary.carriedOverStale,
-                    days: STALE_PRICE_DAYS,
-                  })
-                : '')
-            : '';
-        /**
-         * M3.52 (2026-05-23): per-store settlement list. Shown only
-         * for multi-store runs (single-store: the headline total
-         * already says everything). The manager sees each store's
-         * total, and its cash and transfer parts when the store paid
-         * both ways, before tapping Finish.
-         *
-         * Strictly per-store: each line is one store's own slice
-         * (SKU lines + expense splits attributed via storeSplits),
-         * never aggregated across stores.
-         */
-        const perStoreLines =
-          finishSummary.byStore.length > 1
-            ? '\n\n' +
-              i18n.t('run.confirm.finish.perStoreHeading') +
-              '\n' +
-              finishSummary.byStore
-                .map((ps) => {
-                  const mixed = ps.cash > 0 && ps.transfer > 0;
-                  // RUNWEB1-22: the catalog's "cash · transfer" line, not
-                  // labels and amounts glued in English order.
-                  const tail = mixed
-                    ? ' · ' +
-                      i18n.t('run.money.cashTransfer', {
-                        cash: formatMoney(ps.cash),
-                        transfer: formatMoney(ps.transfer),
-                      })
-                    : '';
-                  return i18n.t('common.labelValue', {
-                    label: ctx.storeName(ps.storeId),
-                    value: `${formatMoney(ps.total)}${tail}`,
-                  });
-                })
-                .join('\n')
-            : '';
-        // DLV-11 (2026-10-30): the bills below still charge each store
-        // for what was split to it, even where the store signed for less.
-        // Say so before the run locks: every line signed short / wrong /
-        // spoiled, and roughly how much was not received.
-        const { issues: receiptIssues, missingValue } = receiptShortfall(run);
-        const receiptLine =
-          receiptIssues.length > 0
-            ? '\n\n' +
-              i18n.t('run.confirm.finish.receiptIssues', {
-                n: receiptIssues.length,
-                amount: formatMoney(missingValue),
-                currency,
-              }) +
-              '\n' +
-              receiptIssues
-                .slice(0, RECEIPT_ISSUES_LISTED)
-                .map((sp) =>
-                  i18n.t('run.confirm.finish.receiptIssueLine', {
-                    sku: ctx.skuName(sp.skuId),
-                    store: ctx.storeName(sp.storeId),
-                    received: formatQty(sp.confirmReceivedQty ?? '0'),
-                    qty: formatQty(sp.qty),
-                  }),
-                )
-                .join('\n') +
-              (receiptIssues.length > RECEIPT_ISSUES_LISTED
-                ? '\n' +
-                  i18n.t('run.confirm.finish.receiptIssuesMore', {
-                    n: receiptIssues.length - RECEIPT_ISSUES_LISTED,
-                  })
-                : '')
-            : '';
+      case 'finish':
+        // RUNWEB1-08: the figures are rows above the text
+        // (confirmSummary.ts), each once; the text says what locks.
         return {
           title: i18n.t('run.confirm.finish.title'),
-          body:
-            i18n.t('run.confirm.finish.body') +
-            '\n\n' +
-            i18n.t('run.confirm.finish.summary', {
-              items: finishSummary.skus,
-              stores: finishSummary.stores,
-              total: formatMoney(finishSummary.money.total),
-              currency,
-            }) +
-            moneyLine +
-            breakdownLine +
-            addedLine +
-            expensesLine +
-            carriedLine +
-            perStoreLines +
-            receiptLine,
+          body: i18n.t('run.confirm.finish.body'),
+          summary: finishConfirmSummary(ctx),
           confirmLabel: i18n.t('run.action.finish'),
           danger: false,
           // DX-IX-6: locks the purchase; Cancel shown and focused.
           irreversible: true,
           requireReason: false,
         };
-      }
       case 'refinalize':
         // finishSummary reflects the live (corrected) run.get during
         // amending. 2026-10-21 CA-11: the sheet used to show an
@@ -280,17 +124,8 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
         // expensesTotal explicitly (actual_total stays the items part).
         return {
           title: i18n.t('run.confirm.refinalize.title'),
-          body:
-            i18n.t('run.confirm.refinalize.body', {
-              total: formatMoney(finishSummary.money.total),
-            }) +
-            '\n' +
-            i18n.t('run.confirm.finish.money', {
-              items: formatMoney(finishSummary.money.items),
-              expenses: formatMoney(finishSummary.money.expenses),
-              total: formatMoney(finishSummary.money.total),
-              currency,
-            }),
+          body: i18n.t('run.confirm.refinalize.body'),
+          summary: refinalizeConfirmSummary(ctx),
           confirmLabel: i18n.t('run.action.refinalize'),
           danger: false,
           // DX-IX-6: locks the purchase; Cancel shown and focused.
