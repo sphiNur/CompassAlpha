@@ -7,20 +7,7 @@ import {
   readDraft,
   writeDraft,
 } from '../draftStore';
-
-function memory() {
-  const map = new Map<string, string>();
-  return {
-    map,
-    getItem: (k: string) => map.get(k) ?? null,
-    setItem: (k: string, v: string) => void map.set(k, v),
-    removeItem: (k: string) => void map.delete(k),
-    get length() {
-      return map.size;
-    },
-    key: (i: number) => [...map.keys()][i] ?? null,
-  };
-}
+import { memoryStorage, throwingStorage } from '../../../__tests__/helpers/storage';
 
 const draft = {
   onlineRevenue: '1250000',
@@ -30,7 +17,7 @@ const draft = {
 
 describe('settlement draft store', () => {
   test('round-trips a draft under a per-user, per-record key', () => {
-    const s = memory();
+    const s = memoryStorage();
     const key = draftKey('u1', 'store:2026-11-05:new:0');
     writeDraft(s, key, draft, 1000);
     expect(readDraft(s, key, 2000)).toEqual(draft);
@@ -38,7 +25,7 @@ describe('settlement draft store', () => {
   });
 
   test('drops a stale or malformed entry', () => {
-    const s = memory();
+    const s = memoryStorage();
     const key = draftKey('u1', 'k');
     writeDraft(s, key, draft, 0);
     expect(readDraft(s, key, DRAFT_MAX_AGE_MS + 1)).toBeNull();
@@ -50,7 +37,7 @@ describe('settlement draft store', () => {
   });
 
   test('forget removes it; missing storage is a no-op', () => {
-    const s = memory();
+    const s = memoryStorage();
     const key = draftKey('u1', 'k');
     writeDraft(s, key, draft);
     forgetDraft(s, key);
@@ -61,24 +48,14 @@ describe('settlement draft store', () => {
   });
 
   test('a throwing storage never breaks the page', () => {
-    const boom = {
-      getItem: () => {
-        throw new Error('blocked');
-      },
-      setItem: () => {
-        throw new Error('quota');
-      },
-      removeItem: () => {
-        throw new Error('blocked');
-      },
-    };
+    const boom = throwingStorage();
     expect(readDraft(boom, 'k')).toBeNull();
     writeDraft(boom, 'k', draft);
     forgetDraft(boom, 'k');
   });
 
   test('a line or a field of the wrong shape is dropped (CONF-13)', () => {
-    const s = memory();
+    const s = memoryStorage();
     const key = draftKey('u1', 'k');
     for (const bad of [
       { ...draft, operatingExpenseItems: [{ id: 'e1', amount: 45000, reason: 'Taxi' }] },
@@ -94,7 +71,7 @@ describe('settlement draft store', () => {
   });
 
   test('prune keeps the open draft and drops earlier versions and dead entries (CONF-13)', () => {
-    const s = memory();
+    const s = memoryStorage();
     const day = (rest: string) => draftKey('u1', `store:2026-11-05:${rest}`);
     const open = day('rec:3');
     const earlier = day('rec:2');
@@ -118,7 +95,7 @@ describe('settlement draft store', () => {
   });
 
   test('while the record loads, no draft is judged by its version (CONF-13)', () => {
-    const s = memory();
+    const s = memoryStorage();
     const saved = draftKey('u1', 'store:2026-11-05:rec:3');
     writeDraft(s, saved, draft, 1000);
     // Before the record arrives the page's key reads "new:0".
