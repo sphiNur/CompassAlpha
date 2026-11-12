@@ -13,7 +13,9 @@ describe('shouldDeferInvalidate', () => {
 
   it('waits for running mutations, up to 2.5 s', () => {
     expect(shouldDeferInvalidate(true, false, 1_000)).toBe(true);
-    expect(shouldDeferInvalidate(true, false, 2_600)).toBe(false);
+    // Review TEST3-12: the edge itself, not only a point past it.
+    expect(shouldDeferInvalidate(true, false, 2_499)).toBe(true);
+    expect(shouldDeferInvalidate(true, false, 2_500)).toBe(false);
   });
 
   it('waits for unsent local taps even with no mutation running', () => {
@@ -22,7 +24,10 @@ describe('shouldDeferInvalidate', () => {
   });
 
   it('gives up on local writes after 10 s so data cannot freeze', () => {
-    expect(shouldDeferInvalidate(false, true, 10_001)).toBe(false);
+    expect(shouldDeferInvalidate(false, true, 9_999)).toBe(true);
+    expect(shouldDeferInvalidate(false, true, 10_000)).toBe(false);
+    // Past 2.5 s a running mutation no longer holds it either.
+    expect(shouldDeferInvalidate(true, true, 10_000)).toBe(false);
   });
 });
 

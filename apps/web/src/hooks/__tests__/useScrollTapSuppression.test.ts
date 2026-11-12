@@ -35,6 +35,14 @@ describe('updateMoved', () => {
     expect(s.moved).toBe(false);
   });
 
+  it('a move of exactly 10px either way is still a tap (review TEST3-12)', () => {
+    const s = makeState();
+    updateMoved(s, 110, 210); // dx = dy = 10, not past the threshold
+    expect(s.moved).toBe(false);
+    updateMoved(s, 90, 190);
+    expect(s.moved).toBe(false);
+  });
+
   it('flips moved when horizontal delta crosses threshold', () => {
     const s = makeState();
     updateMoved(s, 111, 200); // dx = 11 > 10
@@ -102,6 +110,9 @@ describe('shouldCancel', () => {
   it('does not cancel a click that comes long after the scroll', () => {
     const late = { detail: 1, at: 1_000 + CLICK_WINDOW_MS + 1 };
     expect(shouldCancel({ moved: true, bypass: false, ...ended }, late)).toBe(false);
+    // The window's last moment still counts.
+    const last = { detail: 1, at: 1_000 + CLICK_WINDOW_MS };
+    expect(shouldCancel({ moved: true, bypass: false, ...ended }, last)).toBe(true);
   });
 
   it('does not cancel while no guarded touch has ended', () => {
