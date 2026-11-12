@@ -140,8 +140,10 @@ export function SkusSection() {
     onError: errToast('common.errors.actionFailed'),
   });
 
-  const categoryName = (id: string | null): string => {
-    if (!id) return '—';
+  // ADM2-25: a product without a category says nothing about it (UI-3);
+  // its facts line used to start with "— · ".
+  const categoryName = (id: string | null): string | null => {
+    if (!id) return null;
     const c = categoriesQuery.data?.find((x) => x.id === id);
     if (!c) return i18n.t('common.unknownCategory');
     return productName({ names: c.names }) || c.slug;
@@ -225,14 +227,15 @@ export function SkusSection() {
                       title={primary}
                       titleLang={name.primary ? name.primaryLang : undefined}
                       names={names}
-                      meta={
-                        <>
-                          {categoryName(sk.categoryId)} · {unitLabel.uncounted(sk.unit)} ·{' '}
-                          {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
-                          {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
-                          {sk.code ? ` · ${sk.code}` : ''}
-                        </>
-                      }
+                      meta={[
+                        categoryName(sk.categoryId),
+                        unitLabel.uncounted(sk.unit),
+                        // DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500".
+                        i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) }),
+                        sk.code,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                       archived={sk.isArchived}
                     />
                     {canWrite ? (

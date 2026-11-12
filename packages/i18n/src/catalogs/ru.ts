@@ -424,7 +424,6 @@ export const ru = {
     'У вас нет этого права во всём рабочем пространстве, поэтому добавить его в роль нельзя.',
   'people.grantInStores': 'В отдельных магазинах',
   'stores.codeLabel': 'код {code}',
-  'stores.noCode': 'без кода',
   'stores.paused': 'приостановлен',
   'stores.archived': 'в архиве',
   'stores.pickSourceStore': '— выберите исходный магазин —',

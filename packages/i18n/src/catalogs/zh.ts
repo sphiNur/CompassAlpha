@@ -394,7 +394,6 @@ export const zh = {
   'people.perm.roleNeedsOwn': '你在整个工作区没有这项权限，不能把它放进角色。',
   'people.grantInStores': '在指定门店',
   'stores.codeLabel': '编号 {code}',
-  'stores.noCode': '无编号',
   'stores.paused': '已暂停',
   'stores.archived': '已归档',
   'stores.pickSourceStore': '——选择来源门店——',

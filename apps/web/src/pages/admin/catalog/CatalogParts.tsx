@@ -103,6 +103,7 @@ export function CatalogRowHeader({
    * show under it, so an admin sees at a glance what is translated.
    */
   names?: Partial<Record<string, string>>;
+  /** The facts line; nothing (or '') draws no line (UI-3, review ADM2-25). */
   meta: ReactNode;
   archived: boolean;
 }) {
@@ -121,7 +122,7 @@ export function CatalogRowHeader({
             <OtherLangNames names={names} langs={otherLangs} />
           </div>
         ) : null}
-        <CardMeta>{meta}</CardMeta>
+        {meta ? <CardMeta>{meta}</CardMeta> : null}
       </div>
       {archived ? <Badge tone="muted">{i18n.t('common.archived')}</Badge> : null}
     </CardHeader>

@@ -429,7 +429,6 @@ export const uz = {
     'Bu ruxsat butun ish maydonida sizda yoʻq, shuning uchun uni rolga qoʻsha olmaysiz.',
   'people.grantInStores': 'Tanlangan doʻkonlarda',
   'stores.codeLabel': 'kod {code}',
-  'stores.noCode': 'kodsiz',
   'stores.paused': 'toʻxtatilgan',
   'stores.archived': 'arxivlangan',
   'stores.pickSourceStore': '— manba doʻkonni tanlang —',

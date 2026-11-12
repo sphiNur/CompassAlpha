@@ -210,6 +210,14 @@ export function StoresHomeSection({
             ) : null}
             {rows.map((st) => {
               const count = memberCounts.byStore.get(st.id) ?? 0;
+              // Review ADM2-25 (2026-11-12): no "no code" and no "0 members"
+              // (UI-3); a store with neither has no second line.
+              const meta = [
+                st.code ? i18n.t('stores.codeLabel', { code: st.code }) : null,
+                count > 0 ? i18n.t('admin.label.memberCount', { n: count }) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
               return (
                 <li key={st.id}>
                   {/* M1.11: Stores home tile slimmed from 3 muted-meta
@@ -235,13 +243,11 @@ export function StoresHomeSection({
                       <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
                         {st.name}
                       </span>
-                      <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-                        {st.code
-                          ? i18n.t('stores.codeLabel', { code: st.code })
-                          : i18n.t('stores.noCode')}
-                        {' · '}
-                        {i18n.t('admin.label.memberCount', { n: count })}
-                      </span>
+                      {meta ? (
+                        <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
+                          {meta}
+                        </span>
+                      ) : null}
                     </span>
                     {/* UIUX-B1: active is the silent default; only the
                         exception (paused) earns ink. */}

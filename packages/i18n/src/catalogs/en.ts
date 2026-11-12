@@ -449,7 +449,6 @@ export const en = {
     'You do not have this permission across the workspace, so it cannot go into a role.',
   'people.grantInStores': 'In specific stores',
   'stores.codeLabel': 'code {code}',
-  'stores.noCode': 'no code',
   'stores.paused': 'paused',
   'stores.archived': 'archived',
   'stores.pickSourceStore': '— choose a source store —',
