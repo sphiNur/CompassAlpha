@@ -554,6 +554,24 @@ export function rlsRoleProblem(output: string): string | null {
 export const UNIT_BUN = '/home/ubuntu/.bun/bin/bun';
 
 /**
+ * Review COREAPI-27 (2026-11-12): read-only. The release just extracted
+ * reads the server's .env with its worker's own rules
+ * (apps/worker/src/config.ts), before the migrations and the restart. A
+ * setting the worker cannot read stops it at start, and found only after
+ * the restart, the deploy could report it but not undo it. Prints the
+ * names of the settings that are wrong, never their values, and exits 1
+ * when there is one.
+ */
+export function workerSettingsScript(appDir = APP_DIR, bun = UNIT_BUN): string {
+  const check = [
+    'import("./src/config.ts")',
+    '.then((m) => { m.readWorkerConfig(process.env); console.log("worker settings: ok"); })',
+    '.catch((e) => { console.error(String(e?.message ?? e)); process.exit(1); })',
+  ].join('');
+  return `cd ${appDir}/apps/worker && ${bun} --env-file=${appDir}/.env -e '${check}'`;
+}
+
+/**
  * Review OPS-21 (2026-11-10): read-only shell script. The version of the
  * bun the services run, and of the pnpm and node a deploy step finds on the
  * PATH it sets, one `tool=version` line each (`missing` when one does not

@@ -15,6 +15,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -54,6 +55,7 @@ import {
   stageSeedScript,
   toolchainProblems,
   toolchainScript,
+  workerSettingsScript,
   WORKSPACE_GLOBS,
 } from '../lib/deployRemote';
 
@@ -963,5 +965,50 @@ describe('OPS-32: the database checks keep the password off the command line', (
     expect(r.status).toBe(3);
     expect(r.stdout).toBe('');
     expect(r.stderr).toContain('no DATABASE_URL');
+  });
+});
+
+describe('the new worker reads the server .env before the migrations (COREAPI-27)', () => {
+  /** A server tree with this repo's worker and `env` as its .env. */
+  function treeWith(env: string) {
+    const home = mkdtempSync(join(tmpdir(), 'deploy-remote-'));
+    dirs.push(home);
+    const app = join(home, 'compass-alpha');
+    mkdirSync(join(app, 'apps'), { recursive: true });
+    symlinkSync(join(ROOT, 'apps/worker'), join(app, 'apps/worker'));
+    put(app, '.env', env);
+    return app;
+  }
+  /** Run as a step does: bash, with none of this test run's own settings. */
+  const run = (app: string) =>
+    spawnSync('bash', ['-c', workerSettingsScript(app, process.execPath)], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' },
+    });
+
+  test('settings the worker reads pass, and no value is printed', () => {
+    const r = run(
+      treeWith('DATABASE_URL=postgres://u:secret-pw@db:5432/x\nBOT_DELIVERY_ENABLED=true\n'),
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('worker settings: ok');
+    expect(r.stdout + r.stderr).not.toContain('secret-pw');
+  });
+
+  test('a setting it cannot read fails the step by name, without its value', () => {
+    const r = run(
+      treeWith('DATABASE_URL=postgres://u:secret-pw@db:5432/x\nBOT_DELIVERY_ENABLED=yes-please\n'),
+    );
+    expect(r.status).toBe(1);
+    // remoteStepError shows a failed step's last line on stderr.
+    expect(r.stderr.trim().split('\n').pop()).toContain('BOT_DELIVERY_ENABLED');
+    expect(r.stdout + r.stderr).not.toContain('yes-please');
+    expect(r.stdout + r.stderr).not.toContain('secret-pw');
+  });
+
+  test('a server without a .env fails the step', () => {
+    const app = treeWith('');
+    rmSync(join(app, '.env'));
+    expect(run(app).status).not.toBe(0);
   });
 });

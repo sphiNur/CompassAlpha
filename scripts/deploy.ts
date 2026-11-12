@@ -136,6 +136,7 @@ import {
   stageTarScript,
   toolchainProblems,
   toolchainScript,
+  workerSettingsScript,
 } from './lib/deployRemote';
 import { UNIT_TEST_DIRS, unitGateEnv } from './lib/testTargets';
 
@@ -990,6 +991,18 @@ if (!DRY) {
     console.error('\x1b[31m✖ pnpm install FAILED — aborting before the api restart\x1b[0m');
     console.error(String((err as Error).message ?? err));
     process.exit(1);
+  }
+
+  if (!ROLLBACK) {
+    // Review COREAPI-27 (2026-11-12): the worker stops at start on a
+    // setting it cannot read. Asked here, before the migrations, such a
+    // setting puts the previous release back with nothing restarted.
+    step('3.5b. the new worker reads the server .env (read-only)');
+    try {
+      console.log('  ' + ssh(workerSettingsScript()).trim());
+    } catch (err) {
+      abortAfterExtract('the new worker cannot read the server .env', err);
+    }
   }
 
   if (!ROLLBACK) {
