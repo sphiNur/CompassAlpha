@@ -18,6 +18,7 @@ import {
   SKU_UNITS,
   SLUG_MESSAGE,
   SLUG_RE,
+  SORT_INDEX_RANGE,
   recipeQtyProblem,
 } from '../limits';
 
@@ -120,13 +121,14 @@ export const CatalogNamesSchema = catalogNamesSchema('admin.errors.namesRequired
 /**
  * CAT-10 (2026-10-31): a sort position. A fractional or huge value came
  * back as zod's English "Expected integer" — "出错了" in the form — or
- * overflowed the int column as a 500.
+ * overflowed the int column as a 500. The range is the editors' too
+ * (SORT_INDEX_RANGE, review NEW-07).
  */
 export const SortIndexSchema = z
   .number({ invalid_type_error: 'admin.errors.sortIndexInteger' })
   .int('admin.errors.sortIndexInteger')
-  .min(-1_000_000, 'admin.errors.sortIndexInteger')
-  .max(1_000_000, 'admin.errors.sortIndexInteger');
+  .min(SORT_INDEX_RANGE.min, 'admin.errors.sortIndexInteger')
+  .max(SORT_INDEX_RANGE.max, 'admin.errors.sortIndexInteger');
 
 /**
  * A one-line name (supplier, expense template; the admin router's stores

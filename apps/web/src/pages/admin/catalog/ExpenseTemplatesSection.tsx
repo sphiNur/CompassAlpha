@@ -27,11 +27,13 @@ import {
   CatalogRowHeader,
   CatalogToolbar,
   ReadOnlyHint,
+  SortIndexField,
   useIsOrgAdmin,
 } from './CatalogParts';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { moneyLine } from '../../../lib/money';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
+import { readSortIndex } from './sortIndex';
 
 // ============ Expense Templates (M3.57) ============
 //
@@ -53,7 +55,8 @@ interface ExpenseTemplateDraft {
    *  it is not sent, so it stays as saved. */
   defaultUnitPrice: string | null;
   defaultPaymentMethod: PaymentMethod;
-  sortIndex: number;
+  /** As typed (NEW-07); readSortIndex reads it. */
+  sortText: string;
   isArchived: boolean;
 }
 
@@ -101,6 +104,7 @@ export function ExpenseTemplatesSection() {
     (d) => d.templateId ?? 'new',
     create.isPending || update.isPending,
   );
+  const sortIndex = draft ? readSortIndex(draft.sortText) : null;
 
   return (
     <div className="px-4 py-3">
@@ -114,7 +118,7 @@ export function ExpenseTemplatesSection() {
             defaultQty: '1',
             defaultUnitPrice: '',
             defaultPaymentMethod: 'cash',
-            sortIndex: 0,
+            sortText: '0',
             isArchived: false,
           })
         }
@@ -179,7 +183,7 @@ export function ExpenseTemplatesSection() {
                           defaultQty: tpl.defaultQty,
                           defaultUnitPrice: tpl.defaultUnitPrice,
                           defaultPaymentMethod: paymentMethodOrCash(tpl.defaultPaymentMethod),
-                          sortIndex: tpl.sortIndex,
+                          sortText: String(tpl.sortIndex),
                           isArchived: tpl.isArchived,
                         })
                       }
@@ -214,16 +218,17 @@ export function ExpenseTemplatesSection() {
               !draft.defaultQty ||
               Number(draft.defaultQty) <= 0 ||
               (draft.defaultUnitPrice !== null &&
-                (!draft.defaultUnitPrice || Number(draft.defaultUnitPrice) <= 0))
+                (!draft.defaultUnitPrice || Number(draft.defaultUnitPrice) <= 0)) ||
+              sortIndex === null
             }
             onClick={() => {
-              if (!draft) return;
+              if (!draft || sortIndex === null) return;
               const fields = {
                 label: draft.label.trim(),
                 unitHint: draft.unitHint.trim() || null,
                 defaultQty: draft.defaultQty,
                 defaultPaymentMethod: draft.defaultPaymentMethod,
-                sortIndex: draft.sortIndex,
+                sortIndex,
               };
               const price = draft.defaultUnitPrice;
               if (draft.templateId) {
@@ -296,18 +301,10 @@ export function ExpenseTemplatesSection() {
                 onChange={(m) => setDraft({ ...draft, defaultPaymentMethod: m })}
               />
             </FieldGroup>
-            <Field label={i18n.t('admin.field.sortIndex')}>
-              <Input
-                value={String(draft.sortIndex)}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    sortIndex: Number(e.target.value) || 0,
-                  })
-                }
-                inputMode="numeric"
-              />
-            </Field>
+            <SortIndexField
+              text={draft.sortText}
+              onText={(sortText) => setDraft({ ...draft, sortText })}
+            />
           </div>
         ) : null}
       </Sheet>

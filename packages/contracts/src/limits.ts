@@ -377,16 +377,29 @@ export const ATTENDANCE_OVERTIME_AFTER_MINUTES = {
 } as const satisfies WholeNumberRange;
 
 /**
+ * A catalog sort position (categories, products, expense templates).
+ * CAT-10: the int column takes far more; a million either way is plenty.
+ * SortIndexSchema and the catalog editors share it (review NEW-07).
+ */
+export const SORT_INDEX_RANGE = {
+  min: -1_000_000,
+  max: 1_000_000,
+} as const satisfies WholeNumberRange;
+
+/**
  * The whole number a field holds, when it is one and inside `range`;
  * otherwise null. `value` is the field's normalised text (a number field
  * hands that on). Review NEW-06 (2026-11-11): the attendance form read
  * its fields with `Number()`, so an emptied grace field was 0 minutes and
- * saved as such, and "1e2" was 100.
+ * saved as such, and "1e2" was 100. Review NEW-07 (2026-11-12): a minus
+ * sign is read where the range goes below zero (sort positions); "-0" is 0.
  */
 export function wholeNumberIn(value: string, range: WholeNumberRange): number | null {
-  if (!/^\d{1,9}$/.test(value)) return null;
+  const pattern = range.min < 0 ? /^-?\d{1,9}$/ : /^\d{1,9}$/;
+  if (!pattern.test(value)) return null;
   const n = Number(value);
-  return n >= range.min && n <= range.max ? n : null;
+  if (n < range.min || n > range.max) return null;
+  return n === 0 ? 0 : n;
 }
 
 /**

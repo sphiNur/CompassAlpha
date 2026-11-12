@@ -25,6 +25,7 @@ import {
   CatalogRowHeader,
   CatalogToolbar,
   ReadOnlyHint,
+  SortIndexField,
   useIsOrgAdmin,
 } from './CatalogParts';
 import {
@@ -36,12 +37,14 @@ import {
 } from './catalogNames';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { slugIsValid } from '../../../lib/adminFields';
+import { readSortIndex } from './sortIndex';
 
 interface CategoryDraft {
   categoryId?: string;
   slug: string;
   names: CatalogNames;
-  sortIndex: number;
+  /** As typed (NEW-07); readSortIndex reads it. */
+  sortText: string;
 }
 
 /** Example names, each in its own field's language. */
@@ -92,13 +95,14 @@ export function CategoriesSection() {
     (d) => d.categoryId ?? 'new',
     create.isPending || update.isPending,
   );
+  const sortIndex = draft ? readSortIndex(draft.sortText) : null;
 
   return (
     <div className="px-4 py-3">
       {canWrite ? (
         <CatalogToolbar
           newLabel={i18n.t('catalog.category.newButton')}
-          onNew={() => setDraft({ slug: '', names: { ...EMPTY_NAMES }, sortIndex: 100 })}
+          onNew={() => setDraft({ slug: '', names: { ...EMPTY_NAMES }, sortText: '100' })}
         />
       ) : (
         <ReadOnlyHint />
@@ -140,7 +144,7 @@ export function CategoriesSection() {
                           categoryId: c.id,
                           slug: c.slug,
                           names: namesForEdit(names),
-                          sortIndex: c.sortIndex,
+                          sortText: String(c.sortIndex),
                         })
                       }
                       confirmArchive={i18n.t('catalog.category.confirmArchive', { name: title })}
@@ -163,19 +167,24 @@ export function CategoriesSection() {
           <Button
             block
             loading={create.isPending || update.isPending}
-            disabled={!draft?.slug.trim() || !slugIsValid(draft.slug) || !hasAnyName(draft.names)}
+            disabled={
+              !draft?.slug.trim() ||
+              !slugIsValid(draft.slug) ||
+              !hasAnyName(draft.names) ||
+              sortIndex === null
+            }
             onClick={() => {
-              if (!draft) return;
+              if (!draft || sortIndex === null) return;
               const names = cleanNames(draft.names);
               if (draft.categoryId) {
                 update.mutate({
                   categoryId: draft.categoryId,
                   slug: draft.slug,
                   names,
-                  sortIndex: draft.sortIndex,
+                  sortIndex,
                 });
               } else {
-                create.mutate({ slug: draft.slug, names, sortIndex: draft.sortIndex });
+                create.mutate({ slug: draft.slug, names, sortIndex });
               }
             }}
           >
@@ -204,13 +213,10 @@ export function CategoriesSection() {
               onChange={(names) => setDraft({ ...draft, names })}
               examples={CATEGORY_EXAMPLES}
             />
-            <Field label={i18n.t('admin.field.sortIndex')}>
-              <Input
-                type="number"
-                value={String(draft.sortIndex)}
-                onChange={(e) => setDraft({ ...draft, sortIndex: Number(e.target.value) || 0 })}
-              />
-            </Field>
+            <SortIndexField
+              text={draft.sortText}
+              onText={(sortText) => setDraft({ ...draft, sortText })}
+            />
           </div>
         ) : null}
       </Sheet>

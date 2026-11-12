@@ -8,7 +8,7 @@
  * " · " for a supplier with no phone. The dish names had no "one language
  * is enough" line.
  */
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Badge, Button, CardHeader, CardMeta, CardTitle, Field, Input, Switch } from '@compass/ui';
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
@@ -16,6 +16,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAuthStore } from '../../../stores/authStore';
 import { nativeConfirm } from '../shared';
 import { CATALOG_LOCALES, type CatalogNames } from './catalogNames';
+import { readSortIndex } from './sortIndex';
 
 /**
  * 2026-10-21 audit CA-16: every catalog write (categories, SKUs,
@@ -234,5 +235,33 @@ export function CatalogNameFields({
         </Field>
       ))}
     </>
+  );
+}
+
+/**
+ * The sort position field of the category, product and expense template
+ * editors (review NEW-07): the text as typed, a minus sign included. Once
+ * the field is left, a line under it says when the text is not a whole
+ * number in range; the editor's Save waits for one (readSortIndex).
+ */
+export function SortIndexField({ text, onText }: { text: string; onText: (text: string) => void }) {
+  const i18n = useI18n();
+  const [left, setLeft] = useState(false);
+  const bad = left && readSortIndex(text) === null;
+  return (
+    <Field
+      label={i18n.t('admin.field.sortIndex')}
+      error={bad ? i18n.t('admin.errors.sortIndexInteger') : null}
+    >
+      <Input
+        type="number"
+        // The full keyboard: the iPhone's number pads have no minus sign
+        // (as the reset date in Maintenance, DX-CAT-4).
+        inputMode="text"
+        value={text}
+        onChange={(e) => onText(e.target.value)}
+        onBlur={() => setLeft(true)}
+      />
+    </Field>
   );
 }
