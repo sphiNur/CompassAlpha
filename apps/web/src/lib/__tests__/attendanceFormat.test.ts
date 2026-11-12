@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { sheetMemberOrder } from '../attendanceFormat';
 
-// 2026-11-13: the attendance screens listed people in the server's own
+// 2026-11-12: the attendance screens listed people in the server's own
 // collation, so Chinese names came out in code-point order (张, 李, 王).
 describe('sheetMemberOrder', () => {
   const people = [

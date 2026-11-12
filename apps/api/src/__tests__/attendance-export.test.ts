@@ -101,7 +101,7 @@ describe('monthWorkbook: an overnight shift', () => {
   });
 });
 
-// 2026-11-13: the workbook sorted people in the server's own collation, so
+// 2026-11-12: the workbook sorted people in the server's own collation, so
 // Chinese names came out in code-point order (张, 李, 王), not pinyin.
 describe('monthWorkbook: the order of people', () => {
   test('by name in the workbook language; two people with one name stay apart', async () => {

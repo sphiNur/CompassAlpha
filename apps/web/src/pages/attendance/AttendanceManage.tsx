@@ -20,32 +20,26 @@ import { locationVerdict } from '@compass/contracts/limits';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { useErrToast } from '../../hooks/useErrToast';
-import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendance';
-import { minutesText, punchKindText, sheetMemberOrder } from '../../lib/attendanceFormat';
+import {
+  FACE_TONE,
+  LIVE_TONE,
+  minutesText,
+  punchKindText,
+  sheetMemberOrder,
+} from '../../lib/attendanceFormat';
 import { currencyOf, formatMoney } from '../../lib/format';
 import { formatList } from '../../lib/listFormat';
 import { useAuthStore } from '../../stores/authStore';
 import { GeoMap } from '../../components/geo/GeoMap';
-import { trpc } from '../../lib/trpc';
-import { orgToday } from '../../lib/calendarDate';
+import { trpc, type RouterOutputs } from '../../lib/trpc';
+import { addDays, mondayOf, orgToday } from '../../lib/calendarDate';
+import { PunchPhotoStrip } from './AttendancePhotos';
 
-type SheetData = AttendanceSheetData;
+type SheetData = RouterOutputs['attendance']['sheet'];
 type Member = SheetData['members'][number];
 type Punch = SheetData['punches'][number];
 type Shift = SheetData['shifts'][number];
 type Day = SheetData['days'][number];
-
-export function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
-/** Monday of the week holding `date`. */
-export function mondayOf(date: string): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
-  return addDays(date, -((dow + 6) % 7));
-}
 
 const FLAG_TONE: Record<string, 'success' | 'warn' | 'danger' | 'info' | 'muted'> = {
   onDuty: 'success',
@@ -161,13 +155,6 @@ function OvertimeBadges({ items }: { items: SheetData['overtime'] }) {
   );
 }
 
-export const FACE_TONE = {
-  match: 'success',
-  mismatch: 'danger',
-  enrolled: 'info',
-  unchecked: 'warn',
-} as const;
-
 /**
  * The day's punch checks at a glance: face (2026-11-05), and liveness,
  * borrowed phone and new phone (2026-11-06).
@@ -199,13 +186,6 @@ function FaceBadges({ punches }: { punches: SheetData['punches'] }) {
     </span>
   );
 }
-
-export const LIVE_TONE = {
-  pass: 'success',
-  passive: 'success',
-  fail: 'danger',
-  unchecked: 'warn',
-} as const;
 
 // ─── Daily sheet ──────────────────────────────────────────────────────────
 
@@ -353,43 +333,6 @@ function MemberDayRow({
         <PayLine day={day} />
       </button>
     </li>
-  );
-}
-
-/** A punch's face and surroundings photos, loaded when asked for. */
-export function PunchPhotoStrip({ storeId, punchId }: { storeId: string; punchId: string }) {
-  const i18n = useI18n();
-  const [open, setOpen] = useState(false);
-  const photos = trpc.attendance.punchPhotos.useQuery(
-    { storeId, punchId },
-    { enabled: open, staleTime: Infinity },
-  );
-  if (!open) {
-    return (
-      <Button variant="secondary" size="sm" className="self-start" onClick={() => setOpen(true)}>
-        {i18n.t('attendance.photo.show')}
-      </Button>
-    );
-  }
-  return (
-    <DataState query={photos}>
-      {(list) => (
-        <div className="grid grid-cols-2 gap-2">
-          {list.map((ph) => (
-            <figure key={ph.kind} className="flex flex-col gap-1">
-              <img
-                src={ph.src}
-                alt={i18n.t(`attendance.photo.${ph.kind}`)}
-                className="aspect-[3/4] w-full rounded-[var(--r-utility)] object-cover"
-              />
-              <figcaption className="text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t(`attendance.photo.${ph.kind}`)}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      )}
-    </DataState>
   );
 }
 

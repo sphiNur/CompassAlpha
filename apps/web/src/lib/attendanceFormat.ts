@@ -37,3 +37,23 @@ export function sheetMemberOrder(
 ): (a: { enabled: boolean; name: string }, b: { enabled: boolean; name: string }) => number {
   return (a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name, locale);
 }
+
+/**
+ * The badge tone of a punch's face check (2026-11-05). The day sheet and
+ * the review queue both show it; it lived in the day sheet's page (review
+ * ATT-23).
+ */
+export const FACE_TONE = {
+  match: 'success',
+  mismatch: 'danger',
+  enrolled: 'info',
+  unchecked: 'warn',
+} as const;
+
+/** The badge tone of a punch's liveness check (2026-11-06), as FACE_TONE. */
+export const LIVE_TONE = {
+  pass: 'success',
+  passive: 'success',
+  fail: 'danger',
+  unchecked: 'warn',
+} as const;

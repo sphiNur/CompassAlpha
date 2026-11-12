@@ -2,7 +2,7 @@
  * What an invitation gives: the stores the person joins and the role
  * bindings they get there.
  *
- * Review ADM1-12 (2026-11-13): the invite link (memberInviteCreate) and the
+ * Review ADM1-12 (2026-11-12): the invite link (memberInviteCreate) and the
  * invite by Telegram ID (memberInviteByTgId) each worked this out in a copy
  * of their own, and the copies drifted. The Telegram path checked the
  * stores again with a query that kept archived ones ("filter rather than

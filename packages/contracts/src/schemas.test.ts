@@ -228,7 +228,7 @@ describe('identifiers and links', () => {
   });
 });
 
-// Review ADM1-12 (2026-11-13): one plan decides an invite link and an
+// Review ADM1-12 (2026-11-12): one plan decides an invite link and an
 // invite by Telegram ID, and the second took any number of stores.
 describe('invitations', () => {
   it('a link and an invite by Telegram ID take the same stores: at most 50', () => {
