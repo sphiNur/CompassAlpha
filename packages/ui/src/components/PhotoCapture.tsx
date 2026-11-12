@@ -93,8 +93,14 @@ export function PhotoCapture({
     setError(null);
     try {
       const url = URL.createObjectURL(file);
-      const img = await loadImage(url);
-      URL.revokeObjectURL(url);
+      let img: HTMLImageElement;
+      try {
+        img = await loadImage(url);
+      } finally {
+        // Review UI-29 (2026-11-12): also when the photo does not decode;
+        // each failure kept a whole photo in memory.
+        URL.revokeObjectURL(url);
+      }
       const blob = await encodeJpegBlob(img, maxSize, quality);
 
       if (uploader) {
@@ -139,7 +145,8 @@ export function PhotoCapture({
             <button
               type="button"
               onClick={onClear}
-              className="press hit-44 absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[oklch(0%_0_0_/_0.7)] text-white"
+              // UI-29: the colours of a control over a photo are tokens (UI-8).
+              className="press hit-44 absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--c-overlay-control)] text-[var(--c-overlay-control-fg)]"
               aria-label={labels.photoRemove}
             >
               ×
@@ -160,9 +167,7 @@ export function PhotoCapture({
             busy && 'opacity-60',
           )}
         >
-          <span className="text-old-h1" aria-hidden>
-            📷
-          </span>
+          {/* UI-29: no 📷 above the hint, which says it (UI-1). */}
           <span id={actionId} className="text-old-body-sm">
             {busy ? labels.uploading : labels.photoHint}
           </span>

@@ -105,6 +105,10 @@
   --c-field-border: oklch(62% 0.02 240);
   /* Behind a sheet. */
   --c-scrim: oklch(0% 0 0 / 0.32);
+  /* A control over a photo (PhotoCapture's remove button), the same in
+   * every theme since the photo under it is: dark glass, white ink. */
+  --c-overlay-control: oklch(0% 0 0 / 0.7);
+  --c-overlay-control-fg: oklch(100% 0 0);
   --c-ring: oklch(52% 0.18 250);
   --c-ring-offset: var(--c-bg);
 
