@@ -49,7 +49,8 @@ import { usePageMainButton } from '../hooks/usePageMainButton';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { RUN_PAGE } from '../config/timings';
 import { readLocalPref, writeLocalPref } from '../lib/localPref';
-import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useProductNameParts } from '../hooks/useI18n';
+import { rowName } from '../lib/productName';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { usePageMenu } from '../components/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
@@ -101,6 +102,7 @@ export function RunPage() {
   const i18n = useI18n();
   const dates = useDateFormat();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const session = useAuthStore((s) => s.session);
   const currency = currencyOf(session);
   const toast = useToast();
@@ -896,10 +898,10 @@ export function RunPage() {
             summary: finishSummary,
             currency,
             storeName: (id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'),
-            skuName: (skuId) => {
-              const sku = skuById.get(skuId);
-              return sku ? productName(sku) : i18n.t('common.unknownProduct');
-            },
+            // NEW-03: the main name in the confirmations, as the rows give it.
+            skuName: (skuId) =>
+              rowName(productNameParts, skuById.get(skuId), i18n.t('common.unknownProduct'))
+                .primary,
           })
         : null,
     [
@@ -909,7 +911,7 @@ export function RunPage() {
       finishSummary,
       currency,
       i18n,
-      productName,
+      productNameParts,
       skuById,
       storeById,
     ],
@@ -1455,8 +1457,13 @@ export function RunPage() {
               // An unavailable item comes back as pending (with the whole
               // demand) through the existing restore flow.
               if (item.status === 'unavailable') {
-                const sku = skuById.get(item.skuId);
-                const skuName = sku ? productName(sku) : i18n.t('common.unknownProduct');
+                // NEW-03: the main name, as the row's own entry to this
+                // confirmation gives it (not "Main (Secondary)").
+                const skuName = rowName(
+                  productNameParts,
+                  skuById.get(item.skuId),
+                  i18n.t('common.unknownProduct'),
+                ).primary;
                 setConfirmAction({ kind: 'unmarkUnavailable', skuId: item.skuId, skuName });
                 return;
               }

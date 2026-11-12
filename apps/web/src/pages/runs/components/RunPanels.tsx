@@ -632,7 +632,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           skuById={skuById}
           categoryById={categoryById}
           storeById={storeById}
-          productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
           onTogglePriceUnit={onTogglePriceUnit}

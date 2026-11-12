@@ -905,7 +905,6 @@ export function PerCategoryView({
   skuById,
   categoryById,
   storeById,
-  productName,
   i18n,
   priceInThousands,
   onTogglePriceUnit,
@@ -925,7 +924,6 @@ export function PerCategoryView({
   skuById: Map<string, SkuLite>;
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
   storeById: Map<string, StoreLite>;
-  productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
   onTogglePriceUnit: () => void;
@@ -958,12 +956,15 @@ export function PerCategoryView({
             ? // 2026-07-26: was a hard-coded Chinese literal.
               i18n.t('run.view.uncategorized')
             : categoryById.has(categoryId)
-              ? productName(categoryById.get(categoryId)!)
+              ? // NEW-03: the name in the screen's language, not "Fruit
+                // (Фрукты)" cut short on one line; the stall language is
+                // for what is sent to stalls.
+                productNameParts(categoryById.get(categoryId)!).primary
               : i18n.t('common.unknownCategory'),
         items,
       }))
       .sort((a, b) => a.name.localeCompare(b.name, i18n.locale));
-  }, [categoryById, i18n, productName, run.items, skuById]);
+  }, [categoryById, i18n, productNameParts, run.items, skuById]);
 
   // RUNWEB1-27 / RUNWEB1-28: a Card whose header is a button that says
   // whether the group is open (it was a <details> whose <summary> held a
