@@ -460,6 +460,7 @@ export const ru = {
     '{n, plural, one {# право} few {# права} many {# прав} other {# права}}',
   'people.permissionsHeading': 'Права ({n})',
   'people.assigneesHeading': 'Назначены · {n}',
+  'people.assigneesGroup': '{scope} ({n})',
   'people.effectiveOverridesLine':
     '{eff, plural, one {# действует} few {# действуют} many {# действуют} other {# действуют}} · {ov, plural, one {# переопределение} few {# переопределения} many {# переопределений} other {# переопределения}}',
   'ops.history.contributorCount':

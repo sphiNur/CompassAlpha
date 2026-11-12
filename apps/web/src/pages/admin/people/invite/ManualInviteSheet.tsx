@@ -225,8 +225,14 @@ export function ManualInviteSheet({
                 />
               )}
               <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('admin.invite.staffNeedStoreHint')}
-                {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
+                {/* ADM1-25: two sentences joined as the language joins them
+                    (no space after 。 in Chinese). */}
+                {isGlobalAdmin
+                  ? i18n.t('admin.invite.staffNeedStoreHint')
+                  : i18n.t('common.twoSentences', {
+                      first: i18n.t('admin.invite.staffNeedStoreHint'),
+                      second: i18n.t('admin.invite.onlyYourStoresHint'),
+                    })}
               </p>
             </FieldGroup>
           ) : (

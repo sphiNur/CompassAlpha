@@ -458,6 +458,7 @@ export const uz = {
   'people.permissionCount': '{n} ta ruxsat',
   'people.permissionsHeading': 'Ruxsatlar ({n})',
   'people.assigneesHeading': 'Tayinlanganlar · {n}',
+  'people.assigneesGroup': '{scope} ({n})',
   'people.effectiveOverridesLine': '{eff} ta amalda · {ov} ta alohida sozlama',
   'ops.history.contributorCount': '{n} ta yuboruvchi',
   'admin.clone.toastCloned': '{n} ta rol biriktirmasi klonlandi',

@@ -222,8 +222,14 @@ export function GrantRoleSheet({
     }
     if (createdCount > 0) {
       toast.success(
-        i18n.t('people.toastGrantedInStores', { n: createdCount }) +
-          (skipped > 0 ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}` : ''),
+        // ADM1-25: joined as the language joins them (no space before the
+        // full-width bracket in Chinese).
+        skipped > 0
+          ? i18n.t('common.twoSentences', {
+              first: i18n.t('people.toastGrantedInStores', { n: createdCount }),
+              second: i18n.t('people.toastAlreadyHad', { n: skipped }),
+            })
+          : i18n.t('people.toastGrantedInStores', { n: createdCount }),
       );
     } else if (skipped > 0) {
       toast.info(i18n.t('people.toastAlreadyEverywhere'));

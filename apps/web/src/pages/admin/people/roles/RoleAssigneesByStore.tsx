@@ -65,7 +65,8 @@ export function RoleAssigneesByStore({
         {grouped.map(([key, bucket]) => (
           <section key={key}>
             <h4 className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {bucket.label} ({bucket.members.length})
+              {/* ADM1-25: the brackets are the language's (full-width in Chinese). */}
+              {i18n.t('people.assigneesGroup', { scope: bucket.label, n: bucket.members.length })}
             </h4>
             {/* Review ADM1-23 / ADM1-24 (2026-11-12): one card, a row per
                 holder (UI-6), and a long name or @username is cut short

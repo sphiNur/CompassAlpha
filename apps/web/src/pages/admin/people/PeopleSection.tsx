@@ -332,7 +332,9 @@ export function PeopleSection({
                     <Badge tone="warn">
                       {m.status === 'suspended' || m.status === 'invited'
                         ? i18n.t(`people.memberStatus.${m.status}`)
-                        : m.status}
+                        : // UI-2 (ADM1-25): a status this build does not know
+                          // is named as such, never shown raw.
+                          i18n.t('common.unknownStatus')}
                     </Badge>
                   ) : null}
                 </CardHeader>

@@ -484,6 +484,7 @@ export const en = {
   'people.permissionCount': '{n, plural, =1 {1 permission} other {# permissions}}',
   'people.permissionsHeading': 'Permissions ({n})',
   'people.assigneesHeading': 'Assignees · {n}',
+  'people.assigneesGroup': '{scope} ({n})',
   'people.effectiveOverridesLine':
     '{eff} effective · {ov, plural, =1 {1 override} other {# overrides}}',
   'ops.history.contributorCount': '{n, plural, =1 {1 contributor} other {# contributors}}',

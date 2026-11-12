@@ -421,6 +421,7 @@ export const zh = {
   'people.permissionCount': '{n} 项权限',
   'people.permissionsHeading': '权限（{n}）',
   'people.assigneesHeading': '已分配 · {n}',
+  'people.assigneesGroup': '{scope}（{n}）',
   'people.effectiveOverridesLine': '{eff} 项生效 · {ov} 条覆盖',
   'ops.history.contributorCount': '{n} 位参与人',
   'admin.clone.toastCloned': '带入了 {n} 个角色分配',
