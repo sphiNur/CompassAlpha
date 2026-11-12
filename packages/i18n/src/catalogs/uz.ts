@@ -1058,8 +1058,8 @@ export const uz = {
   'admin.empty.members.title': 'Hali aʼzolar yoʻq',
   'admin.empty.members.description':
     'Birinchisini qoʻshish uchun yuqoridagi «+ Taklif qilish» tugmasini bosing.',
-  'admin.empty.noStoresInThisStore.title': 'Bu doʻkonda xodim yoʻq',
-  'admin.empty.noStoresInThisStore.description':
+  'admin.empty.noMembersInThisStore.title': 'Bu doʻkonda xodim yoʻq',
+  'admin.empty.noMembersInThisStore.description':
     'Kimnidir qoʻshish uchun «Taklif qilish» tugmasini bosing.',
   'admin.toast.memberUpdated': 'Aʼzo yangilandi',
   'admin.toast.memberRemoved': 'Aʼzo olib tashlandi',
@@ -1754,7 +1754,7 @@ export const uz = {
   'run.errors.staleSeq':
     'Buni hozirgina kimdir oʻzgartirdi. Sahifani yangilab, soʻnggi holatni koʻring va oʻzgarishni qayta kiriting.',
   'run.errors.notPurchased': 'Bu mahsulot hali xarid qilinmagan.',
-  'run.errors.notRevisable': 'Bu mahsulot hali xarid qilinmagan.',
+  'run.errors.notRevisable': 'Bu mahsulot hali xarid qilinmagan — tahrirlab boʻlmaydi.',
   'run.errors.cannotReviseAfterDelivery':
     'Oʻzgartirib boʻlmaydi — doʻkonga allaqachon yetkazilgan.',
   'run.errors.notUnavailable': 'Bu mahsulot «yoʻq» holatida emas.',
