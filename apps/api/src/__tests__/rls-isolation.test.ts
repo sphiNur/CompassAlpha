@@ -23,9 +23,10 @@
  * Tables covered: the ones with a test below, including the M1.9
  * additions (member_store_assignments, member_permission_overrides,
  * policy_decisions, snapshots) and the 2026-10-21 CA-36 additions
- * (run_expenses_v, dishes, dish_ingredients). Not every table of
- * 900_rls_policies.sql has one: rls-catalog.test.ts checks that every
- * table has RLS forced and a tenant-only policy (TEST2-01).
+ * (run_expenses_v, dishes, dish_ingredients). The other tenant tables
+ * are seeded in rls-attendance.test.ts and rls-records.test.ts, and
+ * rls-catalog.test.ts checks that every table has RLS forced and a
+ * tenant-only policy (TEST2-01).
  *
  * Writes: a row cannot be inserted into another organisation or with no
  * tenant, a row of another organisation cannot be updated or deleted,
@@ -46,6 +47,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { pgErrorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+import { countUnderEachContext as countIn, rlsSuiteRuns } from './helpers/rls';
 
 cleanUpAfterAll();
 
@@ -91,23 +93,7 @@ interface Fixture {
 
 let fix: Fixture | null = null;
 
-async function roleBypassesRls(): Promise<boolean> {
-  const db = getDb(undefined, { system: 'maintenance' });
-  const r = await db.execute(sql`
-    SELECT rolsuper OR rolbypassrls AS bypass FROM pg_roles WHERE rolname = current_user
-  `);
-  const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
-  return Boolean((rows[0] as { bypass?: boolean } | undefined)?.bypass);
-}
-
-const RLS_BYPASSED = SHOULD_RUN && (await roleBypassesRls());
-if (RLS_BYPASSED && process.env.CI) {
-  throw new Error(
-    'rls-isolation: the database role is a superuser or has BYPASSRLS, so these tests ' +
-      'would prove nothing. CI must run them as compass_ci_app.',
-  );
-}
-const RUN_RLS = SHOULD_RUN && !RLS_BYPASSED;
+const RUN_RLS = await rlsSuiteRuns('rls-isolation');
 
 /** The write was refused by a row-level policy (42501), not by another error. */
 async function expectRlsRefusal(write: Promise<unknown>): Promise<void> {
@@ -464,55 +450,13 @@ afterAll(async () => {
   if (SHOULD_RUN) await closeDb();
 });
 
-/**
- * Helper — count rows in a table under each org's RLS context, plus
- * total without context. Returns a triple [aSeen, bSeen, totalSeen]
- * so the assertion can verify isolation succinctly.
- */
-async function countUnderEachContext(
+/** helpers/rls.ts countUnderEachContext, for this file's two orgs. */
+function countUnderEachContext(
   table: string,
   whereClause: string,
 ): Promise<{ aSeen: number; bSeen: number; totalSeen: number }> {
   if (!fix) throw new Error('fixture missing');
-  const db = getDb(undefined, { system: 'maintenance' });
-  const aSeen = await withOrgContext(db, fix.orgA.id, async (tx) => {
-    const r = await tx.execute(
-      sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`),
-    );
-    // postgres-js result wrapper: rows on a `.rows` array OR a bare
-    // array. Defensive read.
-    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
-    return Number((rows[0] as { n: number }).n);
-  });
-  const bSeen = await withOrgContext(db, fix.orgB.id, async (tx) => {
-    const r = await tx.execute(
-      sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`),
-    );
-    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
-    return Number((rows[0] as { n: number }).n);
-  });
-  // With neither a tenant nor the system context, nothing is visible.
-  // This used to return both rows: "no tenant set" meant "let it
-  // through", so a query that forgot to set one read every customer's
-  // data. Checked here, for every table that goes through this helper.
-  const noneSeen = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT set_config('app.system_context', '', true)`);
-    const r = await tx.execute(
-      sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`),
-    );
-    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
-    return Number((rows[0] as { n: number }).n);
-  });
-  expect(noneSeen).toBe(0);
-  // In the system context (this handle is a maintenance one) both rows
-  // are visible: that is what sign-in and the worker run in.
-  const totalSeen = await db
-    .execute(sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`))
-    .then((r) => {
-      const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
-      return Number((rows[0] as { n: number }).n);
-    });
-  return { aSeen, bSeen, totalSeen };
+  return countIn(table, whereClause, fix.orgA.id, fix.orgB.id);
 }
 
 describe.skipIf(!RUN_RLS)('RLS cross-org isolation (PG-gated)', () => {
