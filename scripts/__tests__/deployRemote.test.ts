@@ -23,14 +23,19 @@ import { fileURLToPath } from 'node:url';
 import {
   BACKUP_MAX_AGE_SECONDS,
   INCOMPLETE_MARKER,
+  RELEASE_FILES,
+  RELEASE_TOP,
   backupHealthScript,
   backupProblem,
   clearIncompleteScript,
   describeSnapshotScript,
   devBypassFiles,
   devBypassScript,
+  extractScript,
   hostName,
   knownHostsFile,
+  localReadyScript,
+  localReadyVerdict,
   markIncompleteScript,
   meetsVersionRange,
   pendingMigrationTags,
@@ -132,7 +137,8 @@ describe('rollback snapshot', () => {
     expect(read(app, '.env')).toBe('DATABASE_URL=server-secret-rotated');
     expect(read(app, 'apps/web/.env')).toBe('VITE_X=server');
     expect(existsSync(join(app, 'node_modules/dep/index.js'))).toBe(true);
-    // Like a deploy, extraction does not delete: documented in RUNBOOK.
+    // This tree has no release list (deployed before .release-files), so
+    // nothing is removed: documented in RUNBOOK.
     expect(existsSync(join(app, 'apps/api/src/onlyInNew.ts'))).toBe(true);
   });
 
@@ -690,5 +696,222 @@ describe('incremental upload', () => {
     }
     expect([r.status, r.stdout.trim()]).toEqual([0, 'empty']);
     expect(existsSync(join(stage, 'CompassAlpha'))).toBe(true);
+  });
+});
+
+/** A release tarball as steps 1 and 2 make it: every path under RELEASE_TOP/. */
+function releaseTarball(home: string, name: string, files: Record<string, string>): string {
+  const src = mkdtempSync(join(home, 'release-'));
+  for (const [rel, body] of Object.entries(files)) put(join(src, RELEASE_TOP), rel, body);
+  const tarball = join(home, `${name}.tar.gz`);
+  const r = bash(`tar -czf "${tarball}" -C "${src}" ${RELEASE_TOP}`);
+  if (r.status !== 0) throw new Error(r.stderr);
+  return tarball;
+}
+
+function listed(app: string): string[] {
+  return read(app, RELEASE_FILES).trim().split('\n');
+}
+
+// Review OPS-01 (2026-11-12): extracting over the live tree never deleted a
+// file, so whatever a release dropped stayed on disk. A dropped package then
+// failed the frozen install, after a revert and again when the release
+// before it was put back.
+describe('files a release no longer ships', () => {
+  const v1 = {
+    'apps/api/src/main.ts': 'api v1',
+    'apps/api/src/gone.ts': 'dropped in v2',
+    'packages/old/src/index.ts': 'a package dropped in v2',
+    'docs/notes.md': 'notes',
+  };
+  const v2 = {
+    'apps/api/src/main.ts': 'api v2',
+    'apps/api/src/added.ts': 'new in v2',
+    'docs/notes.md': 'notes',
+  };
+
+  test('the first extract removes nothing and keeps the list', () => {
+    const { home, app } = liveTree();
+    const r = bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(read(app, 'apps/api/src/main.ts')).toBe('api v1');
+    expect(listed(app)).toEqual(Object.keys(v1).sort());
+    // What the live tree had besides stays.
+    expect(read(app, 'apps/web/dist/index.html')).toBe('old html');
+    expect(read(app, '.env')).toBe('DATABASE_URL=server-secret');
+    expect(existsSync(join(app, 'node_modules/dep/index.js'))).toBe(true);
+    expect(existsSync(join(app, `${RELEASE_FILES}.next`))).toBe(false);
+  });
+
+  test('the next extract removes what that release dropped, and the folders it emptied', () => {
+    const { home, app } = liveTree();
+    bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    put(app, 'apps/api/uploads/photo.jpg', 'made on the server');
+    const r = bash(extractScript(app, releaseTarball(home, 'v2', v2)));
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim().split('\n').sort()).toEqual([
+      'removed apps/api/src/gone.ts: not in this release',
+      'removed packages/old/src/index.ts: not in this release',
+    ]);
+    expect(existsSync(join(app, 'apps/api/src/gone.ts'))).toBe(false);
+    expect(existsSync(join(app, 'packages/old'))).toBe(false);
+    expect(read(app, 'apps/api/src/main.ts')).toBe('api v2');
+    expect(read(app, 'apps/api/src/added.ts')).toBe('new in v2');
+    expect(listed(app)).toEqual(Object.keys(v2).sort());
+    // The server's own files are never on a list.
+    expect(read(app, 'apps/api/uploads/photo.jpg')).toBe('made on the server');
+    expect(read(app, '.env')).toBe('DATABASE_URL=server-secret');
+    expect(existsSync(join(app, 'node_modules/dep/index.js'))).toBe(true);
+    expect(existsSync(join(app, `${RELEASE_FILES}.gone`))).toBe(false);
+  });
+
+  test('a folder the server put files in stays', () => {
+    const { home, app } = liveTree();
+    bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    put(app, 'packages/old/node_modules/dep/index.js', 'installed');
+    expect(bash(extractScript(app, releaseTarball(home, 'v2', v2))).status).toBe(0);
+    expect(existsSync(join(app, 'packages/old/src'))).toBe(false);
+    expect(read(app, 'packages/old/node_modules/dep/index.js')).toBe('installed');
+  });
+
+  test('a tarball that lists no release file extracts nothing', () => {
+    const { home, app } = liveTree();
+    bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    const before = read(app, RELEASE_FILES);
+    // Not under RELEASE_TOP/: --strip-components would put it in the wrong place.
+    put(home, 'odd/apps/api/src/main.ts', 'odd');
+    const odd = join(home, 'odd.tar.gz');
+    bash(`tar -czf "${odd}" -C "${home}" odd`);
+    expect(bash(extractScript(app, odd)).status).not.toBe(0);
+    expect(read(app, 'apps/api/src/main.ts')).toBe('api v1');
+    expect(read(app, RELEASE_FILES)).toBe(before);
+    expect(bash(extractScript(app, join(home, 'missing.tar.gz'))).status).not.toBe(0);
+    expect(read(app, RELEASE_FILES)).toBe(before);
+  });
+
+  test('a path on the list that leads out of the app folder is never removed', () => {
+    const { home, app } = liveTree();
+    put(home, 'outside.txt', 'not the app');
+    writeFileSync(
+      join(app, RELEASE_FILES),
+      ['../outside.txt', join(home, 'outside.txt'), 'apps/../../outside.txt', ''].join('\n'),
+    );
+    expect(bash(extractScript(app, releaseTarball(home, 'v1', v1))).status).toBe(0);
+    expect(read(home, 'outside.txt')).toBe('not the app');
+  });
+
+  test('putting a release back removes what only the release put aside shipped', () => {
+    const { home, app, prev } = liveTree();
+    bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    expect(bash(snapshotScript(app, prev)).status).toBe(0);
+    bash(extractScript(app, releaseTarball(home, 'v2', v2)));
+    const r = bash(restoreScript(app, prev));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('removed apps/api/src/added.ts: only the release put aside had it');
+    expect(existsSync(join(app, 'apps/api/src/added.ts'))).toBe(false);
+    // What v2 had dropped comes back with the snapshot.
+    expect(read(app, 'apps/api/src/gone.ts')).toBe('dropped in v2');
+    expect(read(app, 'apps/api/src/main.ts')).toBe('api v1');
+    expect(listed(app)).toEqual(Object.keys(v1).sort());
+    for (const copy of ['undo', 'kept', 'kept.tar', 'gone']) {
+      expect(existsSync(join(app, `${RELEASE_FILES}.${copy}`))).toBe(false);
+    }
+  });
+
+  test('a snapshot from before the list: the newer files go, and no list is left', () => {
+    const { home, app, prev } = liveTree();
+    expect(bash(snapshotScript(app, prev)).status).toBe(0);
+    bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    expect(bash(restoreScript(app, prev)).status).toBe(0);
+    expect(existsSync(join(app, 'apps/api/src/gone.ts'))).toBe(false);
+    expect(existsSync(join(app, 'packages/old'))).toBe(false);
+    expect(existsSync(join(app, 'docs/notes.md'))).toBe(false);
+    expect(read(app, 'apps/api/src/main.ts')).toBe('old api');
+    expect(existsSync(join(app, RELEASE_FILES))).toBe(false);
+  });
+
+  test('the snapshot keeps the list, not its working copies', () => {
+    const { home, app, prev } = liveTree();
+    bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    put(app, `${RELEASE_FILES}.undo`, 'left over');
+    expect(bash(snapshotScript(app, prev)).status).toBe(0);
+    const listing = bash(`tar -tzf "${prev}"`).stdout.split('\n');
+    expect(listing).toContain(`./${RELEASE_FILES}`);
+    expect(listing).not.toContain(`./${RELEASE_FILES}.undo`);
+  });
+});
+
+/** bash, without blocking this process: the api the script asks runs in it. */
+function bashAsync(script: string): Promise<{ status: number | null; stdout: string }> {
+  return new Promise((resolve) => {
+    const child = spawn('bash', ['-c', script]);
+    let stdout = '';
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.on('close', (status) => resolve({ status, stdout }));
+  });
+}
+
+// 2026-11-12: the deploy could not tell an api that did not start from a
+// broken way to it, so it put nothing back (review OPS-01).
+describe('asking the api on the server itself', () => {
+  function api(status: number) {
+    return Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req) =>
+        new URL(req.url).pathname === '/health/ready'
+          ? new Response('ready?', { status })
+          : new Response('no', { status: 404 }),
+    });
+  }
+
+  test('the status /health/ready answers each try, at the PORT the server .env sets last', async () => {
+    const { app } = liveTree();
+    const server = api(200);
+    try {
+      put(app, '.env', `DATABASE_URL=x\nPORT=1\nPORT="${server.port}"\nHOST=0.0.0.0\n`);
+      const r = await bashAsync(localReadyScript(app, 2, 0));
+      expect([r.status, r.stdout]).toEqual([0, '200\n200\n']);
+      expect(localReadyVerdict(r.stdout, 2)).toBe('up');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('an api that is not ready answers its status', async () => {
+    const { app } = liveTree();
+    const server = api(503);
+    try {
+      put(app, '.env', `PORT=${server.port}\nHOST='127.0.0.1'\n`);
+      const r = await bashAsync(localReadyScript(app, 2, 0));
+      expect(r.stdout).toBe('503\n503\n');
+      expect(localReadyVerdict(r.stdout, 2)).toBe('down');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('nothing listening answers 000', async () => {
+    const { app } = liveTree();
+    const server = api(200);
+    const port = server.port;
+    server.stop(true);
+    put(app, '.env', `PORT=${port}\n`);
+    const r = await bashAsync(localReadyScript(app, 2, 0));
+    expect([r.status, r.stdout]).toEqual([0, '000\n000\n']);
+    expect(localReadyVerdict(r.stdout, 2)).toBe('down');
+  });
+
+  test('the verdict: up only when every try answered 200; unknown when the answers are not all there', () => {
+    expect(localReadyVerdict('200\n200\n200\n')).toBe('up');
+    // An api that crashes and restarts answers now and then.
+    expect(localReadyVerdict('200\n000\n200\n')).toBe('down');
+    expect(localReadyVerdict('000\n000\n000\n')).toBe('down');
+    expect(localReadyVerdict('502\n502\n502\n')).toBe('down');
+    expect(localReadyVerdict('none\nnone\nnone\n')).toBe('unknown');
+    expect(localReadyVerdict('200\n200\n')).toBe('unknown');
+    expect(localReadyVerdict('')).toBe('unknown');
+    expect(localReadyVerdict('ssh: connect to host: Connection timed out')).toBe('unknown');
   });
 });

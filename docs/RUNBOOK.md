@@ -79,7 +79,8 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 ### Roll back a bad deploy
 Production is not image-based: `scripts/deploy.ts` ships what git sees
 in the local checkout, extracts it over `/home/ubuntu/compass-alpha` (in
-place, no `--delete`), runs `pnpm install --frozen-lockfile`, builds the
+place; then it removes the files the previous release shipped and this
+one does not, see below), runs `pnpm install --frozen-lockfile`, builds the
 web bundle into `apps/web/dist.next`, runs
 `pnpm --filter @compass/db migrate`, refreshes the systemd units, renames
 the bundle into place (`dist` → `dist.prev`, `dist.next` → `dist`), and
@@ -104,6 +105,32 @@ Since 2026-11-09 (review OPS-01/OPS-02):
   is still there (the undo failed too, or the api did not come up), the
   next deploy keeps the older snapshot instead of that tree, and
   `--rollback` removes the file.
+
+Since 2026-11-12 (review OPS-01; that day a release whose api did not
+start stayed live for six and a half hours):
+- If the api does not answer `$COMPASS_BASE/health/ready` after the
+  restart (or `systemctl` says it did not come up), the deploy asks it on
+  the server itself, three times two seconds apart (`curl` to
+  `/health/ready` on the `PORT` and `HOST` of the server `.env`). Unless
+  all three answers are 200, the release is at fault: the deploy puts the
+  release kept in step 2.5 back, installs its dependencies, refreshes the
+  units, restarts api and worker, waits for `/health/ready` and ends with
+  `DEPLOY FAILED — the previous release is live again`. It does not run
+  the smokes against it (run `scripts/smoke.ts`), and migrations the
+  failed release applied stay applied. When all three are 200, nothing is
+  put back: the way to the api (nginx, the tunnel, the Worker) is at
+  fault, or, when `systemctl` was the complaint, compass-worker or an api
+  start systemd retried (the deploy names `--rollback` for that case).
+  Nor is anything put back when the deploy cannot ask (ssh fails, no
+  `curl` on the server); it says so and names `--rollback`.
+- The extract keeps the list of files the release shipped in
+  `/home/ubuntu/compass-alpha/.release-files`. The next extract removes
+  the files on the old list that are not on the new one (and folders left
+  empty), and putting a release back removes the files only the release
+  put aside shipped. Files a release never shipped (`.env`,
+  `node_modules`, the built bundle, anything made on the server) are
+  never on a list. The first deploy after this change has no list to
+  compare with and removes nothing.
 
 Since 2026-11 (review OPS-03/OPS-04), a server check that cannot run
 stops the deploy, the same as one that fails. Before, it printed a
@@ -148,7 +175,9 @@ Since 2026-11 (review OPS-07/OPS-08/OPS-09):
   shipped, and refuses when it cannot. `--rollback` only warns.
 - After the restart, the deploy waits up to 90 seconds for
   `$COMPASS_BASE/health/ready` to answer 200 before the smokes start. If
-  it never does, the deploy stops there and `.deploy-incomplete` stays.
+  it never does, the deploy stops there (and, since 2026-11-12, puts the
+  previous release back when the api does not answer on the server
+  either; see above).
 - The server smoke checks that `/health/version` names the release just
   deployed (after `--rollback`, the restored one), from an api started
   after the restart. Any commit used to pass, so a Worker or tunnel
@@ -224,8 +253,10 @@ rebuild the bundle (the snapshot carries the built one).
   old script left behind, so a rollback is available from that deploy on.
   If that older api predates the realtime probe, the smoke says so and
   checks only that `/ws` answers, instead of failing.
-- Files that exist only in the newer release stay on disk (extraction
-  does not delete); they are harmless unless something imports them.
+- Files that only the newer release shipped are removed (from its
+  `.release-files` list). A release extracted before that list existed
+  leaves its files on disk; they are harmless unless something imports
+  them, and a workspace package of its own is removed before the install.
 - Migrations only move forward: rolling back does NOT undo a migration
   the bad deploy applied. If old code cannot run against the newer
   schema, restore the dump the deploy took before migrating (see

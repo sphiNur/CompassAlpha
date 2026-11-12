@@ -172,6 +172,18 @@ export function clearIncompleteScript(appDir = APP_DIR): string {
 }
 
 /**
+ * Review OPS-01: the files the release on disk shipped, one path per line,
+ * relative to the app folder. Extracting over the live tree never deleted
+ * anything, so a file a release dropped stayed on disk: a renamed
+ * migration then fails the migration check at every later deploy, and a
+ * removed package failed the frozen install (2026-11-12). The extract and
+ * the restore compare this list with the next one and remove what is gone.
+ * The server's own files (.env, node_modules, the built bundle) are never
+ * part of a release, so never on it.
+ */
+export const RELEASE_FILES = '.release-files';
+
+/**
  * Exclusions for the rollback snapshot: dependencies (reinstalled from the
  * snapshot's own lockfile), the web bundle's own spare copies, and the
  * server's .env files, which belong to the server and are never part of a
@@ -185,6 +197,8 @@ const SNAPSHOT_EXCLUDES = [
   '.env',
   '.env.*',
   '*.log',
+  // Working copies of the release list; the list itself is kept.
+  `${RELEASE_FILES}.*`,
 ];
 
 /**
@@ -227,10 +241,12 @@ export function describeSnapshotScript(prevTarball = PREV_TARBALL): string {
  * Shell script: put the snapshot back over the live tree. The web bundle
  * is replaced wholesale (the snapshot carries the complete old dist/);
  * everything else is extracted over the tree, the same way a deploy
- * extracts — files only the bad release had stay on disk, unimported (a
- * workspace package of its own is removed before the install:
- * staleWorkspacesScript). Checked first: an unreadable or bundle-less
- * snapshot changes nothing.
+ * extracts. Then the files only the release being put aside shipped (its
+ * RELEASE_FILES list, less what the snapshot holds) are removed. A tree
+ * extracted before that list existed has none, and its files stay on
+ * disk, unimported; a workspace package of its own is removed before the
+ * install all the same (staleWorkspacesScript). Checked first: an
+ * unreadable or bundle-less snapshot changes nothing.
  */
 export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): string {
   return [
@@ -242,13 +258,118 @@ export function restoreScript(appDir = APP_DIR, prevTarball = PREV_TARBALL): str
     "trap 'if [ ! -f apps/web/dist/index.html ] && [ -d apps/web/dist.bad ]; then rm -rf apps/web/dist; mv apps/web/dist.bad apps/web/dist; fi' ERR",
     'rm -rf apps/web/dist.bad',
     'if [ -d apps/web/dist ]; then mv apps/web/dist apps/web/dist.bad; fi',
+    // The snapshot brings its own list (or none) back over this one.
+    `if [ -f ${RELEASE_FILES} ]; then mv -f ${RELEASE_FILES} ${RELEASE_FILES}.undo; fi`,
     `tar -xzf "${prevTarball}" -C .`,
     'test -f apps/web/dist/index.html',
     'rm -rf apps/web/dist.bad',
+    `if [ -f ${RELEASE_FILES}.undo ]; then`,
+    ...listedPathsScript(prevTarball, '\\./', `${RELEASE_FILES}.kept`).map((l) => `  ${l}`),
+    `  LC_ALL=C sort -u ${RELEASE_FILES}.undo | LC_ALL=C comm -23 - ${RELEASE_FILES}.kept > ${RELEASE_FILES}.gone`,
+    ...removePathsScript(`${RELEASE_FILES}.gone`, 'only the release put aside had it').map(
+      (l) => `  ${l}`,
+    ),
+    `  rm -f ${RELEASE_FILES}.undo ${RELEASE_FILES}.kept ${RELEASE_FILES}.gone`,
+    'fi',
     // OPS-01: the source tree is the kept release again.
     `rm -f ${INCOMPLETE_MARKER}`,
     `echo "restored $(cat apps/web/dist/build-id.txt 2>/dev/null || echo unknown-build)"`,
   ].join('\n');
+}
+
+/**
+ * Shell lines: the paths of the files in `tarball` whose names start with
+ * `prefix` (a sed pattern), without it, sorted bytewise, into `out`.
+ * Folders are left out, and names are listed as they are (GNU tar would
+ * escape a non-ASCII one). tar's own listing goes to a file first, so a
+ * tar that fails stops the script under `set -e` rather than handing on
+ * half a list.
+ */
+function listedPathsScript(tarball: string, prefix: string, out: string): string[] {
+  return [
+    `tar --quoting-style=literal -tzf "${tarball}" > ${out}.tar`,
+    `sed -n 's|^${prefix}||p' ${out}.tar | sed -e '/\\/$/d' -e '/^$/d' | LC_ALL=C sort -u > ${out}`,
+    `rm -f ${out}.tar`,
+  ];
+}
+
+/**
+ * Shell lines: remove each path listed in `list` (relative to the current
+ * folder), then each folder that left empty, and say so. Only files and
+ * links are removed, and a path that could lead out of the folder is
+ * skipped.
+ */
+function removePathsScript(list: string, why: string): string[] {
+  return [
+    'while IFS= read -r f; do',
+    '  case "$f" in "" | /* | .. | ../* | */.. | */../*) continue ;; esac',
+    '  [ -f "$f" ] || [ -L "$f" ] || continue',
+    '  rm -f -- "$f"',
+    `  echo "removed $f: ${why}"`,
+    '  d=$(dirname -- "$f")',
+    '  if [ "$d" != . ]; then rmdir -p -- "$d" 2>/dev/null || true; fi',
+    `done < ${list}`,
+  ];
+}
+
+/**
+ * Shell script: extract the release over the live tree (step 3), then
+ * remove the files the release before it shipped and this one does not,
+ * and keep this release's list for the next deploy. The first extract
+ * with a tree that has no list removes nothing. The release must list at
+ * least one file: an empty list means a broken listing, and nothing is
+ * extracted.
+ */
+export function extractScript(appDir = APP_DIR, tarball = DEPLOY_TARBALL): string {
+  return [
+    'set -e',
+    `cd "${appDir}"`,
+    ...listedPathsScript(tarball, `${RELEASE_TOP}/`, `${RELEASE_FILES}.next`),
+    `test -s ${RELEASE_FILES}.next`,
+    `tar -xzf "${tarball}" -C . --strip-components=1`,
+    `if [ -f ${RELEASE_FILES} ]; then`,
+    `  LC_ALL=C sort -u ${RELEASE_FILES} | LC_ALL=C comm -23 - ${RELEASE_FILES}.next > ${RELEASE_FILES}.gone`,
+    ...removePathsScript(`${RELEASE_FILES}.gone`, 'not in this release').map((l) => `  ${l}`),
+    `  rm -f ${RELEASE_FILES}.gone`,
+    'fi',
+    `mv -f ${RELEASE_FILES}.next ${RELEASE_FILES}`,
+  ].join('\n');
+}
+
+/**
+ * Shell script: the HTTP status the api answers /health/ready with on the
+ * server itself, past nginx, the tunnel and the Worker, asked `tries` times
+ * `gapSecs` apart: one line each, "000" when nothing answers, "none" when
+ * there is no curl. An api that crashes and restarts can answer once in a
+ * while, so one 200 says little. PORT and HOST as its unit reads them from
+ * the server .env, else the api's defaults. The deploy asks when the public
+ * URL does not answer after a restart, to tell a release that does not
+ * start from a way to it that is broken (localReadyVerdict).
+ */
+export function localReadyScript(appDir = APP_DIR, tries = 3, gapSecs = 2): string {
+  return [
+    `cd "${appDir}"`,
+    `port=$(sed -n 's/^PORT=//p' .env 2>/dev/null | tail -1 | tr -d "\\"' ")`,
+    `host=$(sed -n 's/^HOST=//p' .env 2>/dev/null | tail -1 | tr -d "\\"' ")`,
+    'case "$host" in "" | 0.0.0.0 | "::") host=127.0.0.1 ;; esac',
+    `for i in $(seq 1 ${tries}); do`,
+    `  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$host:\${port:-3000}/health/ready" 2>/dev/null || true)`,
+    '  echo "${code:-none}"',
+    `  if [ "$i" -lt ${tries} ]; then sleep ${gapSecs}; fi`,
+    'done',
+  ].join('\n');
+}
+
+/**
+ * What localReadyScript's answers say: `up` when every try answered 200
+ * (the way to the api is at fault), `down` when they all came back and
+ * one did not (the release is at fault), `unknown` when the script did not
+ * say (no curl, a broken connection).
+ */
+export function localReadyVerdict(output: string, tries = 3): 'up' | 'down' | 'unknown' {
+  const codes = output.trim().split(/\s+/).filter(Boolean);
+  if (codes.length !== tries || !codes.every((c) => /^\d{3}$/.test(c))) return 'unknown';
+  return codes.every((c) => c === '200') ? 'up' : 'down';
 }
 
 /** pnpm-workspace.yaml's `packages` globs; a test keeps the two the same. */

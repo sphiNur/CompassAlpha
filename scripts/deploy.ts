@@ -49,7 +49,8 @@
  *   2.5 keep the live release as /home/ubuntu/compass-alpha.prev.tar.gz
  *      (the rollback target — see "Rollback" below)
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
- *      until the api restart in step 4c)
+ *      until the api restart in step 4c), then remove the files the live
+ *      release shipped and this one does not (its list: .release-files)
  *   3.6 pnpm exec vite build --outDir dist.next (it needs no database,
  *      so it runs before the migrations)
  *   3.7 when a migration is pending, a backup (compass-backup.service),
@@ -57,7 +58,10 @@
  *   4b. swap the new bundle into place (dist → dist.prev, dist.next →
  *      dist). The api reads web/dist/build-id.txt for /health/version so
  *      running clients see a version mismatch and prompt reload.
- *   4c. systemctl restart compass-api compass-worker
+ *   4c. systemctl restart compass-api compass-worker, then wait for
+ *      /health/ready through the public URL. When it does not answer and
+ *      the api does not answer on the server itself either, the release
+ *      kept in step 2.5 is put back and restarted, and the deploy fails.
  *   6. Run server-side tRPC smoke locally against the public URL
  *   7. Run browser smoke locally against the public URL
  *   8. If either fails, exit non-zero; the deploy is "live" but you know
@@ -108,8 +112,11 @@ import {
   describeSnapshotScript,
   devBypassFiles,
   devBypassScript,
+  extractScript,
   hostName,
   knownHostsFile,
+  localReadyScript,
+  localReadyVerdict,
   markIncompleteScript,
   pendingMigrationTags,
   pinnedToolchain,
@@ -815,6 +822,82 @@ function abortAfterExtract(what: string, err: unknown): never {
   process.exit(1);
 }
 
+/**
+ * 2026-11-12: a release whose api did not come up after the restart stayed
+ * live for six and a half hours, the release before it waiting in the
+ * snapshot (review OPS-01). So when the api does not answer through the
+ * public URL after a restart, the deploy asks it on the server itself.
+ * When it does not answer there either, the release is at fault: the
+ * previous one is put back as `--rollback` would, restarted and waited for.
+ * When it does answer there, the release stays: after `ready` (the public
+ * URL did not answer) the way to it (nginx, the tunnel, the Worker) is at
+ * fault and a rollback would not help; after `restart` (systemctl said a
+ * unit did not come up) it is compass-worker, or an api start systemd
+ * retried. Exits 1 either way: this release was not deployed.
+ */
+async function putBackAfterFailedStart(
+  problem: string,
+  after: 'restart' | 'ready',
+): Promise<never> {
+  console.error(`\x1b[31m✖ ${problem}\x1b[0m`);
+  let local: string;
+  try {
+    local = ssh(localReadyScript()).trim();
+  } catch (err) {
+    local = String((err as Error)?.message ?? err).split('\n')[0]!;
+  }
+  const answers = local.replace(/\s+/g, ' ');
+  const verdict = localReadyVerdict(local);
+  if (verdict === 'up' && after === 'ready') {
+    console.error('  The api answers /health/ready on the server itself, so the way to it');
+    console.error('  (nginx, the tunnel, the Worker) is at fault, not the release; it stays.');
+    console.error('  Once that is fixed, check it with scripts/smoke.ts against the public URL.');
+    process.exit(1);
+  }
+  if (verdict === 'up') {
+    console.error('  The api answers /health/ready on the server itself, so what did not come');
+    console.error('  up is compass-worker, or an api start systemd retried; nothing was put');
+    console.error('  back. Look at: sudo systemctl status compass-worker compass-api');
+    console.error('  If the release is at fault: bun run scripts/deploy.ts --rollback');
+    process.exit(1);
+  }
+  if (verdict === 'unknown') {
+    console.error(`  Could not ask the api on the server (${answers}); nothing was put back.`);
+    console.error('  If the release is at fault: bun run scripts/deploy.ts --rollback');
+    process.exit(1);
+  }
+  console.error(
+    `  On the server itself /health/ready answers ${answers} (000: nothing): the release is at fault.`,
+  );
+  step('undo. put the previous release back and restart it');
+  try {
+    console.log('  ' + ssh(describeSnapshotScript()).trim().replace(/\n/g, '\n  '));
+    console.log('  ' + ssh(restoreScript()).trim().replace(/\n/g, '\n  '));
+    console.log(ssh(installScript()));
+    ssh(unitsScript());
+    ssh(
+      'sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker',
+    );
+  } catch (err) {
+    console.error('\x1b[31m✖ putting the previous release back FAILED\x1b[0m');
+    console.error(String((err as Error)?.message ?? err));
+    console.error('  Run: bun run scripts/deploy.ts --rollback');
+    process.exit(1);
+  }
+  const back = await waitUntilReady(BASE!);
+  if (!back.ok) {
+    console.error(`\x1b[31m✖ the previous release does not answer either: ${back.last}\x1b[0m`);
+    console.error('  Look at the api on the server (journalctl -u compass-api) and the way to it.');
+    process.exit(1);
+  }
+  console.error(
+    `\x1b[33m✖ DEPLOY FAILED — the previous release is live again (${BASE}/health/ready answered after ${Math.round(back.afterMs / 1000)} s).\x1b[0m`,
+  );
+  console.error('  Migrations the failed release applied stay applied (they only go forward).');
+  console.error('  The smokes did not run against it: run scripts/smoke.ts to check it.');
+  process.exit(1);
+}
+
 if (!DRY) {
   if (!ROLLBACK) {
     // Incremental upload (2026-11-06) where both ends have rsync: only
@@ -875,7 +958,9 @@ if (!DRY) {
     // OPS-01: from here until the restart, the disk is not what runs.
     ssh(markIncompleteScript(releaseSha));
     try {
-      ssh(`tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C ${APP_DIR} --strip-components=1`);
+      // Also removes the files the live release shipped and this one does not.
+      const removed = ssh(extractScript()).trim();
+      if (removed) console.log('  ' + removed.replace(/\n/g, '\n  '));
     } catch (err) {
       abortAfterExtract('extract FAILED', err);
     }
@@ -1026,22 +1111,26 @@ if (!DRY) {
       .split('\n')[0]!
       .trim();
   } catch (err) {
-    // The new code is what runs now (or fails to). `.deploy-incomplete`
+    const why = String((err as Error).message ?? err).split('\n')[0];
+    if (!ROLLBACK)
+      await putBackAfterFailedStart(
+        `api or worker did not come up after the restart: ${why}`,
+        'restart',
+      );
+    // A rollback that does not start is not put back again. `.deploy-incomplete`
     // stays, so the next deploy does not keep this tree as its rollback.
     console.error('\x1b[31m✖ api or worker did not come up after the restart\x1b[0m');
     console.error(String((err as Error).message ?? err));
-    console.error('  Put the previous release back now: bun run scripts/deploy.ts --rollback');
     process.exit(1);
   }
   // OPS-08: the smokes start once the api answers through the public URL.
   const ready = await waitUntilReady(BASE!);
   if (!ready.ok) {
-    console.error(
-      `\x1b[31m✖ ${BASE}/health/ready did not answer 200 within 90 s: ${ready.last}\x1b[0m`,
-    );
-    console.error('  The api and worker were restarted. If the release is at fault, put the');
-    console.error('  previous one back: bun run scripts/deploy.ts --rollback. If the api is');
-    console.error('  fine on the server, look at the path to it (tunnel, Worker).');
+    const problem = `${BASE}/health/ready did not answer 200 within 90 s: ${ready.last}`;
+    if (!ROLLBACK) await putBackAfterFailedStart(problem, 'ready');
+    console.error(`\x1b[31m✖ ${problem}\x1b[0m`);
+    console.error('  The restored release was restarted. If the api is fine on the server, look');
+    console.error('  at the way to it (nginx, the tunnel, the Worker).');
     process.exit(1);
   }
   console.log(`  ✓ ${BASE}/health/ready answered after ${Math.round(ready.afterMs / 1000)} s`);
