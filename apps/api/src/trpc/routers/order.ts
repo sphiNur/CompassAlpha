@@ -1547,56 +1547,78 @@ export const orderRouter = router({
     ),
   ),
 
-  withdraw: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) => {
-    // ORD-5 (2026-10-30): a withdrawn batch becomes its author's draft
-    // again, but one person has one draft per store and day. With another
-    // draft open the projection hit that unique index and answered
-    // "edited by someone else". Say what to do instead.
-    const draftOpen = await ctx.withOrg(async (tx) => {
-      const [session] = await tx
-        .select({
-          storeId: s.orderSessionsV.storeId,
-          orderDate: s.orderSessionsV.orderDate,
-          initiatedBy: s.orderSessionsV.initiatedByMemberId,
-        })
-        .from(s.orderSessionsV)
-        .where(
-          and(eq(s.orderSessionsV.orgId, ctx.session!.orgId), eq(s.orderSessionsV.id, input.sessionId)),
-        );
-      if (!session?.initiatedBy) return null;
-      const [other] = await tx
-        .select({ id: s.orderSessionsV.id })
-        .from(s.orderSessionsV)
-        .where(
-          and(
-            eq(s.orderSessionsV.orgId, ctx.session!.orgId),
-            eq(s.orderSessionsV.storeId, session.storeId),
-            eq(s.orderSessionsV.orderDate, session.orderDate),
-            eq(s.orderSessionsV.initiatedByMemberId, session.initiatedBy),
-            eq(s.orderSessionsV.status, 'draft'),
-            ne(s.orderSessionsV.id, input.sessionId),
-          ),
-        )
-        .limit(1);
-      return other ? { id: other.id, initiatedBy: session.initiatedBy } : null;
-    });
-    if (draftOpen) {
-      // RE-ORD-5 (2026-10-30): a draft its author has emptied no longer
-      // blocks — archive it and go on. One with content still does.
-      const mine = draftOpen.initiatedBy === ctx.session!.memberId;
-      try {
-        if (!mine) throw new Error('not the author');
-        await runSimpleCommand(ctx, draftOpen.id, (state, perms) =>
-          decide(state, { type: 'Archive', reason: 'empty_draft', actor: buildActor(ctx, state, perms) }),
-        );
-      } catch {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'order.errors.withdrawDraftOpen' });
+  withdraw: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
+    // Review ORD-29 (2026-11): the check for another draft, its archiving
+    // and the withdrawal are one write, decided again when it loses a race
+    // (a draft opened in between). They were three transactions, and any
+    // failure of the archiving, a database error included, was answered
+    // withdrawDraftOpen.
+    withOrderWriteRetry(ctx, async (tx) => {
+      const { session, perms, state } = await openSessionForWrite(tx, ctx, input.sessionId);
+      const out: OrderEvent[] = [];
+      // Decided first, so an order that cannot be withdrawn (claimed by a
+      // reviewer) says so rather than asking for the other draft.
+      const after = decideInto(state, out, {
+        type: 'Withdraw',
+        actor: buildActor(ctx, state, perms),
+      });
+      if (out.length === 0) return { lastSeq: state.seq };
+      // ORD-5 (2026-10-30): a withdrawn batch becomes its author's draft
+      // again, but one person has one draft per store and day. With another
+      // draft open the projection hit that unique index and answered
+      // "edited by someone else". Say what to do instead.
+      const owner = session.initiatedByMemberId;
+      const [other] = owner
+        ? await tx
+            .select({ id: s.orderSessionsV.id })
+            .from(s.orderSessionsV)
+            .where(
+              and(
+                eq(s.orderSessionsV.orgId, ctx.session!.orgId),
+                eq(s.orderSessionsV.storeId, session.storeId),
+                eq(s.orderSessionsV.orderDate, session.orderDate),
+                eq(s.orderSessionsV.initiatedByMemberId, owner),
+                eq(s.orderSessionsV.status, 'draft'),
+                ne(s.orderSessionsV.id, session.id),
+              ),
+            )
+            .limit(1)
+        : [];
+      if (other) {
+        // RE-ORD-5 (2026-10-30): a draft its author has emptied no longer
+        // blocks: it is archived and the withdrawal goes on. One with
+        // content still blocks, and so does anyone else's.
+        if (owner !== ctx.session!.memberId) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'order.errors.withdrawDraftOpen',
+          });
+        }
+        const draft = replay(other.id, await readOrderEvents(tx, other.id));
+        let archived: OrderEvent[];
+        try {
+          archived = decide(draft, {
+            type: 'Archive',
+            reason: 'empty_draft',
+            actor: buildActor(ctx, draft, perms),
+          });
+        } catch (err) {
+          if (err instanceof DomainError && err.i18nKey === 'order.errors.cannotArchive') {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'order.errors.withdrawDraftOpen',
+            });
+          }
+          rethrowDomainError(err);
+        }
+        if (archived.length > 0) {
+          await commitOrderWrite(tx, ctx, archived.reduce(apply, draft), archived);
+        }
       }
-    }
-    return runSimpleCommand(ctx, input.sessionId, (state, perms) =>
-      decide(state, { type: 'Withdraw', actor: buildActor(ctx, state, perms) }),
-    );
-  }),
+      await commitOrderWrite(tx, ctx, after, out);
+      return { lastSeq: after.seq };
+    }),
+  ),
 
   // D12 (2026-10-31): the approval toast's undo sends the lastSeq its
   // approval returned, so it only goes through while nobody else has
