@@ -63,7 +63,7 @@ import {
   type OrderEvent,
 } from '@compass/domain/order';
 import { projectRun } from '../src/services/runProjection';
-import { projectOrder } from '../src/services/orderProjection';
+import { projectOrder } from '@compass/streams';
 
 type StreamType = 'run' | 'order';
 

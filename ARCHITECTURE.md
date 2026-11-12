@@ -38,8 +38,9 @@
 | 包                   | 用途                                                                       |
 | -------------------- | -------------------------------------------------------------------------- |
 | `packages/contracts` | tRPC 路由的 Zod schema（前后端共用）                                       |
-| `packages/db`        | Drizzle schema + 69 个迁移 + RLS 策略                                      |
+| `packages/db`        | Drizzle schema + 71 个迁移 + RLS 策略                                      |
 | `packages/domain`    | 纯函数领域核心：events / decide / apply / state（无副作用，单元测试 100%） |
+| `packages/streams`   | 事件读写与订单投影、采购单认领投影（API 与 worker 共用）                   |
 | `packages/ui`        | 约 30 个组件（Radix 原语 + CVA 变体 + Tailwind）+ ThemeProvider            |
 | `packages/i18n`      | 自研轻量 ICU 解析器 + 4 个 catalog (zh/ru/uz/en)，CI 校验对齐              |
 | `packages/telemetry` | 客户端日志 + batch span，发到 api 的 `system.log` 接口                     |
@@ -127,8 +128,8 @@
 
 | 层           | 现状                                                      | 数量                                                                               |
 | ------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 单元         | Bun test（CI "type-check + unit tests"）                  | domain / contracts / db / i18n / ui / api / worker / web / scripts，约 1800 个测试 |
-| 集成（PG）   | Bun test + GitHub Actions Postgres service                | apps/api + apps/worker，约 720 个测试，含 RLS 隔离与 RLS 目录检查                  |
+| 单元         | Bun test（CI "type-check + unit tests"）                  | domain / contracts / db / i18n / ui / api / worker / web / scripts，约 2500 个测试 |
+| 集成（PG）   | Bun test + GitHub Actions Postgres service                | apps/api + apps/worker，约 900 个测试，含 RLS 隔离与 RLS 目录检查                  |
 | 契约 (tRPC)  | packages/contracts 的单元测试（进了 CI，review TEST4-01） | —                                                                                  |
 | E2E          | Playwright（CI "end-to-end (Playwright)"）                | `tests/e2e`：主流程、会话、渲染次数；部署后另跑 browser-smoke{,-deep}              |
 | 负载 (k6)    | **未实现**                                                | —                                                                                  |
@@ -336,9 +337,8 @@ apps/api/src/
 │       ├── system.ts           (log ingestion / health / version)
 │       └── upload.ts           (presigned PUT)
 ├── services/
-│   ├── eventStore.ts           # appendEvents + readStream
-│   ├── orderProjection.ts      # 事件 → read_model.order_*
-│   ├── runProjection.ts        # 事件 → read_model.run_* / run_item_*
+│   ├── runProjection.ts        # 事件 → read_model.run_* / run_item_*（事件存储与订单投影在 packages/streams）
+│   ├── streamWrite.ts          # writeRunEvents：追加 + 投影采购单事件
 │   ├── notify.ts               # In-App 通知投递
 │   ├── notifyForEvent.ts       # 事件 → 通知模板路由
 │   ├── refreshTokens.ts        # issueRefresh / consumeRefresh / 家族吊销

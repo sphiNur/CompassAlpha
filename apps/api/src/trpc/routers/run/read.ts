@@ -24,7 +24,7 @@ import {
   pricesVisibleFor,
   withoutPrices,
 } from '../../../services/priceRedaction';
-import { readRunEvents } from '../../../services/runStream';
+import { readRunEvents } from '@compass/streams';
 import {
   expensesForReader,
   itemsForStoreReader,

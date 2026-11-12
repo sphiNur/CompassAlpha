@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { closeDb, getDb, schema as s, withSystemContext, type DB } from '@compass/db';
 import {
   claimLastActiveAt,
   claimRowForUpdateSql,
   isClaimExpired,
-  nextSeq,
   releaseClaimIfExpired,
   staleClaimCandidatesSql,
 } from './claimTimeout';
@@ -48,18 +47,6 @@ describe('timestamps as raw tx.execute returns them (strings)', () => {
         timeoutMinutes: 30,
       }),
     ).toBe(true);
-  });
-});
-
-describe('nextSeq (RE-APR-1)', () => {
-  test('a bigint seq read back as a string is added, not concatenated', () => {
-    expect(nextSeq('17')).toBe(18);
-    expect(nextSeq(8)).toBe(9);
-    expect(nextSeq(0n)).toBe(1);
-  });
-  test('refuses a value that is not a seq', () => {
-    expect(() => nextSeq('abc')).toThrow();
-    expect(() => nextSeq(-1)).toThrow();
   });
 });
 
@@ -166,6 +153,9 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     activeRun: randomUUID(),
     deliveringRun: randomUUID(),
     finishedRun: randomUUID(),
+    /** Delivering, its claimer idle; released below. (Not planned: an
+     * organization has one planned or purchasing run, activeRun.) */
+    releasedRun: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -188,7 +178,7 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       { id: ids.otherMemberId, orgId: ids.orgId, userId: ids.otherUserId, status: 'active' },
     ]);
     await db.insert(s.stores).values({ id: ids.storeId, orgId: ids.orgId, name: 'Store' });
-    const session = (id: string, status = 'submitted') => ({
+    const session = (id: string, status = 'submitted', lastSeq = 3) => ({
       id,
       orgId: ids.orgId,
       storeId: ids.storeId,
@@ -196,17 +186,17 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       status,
       claimedByMemberId: ids.claimerMemberId,
       claimedAt: ago(60),
-      lastSeq: 3,
+      lastSeq,
     });
     await db.insert(s.orderSessionsV).values([
       session(ids.activeOrder),
       session(ids.idleOrder),
       session(ids.othersActivityOrder),
-      session(ids.releasedOrder),
+      session(ids.releasedOrder, 'submitted', 4),
       // Idle too, but no longer in review: never a candidate.
       session(ids.approvedOrder, 'approved'),
     ]);
-    const run = (id: string, status: string, runIndex: number) => ({
+    const run = (id: string, status: string, runIndex: number, lastSeq = 2) => ({
       id,
       orgId: ids.orgId,
       runDate: '2026-10-22',
@@ -214,13 +204,14 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       status,
       claimedByMemberId: ids.claimerMemberId,
       claimedAt: ago(60),
-      lastSeq: 2,
+      lastSeq,
     });
     await db.insert(s.marketRunsV).values([
       run(ids.activeRun, 'purchasing', 0),
       // No event from the claimer since the claim an hour ago.
       run(ids.deliveringRun, 'delivering', 1),
       run(ids.finishedRun, 'finished', 2),
+      run(ids.releasedRun, 'delivering', 3, 4),
     ]);
     const event = (
       streamType: 'order' | 'run',
@@ -246,14 +237,72 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       // Claimer's last edit was 45 minutes ago → idle.
       event('order', ids.idleOrder, 1, ids.claimerUserId, 60),
       event('order', ids.idleOrder, 2, ids.claimerUserId, 45),
-      event('order', ids.releasedOrder, 1, ids.claimerUserId, 60),
-      event('order', ids.releasedOrder, 2, ids.claimerUserId, 45),
       // Only someone else touched it recently → the claimer is idle.
       event('order', ids.othersActivityOrder, 1, ids.claimerUserId, 60),
       event('order', ids.othersActivityOrder, 2, ids.otherUserId, 2),
       // Run claimer active 5 minutes ago on the run stream.
       event('run', ids.activeRun, 1, ids.claimerUserId, 60),
       event('run', ids.activeRun, 2, ids.claimerUserId, 5),
+    ]);
+    // The streams the releases replay (review ORD-07): the domain decides a
+    // release from them, so they are the real events. The claimer's last
+    // event on each is its claim, 45 minutes ago.
+    const real = (
+      streamType: 'order' | 'run',
+      streamId: string,
+      steps: Array<[string, Record<string, unknown>, string, number]>,
+    ) =>
+      steps.map(([type, payload, actorId, minutes], i) => ({
+        ...event(streamType, streamId, i + 1, actorId, minutes),
+        type,
+        payload,
+      }));
+    await db.insert(s.events).values([
+      ...real('order', ids.releasedOrder, [
+        [
+          'DraftStarted',
+          {
+            orgId: ids.orgId,
+            storeId: ids.storeId,
+            initiatedByMemberId: ids.otherMemberId,
+            orderDate: '2026-10-22',
+          },
+          ids.otherUserId,
+          70,
+        ],
+        [
+          'ItemAdjusted',
+          {
+            skuId: randomUUID(),
+            qty: '1',
+            prevQty: '0',
+            byMemberId: ids.otherMemberId,
+            forMemberId: ids.otherMemberId,
+          },
+          ids.otherUserId,
+          70,
+        ],
+        ['Submitted', { itemCount: 1, byMemberId: ids.otherMemberId }, ids.otherUserId, 65],
+        ['Claimed', { byMemberId: ids.claimerMemberId }, ids.claimerUserId, 45],
+      ]),
+      ...real('run', ids.releasedRun, [
+        [
+          'RunPlanned',
+          {
+            orgId: ids.orgId,
+            runDate: '2026-10-22',
+            runIndex: 3,
+            sessionIds: [],
+            plannedItems: [{ skuId: randomUUID(), qty: '1' }],
+            purchaserMemberId: ids.claimerMemberId,
+          },
+          ids.otherUserId,
+          70,
+        ],
+        ['PurchaseStarted', {}, ids.otherUserId, 65],
+        ['DeliveryStarted', {}, ids.otherUserId, 50],
+        ['RunClaimed', { byMemberId: ids.claimerMemberId }, ids.claimerUserId, 45],
+      ]),
     ]);
   });
 
@@ -294,10 +343,6 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     // Raw execute returns timestamptz as a string, not a Date; the
     // helpers must accept that (the old `claimed_at.getTime()` threw).
     expect(typeof row!.claimed_at).toBe('string');
-    // RE-APR-1: last_seq (bigint) also comes back as a string; the next
-    // event's seq must be numeric, not "<seq>1".
-    const seqRow = row as unknown as { last_seq: string | number };
-    expect(nextSeq(seqRow.last_seq)).toBe(Number(seqRow.last_seq) + 1);
     expect(row!.last_claimer_event_at).not.toBeNull();
     expect(
       isClaimExpired({
@@ -328,5 +373,69 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       ),
     );
     expect((queued as unknown as Array<{ n: number }>)[0]!.n).toBe(0);
+  });
+
+  /** The event a release appended, and the claim columns after it. */
+  const releaseOf = async (
+    table: typeof s.orderSessionsV | typeof s.marketRunsV,
+    id: string,
+    seq: number,
+  ) => {
+    const [event] = await db
+      .select({ type: s.events.type, payload: s.events.payload, actorId: s.events.actorId })
+      .from(s.events)
+      .where(and(eq(s.events.streamId, id), eq(s.events.seq, seq)));
+    const [row] = await db
+      .select({
+        claimedByMemberId: table.claimedByMemberId,
+        claimedAt: table.claimedAt,
+        previousClaimerMemberId: table.previousClaimerMemberId,
+        lastSeq: table.lastSeq,
+      })
+      .from(table)
+      .where(eq(table.id, id));
+    return { event, row };
+  };
+
+  test('ORD-07: the order release is the domain event, projected like the API projects it', async () => {
+    // Released by the D13 test above, after the claim at seq 4.
+    expect(await releaseOf(s.orderSessionsV, ids.releasedOrder, 5)).toEqual({
+      event: {
+        type: 'ClaimReleased',
+        payload: { byMemberId: null, reason: 'timeout' },
+        actorId: null,
+      },
+      row: {
+        claimedByMemberId: null,
+        claimedAt: null,
+        previousClaimerMemberId: ids.claimerMemberId,
+        lastSeq: 5,
+      },
+    });
+  });
+
+  test('ORD-07: an idle run claim is released the same way', async () => {
+    const released = await withSystemContext(db, 'worker', (tx) =>
+      releaseClaimIfExpired(tx, 'run', { id: ids.releasedRun, orgId: ids.orgId }, 30),
+    );
+    expect(released).toBe(true);
+    expect(await releaseOf(s.marketRunsV, ids.releasedRun, 5)).toEqual({
+      event: {
+        type: 'RunClaimReleased',
+        payload: { byMemberId: null, reason: 'timeout' },
+        actorId: null,
+      },
+      row: {
+        claimedByMemberId: null,
+        claimedAt: null,
+        previousClaimerMemberId: ids.claimerMemberId,
+        lastSeq: 5,
+      },
+    });
+    // Nothing more to release.
+    const again = await withSystemContext(db, 'worker', (tx) =>
+      releaseClaimIfExpired(tx, 'run', { id: ids.releasedRun, orgId: ids.orgId }, 30),
+    );
+    expect(again).toBe(false);
   });
 });
