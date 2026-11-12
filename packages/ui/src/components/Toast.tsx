@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { cn } from '../cn.js';
+import { cn } from '../cn';
 import { useSheetCount } from './Sheet';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
@@ -67,6 +67,23 @@ const TONE: Record<ToastTone, string> = {
   danger:
     'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)] ring-1 ring-[var(--c-danger)]',
 };
+
+/**
+ * Review UI-22 (2026-11-12): how a toast is announced. An error
+ * interrupts what the screen reader is saying; anything else waits.
+ * Exported for tests.
+ */
+export function toastLiveness(tone: ToastTone): 'assertive' | 'polite' {
+  return tone === 'danger' ? 'assertive' : 'polite';
+}
+
+/** One live region of the stack: its toasts, newest on top, 8 px apart. */
+const TOAST_REGION_STYLE = {
+  display: 'flex',
+  flexDirection: 'column-reverse',
+  alignItems: 'center',
+  gap: 8,
+} as const;
 
 /**
  * U11 (2026-10-31): where toasts go while a sheet is open. They sat above
@@ -287,13 +304,84 @@ export function ToastProvider({
     [show, dismiss],
   );
 
+  const renderToast = (t: ToastConfig) =>
+    t.actions ? (
+      <div
+        key={t.id}
+        onPointerEnter={() => pause(t.id)}
+        onPointerLeave={(e) => resume(t.id, e.currentTarget)}
+        onFocus={() => pause(t.id)}
+        onBlur={(e) => {
+          const el = e.currentTarget;
+          // Focus moving to the toast's other button keeps it paused.
+          if (!el.contains(e.relatedTarget as Node | null)) {
+            setTimeout(() => resume(t.id, el), 0);
+          }
+        }}
+        className={cn(
+          'flex min-w-[200px] max-w-[92vw] items-center gap-3 rounded-[var(--r-card)] px-4 py-2.5 text-left',
+          TONE[t.tone],
+        )}
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div className="min-w-0 flex-1">
+          {t.title ? (
+            <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
+          ) : null}
+          {t.message ? <div className="text-old-body-sm leading-snug">{t.message}</div> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {t.actions.map((a, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                a.onClick?.();
+                dismiss(t.id);
+              }}
+              className={cn(
+                // hit-44 (R2-VIS-2): 32px to look at, 44 to tap; the
+                // toast's 10px padding leaves room for the area.
+                'press hit-44 h-8 rounded-[var(--r-pill)] px-3 text-old-label font-semibold',
+                a.emphasis === 'primary'
+                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
+              )}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <button
+        key={t.id}
+        type="button"
+        onClick={() => {
+          t.onClick?.();
+          dismiss(t.id);
+        }}
+        className={cn(
+          // min-h-11 (R2-VIS-2): a one-line toast was 37px tall.
+          'press min-h-11 min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
+          TONE[t.tone],
+        )}
+        style={{ pointerEvents: 'auto' }}
+      >
+        {t.title ? (
+          <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
+        ) : null}
+        <div className="text-old-body-sm leading-snug">{t.message}</div>
+      </button>
+    );
+  const urgent = toasts.filter((t) => toastLiveness(t.tone) === 'assertive');
+  const calm = toasts.filter((t) => toastLiveness(t.tone) === 'polite');
+
   return (
     <ToastContext.Provider value={value}>
       {children}
       <div
         ref={stackRef}
-        aria-live="polite"
-        aria-atomic="true"
         data-toast-stack=""
         style={{
           // BOTTOM-anchored: Telegram's top chrome (Close + ⋯ + ⋄)
@@ -313,87 +401,34 @@ export function ToastProvider({
           display: 'flex',
           flexDirection: 'column-reverse',
           alignItems: 'center',
-          gap: 8,
           pointerEvents: 'none',
           zIndex: 100,
           paddingLeft: 'max(12px, var(--app-safe-left, 0px))',
           paddingRight: 'max(12px, var(--app-safe-right, 0px))',
         }}
       >
-        {toasts.map((t) =>
-          t.actions ? (
-            <div
-              key={t.id}
-              role="status"
-              onPointerEnter={() => pause(t.id)}
-              onPointerLeave={(e) => resume(t.id, e.currentTarget)}
-              onFocus={() => pause(t.id)}
-              onBlur={(e) => {
-                const el = e.currentTarget;
-                // Focus moving to the toast's other button keeps it paused.
-                if (!el.contains(e.relatedTarget as Node | null)) {
-                  setTimeout(() => resume(t.id, el), 0);
-                }
-              }}
-              className={cn(
-                'flex min-w-[200px] max-w-[92vw] items-center gap-3 rounded-[var(--r-card)] px-4 py-2.5 text-left',
-                TONE[t.tone],
-              )}
-              style={{ pointerEvents: 'auto' }}
-            >
-              <div className="min-w-0 flex-1">
-                {t.title ? (
-                  <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
-                ) : null}
-                {t.message ? (
-                  <div className="text-old-body-sm leading-snug">{t.message}</div>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {t.actions.map((a, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => {
-                      a.onClick?.();
-                      dismiss(t.id);
-                    }}
-                    className={cn(
-                      // hit-44 (R2-VIS-2): 32px to look at, 44 to tap; the
-                      // toast's 10px padding leaves room for the area.
-                      'press hit-44 h-8 rounded-[var(--r-pill)] px-3 text-old-label font-semibold',
-                      a.emphasis === 'primary'
-                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
-                    )}
-                  >
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => {
-                t.onClick?.();
-                dismiss(t.id);
-              }}
-              className={cn(
-                // min-h-11 (R2-VIS-2): a one-line toast was 37px tall.
-                'press min-h-11 min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
-                TONE[t.tone],
-              )}
-              style={{ pointerEvents: 'auto' }}
-            >
-              {t.title ? (
-                <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
-              ) : null}
-              <div className="text-old-body-sm leading-snug">{t.message}</div>
-            </button>
-          ),
-        )}
+        {/*
+          Review UI-22 (2026-11-12): the stack was ONE live region with
+          aria-atomic, so every new toast read the whole stack again, and a
+          toast with buttons was a second (role="status") region inside it.
+          Now two regions, both always on the page (a region that arrives
+          with its text is often not read): errors interrupt (assertive),
+          the rest wait their turn (polite), and each reads only the toast
+          just added. Errors sit nearest the bottom, the rest above them,
+          each group in the order shown.
+        */}
+        <div aria-live="assertive" style={TOAST_REGION_STYLE}>
+          {urgent.map(renderToast)}
+        </div>
+        <div
+          aria-live="polite"
+          style={{
+            ...TOAST_REGION_STYLE,
+            marginBottom: urgent.length > 0 && calm.length > 0 ? 8 : 0,
+          }}
+        >
+          {calm.map(renderToast)}
+        </div>
       </div>
     </ToastContext.Provider>
   );

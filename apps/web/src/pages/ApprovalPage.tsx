@@ -667,8 +667,10 @@ export function ApprovalPage() {
                       {/* UI-2 (declutter): status is stated once — by the
                           已拒绝 tab and the danger-tone box. The callout
                           shows only the reason; previously it doubled
-                          "已拒绝" in both the title and the body line. */}
-                      <Banner tone="danger">
+                          "已拒绝" in both the title and the body line.
+                          A note, not an alert (UI-22): the rejected tab
+                          draws one per card, all at once. */}
+                      <Banner tone="danger" role="note">
                         {row.rejectReason
                           ? row.rejectReason
                           : i18n.t('order.status.rejectedNoReason')}

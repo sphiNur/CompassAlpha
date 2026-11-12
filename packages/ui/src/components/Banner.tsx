@@ -8,6 +8,11 @@ export interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title
   action?: ReactNode;
 }
 
+/** The live-region role a banner of this tone gets. Exported for tests. */
+export function bannerRole(tone: NonNullable<BannerProps['tone']>): 'alert' | 'status' {
+  return tone === 'danger' ? 'alert' : 'status';
+}
+
 const TONE: Record<NonNullable<BannerProps['tone']>, string> = {
   info: 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
   // V7: status tints and inks are tokens so they follow the dark theme.
@@ -19,7 +24,11 @@ const TONE: Record<NonNullable<BannerProps['tone']>, string> = {
 export function Banner({ className, tone = 'info', title, action, children, ...rest }: BannerProps) {
   return (
     <div
-      role="status"
+      // Review UI-22 (2026-11-12): a danger banner (a failed load, a
+      // refused action) is an alert, read out at once, also when it
+      // arrives with its text (a polite status often is not). Every
+      // other tone stays a status; a caller's `role` wins.
+      role={bannerRole(tone)}
       // M3.16 (2026-05-16): py-3 → py-2.5. Most banners (the "How
       // permissions work" explainer on Roles, the "已通过·等待采购"
       // success on Order, etc.) sit above content lists and were
