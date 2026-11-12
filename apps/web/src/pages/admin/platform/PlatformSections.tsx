@@ -14,9 +14,8 @@ import {
   Sheet,
   useToast,
 } from '@compass/ui';
-import type { RouterOutputs } from '@compass/api/src/trpc/outputs';
 import { SubscriptionStatusSchema, type SubscriptionStatus } from '@compass/contracts/schemas/auth';
-import { trpc } from '../../../lib/trpc';
+import { trpc, type RouterOutputs } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { planName } from '../../../lib/planName';
 import { subscriptionStatusLabel } from '../../../lib/statusLabels/subscription';

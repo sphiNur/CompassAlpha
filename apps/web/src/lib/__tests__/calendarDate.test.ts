@@ -5,7 +5,15 @@
  * Date parts.
  */
 import { describe, expect, test } from 'bun:test';
-import { calendarParts, isoDate, localDateValue, orgMonth, orgToday } from '../calendarDate';
+import {
+  addDays,
+  calendarParts,
+  isoDate,
+  localDateValue,
+  mondayOf,
+  orgMonth,
+  orgToday,
+} from '../calendarDate';
 
 // 2026-10-31 20:30 UTC = 1 Nov 01:30 in Tashkent (UTC+5), 31 Oct 16:30 in
 // New York: the org has moved to a new day, and a new month.
@@ -49,5 +57,24 @@ describe('calendarParts / isoDate / localDateValue', () => {
   test('localDateValue is the zone (or phone) calendar date', () => {
     expect(localDateValue(LATE, 'Asia/Tashkent')).toBe('2026-11-01');
     expect(localDateValue(new Date(2026, 9, 21, 23, 59))).toBe('2026-10-21');
+  });
+});
+
+// 2026-11-12: the attendance screens' day arithmetic, which AttendanceSettings
+// borrowed from AttendanceManage.
+describe('addDays / mondayOf', () => {
+  test('moves across months, years and a leap day', () => {
+    expect(addDays('2026-01-31', 1)).toBe('2026-02-01');
+    expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
+    expect(addDays('2024-02-28', 1)).toBe('2024-02-29');
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+    expect(addDays('2026-11-13', 0)).toBe('2026-11-13');
+  });
+
+  test('a week starts on Monday, and Sunday is its last day', () => {
+    expect(mondayOf('2026-11-09')).toBe('2026-11-09'); // Monday
+    expect(mondayOf('2026-11-13')).toBe('2026-11-09'); // Friday
+    expect(mondayOf('2026-11-15')).toBe('2026-11-09'); // Sunday
+    expect(mondayOf('2027-01-02')).toBe('2026-12-28'); // across the year
   });
 });

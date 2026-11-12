@@ -7,7 +7,6 @@
  * enrollment shows here, and a manager can ask for it again.
  */
 import { useState } from 'react';
-import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
 import {
   ATTENDANCE_GRACE_MINUTES,
   ATTENDANCE_OVERTIME_AFTER_MINUTES,
@@ -22,14 +21,13 @@ import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
 import { sheetMemberOrder } from '../../lib/attendanceFormat';
 import { useErrToast } from '../../hooks/useErrToast';
 import { GeoMap } from '../../components/geo/GeoMap';
-import type { AttendancePolicyData } from '@compass/api/src/trpc/routers/attendance';
-import { trpc } from '../../lib/trpc';
-import { orgToday } from '../../lib/calendarDate';
+import { trpc, type RouterOutputs } from '../../lib/trpc';
+import { addDays, orgToday } from '../../lib/calendarDate';
 import { useAuthStore } from '../../stores/authStore';
 import { nativeConfirm } from '../admin/shared';
-import { addDays } from './AttendanceManage';
+import { EnrollPhotos } from './AttendancePhotos';
 
-type Policy = AttendancePolicyData;
+type Policy = RouterOutputs['attendance']['policyGet'];
 
 export function AttendanceSettings({ storeId }: { storeId: string }) {
   return (
@@ -202,32 +200,6 @@ function FaceEnrollLine({
         ) : null}
       </div>
       {show && inUse ? <EnrollPhotos photos={inUse.photos} name={name} /> : null}
-    </div>
-  );
-}
-
-/** An enrollment's six photos in a row. */
-export function EnrollPhotos({
-  photos,
-  name,
-}: {
-  photos: { pose: EnrollPose; src: string }[];
-  name: string;
-}) {
-  const i18n = useI18n();
-  return (
-    <div className="grid grid-cols-5 gap-1">
-      {photos.map((p) => (
-        <img
-          key={p.pose}
-          src={p.src}
-          alt={i18n.t('attendance.enroll.photoAlt', {
-            name,
-            pose: i18n.t(`attendance.enroll.pose.${p.pose}`),
-          })}
-          className="aspect-[3/4] w-full rounded-[var(--r-utility)] object-cover"
-        />
-      ))}
     </div>
   );
 }

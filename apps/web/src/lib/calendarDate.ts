@@ -54,6 +54,19 @@ export function isoDate(y: number, m: number, d: number): string {
   return `${dt.getUTCFullYear()}-${mm}-${dd}`;
 }
 
+/** `date` (`YYYY-MM-DD`) moved by `days` on the calendar; negative goes back. */
+export function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return isoDate(y, m, d + days);
+}
+
+/** Monday of the week that holds `date` (`YYYY-MM-DD`). */
+export function mondayOf(date: string): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
+  return addDays(date, -((weekday + 6) % 7));
+}
+
 /** `YYYY-MM-DD` of `date` on the zone's calendar, or on the phone's. */
 export function localDateValue(date: Date, timeZone?: string): string {
   const { y, m, d } = calendarParts(date, timeZone);

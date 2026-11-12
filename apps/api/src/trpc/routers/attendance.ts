@@ -13,10 +13,11 @@
  *   cannot read the Wi-Fi name and shop broadband addresses change.)
  * - Punches are never deleted; a correction voids one (trigger-enforced).
  * - Face only (owner decisions 2026-11-06): every self punch is checked by
- *   face in every store. A person first enrolls their face (six guided
- *   photos), a store manager approves it, and only then can they clock; a
- *   face that is not theirs is refused. Without a camera that works, a
- *   colleague's phone or a manager's manual punch is the way.
+ *   face in every store. A person first enrolls their face (guided photos
+ *   around a ring of poses: ENROLL_POSES, four of them required), a store
+ *   manager approves it, and only then can they clock; a face that is not
+ *   theirs is refused. Without a camera that works, a colleague's phone or
+ *   a manager's manual punch is the way.
  */
 import { createHash } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
@@ -909,8 +910,6 @@ async function loadSheet(ctx: RequestContext, input: z.infer<typeof AttendanceSh
   });
 }
 
-export type AttendanceSheetData = Awaited<ReturnType<typeof loadSheet>>;
-
 async function loadPolicyView(ctx: RequestContext, storeId: string) {
   const session = ctx.session!;
   return ctx.withOrg(async (tx) => {
@@ -919,8 +918,6 @@ async function loadPolicyView(ctx: RequestContext, storeId: string) {
     return policyView(row);
   });
 }
-
-export type AttendancePolicyData = Awaited<ReturnType<typeof loadPolicyView>>;
 
 /**
  * A month of the sheet for the spreadsheet export, checked against the

@@ -7,6 +7,16 @@ import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
 
+/**
+ * What each procedure returns, as a page receives it (JSON, so a date is a
+ * string). A page names an output by its procedure, e.g.
+ * `RouterOutputs['attendance']['sheet']`, instead of importing the API's
+ * own types: this file is where the web reaches into the API. Review
+ * ATT-12 (2026-11-12): two attendance pages imported theirs from the
+ * router's file.
+ */
+export type { RouterOutputs } from '@compass/api/src/trpc/outputs';
+
 // VITE_API_URL is empty in production: the api serves the web app
 // itself, so both are on one origin. `||` (not `??`) so empty-string
 // falls back to '' rather than becoming '(empty)/trpc'.

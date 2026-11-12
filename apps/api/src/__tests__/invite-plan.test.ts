@@ -1,5 +1,5 @@
 /**
- * Review ADM1-12 (2026-11-13): an invite link and an invite by Telegram ID
+ * Review ADM1-12 (2026-11-12): an invite link and an invite by Telegram ID
  * give the same stores and role bindings for the same request. They were
  * worked out in two copies that had drifted (routers/admin/invitePlan.ts
  * now decides both). The link keeps them on the invite until it is

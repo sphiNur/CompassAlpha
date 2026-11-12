@@ -5,7 +5,7 @@
  * the photos, then lets the punch stand or voids it with a reason.
  *
  * Face enrollments (2026-11-06) wait here too: the manager compares the
- * six photos with the person they know and approves, or sends them back
+ * photos with the person they know and approves, or sends them back
  * with a reason. Nobody approves their own.
  */
 import { useState } from 'react';
@@ -14,8 +14,8 @@ import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
 import { useErrToast } from '../../hooks/useErrToast';
 import { trpc } from '../../lib/trpc';
-import { FACE_TONE, LIVE_TONE, PunchPhotoStrip } from './AttendanceManage';
-import { EnrollPhotos } from './AttendanceSettings';
+import { FACE_TONE, LIVE_TONE } from '../../lib/attendanceFormat';
+import { EnrollPhotos, PunchPhotoStrip } from './AttendancePhotos';
 
 export function AttendanceReview({ storeId }: { storeId: string }) {
   const i18n = useI18n();
