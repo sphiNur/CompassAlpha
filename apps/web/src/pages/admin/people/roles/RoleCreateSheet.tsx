@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Field, Input, LoadingState, SectionLabel, Sheet, useToast } from '@compass/ui';
+import {
+  Button,
+  Field,
+  Input,
+  LoadingState,
+  QueryErrorBanner,
+  SectionLabel,
+  Sheet,
+  useToast,
+} from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { SLUG_MESSAGE } from '@compass/contracts/limits';
 import { trpc } from '../../../../lib/trpc';
@@ -182,6 +191,10 @@ export function RoleCreateSheet({
           </SectionLabel>
           {permsQuery.isLoading ? (
             <LoadingState variant="compact" />
+          ) : permsQuery.isError && !permsQuery.data ? (
+            // Review ADM1-22 (2026-11-12): a failed load showed no
+            // permissions at all.
+            <QueryErrorBanner query={permsQuery} />
           ) : (
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (

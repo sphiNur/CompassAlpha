@@ -173,6 +173,10 @@ export function ManualInviteSheet({
           >
             {rolesQuery.isLoading ? (
               <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
+            ) : rolesQuery.isError && !rolesQuery.data ? (
+              // Review ADM1-22 (2026-11-12): a failed load left only "no
+              // role yet" to pick.
+              <QueryErrorBanner query={rolesQuery} />
             ) : (
               <Select
                 value={draft.roleSlug}

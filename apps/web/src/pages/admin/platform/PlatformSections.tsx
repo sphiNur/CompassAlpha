@@ -8,6 +8,7 @@ import {
   CardTitle,
   Checkbox,
   DataState,
+  EmptyState,
   Field,
   Input,
   Select,
@@ -48,9 +49,9 @@ export function PlatformSection() {
       <DataState
         query={orgs}
         emptyWhen={(rows) => rows.length === 0}
-        empty={
-          <p className="text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('platform.empty')}</p>
-        }
+        // Review ADM1-22 (2026-11-12): the kit's empty state (UI-15), not a
+        // bare line.
+        empty={<EmptyState compact title={i18n.t('platform.empty')} />}
       >
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">

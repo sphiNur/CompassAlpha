@@ -1,4 +1,11 @@
-import { Button, ListRow, SectionLabel, useToast, rowGroupClass } from '@compass/ui';
+import {
+  Button,
+  ListRow,
+  QueryErrorBanner,
+  SectionLabel,
+  useToast,
+  rowGroupClass,
+} from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
 import { formatList } from '../../../../lib/listFormat';
 import { useErrToast } from '../../../../hooks/useErrToast';
@@ -33,6 +40,15 @@ export function PendingInvitesList({ enabled }: { enabled: boolean }) {
     },
   });
   const invites = invitesQuery.data ?? [];
+  // Review ADM1-22 (2026-11-12): a failed load showed nothing, as if there
+  // were no pending invites.
+  if (invitesQuery.isError && !invitesQuery.data) {
+    return (
+      <div className="mt-3">
+        <QueryErrorBanner query={invitesQuery} />
+      </div>
+    );
+  }
   if (invites.length === 0) return null;
 
   return (

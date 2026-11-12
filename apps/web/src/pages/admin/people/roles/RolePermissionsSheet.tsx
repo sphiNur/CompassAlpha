@@ -308,7 +308,13 @@ export function RolePermissionsSheet({
               {roleText.description(detail.data)}
             </p>
           ) : null}
-          {grouped.length === 0 ? (
+          {editing && permsQuery.isLoading ? (
+            <LoadingState variant="compact" />
+          ) : editing && permsQuery.isError && !permsQuery.data ? (
+            // Review ADM1-22 (2026-11-12): a failed load of the permission
+            // list read "no permissions assigned".
+            <QueryErrorBanner query={permsQuery} />
+          ) : grouped.length === 0 ? (
             <p className="text-old-body text-[var(--c-fg-muted)]">
               {i18n.t('people.noPermsAssigned')}
             </p>

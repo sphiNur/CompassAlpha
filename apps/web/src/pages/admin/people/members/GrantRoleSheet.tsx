@@ -5,6 +5,7 @@ import {
   Checkbox,
   FieldGroup,
   LoadingState,
+  QueryErrorBanner,
   Segmented,
   Sheet,
   useToast,
@@ -303,6 +304,10 @@ export function GrantRoleSheet({
           </p>
         ) : rolesQuery.isLoading ? (
           <LoadingState variant="inline" label={i18n.t('admin.label.loadingRoles')} />
+        ) : rolesQuery.isError && !rolesQuery.data ? (
+          // Review ADM1-22 (2026-11-12): a failed load read "no role you
+          // can grant here".
+          <QueryErrorBanner query={rolesQuery} />
         ) : grantableRoles.length === 0 ? (
           <Banner tone="warn" title={i18n.t('people.noGrantableTitle')}>
             {scopeMode === 'global'

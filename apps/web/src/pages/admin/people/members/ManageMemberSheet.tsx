@@ -6,6 +6,7 @@ import {
   FieldGroup,
   Input,
   LoadingState,
+  QueryErrorBanner,
   Sheet,
   useToast,
 } from '@compass/ui';
@@ -161,6 +162,12 @@ export function ManageMemberSheet({
           <FieldGroup label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
               <LoadingState variant="inline" />
+            ) : storesQuery.isError && !storesQuery.data ? (
+              // Review ADM1-22 (2026-11-12): a failed load read "no stores
+              // in the workspace".
+              <QueryErrorBanner query={storesQuery} />
+            ) : assignmentsQuery.isError && !assignmentsQuery.data ? (
+              <QueryErrorBanner query={assignmentsQuery} />
             ) : (
               <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
                 {(storesQuery.data ?? []).map((st) => {
