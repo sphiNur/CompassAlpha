@@ -309,8 +309,13 @@ apps/api/src/
 │       │       overrides / stores / catalog / expenseTemplates / audit /
 │       │       maintenance.ts
 │       ├── attendance.ts       (考勤：打卡、排班、考勤表)
-│       ├── auth.ts             (telegramLogin / refresh / me / signOut /
-│       │                        setLocale / completeOnboarding)
+│       ├── auth/               (登录与会话，COREAPI-09 按流程拆分；路径仍是 auth.<name>)
+│       │   ├── index.ts        (把各文件的 procedure 展开成一个 router)
+│       │   ├── limits.ts       (各登录入口按地址限频)
+│       │   ├── modes.ts        (本服务器开放哪些登录方式：loginModes / nonTelegramStatus)
+│       │   ├── loginResult.ts  (登录返回的令牌和会话；换组织时结束旧的刷新链)
+│       │   └── telegram / invite / refresh / organizations / account /
+│       │       dev / nonTelegram.ts
 │       ├── order.ts            (todaySession / adjustItem / submit /
 │       │                        approve / reject / claim / withdraw / unapprove)
 │       ├── run.ts              (previewCreatable / create / purchaseItem /
@@ -334,6 +339,7 @@ apps/api/src/
 │   ├── refreshTokens.ts        # issueRefresh / consumeRefresh / 家族吊销
 │   ├── rateLimit.ts            # 进程内固定窗口
 │   ├── s3.ts                   # 自研 SigV4 presigned PUT
+│   ├── sessionPayload.ts       # 客户端拿到的会话：成员身份、门店、各店权限
 │   ├── storeScope.ts           # RBAC + override per-store 评估
 │   └── telegramAuth.ts         # initData HMAC + timing-safe
 └── realtime/

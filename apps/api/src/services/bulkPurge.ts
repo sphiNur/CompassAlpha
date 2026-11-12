@@ -10,7 +10,7 @@
  * .env sets COMPASS_ALLOW_BULK_PURGE=true for the maintenance window.
  *
  * Production = NODE_ENV=production or COMPASS_RELEASE_CHANNEL=production
- * (either one; the same reading auth.ts uses for dev login).
+ * (either one; dev login reads the same two, in routers/auth/modes.ts).
  *
  * The per-item deletes on the maintenance page (one order, one run) are
  * not covered: they refuse other people's records by themselves (CAT-3,
