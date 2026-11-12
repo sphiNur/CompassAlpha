@@ -15,14 +15,27 @@ const MINUTE = 60_000;
 // router keeps reading it from here.
 export { nextDate, zonedTimeToUtc };
 
+/**
+ * One formatter per time zone, as shared/clock keeps its own (review
+ * ATT-09): the month's sheet and its export call localTime for every
+ * punch and shift, and building an Intl.DateTimeFormat costs far more
+ * than formatting with one.
+ */
+const timeFmtCache = new Map<string, Intl.DateTimeFormat>();
+
 /** `HH:MM` of an instant in `tz`. */
 export function localTime(at: Date, tz: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz,
-    hourCycle: 'h23',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(at);
+  let fmt = timeFmtCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    timeFmtCache.set(tz, fmt);
+  }
+  return fmt.format(at);
 }
 
 /** A planned shift's instants; an end at or before the start ends next day. */

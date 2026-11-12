@@ -28,6 +28,13 @@ describe('local time', () => {
     expect(at('2026-11-05', '09:00').toISOString()).toBe('2026-11-05T04:00:00.000Z');
     expect(localTime(at('2026-11-05', '21:30'), TZ)).toBe('21:30');
   });
+  test('each zone keeps its own clock (one cached formatter per zone, ATT-09)', () => {
+    const instant = new Date('2026-11-05T04:00:00.000Z');
+    expect(localTime(instant, TZ)).toBe('09:00');
+    expect(localTime(instant, 'Europe/Moscow')).toBe('07:00');
+    expect(localTime(instant, TZ)).toBe('09:00');
+    expect(localTime(new Date('2026-11-05T19:05:00.000Z'), 'Europe/Moscow')).toBe('22:05');
+  });
   test('DST zone resolves on both sides of the change', () => {
     expect(zonedTimeToUtc('2026-07-01', '09:00', 'Europe/Moscow').toISOString()).toBe(
       '2026-07-01T06:00:00.000Z',
