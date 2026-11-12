@@ -4,6 +4,7 @@ import {
   cleanExtraRows,
   extraLinesToSave,
   isInvalidExtraRow,
+  otherSuggestions,
   wholeNumberRequired,
   type ExtraDraft,
   type ExtraLine,
@@ -72,5 +73,23 @@ describe('the rows a save sends', () => {
   test('a quantity past the server bound is flagged before saving', () => {
     expect(isInvalidExtraRow(row('Rice', '1000000', 'kg'))).toBe(true);
     expect(isInvalidExtraRow(row('Rice', '999999', 'kg'))).toBe(false);
+  });
+});
+
+// Review ORD-24 (2026-11): suggestions keep the case people wrote; the one
+// matching what is typed was still offered unless typed in lower case.
+describe('the name suggestions offered', () => {
+  const used = [
+    { name: 'Lauk', count: 4 },
+    { name: 'Lavash', count: 2 },
+    { name: '', count: 1 },
+  ];
+  test('leave out the name typed, whatever its case', () => {
+    expect(otherSuggestions(used, 'Lauk').map((s) => s.name)).toEqual(['Lavash']);
+    expect(otherSuggestions(used, ' lauk ').map((s) => s.name)).toEqual(['Lavash']);
+    expect(otherSuggestions(used, 'LAVASH').map((s) => s.name)).toEqual(['Lauk']);
+  });
+  test('keep the others, and never an empty name', () => {
+    expect(otherSuggestions(used, 'La').map((s) => s.name)).toEqual(['Lauk', 'Lavash']);
   });
 });

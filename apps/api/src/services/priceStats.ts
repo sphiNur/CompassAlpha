@@ -2,10 +2,12 @@
  * Shared price-history aggregation.
  *
  * Extracted 2026-07-30 from `catalog.skuPriceStats`, which was the only
- * caller until `order.pendingList` needed the same 7-day mean to put an
+ * caller until `order.pendingList` needed the same figures to put an
  * estimated value on each approval card. Duplicating the 30-line
  * accumulator in a second router is how the two figures would eventually
- * disagree, so both now read from here.
+ * disagree, so both now read from here. Estimates go by the last price
+ * paid since 2026-10-11 (see estimateLines), which the order screens read
+ * on its own (loadSkuLastPrices, review ORD-26).
  *
  * Why aggregate in JS rather than SQL: the window logic (last / 7d mean /
  * 30d mean, all from one scan) stays legible, one round-trip covers every
@@ -29,6 +31,14 @@ export interface SkuPriceStat {
   avg7d: number | null;
   avg30d: number | null;
   observations30d: number;
+}
+
+/** A product's last price paid (see loadSkuLastPrices). */
+export interface SkuLastPrice {
+  skuId: string;
+  /** Rounded to cents (ORD-01): a decimal string with two decimals. */
+  lastPrice: string;
+  lastObservedAt: Date;
 }
 
 /**
@@ -108,18 +118,55 @@ export async function loadSkuPriceStats(
     });
   }
 
-  // 2026-10-11: the last price is what a budget is made of (see
-  // estimateLines), so it must not stop existing after 30 days, and it
-  // must be the price of the last PURCHASE rather than of one row: a
-  // purchase split between stores at different prices writes a row per
-  // store at the same instant, and those are weighed by quantity. A
-  // corrected price is a later row, so it replaces the mistake here even
-  // though the mistake stays in the averages above.
-  //
-  // ORD-01 (2026-11-09): rounded to cents here, once. The server's
-  // estimates used the weighted price unrounded (10000.666…) while the
-  // web got it from catalog.skuPriceStats rounded, so the same order was
-  // estimated a cent apart.
+  for (const r of await latestPrices(db, orgId, skuIds)) {
+    const stat = out.get(r.skuId);
+    if (stat) {
+      stat.lastPrice = r.lastPrice;
+      stat.lastObservedAt = r.lastObservedAt;
+    } else {
+      out.set(r.skuId, {
+        ...r,
+        avg7d: null,
+        avg30d: null,
+        observations30d: 0,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Each product's last price paid, for `skuIds` only (none for an empty
+ * list). Review ORD-26 (2026-11): the order screens' estimates are made of
+ * this alone, and read 30 days of observations for averages they never
+ * used.
+ */
+export async function loadSkuLastPrices(
+  db: DB,
+  orgId: string,
+  skuIds: string[],
+): Promise<Map<string, SkuLastPrice>> {
+  if (skuIds.length === 0) return new Map();
+  return new Map((await latestPrices(db, orgId, skuIds)).map((r) => [r.skuId, r]));
+}
+
+/**
+ * The last price paid for `skuIds` (every product when omitted or empty).
+ *
+ * 2026-10-11: the last price is what a budget is made of (see
+ * estimateLines), so it must not stop existing after 30 days, and it must
+ * be the price of the last PURCHASE rather than of one row: a purchase
+ * split between stores at different prices writes a row per store at the
+ * same instant, and those are weighed by quantity. A corrected price is a
+ * later row, so it replaces the mistake here even though the mistake stays
+ * in the averages.
+ *
+ * ORD-01 (2026-11-09): rounded to cents here, once. The server's
+ * estimates used the weighted price unrounded (10000.666…) while the web
+ * got it from catalog.skuPriceStats rounded, so the same order was
+ * estimated a cent apart.
+ */
+async function latestPrices(db: DB, orgId: string, skuIds?: string[]): Promise<SkuLastPrice[]> {
   const latest = (await db.execute(sql`
     SELECT
       t.sku_id::text AS sku_id,
@@ -147,26 +194,16 @@ export async function loadSkuPriceStats(
     WHERE t.observed_at = t.newest
     GROUP BY t.sku_id, t.observed_at
   `)) as unknown as Array<{ sku_id: string; observed_at: Date | string; unit_price: string }>;
+  const prices: SkuLastPrice[] = [];
   for (const r of latest) {
     if (!Number.isFinite(Number(r.unit_price))) continue;
-    const price = r.unit_price;
-    const at = r.observed_at instanceof Date ? r.observed_at : new Date(r.observed_at);
-    const stat = out.get(r.sku_id);
-    if (stat) {
-      stat.lastPrice = price;
-      stat.lastObservedAt = at;
-    } else {
-      out.set(r.sku_id, {
-        skuId: r.sku_id,
-        lastPrice: price,
-        lastObservedAt: at,
-        avg7d: null,
-        avg30d: null,
-        observations30d: 0,
-      });
-    }
+    prices.push({
+      skuId: r.sku_id,
+      lastPrice: r.unit_price,
+      lastObservedAt: r.observed_at instanceof Date ? r.observed_at : new Date(r.observed_at),
+    });
   }
-  return out;
+  return prices;
 }
 
 /** How each product was paid for the last time it was bought. */
@@ -252,7 +289,7 @@ export async function loadSkuUsualPayment(
  */
 export function estimateLines(
   lines: Array<{ skuId: string; qty: string }>,
-  stats: Map<string, SkuPriceStat>,
+  stats: ReadonlyMap<string, { lastPrice: string | null }>,
   paid?: { usual: SkuUsualPayment; storeId: string },
 ): OrderEstimate {
   return estimateOrder(

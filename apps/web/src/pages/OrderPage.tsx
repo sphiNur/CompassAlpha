@@ -96,14 +96,9 @@ export function OrderPage() {
   const orgCurrency = useCurrency();
   // COREWEB2-21: an order is dated on the org's calendar, not the phone's.
   const orgTimeZone = session?.member.timezone;
-  // Language picker — accessible from every page's header so staff
-  // who don't have admin access can still switch languages (added
-  // 2026-05-05). State lives at OrderPage level since this is the
-  // landing tab; other pages can grow their own copies if needed.
   // OrderPage requires a SPECIFIC store — you can't draft an order
   // without a target. If the global store-switcher is on 'ALL', we
   // refuse and prompt the user to pick (added 2026-05-05).
-  // Language picker moved to Telegram's gear button (Shell wires it).
   const storeCtx = useStoreContext();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
@@ -220,7 +215,8 @@ export function OrderPage() {
    *    `applyOptimisticQty` below updates the cache instantly. The
    *    user always sees their tap reflected with no RTT delay.
    *
-   * 2. **Server mutation is debounced 250 ms per (storeId, skuId).**
+   * 2. **Server mutation is debounced 200 ms per (storeId, skuId)**
+   *    (DEBOUNCE_MS).
    *    A burst of 5 taps fires ONE mutation, not 5. This avoids the
    *    `(streamId, seq)` UNIQUE collision that previously caused a
    *    cascade of CONFLICT-rollback-snap-backward events.
@@ -262,12 +258,12 @@ export function OrderPage() {
       // does being signed out (COREWEB2-02).
       if (staysQueued(err)) return;
       // CONFLICT = (streamId, seq) UNIQUE collision. With per-store
-      // serialization (see `flushOne`) this can only happen when a
-      // SECOND staff member at the same store wrote concurrently —
-      // legitimate multi-user editing, NOT a user error. Silently
-      // refetch and let the cache reconcile; the user keeps tapping.
-      // Showing "could not save change" here was the bug the user
-      // reported on rapid clicks across multiple SKUs.
+      // serialization (see `flushOne`) this can only happen when the
+      // same person wrote from another device or tab at once (since
+      // 0005 nobody else edits their draft) — NOT a user error.
+      // Silently refetch and let the cache reconcile; the user keeps
+      // tapping. Showing "could not save change" here was the bug the
+      // user reported on rapid clicks across multiple SKUs.
       const code = (err as { data?: { code?: string } }).data?.code;
       if (code === 'CONFLICT') {
         void utils.order.todaySession.invalidate({ storeId: vars.storeId });
@@ -289,9 +285,9 @@ export function OrderPage() {
    *   - pendingTimers + pendingPayloads: keyed by (storeId, skuId).
    *     Each SKU has its own debounce window, so rapid taps on +/- for
    *     SKU-A get coalesced INDEPENDENTLY of taps for SKU-B.
-   *   - inFlight: keyed by storeId ALONE. The server keeps ONE event
-   *     stream per (org, store, date) — every AdjustItem for any SKU
-   *     at that store hits the same stream. If we serialize per-SKU
+   *   - inFlight: keyed by storeId ALONE. Every AdjustItem for any SKU
+   *     at that store goes to the same event stream: this member's own
+   *     draft for the store and day (0005). If we serialize per-SKU
    *     instead of per-store, two concurrent requests for SKU-A and
    *     SKU-B both read the same `seq`, both try to append at seq+1,
    *     and one collides on the (streamId, seq) UNIQUE constraint →
@@ -652,14 +648,14 @@ export function OrderPage() {
     retry: false,
     onError: (err) => {
       // 2026-10-21 audit CA-25/CA-27: same offline story as adjustItem —
-      // the save stored it in the outbox before sending (R2-ORD-5).
-      if (isLikelyNetworkError(err)) return;
-      const code = (err as { data?: { code?: string } }).data?.code;
-      if (code === 'CONFLICT') {
-        if (currentStoreId) {
-          void utils.order.todaySession.invalidate({ storeId: currentStoreId });
-        }
-        return;
+      // the save stored it in the outbox before sending (R2-ORD-5), and
+      // it stays there (staysQueued), signed out included.
+      if (staysQueued(err)) return;
+      // Review ORD-15 (2026-11): a refused save says so, a conflict too.
+      // A conflict was only reloaded, so the rows on screen looked saved
+      // when they were not. The order is read again either way.
+      if (currentStoreId) {
+        void utils.order.todaySession.invalidate({ storeId: currentStoreId });
       }
       errToast('order.toast.extrasSaveFailed')(err);
     },
@@ -1143,13 +1139,15 @@ export function OrderPage() {
             In the default 30px strip the area stuck out of the top edge,
             under the header. */}
         <StickyPageBar className="min-h-12 py-1">
-          <button
-            type="button"
-            className="hit-44 text-old-label font-semibold text-[var(--c-action)]"
+          {/* Review ORD-22 (2026-11): the kit's Button, not a hand-made link (UI-16). */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-3 font-semibold"
             onClick={() => setViewBatchId(null)}
           >
-            ‹ {i18n.t('order.batches.backToCurrent')}
-          </button>
+            <span aria-hidden>‹</span> {i18n.t('order.batches.backToCurrent')}
+          </Button>
           <span className="ml-auto shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
             {dateLabel}
           </span>
@@ -1348,13 +1346,14 @@ export function OrderPage() {
           ChipBar — the actual filters the user interacts with. */}
       <StickyPageBar direction="col">
         {canLeaveNewBatch ? (
-          <button
-            type="button"
-            className="hit-44 self-start text-old-label font-semibold text-[var(--c-action)]"
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-3 self-start font-semibold"
             onClick={leaveNewBatch}
           >
-            ‹ {i18n.t('order.batches.backToReceipt')}
-          </button>
+            <span aria-hidden>‹</span> {i18n.t('order.batches.backToReceipt')}
+          </Button>
         ) : null}
         {/* 2026-07-30 (flow review): the store you are ordering for was
             stated NOWHERE on this page. See the StoreChip docblock —
@@ -1390,14 +1389,16 @@ export function OrderPage() {
               first-of-the-day order, with nothing saying the earlier
               batches exist. */}
           {(batchesQuery.data?.length ?? 0) > 1 ? (
-            <button
-              type="button"
+            // ORD-22: the kit's Button, not a hand-made pill (UI-16).
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 tabular-nums"
               onClick={() => setBatchesOpen(true)}
-              className="press hit-44 shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
             >
               {/* U5: the draft being filled in is not counted. */}
               {i18n.t('order.batches.today', { n: sentBatchCount(batchesQuery.data) })}
-            </button>
+            </Button>
           ) : null}
         </div>
         {/* V4: -my-1.5 py-1.5 instead of py-0 — same layout, but the
@@ -1443,63 +1444,21 @@ export function OrderPage() {
         <div className="px-4 pt-3">{rejectedNotice(sessionQuery.data?.id)}</div>
       ) : null}
 
-      {/* Status banners — only render the wrapper when at least one
-          banner condition is true, so the empty-state draft view has
-          zero chrome between sticky filters and the SKU list. M1.11:
-          single section with `gap-2` replaces 4 individually-padded
-          shells. */}
-      {(sessionStatus &&
-        (sessionStatus === 'rejected' ||
-          sessionStatus === 'approved' ||
-          sessionStatus === 'in_run' ||
-          (sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId))) ||
-      (sessionQuery.data?.claimedByMemberId &&
-        sessionQuery.data.claimedByMemberId !== session.member.memberId) ? (
-        <div className="flex flex-col gap-2 px-4 pt-2">
-          {sessionQuery.data?.claimedByMemberId &&
-          sessionQuery.data.claimedByMemberId !== session.member.memberId ? (
-            <Banner
-              tone="warn"
-              title={i18n.t('order.banner.claimed', {
-                who:
-                  sessionQuery.data.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
-              })}
-            />
-          ) : null}
-          {/* DX-ORD-3 (2026-11-01): no 撤回 here. A rejected batch is edited
-              in place already; withdrawing it only turned it back into a
-              draft and took the reviewer's reason off the screen. The
-              reason is the body (it was the bold red title), with who
-              sent it back and when. */}
-          {sessionStatus === 'rejected' && sessionQuery.data ? (
-            <Banner tone="danger" title={i18n.t('order.status.rejectedTitle')}>
-              {rejectionBody(sessionQuery.data)}
-            </Banner>
-          ) : null}
-          {sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId ? (
-            <Banner
-              tone="info"
-              title={i18n.t('order.status.submitted')}
-              action={
-                <Button
-                  size="sm"
-                  variant="pearl"
-                  loading={withdraw.isPending}
-                  onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
-                >
-                  {i18n.t('order.withdraw')}
-                </Button>
-              }
-            />
-          ) : null}
-          {sessionStatus === 'approved' ? (
-            <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
-              {i18n.t('order.banner.approved.body')}
-            </Banner>
-          ) : null}
-          {sessionStatus === 'in_run' && currentStoreId ? (
-            <InRunBanner runId={sessionQuery.data?.runId} storeId={currentStoreId} />
-          ) : null}
+      {/* The order being edited is a draft or a rejected batch: a sent,
+          approved or bought one shows its receipt (above), and in a new
+          batch the sent one is hidden (hideSentWhileNewBatch). A draft
+          is never claimed. Review ORD-12 (2026-11): so only a rejected
+          batch has a status to state here; the banners for the others
+          never showed. DX-ORD-3 (2026-11-01): no 撤回 here. A rejected
+          batch is edited in place already; withdrawing it only turned it
+          back into a draft and took the reviewer's reason off the screen.
+          The reason is the body (it was the bold red title), with who
+          sent it back and when. */}
+      {sessionStatus === 'rejected' && sessionQuery.data ? (
+        <div className="px-4 pt-2">
+          <Banner tone="danger" title={i18n.t('order.status.rejectedTitle')}>
+            {rejectionBody(sessionQuery.data)}
+          </Banner>
         </div>
       ) : null}
 
@@ -1514,7 +1473,10 @@ export function OrderPage() {
           <EmptyState
             title={i18n.t('order.catalogEmpty.title')}
             description={i18n.t('order.catalogEmpty.description', {
-              path: `${i18n.t('nav.admin')} › ${i18n.t('admin.section.catalog')}`,
+              path: i18n.t('common.navPath', {
+                parent: i18n.t('nav.admin'),
+                child: i18n.t('admin.section.catalog'),
+              }),
             })}
           />
         }
@@ -1646,10 +1608,15 @@ export function OrderPage() {
         title={i18n.t('order.review.title')}
         description={
           // DX-ORD-12: "7 items + 1 other item" — other items are not products.
+          // ORD-20: the "+" is the catalog's (order.batches.itemsAndExtras).
           dateLabel +
           ' · ' +
-          i18n.t('order.review.itemsCount', { n: totals.length }) +
-          (extrasCount > 0 ? ' + ' + i18n.t('order.batches.extras', { n: extrasCount }) : '')
+          (extrasCount > 0
+            ? i18n.t('order.batches.itemsAndExtras', {
+                items: i18n.t('order.review.itemsCount', { n: totals.length }),
+                extras: i18n.t('order.batches.extras', { n: extrasCount }),
+              })
+            : i18n.t('order.review.itemsCount', { n: totals.length }))
         }
         footer={
           // M3.49: in-page PageMainButton sits behind any open sheet —

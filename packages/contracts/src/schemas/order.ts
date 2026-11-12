@@ -3,7 +3,6 @@ import { CANONICAL_UNITS, QTY_TEXT_RE, WHOLE_NUMBER_UNITS, isCanonicalUnit } fro
 import {
   CLIENT_FAULT_MESSAGE,
   DateStringSchema,
-  DecimalStringSchema,
   IdempotencyKeySchema,
   ORDER_QTY_MAX,
   OrderQtySchema,
@@ -43,33 +42,9 @@ export const TodayBatchesInputSchema = z.object({
   date: DateStringSchema.optional(),
 });
 
+/** One order, by id: sessionDetail, submittedVersion, releaseClaim. */
 export const SessionDetailInputSchema = z.object({
   sessionId: UuidSchema,
-});
-
-export const OrderItemViewSchema = z.object({
-  skuId: UuidSchema,
-  qty: DecimalStringSchema,
-  note: z.string().nullable(),
-  lastEditedByUserId: UuidSchema.nullable(),
-  lastEditedAt: z.string().nullable(),
-});
-
-export const OrderSessionViewSchema = z.object({
-  id: UuidSchema,
-  storeId: UuidSchema,
-  memberId: UuidSchema,
-  orderDate: DateStringSchema,
-  status: OrderStatusSchema,
-  claimedByMemberId: UuidSchema.nullable(),
-  claimedAt: z.string().nullable(),
-  submittedAt: z.string().nullable(),
-  decidedAt: z.string().nullable(),
-  decidedByMemberId: UuidSchema.nullable(),
-  rejectReason: z.string().nullable(),
-  runId: UuidSchema.nullable(),
-  lastSeq: z.number().int(),
-  items: z.array(OrderItemViewSchema),
 });
 
 export const AdjustItemInputSchema = z.object({

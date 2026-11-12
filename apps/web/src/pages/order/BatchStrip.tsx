@@ -1,4 +1,4 @@
-import { SectionLabel } from '@compass/ui';
+import { cn, rowGroupClass, SectionLabel } from '@compass/ui';
 import { sentBatchCount } from './batchCount';
 import { useI18n } from '../../hooks/useI18n';
 import { formatMoney } from '../../lib/format';
@@ -49,7 +49,10 @@ export function BatchStrip({
           {i18n.t('order.batches.today', { n: sentBatchCount(batches) })}
         </SectionLabel>
       ) : null}
-      <ul className="flex flex-col gap-1" role="list">
+      {/* Review ORD-22 (2026-11): one card of rows divided by hairlines (UI-6,
+          UI-13); each batch was a grey card of its own. The one shown is
+          tinted. */}
+      <ul className={rowGroupClass} role="list">
         {batches.map((b) => {
           const isCurrent = b.id === currentId;
           return (
@@ -58,14 +61,13 @@ export function BatchStrip({
                 type="button"
                 disabled={!onSelect || isCurrent}
                 onClick={() => onSelect?.(b.id)}
-                className={
+                className={cn(
                   // V4: min-h-11 — a stacked list row is tapped across its whole height.
-                  'flex min-h-11 w-full items-center justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
-                  (onSelect && !isCurrent ? 'press ' : '') +
-                  (isCurrent
-                    ? 'bg-[color:color-mix(in_oklch,var(--c-action)_10%,transparent)] ring-1 ring-[var(--c-action)]'
-                    : 'bg-[var(--c-surface-2)]')
-                }
+                  // ORD-25: wraps, so the counts go under the name when both do not fit.
+                  'flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-0.5 px-3 py-2 text-left text-old-label',
+                  onSelect && !isCurrent && 'press',
+                  isCurrent && 'bg-[color:color-mix(in_oklch,var(--c-action)_10%,transparent)]',
+                )}
               >
                 <span className="min-w-0 truncate">
                   <span className="font-semibold text-[var(--c-fg)]">
@@ -83,14 +85,19 @@ export function BatchStrip({
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 whitespace-nowrap tabular-nums text-[var(--c-fg-muted)]">
-                  {i18n.t('approval.itemsCount', { n: b.itemCount })}
+                {/* Review ORD-25 (2026-11): this part kept to one line and
+                    would not shrink, so on a narrow phone in Russian or
+                    Uzbek it squeezed the batch's name to nothing or ran
+                    off the row. It moves under the name and may wrap. */}
+                <span className="ml-auto tabular-nums text-[var(--c-fg-muted)]">
+                  {/* ORD-20: the "+" is the catalog's. */}
                   {b.extrasCount > 0
-                    ? ` + ${i18n.t('order.batches.extras', { n: b.extrasCount })}`
-                    : ''}
-                  {b.estimatedTotal
-                    ? ` · ~${formatMoney(Number(b.estimatedTotal))} ${currency}`
-                    : ''}
+                    ? i18n.t('order.batches.itemsAndExtras', {
+                        items: i18n.t('approval.itemsCount', { n: b.itemCount }),
+                        extras: i18n.t('order.batches.extras', { n: b.extrasCount }),
+                      })
+                    : i18n.t('approval.itemsCount', { n: b.itemCount })}
+                  {b.estimatedTotal ? ` · ~${formatMoney(b.estimatedTotal, currency)}` : ''}
                 </span>
               </button>
             </li>

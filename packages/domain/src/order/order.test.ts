@@ -4,7 +4,7 @@ import { apply, emptyState, replay, itemKey, type OrderState } from './state';
 import type { OrderEvent } from './events';
 import type { ActorCtx } from './commands';
 import { fixedClock } from '../shared/clock';
-import { manager, orderStepper, sku, staff } from '../testing';
+import { manager, orderActor, orderStepper, sku, staff } from '../testing';
 
 const NOW = new Date('2026-05-02T10:00:00Z');
 const clock = fixedClock(NOW);
@@ -718,5 +718,204 @@ describe('order.SetSessionNote', () => {
     expect(() =>
       decide(state, { type: 'SetSessionNote', note: 'too late', actor: memA }, { clock }),
     ).toThrow('order.errors.lockedByStatus');
+  });
+});
+
+// Review ORD-32 (2026-11): the command branches that had no domain test.
+describe('order.SetNote (ORD-34)', () => {
+  const owner = staff(['order.draft', 'order.submit'], 'mem-A');
+  const mgr = manager(['order.claim', 'order.approve'], 'mem-mgr');
+
+  /** mem-A's order of 1 apple, sent and claimed by mem-mgr. */
+  function claimed(): OrderState {
+    return steps(startedDraft('sess-1', owner), [
+      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: owner },
+      { type: 'Submit', actor: owner },
+      { type: 'Claim', actor: mgr },
+    ]).state;
+  }
+
+  test('the owner notes a line; spaces alone clear the note to null', () => {
+    let state = step(claimed(), { type: 'ReleaseClaim', reason: 'manual', actor: mgr });
+    state = step(state, { type: 'SetNote', skuId: 'apple', note: '  ripe ', actor: owner });
+    expect(state.items.get(itemKey('apple', 'mem-A'))?.note).toBe('ripe');
+    const cleared = decide(
+      state,
+      { type: 'SetNote', skuId: 'apple', note: '   ', actor: owner },
+      { clock },
+    );
+    expect(cleared.map((e) => (e.type === 'ItemNoteSet' ? e.payload.note : e.type))).toEqual([
+      null,
+    ]);
+    state = cleared.reduce(apply, state);
+    expect(state.items.get(itemKey('apple', 'mem-A'))?.note).toBeNull();
+    // Nothing to clear any more: no event.
+    expect(
+      decide(state, { type: 'SetNote', skuId: 'apple', note: ' ', actor: owner }, { clock }),
+    ).toEqual([]);
+  });
+
+  test('the claiming reviewer notes the owner’s line, not one the owner does not have', () => {
+    const reviewer = { ...mgr, isClaimer: true };
+    let state = claimed();
+    state = step(state, {
+      type: 'SetNote',
+      skuId: 'apple',
+      note: 'green ones',
+      actor: reviewer,
+      targetMemberId: 'mem-A',
+    });
+    const row = state.items.get(itemKey('apple', 'mem-A'));
+    expect(row?.note).toBe('green ones');
+    expect(row?.updatedByMemberId).toBe('mem-mgr');
+    expect(() =>
+      decide(
+        state,
+        {
+          type: 'SetNote',
+          skuId: 'pear',
+          note: 'soft',
+          actor: reviewer,
+          targetMemberId: 'mem-A',
+        },
+        { clock },
+      ),
+    ).toThrow('order.errors.targetLineNotFound');
+    expect(state.items.has(itemKey('pear', 'mem-A'))).toBe(false);
+  });
+
+  test('someone else’s line needs order.approve; a note is at most 500 characters', () => {
+    const claimer = { ...manager(['order.claim'], 'mem-claim'), isClaimer: true };
+    const state = steps(startedDraft('sess-1', owner), [
+      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: owner },
+      { type: 'Submit', actor: owner },
+      { type: 'Claim', actor: claimer },
+    ]).state;
+    expect(() =>
+      decide(
+        state,
+        { type: 'SetNote', skuId: 'apple', note: 'x', actor: claimer, targetMemberId: 'mem-A' },
+        { clock },
+      ),
+    ).toThrow('order.errors.cannotEditOthersLine');
+    const draft = startedDraft('sess-2', owner);
+    expect(() =>
+      decide(
+        draft,
+        { type: 'SetNote', skuId: 'apple', note: 'a'.repeat(501), actor: owner },
+        { clock },
+      ),
+    ).toThrow('order.errors.noteTooLong');
+  });
+});
+
+describe('order.MarkExtraStatus', () => {
+  const owner = staff(['order.draft', 'order.submit'], 'mem-A');
+  const mgr = { ...manager(['order.claim', 'order.approve'], 'mem-mgr'), isClaimer: true };
+  const buyer = orderActor('mem-buyer', ['run.purchase']);
+
+  /** mem-A's order of two extras, approved; attached to run r1 unless told otherwise. */
+  function withExtras(attach = true): OrderState {
+    const { state } = steps(startedDraft('sess-1', owner), [
+      {
+        type: 'SetSessionExtras',
+        extras: [
+          { name: 'salt', qty: '1', unit: 'kg' },
+          { name: 'matches', qty: '2', unit: 'box' },
+        ],
+        actor: owner,
+      },
+      { type: 'Submit', actor: owner },
+      { type: 'Claim', actor: mgr },
+      { type: 'Approve', actor: mgr },
+    ]);
+    return attach ? step(state, { type: 'AttachToRun', runId: 'r1', actor: mgr }) : state;
+  }
+
+  test('the purchaser marks one extra; the same status again is no event', () => {
+    let state = withExtras();
+    state = step(state, { type: 'MarkExtraStatus', extraIndex: 1, status: 'bought', actor: buyer });
+    expect(state.extras.map((e) => e.status)).toEqual([undefined, 'bought']);
+    expect(
+      decide(
+        state,
+        { type: 'MarkExtraStatus', extraIndex: 1, status: 'bought', actor: buyer },
+        { clock },
+      ),
+    ).toEqual([]);
+    // An extra never marked is pending.
+    expect(
+      decide(
+        state,
+        { type: 'MarkExtraStatus', extraIndex: 0, status: 'pending', actor: buyer },
+        { clock },
+      ),
+    ).toEqual([]);
+    state = step(state, {
+      type: 'MarkExtraStatus',
+      extraIndex: 1,
+      status: 'unavailable',
+      actor: buyer,
+    });
+    expect(state.extras[1]?.status).toBe('unavailable');
+  });
+
+  test('only with run.purchase, only while in a run, only an extra the order has', () => {
+    const state = withExtras();
+    const notInRun = withExtras(false);
+    const mark = (actor: ActorCtx, extraIndex: number, s: OrderState = state) =>
+      decide(s, { type: 'MarkExtraStatus', extraIndex, status: 'bought', actor }, { clock });
+    expect(() => mark(owner, 0)).toThrow('order.errors.cannotMarkExtra');
+    expect(() => mark(buyer, 0, notInRun)).toThrow('order.errors.extraStatusOnlyDuringRun');
+    for (const index of [2, -1, 0.5]) {
+      expect(() => mark(buyer, index)).toThrow('order.errors.extraIndexOutOfRange');
+    }
+  });
+});
+
+describe('order.EjectFromRun (Wave2 #15)', () => {
+  const owner = staff(['order.draft', 'order.submit'], 'mem-A');
+  const mgr = { ...manager(['order.claim', 'order.approve'], 'mem-mgr'), isClaimer: true };
+  const ejector = orderActor('mem-buyer', ['run.eject_session']);
+  const eject = (state: OrderState, runId = 'r1', actor: ActorCtx = ejector) =>
+    decide(state, { type: 'EjectFromRun', runId, actor }, { clock });
+
+  /** mem-A's order of 1 apple, as far as `until` goes. */
+  function order(until: 'submitted' | 'approved' | 'in_run'): OrderState {
+    let state = steps(startedDraft('sess-1', owner), [
+      { type: 'AdjustItem', skuId: 'apple', qty: '1', sku: sku('apple'), actor: owner },
+      { type: 'Submit', actor: owner },
+    ]).state;
+    if (until === 'submitted') return state;
+    state = steps(state, [
+      { type: 'Claim', actor: mgr },
+      { type: 'Approve', actor: mgr },
+    ]).state;
+    if (until === 'approved') return state;
+    return step(state, { type: 'AttachToRun', runId: 'r1', actor: mgr });
+  }
+
+  test('an order in this run goes back to approved, out of the run', () => {
+    const state = order('in_run');
+    const out = eject(state);
+    expect(out.map((e) => e.type)).toEqual(['EjectedFromRun']);
+    const after = out.reduce(apply, state);
+    expect(after.status).toBe('approved');
+    expect(after.runId).toBeNull();
+    // Ejected already: nothing more to do.
+    expect(eject(after)).toEqual([]);
+  });
+
+  test('no event for another run’s order or one not in a run; refused without the permission', () => {
+    expect(eject(order('in_run'), 'r2')).toEqual([]);
+    expect(eject(order('approved'))).toEqual([]);
+    expect(eject(order('submitted'))).toEqual([]);
+    expect(eject(startedDraft())).toEqual([]);
+    expect(() => eject(order('in_run'), 'r1', owner)).toThrow('order.errors.cannotEject');
+  });
+
+  test('an archived order is refused', () => {
+    const state = step(order('in_run'), { type: 'Archive', reason: 'run_finished', actor: mgr });
+    expect(() => eject(state)).toThrow('order.errors.archived');
   });
 });

@@ -61,6 +61,12 @@ export function withoutPrices<T>(value: T): T {
   return out as T;
 }
 
+/**
+ * Whether prices.view is in the session's flat permission union, i.e.
+ * held in SOME store. Review ORD-33 (2026-11): a first, coarse check only
+ * (held nowhere: no money to work out at all). Whether a store's money
+ * may be shown is `pricesVisibleFor(priceStoreIds(…), storeIds)` below.
+ */
 export function canSeePrices(session: { permissions: ReadonlySet<string> } | null | undefined): boolean {
   return !!session?.permissions.has('prices.view');
 }

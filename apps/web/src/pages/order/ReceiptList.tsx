@@ -1,4 +1,4 @@
-import { SectionLabel } from '@compass/ui';
+import { cn, SectionLabel, surfaceClass } from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import { extrasChanged } from './submittedDiff';
 import { useI18n, useUnitLabel } from '../../hooks/useI18n';
@@ -33,7 +33,7 @@ export function ReceiptList({
     <>
       <ReviewList {...rest} totals={totals} submitted={snap?.totals ?? null} />
       {snap && extrasChanged(snap.extras, extras) ? (
-        <div className="mt-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 ring-hairline">
+        <div className={cn(surfaceClass, 'mt-3 px-4 py-2.5')}>
           <SectionLabel as="h3" padded={false}>
             {i18n.t('order.submitted.extrasOriginal')}
           </SectionLabel>

@@ -22,10 +22,9 @@ import {
   EmptyState,
   Field,
   Input,
+  Segmented,
   Sheet,
   StickyPageBar,
-  Tab,
-  Tabs,
   focusAfter,
   useToast,
 } from '@compass/ui';
@@ -37,7 +36,10 @@ import { haptic } from '../lib/telegram';
 import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../hooks/useErrToast';
+import { useStableCallbacks } from '../hooks/useStableCallbacks';
 import { formatMoney } from '../lib/format';
+import { hasStorePermission } from '../lib/storePermission';
+import { useCurrency } from '../hooks/useCurrency';
 import { useStoreContext } from '../hooks/useStoreContext';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
 import { approvable } from './approval/reviewDiff';
@@ -70,6 +72,9 @@ export function ApprovalPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
+  // ORD-21 (2026-11): the card's total names the currency, as the
+  // estimate in its detail does.
+  const currency = useCurrency();
   const [tab, setTab] = useState<ApprovalTab>('pending');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<string | null>(null);
@@ -149,11 +154,13 @@ export function ApprovalPage() {
   };
   // APR-10 (2026-10-30): a double tap sent two approvals; the second lost
   // on the unique index and toasted "changed since you opened it" right
-  // after "approved". One in flight per order.
-  const approving = useRef(new Set<string>());
-  const approveOnce = (sessionId: string, expectedSeq: number) => {
+  // after "approved". One in flight per order, with the order's store
+  // (ORD-28: whether its approval may be undone is that store's rule);
+  // approve's onSuccess runs before the entry is let go.
+  const approving = useRef(new Map<string, string>());
+  const approveOnce = (sessionId: string, storeId: string, expectedSeq: number) => {
     if (approving.current.has(sessionId)) return;
-    approving.current.add(sessionId);
+    approving.current.set(sessionId, storeId);
     decidedByMe.current.add(sessionId);
     approve.mutate(
       { sessionId, expectedSeq },
@@ -177,8 +184,10 @@ export function ApprovalPage() {
       // D12 (U1, 2026-10-31): the card's 通过 stays one tap, with five
       // seconds to take it back. The undo is the normal unapprove, sent
       // with the lastSeq this approval produced, so it is refused once
-      // anyone else has touched the order.
-      if (!session?.permissions.includes('order.unapprove')) {
+      // anyone else has touched the order. Review ORD-28 (2026-11): in
+      // the order's store, as the server decides it; the flat list said
+      // yes for a manager of another store.
+      if (!hasStorePermission(session, approving.current.get(vars.sessionId), 'order.unapprove')) {
         toast.success(i18n.t('approval.toast.approved'));
         return;
       }
@@ -271,60 +280,71 @@ export function ApprovalPage() {
   // reported.
   const myClaims = useRef(new Set<string>());
   const letGo = useRef(new Set<string>());
-  useEffect(() => {
-    if (tab !== 'pending' || !pendingQuery.data) return;
-    const me = session?.member.memberId;
-    const rows = new Map(pendingQuery.data.map((r) => [r.id, r]));
-    for (const id of myClaims.current) {
-      const r = rows.get(id);
-      if (!r || r.claimedByMemberId === me) continue;
-      if (letGo.current.delete(id)) continue;
-      haptic('warning');
-      toast.info(
-        r.claimedByMemberId
-          ? i18n.t('approval.toast.claimTakenOver', {
-              owner: r.attribDisplayName ?? i18n.t('common.unknownMember'),
-              who: r.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
-            })
-          : i18n.t('approval.toast.claimTimedOut', {
-              owner: r.attribDisplayName ?? i18n.t('common.unknownMember'),
-            }),
+  // Review ORD-31 (2026-11): this and the next effect run when the queue
+  // or the tab changes; what else they read comes from the latest render
+  // (useStableCallbacks) instead of past a silenced dependency lint.
+  const { noticeLostClaims } = useStableCallbacks({
+    noticeLostClaims: () => {
+      if (tab !== 'pending' || !pendingQuery.data) return;
+      const me = session?.member.memberId;
+      const rows = new Map(pendingQuery.data.map((r) => [r.id, r]));
+      for (const id of myClaims.current) {
+        const r = rows.get(id);
+        if (!r || r.claimedByMemberId === me) continue;
+        if (letGo.current.delete(id)) continue;
+        haptic('warning');
+        toast.info(
+          r.claimedByMemberId
+            ? i18n.t('approval.toast.claimTakenOver', {
+                owner: r.attribDisplayName ?? i18n.t('common.unknownMember'),
+                who: r.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+              })
+            : i18n.t('approval.toast.claimTimedOut', {
+                owner: r.attribDisplayName ?? i18n.t('common.unknownMember'),
+              }),
+        );
+      }
+      myClaims.current = new Set(
+        pendingQuery.data.filter((r) => me && r.claimedByMemberId === me).map((r) => r.id),
       );
-    }
-    myClaims.current = new Set(
-      pendingQuery.data.filter((r) => me && r.claimedByMemberId === me).map((r) => r.id),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingQuery.data, tab]);
+    },
+  });
+  useEffect(() => {
+    noticeLostClaims();
+  }, [noticeLostClaims, pendingQuery.data, tab]);
 
   // DX-APR-3 (2026-11-01): the open card vanished from the queue without
   // this reviewer deciding it — say what happened (the submitter withdrew
   // it, or another reviewer decided it) instead of letting it disappear.
   const decidedByMe = useRef(new Set<string>());
   const lastPendingIds = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (tab !== 'pending' || !pendingQuery.data) return;
-    const ids = new Set(pendingQuery.data.map((r) => r.id));
-    const openId = activeSessionId;
-    if (openId && lastPendingIds.current.has(openId) && !ids.has(openId)) {
-      if (!decidedByMe.current.delete(openId)) {
-        void utils.order.sessionDetail.fetch({ sessionId: openId }).then(
-          (d) => {
-            haptic('warning');
-            toast.show(
-              d.status === 'draft'
-                ? i18n.t('approval.toast.withdrawnWhileOpen')
-                : i18n.t('approval.toast.decidedElsewhere'),
-              { tone: 'info', ttlMs: 8000 },
-            );
-          },
-          () => undefined,
-        );
+  const { noticeVanishedCard } = useStableCallbacks({
+    noticeVanishedCard: () => {
+      if (tab !== 'pending' || !pendingQuery.data) return;
+      const ids = new Set(pendingQuery.data.map((r) => r.id));
+      const openId = activeSessionId;
+      if (openId && lastPendingIds.current.has(openId) && !ids.has(openId)) {
+        if (!decidedByMe.current.delete(openId)) {
+          void utils.order.sessionDetail.fetch({ sessionId: openId }).then(
+            (d) => {
+              haptic('warning');
+              toast.show(
+                d.status === 'draft'
+                  ? i18n.t('approval.toast.withdrawnWhileOpen')
+                  : i18n.t('approval.toast.decidedElsewhere'),
+                { tone: 'info', ttlMs: 8000 },
+              );
+            },
+            () => undefined,
+          );
+        }
       }
-    }
-    lastPendingIds.current = ids;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingQuery.data, tab]);
+      lastPendingIds.current = ids;
+    },
+  });
+  useEffect(() => {
+    noticeVanishedCard();
+  }, [noticeVanishedCard, pendingQuery.data, tab]);
 
   // 2026-07-30 (flow review): `step` was missing from this map while
   // SessionItems read `Number(sku.step ?? '1')` — and its prop type had
@@ -347,7 +367,7 @@ export function ApprovalPage() {
 
   if (!session) return null;
 
-  // M1.11 cleanup (2026-05-08): subtitle dropped — the Tabs row
+  // M1.11 cleanup (2026-05-08): subtitle dropped — the status switch
   // immediately below + the empty-state Card (when count===0) +
   // the Card list itself already convey "what state am I in" and
   // "how many". The redundant "X items" line just compressed the
@@ -355,26 +375,26 @@ export function ApprovalPage() {
   return (
     <div className="flex flex-col">
       {/* M3.5: store-switcher pill moved to SettingsSheet. The sticky
-         band now only carries the approval-state Tabs. */}
+         band now only carries the approval-state switch. */}
       <StickyPageBar direction="col">
         {/* 2026-07-30: which store's queue am I looking at? The list is
             filtered by store context but never said so. On 'all' the chip
             reads 所有门店, which is equally load-bearing. Answered by the
             chip in Shell's top strip now (same day) rather than a copy
-            per page — this strip is back to just the state Tabs. */}
-        {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
-            tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
-            `ChipBar`-as-tabs with role=tablist/tab on the buttons
-            but no keyboard-cycle behaviour. */}
-        <Tabs
+            per page — this strip is back to just the state switch. */}
+        {/* Review ORD-22 (2026-11): the kit's Segmented, as every other
+            page switches its views (UI-16); this was the one <Tabs> in
+            the app. One Tab stop, arrow keys between the states. */}
+        <Segmented<ApprovalTab>
           value={tab}
-          onChange={(v) => setTab(v as ApprovalTab)}
+          onChange={setTab}
           ariaLabel={i18n.t('approval.tabsAriaLabel')}
-        >
-          <Tab value="pending">{i18n.t(TAB_LABEL_KEYS.pending)}</Tab>
-          <Tab value="approved">{i18n.t(TAB_LABEL_KEYS.approved)}</Tab>
-          <Tab value="rejected">{i18n.t(TAB_LABEL_KEYS.rejected)}</Tab>
-        </Tabs>
+          options={[
+            { value: 'pending', label: i18n.t(TAB_LABEL_KEYS.pending) },
+            { value: 'approved', label: i18n.t(TAB_LABEL_KEYS.approved) },
+            { value: 'rejected', label: i18n.t(TAB_LABEL_KEYS.rejected) },
+          ]}
+        />
       </StickyPageBar>
 
       {myStores.length === 0 &&
@@ -504,7 +524,7 @@ export function ApprovalPage() {
                           NOT with the old totalQty, which summed kg and pcs
                           into one meaningless figure.
 
-                          The "has notes" 📝 pill stays — still the only
+                          The "has notes" badge stays — still the only
                           pre-expand signal for a free-text request. */}
                       <span className="whitespace-nowrap text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {i18n.t('approval.itemsCount', { n: row.itemCount })}
@@ -517,7 +537,7 @@ export function ApprovalPage() {
                             unknown: row.estimatedUnknown,
                           })}
                         >
-                          ~{formatMoney(Number(row.estimatedTotal))}
+                          ~{formatMoney(row.estimatedTotal, currency)}
                         </span>
                       ) : null}
                       {/* APR-5 (2026-10-30): the unpriced count lived only in
@@ -537,8 +557,8 @@ export function ApprovalPage() {
                       {row.estimatedTotal &&
                       showPaymentSplit(row.estimatedCash, row.estimatedTransfer) ? (
                         <span
-                          // V10: the figures in the same mono face as the
-                          // card's total beside them.
+                          // V10: the figures in tabular digits, as the
+                          // card's total beside them (UI-14).
                           data-testid="approval-payment-budget"
                           className="flex flex-col items-end text-old-label tabular-nums text-[var(--c-fg-muted)]"
                         >
@@ -610,8 +630,9 @@ export function ApprovalPage() {
                           // claim. Server validates the same permission and
                           // records `ClaimReleased{reason:'override'}` for
                           // audit (commands.ts 2026-05-18). Self-release stays
-                          // on the in-row "Release" button below.
-                          session.permissions.includes('order.approve') ? (
+                          // on the in-row "Release" button below. ORD-28: in
+                          // the card's store, as the server checks it.
+                          hasStorePermission(session, row.storeId, 'order.approve') ? (
                             <Button
                               size="sm"
                               variant="pearl"
@@ -696,7 +717,7 @@ export function ApprovalPage() {
                             held.has(row.id) ||
                             (claim.isPending && claim.variables?.sessionId === row.id)
                           }
-                          onClick={() => approveOnce(row.id, row.lastSeq)}
+                          onClick={() => approveOnce(row.id, row.storeId, row.lastSeq)}
                         >
                           {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
                         </Button>
@@ -739,7 +760,7 @@ export function ApprovalPage() {
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
                           disabled={!online || adjusting || held.has(row.id)}
-                          onClick={() => approveOnce(row.id, row.lastSeq)}
+                          onClick={() => approveOnce(row.id, row.storeId, row.lastSeq)}
                         >
                           {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
                         </Button>
@@ -779,7 +800,7 @@ export function ApprovalPage() {
                         `order.unapprove` would tap and get a 403
                         toast, which looks like the app is broken. */}
                     {tab === 'approved' &&
-                    session.permissions.includes('order.unapprove') ? (
+                    hasStorePermission(session, row.storeId, 'order.unapprove') ? (
                       <Button
                         size="sm"
                         variant="pearl"
@@ -825,7 +846,7 @@ export function ApprovalPage() {
                         claimOnEditSeq={
                           tab === 'pending' &&
                           !row.claimedByMemberId &&
-                          session.permissions.includes('order.claim')
+                          hasStorePermission(session, row.storeId, 'order.claim')
                             ? row.lastSeq
                             : undefined
                         }

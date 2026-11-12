@@ -4,14 +4,13 @@
  * (read_model.order_sessions_v); that one lives in the DB and is for
  * UI queries.
  *
- * Per-store collaborative model (2026-05-02):
- *   The session is owned by the store, NOT by an individual member.
- *   Multiple staff at the same store add/edit line items on a SHARED
- *   shopping list. Each line carries the member who created it
- *   (createdByMemberId) and the member who last touched it
- *   (updatedByMemberId), so the command layer can enforce
- *   "you can only edit lines you authored" by default, with a store-
- *   manager override.
+ * A session is one member's order for one store and day (0005,
+ * 2026-05-04): its owner (`initiatedByMemberId`) edits and submits it;
+ * under review, the reviewer holding the claim edits the owner's lines
+ * (commands.ts assertCanEditSession). Each line says whose it is
+ * (contributorMemberId) and who touched it last (updatedByMemberId).
+ * Review ORD-18 (2026-11): this described the store-wide shared list of
+ * 2026-05-02, which 0005 replaced.
  */
 import type { OrderEvent, SessionExtraItem } from './events';
 
@@ -25,9 +24,9 @@ export type OrderStatus =
   | 'archived';
 
 /**
- * One row per (sku, contributor). Two people at the same store both
- * adding apples → two rows, summed at read time. Manager review can
- * mutate a specific row in place (see commands.ts).
+ * One row per (sku, contributor), summed per sku at read time. Since 0005
+ * the contributor is the owner (a reviewer's edit changes the owner's row);
+ * rows of several contributors exist only on orders from before it.
  */
 export interface OrderItemState {
   skuId: string;

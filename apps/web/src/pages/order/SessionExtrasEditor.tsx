@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Button, cn, FieldError, Input, SectionLabel, Select } from '@compass/ui';
+import { Button, cn, FieldError, Input, SectionLabel, Select, surfaceClass } from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import {
   badExtraQty,
   cleanExtraRows,
   extraLinesToSave,
   isInvalidExtraRow,
+  otherSuggestions,
   unlistedUnit,
   wholeNumberRequired,
   type ExtraDraft,
   type ExtraLine,
 } from './extraRows';
 import { useI18n, useUnitLabel } from '../../hooks/useI18n';
+import { useStableCallbacks } from '../../hooks/useStableCallbacks';
 import { formatQty } from '../../lib/format';
 import { CANONICAL_UNITS, WHOLE_NUMBER_UNITS, isCanonicalUnit } from '@compass/contracts/limits';
 
@@ -62,37 +64,49 @@ export function SessionExtrasEditor({
   // Adopt server array when local is clean. Compare via JSON string
   // (cheap; arrays are short ≤50 rows). If our local copy doesn't
   // match what we last saved, the user is mid-edit — let them win.
+  // Review ORD-31 (2026-11): this and the reset below run when the
+  // server's list, or the session, changes; what else they read comes
+  // from the latest render (useStableCallbacks) instead of past a
+  // silenced dependency lint.
+  const serverJson = JSON.stringify(initialValue);
+  const { adoptServerRows } = useStableCallbacks({
+    adoptServerRows: () => {
+      if (JSON.stringify(rows) === lastSavedRef.current) {
+        lastSavedRef.current = serverJson;
+        setRows(initialValue.map((r) => ({ ...r })));
+      }
+    },
+  });
   useEffect(() => {
-    const serverJson = JSON.stringify(initialValue);
-    if (JSON.stringify(rows) === lastSavedRef.current) {
-      lastSavedRef.current = serverJson;
-      setRows(initialValue.map((r) => ({ ...r })));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(initialValue)]);
+    adoptServerRows();
+  }, [adoptServerRows, serverJson]);
 
   // Reset on session swap (different store → different session).
   // 2026-10-21 audit CA-27: NOT when the id merely appears (no session
   // → the draft our own first save / tap just lazy-created, same store)
   // — that reset wiped the rows the user was still typing.
   const resetKeyRef = useRef({ storeId, sessionId });
+  const { resetForSession } = useStableCallbacks({
+    resetForSession: () => {
+      const prev = resetKeyRef.current;
+      resetKeyRef.current = { storeId, sessionId };
+      if (prev.storeId === storeId && (prev.sessionId === sessionId || prev.sessionId === null)) {
+        return;
+      }
+      const next = initialValue.map((r) => ({ ...r }));
+      lastSavedRef.current = JSON.stringify(next);
+      setRows(next);
+      setSavingState('idle');
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      pendingFireRef.current = null;
+    },
+  });
   useEffect(() => {
-    const prev = resetKeyRef.current;
-    resetKeyRef.current = { storeId, sessionId };
-    if (prev.storeId === storeId && (prev.sessionId === sessionId || prev.sessionId === null)) {
-      return;
-    }
-    const next = initialValue.map((r) => ({ ...r }));
-    lastSavedRef.current = JSON.stringify(next);
-    setRows(next);
-    setSavingState('idle');
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    pendingFireRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, storeId]);
+    resetForSession();
+  }, [resetForSession, sessionId, storeId]);
 
   // CA-25: the save waiting out its 700 ms debounce, so unmount /
   // pagehide can send it instead of dropping it.
@@ -221,7 +235,7 @@ export function SessionExtrasEditor({
       </div>
 
       {isReadOnly ? (
-        <ul className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline">
+        <ul className={cn(surfaceClass, 'flex flex-col gap-1 px-3 py-2')}>
           {cleanedView.map((r, i) => (
             <li
               key={`${r.name}-${i}`}
@@ -298,17 +312,10 @@ function ExtraRowEditor({
     { storeId, search: row.name },
     { enabled: focusing && storeId.length > 0, staleTime: 30_000 },
   );
-  const suggestions = (suggestionsQuery.data ?? []).filter(
-    (s) => s.name.length > 0 && s.name !== row.name.trim().toLowerCase(),
-  );
+  const suggestions = otherSuggestions(suggestionsQuery.data ?? [], row.name);
 
   return (
-    <div
-      className={cn(
-        'rounded-[var(--r-card)] bg-[var(--c-surface)] p-2 ring-hairline',
-        invalid && 'ring-1 ring-[var(--c-danger)]',
-      )}
-    >
+    <div className={cn(surfaceClass, 'p-2', invalid && 'ring-1 ring-[var(--c-danger)]')}>
       {/* Walkthrough F1 (2026-11-05): name, qty, unit and remove shared one
           line, leaving the name a sliver (and less in Russian). The name
           now has its own line; qty and unit sit under it. */}
@@ -337,9 +344,12 @@ function ExtraRowEditor({
               if (e.key === 'Enter') onNameCommit();
             }}
           />
+          {/* Review ORD-23 (2026-11): a plain list of buttons. It was marked
+              a listbox, whose items must be options the field points at
+              (combobox), which these are not. */}
           {focusing && suggestions.length > 0 ? (
             <ul
-              role="listbox"
+              role="list"
               className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-[var(--r-card)] bg-[var(--c-surface-elevated)] py-1 shadow-product ring-hairline"
             >
               {suggestions.slice(0, 6).map((s) => (
@@ -364,7 +374,10 @@ function ExtraRowEditor({
                     className="press flex min-h-11 w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
                   >
                     <span className="text-[var(--c-fg)]">{s.name}</span>
-                    <span className="text-old-label text-[var(--c-fg-muted)]">×{s.count}</span>
+                    {/* ORD-23: "×3" read as "times 3" and looked like a quantity. */}
+                    <span className="text-old-label text-[var(--c-fg-muted)]">
+                      {i18n.t('order.extras.usedCount', { n: s.count })}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -434,8 +447,9 @@ function RemoveExtraButton({ label, onClick }: { label: string; onClick: () => v
       type="button"
       aria-label={label}
       onClick={onClick}
+      // ORD-22: hit-44, a 44 px tap area around the 36 px circle.
       className={cn(
-        'press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+        'press hit-44 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
         'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
         'hover:text-[var(--c-danger)]',
       )}

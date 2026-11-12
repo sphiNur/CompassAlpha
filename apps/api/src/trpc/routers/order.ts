@@ -47,11 +47,7 @@ import {
   submittedSnapshot,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
-import {
-  priceStoreIds,
-  pricesVisibleAnywhere,
-  pricesVisibleFor,
-} from '../../services/priceRedaction';
+import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import type { RequestContext } from '../context';
 import { readOrderEvents } from '../../services/orderStream';
@@ -67,8 +63,9 @@ import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
 import { memberProfiles } from '../../services/memberProfiles';
 import {
   estimateLines,
-  loadSkuPriceStats,
+  loadSkuLastPrices,
   loadSkuUsualPayment,
+  type SkuUsualPayment,
 } from '../../services/priceStats';
 import {
   assertActorAssignedToStore,
@@ -352,8 +349,11 @@ async function commitOrderWrite(
 
 export const orderRouter = router({
   /**
-   * Returns the (storeId, date) session — shared across the store's staff.
-   * Empty/null when nobody has touched it yet today.
+   * The caller's own order for (storeId, date): the open draft, else the
+   * latest rejected batch, else the latest sent one; or the batch named by
+   * `sessionId`. Null when there is none. Review ORD-18 (2026-11): this
+   * said the session was shared across the store's staff; it is the
+   * caller's own since 0005.
    */
   todaySession: authedProcedure.input(TodaySessionInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
@@ -383,23 +383,17 @@ export const orderRouter = router({
       // today, returns null and the FE shows an empty-state with a
       // "start a new batch" affordance.
       // ORD-4 (2026-10-30): a batch the caller picked from the day's list.
-      // Only their own, at this store; nothing else is returned.
-      if (input.sessionId) {
-        const picked = await tx.query.orderSessionsV.findFirst({
-          where: (sess, { eq: eq2, and: and2 }) =>
-            and2(
-              eq2(sess.id, input.sessionId!),
-              eq2(sess.orgId, ctx.session!.orgId),
-              eq2(sess.storeId, input.storeId),
-              eq2(sess.initiatedByMemberId, ctx.session!.memberId),
-            ),
-        });
-        if (!picked) return null;
-      }
+      // Only their own, at this store; nothing else is returned. Review
+      // ORD-26 (2026-11): read once (it was looked up twice).
       let session = await tx.query.orderSessionsV.findFirst({
         where: (sess, { eq: eq2, and: and2 }) =>
           input.sessionId
-            ? and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, ctx.session!.orgId))
+            ? and2(
+                eq2(sess.id, input.sessionId),
+                eq2(sess.orgId, ctx.session!.orgId),
+                eq2(sess.storeId, input.storeId),
+                eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+              )
             : and2(
                 eq2(sess.orgId, ctx.session!.orgId),
                 eq2(sess.storeId, input.storeId),
@@ -408,6 +402,7 @@ export const orderRouter = router({
                 eq2(sess.status, 'draft'),
               ),
       });
+      if (input.sessionId && !session) return null;
       // 2026-10-21 audit CA-02: next, the most recent REJECTED batch. The
       // domain keeps it 'rejected' and lets the owner edit + re-Submit (or
       // Withdraw) it; before this it was never returned, so a rejected
@@ -513,8 +508,6 @@ export const orderRouter = router({
     });
   }),
 
-  /** Look up a session by id (any status). Used by ApprovalPage's expand-row,
-   *  Withdraw history, RunPage's session-list. */
   /**
    * Every session this member started for one (store, date) (2026-07-30).
    *
@@ -556,12 +549,15 @@ export const orderRouter = router({
               eq2(sess.orderDate, date),
               eq2(sess.initiatedByMemberId, ctx.session!.memberId),
             ),
-          // `submittedAt ASC NULLS LAST`: immutable once set, so a batch
-          // keeps its number while the user keeps editing. The open draft
-          // (null) sorts last and becomes the highest number, which is
-          // what "the one I'm working on now" should be. There is no
-          // createdAt on this read model, and updatedAt would reshuffle
-          // the list on every keystroke.
+          // `submittedAt ASC NULLS LAST`: a batch keeps its number while
+          // the user keeps editing. The open draft (null) sorts last and
+          // becomes the highest number, which is what "the one I'm working
+          // on now" should be. There is no createdAt on this read model,
+          // and updatedAt would reshuffle the list on every keystroke.
+          // Review ORD-27 (2026-11): numbers are by time sent, as on the
+          // run page (sessionSelection batchNumbers), so they change when
+          // a batch is sent again: withdrawing clears its submittedAt and
+          // re-submitting a rejected or withdrawn batch stamps a new one.
           orderBy: (sess) => sql`${sess.submittedAt} asc nulls last`,
         });
         if (sessions.length === 0) return [];
@@ -592,7 +588,7 @@ export const orderRouter = router({
         const priceStats =
           allSkuIds.size > 0 &&
           pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [input.storeId])
-            ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
+            ? await loadSkuLastPrices(tx, ctx.session!.orgId, [...allSkuIds])
             : new Map();
 
         // RE-ORD-5 (2026-10-30): an empty draft (everything set back to 0)
@@ -629,6 +625,8 @@ export const orderRouter = router({
       });
     }),
 
+  /** One order by id, any status: the approval card's lines. Read by its
+   *  owner or by a reviewer at its store (assertCanReadSession). */
   sessionDetail: authedProcedure
     .input(SessionDetailInputSchema)
     .query(async ({ ctx, input }) => {
@@ -761,19 +759,17 @@ export const orderRouter = router({
         // Approves nowhere → nothing to show.
         return [];
       }
-      const storeFilterClause =
-        allowedStoreIds === null
+      // Asked for a store outside their scope: an empty queue rather than
+      // a 403, as queue screens filter by store. Review ORD-30 (2026-11):
+      // the query used to run with a made-up store id to get it.
+      if (allowedStoreIds !== null && input.storeId && !allowedStoreIds.includes(input.storeId)) {
+        return [];
+      }
+      const storeFilterClause = input.storeId
+        ? eq(s.orderSessionsV.storeId, input.storeId)
+        : allowedStoreIds === null
           ? undefined
-          : input.storeId
-            ? // Caller asked for a specific store — only allowed if it's
-              // in their scope.
-              allowedStoreIds.includes(input.storeId)
-              ? eq(s.orderSessionsV.storeId, input.storeId)
-              : // Asked for a store they don't own → return empty rather
-                // than 403; queue UIs filter by store and we don't want
-                // to break them with errors.
-                eq(s.orderSessionsV.storeId, '00000000-0000-0000-0000-000000000000')
-            : inArray(s.orderSessionsV.storeId, allowedStoreIds);
+          : inArray(s.orderSessionsV.storeId, allowedStoreIds);
 
       const sessions = await tx
         .select()
@@ -784,11 +780,7 @@ export const orderRouter = router({
             input.status
               ? eq(s.orderSessionsV.status, input.status)
               : eq(s.orderSessionsV.status, 'submitted'),
-            // If allowedStoreIds is null, no scoping; otherwise applied above.
             storeFilterClause,
-            !storeFilterClause && input.storeId
-              ? eq(s.orderSessionsV.storeId, input.storeId)
-              : undefined,
             input.date ? eq(s.orderSessionsV.orderDate, input.date) : undefined,
           ),
         )
@@ -871,32 +863,44 @@ export const orderRouter = router({
       // review sheet run too, so the card and the detail agree to the
       // cent. One extra price-history scan for the whole page, not one per
       // card.
-      const allSkuIds = new Set<string>();
-      for (const skuTotals of skuTotalsBySession.values()) {
-        for (const [skuId, qty] of skuTotals) if (qty > 0n) allSkuIds.add(skuId);
-      }
       // D12 (2026-10-31): the card's amount only for those with
       // prices.view, like the batches list (HIS-4 / ORD-12).
       // D6 (2026-10-31): prices.view as effective per store; a card from
       // a store where it does not hold shows no amount (counts stay).
+      // Reviews ORD-26 / ORD-33 (2026-11): such a card's estimate is not
+      // worked out at all, so no amount of it can be sent by mistake, and
+      // nothing is looked up for it.
       const priceStores = await priceStoreIds(tx, ctx.session!);
-      const priceStats =
-        allSkuIds.size > 0 && pricesVisibleAnywhere(priceStores)
-          ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
-          : new Map();
+      const pricedSessions = sessions.filter((sess) =>
+        pricesVisibleFor(priceStores, [sess.storeId]),
+      );
+      const pricedSkuIds = new Set<string>();
+      for (const sess of pricedSessions) {
+        for (const [skuId, qty] of skuTotalsBySession.get(sess.id) ?? []) {
+          if (qty > 0n) pricedSkuIds.add(skuId);
+        }
+      }
       // 2026-10-11: and how much of it is likely cash and how much
       // transfer, by how each product was last paid. One more scan for
       // the whole page.
-      const usualPayment = await loadSkuUsualPayment(tx, ctx.session!.orgId, [...allSkuIds]);
-      const storeIdBySession = new Map(sessions.map((sess) => [sess.id, sess.storeId]));
+      const noUsualPayment: SkuUsualPayment = { byStoreSku: new Map(), bySku: new Map() };
+      const [priceStats, usualPayment] =
+        pricedSkuIds.size > 0
+          ? await Promise.all([
+              loadSkuLastPrices(tx, ctx.session!.orgId, [...pricedSkuIds]),
+              loadSkuUsualPayment(tx, ctx.session!.orgId, [...pricedSkuIds]),
+            ])
+          : [new Map(), noUsualPayment];
       const estimateBySession = new Map<string, ReturnType<typeof estimateLines>>();
-      for (const [sessionId, skuTotals] of skuTotalsBySession) {
+      for (const sess of pricedSessions) {
+        const skuTotals = skuTotalsBySession.get(sess.id);
+        if (!skuTotals) continue;
         estimateBySession.set(
-          sessionId,
+          sess.id,
           estimateLines(
             [...skuTotals.entries()].map(([skuId, qty]) => ({ skuId, qty: milliQty(qty) })),
             priceStats,
-            { usual: usualPayment, storeId: storeIdBySession.get(sessionId) ?? '' },
+            { usual: usualPayment, storeId: sess.storeId },
           ),
         );
       }
@@ -907,14 +911,9 @@ export const orderRouter = router({
           totalQty: 0n,
           contributors: new Set<string>(),
         };
-        const est = estimateBySession.get(sess.id) ?? {
-          total: '0.00',
-          known: 0,
-          unknown: 0,
-          cash: '0.00',
-          transfer: '0.00',
-        };
-        const priced = pricesVisibleFor(priceStores, [sess.storeId]);
+        // Absent for an order of a store the reader may not price.
+        const est = estimateBySession.get(sess.id);
+        const priced = est !== undefined && est.known > 0;
         const store = storeById.get(sess.storeId);
         const attribMemberId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
         const member = attribMemberId ? memberById.get(attribMemberId) : null;
@@ -955,12 +954,12 @@ export const orderRouter = router({
            * as the whole order. Null total when nothing could be priced at
            * all.
            */
-          estimatedTotal: priced && est.known > 0 ? est.total : null,
-          estimatedKnown: priced ? est.known : 0,
-          estimatedUnknown: priced ? est.unknown : 0,
+          estimatedTotal: priced ? est.total : null,
+          estimatedKnown: est?.known ?? 0,
+          estimatedUnknown: est?.unknown ?? 0,
           /** The same total, split by how each product was last paid. */
-          estimatedCash: priced && est.known > 0 ? est.cash : null,
-          estimatedTransfer: priced && est.known > 0 ? est.transfer : null,
+          estimatedCash: priced ? est.cash : null,
+          estimatedTransfer: priced ? est.transfer : null,
         };
       });
     });
@@ -1375,7 +1374,9 @@ export const orderRouter = router({
         if (out.length === 0) return { sessionId: state.streamId, lastSeq: state.seq };
         // Review ORD-15: the list replaces the one saved, so it is refused
         // when someone else changed the order after the version the caller
-        // saw (`expectedSeq`; the web app does not send it yet).
+        // saw (`expectedSeq`). The web app does not send it: only the
+        // owner edits a draft, and a queued save replayed after a manager
+        // withdrew the order would be refused and lost.
         if (existing) assertSeenLatest(seen, input.expectedSeq, ctx.session!.userId);
         await commitOrderWrite(tx, ctx, state, out);
         return { sessionId: state.streamId, lastSeq: state.seq };
@@ -1483,8 +1484,11 @@ export const orderRouter = router({
     ),
   ),
 
+  // Review ORD-16 (2026-11): the input is the order's id alone. It was
+  // written as a command with a `reason` and `expectedSeq` that were then
+  // picked away, so neither ever arrived.
   releaseClaim: authedProcedure
-    .input(SimpleSessionCommandSchema.extend({ reason: SimpleSessionCommandSchema.shape.expectedSeq.optional() }).pick({ sessionId: true }))
+    .input(SessionDetailInputSchema)
     .mutation(async ({ ctx, input }) =>
       runSimpleCommand(ctx, input.sessionId, (state, perms) =>
         decide(state, { type: 'ReleaseClaim', reason: 'manual', actor: buildActor(ctx, state, perms) }),
@@ -1547,56 +1551,78 @@ export const orderRouter = router({
     ),
   ),
 
-  withdraw: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) => {
-    // ORD-5 (2026-10-30): a withdrawn batch becomes its author's draft
-    // again, but one person has one draft per store and day. With another
-    // draft open the projection hit that unique index and answered
-    // "edited by someone else". Say what to do instead.
-    const draftOpen = await ctx.withOrg(async (tx) => {
-      const [session] = await tx
-        .select({
-          storeId: s.orderSessionsV.storeId,
-          orderDate: s.orderSessionsV.orderDate,
-          initiatedBy: s.orderSessionsV.initiatedByMemberId,
-        })
-        .from(s.orderSessionsV)
-        .where(
-          and(eq(s.orderSessionsV.orgId, ctx.session!.orgId), eq(s.orderSessionsV.id, input.sessionId)),
-        );
-      if (!session?.initiatedBy) return null;
-      const [other] = await tx
-        .select({ id: s.orderSessionsV.id })
-        .from(s.orderSessionsV)
-        .where(
-          and(
-            eq(s.orderSessionsV.orgId, ctx.session!.orgId),
-            eq(s.orderSessionsV.storeId, session.storeId),
-            eq(s.orderSessionsV.orderDate, session.orderDate),
-            eq(s.orderSessionsV.initiatedByMemberId, session.initiatedBy),
-            eq(s.orderSessionsV.status, 'draft'),
-            ne(s.orderSessionsV.id, input.sessionId),
-          ),
-        )
-        .limit(1);
-      return other ? { id: other.id, initiatedBy: session.initiatedBy } : null;
-    });
-    if (draftOpen) {
-      // RE-ORD-5 (2026-10-30): a draft its author has emptied no longer
-      // blocks — archive it and go on. One with content still does.
-      const mine = draftOpen.initiatedBy === ctx.session!.memberId;
-      try {
-        if (!mine) throw new Error('not the author');
-        await runSimpleCommand(ctx, draftOpen.id, (state, perms) =>
-          decide(state, { type: 'Archive', reason: 'empty_draft', actor: buildActor(ctx, state, perms) }),
-        );
-      } catch {
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'order.errors.withdrawDraftOpen' });
+  withdraw: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
+    // Review ORD-29 (2026-11): the check for another draft, its archiving
+    // and the withdrawal are one write, decided again when it loses a race
+    // (a draft opened in between). They were three transactions, and any
+    // failure of the archiving, a database error included, was answered
+    // withdrawDraftOpen.
+    withOrderWriteRetry(ctx, async (tx) => {
+      const { session, perms, state } = await openSessionForWrite(tx, ctx, input.sessionId);
+      const out: OrderEvent[] = [];
+      // Decided first, so an order that cannot be withdrawn (claimed by a
+      // reviewer) says so rather than asking for the other draft.
+      const after = decideInto(state, out, {
+        type: 'Withdraw',
+        actor: buildActor(ctx, state, perms),
+      });
+      if (out.length === 0) return { lastSeq: state.seq };
+      // ORD-5 (2026-10-30): a withdrawn batch becomes its author's draft
+      // again, but one person has one draft per store and day. With another
+      // draft open the projection hit that unique index and answered
+      // "edited by someone else". Say what to do instead.
+      const owner = session.initiatedByMemberId;
+      const [other] = owner
+        ? await tx
+            .select({ id: s.orderSessionsV.id })
+            .from(s.orderSessionsV)
+            .where(
+              and(
+                eq(s.orderSessionsV.orgId, ctx.session!.orgId),
+                eq(s.orderSessionsV.storeId, session.storeId),
+                eq(s.orderSessionsV.orderDate, session.orderDate),
+                eq(s.orderSessionsV.initiatedByMemberId, owner),
+                eq(s.orderSessionsV.status, 'draft'),
+                ne(s.orderSessionsV.id, session.id),
+              ),
+            )
+            .limit(1)
+        : [];
+      if (other) {
+        // RE-ORD-5 (2026-10-30): a draft its author has emptied no longer
+        // blocks: it is archived and the withdrawal goes on. One with
+        // content still blocks, and so does anyone else's.
+        if (owner !== ctx.session!.memberId) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'order.errors.withdrawDraftOpen',
+          });
+        }
+        const draft = replay(other.id, await readOrderEvents(tx, other.id));
+        let archived: OrderEvent[];
+        try {
+          archived = decide(draft, {
+            type: 'Archive',
+            reason: 'empty_draft',
+            actor: buildActor(ctx, draft, perms),
+          });
+        } catch (err) {
+          if (err instanceof DomainError && err.i18nKey === 'order.errors.cannotArchive') {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'order.errors.withdrawDraftOpen',
+            });
+          }
+          rethrowDomainError(err);
+        }
+        if (archived.length > 0) {
+          await commitOrderWrite(tx, ctx, archived.reduce(apply, draft), archived);
+        }
       }
-    }
-    return runSimpleCommand(ctx, input.sessionId, (state, perms) =>
-      decide(state, { type: 'Withdraw', actor: buildActor(ctx, state, perms) }),
-    );
-  }),
+      await commitOrderWrite(tx, ctx, after, out);
+      return { lastSeq: after.seq };
+    }),
+  ),
 
   // D12 (2026-10-31): the approval toast's undo sends the lastSeq its
   // approval returned, so it only goes through while nobody else has

@@ -1,12 +1,15 @@
 /**
- * Order event catalog — every state change to a `(store, date)` order
- * session goes through one of these. Append-only.
+ * Order event catalog — every state change to an order session goes
+ * through one of these. Append-only.
  *
- * Per-store collaborative model (2026-05-02): the session belongs to
- * the store; multiple staff add line items. Events that mutate items
- * (`ItemAdjusted`, `ItemNoteSet`) carry `byMemberId` so the projector
- * can attribute authorship and the command layer can enforce
- * "edit only what you authored" by default.
+ * A session is one member's order for one store and day (0005,
+ * 2026-05-04; several a day since M3.32): only its owner edits and submits
+ * it, and while it is under review only the reviewer holding the claim.
+ * Events that change a line (`ItemAdjusted`, `ItemNoteSet`) say who acted
+ * (`byMemberId`) and whose line it is (`forMemberId`): a reviewer's edit
+ * changes the owner's line. Review ORD-18 (2026-11): this said the
+ * session belonged to the store and its staff shared it, the model 0005
+ * replaced.
  *
  * Event payload shape is part of the public contract (docs/EVENT_CATALOG.md):
  * written events are never rewritten. A payload may gain an optional field

@@ -983,6 +983,7 @@ export const zh = {
   'order.batches.newBatch': '再下一单',
   'order.batches.viewing': '已选中',
   'order.batches.extras': '{n} 项其他物品',
+  'order.batches.itemsAndExtras': '{items} + {extras}',
   'order.batches.rejectedTitle': '第 {n} 批被拒绝',
   'order.batches.open': '查看',
   'order.batches.backToCurrent': '返回当前批次',
@@ -1043,6 +1044,7 @@ export const zh = {
   'order.categories.uncategorized': '未分类',
   'order.batches.backToReceipt': '返回今日批次',
   'order.extras.remove': '删除',
+  'order.extras.usedCount': '用过 {n} 次',
   'order.toast.extrasSaveFailed': '其他物品没保存成功，再试一次。',
 
   // ── ApprovalPage ────────────────────────────────────────────────
@@ -1246,6 +1248,7 @@ export const zh = {
   'run.action.finishBlocked.otherStores': '结束采购需要负责全部门店的人',
   'run.action.finishBlocked.noPermission': '你没有结束采购的权限',
   'common.listSeparator': '、',
+  'common.navPath': '{parent} › {child}',
   'common.unknownStore': '未知门店',
   'common.unknownProduct': '未知商品',
   'common.unknownSupplier': '未知供应商',
@@ -1944,8 +1947,8 @@ export const zh = {
   'run.money.itemsExpenses': '商品 {items} · 开销 {expenses}',
   'run.money.cashTransfer': '现金 {cash} · 转账 {transfer}',
   'confirm.issue.receivedQty': '实收数量（共 {max} {unit}）',
-  'confirm.issue.receivedQtyRequired': '请填写实际收到的数量',
-  'confirm.issue.receivedQtyRange': '请输入 0 到 {max} 之间的数字',
+  'confirm.issue.receivedQtyRequired': '请填写实际收到的数量。',
+  'confirm.issue.receivedQtyRange': '请输入 0 到 {max} 之间的数字。',
   'confirm.issue.receivedQtyNotShort':
     '实收 {max} 就是全部到齐了，请选「无误」；数量不足时请填少于 {max} 的数。',
   'confirm.receivedOf': '实收 {received} / {qty} {unit}',

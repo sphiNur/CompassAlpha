@@ -84,3 +84,17 @@ export function wholeNumberRequired(row: ExtraDraft): boolean {
   const qty = Number(row.qty.trim());
   return WHOLE_NUMBER_UNITS.has(row.unit) && Number.isFinite(qty) && !Number.isInteger(qty);
 }
+
+/**
+ * The name suggestions worth offering while `typed` is in the name field:
+ * not the name already typed. Review ORD-24 (2026-11): suggestions come
+ * back as people last wrote them (ORD-17), grouped without case, so they
+ * are compared without case too; "Lauk" was still offered under "Lauk".
+ */
+export function otherSuggestions<T extends { name: string }>(
+  suggestions: readonly T[],
+  typed: string,
+): T[] {
+  const own = typed.trim().toLowerCase();
+  return suggestions.filter((s) => s.name.length > 0 && s.name.toLowerCase() !== own);
+}
