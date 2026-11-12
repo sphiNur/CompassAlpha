@@ -102,7 +102,7 @@ bun run scripts/deploy.ts --dry   # 只跑 smoke，不部署
 1. **写事件**：在 `packages/domain/src/<aggregate>/events.ts` 增加 event 类型（payload schema 是公共契约，改了要新事件类型）。
 2. **写 reducer**：在 `state.ts` 的 `apply()` 加 case，更新 in-memory 投影。
 3. **写命令**：在 `commands.ts` 的 `decide()` 加 case，做权限/校验，emit 事件。
-4. **写 projector**：在 `apps/api/src/services/<aggregate>Projection.ts` 加 case，更新读模型表。
+4. **写 projector**：订单在 `packages/streams/src/orderProjection.ts`（API 和 worker 共用），采购单在 `apps/api/src/services/runProjection.ts`，加 case，更新读模型表。
 5. **写 migration**：`packages/db/migrations/00xx_*.sql` + `meta/_journal.json` 加同名条目（CI 会卡缺漏）。
 6. **写 tRPC**：`apps/api/src/trpc/routers/<router>.ts` 加 procedure，调 `decide` + `appendEvents` + `projectXxx`。
 7. **写 FE**：`apps/web/src/pages/...` 用 `trpc.xxx.useMutation`，乐观写缓存（参考 OrderPage.tsx 的 debounce + serialize 模板）。

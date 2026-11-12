@@ -1,7 +1,7 @@
 /**
  * Event store helpers — read events for a stream and append new ones with
  * optimistic concurrency. Keeps DB access in one place so the order/run
- * routers stay focused on decision flow.
+ * routers, and the worker's system commands, stay focused on decision flow.
  */
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { DB } from '@compass/db';

@@ -40,7 +40,7 @@
  * without a tracked row.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { inSystem, schema as s, withSystemContext } from '@compass/db';
 import { signRefresh } from '../infra/jwt';
@@ -336,18 +336,4 @@ async function revokeFamily(db: DB, family: string): Promise<void> {
       .set({ revokedAt: new Date() })
       .where(and(eq(s.refreshTokens.family, family), isNull(s.refreshTokens.revokedAt))),
   );
-}
-
-/**
- * GC helper for a future cron — drop fully-expired rows beyond a
- * grace period. Not wired today; the table grows ~5 rows/user/month
- * which is fine for a single-chain launch. Wire when row count
- * starts mattering for query plans.
- */
-export async function purgeExpiredRefreshTokens(db: DB, graceDays = 7): Promise<number> {
-  const cutoff = new Date(Date.now() - graceDays * 24 * 60 * 60 * 1000);
-  const result = await inSystem(db, 'auth', (tx) =>
-    tx.delete(s.refreshTokens).where(sql`${s.refreshTokens.expiresAt} < ${cutoff}`),
-  );
-  return (result as unknown as { rowCount?: number }).rowCount ?? 0;
 }

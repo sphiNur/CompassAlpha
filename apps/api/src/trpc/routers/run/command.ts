@@ -17,9 +17,8 @@ import {
   pgConstraintName,
   withStreamConflictRetry,
 } from '../../../services/pgErrors';
-import { loadRunState } from '../../../services/runStream';
-import { loadOrderState } from '../../../services/orderStream';
-import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
+import { loadOrderState, loadRunState, writeOrderEvents } from '@compass/streams';
+import { writeRunEvents } from '../../../services/streamWrite';
 import { hub } from '../../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
 import {
