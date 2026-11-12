@@ -76,18 +76,7 @@ import {
   getActorStoreIdsForPermission,
 } from '../../services/storeScope';
 import { hub } from '../../realtime/hub';
-import { todayInTz } from '@compass/domain';
-
-/**
- * Today's date as YYYY-MM-DD in the SESSION'S ORG timezone.
- * D.1 (M3.39, 2026-05-20) — replaced the M0 UTC-only stub that was
- * silently rolling the day boundary at 5am Tashkent local. The session
- * carries `orgTimezone` (populated in context.ts:loadSession from
- * organizations.timezone, default 'Asia/Tashkent' post migration 0028).
- */
-function todayInOrgTz(ctx: { session: { orgTimezone: string } | null }): string {
-  return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
-}
+import { orgToday } from '../../services/timeZone';
 
 function buildActor(
   ctx: {
@@ -172,7 +161,7 @@ function assertNotStaleOfflineCreate(
   ctx: { session: { orgTimezone: string } | null },
   requestedDate: string | undefined,
 ): void {
-  if (requestedDate !== undefined && isPastBusinessDate(requestedDate, todayInOrgTz(ctx))) {
+  if (requestedDate !== undefined && isPastBusinessDate(requestedDate, orgToday(ctx.session))) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message: 'order.errors.staleOfflineEdit',
@@ -181,7 +170,7 @@ function assertNotStaleOfflineCreate(
   // ORD-11 (2026-10-30, owner decision): the date is frozen on the device,
   // so a phone whose clock runs ahead opened a draft for a day that has
   // not come, invisible today and puzzling tomorrow.
-  if (requestedDate !== undefined && requestedDate > todayInOrgTz(ctx)) {
+  if (requestedDate !== undefined && requestedDate > orgToday(ctx.session)) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message: 'order.errors.deviceDateAhead',
@@ -383,7 +372,7 @@ export const orderRouter = router({
         ctx.session!.permissions,
       );
 
-      const date = input.date ?? todayInOrgTz(ctx);
+      const date = input.date ?? orgToday(ctx.session);
       // 0005 (2026-05-04): per-member sessions. Each staff sees ONLY
       // their own draft for this (store, date) — never another staff's.
       // M3.32 (2026-05-18): multi-batch-per-day support (migration 0026)
@@ -558,7 +547,7 @@ export const orderRouter = router({
           ctx.session!.permissions,
         );
 
-        const date = input.date ?? todayInOrgTz(ctx);
+        const date = input.date ?? orgToday(ctx.session);
         const sessions = await tx.query.orderSessionsV.findMany({
           where: (sess, { eq: eq2, and: and2 }) =>
             and2(
@@ -979,7 +968,7 @@ export const orderRouter = router({
 
   /** Adjust an item qty. Lazy-creates a draft if none exists for today. */
   adjustItem: authedProcedure.input(AdjustItemInputSchema).mutation(async ({ ctx, input }) => {
-    const date = input.date ?? todayInOrgTz(ctx);
+    const date = input.date ?? orgToday(ctx.session);
     return withOrderWriteRetry(ctx, async (tx) => {
       // Verify store ownership.
       const store = await tx.query.stores.findFirst({
@@ -1347,7 +1336,7 @@ export const orderRouter = router({
           storeId,
           ctx.session!.permissions,
         );
-        const date = input.date ?? todayInOrgTz(ctx);
+        const date = input.date ?? orgToday(ctx.session);
         if (!existing) {
           existing = await findSelfEditSession(
             tx,
@@ -1456,7 +1445,7 @@ export const orderRouter = router({
         // the API was hit between 00:00 and (org-offset) UTC.
         type Row = { name: string; cnt: number };
         const search = (input.search ?? '').trim().toLowerCase();
-        const today = todayInOrgTz(ctx);
+        const today = orgToday(ctx.session);
         const rows = await tx.execute<Row>(sql`
           -- ORD-17 (2026-10-30): grouped case-insensitively but returned as
           -- people last wrote it (picking a suggestion lower-cased the

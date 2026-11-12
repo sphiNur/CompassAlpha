@@ -8,7 +8,7 @@ import { and, eq, ne, sql } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
 import type { RunEvent, RunState } from '@compass/domain/run';
 import { decide as decideOrder, type OrderState } from '@compass/domain/order';
-import { DomainError, todayInTz } from '@compass/domain';
+import { DomainError } from '@compass/domain';
 import { rethrowDomainError } from '../../trpc';
 import type { RequestContext } from '../../context';
 import {
@@ -28,16 +28,6 @@ import {
   assertCanAmendRun,
   assertRunPermissionForAllStores,
 } from './scope';
-
-/**
- * Today as YYYY-MM-DD in the session's ORG timezone. D.1 (M3.39,
- * 2026-05-20) — was UTC-only, which caused new runs created between
- * 00:00 and (org-offset) UTC to land under yesterday's runDate key
- * for UZ tenants. Same helper shape as order.ts:todayInOrgTz.
- */
-export function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
-  return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
-}
 
 export function actorFromCtx(
   ctx: RequestContext,

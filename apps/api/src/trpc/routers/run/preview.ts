@@ -18,7 +18,7 @@ import {
 } from '../../../services/runSessionsView';
 import { inUuids } from '../../../services/sqlIn';
 import { executeRows } from '../../../services/sqlRows';
-import { todayStr } from './command';
+import { orgToday } from '../../../services/timeZone';
 
 export const previewProcedures = {
   /**
@@ -84,7 +84,7 @@ export const previewProcedures = {
       // pre-select only today's orders and flag older ones — the device
       // clock is the wrong timezone for a purchaser travelling or a
       // phone set to UTC.
-      const today = todayStr(ctx);
+      const today = orgToday(ctx.session);
       // M3.2: org-wide visibility requires `run.create.org` (or the
       // legacy `users.manage` super-perm). Without it, scope the
       // query to the actor's bound stores. `getActorStoreIds`

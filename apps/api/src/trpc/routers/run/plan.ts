@@ -27,8 +27,8 @@ import { loadOrderState } from '../../../services/orderStream';
 import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
 import { hub } from '../../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
+import { orgToday } from '../../../services/timeZone';
 import {
-  todayStr,
   actorFromCtx,
   orderActorFromCtx,
   attachSessionsToRun,
@@ -72,7 +72,7 @@ export const planProcedures = {
     return withRunStreamRetry(
       ctx,
       async (tx) => {
-        const today = todayStr(ctx);
+        const today = orgToday(ctx.session);
         const date = input.date ?? today;
 
         /**

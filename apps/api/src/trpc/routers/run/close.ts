@@ -17,8 +17,8 @@ import { loadOrderState } from '../../../services/orderStream';
 import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
 import { hub } from '../../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
+import { orgToday } from '../../../services/timeZone';
 import {
-  todayStr,
   actorFromCtx,
   orderActorFromCtx,
   withRunStreamRetry,
@@ -219,7 +219,7 @@ export const closeProcedures = {
         // HIS-7 (2026-10-30): the same rule as creating a run — never a
         // day that has not come yet in the org's time zone. Checked after
         // the amend gate so a caller without it hears about that first.
-        if (input.runDate > todayStr(ctx)) {
+        if (input.runDate > orgToday(ctx.session)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
         }
         return decideRun(state, {
