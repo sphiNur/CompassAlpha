@@ -117,9 +117,9 @@ export function decide(
       if (!command.orderDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
         throw validation('order.errors.invalidDate');
       }
-      // Per-store collaborative model: any member with `order.draft` can
-      // start the day's session for their store. The first one to add a
-      // line is recorded as the initiator (informational only).
+      // 0005: each member with `order.draft` starts their own session; the
+      // initiator recorded here is its owner, who alone edits and submits
+      // it (assertCanEditSession, Submit).
       if (!command.actor.permissions.has('order.draft')) {
         throw forbidden('order.errors.cannotDraft');
       }
@@ -477,7 +477,7 @@ export function decide(
       assertActiveStream(state);
       // Withdraw is allowed for: the original submitter, or anyone with
       // `order.approve` (the store manager). Either can pull a submitted
-      // order back to draft so the team can keep editing.
+      // order back to draft so its owner can keep editing.
       const isSubmitter =
         state.submittedByMemberId !== null &&
         state.submittedByMemberId === command.actor.memberId;

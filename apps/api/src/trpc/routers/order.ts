@@ -349,8 +349,11 @@ async function commitOrderWrite(
 
 export const orderRouter = router({
   /**
-   * Returns the (storeId, date) session — shared across the store's staff.
-   * Empty/null when nobody has touched it yet today.
+   * The caller's own order for (storeId, date): the open draft, else the
+   * latest rejected batch, else the latest sent one; or the batch named by
+   * `sessionId`. Null when there is none. Review ORD-18 (2026-11): this
+   * said the session was shared across the store's staff; it is the
+   * caller's own since 0005.
    */
   todaySession: authedProcedure.input(TodaySessionInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
@@ -505,8 +508,6 @@ export const orderRouter = router({
     });
   }),
 
-  /** Look up a session by id (any status). Used by ApprovalPage's expand-row,
-   *  Withdraw history, RunPage's session-list. */
   /**
    * Every session this member started for one (store, date) (2026-07-30).
    *
@@ -548,12 +549,15 @@ export const orderRouter = router({
               eq2(sess.orderDate, date),
               eq2(sess.initiatedByMemberId, ctx.session!.memberId),
             ),
-          // `submittedAt ASC NULLS LAST`: immutable once set, so a batch
-          // keeps its number while the user keeps editing. The open draft
-          // (null) sorts last and becomes the highest number, which is
-          // what "the one I'm working on now" should be. There is no
-          // createdAt on this read model, and updatedAt would reshuffle
-          // the list on every keystroke.
+          // `submittedAt ASC NULLS LAST`: a batch keeps its number while
+          // the user keeps editing. The open draft (null) sorts last and
+          // becomes the highest number, which is what "the one I'm working
+          // on now" should be. There is no createdAt on this read model,
+          // and updatedAt would reshuffle the list on every keystroke.
+          // Review ORD-27 (2026-11): numbers are by time sent, as on the
+          // run page (sessionSelection batchNumbers), so they change when
+          // a batch is sent again: withdrawing clears its submittedAt and
+          // re-submitting a rejected or withdrawn batch stamps a new one.
           orderBy: (sess) => sql`${sess.submittedAt} asc nulls last`,
         });
         if (sessions.length === 0) return [];
@@ -621,6 +625,8 @@ export const orderRouter = router({
       });
     }),
 
+  /** One order by id, any status: the approval card's lines. Read by its
+   *  owner or by a reviewer at its store (assertCanReadSession). */
   sessionDetail: authedProcedure
     .input(SessionDetailInputSchema)
     .query(async ({ ctx, input }) => {
@@ -1368,7 +1374,9 @@ export const orderRouter = router({
         if (out.length === 0) return { sessionId: state.streamId, lastSeq: state.seq };
         // Review ORD-15: the list replaces the one saved, so it is refused
         // when someone else changed the order after the version the caller
-        // saw (`expectedSeq`; the web app does not send it yet).
+        // saw (`expectedSeq`). The web app does not send it: only the
+        // owner edits a draft, and a queued save replayed after a manager
+        // withdrew the order would be refused and lost.
         if (existing) assertSeenLatest(seen, input.expectedSeq, ctx.session!.userId);
         await commitOrderWrite(tx, ctx, state, out);
         return { sessionId: state.streamId, lastSeq: state.seq };
@@ -1476,8 +1484,11 @@ export const orderRouter = router({
     ),
   ),
 
+  // Review ORD-16 (2026-11): the input is the order's id alone. It was
+  // written as a command with a `reason` and `expectedSeq` that were then
+  // picked away, so neither ever arrived.
   releaseClaim: authedProcedure
-    .input(SimpleSessionCommandSchema.extend({ reason: SimpleSessionCommandSchema.shape.expectedSeq.optional() }).pick({ sessionId: true }))
+    .input(SessionDetailInputSchema)
     .mutation(async ({ ctx, input }) =>
       runSimpleCommand(ctx, input.sessionId, (state, perms) =>
         decide(state, { type: 'ReleaseClaim', reason: 'manual', actor: buildActor(ctx, state, perms) }),
