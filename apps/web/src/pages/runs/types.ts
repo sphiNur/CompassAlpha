@@ -148,7 +148,7 @@ export interface ActiveRun {
       qty: string;
       unit: string;
       note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
+      status?: ExtraStatus;
       sessionId?: string;
       idx?: number;
       /** APR-18: the session's lastSeq, sent back as expectedSeq. */
@@ -194,6 +194,24 @@ export interface ActiveRun {
     } | null
   >;
 }
+
+/** An "other item"'s outcome (M3.37); a row without one is pending. */
+export type ExtraStatus = 'pending' | 'bought' | 'unavailable';
+
+/** An "other item" a store asked for, as run.get lists it (M3.16-C). */
+export type RunExtra = NonNullable<ActiveRun['sessionExtrasByStore']>[string][number];
+
+/**
+ * Marks one "other item" (M3.37). Settles, never rejects, once the server
+ * has answered, so the row can wait for it (RUNWEB1-17).
+ */
+export type MarkExtraStatus = (
+  sessionId: string,
+  extraIndex: number,
+  status: ExtraStatus,
+  /** APR-18: the session's lastSeq the row was read at. */
+  expectedSeq?: number,
+) => Promise<void>;
 
 const otherCache = new WeakMap<string[], ReadonlySet<string>>();
 /** BUY-6: the read-only item set, stable per run.get payload. */

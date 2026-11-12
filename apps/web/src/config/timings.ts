@@ -37,3 +37,25 @@ export const PAGE_SIZE = {
   /** Debug-style firehose. */
   firehose: 200,
 } as const;
+
+/**
+ * The purchase page's waits (review RUNWEB1-32: they were bare numbers in
+ * RunPage, its hook and its rows).
+ */
+export const RUN_PAGE = {
+  /**
+   * After a write the run is read again this much later, so the list does
+   * not redraw under the purchaser's next tap (2026-06-08). What the
+   * server accepted shows on its row at once (RUNWEB1-37).
+   */
+  refetchDelayMs: 650,
+  /** How often the run is read while the realtime socket is down (P-4). */
+  offlinePollMs: 6_000,
+  /**
+   * How long a row saved inline keeps its "saving" mark once the request
+   * is over and the run still shows it unbought.
+   */
+  savingHoldMs: 5_000,
+  /** How long focus waits for the next row to buy after one is saved (DX-IX-4). */
+  nextRowFocusWaitMs: 3_000,
+} as const;

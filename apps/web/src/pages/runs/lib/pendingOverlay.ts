@@ -14,6 +14,7 @@
  */
 import type { PaymentMethod } from '@compass/contracts';
 import type { PendingWrite } from '../../../lib/outbox/policy';
+import type { ExtraStatus } from '../types';
 
 type Split = {
   runId: string;
@@ -62,13 +63,31 @@ type Expense = {
   pendingSync?: boolean;
 };
 
-export type OverlayRun = { id: string; items: Item[]; splits: Split[]; expenses?: Expense[] };
+/** An "other item" a store asked for (M3.37); absent status reads as pending. */
+type Extra = { sessionId?: string; idx?: number; status?: ExtraStatus };
+
+export type OverlayRun = {
+  id: string;
+  items: Item[];
+  splits: Split[];
+  expenses?: Expense[];
+  sessionExtrasByStore?: Record<string, Extra[]>;
+};
 
 type StoreSplitInput = {
   storeId: string;
   qty: string;
   unitPrice?: string;
   paymentMethod?: PaymentMethod;
+};
+
+/** What a purchase sends that shows on its row. */
+export type PurchaseInput = {
+  skuId: string;
+  actualQty: string;
+  unitPrice: string;
+  paymentMethod?: string;
+  storeSplits: StoreSplitInput[];
 };
 
 /** Procedures whose queued writes these overlays understand. */
@@ -91,6 +110,104 @@ function inputOf(entry: PendingWrite): Record<string, unknown> {
 }
 
 /**
+ * The items and splits with a purchase of an item not bought yet laid
+ * over them; `pendingSync` marks it as not on the server yet.
+ */
+function applyPurchase(
+  runId: string,
+  items: Item[],
+  splits: Split[],
+  input: PurchaseInput,
+  pendingSync: boolean,
+): { items: Item[]; splits: Split[] } {
+  const sync = pendingSync ? { pendingSync: true } : {};
+  // Review RUNWEB2-11 (2026-11-12): the server records a purchase of any
+  // item not bought yet, an unavailable one too (decide refuses only a
+  // second buy), so the purchase shows on the same items.
+  let applied = false;
+  const nextItems = items.map((item) => {
+    if (item.skuId !== input.skuId || item.status === 'purchased') return item;
+    applied = true;
+    return {
+      ...item,
+      status: 'purchased',
+      purchasedQty: String(input.actualQty),
+      unitPrice: String(input.unitPrice),
+      paymentMethod: input.paymentMethod ?? 'cash',
+      ...sync,
+    };
+  });
+  if (!applied) return { items, splits };
+  return {
+    items: nextItems,
+    splits: [
+      ...splits.filter((sp) => sp.skuId !== input.skuId),
+      ...input.storeSplits.map(
+        (sp): Split => ({
+          runId,
+          skuId: input.skuId,
+          storeId: sp.storeId,
+          qty: sp.qty,
+          unitPrice: sp.unitPrice ?? null,
+          paymentMethod: sp.paymentMethod ?? null,
+          deliveredAt: null,
+          confirmedAt: null,
+          ...sync,
+        }),
+      ),
+    ],
+  };
+}
+
+/**
+ * Review RUNWEB1-37 (2026-11-12): a purchase the server has accepted,
+ * shown on its row at once. The run is read again a moment later; until
+ * then the row went back to "to buy", and on a slow line a second tap on
+ * ✓ was refused as already bought. Written into the query cache, unlike
+ * the queued writes above: the next read replaces it with what the
+ * server holds.
+ */
+export function withRecordedPurchase<T extends OverlayRun>(run: T, input: PurchaseInput): T {
+  const next = applyPurchase(run.id, run.items, run.splits, input, false);
+  return next.items === run.items ? run : { ...run, ...next };
+}
+
+/**
+ * The extras with one row's status set (RUNWEB1-17); the same object
+ * when no row is at that address.
+ */
+export function withExtraStatus<R extends Record<string, Extra[]> | undefined>(
+  byStore: R,
+  sessionId: string,
+  idx: number,
+  status: ExtraStatus,
+): R {
+  if (!byStore) return byStore;
+  for (const [storeId, extras] of Object.entries(byStore)) {
+    const at = extras.findIndex((e) => e.sessionId === sessionId && e.idx === idx);
+    if (at < 0) continue;
+    if ((extras[at]!.status ?? 'pending') === status) return byStore;
+    const rows = extras.slice();
+    rows[at] = { ...extras[at]!, status };
+    return { ...byStore, [storeId]: rows };
+  }
+  return byStore;
+}
+
+/** One extra's status, or undefined when no row is at that address. */
+export function extraStatusOf(
+  byStore: Record<string, Extra[]> | undefined,
+  sessionId: string,
+  idx: number,
+): ExtraStatus | undefined {
+  for (const extras of Object.values(byStore ?? {})) {
+    const e = extras.find((x) => x.sessionId === sessionId && x.idx === idx);
+    if (e) return e.status ?? 'pending';
+  }
+  return undefined;
+}
+
+/**
  * The run with every queued write for it applied. Returns the same object
  * when nothing is queued for this run, so memoised children don't
  * re-render for nothing.
@@ -100,10 +217,11 @@ export function overlayPendingWrites<T extends OverlayRun>(
   entries: readonly PendingWrite[],
 ): T | undefined {
   if (!run) return run;
+  const withMarks = overlayExtraMarks(run, entries);
   const mine = entries.filter(
     (entry) => OVERLAID_PROCEDURES.has(entry.procedure) && inputOf(entry).runId === run.id,
   );
-  if (mine.length === 0) return run;
+  if (mine.length === 0) return withMarks;
   let items = run.items;
   let splits = run.splits;
   let expenses = run.expenses;
@@ -112,41 +230,19 @@ export function overlayPendingWrites<T extends OverlayRun>(
     const input = inputOf(entry);
     switch (entry.procedure) {
       case 'run.purchaseItem': {
-        const skuId = String(input.skuId);
-        const storeSplits = (input.storeSplits ?? []) as StoreSplitInput[];
-        // Review RUNWEB2-11 (2026-11-12): the server records a purchase of
-        // any item not bought yet, an unavailable one too (decide refuses
-        // only a second buy), so the queued one shows on the same items.
-        items = items.map((item) =>
-          item.skuId === skuId && item.status !== 'purchased'
-            ? {
-                ...item,
-                status: 'purchased',
-                purchasedQty: String(input.actualQty),
-                unitPrice: String(input.unitPrice),
-                paymentMethod: (input.paymentMethod as string | undefined) ?? 'cash',
-                pendingSync: true,
-              }
-            : item,
-        );
-        if (items.some((item) => item.skuId === skuId && item.pendingSync)) {
-          splits = [
-            ...splits.filter((sp) => sp.skuId !== skuId),
-            ...storeSplits.map(
-              (sp): Split => ({
-                runId: run.id,
-                skuId,
-                storeId: sp.storeId,
-                qty: sp.qty,
-                unitPrice: sp.unitPrice ?? null,
-                paymentMethod: sp.paymentMethod ?? null,
-                deliveredAt: null,
-                confirmedAt: null,
-                pendingSync: true,
-              }),
-            ),
-          ];
-        }
+        ({ items, splits } = applyPurchase(
+          run.id,
+          items,
+          splits,
+          {
+            skuId: String(input.skuId),
+            actualQty: String(input.actualQty),
+            unitPrice: String(input.unitPrice),
+            paymentMethod: input.paymentMethod as string | undefined,
+            storeSplits: (input.storeSplits ?? []) as StoreSplitInput[],
+          },
+          true,
+        ));
         break;
       }
       case 'run.addPurchaserItem': {
@@ -270,7 +366,29 @@ export function overlayPendingWrites<T extends OverlayRun>(
       }
     }
   }
-  return { ...run, items, splits, ...(expenses ? { expenses } : {}) } as T;
+  return { ...withMarks, items, splits, ...(expenses ? { expenses } : {}) } as T;
+}
+
+/**
+ * RUNWEB1-17 (2026-11-12): an "other item" priced offline is marked
+ * bought once its expense is sent (useRunMutations queues both); until
+ * then it shows bought here. The mark names the order, not the run, so
+ * it is matched by the order's rows.
+ */
+function overlayExtraMarks<T extends OverlayRun>(run: T, entries: readonly PendingWrite[]): T {
+  let byStore = run.sessionExtrasByStore;
+  for (const entry of entries) {
+    if (entry.procedure !== 'order.markExtraStatus') continue;
+    const input = inputOf(entry);
+    if (typeof input.sessionId !== 'string' || typeof input.extraIndex !== 'number') continue;
+    byStore = withExtraStatus(
+      byStore,
+      input.sessionId,
+      input.extraIndex,
+      input.status as ExtraStatus,
+    );
+  }
+  return byStore === run.sessionExtrasByStore ? run : { ...run, sessionExtrasByStore: byStore };
 }
 
 /** Stores with a queued delivery or receipt confirmation. */

@@ -16,6 +16,7 @@ import {
   memo,
   useCallback,
   useDeferredValue,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -39,6 +40,7 @@ import {
   Segmented,
   PickerGroup,
   PickerRow,
+  SearchInput,
 } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
@@ -55,6 +57,7 @@ import {
 import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
+import { scrollBehavior } from '../../../lib/reducedMotion';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,
@@ -66,9 +69,11 @@ import {
 } from '../views/RunViews';
 import type {
   ActiveRun,
+  MarkExtraStatus,
   PreviewLine,
   PreviewStoreGroup,
   PreviewSupplierGroup,
+  RunExtra,
 } from '../types';
 import { otherStoreSkusOf } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
@@ -169,6 +174,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   priceInThousands,
   onTogglePriceUnit,
   savingSkuId,
+  revealPending,
   onSavePurchaseInline,
   onMarkNa,
   onEditPurchased,
@@ -208,6 +214,12 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   /** Forwarded to PurchaseRow's unit-suffix toggle. */
   onTogglePriceUnit: () => void;
   savingSkuId: string | null;
+  /**
+   * RUNWEB1-14: counts the bottom bar's "N left" taps that found no row
+   * to buy on screen. Each one brings back the full list and scrolls to
+   * the first such row.
+   */
+  revealPending: number;
   onSavePurchaseInline: (payload: {
     skuId: string;
     actualQty: string;
@@ -231,26 +243,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   onDeliverStore: (storeId: string, storeName: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;
   /** M3.37 (Wave2 #5): mark a single "其他物品" row's outcome. */
-  onMarkExtraStatus: (
-    sessionId: string,
-    extraIndex: number,
-    status: 'pending' | 'bought' | 'unavailable',
-    /** APR-18: the session's lastSeq the row was read at. */
-    expectedSeq?: number,
-  ) => void;
-  onRecordExtraExpense: (
-    storeId: string,
-    extra: {
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    },
-  ) => void;
+  onMarkExtraStatus: MarkExtraStatus;
+  onRecordExtraExpense: (storeId: string, extra: RunExtra) => void;
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
@@ -372,6 +366,11 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
     }
     return ids.size;
   }, [run.items, skuById]);
+  // M3.52: every row of a run for two stores or more shows its per-store
+  // chips. The run's items by product, for the grouped views. Both once
+  // here, not again in each view (review RUNWEB1-20).
+  const isMultiStoreRun = demandStoreIds.length > 1;
+  const itemBySku = useMemo(() => new Map(run.items.map((it) => [it.skuId, it])), [run.items]);
   // M3.27 (2026-05-18): showing perStore needs ≥2 stores; showing
   // perVendor needs ≥2 supplier buckets (including unassigned). The
   // toggle itself shows when either condition holds — even if only
@@ -386,6 +385,15 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   const editingPhase = run.status === 'purchasing' || run.status === 'amending';
   const plannedOrEditing = run.status === 'planned' || editingPhase;
   const showViewToggle = plannedOrEditing && (showPerStore || showPerVendor || showPerCategory);
+  // The editable list (and the cards under it) shows unless a grouped view
+  // that has something to group is chosen (review RUNWEB1-20: this was
+  // spelt out three times).
+  const showAggregate =
+    !showViewToggle ||
+    shownViewMode === 'aggregate' ||
+    (shownViewMode === 'perStore' && !showPerStore) ||
+    (shownViewMode === 'perVendor' && !showPerVendor) ||
+    (shownViewMode === 'perCategory' && !showPerCategory);
 
   /**
    * Search + filter over the in-run list.
@@ -456,6 +464,28 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
         : i18n.t('a11y.results.items', { n: visibleRunItems.length })
       : null,
   );
+
+  // RUNWEB1-14 (2026-11-12): "N left" scrolls to the first row still to
+  // buy. With none on screen (the by-store view, a search, a filter) the
+  // tap did nothing; the full list comes back first. Not remembered as
+  // the chosen view. The scroll waits for the list to draw from the
+  // deferred view and query.
+  const revealWanted = useRef(false);
+  useEffect(() => {
+    if (revealPending === 0) return;
+    revealWanted.current = true;
+    setViewMode('aggregate');
+    setItemQuery('');
+    setItemFilter('all');
+  }, [revealPending]);
+  const listShowsAll = showAggregate && deferredItemQuery === '' && itemFilter === 'all';
+  useEffect(() => {
+    if (!revealWanted.current || !listShowsAll) return;
+    revealWanted.current = false;
+    document
+      .querySelector('[data-run-item-pending]')
+      ?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+  });
 
   // BUY-5 (2026-10-30): items an order asked for more of after they were
   // bought or marked unavailable.
@@ -575,6 +605,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
       {showViewToggle && shownViewMode === 'perStore' && showPerStore ? (
         <PerStoreView
           run={run}
+          itemBySku={itemBySku}
           storeById={storeById}
           skuById={skuById}
           productName={productName}
@@ -586,6 +617,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
           run={run}
+          itemBySku={itemBySku}
+          isMultiStoreRun={isMultiStoreRun}
           skuById={skuById}
           storeById={storeById}
           productName={productName}
@@ -608,6 +641,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
           run={run}
+          isMultiStoreRun={isMultiStoreRun}
           skuById={skuById}
           categoryById={categoryById}
           storeById={storeById}
@@ -624,12 +658,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           onUnmark={onUnmark}
         />
       ) : null}
-      {(!showViewToggle ||
-        shownViewMode === 'aggregate' ||
-        (shownViewMode === 'perStore' && !showPerStore) ||
-        (shownViewMode === 'perVendor' && !showPerVendor) ||
-        (shownViewMode === 'perCategory' && !showPerCategory)) &&
-      plannedOrEditing && run.items.length > 0 ? (
+      {showAggregate && plannedOrEditing && run.items.length > 0 ? (
         <Card>
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
               standardised primitive so every section eyebrow renders
@@ -664,14 +693,14 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               and the controls would cost more rows than they save. */}
           {run.items.length >= 8 ? (
             <>
+              {/* RUNWEB1-13: the kit's search field, with its clear button. */}
               <div className="px-4 pb-1.5">
-                <input
-                  type="search"
+                <SearchInput
                   value={itemQuery}
                   onChange={(e) => setItemQuery(e.target.value)}
+                  onClear={() => setItemQuery('')}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
                 />
               </div>
               {/* V4: -mt-1.5 pt-1.5 instead of pt-0 — same layout, and the
@@ -730,7 +759,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                   demand={demandBySku.get(it.skuId) ?? NO_DEMAND}
                   storeById={storeById}
                   actualSplits={actualSplits}
-                  isMultiStoreRun={demandStoreIds.length > 1}
+                  isMultiStoreRun={isMultiStoreRun}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   lastPriceObservedAt={run.lastPriceObservedAtBySku?.[it.skuId] ?? null}
                   i18n={i18n}
@@ -1061,12 +1090,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           moment a run started — they only existed in the preview
           UI. Now they sit right under the per-SKU list so the
           purchaser sees them while recording buys. */}
-      {(!showViewToggle ||
-        shownViewMode === 'aggregate' ||
-        (shownViewMode === 'perStore' && !showPerStore) ||
-        (shownViewMode === 'perVendor' && !showPerVendor) ||
-        (shownViewMode === 'perCategory' && !showPerCategory)) &&
-      plannedOrEditing ? (
+      {showAggregate && plannedOrEditing ? (
         <RunExtrasCard
           sessionExtrasByStore={run.sessionExtrasByStore}
           sessionNotesByStore={run.sessionNotesByStore}
@@ -1084,12 +1108,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           sections. Always visible (read-only in non-purchasing
           phases) so the manager can see "what off-plan was spent"
           from any page state. */}
-      {(!showViewToggle ||
-        shownViewMode === 'aggregate' ||
-        (shownViewMode === 'perStore' && !showPerStore) ||
-        (shownViewMode === 'perVendor' && !showPerVendor) ||
-        (shownViewMode === 'perCategory' && !showPerCategory)) &&
-      (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
+      {showAggregate && (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
         <ExpensesCard
           expenses={run.expenses}
           storeById={storeById}
@@ -1727,7 +1746,13 @@ export function PreviewSummaryCard({
    * hits, not to then go tapping for them.
    */
   const [filterText, setFilterText] = useState('');
-  const filterTokens = useMemo(() => normalizeQuery(filterText) ?? [], [filterText]);
+  // RUNWEB1-34: the box shows each key at once; the groups filter from
+  // this deferred copy, as the in-run list's search does.
+  const deferredFilterText = useDeferredValue(filterText);
+  const filterTokens = useMemo(
+    () => normalizeQuery(deferredFilterText) ?? [],
+    [deferredFilterText],
+  );
   const filtering = filterTokens.length > 0;
   // Other-language names for the SKU behind a line, so a Russian speaker
   // finds a row whose display name resolved to Chinese.
@@ -1921,13 +1946,15 @@ export function PreviewSummaryCard({
           every group collapsed it is the primary way to reach a row. */}
       <div className="px-3 pt-1">
         <div className="flex items-center gap-2">
-          <input
-            type="search"
+          {/* RUNWEB1-13: the kit's search field. It matches stalls too
+              (lib/previewFilter), as the in-run list's does. */}
+          <SearchInput
+            className="flex-1"
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
-            placeholder={i18n.t('order.search.placeholder')}
-            aria-label={i18n.t('order.search.placeholder')}
-            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
+            onClear={() => setFilterText('')}
+            placeholder={i18n.t('run.search.itemsPlaceholder')}
+            aria-label={i18n.t('run.search.itemsPlaceholder')}
           />
           {filtering ? (
             <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -2072,7 +2099,7 @@ export function PreviewSummaryCard({
                 <button
                   type="button"
                   aria-expanded={open}
-                  aria-controls={panelId}
+                  aria-controls={open ? panelId : undefined}
                   onClick={(e) => {
                     anchorOn(e.currentTarget);
                     setOpenStore((o) => toggleOpen(o, g.storeId));
@@ -2097,23 +2124,27 @@ export function PreviewSummaryCard({
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
-                {groupStoreBySupplier(
-                  g,
-                  i18n.t('run.previewSupplier.unassigned'),
-                  i18n.locale,
-                ).map((supplier) => (
-                  <section key={supplier.supplierId ?? '__unassigned__'}>
-                    <PreviewSubheading
-                      name={supplier.supplierName}
-                      meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
-                    />
-                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
-                      {supplier.items.map((line, idx) => renderLine(line, idx))}
-                    </ul>
-                  </section>
-                ))}
-              </div>
+              {/* RUNWEB1-34: a shut group's rows are not drawn at all
+                  (they were, hidden, in every group). */}
+              {open ? (
+                <div id={panelId} className="flex flex-col gap-2">
+                  {groupStoreBySupplier(
+                    g,
+                    i18n.t('run.previewSupplier.unassigned'),
+                    i18n.locale,
+                  ).map((supplier) => (
+                    <section key={supplier.supplierId ?? '__unassigned__'}>
+                      <PreviewSubheading
+                        name={supplier.supplierName}
+                        meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
+                      />
+                      <ul className="overflow-hidden rounded-[var(--r-utility)]">
+                        {supplier.items.map((line, idx) => renderLine(line, idx))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              ) : null}
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
                   per item; legacy free-text notes (pre-M3.16) appended
@@ -2177,7 +2208,7 @@ export function PreviewSummaryCard({
                 <button
                   type="button"
                   aria-expanded={open}
-                  aria-controls={panelId}
+                  aria-controls={open ? panelId : undefined}
                   onClick={(e) => {
                     anchorOn(e.currentTarget);
                     setOpenSupplier((o) => toggleOpen(o, supplierKey));
@@ -2221,31 +2252,33 @@ export function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
-                {b.stores.map((store) => (
-                  <div key={store.storeId}>
-                    <PreviewSubheading
-                      name={store.storeName}
-                      meta={groupMoneyMeta(store.total, store.unknownCount)}
-                    />
-                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
-                      {store.items.map((line, idx) =>
-                        renderLine(line, idx, { editableSupplier: true }),
-                      )}
-                    </ul>
-                    {store.legacyNote ? (
-                      <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
-                        <SectionLabel padded={false}>
-                          {i18n.t('order.notes.label')}
-                        </SectionLabel>
-                        <div className="mt-1 whitespace-pre-wrap text-old-body-sm leading-snug text-[var(--c-fg-muted)]">
-                          {store.legacyNote}
+              {open ? (
+                <div id={panelId} className="flex flex-col gap-2">
+                  {b.stores.map((store) => (
+                    <div key={store.storeId}>
+                      <PreviewSubheading
+                        name={store.storeName}
+                        meta={groupMoneyMeta(store.total, store.unknownCount)}
+                      />
+                      <ul className="overflow-hidden rounded-[var(--r-utility)]">
+                        {store.items.map((line, idx) =>
+                          renderLine(line, idx, { editableSupplier: true }),
+                        )}
+                      </ul>
+                      {store.legacyNote ? (
+                        <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
+                          <SectionLabel padded={false}>
+                            {i18n.t('order.notes.label')}
+                          </SectionLabel>
+                          <div className="mt-1 whitespace-pre-wrap text-old-body-sm leading-snug text-[var(--c-fg-muted)]">
+                            {store.legacyNote}
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </section>
             );
           })}

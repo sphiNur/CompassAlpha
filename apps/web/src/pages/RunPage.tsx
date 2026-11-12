@@ -47,6 +47,7 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton } from '../hooks/usePageMainButton';
 import { scrollBehavior } from '../lib/reducedMotion';
+import { RUN_PAGE } from '../config/timings';
 import { confirmThen } from '../lib/confirm';
 import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
@@ -109,6 +110,8 @@ export function RunPage() {
   // is the page-level button, not a modal.
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
   const [inlineSavingSkuId, setInlineSavingSkuId] = useState<string | null>(null);
+  /** Taps of "N left" that found no row to buy on screen (RUNWEB1-14). */
+  const [revealPending, setRevealPending] = useState(0);
   // Which purchased row is mid-flight on a payment-method correction, so
   // that row's toggle greys out instead of accepting a second tap on a
   // slow link.
@@ -235,7 +238,7 @@ export function RunPage() {
     flipPayment,
     markUnavailable,
     dismissTopUp,
-    markExtraStatus,
+    markExtra,
     extraForExpense,
     sendConfirm,
     sendAddItem,
@@ -321,7 +324,10 @@ export function RunPage() {
     activeRun ? { runId: activeRun.id } : { runId: '' },
     // P-4 (2026-10-31): realtime `run.changed` already refreshes this; poll
     // only while the socket is down instead of every 6 s on top of it.
-    { enabled: !!activeRun, refetchInterval: activeRun ? pollWhenOffline(6_000, realtimeLive) : false },
+    {
+      enabled: !!activeRun,
+      refetchInterval: activeRun ? pollWhenOffline(RUN_PAGE.offlinePollMs, realtimeLive) : false,
+    },
   );
   // R2-INT-1 / RE-DLV-1 (2026-10-31): writes saved offline show on their
   // item (bought, unavailable, delivered — waiting to sync) instead of the
@@ -397,7 +403,7 @@ export function RunPage() {
     if (purchaseItem.isPending) return;
     const t = setTimeout(() => {
       setInlineSavingSkuId((cur) => (cur === inlineSavingSkuId ? null : cur));
-    }, 5_000);
+    }, RUN_PAGE.savingHoldMs);
     return () => clearTimeout(t);
   }, [inlineSavingSkuId, purchaseItem.isPending, runDetailQuery.data?.items]);
 
@@ -751,9 +757,12 @@ export function RunPage() {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
             onClick: () => {
               const next = document.querySelector('[data-run-item-pending]');
-              next?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+              if (next) next.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+              // RUNWEB1-14: none on screen (the by-store view, or a search
+              // or filter hiding them): the panel shows the list again.
+              else setRevealPending((n) => n + 1);
             },
-            visible: pendingCount > 0,
+            visible: true,
             active: true,
           };
         }
@@ -1362,6 +1371,7 @@ export function RunPage() {
             priceInThousands={priceInThousands}
             onTogglePriceUnit={togglePriceInThousands}
             savingSkuId={inlineSavingSkuId}
+            revealPending={revealPending}
             onSavePurchaseInline={({
               skuId,
               actualQty,
@@ -1502,7 +1512,7 @@ export function RunPage() {
               setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
             }
             onMarkExtraStatus={(sessionId, extraIndex, status, expectedSeq) =>
-              markExtraStatus.mutate({ sessionId, extraIndex, status, expectedSeq })
+              markExtra(activeRun.id, { sessionId, extraIndex, status, expectedSeq })
             }
             onRecordExtraExpense={(storeId, extra) => {
               const expenseId = newClientId();

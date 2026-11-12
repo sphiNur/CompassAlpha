@@ -20,7 +20,15 @@ import {
   logPurchaseUnavailable,
 } from '../lib/purchaseTelemetry';
 import type { ComponentProps, ReactNode } from 'react';
-import { Button, Card, Input, NameCell, SectionLabel, focusAfter } from '@compass/ui';
+import {
+  Button,
+  Card,
+  Input,
+  NameCell,
+  SectionLabel,
+  disabledClass,
+  focusAfter,
+} from '@compass/ui';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
@@ -42,7 +50,13 @@ import { proportionalSplitQty } from '../lib/splitQty';
 import { paidPerStore } from '../lib/purchaseOverrides';
 import { expenseLine, expensesTotal } from '../lib/expenseMoney';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
-import { otherStoreSkusOf, type ActiveRun } from '../types';
+import {
+  otherStoreSkusOf,
+  type ActiveRun,
+  type ExtraStatus,
+  type MarkExtraStatus,
+  type RunExtra,
+} from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { rowName } from '../../../lib/productName';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
@@ -81,8 +95,11 @@ export function PerStoreView({
   skuById,
   productName,
   skusByStore,
+  itemBySku,
 }: {
   run: ActiveRun;
+  /** The run's items by product, indexed once by the panel (RUNWEB1-20). */
+  itemBySku: ReadonlyMap<string, ActiveRun['items'][number]>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   skuById: Map<
     string,
@@ -99,13 +116,6 @@ export function PerStoreView({
   // M3.34 and falls back to the raw string for exotic free-text units.
   const unitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
-  // Indexed once. Every row was doing run.items.find(...), which on an
-  // 87-item run is ~7,600 comparisons per render, repeated whenever the
-  // 6-second poll hands back a new array.
-  const itemBySku = useMemo(
-    () => new Map(run.items.map((it) => [it.skuId, it])),
-    [run.items],
-  );
   const orderedStores = useMemo(() => {
     const ids = [...skusByStore.keys()];
     ids.sort((a, b) => {
@@ -251,6 +261,8 @@ export function PerStoreView({
  */
 export function PerVendorView({
   run,
+  itemBySku,
+  isMultiStoreRun,
   skuById,
   storeById,
   productName,
@@ -270,6 +282,14 @@ export function PerVendorView({
   paymentBusySkuId,
 }: {
   run: ActiveRun;
+  /** The run's items by product, indexed once by the panel (RUNWEB1-20). */
+  itemBySku: ReadonlyMap<string, ActiveRun['items'][number]>;
+  /**
+   * M3.52: the run spans two stores or more, so EVERY row shows its
+   * per-store chips (a single-store-demand row in a multi-store run had
+   * no store label and looked ambiguous).
+   */
+  isMultiStoreRun: boolean;
   skuById: Map<
     string,
     { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
@@ -313,40 +333,14 @@ export function PerVendorView({
   /** Absent while the goods are going out (review RUNAPI-02). */
   onUnmark?: (skuId: string, skuName: string) => void;
   /** M3.37 (Wave2 #5): tap-to-cycle extras status. */
-  onMarkExtraStatus: (
-    sessionId: string,
-    extraIndex: number,
-    status: 'pending' | 'bought' | 'unavailable',
-    /** APR-18: the session's lastSeq the row was read at. */
-    expectedSeq?: number,
-  ) => void;
-  onRecordExtraExpense: (
-    storeId: string,
-    extra: {
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    },
-  ) => void;
+  onMarkExtraStatus: MarkExtraStatus;
+  onRecordExtraExpense: (storeId: string, extra: RunExtra) => void;
   onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
-  // Indexed once each — every row did run.items.find(...) plus
-  // run.splits.filter(...) (now rowSplitsOf), which on an 87-item run with
-  // ~260 splits is roughly 30,000 comparisons per render, recomputed
-  // whenever the 6-second poll returns fresh array identities.
-  const itemBySku = useMemo(
-    () => new Map(run.items.map((it) => [it.skuId, it])),
-    [run.items],
-  );
   // One save per stall for as long as onSavePurchaseInline stays the same:
   // a closure per row drew every memo()'d row again (review RUNWEB1-07).
   const saveAt = useMemo(() => {
@@ -360,20 +354,6 @@ export function PerVendorView({
       return save;
     };
   }, [onSavePurchaseInline]);
-  // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
-  // whether to render per-store chips on EVERY row of the run (true
-  // when the run spans ≥2 stores) — without this single-store-demand
-  // rows in a multi-store run had no store label and looked ambiguous.
-  // Falls back to splits for legacy runs missing perStoreDemand.
-  const isMultiStoreRun = useMemo(() => {
-    const ids = new Set<string>();
-    for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
-    if (ids.size === 0) {
-      for (const sp of run.splits) ids.add(sp.storeId);
-    }
-    return ids.size > 1;
-  }, [run.perStoreDemand, run.splits]);
-
   // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
   const buckets = useMemo(() => {
     type Bucket = {
@@ -565,48 +545,32 @@ export function RunExtrasCard({
    *  an extra records an expense for its store, so it is offered only for
    *  those stores; the others say who does it. */
   purchaseScopeStoreIds?: string[] | null;
-  sessionExtrasByStore?: Record<
-    string,
-    Array<{
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    }>
-  >;
+  sessionExtrasByStore?: Record<string, RunExtra[]>;
   sessionNotesByStore?: Record<string, string>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
   /** M3.37 (Wave2 #5): when true, tap a row to cycle pending → bought
    *  → unavailable → pending. Only true during run.status='purchasing'. */
   editable?: boolean;
-  onMarkExtraStatus?: (
-    sessionId: string,
-    extraIndex: number,
-    status: 'pending' | 'bought' | 'unavailable',
-    /** APR-18: the session's lastSeq the row was read at. */
-    expectedSeq?: number,
-  ) => void;
-  onRecordExtraExpense?: (
-    storeId: string,
-    extra: {
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    },
-  ) => void;
+  onMarkExtraStatus?: MarkExtraStatus;
+  onRecordExtraExpense?: (storeId: string, extra: RunExtra) => void;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
+  // RUNWEB1-17: rows whose mark is on its way; each takes no tap until
+  // the server has answered (its new status already shows).
+  const [marking, setMarking] = useState<ReadonlySet<string>>(() => new Set());
+  const mark = (e: RunExtra, sessionId: string, idx: number, next: ExtraStatus) => {
+    const key = `${sessionId}:${idx}`;
+    setMarking((cur) => new Set(cur).add(key));
+    void onMarkExtraStatus?.(sessionId, idx, next, e.sessionSeq).then(() =>
+      setMarking((cur) => {
+        const out = new Set(cur);
+        out.delete(key);
+        return out;
+      }),
+    );
+  };
   const resolveStoreName = (id: string) => storeById.get(id)?.name ?? i18n.t('common.unknownStore');
   const storeIds = [
     ...new Set([
@@ -620,9 +584,7 @@ export function RunExtrasCard({
   });
   if (storeIds.length === 0) return null;
   // M3.37: small lookup for the visual + accessible label per status.
-  const statusVisual = (
-    status: 'pending' | 'bought' | 'unavailable',
-  ): { mark: string; tone: string; label: string } => {
+  const statusVisual = (status: ExtraStatus): { mark: string; tone: string; label: string } => {
     switch (status) {
       case 'bought':
         return {
@@ -644,9 +606,7 @@ export function RunExtrasCard({
         };
     }
   };
-  const cycle = (
-    s: 'pending' | 'bought' | 'unavailable',
-  ): 'pending' | 'bought' | 'unavailable' =>
+  const cycle = (s: ExtraStatus): ExtraStatus =>
     s === 'pending' ? 'bought' : s === 'bought' ? 'unavailable' : 'pending';
   const anyTappable =
     editable &&
@@ -724,10 +684,9 @@ export function RunExtrasCard({
                             <button
                               type="button"
                               title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
-                              onClick={() =>
-                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status), e.sessionSeq)
-                              }
-                              className="flex min-h-11 min-w-0 flex-1 items-center gap-2 self-stretch rounded-[var(--r-utility)] text-left active:bg-[var(--c-surface-2)]"
+                              disabled={marking.has(`${e.sessionId}:${e.idx}`)}
+                              onClick={() => mark(e, e.sessionId!, e.idx!, cycle(status))}
+                              className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 self-stretch rounded-[var(--r-utility)] text-left active:bg-[var(--c-surface-2)] ${disabledClass}`}
                             >
                               {inner}
                             </button>
@@ -940,6 +899,7 @@ export function ExpensesCard({
 
 export function PerCategoryView({
   run,
+  isMultiStoreRun,
   skuById,
   categoryById,
   storeById,
@@ -958,6 +918,8 @@ export function PerCategoryView({
   paymentBusySkuId,
 }: {
   run: ActiveRun;
+  /** See PerVendorView. */
+  isMultiStoreRun: boolean;
   skuById: Map<
     string,
     { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
@@ -998,12 +960,6 @@ export function PerCategoryView({
   paymentBusySkuId: string | null;
 }) {
   const productNameParts = useProductNameParts();
-  const demandStoreIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
-    if (ids.size === 0) for (const sp of run.splits) ids.add(sp.storeId);
-    return [...ids];
-  }, [run.perStoreDemand, run.splits]);
   const groups = useMemo(() => {
     const byCategory = new Map<string, ActiveRun['items']>();
     for (const item of run.items) {
@@ -1068,7 +1024,7 @@ export function PerCategoryView({
                   demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
                   storeById={storeById}
                   actualSplits={actualSplits}
-                  isMultiStoreRun={demandStoreIds.length > 1}
+                  isMultiStoreRun={isMultiStoreRun}
                   lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
                   lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
                   i18n={i18n}
