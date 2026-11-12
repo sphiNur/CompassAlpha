@@ -13,7 +13,7 @@ import {
   toCents,
 } from '@compass/contracts';
 import {
-  effectivePermissionsForStore,
+  effectivePermissionsForStores,
   getActorStoreIdsForPermission,
 } from '../../../services/storeScope';
 import { replayRun } from '@compass/domain/run';
@@ -272,8 +272,10 @@ export const readProcedures = {
         // on run.list).
         const allowedStoreIds = await resolveRunReadStoreScope(tx, ctx);
         const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+        // Review RUNAPI-12 (2026-11-12): read once here; the dispatch and
+        // finish checks below reuse it.
+        const involvedStoreIds = await runInvolvedStoreIds(tx, run);
         if (allowedStoreSet) {
-          const involvedStoreIds = await runInvolvedStoreIds(tx, run);
           if (!involvedStoreIds.some((storeId) => allowedStoreSet.has(storeId))) {
             throw new TRPCError({
               code: 'NOT_FOUND',
@@ -597,22 +599,28 @@ export const readProcedures = {
         // only for an actor who can dispatch at all.
         const dispatchDeniedStoreIds: string[] = [];
         if (run.status === 'delivering' && ctx.session!.permissions.has('delivery.dispatch')) {
-          for (const storeId of await runInvolvedStoreIds(tx, run)) {
-            if (allowedStoreSet && !allowedStoreSet.has(storeId)) continue;
-            const perms = await effectivePermissionsForStore(
-              tx,
-              ctx.session!.memberId,
-              storeId,
-              ctx.session!.permissions,
-            );
-            if (!perms.has('delivery.dispatch')) dispatchDeniedStoreIds.push(storeId);
+          const visibleStoreIds = involvedStoreIds.filter(
+            (storeId) => !allowedStoreSet || allowedStoreSet.has(storeId),
+          );
+          const permsByStore = await effectivePermissionsForStores(
+            tx,
+            ctx.session!.memberId,
+            visibleStoreIds,
+          );
+          for (const storeId of visibleStoreIds) {
+            if (!permsByStore.get(storeId)?.has('delivery.dispatch')) {
+              dispatchDeniedStoreIds.push(storeId);
+            }
           }
         }
 
         // RE-DLV-3 (2026-10-31): whether this actor may finish (or close
         // the correction of) the run, so the screen can say why up front
         // instead of answering 403 after the summary sheet.
-        const finishBlockedReason = await finishBlockedReasonFor(tx, ctx, run);
+        const finishBlockedReason = await finishBlockedReasonFor(tx, ctx, {
+          ...run,
+          involvedStoreIds,
+        });
 
         // BUY-6 (2026-10-30): the stores this actor purchases for (null =
         // all), so rows serving other stores can be shown read-only.

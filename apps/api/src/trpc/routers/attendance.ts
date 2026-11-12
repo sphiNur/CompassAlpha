@@ -63,6 +63,7 @@ import { hub } from '../../realtime/hub';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
+  effectivePermissionsForStores,
   getActorStoreIds,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
@@ -950,15 +951,14 @@ export const attendanceRouter = router({
       const enrollment = enrollmentView(await enrollmentState(tx, session.memberId));
       const now = new Date();
       const out = [];
-      for (const store of stores) {
-        if (allowed !== null && !allowed.includes(store.id)) continue;
-        const perms = await effectivePermissionsForStore(
-          tx,
-          session.memberId,
-          store.id,
-          session.permissions,
-        );
-        if (!perms.has('attendance.clock')) continue;
+      const mine = stores.filter((store) => allowed === null || allowed.includes(store.id));
+      const permsByStore = await effectivePermissionsForStores(
+        tx,
+        session.memberId,
+        mine.map((store) => store.id),
+      );
+      for (const store of mine) {
+        if (!permsByStore.get(store.id)?.has('attendance.clock')) continue;
         const tz = tzOf(store, session);
         const today = todayInTz(tz, now);
         const [policy, shifts, punches] = await Promise.all([
