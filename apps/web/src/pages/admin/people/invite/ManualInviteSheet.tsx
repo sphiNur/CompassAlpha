@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
-  Checkbox,
   Field,
   FieldGroup,
   Input,
@@ -18,7 +17,8 @@ import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
 import { tgIdProblem } from '../../../../lib/adminFields';
 import { canGrantRole, rolePassesOn, type Actor } from '../../../../lib/authority';
-import { type InviteDraft, StoreName } from '../shared';
+import { type InviteDraft } from '../shared';
+import { StoreCheckList } from '../StoreCheckList';
 
 export function ManualInviteSheet({
   mode = 'tgid',
@@ -211,27 +211,18 @@ export function ManualInviteSheet({
                   {i18n.t('admin.banner.noStoresToInviteInto.body')}
                 </Banner>
               ) : (
-                <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                  {eligibleStores.map((st) => {
-                    const checked = draft.storeIds.includes(st.id);
-                    return (
-                      <Checkbox
-                        key={st.id}
-                        className="px-2"
-                        checked={checked}
-                        label={<StoreName store={st} />}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            storeIds: e.target.checked
-                              ? [...draft.storeIds, st.id]
-                              : draft.storeIds.filter((id) => id !== st.id),
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </div>
+                <StoreCheckList
+                  stores={eligibleStores}
+                  isChecked={(st) => draft.storeIds.includes(st.id)}
+                  onChange={(st, checked) =>
+                    setDraft({
+                      ...draft,
+                      storeIds: checked
+                        ? [...draft.storeIds, st.id]
+                        : draft.storeIds.filter((id) => id !== st.id),
+                    })
+                  }
+                />
               )}
               <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t('admin.invite.staffNeedStoreHint')}

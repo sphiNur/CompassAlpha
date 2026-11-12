@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Banner,
-  Checkbox,
   FieldGroup,
   LoadingState,
   QueryErrorBanner,
@@ -24,7 +23,7 @@ import {
   type Actor,
   type TargetMember,
 } from '../../../../lib/authority';
-import { StoreName } from '../shared';
+import { StoreCheckList } from '../StoreCheckList';
 
 /**
  * GrantRoleSheet — two-step picker.
@@ -277,20 +276,11 @@ export function GrantRoleSheet({
                 {i18n.t('people.noGrantStoresBody')}
               </Banner>
             ) : (
-              <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                {eligibleStores.map((st) => {
-                  const checked = selectedStoreIds.has(st.id);
-                  return (
-                    <Checkbox
-                      key={st.id}
-                      className="px-2"
-                      checked={checked}
-                      label={<StoreName store={st} />}
-                      onChange={() => toggleStore(st.id)}
-                    />
-                  );
-                })}
-              </div>
+              <StoreCheckList
+                stores={eligibleStores}
+                isChecked={(st) => selectedStoreIds.has(st.id)}
+                onChange={(st) => toggleStore(st.id)}
+              />
             )}
           </FieldGroup>
         ) : null}

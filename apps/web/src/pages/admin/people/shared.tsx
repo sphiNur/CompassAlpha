@@ -44,18 +44,6 @@ export function targetOf(m: {
   };
 }
 
-/** A store in a pick list: its name, then its code, muted. */
-export function StoreName({ store }: { store: { name: string; code?: string | null } }) {
-  return (
-    <>
-      {store.name}
-      {store.code ? (
-        <span className="ml-2 text-old-label text-[var(--c-fg-muted)]">{store.code}</span>
-      ) : null}
-    </>
-  );
-}
-
 export interface InviteDraft {
   tgUserId: string;
   displayName: string;
