@@ -16,7 +16,7 @@ import {
   varchar,
   customType,
 } from 'drizzle-orm/pg-core';
-import { members, organizations } from './auth';
+import { members, organizations, roles } from './auth';
 import { createdAt, deletedAt, inventorySchema, pkUuid, updatedAt } from './_helpers';
 
 export const stores = inventorySchema.table(
@@ -40,7 +40,7 @@ export const stores = inventorySchema.table(
      *  store has it set; otherwise the new member gets no role and
      *  the operator can grant one later. ON DELETE SET NULL so role
      *  deletion doesn't break the store row (see migration 0009). */
-    defaultRoleId: uuid('default_role_id'),
+    defaultRoleId: uuid('default_role_id').references(() => roles.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: deletedAt(),
@@ -48,6 +48,9 @@ export const stores = inventorySchema.table(
   (t) => ({
     orgIdx: index('stores_org_idx').on(t.orgId),
     orgCodeUnique: uniqueIndex('stores_org_code_unique').on(t.orgId, t.code),
+    defaultRoleIdx: index('stores_default_role_idx')
+      .on(t.defaultRoleId)
+      .where(sql`default_role_id IS NOT NULL`),
   }),
 );
 
@@ -157,8 +160,8 @@ export const storeDailySettlements = inventorySchema.table(
       t.storeId,
       t.settlementDate,
     ),
-    orgDateIdx: index('sds_org_date_idx').on(t.orgId, t.settlementDate),
-    storeDateIdx: index('sds_store_date_idx').on(t.storeId, t.settlementDate),
+    orgDateIdx: index('sds_org_date_idx').on(t.orgId, t.settlementDate.desc()),
+    storeDateIdx: index('sds_store_date_idx').on(t.storeId, t.settlementDate.desc()),
   }),
 );
 
@@ -196,8 +199,8 @@ export const storeDailySettlementRevisions = inventorySchema.table(
       t.settlementId,
       t.version,
     ),
-    orgDateIdx: index('sdsr_org_date_idx').on(t.orgId, t.settlementDate),
-    storeDateIdx: index('sdsr_store_date_idx').on(t.storeId, t.settlementDate),
+    orgDateIdx: index('sdsr_org_date_idx').on(t.orgId, t.settlementDate.desc()),
+    storeDateIdx: index('sdsr_store_date_idx').on(t.storeId, t.settlementDate.desc()),
   }),
 );
 
@@ -384,7 +387,9 @@ export const expenseTemplates = inventorySchema.table(
     updatedAt: updatedAt(),
   },
   (t) => ({
-    orgActiveIdx: index('expense_templates_org_active_idx').on(t.orgId, t.sortIndex, t.createdAt),
+    orgActiveIdx: index('expense_templates_org_active_idx')
+      .on(t.orgId, t.sortIndex, t.createdAt)
+      .where(sql`is_archived = false`),
   }),
 );
 
@@ -453,7 +458,9 @@ export const dishes = inventorySchema.table(
   },
   (t) => ({
     orgIdx: index('dishes_org_idx').on(t.orgId, t.isArchived),
-    orgCodeUnique: uniqueIndex('dishes_org_code_unique').on(t.orgId, t.code),
+    orgCodeUnique: uniqueIndex('dishes_org_code_unique')
+      .on(t.orgId, t.code)
+      .where(sql`code IS NOT NULL`),
   }),
 );
 
@@ -831,6 +838,10 @@ export const attendancePunches = inventorySchema.table(
     storeTimeIdx: index('ap_store_time_idx').on(t.storeId, t.punchedAt),
     memberTimeIdx: index('ap_member_time_idx').on(t.memberId, t.punchedAt),
     orgIdx: index('ap_org_idx').on(t.orgId),
+    // A liveness challenge answers one punch only (0064).
+    livenessNonceKey: uniqueIndex('ap_liveness_nonce_key')
+      .on(t.livenessNonce)
+      .where(sql`liveness_nonce IS NOT NULL`),
   }),
 );
 
@@ -876,7 +887,7 @@ export const attendanceOvertime = inventorySchema.table(
     shiftId: uuid('shift_id').references(() => attendanceShifts.id, { onDelete: 'set null' }),
     punchId: uuid('punch_id')
       .notNull()
-      .unique()
+      .unique('attendance_overtime_punch_id_key')
       .references(() => attendancePunches.id, { onDelete: 'cascade' }),
     minutes: integer('minutes').notNull(),
     reason: text('reason'),
@@ -968,6 +979,13 @@ export const attendanceFaceEnrollments = inventorySchema.table(
   (t) => ({
     orgIdx: index('afe_org_idx').on(t.orgId),
     memberIdx: index('afe_member_idx').on(t.memberId),
+    // At most one waiting and one approved enrolment per person (0066).
+    onePending: uniqueIndex('afe_one_pending')
+      .on(t.memberId)
+      .where(sql`status = 'pending'`),
+    oneApproved: uniqueIndex('afe_one_approved')
+      .on(t.memberId)
+      .where(sql`status = 'approved'`),
   }),
 );
 
