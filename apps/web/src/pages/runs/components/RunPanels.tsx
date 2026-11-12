@@ -58,6 +58,7 @@ import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../..
 import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
 import { scrollBehavior } from '../../../lib/reducedMotion';
+import { PhotoThumb, PhotoViewerSheet, type ViewedPhoto } from '../../../components/PhotoThumb';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,
@@ -108,7 +109,6 @@ import { moneyLine } from '../../../lib/money';
 // thousand-separator + max-1-decimal display rule applied everywhere.
 
 
-const SAFE_PHOTO_URL = /^(https?:\/\/|data:image\/)/i;
 /**
  * Active-run panel — INLINE-EDIT list rows.
  *
@@ -464,6 +464,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
         : i18n.t('a11y.results.items', { n: visibleRunItems.length })
       : null,
   );
+
+  /** A store's problem photo, opened large (RUNWEB1-18). */
+  const [photoFor, setPhotoFor] = useState<ViewedPhoto | null>(null);
 
   // RUNWEB1-14 (2026-11-12): "N left" scrolls to the first row still to
   // buy. With none on screen (the by-store view, a search, a filter) the
@@ -861,11 +864,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                       const sku = skuById.get(sp.skuId);
                       const name = sku ? productName(sku) : i18n.t('common.unknownProduct');
                       const statusLabel = confirmStatusLabel(i18n, sp.confirmStatus);
-                      // Only a web or inline-image URL becomes a link.
-                      const photo =
-                        sp.confirmPhotoUrl && SAFE_PHOTO_URL.test(sp.confirmPhotoUrl)
-                          ? sp.confirmPhotoUrl
-                          : null;
                       return (
                         <li key={sp.skuId} className="flex items-start gap-2">
                           <div className="min-w-0 flex-1">
@@ -887,21 +885,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                               </div>
                             ) : null}
                           </div>
-                          {photo ? (
-                            <a
-                              href={photo}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label={i18n.t('confirm.issue.photoOf', { name })}
-                              className="shrink-0"
-                            >
-                              <img
-                                src={photo}
-                                alt=""
-                                loading="lazy"
-                                className="h-10 w-10 rounded-[var(--r-utility)] object-cover ring-hairline"
-                              />
-                            </a>
+                          {/* RUNWEB1-18: opens in the app, as in the history. */}
+                          {sp.confirmPhotoUrl ? (
+                            <PhotoThumb
+                              url={sp.confirmPhotoUrl}
+                              label={i18n.t('confirm.issue.photoOf', { name })}
+                              onOpen={setPhotoFor}
+                            />
                           ) : null}
                         </li>
                       );
@@ -1126,6 +1116,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           ("Tap Start Purchase when ready") is already conveyed by the
           MainButton sitting at the bottom of the page in the same state.
           The banner just took up vertical space without adding info. */}
+      <PhotoViewerSheet photo={photoFor} onClose={() => setPhotoFor(null)} />
     </div>
   );
 });

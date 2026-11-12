@@ -52,6 +52,7 @@ import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 import { localDateValue } from '../../../lib/calendarDate';
 import type { RunListRow } from '../types';
+import { PhotoThumb, PhotoViewerSheet, type ViewedPhoto } from '../../../components/PhotoThumb';
 
 // ====================================================================
 // HISTORY VIEW
@@ -710,7 +711,7 @@ export function RunHistoryDetailSheet({
   // trust the per-run answer derived from persisted bindings by the server.
   const canAmend = detail.data?.canAmend ?? false;
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
-  const [photoFor, setPhotoFor] = useState<{ url: string; label: string } | null>(null);
+  const [photoFor, setPhotoFor] = useState<ViewedPhoto | null>(null);
   const supplierName = (id: string | null | undefined): string | null =>
     id ? (detail.data?.supplierNameById?.[id] ?? null) : null;
 
@@ -1110,7 +1111,7 @@ export function RunHistoryDetailSheet({
                           </span>
                         ) : null}
                         {it.receiptPhotoUrl ? (
-                          <ReceiptThumb
+                          <PhotoThumb
                             url={it.receiptPhotoUrl}
                             label={i18n.t('run.history.receiptOf', { item: nm.primary })}
                             onOpen={setPhotoFor}
@@ -1285,7 +1286,7 @@ export function RunHistoryDetailSheet({
                               : 'run.label.paymentCash',
                           )}
                           {ex.receiptPhotoUrl ? (
-                            <ReceiptThumb
+                            <PhotoThumb
                               url={ex.receiptPhotoUrl}
                               label={i18n.t('run.history.receiptOf', { item: ex.label })}
                               onOpen={setPhotoFor}
@@ -1360,42 +1361,7 @@ export function RunHistoryDetailSheet({
           ) : null}
         </div>
       )}
-      <Sheet
-        open={!!photoFor}
-        onOpenChange={(open) => !open && setPhotoFor(null)}
-        title={photoFor?.label ?? ''}
-      >
-        {photoFor ? (
-          <img
-            src={photoFor.url}
-            alt={photoFor.label}
-            className="mx-auto max-h-[70dvh] w-auto rounded-[var(--r-card)] py-3"
-          />
-        ) : null}
-      </Sheet>
+      <PhotoViewerSheet photo={photoFor} onClose={() => setPhotoFor(null)} />
     </Sheet>
-  );
-}
-
-/** DX-HIS-6: a receipt photo as a small thumbnail that opens it large. */
-function ReceiptThumb({
-  url,
-  label,
-  onOpen,
-}: {
-  url: string;
-  label: string;
-  onOpen: (photo: { url: string; label: string }) => void;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid="history-receipt"
-      aria-label={label}
-      onClick={() => onOpen({ url, label })}
-      className="hit-44 relative h-8 w-8 shrink-0 overflow-hidden rounded-[var(--r-pill)] ring-1 ring-[var(--c-divider)]"
-    >
-      <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
-    </button>
   );
 }
