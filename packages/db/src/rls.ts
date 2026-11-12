@@ -6,8 +6,8 @@
  * GUC so that even a buggy WHERE clause can't leak across tenants.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { sql, type SQL } from 'drizzle-orm';
-import type { PgTransactionConfig } from 'drizzle-orm/pg-core';
+import { is, sql, type SQL } from 'drizzle-orm';
+import { PgTransaction, type PgTransactionConfig } from 'drizzle-orm/pg-core';
 import { unprobed } from './client';
 import type { DB } from './client';
 
@@ -74,13 +74,37 @@ async function collectingAfterCommit<T>(open: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export async function setOrgContext(db: DB, orgId: string): Promise<void> {
-  // Validates the orgId is a UUID at the SQL layer to prevent injection in SET LOCAL.
-  await db.execute(sql`SELECT set_config('app.current_org_id', ${orgId}::text, true)`);
+/**
+ * The tenant settings a nested call must put back (review DB-16,
+ * 2026-11-12). Given a transaction instead of the pool, withOrgContext and
+ * withSystemContext open a savepoint, and a setting made with
+ * set_config(…, true) outlives RELEASE SAVEPOINT: a system context opened
+ * inside a tenant's transaction stayed on for the rest of it, so every
+ * later query there saw all tenants. A rollback to the savepoint undoes
+ * the settings by itself; a nested block that succeeds now restores them.
+ * Null for the pool: a transaction of its own starts clean.
+ */
+async function settingsToRestore(db: DB, tx: DB): Promise<SQL | null> {
+  if (!is(db, PgTransaction)) return null;
+  const rows = (await tx.execute(
+    sql`SELECT coalesce(current_setting('app.current_org_id', true), '') AS org, coalesce(current_setting('app.system_context', true), '') AS system`,
+  )) as unknown as Array<{ org: string; system: string }>;
+  const outer = rows[0] ?? { org: '', system: '' };
+  return sql`SELECT set_config('app.current_org_id', ${outer.org}, true), set_config('app.system_context', ${outer.system}, true)`;
 }
 
-export async function clearOrgContext(db: DB): Promise<void> {
-  await db.execute(sql`SELECT set_config('app.current_org_id', '', true)`);
+/** `fn` in the transaction, then the outer settings back if it is nested. */
+async function runNested<T>(
+  db: DB,
+  tx: DB,
+  set: SQL | null,
+  fn: (tx: DB) => Promise<T>,
+): Promise<T> {
+  const restore = await settingsToRestore(db, tx);
+  if (set) await tx.execute(set);
+  const result = await fn(tx);
+  if (restore) await tx.execute(restore);
+  return result;
 }
 
 /**
@@ -96,17 +120,15 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   return collectingAfterCommit(() =>
     unprobed(db).transaction(async (tx) => {
-      if (orgId) {
-        // Also drop any system context the connection carries (a maintenance
-        // handle has one for its whole life): inside here, only this tenant.
-        await tx.execute(
-          sql`SELECT set_config('app.current_org_id', ${orgId}::text, true), set_config('app.system_context', '', true)`,
-        );
-      }
+      // Also drop any system context the connection carries (a maintenance
+      // handle has one for its whole life): inside here, only this tenant.
+      const set = orgId
+        ? sql`SELECT set_config('app.current_org_id', ${orgId}::text, true), set_config('app.system_context', '', true)`
+        : null;
       // PgTransaction is structurally similar to DB but lacks `$client`.
       // Drizzle's transaction passes a tx with a compatible query API; we
       // cast through unknown so the inner code path can use the same shape.
-      return fn(tx as unknown as DB);
+      return runNested(db, tx as unknown as DB, set, fn);
     }, options),
   );
 }
@@ -156,8 +178,8 @@ export async function withSystemContext<T>(
 ): Promise<T> {
   return collectingAfterCommit(() =>
     unprobed(db).transaction(async (tx) => {
-      await tx.execute(sql`SELECT set_config('app.system_context', ${reason}, true)`);
-      return fn(tx as unknown as DB);
+      const set = sql`SELECT set_config('app.system_context', ${reason}, true)`;
+      return runNested(db, tx as unknown as DB, set, fn);
     }, options),
   );
 }

@@ -4,9 +4,7 @@ export type { LocalizedAliases, LocalizedText } from './schema/inventory';
 export {
   afterCommit,
   allowEventPurge,
-  clearOrgContext,
   inSystem,
-  setOrgContext,
   SYSTEM_REASONS,
   withOrgContext,
   withSystemContext,
