@@ -23,8 +23,13 @@ import { callerFor } from './helpers/ctx';
 import { seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
+
+/** The calls send no date, so the server takes the org's today; where it is
+ *  midday that does not change while the file runs (review TEST1-09). */
+const TZ = middayZone(new Date());
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -51,7 +56,7 @@ beforeAll(async () => {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `review-${suffix}`, name: 'Review', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `review-${suffix}`, name: 'Review', localeDefault: 'en', timezone: TZ })
     .returning();
   noteOrg(org!.id);
   const orgId = org!.id;

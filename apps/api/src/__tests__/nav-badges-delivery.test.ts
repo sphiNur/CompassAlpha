@@ -23,8 +23,13 @@ import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { planRun, runStream, seedOrder } from './helpers/streams';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
+
+/** The org's zone: where it is midday, today (the 日结 badge's day) does
+ *  not change while the file runs (review TEST1-09). */
+const TZ = middayZone(new Date());
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Person {
@@ -69,7 +74,7 @@ beforeAll(async () => {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `navb-${suffix}`, name: 'Nav badges', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `navb-${suffix}`, name: 'Nav badges', localeDefault: 'en', timezone: TZ })
     .returning();
   noteOrg(org!.id);
   const orgId = org!.id;
@@ -255,7 +260,7 @@ describe.skipIf(!SHOULD_RUN)('nav badges and delivery links (PG-gated)', () => {
     await db.insert(s.storeDailySettlements).values({
       orgId,
       storeId: storeA,
-      settlementDate: todayInTz('UTC'),
+      settlementDate: todayInTz(TZ),
     });
     expect((await manager.caller.nav.counts({ storeId: storeA })).settlementDue).toBe(false);
   });

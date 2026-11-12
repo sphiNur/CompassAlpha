@@ -16,13 +16,19 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
+import { todayInTz } from '@compass/domain';
 import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
+
+/** The order calls send no date, so the server takes the org's today; where
+ *  it is midday that does not change while the file runs (review TEST1-09). */
+const TZ = middayZone(new Date());
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: { orgId: string; storeId: string; skuId: string; a: Caller; b: Caller } | null = null;
@@ -33,7 +39,7 @@ beforeAll(async () => {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `race-${suffix}`, name: 'Run race', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `race-${suffix}`, name: 'Run race', localeDefault: 'en', timezone: TZ })
     .returning();
   noteOrg(org!.id);
   const orgId = org!.id;
@@ -88,7 +94,7 @@ describe.skipIf(!SHOULD_RUN)('run.create race (PG-gated)', () => {
       await tx.insert(s.marketRunsV).values({
         id: winnerId,
         orgId,
-        runDate: new Date().toISOString().slice(0, 10),
+        runDate: todayInTz(TZ),
         runIndex: 99,
         status: 'planned',
         lastSeq: 1,
