@@ -336,8 +336,8 @@ export function FieldGroup({ label, hint, error, children, className }: FieldGro
 /**
  * Field label — the one definition of a form-field label (sentence
  * case, `text-old-label font-semibold text-fg-muted`): Field, FieldGroup
- * and PhotoCapture draw theirs with it. Deliberately sentence-case:
- * uppercase eyebrows are `SectionLabel`, a different role.
+ * and PhotoCapture draw theirs with it. A section heading is
+ * `SectionLabel`, a different role (both sentence case, UI-11).
  *
  * With `htmlFor` it is the `<label>` of that control (Field's, UI-01);
  * without, a title the caller ties to its content by `id`.

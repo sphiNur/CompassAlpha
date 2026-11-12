@@ -30,8 +30,8 @@ interface QtyControlProps {
    */
   onRequestManualEntry?: () => void;
   /** Compact variant for dense lists (e.g. ApprovalPage manager edits).
-   *  Buttons shrink from 44px to 32px touch targets — still hits the
-   *  iOS recommended minimum but takes less horizontal space. */
+   *  The − / + circles are 28 px instead of 36 px (md); both tap as
+   *  44 px (hit-44), so it only takes less room. */
   size?: 'md' | 'sm';
   className?: string;
   /**
@@ -340,18 +340,12 @@ export function QtyControl({
  *
  * Paths in:
  *   1. Tap a preset chip → onPick(value) → sheet closes
- *   2. Type into the custom input → confirm via Telegram MainButton
- *      (or fallback in-sheet Set button outside Telegram) → onPick →
- *      close
+ *   2. Type into the custom input → the sheet's own "Set N kg" button
+ *      → onPick → close
  *
- * M3.14-C (2026-05-16): the in-sheet Set button is replaced by
- * Telegram's MainButton when the WebApp SDK is present. The user
- * called this out — "set quantity 页面不需要单独的set按钮，只需要将
- * telegram的主按钮合理的利用". The MainButton labels itself "Set N kg"
- * mirroring the previous button's text, toggles active/inactive with
- * the draft-differs predicate, and gets save/restored against the
- * parent page's MainButton state so closing the sheet hands the
- * button back to the page (Submit / Confirm / etc.) untouched.
+ * M3.14-C (2026-05-16) had Telegram's MainButton confirm the custom
+ * value; since 2026-07-30 the sheet always draws its own button (see
+ * the note above the return below).
  *
  * Presets default to a step-aware ladder (defaultPresets below), but
  * the caller can override via QtyControl.pickPresets when a SKU has

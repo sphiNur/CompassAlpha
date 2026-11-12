@@ -520,7 +520,7 @@ apps/web/src/
 - 约 30 个组件，基于 **Radix Primitives**（Dialog / Tooltip / Toast 等）+ **CVA**（class-variance-authority）+ Tailwind utility classes
 - **Theme**：CSS variables，通过 `data-theme="native|apple|dark"` 切换。`native` 主题跟随 Telegram `themeChanged` 事件
 - **Typography**：M3.14 字号 scale (24/19/15/14/13/12/11/10/9)，对 Android Telegram WebView 调校
-- **Sheet 组件**：自动接管 Telegram BackButton 关闭顶层 sheet（M1.5），全局 sheet 计数让 SectionFrame 在 sheet 打开时让出 BackButton
+- **Sheet 组件**：打开时接管 Telegram BackButton，只关闭最上层的 sheet（M1.5；CA-34 起由 `telegramBackStack` 的栈统一管理，页面的返回键也登记在这个栈上）。全局 sheet 计数供 toast 跟随打开的 sheet，以及版本检查在有 sheet 打开时不刷新页面
 
 ### 5.4 路由
 

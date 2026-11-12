@@ -2,7 +2,7 @@
 
 > Tokens-first, theme-switchable, a11y-by-default. Built on Tailwind v3 + Radix UI.
 > What to render and what not to: [UI_STANDARDS.md](UI_STANDARDS.md).
-> Two themes: **Native** (Telegram-themed) and **Apple** (high-contrast polished).
+> Three themes: **Native** (the default; light or dark as Telegram or the phone says), **Dark** and **Apple** (high-contrast polished, light only).
 
 ## Tokens
 
@@ -67,7 +67,7 @@ Each is theme-agnostic via tokens.
 | `Stepper` | Numbered step indicator with done/active/pending styles. |
 | `Chip` / `ChipBar` | Sub-nav category chips. |
 | `Avatar` | Initials fallback when `src` missing. |
-| `QtyControl` | 44×44 circular chips, long-press accelerator (350ms hold → 90ms tick). |
+| `QtyControl` | 36 px (`sm` 28 px) circular − / + keys that tap as 44 px, long-press accelerator (350ms hold → 90ms tick). |
 | `Badge` | Status pill. Pass `status` for auto-tone or `tone` directly. |
 
 ## A11y rules

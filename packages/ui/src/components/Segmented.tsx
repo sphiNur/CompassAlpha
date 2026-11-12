@@ -26,16 +26,19 @@ import { useRovingRadio } from '../rovingRadio';
  *   - `sm` variant (h-7, text-old-label 11 px) — for nested-in-row use
  *     like the Permissions matrix (allow/deny/inherit). Acts like
  *     SegBtn but reusable.
- *   - Single hairline ring + a sliding active background (action
+ *   - Single hairline ring; the chosen segment fills itself (action
  *     color by default; callers can override per-option via the
  *     `activeBg` field on the option object — used by the
  *     Permissions matrix to color allow=success / deny=danger).
+ *     Nothing slides between segments.
  *
- * Layout choice: a flex row with `overflow-hidden` on the rounded
- * frame. Options stretch to equal width via `flex-1` so the control
- * fills its parent. If the caller wants intrinsic-width segments
- * (e.g. "Week / Month / Quarter / Year" where Q feels smaller),
- * set `equalWidth={false}` and segments size to content.
+ * Layout choice: a flex row on the rounded frame, WITHOUT
+ * `overflow-hidden` (V4: it clipped the segments' hit-44 tap areas);
+ * the end segments round their own corners. Options stretch to equal
+ * width via `flex-1` so the control fills its parent. If the caller
+ * wants intrinsic-width segments (e.g. "Week / Month / Quarter / Year"
+ * where Q feels smaller), set `equalWidth={false}` and segments size
+ * to content.
  *
  * Keyboard (review UI-07, 2026-11-11), as in ChipBar and PickerGroup
  * (A11Y-15): the control is one Tab stop and the arrow keys move between

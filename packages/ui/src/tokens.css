@@ -1,9 +1,11 @@
 /**
  * Concord design tokens.
  *
- * Two themes: native (Telegram-themed; honors WebApp.themeParams via JS bridge)
- * and apple (high-contrast polished). All colors use OKLCH so the same hue
- * looks correct on HDR + sRGB.
+ * Three themes: native (the default: light or dark as Telegram, or else
+ * the phone, says — ThemeProvider sets `data-color-scheme`; it follows
+ * Telegram's light/dark, not Telegram's theme colours), dark (always
+ * dark) and apple (high-contrast polished, light only). All colors use
+ * OKLCH so the same hue looks correct on HDR + sRGB.
  *
  * Tokens are CSS variables; switching theme is `<html data-theme="apple">`.
  */
