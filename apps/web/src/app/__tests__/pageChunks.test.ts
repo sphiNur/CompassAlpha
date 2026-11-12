@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { memoryStorage } from '../../__tests__/helpers/storage';
 import { preloadPage, savedTab } from '../pageChunks';
 
-const storage = (items: Record<string, unknown>) => ({
-  getItem: (key: string) => (key in items ? JSON.stringify(items[key]) : null),
-});
+/** A storage holding `items` as the persisted stores write them, in JSON. */
+const storage = (items: Record<string, unknown>) =>
+  memoryStorage(
+    Object.fromEntries(Object.entries(items).map(([key, value]) => [key, JSON.stringify(value)])),
+  );
 const signedIn = { state: { session: { user: { id: 'u' } } } };
 
 describe('savedTab (DX-PFE-3: preload the page the app reopens on)', () => {
