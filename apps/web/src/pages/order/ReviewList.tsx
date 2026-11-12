@@ -1,14 +1,13 @@
 import { useMemo, useRef } from 'react';
 import { cn, EmptyState, NameCell, QtyControl, SectionLabel } from '@compass/ui';
-import { trpc } from '../../lib/trpc';
 import { groupCatalog } from './catalogGroups';
 import { submittedDiff } from './submittedDiff';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../hooks/useI18n';
 import { useCurrency } from '../../hooks/useCurrency';
+import { useOrderEstimate } from '../../hooks/useOrderEstimate';
 import { formatQty, formatMoney } from '../../lib/format';
 import { useStoreContext } from '../../hooks/useStoreContext';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
-import { estimateOrder } from '@compass/contracts/money';
 
 export interface ReviewTotal {
   skuId: string;
@@ -64,36 +63,13 @@ export function ReviewList({
   const unitLabel = useUnitLabel();
   // M1.21: org-wide currency for the estimate suffix.
   const currency = useCurrency();
-  // Pull price stats for the SKUs being reviewed so we can show an
-  // estimated total (added 2026-05-05). The estimate goes by the last
-  // price paid (2026-10-11). Stats might be null for new SKUs with no
-  // purchase history yet — those rows just don't contribute to the
-  // estimate.
-  const skuIds = useMemo(
-    () => totals.filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
-    [totals],
-  );
+  // An estimated total (added 2026-05-05), at each product's last price
+  // paid; a product never bought yet is left out and counted as unpriced.
   // D6 / RE-SHL-3 (2026-10-31): priced for the store being ordered for —
   // a member who manages another store but is staff here gets no estimate.
   const reviewStoreCtx = useStoreContext();
   const reviewStoreId = reviewStoreCtx.kind === 'specific' ? reviewStoreCtx.storeId : undefined;
-  const priceStats = trpc.catalog.skuPriceStats.useQuery(
-    { skuIds, storeId: reviewStoreId },
-    { enabled: skuIds.length > 0, staleTime: 60_000 },
-  );
-  const priceBySku = useMemo(() => {
-    const m = new Map<string, { avg7d: string | null; lastPrice: string | null }>();
-    for (const r of priceStats.data ?? []) {
-      m.set(r.skuId, { avg7d: r.avg7d, lastPrice: r.lastPrice });
-    }
-    return m;
-  }, [priceStats.data]);
-  const estimate = useMemo(() => {
-    // ORD-01: the server's rule for the batch list and approval cards,
-    // so this figure and theirs agree to the cent.
-    const est = estimateOrder(totals, (skuId) => priceBySku.get(skuId)?.lastPrice);
-    return { total: Number(est.total), known: est.known, unknown: est.unknown };
-  }, [totals, priceBySku]);
+  const { estimate } = useOrderEstimate(totals, reviewStoreId);
   // Show the AGGREGATE qty per SKU (sum across all contributors). Group
   // by category. Items without a known SKU fall under "Other".
   const skuById = useMemo(() => {
@@ -143,11 +119,10 @@ export function ReviewList({
   }
   return (
     <div className="flex flex-col gap-3 py-3">
-      {/* Estimated cost banner — shown when we have any price history
-          to base the estimate on. Uses avg-7d mean per SKU. SKUs
-          without history fall under "unknown" and are skipped from
-          the total but called out so the staff knows the figure is
-          approximate. (Added 2026-05-05.) */}
+      {/* Estimated cost — shown when any product has a price to go by
+          (the last one paid). Products without one are left out of the
+          total and counted, so the staff knows the figure is partial.
+          (Added 2026-05-05.) */}
       {estimate.known > 0 ? (
         <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
           <div className="flex items-baseline justify-between gap-2">
@@ -155,7 +130,7 @@ export function ReviewList({
               {i18n.t('order.review.estimatedTotal')}
             </span>
             <span className="text-old-h2 font-semibold tabular-nums text-[var(--c-fg)]">
-              ~{formatMoney(estimate.total)} {currency}
+              ~{formatMoney(estimate.total, currency)}
             </span>
           </div>
           <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">

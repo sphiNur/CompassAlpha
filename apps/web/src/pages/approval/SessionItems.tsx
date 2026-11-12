@@ -14,6 +14,7 @@ import { useI18n, useProductNameParts, useUnitLabel } from '../../hooks/useI18n'
 import { rowName } from '../../lib/productName';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useErrToast } from '../../hooks/useErrToast';
+import { useOrderEstimate } from '../../hooks/useOrderEstimate';
 import { extrasChanged, submittedDiff } from '../order/submittedDiff';
 import { formatQty, formatMoney } from '../../lib/format';
 import { sessionItemsView } from './sessionItemsView';
@@ -21,7 +22,6 @@ import { changedSinceSeen, snapshotOrder, zeroedInReview, type SeenOrder } from 
 import { QtyDrafts } from './qtyDrafts';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 import { moneyLine } from '../../lib/money';
-import { estimateOrder } from '@compass/contracts/money';
 
 /**
  * Per-SKU expanded view inside the approval queue. Shows the running
@@ -155,20 +155,13 @@ export function SessionItems({
     onHold(sessionId, hold);
   }, [hold, onHold, sessionId]);
 
-  // skuPriceStats hooked here (BEFORE early returns, fixed 2026-05-05)
+  // The estimate is hooked here (BEFORE early returns, fixed 2026-05-05)
   // so React's hooks-order invariant holds across loading/empty/error
-  // branches. Manager sees estimated budget before approving.
-  // skuIds derived from detail.data so it's stable across renders.
-  const skuIdsForPrice = useMemo(
-    () => (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
-    [detail.data],
-  );
-  // D6 (2026-10-31): priced for the order's store (no amounts where the
-  // approver lacks prices.view).
-  const priceStats = trpc.catalog.skuPriceStats.useQuery(
-    { skuIds: skuIdsForPrice, storeId: detail.data?.storeId },
-    { enabled: skuIdsForPrice.length > 0, staleTime: 60_000 },
-  );
+  // branches. Manager sees estimated budget before approving. ORD-01: the
+  // server's rule for the card's "~", so the card and this detail agree
+  // to the cent. D6 (2026-10-31): priced for the order's store (no
+  // amounts where the approver lacks prices.view).
+  const { estimate, lastPriceOf } = useOrderEstimate(detail.data?.totals, detail.data?.storeId);
 
   if (detail.isLoading) {
     return (
@@ -193,14 +186,6 @@ export function SessionItems({
   }
   const totals = (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0);
   const rawItems = detail.data?.items ?? [];
-  // The same price the estimate below is made of: the last price paid.
-  const priceBySku = new Map((priceStats.data ?? []).map((r) => [r.skuId, r.lastPrice]));
-  // ORD-01: the server's rule for the card's "~", so the card and this
-  // detail agree to the cent.
-  const estimateTotal = (() => {
-    const est = estimateOrder(totals, (skuId) => priceBySku.get(skuId));
-    return { sum: Number(est.total), known: est.known, unknown: est.unknown };
-  })();
   const sessionNotes = detail.data?.notes ?? null;
   const sessionExtras = detail.data?.extras ?? [];
   // 2026-10-21 FE-02: the empty state used to return before extras and
@@ -315,17 +300,17 @@ export function SessionItems({
         </div>
       ) : null}
       {/* Estimated budget row (added 2026-05-05). Tells the manager
-        roughly how much approval-then-purchase will cost, based on
-        the last 7 days of price history. SKUs with no history skip
-        and are flagged. */}
-      {estimateTotal.known > 0 ? (
+        roughly how much approval-then-purchase will cost, at each
+        product's last price paid. Products never bought are left out
+        and counted. */}
+      {estimate.known > 0 ? (
         <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
           <span className="font-semibold">{i18n.t('order.review.estimatedTotal')}</span>
           <span className="text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
-            ~{formatMoney(estimateTotal.sum)} {currency}
-            {estimateTotal.unknown > 0 ? (
+            ~{formatMoney(estimate.total, currency)}
+            {estimate.unknown > 0 ? (
               <span className="ml-2 font-sans font-normal text-[var(--c-warning-fg)]">
-                {i18n.t('approval.estimateUnpriced', { n: estimateTotal.unknown })}
+                {i18n.t('approval.estimateUnpriced', { n: estimate.unknown })}
               </span>
             ) : null}
           </span>
@@ -350,7 +335,7 @@ export function SessionItems({
             // qty span.
             const isSingleContributor = rows.length === 1;
             const singleRow = isSingleContributor ? rows[0]! : null;
-            const unitPrice = Number(priceBySku.get(t.skuId) ?? 0) || null;
+            const unitPrice = Number(lastPriceOf(t.skuId) ?? 0) || null;
             const before = changed.get(t.skuId);
             const sub = vsSubmitted.get(t.skuId);
             return (
@@ -442,7 +427,7 @@ export function SessionItems({
                     </span>
                     {unitPrice ? (
                       <span className="shrink-0 tabular-nums">
-                        ~{formatMoney(moneyLine(t.qty, priceBySku.get(t.skuId)))}
+                        ~{formatMoney(moneyLine(t.qty, lastPriceOf(t.skuId)))}
                       </span>
                     ) : null}
                   </div>

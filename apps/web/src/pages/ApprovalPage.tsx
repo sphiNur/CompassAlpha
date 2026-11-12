@@ -38,6 +38,7 @@ import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../hooks/useErrToast';
 import { formatMoney } from '../lib/format';
+import { useCurrency } from '../hooks/useCurrency';
 import { useStoreContext } from '../hooks/useStoreContext';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
 import { approvable } from './approval/reviewDiff';
@@ -70,6 +71,9 @@ export function ApprovalPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
+  // ORD-21 (2026-11): the card's total names the currency, as the
+  // estimate in its detail does.
+  const currency = useCurrency();
   const [tab, setTab] = useState<ApprovalTab>('pending');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<string | null>(null);
@@ -517,7 +521,7 @@ export function ApprovalPage() {
                             unknown: row.estimatedUnknown,
                           })}
                         >
-                          ~{formatMoney(Number(row.estimatedTotal))}
+                          ~{formatMoney(row.estimatedTotal, currency)}
                         </span>
                       ) : null}
                       {/* APR-5 (2026-10-30): the unpriced count lived only in

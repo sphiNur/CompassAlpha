@@ -88,9 +88,7 @@ export function BatchStrip({
                   {b.extrasCount > 0
                     ? ` + ${i18n.t('order.batches.extras', { n: b.extrasCount })}`
                     : ''}
-                  {b.estimatedTotal
-                    ? ` · ~${formatMoney(Number(b.estimatedTotal))} ${currency}`
-                    : ''}
+                  {b.estimatedTotal ? ` · ~${formatMoney(b.estimatedTotal, currency)}` : ''}
                 </span>
               </button>
             </li>
