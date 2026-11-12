@@ -32,6 +32,19 @@
  *     messages, which we don't want)
  *   - `auth.*`, `inventory.{stores,suppliers,categories,skus,...}`
  *     (catalog tables aren't event-sourced; nothing to rebuild)
+ *   - the stock a store received from a run (`inventory.movements` rows
+ *     with source_type 'run', written when the store confirms). Review
+ *     COREAPI-17 (2026-11-12): this is on purpose. On-hand stock is the
+ *     sum of the ledger, and a stocktake books the difference to what was
+ *     counted, so it has already absorbed every receipt before it (see
+ *     keepCountedStock in services/purgePlans.ts). Booking an old receipt
+ *     again with another quantity would move on-hand away from what was
+ *     counted. Replaying StoreConfirmed adds only a receipt that is
+ *     missing (ON CONFLICT DO NOTHING); one that is there stays as booked,
+ *     even when this rebuild now reads another quantity for it. The rows
+ *     with source_type 'run_amend' are worked out again from the stored
+ *     receipts when a correction closes. Correct stock with a stocktake.
+ *     The script says so at the end.
  *
  * Usage:
  *
@@ -203,6 +216,14 @@ async function main() {
     `[reproject] done in ${elapsedMs} ms — ` +
       `runs=${runStreamsProcessed} orders=${orderStreamsProcessed}`,
   );
+  if (opts.type === 'all' || opts.type === 'run') {
+    console.log(
+      '[reproject] stock was not rebuilt: receipts already booked from runs ' +
+        "(inventory.movements, source_type 'run') stay as they were, because a " +
+        'stocktake after a receipt has already counted it. If this rebuild changed ' +
+        'what a store received, correct its stock with a stocktake.',
+    );
+  }
   await closeDb();
 }
 
