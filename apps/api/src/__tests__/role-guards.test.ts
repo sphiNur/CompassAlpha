@@ -57,7 +57,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       fix!.admin.admin.roleCreate({ slug: 'amender', name: 'Amender', rank: 70, permissionKeys: ['system.impersonate'] }),
     );
     expect(err?.code).toBe('FORBIDDEN');
-    expect(err?.message).toBe('auth.errors.missingPermission');
+    expect(err?.message).toBe('admin.errors.roleKeyNotHeld');
     expect(
       await errorOf(() =>
         fix!.admin.admin.roleCreate({ slug: 'helper', name: 'Helper', rank: 20, permissionKeys: ['order.draft'] }),
@@ -76,7 +76,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const err = await errorOf(() =>
       admin.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...current, 'system.impersonate'] }),
     );
-    expect(err?.message).toBe('auth.errors.missingPermission');
+    expect(err?.message).toBe('admin.errors.roleKeyNotHeld');
     expect(await errorOf(() => admin.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: current }))).toBeNull();
   });
 

@@ -641,7 +641,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
               .fetch({ storeId })
               .catch(() => null);
             const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
-            nativeConfirm(
+            confirmThen(
               busy
                 ? i18n.t('admin.store.confirmPauseBusy', {
                     name: store.name,
