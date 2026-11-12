@@ -28,6 +28,7 @@ import {
 } from '../../../services/catalogCopy';
 import { requireAdmin, requireOrgAdmin, requireGlobalOrgAdmin } from './guards';
 import { broadcastCatalog } from './notify';
+import { orgRowOr404 } from './orgRows';
 import { categoryNamesForAudit, auditAdmin } from '../../../services/adminAudit';
 import type { RequestContext } from '../../context';
 
@@ -134,14 +135,16 @@ export const catalogProcedures = {
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const existing = await tx.query.categories.findFirst({
-          where: (c, { eq: eq2, and: and2 }) =>
-            and2(eq2(c.id, input.categoryId), eq2(c.orgId, orgId)),
-        });
-        if (!existing) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
-        }
-        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        const existing = await orgRowOr404(
+          tx,
+          s.categories,
+          orgId,
+          input.categoryId,
+          'admin.errors.categoryNotFound',
+        );
+        // ADM2-36: typed by the table, so a misspelt column or a wrong
+        // value type fails the type-check.
+        const patch: Partial<typeof s.categories.$inferInsert> = { updatedAt: new Date() };
         if (input.slug !== undefined) patch.slug = input.slug;
         if (input.names !== undefined) patch.names = input.names;
         if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
@@ -165,13 +168,13 @@ export const catalogProcedures = {
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const existing = await tx.query.categories.findFirst({
-          where: (c, { eq: eq2, and: and2 }) =>
-            and2(eq2(c.id, input.categoryId), eq2(c.orgId, orgId)),
-        });
-        if (!existing) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
-        }
+        await orgRowOr404(
+          tx,
+          s.categories,
+          orgId,
+          input.categoryId,
+          'admin.errors.categoryNotFound',
+        );
         await tx
           .update(s.categories)
           .set({ isArchived: true, updatedAt: new Date() })
@@ -225,13 +228,13 @@ export const catalogProcedures = {
       // — otherwise a UUID from another org could attach this SKU to
       // their category (cross-tenant data leak).
       if (input.categoryId) {
-        const cat = await tx.query.categories.findFirst({
-          where: (c, { eq: eq2, and: and2 }) =>
-            and2(eq2(c.id, input.categoryId!), eq2(c.orgId, orgId)),
-        });
-        if (!cat) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
-        }
+        await orgRowOr404(
+          tx,
+          s.categories,
+          orgId,
+          input.categoryId,
+          'admin.errors.categoryNotFound',
+        );
       }
       const [created] = await withUniqueKey(
         tx
@@ -258,23 +261,24 @@ export const catalogProcedures = {
     requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const existing = await tx.query.skus.findFirst({
-        where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
-      });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
-      }
+      const existing = await orgRowOr404(
+        tx,
+        s.skus,
+        orgId,
+        input.skuId,
+        'admin.errors.skuNotFound',
+      );
       // Cross-tenant gate on categoryId — same as skuCreate.
       if (input.categoryId) {
-        const cat = await tx.query.categories.findFirst({
-          where: (c, { eq: eq2, and: and2 }) =>
-            and2(eq2(c.id, input.categoryId!), eq2(c.orgId, orgId)),
-        });
-        if (!cat) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
-        }
+        await orgRowOr404(
+          tx,
+          s.categories,
+          orgId,
+          input.categoryId,
+          'admin.errors.categoryNotFound',
+        );
       }
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      const patch: Partial<typeof s.skus.$inferInsert> = { updatedAt: new Date() };
       if (input.categoryId !== undefined) patch.categoryId = input.categoryId;
       if (input.code !== undefined) patch.code = input.code;
       if (input.names !== undefined) patch.names = input.names;
@@ -295,7 +299,7 @@ export const catalogProcedures = {
       if (patch.categoryId !== undefined && patch.categoryId !== existing.categoryId) {
         changes.category = [
           await categoryNamesForAudit(tx, existing.categoryId),
-          await categoryNamesForAudit(tx, patch.categoryId as string | null),
+          await categoryNamesForAudit(tx, patch.categoryId),
         ];
       }
       await auditAdmin(tx, ctx, 'admin.sku.update', 'sku', input.skuId, { ...input, changes });
@@ -308,12 +312,7 @@ export const catalogProcedures = {
     requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const existing = await tx.query.skus.findFirst({
-        where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
-      });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
-      }
+      await orgRowOr404(tx, s.skus, orgId, input.skuId, 'admin.errors.skuNotFound');
       // Soft delete; hard delete would cascade through every order_item ever
       // referencing this SKU.
       await tx
@@ -391,14 +390,14 @@ export const catalogProcedures = {
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const existing = await tx.query.suppliers.findFirst({
-          where: (sp, { eq: eq2, and: and2 }) =>
-            and2(eq2(sp.id, input.supplierId), eq2(sp.orgId, orgId)),
-        });
-        if (!existing) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.supplierNotFound' });
-        }
-        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        const existing = await orgRowOr404(
+          tx,
+          s.suppliers,
+          orgId,
+          input.supplierId,
+          'admin.errors.supplierNotFound',
+        );
+        const patch: Partial<typeof s.suppliers.$inferInsert> = { updatedAt: new Date() };
         if (input.name !== undefined) patch.name = input.name;
         if (input.contactPhone !== undefined) patch.contactPhone = input.contactPhone;
         if (input.contactTg !== undefined) patch.contactTg = input.contactTg;
@@ -427,13 +426,13 @@ export const catalogProcedures = {
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const existing = await tx.query.suppliers.findFirst({
-          where: (sp, { eq: eq2, and: and2 }) =>
-            and2(eq2(sp.id, input.supplierId), eq2(sp.orgId, orgId)),
-        });
-        if (!existing) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.supplierNotFound' });
-        }
+        await orgRowOr404(
+          tx,
+          s.suppliers,
+          orgId,
+          input.supplierId,
+          'admin.errors.supplierNotFound',
+        );
         await tx
           .update(s.suppliers)
           .set({ isArchived: true, updatedAt: new Date() })

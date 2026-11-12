@@ -26,6 +26,7 @@ import { auditChanges } from '../../../services/auditChanges';
 import { requireAdmin, requireOrgAdmin } from './guards';
 import { broadcastCatalog, broadcastPeople } from './notify';
 import { getActorAdminStoreIds, notAdminOfStore, getAdminReadScope } from './scope';
+import { orgRowOr404 } from './orgRows';
 import { granterOf, missingRoleKey, assertCanPassOnRole } from './grants';
 import { roleNameForAudit, auditAdmin } from '../../../services/adminAudit';
 
@@ -124,14 +125,15 @@ export const storeProcedures = {
           throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
       }
-      const existing = await tx.query.stores.findFirst({
-        where: (st, { eq: eq2, and: and2 }) =>
-          and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
-      });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
-      }
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      const existing = await orgRowOr404(
+        tx,
+        s.stores,
+        orgId,
+        input.storeId,
+        'admin.errors.storeNotFound',
+      );
+      // ADM2-36: typed by the table, as the catalog's edits.
+      const patch: Partial<typeof s.stores.$inferInsert> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name;
       if (input.code !== undefined) patch.code = input.code;
       if (input.address !== undefined) patch.address = input.address;
@@ -219,7 +221,7 @@ export const storeProcedures = {
       if (patch.defaultRoleId !== undefined && patch.defaultRoleId !== existing.defaultRoleId) {
         changes.defaultRole = [
           await roleNameForAudit(tx, existing.defaultRoleId),
-          await roleNameForAudit(tx, patch.defaultRoleId as string | null),
+          await roleNameForAudit(tx, patch.defaultRoleId),
         ];
       }
       await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, {
@@ -270,13 +272,13 @@ export const storeProcedures = {
     requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const existing = await tx.query.stores.findFirst({
-        where: (st, { eq: eq2, and: and2 }) =>
-          and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
-      });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
-      }
+      const existing = await orgRowOr404(
+        tx,
+        s.stores,
+        orgId,
+        input.storeId,
+        'admin.errors.storeNotFound',
+      );
       // ADM-18 (2026-10-30): archiving it again rewrote the date and the audit.
       if (existing.deletedAt) return { ok: true };
       // Soft delete via deleted_at timestamp + isActive=false. Hard delete
@@ -336,19 +338,20 @@ export const storeProcedures = {
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const [sourceStore, targetStore] = await Promise.all([
-          tx.query.stores.findFirst({
-            where: (st, { eq: eq2, and: and2 }) =>
-              and2(eq2(st.id, input.sourceStoreId), eq2(st.orgId, orgId)),
-          }),
-          tx.query.stores.findFirst({
-            where: (st, { eq: eq2, and: and2 }) =>
-              and2(eq2(st.id, input.targetStoreId), eq2(st.orgId, orgId)),
-          }),
-        ]);
-        if (!sourceStore || !targetStore) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
-        }
+        const sourceStore = await orgRowOr404(
+          tx,
+          s.stores,
+          orgId,
+          input.sourceStoreId,
+          'admin.errors.storeNotFound',
+        );
+        const targetStore = await orgRowOr404(
+          tx,
+          s.stores,
+          orgId,
+          input.targetStoreId,
+          'admin.errors.storeNotFound',
+        );
         // C2: actor must administer BOTH ends. Reading the source's
         // shape AND writing into the target both qualify as admin
         // actions.

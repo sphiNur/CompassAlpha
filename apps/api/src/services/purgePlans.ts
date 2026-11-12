@@ -20,6 +20,7 @@ import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { TRPCError } from '@trpc/server';
 import { allowEventPurge, schema as s } from '@compass/db';
 import { inTexts, inUuids } from './sqlIn';
+import { executeRows } from './sqlRows';
 
 /** What a purge needs of its transaction. */
 export interface PurgeTx {
@@ -53,9 +54,9 @@ export async function countPurge(
 ): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
   for (const step of steps) {
-    const rows = (await tx.execute(
-      sql`SELECT count(*)::int AS n FROM ${step.table} WHERE ${step.where}`,
-    )) as unknown as Array<{ n: number }>;
+    const rows = executeRows<{ n: number }>(
+      await tx.execute(sql`SELECT count(*)::int AS n FROM ${step.table} WHERE ${step.where}`),
+    );
     counts[purgeKey(step.table)] = rows[0]?.n ?? 0;
   }
   return counts;
@@ -242,10 +243,12 @@ export async function refuseIfSettled(tx: PurgeTx, orgId: string, date?: string)
     date === undefined
       ? sql`org_id = ${orgId}`
       : sql`org_id = ${orgId} AND settlement_date = ${date}`;
-  const rows = (await tx.execute(
-    sql`SELECT (EXISTS (SELECT 1 FROM ${s.storeDailySettlements} WHERE ${scope})
+  const rows = executeRows<{ settled: boolean }>(
+    await tx.execute(
+      sql`SELECT (EXISTS (SELECT 1 FROM ${s.storeDailySettlements} WHERE ${scope})
       OR EXISTS (SELECT 1 FROM ${s.storeDailySettlementRevisions} WHERE ${scope})) AS settled`,
-  )) as unknown as Array<{ settled: boolean }>;
+    ),
+  );
   if (rows[0]?.settled) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
@@ -269,7 +272,8 @@ export async function refuseIfSettled(tx: PurgeTx, orgId: string, date?: string)
  * arrived. Returns how many adjustments were written.
  */
 async function keepCountedStock(tx: PurgeTx, which: SQL, actorMemberId: string): Promise<number> {
-  const rows = (await tx.execute(sql`
+  const rows = executeRows<{ id: string }>(
+    await tx.execute(sql`
     INSERT INTO inventory.movements
       (org_id, store_id, sku_id, delta, reason, source_type, source_id, actor_member_id)
     SELECT m.org_id, m.store_id, m.sku_id, SUM(m.delta), 'adjustment', 'purge', m.source_id,
@@ -282,6 +286,7 @@ async function keepCountedStock(tx: PurgeTx, which: SQL, actorMemberId: string):
             AND st.reason = 'stocktake' AND st.occurred_at > m.occurred_at)
      GROUP BY m.org_id, m.store_id, m.sku_id, m.source_id
     HAVING SUM(m.delta) <> 0
-    RETURNING id`)) as unknown as Array<{ id: string }>;
+    RETURNING id`),
+  );
   return rows.length;
 }
