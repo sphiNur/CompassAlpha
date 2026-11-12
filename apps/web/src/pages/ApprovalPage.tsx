@@ -508,7 +508,7 @@ export function ApprovalPage() {
                           NOT with the old totalQty, which summed kg and pcs
                           into one meaningless figure.
 
-                          The "has notes" 📝 pill stays — still the only
+                          The "has notes" badge stays — still the only
                           pre-expand signal for a free-text request. */}
                       <span className="whitespace-nowrap text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {i18n.t('approval.itemsCount', { n: row.itemCount })}
@@ -541,8 +541,8 @@ export function ApprovalPage() {
                       {row.estimatedTotal &&
                       showPaymentSplit(row.estimatedCash, row.estimatedTransfer) ? (
                         <span
-                          // V10: the figures in the same mono face as the
-                          // card's total beside them.
+                          // V10: the figures in tabular digits, as the
+                          // card's total beside them (UI-14).
                           data-testid="approval-payment-budget"
                           className="flex flex-col items-end text-old-label tabular-nums text-[var(--c-fg-muted)]"
                         >
