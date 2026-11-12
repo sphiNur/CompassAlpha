@@ -66,6 +66,7 @@ describe('run money rounding (PG, D1)', () => {
         type: 'PlanRun',
         orgId,
         runDate: '2026-10-21',
+        today: '2026-10-21',
         runIndex: 0,
         sessionIds: [randomUUID()],
         plannedItems: skus.map((sku) => ({ skuId: sku.id, qty: '1' })),

@@ -9,15 +9,13 @@ import {
   RunAttachSessionsInputSchema,
   RunCancelInputSchema,
   RunCreateInputSchema,
-  milliQty,
-  qtyMilli,
 } from '@compass/contracts';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
   resolveRunCreateStoreScope,
 } from '../../../services/storeScope';
-import { applyRun, decideRun, emptyRunState, type RunEvent } from '@compass/domain/run';
+import { applyRun, decideRun, emptyRunState, sumDemand, type RunEvent } from '@compass/domain/run';
 import { decide as decideOrder, type OrderEvent } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError } from '../../trpc';
@@ -144,48 +142,27 @@ export const planProcedures = {
           allowedStoreIds,
         );
 
-        // 2026-10-21 CA-03: the purchaser may book the run under an earlier
-        // date (yesterday's orders bought this morning), but never a date
-        // the calendar doesn't have (2026-02-31 would roll into March) or
-        // one in the future (org timezone). Checked after the store-scope
-        // gate so an out-of-scope request reports the permission problem.
-        {
-          const parsed = new Date(`${date}T00:00:00Z`);
-          if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.invalidRunDate' });
-          }
-          if (date > today) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
-          }
-        }
-
-        // Aggregate items across sessions.
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, input.sessionIds),
         });
-        // RUNAPI-05: in whole thousandths; the strings go into RunPlanned.
-        const aggregated = new Map<string, bigint>();
-        for (const it of items) {
-          const qty = qtyMilli(it.qty);
-          if (qty <= 0n) continue;
-          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
-        }
-        const plannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
-          skuId,
-          qty: milliQty(qty),
-        }));
 
         const runId = randomUUID();
         const state = emptyRunState(runId);
         let events: RunEvent[] = [];
         try {
+          // 2026-10-21 CA-03: the purchaser may book the run under an
+          // earlier date (yesterday's orders bought this morning), never a
+          // later one; the domain checks it against the org's today. It is
+          // decided after the store-scope gate, so an out-of-scope request
+          // still hears about its permission first.
           events = decideRun(state, {
             type: 'PlanRun',
             orgId: ctx.session!.orgId,
             runDate: date,
+            today,
             runIndex,
             sessionIds: input.sessionIds,
-            plannedItems,
+            plannedItems: sumDemand(items),
             actor: actorFromCtx(ctx),
           });
           // M1.13 (2026-05-08): atomic plan + start. The FE collapsed
@@ -332,23 +309,11 @@ export const planProcedures = {
           allowedStoreIds,
         );
 
-        // Aggregate items across the new sessions only — these become
-        // the delta. The run state reducer merges them on top of
-        // whatever's already planned.
+        // The new sessions' demand only: the run state reducer adds it on
+        // top of whatever is already planned.
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, dedupedNewIds),
         });
-        // RUNAPI-05: in whole thousandths, as in run.create.
-        const aggregated = new Map<string, bigint>();
-        for (const it of items) {
-          const qty = qtyMilli(it.qty);
-          if (qty <= 0n) continue;
-          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
-        }
-        const addedPlannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
-          skuId,
-          qty: milliQty(qty),
-        }));
 
         // Replay the run aggregate, then decide AttachSessions.
         const runState = await loadRunState(tx, run.id);
@@ -357,7 +322,7 @@ export const planProcedures = {
           producedEvents = decideRun(runState, {
             type: 'AttachSessions',
             sessionIds: dedupedNewIds,
-            addedPlannedItems,
+            addedPlannedItems: sumDemand(items),
             actor: actorFromCtx(ctx),
           });
         } catch (err) {
@@ -570,39 +535,21 @@ export const planProcedures = {
 
       let runState = await loadRunState(tx, input.runId);
 
-      // Check no per-session items have been touched yet.
+      // As in runSimpleCommand: a run under amendment answers to amenders.
       if (runState.status === 'amending') await assertCanAmendRun(tx, ctx, run);
 
       const sessionItems = await tx.query.orderItemsV.findMany({
         where: (it, { eq: eq2 }) => eq2(it.sessionId, input.sessionId),
       });
-      for (const i of sessionItems) {
-        const runItem = runState.items.get(i.skuId);
-        if (runItem && runItem.status !== 'pending') {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message: 'order.errors.cannotEject',
-          });
-        }
-      }
-
-      // RUNAPI-05: in whole thousandths, as in run.create.
-      const removedBySku = new Map<string, bigint>();
-      for (const item of sessionItems) {
-        const qty = qtyMilli(item.qty);
-        if (qty <= 0n) continue;
-        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0n) + qty);
-      }
-      const removedPlannedItems = [...removedBySku.entries()].map(([skuId, qty]) => ({
-        skuId,
-        qty: milliQty(qty),
-      }));
 
       try {
+        // The domain refuses the eject once anything the session asked
+        // for has been bought or given up (review RUNAPI-13: this router
+        // checked that a second time).
         const runRemovalEvents = decideRun(runState, {
           type: 'EjectSession',
           sessionId: input.sessionId,
-          removedPlannedItems,
+          removedPlannedItems: sumDemand(sessionItems),
           reason: input.reason,
           actor: actorFromCtx(ctx, effectivePerms),
         });

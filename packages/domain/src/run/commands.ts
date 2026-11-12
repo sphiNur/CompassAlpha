@@ -4,8 +4,9 @@ import { conflict, forbidden, preconditionFailed, validation } from '../shared/e
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
 import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
-import type { RunEvent } from './events';
-import type { RunState } from './state';
+import { isCalendarDate } from '@compass/contracts/schemas/common';
+import type { RunEvent, StoreSplitPayload } from './events';
+import type { RunState, RunStoreDeliveryState } from './state';
 
 type StoreSplitCommand = {
   storeId: string;
@@ -19,8 +20,11 @@ export type RunCommand =
       type: 'PlanRun';
       orgId: string;
       runDate: string;
+      /** The org's today, YYYY-MM-DD: see assertRunDate. */
+      today: string;
       runIndex: number;
       sessionIds: string[];
+      /** The sessions' order lines, summed with `sumDemand`. */
       plannedItems: Array<{ skuId: string; qty: string }>;
       actor: ActorCtx;
     }
@@ -62,6 +66,18 @@ export type RunCommand =
       receivedQty?: string | null;
       actor: ActorCtx;
     }
+  | {
+      /**
+       * The receiver's "all arrived" at one store (run.markStoreItemsOk,
+       * review RUNAPI-13): every listed product the store has not checked
+       * yet is confirmed 'ok', one StoreItemConfirmed each. A product it
+       * has already checked, either way, is left as it is.
+       */
+      type: 'ConfirmStoreItemsOk';
+      storeId: string;
+      skuIds: readonly string[];
+      actor: ActorCtx;
+    }
   | { type: 'ConfirmStore'; storeId: string; actor: ActorCtx }
   | { type: 'FinishRun'; actor: ActorCtx }
   | { type: 'CancelRun'; reason: string; actor: ActorCtx }
@@ -71,7 +87,8 @@ export type RunCommand =
   // Correct the calendar date a run's spend is booked under (2026-07-30),
   // super-admin only (run.amend). See the RunDateChanged event docblock.
   // `runIndex`: the run's number on the new day (see RunDateChanged).
-  | { type: 'ChangeRunDate'; runDate: string; runIndex?: number; actor: ActorCtx }
+  // `today`: the org's today, as for PlanRun.
+  | { type: 'ChangeRunDate'; runDate: string; today: string; runIndex?: number; actor: ActorCtx }
   // ---- Reversal commands (added 2026-05-03) ---------------------------
   | {
       type: 'RevisePurchase';
@@ -102,9 +119,8 @@ export type RunCommand =
   | { type: 'UndoStartDelivery'; reason: string; actor: ActorCtx }
   | {
       // M3.31 A.2 (2026-05-18): attach approved sessions to a live run.
-      // `addedPlannedItems` is the pre-aggregated qty delta the API
-      // layer produced from the new sessions' orderItemsV rows; the
-      // domain trusts it (same trust we extend to RunPlanned).
+      // `addedPlannedItems` is what the new sessions' order lines add,
+      // summed with `sumDemand` as for RunPlanned.
       type: 'AttachSessions';
       sessionIds: string[];
       addedPlannedItems: Array<{ skuId: string; qty: string }>;
@@ -115,6 +131,7 @@ export type RunCommand =
       // run and reduce the aggregated planned quantities accordingly.
       type: 'EjectSession';
       sessionId: string;
+      /** The session's order lines, summed with `sumDemand`. */
       removedPlannedItems: Array<{ skuId: string; qty: string }>;
       reason?: string;
       actor: ActorCtx;
@@ -229,6 +246,7 @@ export function decideRun(
       if (!command.actor.permissions.has('run.create')) {
         throw forbidden('run.errors.cannotCreate');
       }
+      assertRunDate(command.runDate, command.today);
       if (command.sessionIds.length === 0) {
         throw validation('run.errors.noSessions');
       }
@@ -648,32 +666,8 @@ export function decideRun(
     }
 
     case 'ConfirmStoreItem': {
-      assertActive(state);
-      if (!command.actor.permissions.has('delivery.confirm')) {
-        throw forbidden('run.errors.cannotConfirm');
-      }
-      if (state.status !== 'delivering') {
-        throw preconditionFailed('run.errors.notDelivering');
-      }
-      // 2026-10-21 audit CA-30: a store may only check goods that have
-      // been handed over to it, only until it has signed for them (the
-      // inventory receipt is written at StoreConfirmed and never revised),
-      // and only for SKUs that were actually split to it.
-      const target = state.stores.get(command.storeId);
-      if (!target?.deliveredAt) {
-        throw preconditionFailed('run.errors.storeNotDelivered');
-      }
-      if (target.confirmedAt) {
-        throw preconditionFailed('run.errors.storeAlreadyConfirmed');
-      }
-      const confirmItem = state.items.get(command.skuId);
-      const confirmSplit =
-        confirmItem?.status === 'purchased'
-          ? confirmItem.storeSplits.find((sp) => sp.storeId === command.storeId)
-          : undefined;
-      if (!confirmSplit) {
-        throw validation('run.errors.itemNotInRun');
-      }
+      const target = receivingStore(state, command);
+      const confirmSplit = receivedSplit(state, command.storeId, command.skuId);
       if (command.status !== 'ok') {
         const note = command.note?.trim() ?? '';
         if (!note) throw validation('run.errors.confirmNoteRequiredOnIssue');
@@ -715,8 +709,7 @@ export function decideRun(
       // precondition harder to reason about. The user reported tapping
       // confirm "but status didn't change" and the log showed 4–5
       // identical events for the same SKU.
-      const existingStore = state.stores.get(command.storeId);
-      const existing = existingStore?.itemConfirms.get(command.skuId);
+      const existing = target.itemConfirms.get(command.skuId);
       const newNote = command.note?.trim() || null;
       if (
         existing &&
@@ -743,6 +736,24 @@ export function decideRun(
           },
         },
       ];
+    }
+
+    case 'ConfirmStoreItemsOk': {
+      // The same checks as ConfirmStoreItem, made even when every listed
+      // product has been checked already: the router's copy of this loop
+      // skipped them then and answered success.
+      const target = receivingStore(state, command);
+      const events: RunEvent[] = [];
+      for (const skuId of new Set(command.skuIds)) {
+        receivedSplit(state, command.storeId, skuId);
+        if (target.itemConfirms.has(skuId)) continue;
+        events.push({
+          ...baseFor(events.length + 1),
+          type: 'StoreItemConfirmed',
+          payload: { storeId: command.storeId, skuId, status: 'ok', note: null, photoUrl: null },
+        });
+      }
+      return events;
     }
 
     case 'ConfirmStore': {
@@ -910,16 +921,7 @@ export function decideRun(
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
       const runDate = command.runDate.trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(runDate)) {
-        throw validation('run.errors.invalidRunDate');
-      }
-      // Reject a date the calendar doesn't have (2026-02-31 parses to
-      // March 3 via Date's rollover, which would silently book the spend
-      // in the wrong month).
-      const parsed = new Date(`${runDate}T00:00:00Z`);
-      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== runDate) {
-        throw validation('run.errors.invalidRunDate');
-      }
+      assertRunDate(runDate, command.today);
       // No-op guard: emitting an event that changes nothing would add an
       // audit entry claiming a correction happened.
       if (state.runDate === runDate) {
@@ -1224,6 +1226,10 @@ export function decideRun(
         if (qty <= 0) throw validation('run.errors.qtyMustBePositive');
         const existing = items.get(removed.skuId);
         if (!existing) continue;
+        // A session cannot leave once anything it asked for has been
+        // bought or given up. Only what it asks a quantity of counts: the
+        // router used to check this too, also counting lines of none
+        // (review RUNAPI-13).
         if (existing.status !== 'pending') {
           throw preconditionFailed('order.errors.cannotEject', {
             skuId: removed.skuId,
@@ -1377,6 +1383,56 @@ export function decideRun(
 
 function assertActive(state: RunState): void {
   if (state.status === 'absent') throw preconditionFailed('run.errors.streamMissing');
+}
+
+/**
+ * A day a run's spend can be booked under: one the calendar has
+ * (2026-02-31 would roll into March) and not one that has not come yet in
+ * the org's time zone (2026-10-21 CA-03 for a new run, HIS-7 for a moved
+ * one). The caller gives `today`: it knows the org's time zone, the
+ * domain does not (review RUNAPI-13; the routers checked this themselves).
+ */
+function assertRunDate(runDate: string, today: string): void {
+  if (!isCalendarDate(runDate)) throw validation('run.errors.invalidRunDate');
+  if (runDate > today) throw validation('run.errors.runDateInFuture');
+}
+
+/**
+ * The store whose goods `command` checks, once the actor may and the run
+ * is out for delivery. 2026-10-21 audit CA-30: only goods handed over to
+ * the store, and only until it has signed for them (the inventory receipt
+ * is written at StoreConfirmed and never revised).
+ */
+function receivingStore(
+  state: RunState,
+  command: { storeId: string; actor: ActorCtx },
+): RunStoreDeliveryState {
+  assertActive(state);
+  if (!command.actor.permissions.has('delivery.confirm')) {
+    throw forbidden('run.errors.cannotConfirm');
+  }
+  if (state.status !== 'delivering') {
+    throw preconditionFailed('run.errors.notDelivering');
+  }
+  const store = state.stores.get(command.storeId);
+  if (!store?.deliveredAt) {
+    throw preconditionFailed('run.errors.storeNotDelivered');
+  }
+  if (store.confirmedAt) {
+    throw preconditionFailed('run.errors.storeAlreadyConfirmed');
+  }
+  return store;
+}
+
+/** The store's split of a product bought for it: the only products it checks (CA-30). */
+function receivedSplit(state: RunState, storeId: string, skuId: string): StoreSplitPayload {
+  const item = state.items.get(skuId);
+  const split =
+    item?.status === 'purchased'
+      ? item.storeSplits.find((sp) => sp.storeId === storeId)
+      : undefined;
+  if (!split) throw validation('run.errors.itemNotInRun');
+  return split;
 }
 
 /**

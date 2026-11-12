@@ -133,12 +133,13 @@ type FieldsOf<T extends RunCommand['type'], Named extends keyof RunCommandOf<T>>
 > &
   Partial<Omit<RunCommandOf<T>, 'type' | Named>>;
 
-/** PlanRun for 2026-05-01, index 0, from session s1 of org-1, by the purchaser. */
+/** PlanRun for 2026-05-01, which is today, index 0, from session s1 of org-1, by the purchaser. */
 export function planRun(fields: FieldsOf<'PlanRun', 'plannedItems'>): RunCommandOf<'PlanRun'> {
   return {
     type: 'PlanRun',
     orgId: 'org-1',
     runDate: '2026-05-01',
+    today: '2026-05-01',
     runIndex: 0,
     sessionIds: ['s1'],
     actor: purchaser(),
@@ -235,17 +236,18 @@ export function deliver(state: RunState, storeIds: readonly string[] = ['A']): R
 
 /**
  * Marks every line still unchecked at `storeId` OK, then confirms the
- * store. ConfirmStore does not write those OKs itself (DLV-19, 2026-10-30).
+ * store, by the confirmer. ConfirmStore does not write those OKs itself
+ * (DLV-19, 2026-10-30).
  */
 export function confirmStoreAllOk(state: RunState, storeId: string): RunState {
-  const { step } = runStepper();
-  let s = state;
-  const store = s.stores.get(storeId);
-  for (const item of s.items.values()) {
-    if (item.status !== 'purchased') continue;
-    if (!item.storeSplits.some((sp) => sp.storeId === storeId)) continue;
-    if (store?.itemConfirms.has(item.skuId)) continue;
-    s = step(s, confirmStoreItem({ storeId, skuId: item.skuId }));
-  }
-  return step(s, { type: 'ConfirmStore', storeId, actor: confirmer() });
+  const skuIds = [...state.items.values()]
+    .filter(
+      (item) =>
+        item.status === 'purchased' && item.storeSplits.some((sp) => sp.storeId === storeId),
+    )
+    .map((item) => item.skuId);
+  return runStepper().steps(state, [
+    { type: 'ConfirmStoreItemsOk', storeId, skuIds, actor: confirmer() },
+    { type: 'ConfirmStore', storeId, actor: confirmer() },
+  ]).state;
 }

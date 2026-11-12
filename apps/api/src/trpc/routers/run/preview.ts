@@ -6,7 +6,8 @@ import { TRPCError } from '@trpc/server';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
-import { RunPreviewInputSchema, estimateOrder, milliQty, qtyMilli } from '@compass/contracts';
+import { RunPreviewInputSchema, estimateOrder } from '@compass/contracts';
+import { sumDemand, sumDemandBy } from '@compass/domain/run';
 import { resolveRunCreateStoreScope } from '../../../services/storeScope';
 import { authedProcedure } from '../../trpc';
 import { priceStoreIds, pricesVisibleFor } from '../../../services/priceRedaction';
@@ -152,26 +153,14 @@ export const previewProcedures = {
       const storeBySession = new Map<string, string>();
       for (const sess of sessions) storeBySession.set(sess.id, sess.storeId);
 
-      // RUNAPI-05: quantities in whole thousandths (bigint), not floats.
-      const aggregated = new Map<string, bigint>();
-      const perStoreSkuQty = new Map<string, Map<string, bigint>>(); // storeId → skuId → qty
+      // Summed by the domain as run.create sums them (review RUNAPI-13),
+      // in whole thousandths (RUNAPI-05).
+      const plannedItems = sumDemand(items);
+      const demandByStore = sumDemandBy(items, (it) => storeBySession.get(it.sessionId));
       // 2026-10-21 CA-03: demand per SESSION, so the client can
       // re-aggregate the preview over the sessions the purchaser ticked
       // without a round trip per checkbox.
-      const perSessionSkuQty = new Map<string, Map<string, bigint>>();
-      for (const it of items) {
-        const qty = qtyMilli(it.qty);
-        if (qty <= 0n) continue;
-        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0n) + qty);
-        const bySession = perSessionSkuQty.get(it.sessionId) ?? new Map<string, bigint>();
-        bySession.set(it.skuId, (bySession.get(it.skuId) ?? 0n) + qty);
-        perSessionSkuQty.set(it.sessionId, bySession);
-        const sid = storeBySession.get(it.sessionId);
-        if (!sid) continue;
-        const inner = perStoreSkuQty.get(sid) ?? new Map<string, bigint>();
-        inner.set(it.skuId, (inner.get(it.skuId) ?? 0n) + qty);
-        perStoreSkuQty.set(sid, inner);
-      }
+      const demandBySession = sumDemandBy(items, (it) => it.sessionId);
 
       // Resolve store display names in one query — the FE renders
       // "🏪 {name}" headings so we'd otherwise need session.stores
@@ -179,7 +168,7 @@ export const previewProcedures = {
       // admin viewing an org-wide preview we want every involved
       // store's name, not just theirs.
       const involvedStoreIds = [
-        ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
+        ...new Set([...demandByStore.keys(), ...sessions.map((s) => s.storeId)]),
       ];
       // M1.9-fix (2026-05-07): storeName was '—' for every store on the
       // by-store preview; the store lookup now uses `inArray()`, which
@@ -198,24 +187,20 @@ export const previewProcedures = {
         storeName: string;
         skuId: string;
         qty: string;
-      }> = [];
-      for (const [sid, inner] of perStoreSkuQty.entries()) {
-        const storeName = storeNameById.get(sid) ?? '—';
-        for (const [skuId, qty] of inner.entries()) {
-          perStoreDemand.push({
-            storeId: sid,
-            storeName,
-            skuId,
-            qty: milliQty(qty),
-          });
-        }
-      }
+      }> = [...demandByStore].flatMap(([storeId, demand]) =>
+        demand.map(({ skuId, qty }) => ({
+          storeId,
+          storeName: storeNameById.get(storeId) ?? '—',
+          skuId,
+          qty,
+        })),
+      );
 
       // Resolve preferred supplier per SKU. DISTINCT ON (sku_id) +
       // ORDER BY is_preferred DESC, last_seen_at DESC NULLS LAST
       // gives us "the best link per SKU". Only one query for all
       // planned SKUs.
-      const skuIds = [...aggregated.keys()];
+      const skuIds = plannedItems.map((item) => item.skuId);
       const supplierBySku: Record<
         string,
         {
@@ -320,10 +305,7 @@ export const previewProcedures = {
       // ORD-01: D1 money lines added in cents, as every estimate is.
       const perStoreBudgets = involvedStoreIds.map((storeId) => {
         const est = estimateOrder(
-          [...(perStoreSkuQty.get(storeId)?.entries() ?? [])].map(([skuId, qty]) => ({
-            skuId,
-            qty: milliQty(qty),
-          })),
+          demandByStore.get(storeId) ?? [],
           (skuId) =>
             lastPurchasePriceBySku[skuId] ?? supplierBySku[skuId]?.estimatedUnitPrice ?? null,
         );
@@ -335,12 +317,9 @@ export const previewProcedures = {
         };
       });
 
-      const perSessionDemand: Array<{ sessionId: string; skuId: string; qty: string }> = [];
-      for (const [sessionId, inner] of perSessionSkuQty.entries()) {
-        for (const [skuId, qty] of inner.entries()) {
-          perSessionDemand.push({ sessionId, skuId, qty: milliQty(qty) });
-        }
-      }
+      const perSessionDemand: Array<{ sessionId: string; skuId: string; qty: string }> = [
+        ...demandBySession,
+      ].flatMap(([sessionId, demand]) => demand.map((line) => ({ sessionId, ...line })));
 
       // D6 (2026-10-31): a planner without prices.view in every store of
       // the plan gets quantities only — no stall prices, last paid prices
@@ -377,10 +356,7 @@ export const previewProcedures = {
           notes: sess.notes,
           extras: storedExtras(sess.extrasJson),
         })),
-        plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
-          skuId,
-          qty: milliQty(qty),
-        })),
+        plannedItems,
         perStoreDemand,
         perSessionDemand,
         supplierBySku,
@@ -395,7 +371,7 @@ export const previewProcedures = {
         /** Per-store structured extras (M3.16-C). Empty record when
          *  no extras anywhere. */
         sessionExtrasByStore,
-        total: aggregated.size,
+        total: plannedItems.length,
       };
     });
   }),

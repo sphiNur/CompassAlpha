@@ -59,6 +59,7 @@ const plan = (by: ActorCtx): Command<'PlanRun'> => ({
   type: 'PlanRun',
   orgId: 'org-1',
   runDate: '2026-05-01',
+  today: '2026-05-01',
   runIndex: 0,
   sessionIds: ['s1', 's2'],
   plannedItems: [
@@ -355,6 +356,14 @@ const GATES: { [T in Type]: Gate<T>[] } = {
   ConfirmStoreItem: [
     { ...CONFIRM, state: delivered, command: checkA, gives: ['StoreItemConfirmed'] },
   ],
+  ConfirmStoreItemsOk: [
+    {
+      ...CONFIRM,
+      state: delivered,
+      command: (by) => ({ type: 'ConfirmStoreItemsOk', storeId: 'A', skuIds: ['a'], actor: by }),
+      gives: ['StoreItemConfirmed'],
+    },
+  ],
   ConfirmStore: [
     {
       ...CONFIRM,
@@ -393,7 +402,12 @@ const GATES: { [T in Type]: Gate<T>[] } = {
     {
       ...AMEND,
       state: finished,
-      command: (by) => ({ type: 'ChangeRunDate', runDate: '2026-05-02', actor: by }),
+      command: (by) => ({
+        type: 'ChangeRunDate',
+        runDate: '2026-05-02',
+        today: '2026-05-02',
+        actor: by,
+      }),
       gives: ['RunDateChanged'],
     },
   ],
