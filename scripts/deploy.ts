@@ -103,12 +103,14 @@ import { ciProblemFor, liveReleaseAt, runGh } from './lib/provenance';
 import { RSYNC_FLAGS, releaseTree, unpackRelease, writeRelease } from './lib/release';
 import {
   APP_DIR,
+  DEPLOY_TARBALL,
   PREV_TARBALL,
   RELEASE_TOP,
   STAGE_DIR,
   backupHealthScript,
   backupProblem,
   clearIncompleteScript,
+  databaseUrlLines,
   describeSnapshotScript,
   devBypassFiles,
   devBypassScript,
@@ -486,13 +488,12 @@ if (!DRY && !args.has('--allow-active-run')) {
     const out = ssh(
       [
         'set -e',
-        'cd /home/ubuntu/compass-alpha',
-        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
+        ...databaseUrlLines(),
         // RLS is fail-closed: as the app role with no org/system context this
         // SELECT returns zero rows, so the gate never fired. Read in the
         // maintenance system context (transaction-local), like docs/RUNBOOK.md.
-        `psql "$DATABASE_URL" -qtA -v ON_ERROR_STOP=1 -c "BEGIN" -c "SET LOCAL app.system_context = 'maintenance'" -c "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering','amending')" -c "COMMIT"`,
-      ].join(' && '),
+        `psql "$PG_URL_NOPASS" -qtA -v ON_ERROR_STOP=1 -c "BEGIN" -c "SET LOCAL app.system_context = 'maintenance'" -c "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering','amending')" -c "COMMIT"`,
+      ].join('\n'),
     );
     const active = out
       .split('\n')
@@ -679,10 +680,9 @@ if (!DRY) {
       ssh(
         [
           'set -e',
-          'cd /home/ubuntu/compass-alpha',
-          'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-          `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
-        ].join(' && '),
+          ...databaseUrlLines(),
+          `psql "$PG_URL_NOPASS" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
+        ].join('\n'),
       ),
     );
   } catch (err) {
@@ -934,7 +934,7 @@ if (!DRY) {
       }
       if (!shipped) {
         step('2. scp the whole tarball to the server');
-        run(`scp ${SSH_OPTS} "${tarball}" ${HOST}:/home/ubuntu/`, { timeoutMs: LIMIT.scp });
+        run(`scp ${SSH_OPTS} "${tarball}" ${HOST}:${DEPLOY_TARBALL}`, { timeoutMs: LIMIT.scp });
       }
     } finally {
       rmSync(work, { recursive: true, force: true });
@@ -1020,7 +1020,7 @@ if (!DRY) {
             'set -e',
             'set -o pipefail',
             'export PATH=$HOME/.bun/bin:$PATH',
-            'cd /home/ubuntu/compass-alpha/apps/web',
+            `cd ${APP_DIR}/apps/web`,
             'rm -rf dist.next',
             `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
             'test -f dist.next/index.html',
@@ -1089,7 +1089,7 @@ if (!DRY) {
       ssh(
         [
           'set -e',
-          'cd /home/ubuntu/compass-alpha/apps/web',
+          `cd ${APP_DIR}/apps/web`,
           'test -f dist.next/index.html',
           'rm -rf dist.prev',
           'if [ -d dist ]; then mv dist dist.prev; fi',
@@ -1166,12 +1166,10 @@ if (!DRY) {
   }
 
   step('verify deployed assets');
-  const newHash = ssh(
-    `ls /home/ubuntu/compass-alpha/apps/web/dist/assets/index-*.js | head -1`,
-  ).trim();
+  const newHash = ssh(`ls ${APP_DIR}/apps/web/dist/assets/index-*.js | head -1`).trim();
   console.log(`  bundle: ${newHash}`);
   try {
-    const buildId = ssh(`cat /home/ubuntu/compass-alpha/apps/web/dist/build-id.txt`).trim();
+    const buildId = ssh(`cat ${APP_DIR}/apps/web/dist/build-id.txt`).trim();
     console.log(`  build-id: ${buildId}`);
     // A rollback brings back whichever release the snapshot holds.
     if (ROLLBACK) expectedSha = buildId;

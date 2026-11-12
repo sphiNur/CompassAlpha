@@ -36,12 +36,13 @@ set -euo pipefail
 # F11: credentials go to pg_restore and psql through PGPASSWORD, not argv.
 # shellcheck source=pg-url.sh
 source "$(dirname "${BASH_SOURCE[0]}")/pg-url.sh"
+# env_get: a value from ENV_FILE without its quotes (review OPS-32).
+# shellcheck source=../lib/env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/env.sh"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
 BACKUP_DIR=${BACKUP_DIR:-/home/ubuntu/compass-backups}
-# A value from ENV_FILE without its quotes; empty when it is not there.
-env_get() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true; }
 
 # --- Arguments --------------------------------------------------------------
 YES=0

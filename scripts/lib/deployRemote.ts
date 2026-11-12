@@ -6,12 +6,33 @@
  *
  * N9 (2026-10-30): host key verification and an API rollback path.
  */
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /** Live tree on the server. */
 export const APP_DIR = '/home/ubuntu/compass-alpha';
 /** The release that was live before the last deploy (code + web bundle). */
 export const PREV_TARBALL = '/home/ubuntu/compass-alpha.prev.tar.gz';
+
+/**
+ * Shell lines that read DATABASE_URL from `${appDir}/.env` and split it
+ * with infra/backup/pg-url.sh: PG_URL_NOPASS for psql's command line, the
+ * password in PGPASSWORD (review OPS-32). `psql "$DATABASE_URL"` put the
+ * password where every local account can read it, in `ps` (the backup
+ * scripts stopped doing that in security scan F11). The helpers' text is
+ * sent along, so this runs on a server whose live release predates them.
+ */
+export function databaseUrlLines(appDir = APP_DIR, root = REPO_ROOT): string[] {
+  return [
+    readFileSync(join(root, 'infra/lib/env.sh'), 'utf8'),
+    readFileSync(join(root, 'infra/backup/pg-url.sh'), 'utf8'),
+    `pg_url_split "$(env_get DATABASE_URL "${appDir}/.env")"`,
+    'test -n "$PG_URL_NOPASS" || { echo "no DATABASE_URL in the server .env" >&2; exit 3; }',
+  ];
+}
 
 /**
  * Host keys of the production server, pinned in the repo. Obtained with

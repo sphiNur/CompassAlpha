@@ -28,6 +28,7 @@ import {
   backupHealthScript,
   backupProblem,
   clearIncompleteScript,
+  databaseUrlLines,
   describeSnapshotScript,
   devBypassFiles,
   devBypassScript,
@@ -913,5 +914,54 @@ describe('asking the api on the server itself', () => {
     expect(localReadyVerdict('200\n200\n')).toBe('unknown');
     expect(localReadyVerdict('')).toBe('unknown');
     expect(localReadyVerdict('ssh: connect to host: Connection timed out')).toBe('unknown');
+  });
+});
+
+describe('OPS-32: the database checks keep the password off the command line', () => {
+  /** A psql on PATH that prints what it was given and what it found in the environment. */
+  function fakePsql(): string {
+    const bin = mkdtempSync(join(tmpdir(), 'deploy-psql-'));
+    dirs.push(bin);
+    put(
+      bin,
+      'psql',
+      '#!/usr/bin/env bash\nprintf \'argv:%s\\n\' "$*"\nprintf \'env:%s\\n\' "${PGPASSWORD:-}"\n',
+    );
+    chmodSync(join(bin, 'psql'), 0o755);
+    return bin;
+  }
+  function check(app: string, bin: string) {
+    const script = [
+      'set -e',
+      ...databaseUrlLines(app),
+      'psql "$PG_URL_NOPASS" -tAc "SELECT 1"',
+    ].join('\n');
+    return spawnSync('bash', ['-c', script], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PGPASSWORD: '' },
+    });
+  }
+
+  test('psql gets the URL without its password; the password goes in PGPASSWORD', () => {
+    const { app } = liveTree();
+    put(
+      app,
+      '.env',
+      'PORT=3000\nDATABASE_URL="postgres://compass:p%40ss:w0rd@db.local:5432/compass"\n',
+    );
+    const r = check(app, fakePsql());
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(
+      'argv:postgres://compass@db.local:5432/compass -tAc SELECT 1\nenv:p@ss:w0rd\n',
+    );
+  });
+
+  test('no DATABASE_URL in the server .env: the check fails before psql', () => {
+    const { app } = liveTree();
+    put(app, '.env', 'PORT=3000\n');
+    const r = check(app, fakePsql());
+    expect(r.status).toBe(3);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain('no DATABASE_URL');
   });
 });

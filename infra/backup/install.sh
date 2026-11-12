@@ -34,6 +34,8 @@ TIMER_SRC="$HERE/compass-backup.timer"
 SCRIPT_SRC="$HERE/compass-backup.sh"
 # Sourced by the script for its database credentials (F11).
 PGURL_SRC="$HERE/pg-url.sh"
+# env_get, sourced by the script and by this installer (review OPS-32).
+ENVLIB_SRC="$HERE/../lib/env.sh"
 SYSTEMD_DIR=/etc/systemd/system
 
 # --- Sanity checks ----------------------------------------------------------
@@ -42,7 +44,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-for f in "$SERVICE_SRC" "$TIMER_SRC" "$SCRIPT_SRC" "$PGURL_SRC"; do
+for f in "$SERVICE_SRC" "$TIMER_SRC" "$SCRIPT_SRC" "$PGURL_SRC" "$ENVLIB_SRC"; do
   if [[ ! -f "$f" ]]; then
     echo "[install] ERROR: missing $f" >&2
     exit 1
@@ -68,7 +70,8 @@ chmod 750 "$BACKUP_DIR_DEFAULT"
 # nothing said so. grant-backup-role.sql also sets the default privileges
 # of the role the migrations connect as. Idempotent.
 ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
-env_get() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true; }
+# shellcheck source=../lib/env.sh
+. "$ENVLIB_SRC"
 # shellcheck source=pg-url.sh
 . "$PGURL_SRC"
 pg_url_parts "$(env_get BACKUP_DATABASE_URL)"
