@@ -3,11 +3,13 @@ import {
   Badge,
   Banner,
   FieldGroup,
+  ListRow,
   LoadingState,
   QueryErrorBanner,
   Segmented,
   Sheet,
   useToast,
+  rowGroupClass,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
@@ -179,7 +181,7 @@ export function GrantRoleSheet({
   };
 
   const handlePick = async (slug: string) => {
-    if (!target) return;
+    if (!target || grant.isPending) return;
     if (scopeMode === 'global') {
       try {
         const data = await grant.mutateAsync({
@@ -303,28 +305,43 @@ export function GrantRoleSheet({
               : i18n.t('people.noGrantableStore', { rank: effectiveRank })}
           </Banner>
         ) : (
-          grantableRoles.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              disabled={grant.isPending || r.keysMissing}
-              onClick={() => handlePick(r.slug)}
-              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
-            >
-              <div>
-                <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                  {roleText.name(r)}
-                </div>
-                <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                  {r.keysMissing
-                    ? i18n.t('people.roleHasKeysYouLack')
-                    : i18n.t('people.rankLine', { rank: r.rank }) +
-                      (roleText.description(r) ? ` · ${roleText.description(r)}` : '')}
-                </div>
-              </div>
-              {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
-            </button>
-          ))
+          // Review ADM1-13 (2026-11-12): the kit's rows (UI-16), not
+          // hand-drawn buttons. A role carrying keys the actor lacks here
+          // (D8) is listed, marked, and not offered; nothing is offered
+          // while a grant is on its way.
+          <ul className={rowGroupClass} role="list">
+            {grantableRoles.map((r) => {
+              const description = roleText.description(r);
+              return (
+                <li key={r.id}>
+                  <ListRow
+                    label={
+                      r.keysMissing ? (
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {roleText.name(r)}
+                          <Badge tone="warn">{i18n.t('people.roleKeysYouLackBadge')}</Badge>
+                        </span>
+                      ) : (
+                        roleText.name(r)
+                      )
+                    }
+                    hint={
+                      i18n.t('people.rankLine', { rank: r.rank }) +
+                      (description ? ` · ${description}` : '')
+                    }
+                    badge={
+                      r.isBuiltIn ? (
+                        <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
+                      ) : null
+                    }
+                    onClick={
+                      r.keysMissing || grant.isPending ? undefined : () => void handlePick(r.slug)
+                    }
+                  />
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </Sheet>

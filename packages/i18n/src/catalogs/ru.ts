@@ -201,6 +201,7 @@ export const ru = {
   'people.roleHasKeysYouLack':
     'В этой роли есть права, которых нет у вас, — здесь её назначить нельзя.',
   'people.roleNameKeysYouLack': '{name} (есть права, которых у вас нет)',
+  'people.roleKeysYouLackBadge': 'есть права, которых у вас нет',
   'people.rolesOfMember': 'Роли',
   'people.revokeRole': 'Снять',
   'people.revokeRoleAria': '{name}: снять роль «{role}»',

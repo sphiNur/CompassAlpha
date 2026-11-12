@@ -208,6 +208,7 @@ export const uz = {
     'Bu rol aʼzolarga biriktirilgan, shuning uchun darajasi {rank} chegarasidan oʻta olmaydi: {rank} va undan yuqori rol butun ish maydoniga, undan pasti alohida doʻkonlarga tegishli.',
   'people.roleHasKeysYouLack': 'Bu rolda sizda yoʻq ruxsatlar bor, uni bu yerda bera olmaysiz.',
   'people.roleNameKeysYouLack': '{name} (sizda yoʻq ruxsatlar bor)',
+  'people.roleKeysYouLackBadge': 'sizda yoʻq ruxsatlar bor',
   'people.rolesOfMember': 'Rollar',
   'people.revokeRole': 'Olib tashlash',
   'people.revokeRoleAria': '{name}: «{role}» rolini olib tashlash',

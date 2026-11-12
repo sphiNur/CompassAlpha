@@ -188,6 +188,7 @@ export const zh = {
     '已有成员持有这个角色，等级不能跨过 {rank}：{rank} 及以上作用于整个工作区，低于 {rank} 只作用于单个门店。',
   'people.roleHasKeysYouLack': '这个角色含你自己没有的权限，不能在这里授予。',
   'people.roleNameKeysYouLack': '{name}（含你没有的权限）',
+  'people.roleKeysYouLackBadge': '含你没有的权限',
   'people.rolesOfMember': '角色',
   'people.revokeRole': '撤销',
   'people.revokeRoleAria': '撤销 {name} 的「{role}」',

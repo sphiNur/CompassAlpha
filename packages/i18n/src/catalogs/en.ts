@@ -230,6 +230,7 @@ export const en = {
   'people.roleHasKeysYouLack':
     "This role has permissions you don't have yourself, so you can't give it here.",
   'people.roleNameKeysYouLack': '{name} (has permissions you lack)',
+  'people.roleKeysYouLackBadge': 'has permissions you lack',
   'people.rolesOfMember': 'Roles',
   'people.revokeRole': 'Revoke',
   'people.revokeRoleAria': 'Revoke {role} from {name}',
