@@ -36,7 +36,7 @@ interface ToastConfig {
   actions?: ToastAction[];
 }
 
-interface ToastContextValue {
+export interface ToastContextValue {
   show: (
     message: ReactNode,
     opts?: {
@@ -115,7 +115,7 @@ function cssPx(name: string): number {
 let counter = 0;
 const nextId = () => `toast-${++counter}-${Math.random().toString(36).slice(2, 6)}`;
 
-interface ToastProviderProps {
+export interface ToastProviderProps {
   children: ReactNode;
   /** Default time-to-live in ms. Per-toast override via `ttlMs`. */
   defaultTtlMs?: number;

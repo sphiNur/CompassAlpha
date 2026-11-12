@@ -19,15 +19,13 @@ import { Spinner } from './Spinner';
  */
 export type LoadingStateVariant = 'block' | 'compact' | 'inline';
 
-export function LoadingState({
-  variant = 'block',
-  label,
-  className,
-}: {
+export interface LoadingStateProps {
   variant?: LoadingStateVariant;
   label?: string;
   className?: string;
-}) {
+}
+
+export function LoadingState({ variant = 'block', label, className }: LoadingStateProps) {
   const labels = useUiLabels();
   const text = label ?? labels.loading;
   if (variant === 'inline') {

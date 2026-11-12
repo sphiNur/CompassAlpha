@@ -7,7 +7,7 @@ import { EmptyState } from './EmptyState';
 import { LoadingState } from './LoadingState';
 import { isWaitingOffline, OfflineState } from './OfflineState';
 
-interface QueryLike<T> {
+export interface QueryLike<T> {
   data: T | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -18,7 +18,7 @@ interface QueryLike<T> {
   refetch?: () => unknown;
 }
 
-interface DataStateProps<T> {
+export interface DataStateProps<T> {
   query: QueryLike<T>;
   emptyWhen?: (data: T) => boolean;
   empty?: ReactNode;

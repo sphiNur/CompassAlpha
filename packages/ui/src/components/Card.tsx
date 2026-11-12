@@ -25,7 +25,7 @@ export const rowListClass = 'flex flex-col divide-y divide-[var(--c-divider)]';
  */
 export const rowGroupClass = `${rowListClass} overflow-hidden ${surfaceClass}`;
 
-interface CardProps extends HTMLAttributes<HTMLElement> {
+export interface CardProps extends HTMLAttributes<HTMLElement> {
   interactive?: boolean;
   // 'li' (A11Y-14): a card that is an item of a <ul role="list">.
   as?: 'div' | 'section' | 'article' | 'li';

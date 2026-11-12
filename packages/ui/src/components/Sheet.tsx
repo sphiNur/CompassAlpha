@@ -82,7 +82,7 @@ function useSheetPresence(open: boolean, onOpenChange: (open: boolean) => void):
   }, [open]);
 }
 
-interface SheetProps {
+export interface SheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: ReactNode;

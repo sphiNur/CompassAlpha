@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '../cn';
 
-interface EmptyStateProps {
+export interface EmptyStateProps {
   title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;

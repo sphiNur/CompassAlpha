@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
 
-interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
+export interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   tone?: 'info' | 'success' | 'warn' | 'danger';
   /** ReactNode title override — wider type than the native string `title` attribute. */
   title?: ReactNode;

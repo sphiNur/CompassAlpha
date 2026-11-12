@@ -1,6 +1,6 @@
 import { cn } from '../cn';
 
-interface AvatarProps {
+export interface AvatarProps {
   src?: string | null;
   name: string;
   size?: number;

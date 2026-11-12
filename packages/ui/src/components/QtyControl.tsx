@@ -7,7 +7,7 @@ import { QTY_DECIMALS, isMultipleOfStep, readQtyDraft } from '../qtyDraft';
 import { Input } from './Input';
 import { Field } from './Rows';
 
-interface QtyControlProps {
+export interface QtyControlProps {
   value: number;
   step?: number;
   min?: number;

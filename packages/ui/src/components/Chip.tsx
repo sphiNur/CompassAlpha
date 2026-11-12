@@ -44,7 +44,7 @@ export type ChipVariant = 'toggles' | 'radio';
 
 const ChipVariantContext = createContext<ChipVariant>('radio');
 
-interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
 }
 
@@ -76,10 +76,15 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
   );
 }
 
-interface ChipBarProps {
+export interface ChipBarProps {
   children: ReactNode;
   className?: string;
-  ariaLabel?: string;
+  /**
+   * What the chips choose or filter, announced to screen readers.
+   * Required (review UI-21), as on Segmented: a group named only by its
+   * chips says nothing about what they are for.
+   */
+  ariaLabel: string;
   /** See the ChipVariant docblock. Defaults to 'radio'. */
   variant?: ChipVariant;
   /**

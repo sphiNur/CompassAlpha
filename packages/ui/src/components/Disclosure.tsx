@@ -12,19 +12,15 @@ import { IconChevronRight } from './NavIcon';
  * block is opened. Pass `open` and `onOpenChange` to keep the state above
  * a parent that is drawn again from scratch.
  */
-export function Disclosure({
-  title,
-  children,
-  open,
-  onOpenChange,
-  className,
-}: {
+export interface DisclosureProps {
   title: ReactNode;
   children: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   className?: string;
-}) {
+}
+
+export function Disclosure({ title, children, open, onOpenChange, className }: DisclosureProps) {
   const [ownOpen, setOwnOpen] = useState(false);
   const shown = open ?? ownOpen;
   const contentId = useId();

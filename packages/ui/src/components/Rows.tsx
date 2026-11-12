@@ -456,16 +456,14 @@ export function PickerRow({
  * ring-hairline` panel every picker used, now also the radiogroup that
  * names the choice and moves between rows with the arrow keys.
  */
-export function PickerGroup({
-  label,
-  children,
-  className,
-}: {
-  /** What is being chosen, e.g. "Language". */
+export interface PickerGroupProps {
+  /** What is being chosen, e.g. "Language"; the group's accessible name. */
   label: string;
   children: ReactNode;
   className?: string;
-}) {
+}
+
+export function PickerGroup({ label, children, className }: PickerGroupProps) {
   const roving = useRovingRadio<HTMLDivElement>({ followFocus: false });
   return (
     <div
