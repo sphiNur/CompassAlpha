@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { lineAmount, sumMoney } from '@compass/contracts/money';
-import { topUpPrefill, topUpRevision, type TopUpRevision } from '../topUp';
+import { topUpBaseOf, topUpDraft, topUpPrefill, topUpRevision, type TopUpRevision } from '../topUp';
+import type { PurchaseDraft } from '../../sheets/RunSheets';
 
 const paid = (r: TopUpRevision) =>
   sumMoney(r.storeSplits.map((sp) => lineAmount(sp.qty, sp.unitPrice ?? r.unitPrice)));
@@ -148,5 +149,95 @@ describe('top-up quantities a number field can hold', () => {
   test('"1e3" reads as 1000, as Number did', () => {
     const r = topUpPrefill({ splits: new Map([['A', '1e3']]), demand: [], extra: '1' });
     expect(r.actualQty).toBe('1001');
+  });
+});
+
+describe('topUpBaseOf (DX-BUY-2)', () => {
+  test("each store's earlier quantity at its effective price and method", () => {
+    expect(
+      topUpBaseOf({ skuId: 'butter', unitPrice: '80000', paymentMethod: 'cash' }, [
+        { skuId: 'butter', storeId: 'CK', qty: '2' },
+        { skuId: 'butter', storeId: 'RH', qty: '1', unitPrice: '81000', paymentMethod: 'transfer' },
+        { skuId: 'butter', storeId: 'XX', qty: '0' },
+        { skuId: 'milk', storeId: 'CK', qty: '4' },
+      ]),
+    ).toEqual({
+      item: { unitPrice: '80000', paymentMethod: 'cash' },
+      base: [
+        { storeId: 'CK', qty: '2', unitPrice: '80000', paymentMethod: 'cash' },
+        { storeId: 'RH', qty: '1', unitPrice: '81000', paymentMethod: 'transfer' },
+      ],
+    });
+  });
+
+  test("without a row price the stores' price stands in, as the edit sheet opens", () => {
+    expect(
+      topUpBaseOf({ skuId: 'butter', unitPrice: null, paymentMethod: 'transfer' }, [
+        { skuId: 'butter', storeId: 'CK', qty: '2', unitPrice: '80000' },
+      ])?.item,
+    ).toEqual({ unitPrice: '80000', paymentMethod: 'transfer' });
+  });
+
+  test('no price at all: no base, and the sheet saves an ordinary revision', () => {
+    expect(
+      topUpBaseOf({ skuId: 'butter', unitPrice: null }, [
+        { skuId: 'butter', storeId: 'CK', qty: '2' },
+      ]),
+    ).toBeUndefined();
+  });
+});
+
+describe('topUpDraft (DX-BUY-2)', () => {
+  const sheet: PurchaseDraft = {
+    isEdit: true,
+    skuId: 'butter',
+    runId: 'run',
+    unitPrice: '80000',
+    actualQty: '2',
+    supplierId: null,
+    splits: new Map([['CK', '2']]),
+    splitPrices: new Map([['CK', '79000']]),
+    splitPaymentMethods: new Map(),
+    perStorePricing: true,
+    receiptPhotoUrl: null,
+    reason: '',
+    paymentMethod: 'transfer',
+  };
+  const base = {
+    item: { unitPrice: '80000', paymentMethod: 'cash' as const },
+    base: [{ storeId: 'CK', qty: '2', unitPrice: '80000', paymentMethod: 'cash' as const }],
+  };
+
+  test('the extra goes to the store still short, and the sheet prices this batch only', () => {
+    const d = topUpDraft(sheet, {
+      demand: [
+        { storeId: 'CK', qty: '2' },
+        { storeId: 'RH', qty: '2' },
+      ],
+      extra: '2',
+      base,
+      reason: 'top-up',
+    });
+    expect([...d.splits]).toEqual([
+      ['CK', '2'],
+      ['RH', '2'],
+    ]);
+    expect(d).toMatchObject({
+      actualQty: '4',
+      reason: 'top-up',
+      topUp: base,
+      perStorePricing: false,
+      unitPrice: '80000',
+      paymentMethod: 'cash',
+    });
+    expect(d.splitPrices.size).toBe(0);
+  });
+
+  test('without a base the sheet keeps its prices', () => {
+    const d = topUpDraft(sheet, { demand: [], extra: '1', base: undefined, reason: 'top-up' });
+    expect(d.topUp).toBeUndefined();
+    expect(d.perStorePricing).toBe(true);
+    expect([...d.splitPrices]).toEqual([['CK', '79000']]);
+    expect(d.actualQty).toBe('3');
   });
 });

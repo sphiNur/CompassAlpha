@@ -26,6 +26,8 @@
  */
 import { toCents } from '@compass/contracts/money';
 import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
+import type { PurchaseDraft } from '../sheets/RunSheets';
+import { editPricingFromSplits } from './purchaseOverrides';
 
 export type PaymentMethod = 'cash' | 'transfer';
 
@@ -149,4 +151,84 @@ export function topUpPrefill(input: {
   let total = remaining > 0n ? remaining : 0n;
   for (const qty of splits.values()) total += qtyMilliOrZero(qty);
   return { splits, actualQty: milliQty(total) };
+}
+
+export type TopUpBase = {
+  item: { unitPrice: string; paymentMethod: PaymentMethod };
+  base: BaseSplit[];
+};
+
+const asMethod = (m: string | null | undefined): PaymentMethod =>
+  m === 'transfer' ? 'transfer' : 'cash';
+
+/**
+ * The row as bought before the top-up, for topUpRevision: its price and
+ * method, and each store's earlier quantity with its effective price and
+ * method, so the sheet's price is this batch's only. Undefined when a
+ * price is missing; the sheet then saves an ordinary revision.
+ */
+export function topUpBaseOf(
+  item: { skuId: string; unitPrice: string | null; paymentMethod?: string | null },
+  splits: ReadonlyArray<{
+    skuId: string;
+    storeId: string;
+    qty: string;
+    unitPrice?: string | null;
+    paymentMethod?: string | null;
+  }>,
+): TopUpBase | undefined {
+  const baseRows = splits.filter((sp) => sp.skuId === item.skuId && Number(sp.qty) > 0);
+  const basePricing = editPricingFromSplits(item, baseRows);
+  const baseItemPrice = item.unitPrice ?? basePricing.unitPrice;
+  return baseItemPrice && baseRows.every((sp) => sp.unitPrice ?? baseItemPrice)
+    ? {
+        item: { unitPrice: baseItemPrice, paymentMethod: basePricing.paymentMethod },
+        base: baseRows.map((sp) => ({
+          storeId: sp.storeId,
+          qty: sp.qty,
+          unitPrice: sp.unitPrice ?? baseItemPrice,
+          paymentMethod: asMethod(sp.paymentMethod ?? item.paymentMethod),
+        })),
+      }
+    : undefined;
+}
+
+/**
+ * The purchase sheet, opened on a bought row, made a top-up: the extra
+ * goes where the demand is not yet covered (topUpPrefill), so it reaches
+ * the stores that asked for it, not all of them; and with the earlier
+ * batch known, the sheet's one price and method are this batch's only
+ * (the stores' earlier prices are kept by the revision itself).
+ */
+export function topUpDraft(
+  d: PurchaseDraft,
+  input: {
+    demand: ReadonlyArray<{ storeId: string; qty: string }>;
+    extra: string | null | undefined;
+    base: TopUpBase | undefined;
+    /** i18n.t('run.topUp.reason') */
+    reason: string;
+  },
+): PurchaseDraft {
+  const { splits, actualQty } = topUpPrefill({
+    splits: d.splits,
+    demand: input.demand,
+    extra: input.extra,
+  });
+  return {
+    ...d,
+    splits,
+    actualQty,
+    reason: input.reason,
+    ...(input.base
+      ? {
+          topUp: input.base,
+          perStorePricing: false,
+          splitPrices: new Map(),
+          splitPaymentMethods: new Map(),
+          unitPrice: input.base.item.unitPrice,
+          paymentMethod: input.base.item.paymentMethod,
+        }
+      : {}),
+  };
 }

@@ -4,6 +4,7 @@ import {
   editPricingFromSplits,
   followPaymentMethod,
   followUnitPrice,
+  paymentFlipRevision,
   splitOverridesFor,
 } from '../purchaseOverrides';
 
@@ -133,5 +134,64 @@ describe('paidPerStore (DX-BUY-1)', () => {
         { storeId: 'b', qty: '0', paymentMethod: 'transfer' },
       ]),
     ).toBe(false);
+  });
+});
+
+describe('paymentFlipRevision', () => {
+  const item = {
+    skuId: 'tomato',
+    unitPrice: '100',
+    purchasedQty: '3',
+    supplierId: 'stall',
+    receiptPhotoUrl: null,
+    paymentMethod: 'cash',
+  };
+  const flip = (over: Partial<Parameters<typeof paymentFlipRevision>[0]> = {}) =>
+    paymentFlipRevision({
+      runId: 'run',
+      item,
+      splits: [
+        { skuId: 'tomato', storeId: 'A', qty: '1' },
+        { skuId: 'tomato', storeId: 'B', qty: '2', unitPrice: '90' },
+        { skuId: 'tomato', storeId: 'C', qty: '0' },
+        { skuId: 'onion', storeId: 'A', qty: '5' },
+      ],
+      next: 'transfer',
+      reason: 'method changed',
+      ...over,
+    });
+
+  test('only the method changes; the stores keep their own prices and follow the new method', () => {
+    expect(flip()).toEqual({
+      runId: 'run',
+      skuId: 'tomato',
+      supplierId: 'stall',
+      unitPrice: '100',
+      actualQty: '3',
+      receiptPhotoUrl: null,
+      storeSplits: [
+        { storeId: 'A', qty: '1' },
+        { storeId: 'B', qty: '2', unitPrice: '90' },
+      ],
+      paymentMethod: 'transfer',
+      reason: 'method changed',
+    });
+  });
+
+  test('a store price equal to the row price is not an override', () => {
+    const r = flip({ splits: [{ skuId: 'tomato', storeId: 'A', qty: '3', unitPrice: '100.00' }] });
+    expect(r?.storeSplits).toEqual([{ storeId: 'A', qty: '3' }]);
+  });
+
+  test('a row paid per store, or without a price or quantity, opens the sheet', () => {
+    expect(
+      flip({ splits: [{ skuId: 'tomato', storeId: 'A', qty: '3', paymentMethod: 'transfer' }] }),
+    ).toBeNull();
+    expect(flip({ item: { ...item, unitPrice: null } })).toBeNull();
+    expect(flip({ item: { ...item, purchasedQty: null } })).toBeNull();
+  });
+
+  test('so does a row no store took any of', () => {
+    expect(flip({ splits: [{ skuId: 'tomato', storeId: 'A', qty: '0' }] })).toBeNull();
   });
 });

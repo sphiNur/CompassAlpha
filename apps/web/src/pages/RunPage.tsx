@@ -26,9 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
-import { addMoney } from '@compass/contracts/money';
-import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cacheOwner } from '../lib/queryPersist';
 import { hintStorage, saveRunHint } from '../lib/runHint';
 import {
@@ -48,38 +46,26 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton } from '../hooks/usePageMainButton';
-import { haptic } from '../lib/telegram';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { confirmThen } from '../lib/confirm';
 import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
-// M3.5: StoreSwitcher pill removed from page chrome; picker lives in
-// SettingsSheet now. RunPage still uses useStoreContext indirectly
-// through other paths if needed.
 import { usePageMenu } from '../components/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
-import { useQueueOnNetworkError, useStableIdempotencyKey } from '../hooks/useOfflineWrite';
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
-import { useErrToast } from '../hooks/useErrToast';
 import { currencyOf, formatQty, formatMoney } from '../lib/format';
 import { runStepLabel } from '../lib/statusLabels/run';
 import { useCanSeePrices } from '../hooks/useStorePermission';
-import { itemProgressCounts, pendingExtrasOf } from './runs/lib/runProgress';
+import { itemProgressCounts } from './runs/lib/runProgress';
 import { otherStoreSkusOf } from './runs/types';
-// Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
-import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
-import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
 import {
   allItemsHandled as allItemsHandledOf,
   pendingItemCount as pendingItemCountOf,
   allStoresConfirmed as allStoresConfirmedOf,
   deliveryWaiting,
 } from './runs/lib/runProgress';
-// History subsystem lives in runs/history and is rendered by the 历史
-// tab (pages/HistoryPage.tsx) as of 2026-07-30 — this page no longer
-// imports any of it.
 // Mutation sheets + draft types — extracted to runs/sheets (Phase 4 step 3).
 import {
   PurchaseSheet,
@@ -88,59 +74,27 @@ import {
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
 import { isUnusualFirstPrice, isUnusualPrice } from './runs/lib/priceMath';
-import { mergeSplitsIntoExistingItem, mergeIntoPurchasedItem, runStoreIdsOf } from './runs/lib/runStores';
-import { buildStorePickList } from './runs/lib/storePickList';
+import { runStoreIdsOf } from './runs/lib/runStores';
 import { closedFor } from './runs/lib/draftClose';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
 import { daysOld, selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
-import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/lib/purchaseOverrides';
-import { topUpPrefill, topUpRevision } from './runs/lib/topUp';
+import {
+  editPricingFromSplits,
+  paymentFlipRevision,
+  splitOverridesFor,
+} from './runs/lib/purchaseOverrides';
+import { topUpBaseOf, topUpDraft, topUpRevision } from './runs/lib/topUp';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
-import { moneyLine as moneyLineAmount } from '../lib/money';
 import { orgToday } from '../lib/calendarDate';
+import { newClientId } from '../lib/clientId';
+import { useRunMutations } from './runs/hooks/useRunMutations';
+import { finishSummaryOf } from './runs/lib/finishSummary';
+import { confirmCommandFor, confirmCopyFor, type ConfirmKind } from './runs/lib/confirmCopy';
+import { newAddItemDraft, planAddItemSubmit } from './runs/lib/addItem';
 
-function newClientId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-/** A pending reason-prompt confirm. The keys here are the ONLY transitions
- *  that need a confirmation; trivial actions (Buy, mark N/A) keep their
- *  existing inline sheets. */
-type ConfirmKind =
-  | 'startPurchase'
-  | 'startDelivery'
-  | 'finish'
-  | 'refinalize'
-  | 'cancel'
-  | 'undoStartPurchase'
-  | 'undoStartDelivery'
-  | { kind: 'deliverStore'; storeId: string; storeName: string }
-  | { kind: 'recallDelivery'; storeId: string; storeName: string }
-  | { kind: 'unmarkUnavailable'; skuId: string; skuName: string }
-  | { kind: 'undoPurchase'; skuId: string; skuName: string; added: boolean }
-  | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string }
-  // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
-  // confirmation or undo.
-  | { kind: 'removeExpense'; expenseId: string; label: string };
-
-/** What the run's confirm sheet asks (ConfirmSheet in @compass/ui). */
-interface RunConfirm {
-  title: string;
-  body: string;
-  confirmLabel: string;
-  danger: boolean;
-  irreversible?: boolean;
-  requireReason: boolean;
-  reasonOptional?: boolean;
-  reasonPlaceholder?: string;
-  isPending: boolean;
-  run: () => void;
-}
 
 export function RunPage() {
   const i18n = useI18n();
@@ -237,416 +191,55 @@ export function RunPage() {
         session.permissions.includes('org.admin')),
   });
 
-  const utils = trpc.useUtils();
-  const invalidateRunQuietly = useCallback(
-    (includeList = false) => {
-      setTimeout(() => {
-        void utils.run.get.invalidate();
-        if (includeList) void utils.run.list.invalidate();
-      }, 650);
-    },
-    [utils],
-  );
   // Purchases queue offline; their replay (with the first attempt's
   // idempotency key) is app-level now (CMP-FE-3, hooks/useOutboxReplay.ts).
   const offline = useOfflineQueue();
 
   // ---- Mutations ------------------------------------------------------
-  // M1.9 (2026-05-07): hoisted into `hooks/useErrToast.ts` so the same
-  // translation logic doesn't live in 3 different pages with subtly
-  // different shapes. Server-side TRPCError uses i18n keys like
-  // `run.errors.runFrozen` as `message`; the helper translates them
-  // and falls back to the caller-provided key on raw / unknown
-  // strings.
-  const errToast = useErrToast();
-  const queueOnNetworkError = useQueueOnNetworkError();
-  const create = trpc.run.create.useMutation({
-    onSuccess: (res) => {
-      void utils.run.list.invalidate();
-      void utils.run.previewCreatable.invalidate();
-      haptic('success');
+  // runs/hooks/useRunMutations.ts (RUNWEB1-04); what each answer does to
+  // this page's state is said here.
+  const mutations = useRunMutations({
+    runCreated: (runId) => {
       // 2026-10-21 CA-03/CA-04: land on the run just created (or the
       // buying run handed back) and forget this trip's ticks / date.
-      if (res?.runId) setSelectedRunKey(res.runId);
+      if (runId) setSelectedRunKey(runId);
       setSessionOverrides(new Map());
       setRunDateChoice(null);
-      /**
-       * `res.reused` means run.create found a live run and handed it
-       * back rather than creating one. Say so — silently landing the
-       * user in a trip someone else started, with a "run planned"
-       * success toast, would be a lie.
-       */
-      if (res?.reused) {
-        toast.info(i18n.t('run.toast.runAlreadyOpen'));
-        return;
-      }
-      toast.success(i18n.t('run.toast.runPlanned'));
-      /**
-       * NO inline undo here, deliberately. Starting is now one tap with
-       * no confirm in front of it, so an immediate "Undo" on the toast
-       * is the right affordance — but the shared Toast primitive renders
-       * each toast as a single <button> that dismisses on click, and
-       * nesting an action button inside it is the exact invalid markup
-       * (and screen-reader trap) that had to be undone in the accordion
-       * header earlier today. Doing it properly means restructuring a
-       * component every page uses; that is its own change, not a
-       * tail-end addition to this one.
-       *
-       * Recovery today: the gear menu's Cancel — which actually works
-       * as of RunCancelInputSchema, having previously returned
-       * BAD_REQUEST for every no-reason cancel.
-       */
     },
-    onError: errToast('run.toast.couldNotPlan'),
-  });
-  const attachSessions = trpc.run.attachSessions.useMutation({
-    onSuccess: () => {
-      setAttachSheetOpen(false);
-      void utils.run.get.invalidate();
-      void utils.run.previewCreatable.invalidate();
-      void utils.run.list.invalidate();
-      haptic('success');
-      toast.success(i18n.t('run.toast.sessionsAttached'));
+    sessionsAttached: () => setAttachSheetOpen(false),
+    addItemSaved: () => setAddItemDraft(null),
+    // RUNWEB1-01 / -02: close only the form this purchase came from
+    // (runs/lib/draftClose.ts), not another row's sheet being typed in.
+    purchaseSaved: (sent) => {
+      setPurchaseDraft((d) => closedFor(d, sent));
+      setAddItemDraft((d) => closedFor(d, sent));
     },
-    onError: errToast('run.toast.couldNotAttach'),
-  });
-  const startPurchase = trpc.run.startPurchase.useMutation({
-    onSuccess: () => {
-      void utils.run.list.invalidate();
-      // M1.9-fix (2026-05-07): success feedback was missing on
-      // startPurchase / startDelivery — the screen visually changed
-      // but no toast/haptic, which on slow networks looked like a
-      // double-tap had registered. Mirrors the pattern used by every
-      // other run mutation.
-      haptic('success');
-      toast.success(i18n.t('run.toast.purchaseStarted'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  // M3.41 (2026-05-21): mid-run addition. Mirrors purchaseItem's
-  // success/offline-queue pattern so the bazaar UX (flaky LTE) survives
-  // a network drop mid-add. Idempotent at the API layer via
-  // X-Idempotency-Key so replays don't double-buy.
-  // 2026-07-26: both of these enqueue to the offline outbox on a network
-  // error, but neither minted a STABLE idempotency key — so the replay
-  // sent a fresh one and the server's 24h dedupe cache never matched.
-  // A committed-but-lost response (the iOS "Load failed" case) therefore
-  // recorded the off-catalog purchase or the expense TWICE.
-  const addItemKey = useStableIdempotencyKey();
-  const addExpenseKey = useStableIdempotencyKey();
-
-  const addPurchaserItem = trpc.run.addPurchaserItem.useMutation({
-    ...addItemKey,
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      setAddItemDraft(null);
-      haptic('success');
-      toast.success(i18n.t('run.toast.itemAdded'));
-    },
-    onError: (err, vars, ctx) =>
-      queueOnNetworkError(err, {
-        procedure: 'run.addPurchaserItem',
-        input: vars,
-        idempotencyKey: ctx?.idempotencyKey,
-        failedKey: 'run.toast.couldNotAddItem',
-        queuedKey: 'run.toast.purchaseSavedOffline',
-        onQueued: () => setAddItemDraft(null),
-      }),
-  });
-  // M3.44 (2026-05-22): off-catalog expense add + remove. Same
-  // optimistic + offline-queue pattern as the SKU-item path so the
-  // bazaar UX is consistent across modes.
-  // Walkthrough F10 (2026-11-05): pricing a staff member's "other item"
-  // records an expense, but the item itself stayed "not handled" — and
-  // 开始配送 then warned about it. The item an expense was opened from
-  // is marked bought once that expense is saved.
-  const extraForExpense = useRef<{
-    expenseId: string;
-    sessionId: string;
-    idx: number;
-    seq?: number;
-  } | null>(null);
-  const addExpense = trpc.run.addExpense.useMutation({
-    ...addExpenseKey,
-    onSuccess: (_data, vars) => {
-      const fromExtra = extraForExpense.current;
-      if (fromExtra && fromExtra.expenseId === vars.expenseId) {
-        extraForExpense.current = null;
-        markExtraStatus.mutate({
-          sessionId: fromExtra.sessionId,
-          extraIndex: fromExtra.idx,
-          status: 'bought',
-          expectedSeq: fromExtra.seq,
-        });
-      }
-      invalidateRunQuietly(true);
-      setAddItemDraft(null);
-      haptic('success');
-      toast.success(i18n.t('run.toast.expenseAdded'));
-    },
-    onError: (err, vars, ctx) =>
-      queueOnNetworkError(err, {
-        procedure: 'run.addExpense',
-        input: vars,
-        idempotencyKey: ctx?.idempotencyKey,
-        failedKey: 'run.toast.couldNotAddExpense',
-        queuedKey: 'run.toast.purchaseSavedOffline',
-        onQueued: () => setAddItemDraft(null),
-      }),
-  });
-  const removeExpense = trpc.run.removeExpense.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly();
-      haptic('success');
-      toast.info(i18n.t('run.toast.expenseRemoved'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const ejectSession = trpc.run.ejectSession.useMutation({
-    onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
-      void utils.run.previewCreatable.invalidate();
-      void utils.order.todaySession.invalidate();
-      void utils.order.pendingList.invalidate();
-      haptic('success');
-      toast.success(i18n.t('run.toast.sessionEjected'));
-    },
-    onError: errToast('run.toast.couldNotEjectSession'),
-  });
-  // H2: one stable idempotency key per purchase, shared between the first
-  // attempt and any offline replay (hooks/useOfflineWrite.ts).
-  const purchaseKey = useStableIdempotencyKey();
-  const purchaseItem = trpc.run.purchaseItem.useMutation({
-    ...purchaseKey,
-    onSuccess: (_data, vars) => {
-      invalidateRunQuietly(true);
-      // RUNWEB1-01 / -02: close only the form this purchase came from
-      // (runs/lib/draftClose.ts), not another row's sheet being typed in.
-      setPurchaseDraft((d) => closedFor(d, vars));
-      setAddItemDraft((d) => closedFor(d, vars));
-      haptic('success');
-      toast.success(i18n.t('run.toast.purchaseRecorded'));
-    },
-    onError: (err, vars, ctx) => {
-      setInlineSavingSkuId((cur) => (cur === vars.skuId ? null : cur));
-      queueOnNetworkError(err, {
-        procedure: 'run.purchaseItem',
-        input: vars,
-        idempotencyKey: ctx?.idempotencyKey,
-        failedKey: 'run.toast.couldNotSavePurchase',
-        queuedKey: 'run.toast.purchaseSavedOffline',
-        onQueued: () => {
-          setPurchaseDraft((d) => closedFor(d, vars));
-          setAddItemDraft((d) => closedFor(d, vars));
-        },
-      });
-    },
-  });
-  // The purchase sheet's and "+ Add item"'s revisions. A failed one
-  // leaves the form open with what was typed (RUNWEB1-02).
-  const revisePurchase = trpc.run.revisePurchase.useMutation({
-    onSuccess: (_data, vars) => {
-      invalidateRunQuietly();
-      setPurchaseDraft((d) => closedFor(d, vars));
-      setAddItemDraft((d) => closedFor(d, vars));
-      haptic('success');
-      toast.success(i18n.t('run.toast.purchaseRevised'));
-    },
-    onError: errToast('run.toast.couldNotSavePurchase'),
-  });
-  /**
-   * A row's 💵 / transfer switch, which opens no form and closes none.
-   *
-   * RUNWEB1-01 (2026-11-09): it shared `revisePurchase` with the sheet,
-   * marked by a ref. A sheet sent while a switch was out made the ref
-   * wrong both ways, and react-query fires `mutate`'s own callbacks only
-   * for the latest call, so the switch's clean-up never ran: the row
-   * stayed busy and the sheet never closed. Its own mutation keeps
-   * `isPending` and the answers apart.
-   */
-  const flipPayment = trpc.run.revisePurchase.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly();
-      haptic('success');
-      toast.success(i18n.t('run.toast.purchaseRevised'));
-    },
-    onError: errToast('run.toast.couldNotSavePurchase'),
-    onSettled: (_data, _err, vars) =>
-      setPaymentBusySkuId((cur) => (cur === vars.skuId ? null : cur)),
-  });
-
-  // BUY-9 (2026-10-30): the replay carries the first attempt's key (as
-  // purchaseItem does), so a request that landed with its response lost
-  // is not replayed into "item not pending" and a false "please review".
-  const markUnavailableKey = useStableIdempotencyKey();
-  const markUnavailable = trpc.run.markUnavailable.useMutation({
-    ...markUnavailableKey,
-    onSuccess: () => {
-      invalidateRunQuietly();
+    purchaseFailed: (sent) => setInlineSavingSkuId((cur) => (cur === sent.skuId ? null : cur)),
+    paymentSettled: (sent) => setPaymentBusySkuId((cur) => (cur === sent.skuId ? null : cur)),
+    unavailableSaved: () => {
       setUnavailableFor(null);
       setUnavailableNote('');
-      toast.info(i18n.t('run.toast.markedUnavailable'));
     },
-    onError: (err, vars, ctx) =>
-      queueOnNetworkError(err, {
-        procedure: 'run.markUnavailable',
-        input: vars,
-        idempotencyKey: ctx?.idempotencyKey,
-        failedKey: 'common.errors.actionFailed',
-        queuedKey: 'run.toast.purchaseSavedOffline',
-        onQueued: () => {
-          setUnavailableFor(null);
-          setUnavailableNote('');
-        },
-      }),
+    // RE-DLV-1: close the sheet; the store row shows the queued
+    // delivery, so a second tap cannot queue it again.
+    deliveryQueued: () => setConfirmAction(null),
   });
-  // BUY-5 (2026-10-30): the demand that joined after an item was decided
-  // will not be bought.
-  const dismissTopUp = trpc.run.dismissTopUp.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      toast.info(i18n.t('run.topUp.dismissed'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const unmarkUnavailable = trpc.run.unmarkUnavailable.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly();
-      haptic('success');
-      toast.success(i18n.t('run.toast.unmarkedUnavailable'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const undoPurchase = trpc.run.undoPurchase.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly();
-      haptic('success');
-      toast.success(i18n.t('run.toast.purchaseUndone'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const startDelivery = trpc.run.startDelivery.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      haptic('success');
-      toast.success(i18n.t('run.toast.deliveryStarted'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const deliverKey = useStableIdempotencyKey();
-  const deliverToStore = trpc.run.deliverToStore.useMutation({
-    ...deliverKey,
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      // DLV-17 (2026-10-30): the only state change with no feedback.
-      haptic('success');
-      toast.success(i18n.t('run.toast.delivered'));
-    },
-    onError: (err, vars, ctx) =>
-      queueOnNetworkError(err, {
-        procedure: 'run.deliverToStore',
-        input: vars,
-        idempotencyKey: ctx?.idempotencyKey,
-        failedKey: 'common.errors.actionFailed',
-        queuedKey: 'run.toast.purchaseSavedOffline',
-        // RE-DLV-1: close the sheet; the store row shows the queued
-        // delivery, so a second tap cannot queue it again.
-        onQueued: () => setConfirmAction(null),
-      }),
-  });
-  const undeliverStore = trpc.run.undeliverStore.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      haptic('success');
-      toast.success(i18n.t('run.toast.deliveryRecalled'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const undoStartPurchase = trpc.run.undoStartPurchase.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      haptic('success');
-      toast.success(i18n.t('run.toast.startPurchaseUndone'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const undoStartDelivery = trpc.run.undoStartDelivery.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly(true);
-      haptic('success');
-      toast.success(i18n.t('run.toast.startDeliveryUndone'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const cancelRun = trpc.run.cancel.useMutation({
-    onSuccess: (result) => {
-      void utils.run.list.invalidate();
-      void utils.run.get.invalidate();
-      // Wave2 #15 (M3.40, 2026-05-20): the server returns
-      // `ejectionFailures: [{ sessionId, reason }]` for any session
-      // that couldn't be released cleanly during the cancel cascade.
-      // Pre-M3.40 the FE silently showed a success toast and the
-      // operator never learned about the orphaned sessions. Now: if
-      // anything failed, show a warning. The worker's repair sweep
-      // will pick those up within the next CLAIM_TIMEOUT_SCAN_MS, so
-      // we tell the operator "they'll be auto-released shortly".
-      const failures = result?.ejectionFailures?.length ?? 0;
-      if (failures > 0) {
-        haptic('warning');
-        toast.info(i18n.t('run.toast.runCancelledWithOrphans', { n: failures }));
-      } else {
-        haptic('success');
-        toast.success(i18n.t('run.toast.runCancelled'));
-      }
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const finish = trpc.run.finish.useMutation({
-    onSuccess: () => {
-      void utils.run.list.invalidate();
-      haptic('success');
-      toast.success(i18n.t('run.toast.runFinished'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  // 2026-07-06: close a super-admin correction — recompute + re-freeze
-  // totals and return amending → finished.
-  const refinalize = trpc.run.refinalize.useMutation({
-    onSuccess: () => {
-      void utils.run.list.invalidate();
-      invalidateRunQuietly();
-      haptic('success');
-      toast.success(i18n.t('run.toast.amendSaved'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  // M3.37 (2026-05-19, Wave2 #5): purchaser cycles an extra row's
-  // outcome (pending → bought → unavailable → pending). One mutation
-  // call per tap — the row is small, payload tiny, and the realtime
-  // run.changed pubsub feeds a coarse refetch so the new status lands
-  // before the next user input even on slow networks. No offline
-  // queue: an unmarked extra is functionally identical to "pending",
-  // so re-queueing on flaky reconnects would create more confusion
-  // than it would resolve.
-  const markExtraStatus = trpc.order.markExtraStatus.useMutation({
-    onSuccess: () => {
-      invalidateRunQuietly();
-      haptic('success');
-    },
-    // APR-18: refused as stale when someone else changed the order since
-    // this page read it; show the current rows.
-    onError: (err) => {
-      invalidateRunQuietly();
-      errToast('common.errors.actionFailed')(err);
-    },
-  });
-  // UIUX-B1 (2026-07-06): the C.2/M3.38 exclusive-claim subsystem
-  // (claim/release mutations, auto-claim/auto-release effects, the
-  // claimed-by-other banner) was deleted — collaborationEnabled has
-  // been hardcoded true since M3.53, which made every branch of it
-  // unreachable. The server-side claim machinery + worker sweep stay;
-  // re-add the FE wiring only if exclusive mode ever returns.
+  const {
+    create,
+    attachSessions,
+    addPurchaserItem,
+    addExpense,
+    ejectSession,
+    purchaseItem,
+    revisePurchase,
+    flipPayment,
+    markUnavailable,
+    dismissTopUp,
+    markExtraStatus,
+    extraForExpense,
+    sendConfirm,
+    sendAddItem,
+  } = mutations;
 
   // ---- Derived state --------------------------------------------------
   const skuById = useMemo(() => {
@@ -900,107 +493,10 @@ export function RunPage() {
   }, [activeRun?.status, session?.permissions, runDetailQuery.data]);
 
   const canSeeMoney = useCanSeePrices();
-  const finishSummary = useMemo(() => {
-    const items = runDetailQuery.data?.items ?? [];
-    const splits = runDetailQuery.data?.splits ?? [];
-    const expenses = runDetailQuery.data?.expenses ?? [];
-    const skus = items.filter((i) => i.status === 'purchased').length;
-    const stores = new Set(splits.map((sp) => sp.storeId)).size;
-    let total = 0;
-    let totalCash = 0;
-    let totalTransfer = 0;
-    // M3.41 (2026-05-21): track purchaser-added rows separately so the
-    // finish confirm sheet can call out "Z items added beyond the
-    // original order, total W UZS". The manager reviewing the run sees
-    // this at a glance — no hunting through audit logs to spot
-    // off-plan spending.
-    let addedSkus = 0;
-    let addedTotal = 0;
-    for (const it of items) {
-      if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
-        const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
-        const { line, cash, transfer } = settleItemLine(it, itemSplits);
-        total = addMoney(total, line);
-        totalCash = addMoney(totalCash, cash);
-        totalTransfer = addMoney(totalTransfer, transfer);
-        if (it.addedByPurchaser) {
-          addedSkus += 1;
-          addedTotal = addMoney(addedTotal, line);
-        }
-      }
-    }
-    // M3.44 (2026-05-22): off-catalog expenses roll into the grand
-    // total and the cash/transfer breakdown the same way SKU buys do.
-    // Counted separately for the "Off-catalog / expenses" line in the
-    // finish confirm body so the manager can read them as their own
-    // bucket.
-    let expensesCount = 0;
-    let expensesTotal = 0;
-    for (const ex of expenses) {
-      const line = expenseLine(ex);
-      expensesCount += 1;
-      expensesTotal = addMoney(expensesTotal, line);
-      total = addMoney(total, line);
-      if (ex.paymentMethod === 'transfer') totalTransfer = addMoney(totalTransfer, line);
-      else totalCash = addMoney(totalCash, line);
-    }
-    /**
-     * M3.52 (2026-05-23): per-store settlement preview shown in the
-     * finish-confirm sheet. The user asked that the post-purchase
-     * settlement strictly segregate each store's bill so the manager
-     * can read it without mentally untangling cross-store totals.
-     * Same shape as the history-sheet breakdown (SKU lines + expense
-     * splits, never mixing across stores).
-     */
-    // 2026-07-26: this loop was duplicated verbatim in RunHistory's
-    // detail breakdown. Same money, two copies, no tests — exactly the
-    // shape that lets a later edit silently move one number and not the
-    // other. It now lives in runs/lib/settlement.ts with tests; the
-    // extra fields (skuIds / expense counters) are the history sheet's
-    // and are simply unused here.
-    const byStoreList = [...settlePerStore(items, splits, expenses).values()].sort(
-      (a, b) => b.total - a.total,
-    );
-    // Q7(b): how many of these prices are simply last trip's price
-    // again, and how many of those references were already old. See
-    // countCarriedOver — this is what makes hiding the price editor
-    // defensible.
-    const { carried: carriedOver, stale: carriedOverStale } = countCarriedOver(
-      items,
-      runDetailQuery.data?.lastPriceBySku ?? {},
-      runDetailQuery.data?.lastPriceObservedAtBySku ?? {},
-      Date.now(),
-    );
-    /**
-     * 2026-10-21 CA-11: the one purchase-money definition — items (with
-     * per-store override prices) / expenses / total — taken from run.get's
-     * server-computed `money` so the sheet shows exactly what History,
-     * Finance and the finish notification show. The local sums above are
-     * the fallback for an older server and still drive the cash/transfer
-     * and per-store breakdowns (same math, see runs/lib/settlement.ts).
-     */
-    const serverMoney = runDetailQuery.data?.money;
-    const money = {
-      items: serverMoney ? Number(serverMoney.itemsTotal) : addMoney(total, -expensesTotal),
-      expenses: serverMoney ? Number(serverMoney.expensesTotal) : expensesTotal,
-      total: serverMoney ? Number(serverMoney.total) : total,
-    };
-    return {
-      skus,
-      stores,
-      total,
-      money,
-      totalCash,
-      totalTransfer,
-      addedSkus,
-      addedTotal,
-      expensesCount,
-      expensesTotal,
-      carriedOver,
-      carriedOverStale,
-      byStore: byStoreList,
-    };
-  }, [runDetailQuery.data]);
+  const finishSummary = useMemo(
+    () => finishSummaryOf(runDetailQuery.data, Date.now()),
+    [runDetailQuery.data],
+  );
 
   /**
    * 2026-10-11: a price 5× away from the last one paid is asked about
@@ -1378,467 +874,40 @@ export function RunPage() {
     setConfirmReason('');
   }, [confirmAction]);
 
-  /** Returns the current confirmation's i18n payload + the side effect
-   *  to fire on Confirm. Returns null when no confirm is open. */
-  const confirmConfig = useMemo((): RunConfirm | null => {
-    if (!confirmAction || !activeRun) return null;
-    const runId = activeRun.id;
-    if (typeof confirmAction === 'string') {
-      switch (confirmAction) {
-        case 'startPurchase':
-          return {
-            title: i18n.t('run.confirm.startPurchase.title'),
-            body: i18n.t('run.confirm.startPurchase.body'),
-            confirmLabel: i18n.t('run.action.startPurchase'),
-            danger: false,
-            requireReason: false,
-            isPending: startPurchase.isPending,
-            run: () => startPurchase.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
-          };
-        case 'startDelivery': {
-          // DX-BUY-5 (2026-11-01): 「其他物品」 the stores asked for and the
-          // purchaser has not handled do not count in "N left", and went
-          // out of sight once delivery started. Say so here — a warning
-          // only; whether to block is an owner decision (#8).
-          const pendingExtras = pendingExtrasOf(runDetailQuery.data?.sessionExtrasByStore);
-          const extrasLine =
-            pendingExtras.length > 0
-              ? '\n\n' +
-                i18n.t('run.confirm.startDelivery.pendingExtras', {
-                  n: pendingExtras.length,
-                  names: pendingExtras.map((e) => e.name).join(i18n.t('run.sessions.storeJoiner')),
-                })
-              : '';
-          return {
-            title: i18n.t('run.confirm.startDelivery.title'),
-            body: i18n.t('run.confirm.startDelivery.body') + extrasLine,
-            confirmLabel: i18n.t('run.action.startDelivery'),
-            danger: false,
-            requireReason: false,
-            isPending: startDelivery.isPending,
-            run: () => startDelivery.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
-          };
-        }
-        case 'finish': {
-          // M1.14: include cash / transfer breakdown when the run mixed
-          // both methods. Single-method runs see only the lump sum.
-          // M2.1 (2026-05-08): route the three confirm-body numbers
-          // through formatMoney() so thousand separators + the
-          // one-decimal cap match every other money display in the
-          // app. Was `.toFixed(0)` which produced a raw integer
-          // string with no separators (e.g. "1234567").
-          const showBreakdown = finishSummary.totalCash > 0 && finishSummary.totalTransfer > 0;
-          const breakdownLine = showBreakdown
-            ? '\n' +
-              i18n.t('run.confirm.finish.paymentBreakdown', {
-                cash: formatMoney(finishSummary.totalCash),
-                transfer: formatMoney(finishSummary.totalTransfer),
-              })
-            : '';
-          // M3.41 (2026-05-21): when the purchaser added items mid-run,
-          // call them out separately in the finish body so the manager
-          // can see "X items added beyond the original order, total Y"
-          // at the same glance as the canonical total. The line is
-          // omitted when nothing was added (the normal case) to avoid
-          // cluttering 90% of finishes with a zeroed-out row.
-          const addedLine =
-            finishSummary.addedSkus > 0
-              ? '\n' +
-                i18n.t('run.confirm.finish.addedByPurchaser', {
-                  n: finishSummary.addedSkus,
-                  total: formatMoney(finishSummary.addedTotal),
-                  currency,
-                })
-              : '';
-          // M3.44 (2026-05-22): off-catalog expenses line. Skipped
-          // when there are none to keep the common-case confirm
-          // body concise.
-          const expensesLine =
-            finishSummary.expensesCount > 0
-              ? '\n' +
-                i18n.t('run.confirm.finish.expenses', {
-                  n: finishSummary.expensesCount,
-                  total: formatMoney(finishSummary.money.expenses),
-                  currency,
-                })
-              : '';
-          // 2026-10-21 CA-11: always items / expenses / total.
-          const moneyLine =
-            '\n' +
-            i18n.t('run.confirm.finish.money', {
-              items: formatMoney(finishSummary.money.items),
-              expenses: formatMoney(finishSummary.money.expenses),
-              total: formatMoney(finishSummary.money.total),
-              currency,
-            });
-          /**
-           * Q7(b) safety net (2026-07-26).
-           *
-           * Hiding the price editor is only defensible if closing a run
-           * says how much of it was billed at a price nobody re-checked.
-           * Otherwise "most prices don't change" quietly becomes "we
-           * charged three shops last month's number", and every accepted
-           * price also writes a fresh price_history row that becomes the
-           * NEXT trip's reference — the error compounds daily.
-           *
-           * Derived by comparing each saved price to its reference
-           * rather than by tracking taps: a tap flag is per-device state
-           * a reload loses, and it answers the wrong question. What the
-           * manager needs is not "did someone tap" but "which of these
-           * numbers is just last week's number again".
-           */
-          const carriedLine =
-            finishSummary.carriedOver > 0
-              ? '\n' +
-                i18n.t('run.finish.carriedOver', { n: finishSummary.carriedOver }) +
-                (finishSummary.carriedOverStale > 0
-                  ? ' · ' +
-                    i18n.t('run.finish.carriedOverStale', {
-                      n: finishSummary.carriedOverStale,
-                      days: STALE_PRICE_DAYS,
-                    })
-                  : '')
-              : '';
-          /**
-           * M3.52 (2026-05-23): per-store settlement list. Shown only
-           * for multi-store runs (single-store: the headline total
-           * already says everything). The manager sees "店A 100,000
-           * · 💵 60,000 · 🏦 40,000" before tapping Finish, so they
-           * can confirm each store's bill at a glance and pivot to
-           * cash-vs-transfer if the run mixed methods.
-           *
-           * Strictly per-store: each line is one store's own slice
-           * (SKU lines + expense splits attributed via storeSplits),
-           * never aggregated across stores.
-           */
-          const perStoreLines =
-            finishSummary.byStore.length > 1
-              ? '\n\n' +
-                i18n.t('run.confirm.finish.perStoreHeading') +
-                '\n' +
-                finishSummary.byStore
-                  .map((ps) => {
-                    const storeName =
-                      storeById.get(ps.storeId)?.name ?? i18n.t('common.unknownStore');
-                    const mixed = ps.cash > 0 && ps.transfer > 0;
-                    const tail = mixed
-                      ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
-                        ` · ${i18n.t('run.label.paymentTransfer')} ${formatMoney(ps.transfer)}`
-                      : '';
-                    return i18n.t('common.labelValue', {
-                      label: storeName,
-                      value: `${formatMoney(ps.total)}${tail}`,
-                    });
-                  })
-                  .join('\n')
-              : '';
-          // DLV-11 (2026-10-30): the bills below still charge each store
-          // for what was split to it, even where the store signed for less.
-          // Say so before the run locks: every line signed short / wrong /
-          // spoiled, and roughly how much was not received.
-          const receiptIssues = (runDetailQuery.data?.splits ?? []).filter(
-            (sp) => sp.confirmStatus != null && sp.confirmStatus !== 'ok',
-          );
-          const itemPrice = new Map(
-            (runDetailQuery.data?.items ?? []).map((it) => [it.skuId, it.unitPrice]),
-          );
-          const missingValue = receiptIssues.reduce((sum, sp) => {
-            const price = sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0;
-            // DX-PFE-12: half-up cents per line (D1). Review QTY-05
-            // (2026-11-11): the shortfall is exact, not a float difference
-            // trimmed with toFixed(3).
-            const missing = qtyMilliOrZero(sp.qty) - qtyMilliOrZero(sp.confirmReceivedQty);
-            return missing > 0n ? addMoney(sum, moneyLineAmount(milliQty(missing), price)) : sum;
-          }, 0);
-          const receiptLine =
-            receiptIssues.length > 0
-              ? '\n\n' +
-                i18n.t('run.confirm.finish.receiptIssues', {
-                  n: receiptIssues.length,
-                  amount: formatMoney(missingValue),
-                  currency,
-                }) +
-                '\n' +
-                receiptIssues
-                  .slice(0, 5)
-                  .map((sp) => {
-                    const sku = skuById.get(sp.skuId);
-                    return i18n.t('run.confirm.finish.receiptIssueLine', {
-                      sku: sku ? productName(sku) : i18n.t('common.unknownProduct'),
-                      store: storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore'),
-                      received: formatQty(sp.confirmReceivedQty ?? '0'),
-                      qty: formatQty(sp.qty),
-                    });
-                  })
-                  .join('\n') +
-                (receiptIssues.length > 5
-                  ? '\n' + i18n.t('run.confirm.finish.receiptIssuesMore', { n: receiptIssues.length - 5 })
-                  : '')
-              : '';
-          return {
-            title: i18n.t('run.confirm.finish.title'),
-            body:
-              i18n.t('run.confirm.finish.body') +
-              '\n\n' +
-              i18n.t('run.confirm.finish.summary', {
-                items: finishSummary.skus,
-                stores: finishSummary.stores,
-                total: formatMoney(finishSummary.money.total),
-                currency,
-              }) +
-              moneyLine +
-              breakdownLine +
-              addedLine +
-              expensesLine +
-              carriedLine +
-              perStoreLines +
-              receiptLine,
-            confirmLabel: i18n.t('run.action.finish'),
-            danger: false,
-            // DX-IX-6: locks the purchase; Cancel shown and focused.
-            irreversible: true,
-            requireReason: false,
-            isPending: finish.isPending,
-            run: () => finish.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
-          };
-        }
-        case 'refinalize':
-          // finishSummary reflects the live (corrected) run.get during
-          // amending. 2026-10-21 CA-11: the sheet used to show an
-          // items-only figure here while the finish sheet showed items +
-          // expenses. Both now show the one definition — items / expenses
-          // / total — and RunRefinalized freezes itemsTotal and
-          // expensesTotal explicitly (actual_total stays the items part).
-          return {
-            title: i18n.t('run.confirm.refinalize.title'),
-            body:
-              i18n.t('run.confirm.refinalize.body', {
-                total: formatMoney(finishSummary.money.total),
-              }) +
-              '\n' +
-              i18n.t('run.confirm.finish.money', {
-                items: formatMoney(finishSummary.money.items),
-                expenses: formatMoney(finishSummary.money.expenses),
-                total: formatMoney(finishSummary.money.total),
-                currency,
-              }),
-            confirmLabel: i18n.t('run.action.refinalize'),
-            danger: false,
-            // DX-IX-6: locks the purchase; Cancel shown and focused.
-            irreversible: true,
-            requireReason: false,
-            isPending: refinalize.isPending,
-            run: () => refinalize.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
-          };
-        case 'cancel':
-          // M1.7-A (2026-05-06): soft-encourage reason but don't
-          // gate. The user pointed out that hard-requiring a reason
-          // for cancel produces "asdf" noise — most cancels are
-          // misclicks. Optional input + an encouraging placeholder
-          // captures the cases where the operator actually has
-          // something to say.
-          return {
-            title: i18n.t('run.confirm.cancel.title'),
-            body: i18n.t('run.confirm.cancel.body'),
-            confirmLabel: i18n.t('run.action.cancelRun'),
-            danger: true,
-            requireReason: false,
-            reasonOptional: true,
-            reasonPlaceholder: i18n.t('run.cancel.reasonPlaceholder'),
-            isPending: cancelRun.isPending,
-            run: () =>
-              cancelRun.mutate(
-                { runId, reason: confirmReason },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        case 'undoStartPurchase':
-          return {
-            title: i18n.t('run.confirm.undoStartPurchase.title'),
-            body: i18n.t('run.confirm.undoStartPurchase.body'),
-            confirmLabel: i18n.t('run.action.undoStartPurchase'),
-            danger: false,
-            requireReason: true,
-            isPending: undoStartPurchase.isPending,
-            run: () =>
-              undoStartPurchase.mutate(
-                { runId, reason: confirmReason },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        case 'undoStartDelivery':
-          return {
-            title: i18n.t('run.confirm.undoStartDelivery.title'),
-            body: i18n.t('run.confirm.undoStartDelivery.body'),
-            confirmLabel: i18n.t('run.action.undoStartDelivery'),
-            danger: false,
-            requireReason: true,
-            isPending: undoStartDelivery.isPending,
-            run: () =>
-              undoStartDelivery.mutate(
-                { runId, reason: confirmReason },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-      }
-    } else {
-      switch (confirmAction.kind) {
-        case 'deliverStore': {
-          // 2026-10-21 FE-03 (F3-01): say what is being handed over — the
-          // store's line count (and goods total when every line is
-          // priced), plus how many ordered SKUs were unavailable.
-          const runDetail = runDetailQuery.data;
-          const pick = runDetail
-            ? buildStorePickList({
-                storeId: confirmAction.storeId,
-                items: runDetail.items,
-                splits: runDetail.splits,
-                demand: runDetail.perStoreDemand,
-              })
-            : null;
-          const pickSummary = pick
-            ? [
-                i18n.t('run.label.itemsCount', { n: pick.lines.length }),
-                ...(pick.total !== null && pick.total > 0
-                  ? // DLV-18 (2026-10-30): goods only; the store's share of
-                    // expenses is added on the final bill.
-                    [`${i18n.t('run.label.itemsTotal')} ${formatMoney(pick.total)} ${currency}`]
-                  : []),
-                ...(pick.unavailable.length > 0
-                  ? [i18n.t('run.filter.unavailable', { n: pick.unavailable.length })]
-                  : []),
-              ].join(' · ') + '\n'
-            : '';
-          return {
-            title: i18n.t('run.confirm.deliver.title', { store: confirmAction.storeName }),
-            body: pickSummary + i18n.t('run.confirm.deliver.body'),
-            confirmLabel: i18n.t('run.action.confirmDeliver'),
-            danger: false,
-            requireReason: false,
-            isPending: deliverToStore.isPending,
-            run: () =>
-              deliverToStore.mutate(
-                { runId, storeId: confirmAction.storeId },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        }
-        case 'recallDelivery':
-          return {
-            title: i18n.t('run.confirm.recall.title', { store: confirmAction.storeName }),
-            body: i18n.t('run.confirm.recall.body'),
-            confirmLabel: i18n.t('run.action.recallDelivery'),
-            danger: true,
-            requireReason: true,
-            isPending: undeliverStore.isPending,
-            run: () =>
-              undeliverStore.mutate(
-                { runId, storeId: confirmAction.storeId, reason: confirmReason },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        case 'unmarkUnavailable':
-          return {
-            title: i18n.t('run.confirm.unmarkUnavailable.title'),
-            body: i18n.t('run.confirm.unmarkUnavailable.body'),
-            confirmLabel: i18n.t('run.action.unmarkUnavailable'),
-            danger: false,
-            requireReason: true,
-            isPending: unmarkUnavailable.isPending,
-            run: () =>
-              unmarkUnavailable.mutate(
-                { runId, skuId: confirmAction.skuId, reason: confirmReason },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        case 'undoPurchase':
-          // No reason field — undo is just "open this row back up for
-          // editing". Audit log still gets an empty PurchaseUndone event
-          // for the state revert; the operator just doesn't have to type
-          // anything.
-          return {
-            title: i18n.t('run.confirm.undoPurchase.title'),
-            // BUY-4: a row the purchaser added is removed, not reopened.
-            body: i18n.t(
-              confirmAction.added
-                ? 'run.confirm.undoPurchase.bodyAdded'
-                : 'run.confirm.undoPurchase.body',
-            ),
-            confirmLabel: i18n.t('run.action.undoPurchase'),
-            danger: true,
-            requireReason: false,
-            isPending: undoPurchase.isPending,
-            run: () =>
-              undoPurchase.mutate(
-                { runId, skuId: confirmAction.skuId, reason: '' },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        case 'ejectSession':
-          return {
-            title: i18n.t('run.confirm.ejectSession.title', {
-              store: confirmAction.storeName,
-              who: confirmAction.submitterName,
-            }),
-            body: i18n.t('run.confirm.ejectSession.body'),
-            confirmLabel: i18n.t('run.action.ejectSession'),
-            danger: true,
-            requireReason: false,
-            reasonOptional: true,
-            reasonPlaceholder: i18n.t('run.eject.reasonPlaceholder'),
-            isPending: ejectSession.isPending,
-            run: () =>
-              ejectSession.mutate(
-                {
-                  runId,
-                  sessionId: confirmAction.sessionId,
-                  reason: confirmReason.trim() || undefined,
-                },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-        case 'removeExpense':
-          return {
-            title: i18n.t('run.action.removeExpense'),
-            body: confirmAction.label,
-            confirmLabel: i18n.t('run.action.removeExpense'),
-            danger: true,
-            requireReason: false,
-            isPending: removeExpense.isPending,
-            run: () =>
-              removeExpense.mutate(
-                { runId, expenseId: confirmAction.expenseId, reason: '' },
-                { onSuccess: () => setConfirmAction(null) },
-              ),
-          };
-      }
-    }
-    return null;
-  }, [
-    confirmAction,
-    confirmReason,
-    finishSummary,
-    activeRun,
-    runDetailQuery.data,
-    currency,
-    i18n,
-    productName,
-    skuById,
-    storeById,
-    startPurchase,
-    startDelivery,
-    finish,
-    refinalize,
-    cancelRun,
-    undoStartPurchase,
-    undoStartDelivery,
-    deliverToStore,
-    undeliverStore,
-    unmarkUnavailable,
-    undoPurchase,
-    ejectSession,
-    removeExpense,
-  ]);
+  /** What the open confirmation says (runs/lib/confirmCopy.ts); null when none is open. */
+  const confirmCopy = useMemo(
+    () =>
+      confirmAction && activeRun
+        ? confirmCopyFor(confirmAction, {
+            i18n,
+            run: runDetailQuery.data,
+            summary: finishSummary,
+            currency,
+            storeName: (id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'),
+            skuName: (skuId) => {
+              const sku = skuById.get(skuId);
+              return sku ? productName(sku) : i18n.t('common.unknownProduct');
+            },
+          })
+        : null,
+    [
+      confirmAction,
+      activeRun,
+      runDetailQuery.data,
+      finishSummary,
+      currency,
+      i18n,
+      productName,
+      skuById,
+      storeById,
+    ],
+  );
+  /** And the command its Confirm sends, with the reason typed. */
+  const confirmCommand =
+    confirmAction && activeRun
+      ? confirmCommandFor(confirmAction, activeRun.id, confirmReason)
+      : null;
+  const confirmPending = confirmCommand ? mutations[confirmCommand.procedure].isPending : false;
 
   // The page's own action. An open sheet covers the button (M3.49: it is
   // part of the page, under the sheet's scrim) and carries its own submit,
@@ -1973,31 +1042,7 @@ export function RunPage() {
           {editing ? (
             <button
               type="button"
-              onClick={() =>
-                setAddItemDraft({
-                  mode: 'sku',
-                  runId: activeRun.id,
-                  skuId: null,
-                  supplierId: null,
-                  skuCostMode: 'merge',
-                  // M3.44: pre-generate expense UUID even when opening
-                  // in SKU mode so a mid-flow tab switch to expense
-                  // mode already has the id ready (idempotency).
-                  expenseId: newClientId(),
-                  label: '',
-                  unitHint: '',
-                  expenseScope: 'shared',
-                  actualQty: '',
-                  unitPrice: '',
-                  splits: new Map(),
-                  splitPrices: new Map(),
-                  splitPaymentMethods: new Map(),
-                  perStorePricing: false,
-                  paymentMethod: 'cash',
-                  receiptPhotoUrl: null,
-                  reason: '',
-                })
-              }
+              onClick={() => setAddItemDraft(newAddItemDraft(activeRun.id))}
               title={i18n.t('run.action.addItem.title')}
               className="hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
             >
@@ -2362,59 +1407,21 @@ export function RunPage() {
             onEditPurchased={openPurchaseEdit}
             paymentBusySkuId={paymentBusySkuId}
             onSetPaymentMethod={(item, next) => {
-              // Correcting the method of an ALREADY purchased row goes
-              // through revisePurchase, NOT the inline purchase path.
-              //
-              // purchaseItem reaches PurchaseItem, which has no
-              // already-purchased guard and emits a fresh ItemPurchased.
-              // The projection then appends an UNDEDUPED price_history row
-              // per tap (insertPriceObservations does a bare insert) and
-              // upserts run_item_stores_v with
-              // `unitPrice: split.unitPrice ?? null`, so a single tap on a
-              // row carrying per-store price overrides would erase them.
-              // revisePurchase is the command that exists for this; its
-              // schema requires a reason, hence the canned localized one.
-              const rows = (runDetailQuery.data?.splits ?? []).filter(
-                (sp) => sp.skuId === item.skuId,
-              );
-              // A row with per-store payment overrides has no single
-              // method to flip — send it to the sheet, where those fields
-              // exist. (The row already opens the sheet in that case; this
-              // is defence in depth.) DX-BUY-1: a split that only repeats
-              // the item's method is not an override.
-              if (paidPerStore(item, rows) || !item.unitPrice || !item.purchasedQty) {
-                openPurchaseEdit(item);
-                return;
-              }
-              const storeSplits = rows
-                .filter((sp) => Number(sp.qty) > 0)
-                // Preserve per-store PRICE overrides; omit paymentMethod
-                // so the projection writes null: every store follows the
-                // item's new method. A split price equal to the item's is
-                // not an override (store-scoped readers get it resolved).
-                .map((sp) => ({
-                  storeId: sp.storeId,
-                  qty: sp.qty,
-                  ...(sp.unitPrice && Number(sp.unitPrice) !== Number(item.unitPrice)
-                    ? { unitPrice: sp.unitPrice }
-                    : {}),
-                }));
-              if (storeSplits.length === 0) {
+              // runs/lib/purchaseOverrides.ts: only the method changes, through
+              // revisePurchase; a row paid per store opens the sheet instead.
+              const revision = paymentFlipRevision({
+                runId: activeRun.id,
+                item,
+                splits: runDetailQuery.data?.splits ?? [],
+                next,
+                reason: i18n.t('run.reason.paymentMethodChanged'),
+              });
+              if (!revision) {
                 openPurchaseEdit(item);
                 return;
               }
               setPaymentBusySkuId(item.skuId);
-              flipPayment.mutate({
-                runId: activeRun.id,
-                skuId: item.skuId,
-                supplierId: item.supplierId ?? null,
-                unitPrice: item.unitPrice,
-                actualQty: item.purchasedQty,
-                receiptPhotoUrl: item.receiptPhotoUrl ?? null,
-                storeSplits,
-                paymentMethod: next,
-                reason: i18n.t('run.reason.paymentMethodChanged'),
-              });
+              flipPayment.mutate(revision);
             }}
             onUnmark={
               activeRun.status === 'delivering'
@@ -2423,67 +1430,26 @@ export function RunPage() {
                     setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
             }
             onTopUpBuy={(item) => {
-              const sku = skuById.get(item.skuId);
-              const skuName = sku ? productName(sku) : i18n.t('common.unknownProduct');
               // An unavailable item comes back as pending (with the whole
               // demand) through the existing restore flow.
               if (item.status === 'unavailable') {
+                const sku = skuById.get(item.skuId);
+                const skuName = sku ? productName(sku) : i18n.t('common.unknownProduct');
                 setConfirmAction({ kind: 'unmarkUnavailable', skuId: item.skuId, skuName });
                 return;
               }
               openPurchaseEdit(item);
-              // DX-BUY-2: what was bought before, with each store's effective
-              // price and method, so the sheet's price is this batch's only.
-              const baseRows = (runDetailQuery.data?.splits ?? []).filter(
-                (sp) => sp.skuId === item.skuId && Number(sp.qty) > 0,
-              );
-              const basePricing = editPricingFromSplits(item, baseRows);
-              const baseItemPrice = item.unitPrice ?? basePricing.unitPrice;
-              const asMethod = (m: string | null | undefined): 'cash' | 'transfer' =>
-                m === 'transfer' ? 'transfer' : 'cash';
-              const topUpBase =
-                baseItemPrice && baseRows.every((sp) => sp.unitPrice ?? baseItemPrice)
-                  ? {
-                      item: { unitPrice: baseItemPrice, paymentMethod: basePricing.paymentMethod },
-                      base: baseRows.map((sp) => ({
-                        storeId: sp.storeId,
-                        qty: sp.qty,
-                        unitPrice: sp.unitPrice ?? baseItemPrice,
-                        paymentMethod: asMethod(sp.paymentMethod ?? item.paymentMethod),
-                      })),
-                    }
-                  : undefined;
-              // Prefill the extra where the demand is not yet covered, so it
-              // goes to the stores that asked for it, not spread over all.
-              const demand = (runDetailQuery.data?.perStoreDemand ?? []).filter(
-                (d) => d.skuId === item.skuId,
-              );
-              setPurchaseDraft((d) => {
-                if (!d) return d;
-                const { splits, actualQty } = topUpPrefill({
-                  splits: d.splits,
-                  demand,
-                  extra: item.topUpQty,
-                });
-                return {
-                  ...d,
-                  splits,
-                  actualQty,
-                  reason: i18n.t('run.topUp.reason'),
-                  ...(topUpBase
-                    ? {
-                        topUp: topUpBase,
-                        // One price for this batch; the stores' earlier
-                        // prices are kept by the revision itself.
-                        perStorePricing: false,
-                        splitPrices: new Map(),
-                        splitPaymentMethods: new Map(),
-                        unitPrice: topUpBase.item.unitPrice,
-                        paymentMethod: topUpBase.item.paymentMethod,
-                      }
-                    : {}),
-                };
-              });
+              // DX-BUY-2 (runs/lib/topUp.ts): the extra is its own batch on the
+              // row, priced on its own, and goes to the stores still short.
+              const topUp = {
+                demand: (runDetailQuery.data?.perStoreDemand ?? []).filter(
+                  (d) => d.skuId === item.skuId,
+                ),
+                extra: item.topUpQty,
+                base: topUpBaseOf(item, runDetailQuery.data?.splits ?? []),
+                reason: i18n.t('run.topUp.reason'),
+              };
+              setPurchaseDraft((d) => (d ? topUpDraft(d, topUp) : d));
             }}
             onTopUpDismiss={(item) =>
               confirmThen(i18n.t('run.topUp.dismissConfirm', { qty: formatQty(item.topUpQty ?? '0') }), () =>
@@ -2546,51 +1512,24 @@ export function RunPage() {
                 extra.status !== 'bought'
                   ? { expenseId, sessionId: extra.sessionId, idx: extra.idx, seq: extra.sessionSeq }
                   : null;
-              setAddItemDraft({
-                mode: 'expense',
-                runId: activeRun.id,
-                skuId: null,
-                supplierId: null,
-                skuCostMode: 'merge',
-                expenseId,
-                label: extra.name,
-                unitHint: extra.unit,
-                expenseScope: 'store',
-                actualQty: extra.qty || '1',
-                unitPrice: '',
-                splits: new Map([[storeId, extra.qty || '1']]),
-                splitPrices: new Map(),
-                splitPaymentMethods: new Map(),
-                perStorePricing: false,
-                paymentMethod: 'cash',
-                receiptPhotoUrl: null,
-                reason: i18n.t('run.extras.recordExpenseReason'),
-              });
+              setAddItemDraft(
+                newAddItemDraft(activeRun.id, {
+                  mode: 'expense',
+                  expenseId,
+                  label: extra.name,
+                  unitHint: extra.unit,
+                  expenseScope: 'store',
+                  actualQty: extra.qty || '1',
+                  splits: new Map([[storeId, extra.qty || '1']]),
+                  reason: i18n.t('run.extras.recordExpenseReason'),
+                }),
+              );
             }}
             onRemoveExpense={(expenseId, label) =>
               setConfirmAction({ kind: 'removeExpense', expenseId, label })
             }
             onOpenExpense={() =>
-              setAddItemDraft({
-                mode: 'expense',
-                runId: activeRun.id,
-                skuId: null,
-                supplierId: null,
-                skuCostMode: 'merge',
-                expenseId: newClientId(),
-                label: '',
-                unitHint: '',
-                expenseScope: 'shared',
-                actualQty: '1',
-                unitPrice: '',
-                splits: new Map(),
-                splitPrices: new Map(),
-                splitPaymentMethods: new Map(),
-                perStorePricing: false,
-                paymentMethod: 'cash',
-                receiptPhotoUrl: null,
-                reason: '',
-              })
+              setAddItemDraft(newAddItemDraft(activeRun.id, { mode: 'expense', actualQty: '1' }))
             }
           />
         ) : null}
@@ -2680,146 +1619,18 @@ export function RunPage() {
             withPriceCheck(d.skuId, [d.unitPrice], (confirmed) => save(d, true, confirmed));
             return;
           }
-          const storeSplits = [...d.splits.entries()]
-            .filter(([, q]) => Number(q) > 0)
-            .map(([storeId, qty]) => ({ storeId, qty }));
-          if (d.mode === 'sku') {
-            if (!d.skuId) return;
-            // M3.54: detect cross-store augmentation case. If the SKU
-            // is already in this run for OTHER stores (no overlap with
-            // the new storeSplits — sheet's store-picker filter
-            // already enforced that), route the submit through the
-            // right existing-item mutation:
-            //   - pending  → purchaseItem, merging existing demand
-            //     splits with the new store split(s). The whole item
-            //     gets marked purchased at the typed unitPrice (the
-            //     purchaser is at the stall buying it now anyway).
-            //   - purchased → revisePurchase, merging actual splits
-            //     with the new store split(s). Reason gets reused
-            //     from the sheet's reason field.
-            //   - unavailable → blocked at the picker stage (SKU is
-            //     filtered out), so this branch shouldn't fire.
-            // Falls back to addPurchaserItem when the SKU is truly
-            // new to the run (the only path that creates a fresh
-            // purchaser-added row).
-            const existingItem = runDetailQuery.data?.items.find((it) => it.skuId === d.skuId);
-            const existingSplits = (runDetailQuery.data?.splits ?? []).filter(
-              (sp) => sp.skuId === d.skuId,
-            );
-            const existingStoreIds = new Set(existingSplits.map((sp) => sp.storeId));
-            const overlapsExistingStore = storeSplits.some((sp) =>
-              existingStoreIds.has(sp.storeId),
-            );
-            if (existingItem && (d.skuCostMode === 'separateExpense' || overlapsExistingStore)) {
-              const sku = skusQuery.data?.find((s) => s.id === d.skuId);
-              // Review RUNWEB1-38: the label is saved with the expense, and
-              // the id's first characters were saved when the product was
-              // not at hand. It was picked from this list, so that does
-              // not happen; if it ever does, nothing is saved.
-              if (!sku) {
-                haptic('error');
-                toast.error(i18n.t('common.errors.actionFailed'));
-                return;
-              }
-              addExpense.mutate({
-                runId: d.runId,
-                expenseId: d.expenseId,
-                label: productName(sku),
-                ...(sku.unit ? { unitHint: sku.unit } : {}),
-                qty: d.actualQty,
-                unitPrice: d.unitPrice,
-                storeSplits,
-                paymentMethod: d.paymentMethod,
-                receiptPhotoUrl: d.receiptPhotoUrl,
-                reason: d.reason.trim(),
-              });
-              return;
-            }
-            if (existingItem) {
-              // 2026-10-21 audit CA-29 (C-05): a pending row has no splits
-              // yet, so its base is the other stores' demand — merging
-              // onto the (empty) splits dropped their order.
-              const { splits: combinedSplits, totalQty: combinedQty } =
-                mergeSplitsIntoExistingItem({
-                  status: existingItem.status,
-                  existingSplits,
-                  demand: (runDetailQuery.data?.perStoreDemand ?? []).filter(
-                    (dm) => dm.skuId === d.skuId,
-                  ),
-                  newSplits: storeSplits,
-                });
-              if (existingItem.status === 'pending') {
-                purchaseItem.mutate({
-                  runId: d.runId,
-                  skuId: d.skuId,
-                  supplierId: d.supplierId,
-                  unitPrice: d.unitPrice,
-                  actualQty: combinedQty,
-                  receiptPhotoUrl: d.receiptPhotoUrl,
-                  storeSplits: combinedSplits,
-                  paymentMethod: d.paymentMethod,
-                  ...(priceConfirmed ? { priceConfirmed: true } : {}),
-                });
-                // Closed by the answer (RUNWEB1-02): a refused merge keeps
-                // the product, quantity, price, stores and reason typed.
-                return;
-              }
-              if (existingItem.status === 'purchased') {
-                // 2026-10-21 FE-04 (F3-07): keep the row's supplier,
-                // receipt and per-store price/payment overrides; only the
-                // new store's split is appended (see mergeIntoPurchasedItem).
-                const merged = mergeIntoPurchasedItem({
-                  item: existingItem,
-                  existingSplits,
-                  newSplits: storeSplits,
-                  draft: {
-                    unitPrice: d.unitPrice,
-                    paymentMethod: d.paymentMethod,
-                    supplierId: d.supplierId,
-                    receiptPhotoUrl: d.receiptPhotoUrl,
-                  },
-                });
-                revisePurchase.mutate({
-                  runId: d.runId,
-                  skuId: d.skuId,
-                  ...merged,
-                  ...(priceConfirmed ? { priceConfirmed: true } : {}),
-                  reason: d.reason.trim() || i18n.t('run.action.addItem.defaultCrossStoreReason'),
-                });
-                return;
-              }
-              // unavailable — should be unreachable (filtered out
-              // in the picker). Fall through and let the backend
-              // 400 just in case the data races.
-            }
-            addPurchaserItem.mutate({
-              runId: d.runId,
-              skuId: d.skuId,
-              supplierId: d.supplierId,
-              unitPrice: d.unitPrice,
-              actualQty: d.actualQty,
-              receiptPhotoUrl: d.receiptPhotoUrl,
-              storeSplits,
-              paymentMethod: d.paymentMethod,
-              ...(priceConfirmed ? { priceConfirmed: true } : {}),
-              reason: d.reason.trim(),
-            });
-          } else {
-            // M3.44: expense mode → run.addExpense
-            if (!d.label.trim()) return;
-            addExpense.mutate({
-              runId: d.runId,
-              expenseId: d.expenseId,
-              label: d.label.trim(),
-              ...(d.unitHint.trim() ? { unitHint: d.unitHint.trim() } : {}),
-              qty: d.actualQty,
-              unitPrice: d.unitPrice,
-              storeSplits,
-              paymentMethod: d.paymentMethod,
-              receiptPhotoUrl: d.receiptPhotoUrl,
-              reason: d.reason.trim(),
-            });
-          }
+          // runs/lib/addItem.ts picks the command: a new row, a store joining
+          // a row already on the run, a separate cost, or an expense.
+          const command = planAddItemSubmit(d, {
+            run: runDetailQuery.data,
+            product: (skuId) => {
+              const sku = skusQuery.data?.find((s) => s.id === skuId);
+              return sku ? { name: productName(sku), unit: sku.unit } : null;
+            },
+            priceConfirmed,
+            crossStoreReason: i18n.t('run.action.addItem.defaultCrossStoreReason'),
+          });
+          if (command) sendAddItem(command);
         }}
         submitting={
           addPurchaserItem.isPending ||
@@ -2900,22 +1711,22 @@ export function RunPage() {
       {/* Generic confirm sheet for ALL the major transitions. Centralized
           so every "I changed my mind" path looks identical. */}
       <ConfirmSheet
-        open={!!confirmConfig}
-        title={confirmConfig?.title ?? ''}
-        body={confirmConfig?.body}
-        confirmLabel={confirmConfig?.confirmLabel ?? ''}
-        danger={confirmConfig?.danger}
-        irreversible={confirmConfig?.irreversible}
-        requireReason={confirmConfig?.requireReason}
-        reasonOptional={confirmConfig?.reasonOptional}
+        open={!!confirmCopy}
+        title={confirmCopy?.title ?? ''}
+        body={confirmCopy?.body}
+        confirmLabel={confirmCopy?.confirmLabel ?? ''}
+        danger={confirmCopy?.danger}
+        irreversible={confirmCopy?.irreversible}
+        requireReason={confirmCopy?.requireReason}
+        reasonOptional={confirmCopy?.reasonOptional}
         reasonLabel={i18n.t('run.label.reasonForChange')}
-        reasonPlaceholder={
-          confirmConfig?.reasonPlaceholder ?? i18n.t('run.label.reasonPlaceholder')
-        }
-        pending={confirmConfig?.isPending}
+        reasonPlaceholder={confirmCopy?.reasonPlaceholder ?? i18n.t('run.label.reasonPlaceholder')}
+        pending={confirmPending}
         reason={confirmReason}
         onReasonChange={setConfirmReason}
-        onConfirm={() => confirmConfig?.run()}
+        onConfirm={() => {
+          if (confirmCommand) sendConfirm(confirmCommand, () => setConfirmAction(null));
+        }}
         onCancel={() => setConfirmAction(null)}
       />
 

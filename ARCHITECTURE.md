@@ -455,7 +455,7 @@ apps/web/src/
 │   ├── ApprovalPage.tsx    # 审核：待审的订单
 │   ├── approval/           # 一张订单的商品和每个人要的数量（SessionItems），及纯函数
 │   ├── RunPage.tsx         # 采购：计划、采购、送到各店，各店验收后结束
-│   ├── runs/               # 采购页的面板（components/）、弹层（sheets/）、视图（views/）、采购历史（history/）和纯函数（lib/）
+│   ├── runs/               # 采购页的面板（components/）、弹层（sheets/）、视图（views/）、采购历史（history/）、写操作的 hook（hooks/）和纯函数（lib/）
 │   ├── ConfirmPage.tsx     # 验收：门店验收送到的商品
 │   ├── confirm/            # 商品行、问题弹层和它的表单 hook、没买到的商品、等待送达、主按钮，及纯函数
 │   ├── HistoryPage.tsx     # 历史：采购记录（搜索、筛选、分页都在服务端）
