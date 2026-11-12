@@ -1,14 +1,14 @@
 /**
  * One-shot real-catalog importer for an Uzbek-market restaurant chain.
  *
- *   bun run packages/db/src/import-catalog.ts             # dry-run, prints diff
- *   bun run packages/db/src/import-catalog.ts --apply    # actually writes
- *   bun run packages/db/src/import-catalog.ts --apply --archive-old
+ *   bun run packages/db/src/import-catalog.ts --org <slug>          # dry-run, prints diff
+ *   bun run packages/db/src/import-catalog.ts --org <slug> --apply  # actually writes
+ *   bun run packages/db/src/import-catalog.ts --org <slug> --apply --archive-old
  *                                                        # also archive every
  *                                                        # SKU/category whose
  *                                                        # code/slug isn't in
  *                                                        # the new catalog
- *   bun run packages/db/src/import-catalog.ts --apply --update-existing
+ *   bun run packages/db/src/import-catalog.ts --org <slug> --apply --update-existing
  *                                                        # also overwrite rows
  *                                                        # that differ from it
  *
@@ -32,7 +32,8 @@
  * and names as JSON with sorted keys (jsonb reorders them), so a re-run
  * finds nothing to do. --apply writes in one transaction.
  *
- * Targets the org with `slug='default'` (the only org in v1).
+ * Targets the organisation named by `--org <slug>`; there is no default
+ * (review DB-20: it was slug 'default', one customer's workspace).
  *
  * SAFETY:
  *   - skuArchive operations are SOFT (sets isArchived=true)
@@ -45,9 +46,14 @@ import { getDb, closeDb, schema as s } from './index';
 import { printable } from './printable';
 import { CATEGORIES, SKUS } from './catalog-uzbek';
 import { loadRepoEnv } from './repoEnv';
+import { requireOrgSlug } from './scriptArgs';
 
 loadRepoEnv(import.meta.url);
 
+const ORG_SLUG = requireOrgSlug(
+  process.argv.slice(2),
+  'Name the organisation to import into: --org <slug>',
+);
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply');
 const ARCHIVE_OLD = args.has('--archive-old');
@@ -91,9 +97,9 @@ async function main() {
 
   // --- Find target org ------------------------------------------------------
   const org = await db.query.organizations.findFirst({
-    where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
+    where: (o, { eq: eq2 }) => eq2(o.slug, ORG_SLUG),
   });
-  if (!org) throw new Error('Default org not found — run seed.ts first');
+  if (!org) throw new Error(`No organisation with the slug ${printable(ORG_SLUG)}`);
   const orgId = org.id;
   console.log(c.dim(`  org: ${printable(org.name)} (${orgId})`));
 

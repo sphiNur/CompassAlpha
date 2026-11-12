@@ -5,9 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts",
-    "./client": "./src/client.ts",
-    "./rls": "./src/rls.ts",
     "./env": "./src/repoEnv.ts",
     "./seed-data": "./src/seed-data.ts",
     "./app-role": "./src/appRole.ts"

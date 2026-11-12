@@ -1,8 +1,8 @@
 /**
  * Audit and optionally normalize production SKU category assignments.
  *
- *   bun run packages/db/src/audit-sku-catalog.ts
- *   bun run packages/db/src/audit-sku-catalog.ts --apply
+ *   bun run packages/db/src/audit-sku-catalog.ts --org <slug>
+ *   bun run packages/db/src/audit-sku-catalog.ts --org <slug> --apply
  *
  * Default mode is read-only. `--apply` only updates `inventory.skus.category_id`
  * for active SKUs whose category is missing or archived. It does not rewrite
@@ -14,20 +14,19 @@ import { eq } from 'drizzle-orm';
 import { closeDb, getDb, schema as s } from './index';
 import { printable } from './printable';
 import { loadRepoEnv } from './repoEnv';
+import { requireOrgSlug } from './scriptArgs';
+import type { CategorySlug } from './catalog-uzbek';
 
 loadRepoEnv(import.meta.url);
 
+// Review DB-20: no default organisation (it was slug 'default').
+const ORG_SLUG = requireOrgSlug(
+  process.argv.slice(2),
+  'Name the organisation to audit: --org <slug>',
+);
 const APPLY = process.argv.includes('--apply');
 
 type Names = Record<string, string | undefined>;
-type CategorySlug =
-  | 'produce'
-  | 'meat'
-  | 'dairy'
-  | 'dry-goods'
-  | 'bakery'
-  | 'packaging'
-  | 'cleaning';
 
 const RULES: Array<{ slug: CategorySlug; terms: RegExp[] }> = [
   {
@@ -126,9 +125,9 @@ function suspiciousLanguageNotes(names: Names): string[] {
 async function main() {
   const db = getDb(undefined, { system: 'maintenance' });
   const org = await db.query.organizations.findFirst({
-    where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
+    where: (o, { eq: eq2 }) => eq2(o.slug, ORG_SLUG),
   });
-  if (!org) throw new Error('Default org not found');
+  if (!org) throw new Error(`No organisation with the slug ${printable(ORG_SLUG)}`);
 
   const categories = await db.query.categories.findMany({
     where: (cat, { eq: eq2 }) => eq2(cat.orgId, org.id),

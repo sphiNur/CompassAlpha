@@ -148,7 +148,7 @@ export const marketRunsV = readModelSchema.table(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     runDate: date('run_date', { mode: 'string' }).notNull(),
     runIndex: integer('run_index').notNull().default(0),
-    status: varchar('status', { length: 24 }).notNull(), // planned|purchasing|delivering|finished|cancelled
+    status: varchar('status', { length: 24 }).notNull(), // planned|purchasing|delivering|finished|amending|cancelled
     plannedTotal: decimal('planned_total', { precision: 14, scale: 2 }),
     actualTotal: decimal('actual_total', { precision: 14, scale: 2 }),
     /**

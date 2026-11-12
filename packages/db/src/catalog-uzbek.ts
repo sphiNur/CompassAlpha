@@ -7,9 +7,9 @@
  * row marked with `// REVIEW` should be eyeballed by a native speaker
  * before going to production.
  *
- * Used by:
- *   - `seed.ts` for fresh dev databases
- *   - `scripts/import-catalog.ts` for one-shot production import
+ * Used by `import-catalog.ts` (next to this file), the import into one
+ * organisation; the development seed has its own smaller list
+ * (seed-data.ts).
  *
  * Schema contract (matches `inventory.skus`):
  *   names:       jsonb { zh, en, ru, uz }
@@ -1452,6 +1452,3 @@ export const SKUS: CatalogSku[] = [
     unit: 'pack', step: '1',
   }),
 ];
-
-/** Total: 7 categories, 165 SKUs (as of 2026-05-05). */
-export const CATALOG_VERSION = '2026-05-05';
