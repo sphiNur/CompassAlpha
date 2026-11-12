@@ -231,6 +231,8 @@ export const members = authSchema.table(
   (t) => ({
     orgUserUnique: uniqueIndex('members_org_user_unique').on(t.orgId, t.userId),
     orgIdx: index('members_org_idx').on(t.orgId),
+    // Sign-in and refresh find a user's memberships (migration 0070).
+    userIdx: index('members_user_idx').on(t.userId),
   }),
 );
 

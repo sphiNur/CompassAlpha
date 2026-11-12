@@ -85,6 +85,11 @@ export const telegramProcedures = {
         await inSystem(ctx.db, 'auth', (tx) =>
           touchTelegramUser(tx, found, tg, {
             locale: detectLocale(input.locale ?? found.locale ?? tg.language_code),
+            // Review NEW-TG-PLACEHOLDER-NAME (2026-11-12): someone an admin
+            // added by Telegram ID signs in here, not through an invite
+            // link. Their tg:<id> placeholder takes their Telegram name, as
+            // an accepted invite's does, so the first-run form has it.
+            adoptName: true,
           }),
         );
       }

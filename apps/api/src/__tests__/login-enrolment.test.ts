@@ -177,6 +177,27 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
     expect(refreshed.session.user.id).toBe(user!.id);
   });
 
+  test('a member added by Telegram ID signs in with their Telegram name, not tg:<id>', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const tgUserId = freshTgId();
+    const [user] = await db
+      .insert(s.users)
+      .values({ tgUserId, displayName: `tg:${tgUserId}` })
+      .returning();
+    noteUser(user!.id);
+    await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
+    const initData = signInitData(tgUserId, { firstName: 'Malika' });
+
+    const login = await callerFor(null).auth.telegramLogin({ initData });
+    expect(login.session.user.displayName).toBe('Malika');
+    expect(login.session.user.displayNameLocked).toBe(false);
+
+    // A name that is not a placeholder is never replaced.
+    await db.update(s.users).set({ displayName: 'Malika O.' }).where(eq(s.users.id, user!.id));
+    const again = await callerFor(null).auth.telegramLogin({ initData });
+    expect(again.session.user.displayName).toBe('Malika O.');
+  });
+
   test("Telegram's raw language code is kept as one of the four (COREWEB2-10)", async () => {
     const db = getDb(undefined, { system: 'maintenance' });
     // Granted from the CLI or an invite: no language yet.

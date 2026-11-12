@@ -1,12 +1,12 @@
 import { TRPCError } from '@trpc/server';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, withSystemContext } from '@compass/db';
 import { isCalendarDate, SubscriptionStatusSchema, UuidSchema } from '@compass/contracts';
 import { attendance } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { isPlatformAdmin } from '../../services/platformAdmin';
-import { readSubscriptionState } from '../../services/subscription';
+import { readSubscriptionState, readSubscriptionStates } from '../../services/subscription';
 import { hub } from '../../realtime/hub';
 
 const SubscriptionUpdateInputSchema = z.object({
@@ -100,28 +100,32 @@ export const platformRouter = router({
         where: (o, { isNull }) => isNull(o.deletedAt),
         orderBy: (o, { asc }) => asc(o.createdAt),
       });
-      return Promise.all(
-        orgs.map(async (org) => {
-          // 2026-10-21 audit CA-39 (A-13): the platform-internal note is
-          // returned here (not in SubscriptionState, which tenants see) so
-          // the manage sheet can prefill it instead of blanking it.
-          const sub = await tx.query.organizationSubscriptions.findFirst({
-            where: (row, { eq: eq2 }) => eq2(row.orgId, org.id),
-            columns: { note: true },
-          });
-          return {
-            orgId: org.id,
-            name: org.name,
-            slug: org.slug,
-            // Review ADM1-32: the sheet shows and sends the dates as days
-            // of this calendar.
-            timezone: org.timezone,
-            createdAt: org.createdAt.toISOString(),
-            note: sub?.note ?? null,
-            subscription: await readSubscriptionState(tx, org.id),
-          };
-        }),
-      );
+      // Review NEW-PLATFORM-N1 (2026-11-12): five queries for the whole
+      // list, not four for each org.
+      const orgIds = orgs.map((org) => org.id);
+      const subscriptionOf = await readSubscriptionStates(tx, orgIds);
+      // 2026-10-21 audit CA-39 (A-13): the platform-internal note is
+      // returned here (not in SubscriptionState, which tenants see) so
+      // the manage sheet can prefill it instead of blanking it.
+      const notes = await tx
+        .select({
+          orgId: s.organizationSubscriptions.orgId,
+          note: s.organizationSubscriptions.note,
+        })
+        .from(s.organizationSubscriptions)
+        .where(inArray(s.organizationSubscriptions.orgId, orgIds));
+      const noteOf = new Map(notes.map((row) => [row.orgId, row.note]));
+      return orgs.map((org) => ({
+        orgId: org.id,
+        name: org.name,
+        slug: org.slug,
+        // Review ADM1-32: the sheet shows and sends the dates as days
+        // of this calendar.
+        timezone: org.timezone,
+        createdAt: org.createdAt.toISOString(),
+        note: noteOf.get(org.id) ?? null,
+        subscription: subscriptionOf(org.id),
+      }));
     });
   }),
 
