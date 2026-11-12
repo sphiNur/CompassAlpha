@@ -6,6 +6,12 @@
  * outbox pattern so a separate worker delivers them. Order's read_model is
  * application-critical (UI reads from it within the same request) — keeping
  * it inline avoids the "I just submitted but the list is stale" UX bug.
+ *
+ * Review ORD-14 (2026-11): every row is stamped with its event's time, as
+ * the worker's own writes are. Session rows took the clock at projection
+ * time, so a replay (`pnpm reproject`) gave every session the same
+ * updated_at, and the lookups that pick the most recent session by it
+ * picked at random.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
@@ -34,6 +40,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             orderDate: e.payload.orderDate,
             status: 'draft',
             lastSeq: e.seq,
+            updatedAt: e.occurredAt,
           })
           .onConflictDoNothing()
           .returning({ id: s.orderSessionsV.id })
@@ -80,7 +87,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
               updatedAt: e.occurredAt,
             },
           });
-        await bumpSeq(db, e.streamId, e.seq);
+        await bumpSeq(db, e.streamId, e.seq, e.occurredAt);
         break;
       }
       case 'ItemNoteSet':
@@ -108,7 +115,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
               updatedAt: e.occurredAt,
             },
           });
-        await bumpSeq(db, e.streamId, e.seq);
+        await bumpSeq(db, e.streamId, e.seq, e.occurredAt);
         break;
       case 'SessionNoteSet':
         // M1.8 (2026-05-07): session-level "其他物品" note. Trim and
@@ -119,7 +126,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
           .set({
             notes: e.payload.note && e.payload.note.trim() ? e.payload.note.trim() : null,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -134,7 +141,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
           .set({
             extrasJson: e.payload.extras,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -152,7 +159,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
           .set({
             extrasJson: sql`jsonb_set(${s.orderSessionsV.extrasJson}, ${'{' + idx + ',status}'}, ${JSON.stringify(e.payload.status)}::jsonb, true)`,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -165,7 +172,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             submittedAt: e.occurredAt,
             submittedByMemberId: e.payload.byMemberId,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -176,7 +183,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             claimedByMemberId: e.payload.byMemberId,
             claimedAt: e.occurredAt,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -199,7 +206,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
               ? sql`claimed_by_member_id`
               : null,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -219,7 +226,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             previousClaimerMemberId: null,
             rejectReason: null,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -235,7 +242,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             claimedAt: null,
             previousClaimerMemberId: null,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -251,7 +258,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             rejectReason: null,
             previousClaimerMemberId: null,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
@@ -270,35 +277,45 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             claimedByMemberId: null,
             claimedAt: null,
             lastSeq: e.seq,
-            updatedAt: new Date(),
+            updatedAt: e.occurredAt,
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
       case 'AttachedToRun':
         await db
           .update(s.orderSessionsV)
-          .set({ status: 'in_run', runId: e.payload.runId, lastSeq: e.seq, updatedAt: new Date() })
+          .set({
+            status: 'in_run',
+            runId: e.payload.runId,
+            lastSeq: e.seq,
+            updatedAt: e.occurredAt,
+          })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
       case 'EjectedFromRun':
         await db
           .update(s.orderSessionsV)
-          .set({ status: 'approved', runId: null, lastSeq: e.seq, updatedAt: new Date() })
+          .set({ status: 'approved', runId: null, lastSeq: e.seq, updatedAt: e.occurredAt })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
       case 'Archived':
         await db
           .update(s.orderSessionsV)
-          .set({ status: 'archived', lastSeq: e.seq, updatedAt: new Date() })
+          .set({ status: 'archived', lastSeq: e.seq, updatedAt: e.occurredAt })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
+      default: {
+        // ORD-14: a new event type fails to compile here until it is projected.
+        const unprojected: never = e;
+        void unprojected;
+      }
     }
   }
 }
 
-async function bumpSeq(db: DB, streamId: string, seq: number): Promise<void> {
+async function bumpSeq(db: DB, streamId: string, seq: number, at: Date): Promise<void> {
   await db
     .update(s.orderSessionsV)
-    .set({ lastSeq: seq, updatedAt: new Date() })
+    .set({ lastSeq: seq, updatedAt: at })
     .where(and(eq(s.orderSessionsV.id, streamId)));
 }
