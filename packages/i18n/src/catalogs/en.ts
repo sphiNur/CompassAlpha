@@ -1375,7 +1375,6 @@ export const en = {
   'run.filter.noMatch': 'No matching items',
   'run.label.confirmedFraction': '{done}/{total} confirmed',
   'run.label.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',
-  'run.label.skuCountAndQty': '{n, plural, one {# product} other {# products}} · {qty}',
   'run.label.splitsMismatch': 'Splits: {sum} / {target}',
   // M1.9-fix (2026-05-07): delivery store-row stage labels — were
   // hardcoded English on the purchaser's main during-run view.
@@ -1626,6 +1625,7 @@ export const en = {
   'run.price.check.confirm': 'Yes, save',
   'run.price.check.fix': 'Change the price',
   'run.action.supplier': 'Supplier',
+  'run.action.supplierNone': 'Not specified',
   'run.action.receiptPhoto': 'Receipt photo (optional)',
   'run.action.allocateAcrossStores': 'Allocate across stores',
   'run.action.actualQtyAriaLabel': 'actual quantity',
@@ -1710,7 +1710,7 @@ export const en = {
   'run.toast.startDeliveryUndone': 'Back to purchase',
   'run.toast.runFinished': 'Run finished',
   'run.history.title': 'History',
-  'run.history.matchedRunsTotal': '(matching runs)',
+  'run.history.matchedRunsTotal': '{total} (matching runs)',
   'run.history.allStores': 'All stores',
   // M3.9: filter chip toolbar + cancelled-row label dropped — cancelled
   // runs no longer surface in RunPage history. Keys removed:
@@ -2099,7 +2099,7 @@ export const en = {
   'sales.errors.storeNotFound':
     'This store is gone — it may have just been archived. Refresh to check.',
   'sales.errors.dishHasNoRecipe': 'Set a recipe for this dish before recording sales.',
-  'run.action.addItem.storeAlreadyHasSkuShort': 'already added',
+  'run.action.addItem.storeAlreadyHasSkuShort': '{store} (already added)',
   'run.action.addItem.costModeTitle': 'Same item price handling',
   'run.action.addItem.costModeMerge': 'Add to existing',
   'run.action.addItem.costModeSeparate': 'Separate price',
@@ -2129,6 +2129,7 @@ export const en = {
   'run.history.filters': 'Filters ({n})',
   'run.history.activeFilters': '{n, plural, one {# active filter} other {# active filters}}',
   'run.history.clearAll': 'Clear all',
+  'run.history.removeFilter': 'Remove filter: {label}',
   'run.history.filterTitle': 'Filter history',
   'run.history.filterDescription': 'Narrow results by store, date, and payment method.',
   'run.history.resetFilters': 'Reset filters',
@@ -2551,7 +2552,6 @@ export const en = {
   'run.gauge.progressLabel': 'Purchase progress',
   'run.gauge.notFound': 'not found {n}',
   'run.sessions.collapsed': '{n, plural, one {# order} other {# orders}}',
-  'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras':
     'Not handled yet — other items the stores asked for ({n}): {names}. Once delivery starts they no longer show on the purchase page.',
   'approval.changed.title': 'This order changed after you opened it',

@@ -12,8 +12,8 @@
  * default (lib/sessionSelection.ts), so orders approved while the screen
  * is open fall into the right default without resetting earlier ticks.
  */
-import { Card, Checkbox, SectionLabel } from '@compass/ui';
-import type { useI18n } from '../../../hooks/useI18n';
+import { Card, Checkbox, Input, SectionLabel } from '@compass/ui';
+import { useDateFormat, type useI18n } from '../../../hooks/useI18n';
 import {
   batchNumbers,
   daysOld,
@@ -33,6 +33,7 @@ export function SessionPicker({
   runDate,
   onRunDateChange,
   bare = false,
+  noneSelectedHint = true,
 }: {
   sessions: readonly SelectableSession[];
   today: string | null;
@@ -44,7 +45,13 @@ export function SessionPicker({
   onRunDateChange?: (date: string) => void;
   /** Render without the Card chrome (inside a Sheet). */
   bare?: boolean;
+  /**
+   * Say "tick at least one order" under the list when none is ticked. Off
+   * where the page's main button already says it (UI-10, RUNWEB1-29).
+   */
+  noneSelectedHint?: boolean;
 }) {
+  const dates = useDateFormat();
   const groups = groupSessionsByDate(sessions, today, i18n.locale);
   const selected = new Set(selectedSessionIds(sessions, today, overrides));
   const isChecked = (id: string) => selected.has(id);
@@ -66,16 +73,18 @@ export function SessionPicker({
             >
               <div
                 className={
-                  'flex items-center gap-2 px-3 py-2 ' +
-                  (group.isToday ? '' : 'bg-[var(--c-warn-bg)]')
+                  'flex items-center gap-2 px-3 ' + (group.isToday ? '' : 'bg-[var(--c-warn-bg)]')
                 }
               >
+                {/* RUNWEB1-28: rows a full 44px to tap (they were ~32). */}
                 <Checkbox
+                  className="min-h-11 items-center"
                   checked={allOn}
                   onChange={(e) => onChange(withGroupSelection(overrides, group, e.target.checked))}
                   label={
                     <span className="text-old-body font-semibold tabular-nums">
-                      {group.date || '—'}
+                      {/* RUNWEB1-23: in the screen's language, as the run's date is. */}
+                      {dates.calendarDay(group.date) || '—'}
                     </span>
                   }
                 />
@@ -92,8 +101,9 @@ export function SessionPicker({
               </div>
               <ul className="flex flex-col pb-1" role="list">
                 {group.sessions.map((s) => (
-                  <li key={s.id} className="px-3 py-1 pl-8">
+                  <li key={s.id} className="px-3 pl-8">
                     <Checkbox
+                      className="min-h-11 items-center"
                       checked={isChecked(s.id)}
                       onChange={(e) => {
                         const next = new Map(overrides);
@@ -128,16 +138,17 @@ export function SessionPicker({
       {runDate !== undefined && onRunDateChange ? (
         <label className="flex items-center gap-2 border-t border-[var(--c-divider)] px-3 py-2">
           <span className="min-w-0 flex-1 text-old-body">{i18n.t('run.select.runDate')}</span>
-          <input
+          {/* UI-16 (RUNWEB1-27): the kit's date field. */}
+          <Input
             type="date"
-            className="h-[var(--control-h)] rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 text-old-body tabular-nums ring-field min-w-0 appearance-none"
+            className="w-auto tabular-nums"
             value={runDate}
             max={today ?? undefined}
             onChange={(e) => onRunDateChange(e.target.value)}
           />
         </label>
       ) : null}
-      {selected.size === 0 ? (
+      {selected.size === 0 && noneSelectedHint ? (
         <div className="px-3 py-2 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('run.select.noneSelected')}
         </div>

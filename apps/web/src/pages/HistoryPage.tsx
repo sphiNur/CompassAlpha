@@ -14,10 +14,11 @@ import {
   SearchInput,
   Select,
   Sheet,
+  pillButtonClass,
 } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../lib/trpc';
-import { useI18n, useProductNameParts } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductNameParts } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
 import { useAuthStore } from '../stores/authStore';
 import { useReportStore } from '../hooks/useReportStore';
@@ -54,6 +55,7 @@ function presetRange(days: number, timeZone?: string): Pick<HistoryFilters, 'dat
 
 export function HistoryPage() {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
   // UI-4 (review RUNWEB2-06): names on two lines, never "primary (secondary)".
   const productNameParts = useProductNameParts();
@@ -204,7 +206,8 @@ export function HistoryPage() {
           <>
           {filters.dateFrom || filters.dateTo ? (
             <FilterChip
-              label={`${filters.dateFrom || '…'} – ${filters.dateTo || '…'}`}
+              // RUNWEB2-24: the days as the list shows them, not ISO.
+              label={`${dates.calendarDay(filters.dateFrom) || '…'} – ${dates.calendarDay(filters.dateTo) || '…'}`}
               onRemove={() => setFilters((current) => ({ ...current, dateFrom: '', dateTo: '' }))}
             />
           ) : null}
@@ -220,13 +223,10 @@ export function HistoryPage() {
               onRemove={() => setFilters((current) => ({ ...current, sort: 'newest' }))}
             />
           ) : null}
-          <button
-            type="button"
-            className="hit-44 px-2 py-1 text-old-label font-semibold text-[var(--c-action)]"
-            onClick={clearAll}
-          >
+          {/* RUNWEB2-23: the kit's text button. */}
+          <Button variant="ghost" size="sm" onClick={clearAll}>
             {i18n.t('run.history.clearAll')}
-          </button>
+          </Button>
           </>
         ) : null}
       </div>
@@ -392,12 +392,19 @@ export function HistoryPage() {
   );
 }
 
+/**
+ * An active filter; a tap removes it. Review RUNWEB2-23 / RUNWEB2-32: the
+ * kit's chip look, and a name that says what the tap does (the "×" is
+ * hidden from screen readers).
+ */
 function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  const i18n = useI18n();
   return (
     <button
       type="button"
       onClick={onRemove}
-      className="press hit-44 inline-flex min-h-8 items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-label font-medium ring-hairline"
+      aria-label={i18n.t('run.history.removeFilter', { label })}
+      className={`${pillButtonClass()} gap-1`}
     >
       <span className="max-w-40 truncate">{label}</span>
       <span aria-hidden className="text-[var(--c-fg-muted)]">

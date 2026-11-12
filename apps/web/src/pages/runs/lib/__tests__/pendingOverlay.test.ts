@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  extraStatusOf,
   overlayPendingWrites,
   pendingStoreIds,
   startDeliveryBlock,
   withData,
+  withExtraStatus,
+  withRecordedPurchase,
   type OverlayRun,
 } from '../pendingOverlay';
 import type { PendingWrite } from '../../../../lib/outbox/policy';
+import type { ExtraStatus } from '../../types';
 
 const run: OverlayRun = {
   id: 'run-1',
@@ -284,5 +288,101 @@ describe('startDeliveryBlock (CMP-BUY-1)', () => {
   });
   test('online and nothing queued: can start', () => {
     expect(startDeliveryBlock(true, 0)).toBeNull();
+  });
+});
+
+describe('a recorded purchase shows on its row at once (RUNWEB1-37)', () => {
+  const input = {
+    skuId: 'rice',
+    actualQty: '3',
+    unitPrice: '12000',
+    paymentMethod: 'transfer',
+    storeSplits: [{ storeId: 'A', qty: '3' }],
+  };
+
+  test('the item reads bought with its splits, not marked as waiting', () => {
+    const out = withRecordedPurchase(run, input);
+    expect(out.items[0]).toMatchObject({
+      status: 'purchased',
+      purchasedQty: '3',
+      unitPrice: '12000',
+      paymentMethod: 'transfer',
+    });
+    expect(out.items[0]!.pendingSync).toBeUndefined();
+    expect(out.splits.filter((sp) => sp.skuId === 'rice')).toEqual([
+      {
+        runId: 'run-1',
+        skuId: 'rice',
+        storeId: 'A',
+        qty: '3',
+        unitPrice: null,
+        paymentMethod: null,
+        deliveredAt: null,
+        confirmedAt: null,
+      },
+    ]);
+    // The other rows are untouched.
+    expect(out.items[1]).toBe(run.items[1]!);
+  });
+
+  test('an item already bought (or not on the run) → the same object', () => {
+    const bought = withRecordedPurchase(run, input);
+    expect(withRecordedPurchase(bought, { ...input, actualQty: '9' })).toBe(bought);
+    expect(withRecordedPurchase(run, { ...input, skuId: 'pepper' })).toBe(run);
+  });
+});
+
+describe('"other items" marked bought show at once (RUNWEB1-17)', () => {
+  const extras: Record<string, Array<{ sessionId: string; idx: number; status?: ExtraStatus }>> = {
+    A: [
+      { sessionId: 's1', idx: 0 },
+      { sessionId: 's1', idx: 1, status: 'unavailable' },
+    ],
+    B: [{ sessionId: 's2', idx: 0, status: 'bought' }],
+  };
+
+  test('withExtraStatus sets the one row at that address', () => {
+    const out = withExtraStatus(extras, 's1', 0, 'bought');
+    expect(out.A).toEqual([
+      { sessionId: 's1', idx: 0, status: 'bought' },
+      { sessionId: 's1', idx: 1, status: 'unavailable' },
+    ]);
+    expect(out.B).toBe(extras.B);
+    expect(extras.A![0]).toEqual({ sessionId: 's1', idx: 0 });
+  });
+
+  test('withExtraStatus returns the same object when nothing changes', () => {
+    expect(withExtraStatus(extras, 's1', 0, 'pending')).toBe(extras);
+    expect(withExtraStatus(extras, 's2', 0, 'bought')).toBe(extras);
+    expect(withExtraStatus(extras, 's9', 0, 'bought')).toBe(extras);
+    expect(withExtraStatus(undefined, 's1', 0, 'bought')).toBeUndefined();
+  });
+
+  test('extraStatusOf reads a row; no status reads as pending', () => {
+    expect(extraStatusOf(extras, 's1', 0)).toBe('pending');
+    expect(extraStatusOf(extras, 's1', 1)).toBe('unavailable');
+    expect(extraStatusOf(extras, 's2', 0)).toBe('bought');
+    expect(extraStatusOf(extras, 's2', 1)).toBeUndefined();
+    expect(extraStatusOf(undefined, 's1', 0)).toBeUndefined();
+  });
+
+  test('a queued mark shows the row bought; it names the order, not the run', () => {
+    const withExtras: OverlayRun = { ...run, sessionExtrasByStore: extras };
+    const out = overlayPendingWrites(withExtras, [
+      entry('order.markExtraStatus', {
+        sessionId: 's1',
+        extraIndex: 0,
+        status: 'bought',
+        expectedSeq: 4,
+      }),
+    ])!;
+    expect(out.sessionExtrasByStore!.A![0]).toEqual({ sessionId: 's1', idx: 0, status: 'bought' });
+    expect(out.items).toBe(run.items);
+    // A mark for a row this run does not list changes nothing.
+    expect(
+      overlayPendingWrites(withExtras, [
+        entry('order.markExtraStatus', { sessionId: 'other', extraIndex: 0, status: 'bought' }),
+      ]),
+    ).toBe(withExtras);
   });
 });

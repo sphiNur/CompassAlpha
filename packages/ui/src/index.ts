@@ -13,6 +13,7 @@ export {
   rowGroupClass,
 } from './components/Card';
 export { pillButtonClass } from './components/pill';
+export { disabledClass, disabledLook } from './components/disabled';
 export { Input } from './components/Input';
 export type { InputProps } from './components/Input';
 export { SearchInput } from './components/SearchInput';

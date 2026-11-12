@@ -16,6 +16,7 @@ import {
   memo,
   useCallback,
   useDeferredValue,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -23,7 +24,6 @@ import {
 } from 'react';
 import type { ComponentProps } from 'react';
 import {
-  Badge,
   Banner,
   Button,
   Card,
@@ -32,13 +32,17 @@ import {
   Chip,
   ChipBar,
   EmptyState,
+  LoadingState,
   NameCell,
+  QueryErrorBanner,
   SectionLabel,
   Sheet,
   useToast,
   Segmented,
   PickerGroup,
   PickerRow,
+  SearchInput,
+  rowListClass,
 } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
@@ -55,6 +59,9 @@ import {
 import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
+import { scrollBehavior } from '../../../lib/reducedMotion';
+import { readLocalPref, writeLocalPref } from '../../../lib/localPref';
+import { PhotoThumb, PhotoViewerSheet, type ViewedPhoto } from '../../../components/PhotoThumb';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,
@@ -66,9 +73,14 @@ import {
 } from '../views/RunViews';
 import type {
   ActiveRun,
+  InlinePurchase,
+  MarkExtraStatus,
   PreviewLine,
   PreviewStoreGroup,
   PreviewSupplierGroup,
+  RunExtra,
+  SkuLite,
+  StoreLite,
 } from '../types';
 import { otherStoreSkusOf } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
@@ -99,11 +111,9 @@ import {
 } from '../lib/itemList';
 import { moneyLine } from '../../../lib/money';
 
-// formatQty / formatMoney are imported from `../lib/format` —
-// thousand-separator + max-1-decimal display rule applied everywhere.
+/** The in-run list offers search and filter from this many items (RUNWEB1-32). */
+const ITEM_SEARCH_FROM = 8;
 
-
-const SAFE_PHOTO_URL = /^(https?:\/\/|data:image\/)/i;
 /**
  * Active-run panel — INLINE-EDIT list rows.
  *
@@ -169,6 +179,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   priceInThousands,
   onTogglePriceUnit,
   savingSkuId,
+  revealPending,
+  canDispatch,
   onSavePurchaseInline,
   onMarkNa,
   onEditPurchased,
@@ -193,12 +205,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   /** 2026-10-30: fill in or correct a price after the goods went out. */
   onEditPrice: (item: ActiveRun['items'][number]) => void;
   run: ActiveRun;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  skuById: Map<string, SkuLite>;
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, inline price input + sheet input display `value/1000`
@@ -208,21 +217,16 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   /** Forwarded to PurchaseRow's unit-suffix toggle. */
   onTogglePriceUnit: () => void;
   savingSkuId: string | null;
-  onSavePurchaseInline: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    /** See the identical field on RunViews' views — only the by-stall
-     *  view supplies it; this panel's aggregate rows send nothing. */
-    supplierId?: string | null;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  /**
+   * RUNWEB1-14: counts the bottom bar's "N left" taps that found no row
+   * to buy on screen. Each one brings back the full list and scrolls to
+   * the first such row.
+   */
+  revealPending: number;
+  /** RUNWEB1-35: the actor may deliver (delivery.dispatch in some store). */
+  canDispatch: boolean;
+  /** Only the by-stall view sends supplierId (InlinePurchase). */
+  onSavePurchaseInline: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
@@ -231,26 +235,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   onDeliverStore: (storeId: string, storeName: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;
   /** M3.37 (Wave2 #5): mark a single "其他物品" row's outcome. */
-  onMarkExtraStatus: (
-    sessionId: string,
-    extraIndex: number,
-    status: 'pending' | 'bought' | 'unavailable',
-    /** APR-18: the session's lastSeq the row was read at. */
-    expectedSeq?: number,
-  ) => void;
-  onRecordExtraExpense: (
-    storeId: string,
-    extra: {
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    },
-  ) => void;
+  onMarkExtraStatus: MarkExtraStatus;
+  onRecordExtraExpense: (storeId: string, extra: RunExtra) => void;
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
@@ -324,21 +310,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   // key; old values 'aggregate'|'perStore' continue to round-trip.
   type ViewMode = 'aggregate' | 'perStore' | 'perVendor' | 'perCategory';
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('compass.run.viewMode');
-      if (saved === 'perStore' || saved === 'perVendor' || saved === 'perCategory') return saved;
-      return 'aggregate';
-    } catch {
-      return 'aggregate';
-    }
+    const saved = readLocalPref('compass.run.viewMode');
+    if (saved === 'perStore' || saved === 'perVendor' || saved === 'perCategory') return saved;
+    return 'aggregate';
   });
   const setViewModePersist = (mode: ViewMode) => {
     setViewMode(mode);
-    try {
-      localStorage.setItem('compass.run.viewMode', mode);
-    } catch {
-      /* localStorage disabled / quota — non-fatal */
-    }
+    writeLocalPref('compass.run.viewMode', mode);
   };
   // Perf (2026-11-05): regrouping re-mounts every row (~150 ms on a slow
   // phone). The chips follow `viewMode` at once; the lists render from this
@@ -372,6 +350,11 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
     }
     return ids.size;
   }, [run.items, skuById]);
+  // M3.52: every row of a run for two stores or more shows its per-store
+  // chips. The run's items by product, for the grouped views. Both once
+  // here, not again in each view (review RUNWEB1-20).
+  const isMultiStoreRun = demandStoreIds.length > 1;
+  const itemBySku = useMemo(() => new Map(run.items.map((it) => [it.skuId, it])), [run.items]);
   // M3.27 (2026-05-18): showing perStore needs ≥2 stores; showing
   // perVendor needs ≥2 supplier buckets (including unassigned). The
   // toggle itself shows when either condition holds — even if only
@@ -386,6 +369,15 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   const editingPhase = run.status === 'purchasing' || run.status === 'amending';
   const plannedOrEditing = run.status === 'planned' || editingPhase;
   const showViewToggle = plannedOrEditing && (showPerStore || showPerVendor || showPerCategory);
+  // The editable list (and the cards under it) shows unless a grouped view
+  // that has something to group is chosen (review RUNWEB1-20: this was
+  // spelt out three times).
+  const showAggregate =
+    !showViewToggle ||
+    shownViewMode === 'aggregate' ||
+    (shownViewMode === 'perStore' && !showPerStore) ||
+    (shownViewMode === 'perVendor' && !showPerVendor) ||
+    (shownViewMode === 'perCategory' && !showPerCategory);
 
   /**
    * Search + filter over the in-run list.
@@ -456,6 +448,31 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
         : i18n.t('a11y.results.items', { n: visibleRunItems.length })
       : null,
   );
+
+  /** A store's problem photo, opened large (RUNWEB1-18). */
+  const [photoFor, setPhotoFor] = useState<ViewedPhoto | null>(null);
+
+  // RUNWEB1-14 (2026-11-12): "N left" scrolls to the first row still to
+  // buy. With none on screen (the by-store view, a search, a filter) the
+  // tap did nothing; the full list comes back first. Not remembered as
+  // the chosen view. The scroll waits for the list to draw from the
+  // deferred view and query.
+  const revealWanted = useRef(false);
+  useEffect(() => {
+    if (revealPending === 0) return;
+    revealWanted.current = true;
+    setViewMode('aggregate');
+    setItemQuery('');
+    setItemFilter('all');
+  }, [revealPending]);
+  const listShowsAll = showAggregate && deferredItemQuery === '' && itemFilter === 'all';
+  useEffect(() => {
+    if (!revealWanted.current || !listShowsAll) return;
+    revealWanted.current = false;
+    document
+      .querySelector('[data-run-item-pending]')
+      ?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+  });
 
   // BUY-5 (2026-10-30): items an order asked for more of after they were
   // bought or marked unavailable.
@@ -575,6 +592,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
       {showViewToggle && shownViewMode === 'perStore' && showPerStore ? (
         <PerStoreView
           run={run}
+          itemBySku={itemBySku}
           storeById={storeById}
           skuById={skuById}
           productName={productName}
@@ -586,6 +604,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
           run={run}
+          itemBySku={itemBySku}
+          isMultiStoreRun={isMultiStoreRun}
           skuById={skuById}
           storeById={storeById}
           productName={productName}
@@ -608,10 +628,10 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
           run={run}
+          isMultiStoreRun={isMultiStoreRun}
           skuById={skuById}
           categoryById={categoryById}
           storeById={storeById}
-          productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
           onTogglePriceUnit={onTogglePriceUnit}
@@ -624,12 +644,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           onUnmark={onUnmark}
         />
       ) : null}
-      {(!showViewToggle ||
-        shownViewMode === 'aggregate' ||
-        (shownViewMode === 'perStore' && !showPerStore) ||
-        (shownViewMode === 'perVendor' && !showPerVendor) ||
-        (shownViewMode === 'perCategory' && !showPerCategory)) &&
-      plannedOrEditing && run.items.length > 0 ? (
+      {showAggregate && plannedOrEditing && run.items.length > 0 ? (
         <Card>
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
               standardised primitive so every section eyebrow renders
@@ -662,16 +677,16 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           {/* Search + filter, only once the list is long enough to need
               them. Below that threshold the whole list is on one screen
               and the controls would cost more rows than they save. */}
-          {run.items.length >= 8 ? (
+          {run.items.length >= ITEM_SEARCH_FROM ? (
             <>
+              {/* RUNWEB1-13: the kit's search field, with its clear button. */}
               <div className="px-4 pb-1.5">
-                <input
-                  type="search"
+                <SearchInput
                   value={itemQuery}
                   onChange={(e) => setItemQuery(e.target.value)}
+                  onClear={() => setItemQuery('')}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
                 />
               </div>
               {/* V4: -mt-1.5 pt-1.5 instead of pt-0 — same layout, and the
@@ -730,7 +745,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                   demand={demandBySku.get(it.skuId) ?? NO_DEMAND}
                   storeById={storeById}
                   actualSplits={actualSplits}
-                  isMultiStoreRun={demandStoreIds.length > 1}
+                  isMultiStoreRun={isMultiStoreRun}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   lastPriceObservedAt={run.lastPriceObservedAtBySku?.[it.skuId] ?? null}
                   i18n={i18n}
@@ -798,7 +813,8 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               // purchaser's main during-run view; non-English users were
               // seeing English on every store row.
               const dispatchDenied =
-                stage !== 'confirmed' && (run.dispatchDeniedStoreIds ?? []).includes(storeId);
+                stage !== 'confirmed' &&
+                (!canDispatch || (run.dispatchDeniedStoreIds ?? []).includes(storeId));
               // RE-DLV-1 (2026-10-31): a delivery saved offline shows as
               // delivered and waiting to sync; it cannot be recalled (or
               // delivered again) until the server has it.
@@ -819,7 +835,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               );
               const inner = (
                 <>
-                  <span className="shrink-0 truncate text-old-body font-semibold">{storeName}</span>
+                  {/* RUNWEB1-29: min-w-0, so a long name truncates (it ran
+                      under the deliver button). */}
+                  <span className="min-w-0 truncate text-old-body font-semibold">{storeName}</span>
                   <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                     {i18n.t('run.label.itemsCount', { n: splitsHere.length })} · {subtitle}
                   </span>
@@ -832,11 +850,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                       const sku = skuById.get(sp.skuId);
                       const name = sku ? productName(sku) : i18n.t('common.unknownProduct');
                       const statusLabel = confirmStatusLabel(i18n, sp.confirmStatus);
-                      // Only a web or inline-image URL becomes a link.
-                      const photo =
-                        sp.confirmPhotoUrl && SAFE_PHOTO_URL.test(sp.confirmPhotoUrl)
-                          ? sp.confirmPhotoUrl
-                          : null;
                       return (
                         <li key={sp.skuId} className="flex items-start gap-2">
                           <div className="min-w-0 flex-1">
@@ -858,21 +871,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                               </div>
                             ) : null}
                           </div>
-                          {photo ? (
-                            <a
-                              href={photo}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label={i18n.t('confirm.issue.photoOf', { name })}
-                              className="shrink-0"
-                            >
-                              <img
-                                src={photo}
-                                alt=""
-                                loading="lazy"
-                                className="h-10 w-10 rounded-[var(--r-utility)] object-cover ring-hairline"
-                              />
-                            </a>
+                          {/* RUNWEB1-18: opens in the app, as in the history. */}
+                          {sp.confirmPhotoUrl ? (
+                            <PhotoThumb
+                              url={sp.confirmPhotoUrl}
+                              label={i18n.t('confirm.issue.photoOf', { name })}
+                              onOpen={setPhotoFor}
+                            />
                           ) : null}
                         </li>
                       );
@@ -1061,12 +1066,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           moment a run started — they only existed in the preview
           UI. Now they sit right under the per-SKU list so the
           purchaser sees them while recording buys. */}
-      {(!showViewToggle ||
-        shownViewMode === 'aggregate' ||
-        (shownViewMode === 'perStore' && !showPerStore) ||
-        (shownViewMode === 'perVendor' && !showPerVendor) ||
-        (shownViewMode === 'perCategory' && !showPerCategory)) &&
-      plannedOrEditing ? (
+      {showAggregate && plannedOrEditing ? (
         <RunExtrasCard
           sessionExtrasByStore={run.sessionExtrasByStore}
           sessionNotesByStore={run.sessionNotesByStore}
@@ -1084,12 +1084,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           sections. Always visible (read-only in non-purchasing
           phases) so the manager can see "what off-plan was spent"
           from any page state. */}
-      {(!showViewToggle ||
-        shownViewMode === 'aggregate' ||
-        (shownViewMode === 'perStore' && !showPerStore) ||
-        (shownViewMode === 'perVendor' && !showPerVendor) ||
-        (shownViewMode === 'perCategory' && !showPerCategory)) &&
-      (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
+      {showAggregate && (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
         <ExpensesCard
           expenses={run.expenses}
           storeById={storeById}
@@ -1107,34 +1102,17 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           ("Tap Start Purchase when ready") is already conveyed by the
           MainButton sitting at the bottom of the page in the same state.
           The banner just took up vertical space without adding info. */}
+      <PhotoViewerSheet photo={photoFor} onClose={() => setPhotoFor(null)} />
     </div>
   );
 });
 
 /**
- * Per-store view (added 2026-05-05).
+ * PreviewSummaryCard — the "ready to plan" summary on RunPage, in two
+ * views (M1.5, 2026-05-06; the third, "Overall", was dropped 2026-07-26,
+ * see PreviewView below):
  *
- * Read-only planning aid for multi-store runs. Groups SKUs by store
- * so a purchaser can mentally tally "Store A wants 2kg apples, Store
- * B wants 3kg apples" before walking the market. The actual purchase
- * recording happens in the Aggregate view — keeping a single source
- * of truth avoids the "did I already buy these?" footgun the agent
- * flagged in the audit.
- *
- * Each store card shows:
- *   - Store name + a 12px "X SKUs · total Y units" line
- *   - One row per SKU: name + qty for that store
- *
- * Sort: stores by name; SKUs within store by sortIndex (which
- * mirrors the catalog order in OrderPage).
- */
-
-/**
- * PreviewSummaryCard — the "ready to plan" summary on RunPage with
- * three views (M1.5, 2026-05-06):
- *
- *   - Overall    : flat SKU list (legacy behavior, unchanged shape).
- *   - By store   : each store's combined order list, with a "Copy
+ *   - By store   : each store's combined order list, with a "Copy"
  *                  list" button per store.
  *   - By supplier: each preferred-vendor's preparation list, with a
  *                  per-store breakdown under each item and a "Copy →
@@ -1281,22 +1259,19 @@ export function PreviewSummaryCard({
       Array<{ name: string; qty: string; unit: string; note?: string; sessionId?: string; idx?: number }>
     >;
   };
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  skuById: Map<string, SkuLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   toast: ReturnType<typeof useToast>;
 }) {
   const [view, setView] = useState<PreviewView>(() => {
-    if (typeof window !== 'undefined') {
-      const v = window.localStorage.getItem(PREVIEW_VIEW_STORAGE_KEY);
-      // The whitelist already excluded 'overall', so a stored value from
-      // before that tab was removed falls through to the default below —
-      // no migration needed.
-      if (v === 'byStore' || v === 'bySupplier') return v;
-    }
+    // RUNWEB1-21: read through lib/localPref, which a blocked storage
+    // cannot make throw (this read was the one left unguarded).
+    const v = readLocalPref(PREVIEW_VIEW_STORAGE_KEY);
+    // The whitelist already excluded 'overall', so a stored value from
+    // before that tab was removed falls through to the default below —
+    // no migration needed.
+    if (v === 'byStore' || v === 'bySupplier') return v;
     // Adaptive, NOT hard-coded to bySupplier. That view is built purely
     // from preview.supplierBySku, which the server fills only from
     // `sku_supplier_links WHERE is_preferred` — and the sole writer of
@@ -1356,7 +1331,7 @@ export function PreviewSummaryCard({
   });
   const currency = useCurrency();
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
-  const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
+  const currentUnitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
   // COREWEB2-12: what is sent to a stall is in the stall's language.
   const vendorI18n = useVendorI18n();
@@ -1376,9 +1351,7 @@ export function PreviewSummaryCard({
    */
   const chooseView = useCallback((v: PreviewView) => {
     setView(v);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, v);
-    }
+    writeLocalPref(PREVIEW_VIEW_STORAGE_KEY, v);
   }, []);
 
   const storeNameById = useMemo(() => {
@@ -1617,9 +1590,13 @@ export function PreviewSummaryCard({
     [byStore, preview.supplierBySku],
   );
 
+  // RUNWEB1-22: label and amount through the catalog (「合计：…」).
   const groupMoneyMeta = (total: number, unknownCount: number): string => {
     const parts = [
-      `${i18n.t('run.preview.groupTotal')} ${formatMoney(total)} ${currency}`,
+      i18n.t('common.labelValue', {
+        label: i18n.t('run.preview.groupTotal'),
+        value: formatMoney(total, currency),
+      }),
     ];
     if (unknownCount > 0) {
       parts.push(i18n.t('run.preview.unknownPrices', { n: unknownCount }));
@@ -1633,7 +1610,7 @@ export function PreviewSummaryCard({
       // UIUX-B1: state "price unknown" once, not twice in one formula.
       return `${qtyUnit} · ${i18n.t('run.preview.priceUnknown')}`;
     }
-    return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
+    return `${qtyUnit} × ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
   };
 
   const shareOrCopyText = async (text: string): Promise<void> => {
@@ -1684,15 +1661,9 @@ export function PreviewSummaryCard({
    * component so the vendor-vs-store disclosure boundary is unit-tested
    * (see runs/lib/__tests__/shareText.test.ts) rather than eyeballed.
    */
-  // Deliberately NOT memoized. `useI18n` returns a memo keyed on the
-  // resolved locale, so its identity does NOT change when a lazily
-  // imported catalog chunk lands — `useEnsureLocale` re-renders via a
-  // state counter instead. A useMemo here would therefore freeze
-  // extrasLabel / notesLabel at whatever the fallback catalog said on
-  // first render (English, if the user's locale chunk was still in
-  // flight on bazaar LTE) for the entire mount. Rebuilding these small
-  // objects each render restores the live read the old inline closures
-  // had; the builders themselves only run on a button tap.
+  // Not memoized: small objects, and the builders only run on a button
+  // tap. (Review RUNWEB1-30: the reason given here was that useI18n kept
+  // its identity when a catalog arrived; it no longer does.)
   // A store's list goes to our own manager, in the interface's language;
   // a stall's list goes to its holder, in the stall's (COREWEB2-12).
   const storeShareDeps = shareDepsFor(i18n, currentUnitLabel, skuById);
@@ -1727,7 +1698,13 @@ export function PreviewSummaryCard({
    * hits, not to then go tapping for them.
    */
   const [filterText, setFilterText] = useState('');
-  const filterTokens = useMemo(() => normalizeQuery(filterText) ?? [], [filterText]);
+  // RUNWEB1-34: the box shows each key at once; the groups filter from
+  // this deferred copy, as the in-run list's search does.
+  const deferredFilterText = useDeferredValue(filterText);
+  const filterTokens = useMemo(
+    () => normalizeQuery(deferredFilterText) ?? [],
+    [deferredFilterText],
+  );
   const filtering = filterTokens.length > 0;
   // Other-language names for the SKU behind a line, so a Russian speaker
   // finds a row whose display name resolved to Chinese.
@@ -1763,12 +1740,12 @@ export function PreviewSummaryCard({
   const openStoreKey = pruneOpen(openStore, storeKeys);
   const openSupplierKey = pruneOpen(openSupplier, supplierKeys);
 
+  // UI-13 (RUNWEB1-27): rows divided by hairlines (rowListClass on the
+  // list), not striped grey.
   const renderLine = (
     line: PreviewLine,
-    index: number,
     opts?: { editableSupplier?: boolean; showSupplier?: boolean },
   ) => {
-    const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
       line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]';
     // UI-4 (RUNWEB1-09): a product's second-language name on its own
@@ -1806,10 +1783,10 @@ export function PreviewSummaryCard({
         : 'text-[var(--c-warning-fg)]';
       const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
       return (
-        <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
+        <li key={line.id} className="px-2 py-1.5">
           <div className="flex min-w-0 items-baseline gap-2 text-old-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-meta font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1865,14 +1842,11 @@ export function PreviewSummaryCard({
     }
 
     return (
-      <li
-        key={line.id}
-        className={`px-2 py-1.5 ${rowBg}`}
-      >
+      <li key={line.id} className="px-2 py-1.5">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-old-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-meta font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1895,9 +1869,10 @@ export function PreviewSummaryCard({
     // 2026-11-05: no -mx-2 bleed — it sat 8 px wider than the order
     // picker card right above it, so the two edges never lined up.
     <Card className="overflow-hidden">
+      {/* UI-10 (RUNWEB1-29): no order count here; the picker above and the
+          warning below both give it. */}
       <CardHeader className="px-3 pt-3">
         <CardTitle>{i18n.t('run.section.readyToPlan')}</CardTitle>
-        <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
       </CardHeader>
       {/* Segmented control — sticky horizontal pill bar, same visual
           language as ScopeTab in MemberPermissionsSheet. Two taps here
@@ -1921,13 +1896,15 @@ export function PreviewSummaryCard({
           every group collapsed it is the primary way to reach a row. */}
       <div className="px-3 pt-1">
         <div className="flex items-center gap-2">
-          <input
-            type="search"
+          {/* RUNWEB1-13: the kit's search field. It matches stalls too
+              (lib/previewFilter), as the in-run list's does. */}
+          <SearchInput
+            className="flex-1"
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
-            placeholder={i18n.t('order.search.placeholder')}
-            aria-label={i18n.t('order.search.placeholder')}
-            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
+            onClear={() => setFilterText('')}
+            placeholder={i18n.t('run.search.itemsPlaceholder')}
+            aria-label={i18n.t('run.search.itemsPlaceholder')}
           />
           {filtering ? (
             <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -2072,7 +2049,7 @@ export function PreviewSummaryCard({
                 <button
                   type="button"
                   aria-expanded={open}
-                  aria-controls={panelId}
+                  aria-controls={open ? panelId : undefined}
                   onClick={(e) => {
                     anchorOn(e.currentTarget);
                     setOpenStore((o) => toggleOpen(o, g.storeId));
@@ -2097,23 +2074,27 @@ export function PreviewSummaryCard({
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
-                {groupStoreBySupplier(
-                  g,
-                  i18n.t('run.previewSupplier.unassigned'),
-                  i18n.locale,
-                ).map((supplier) => (
-                  <section key={supplier.supplierId ?? '__unassigned__'}>
-                    <PreviewSubheading
-                      name={supplier.supplierName}
-                      meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
-                    />
-                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
-                      {supplier.items.map((line, idx) => renderLine(line, idx))}
-                    </ul>
-                  </section>
-                ))}
-              </div>
+              {/* RUNWEB1-34: a shut group's rows are not drawn at all
+                  (they were, hidden, in every group). */}
+              {open ? (
+                <div id={panelId} className="flex flex-col gap-2">
+                  {groupStoreBySupplier(
+                    g,
+                    i18n.t('run.previewSupplier.unassigned'),
+                    i18n.locale,
+                  ).map((supplier) => (
+                    <section key={supplier.supplierId ?? '__unassigned__'}>
+                      <PreviewSubheading
+                        name={supplier.supplierName}
+                        meta={groupMoneyMeta(supplier.total, supplier.unknownCount)}
+                      />
+                      <ul className={rowListClass}>
+                        {supplier.items.map((line) => renderLine(line))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              ) : null}
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
                   per item; legacy free-text notes (pre-M3.16) appended
@@ -2177,7 +2158,7 @@ export function PreviewSummaryCard({
                 <button
                   type="button"
                   aria-expanded={open}
-                  aria-controls={panelId}
+                  aria-controls={open ? panelId : undefined}
                   onClick={(e) => {
                     anchorOn(e.currentTarget);
                     setOpenSupplier((o) => toggleOpen(o, supplierKey));
@@ -2221,31 +2202,31 @@ export function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
-                {b.stores.map((store) => (
-                  <div key={store.storeId}>
-                    <PreviewSubheading
-                      name={store.storeName}
-                      meta={groupMoneyMeta(store.total, store.unknownCount)}
-                    />
-                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
-                      {store.items.map((line, idx) =>
-                        renderLine(line, idx, { editableSupplier: true }),
-                      )}
-                    </ul>
-                    {store.legacyNote ? (
-                      <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
-                        <SectionLabel padded={false}>
-                          {i18n.t('order.notes.label')}
-                        </SectionLabel>
-                        <div className="mt-1 whitespace-pre-wrap text-old-body-sm leading-snug text-[var(--c-fg-muted)]">
-                          {store.legacyNote}
+              {open ? (
+                <div id={panelId} className="flex flex-col gap-2">
+                  {b.stores.map((store) => (
+                    <div key={store.storeId}>
+                      <PreviewSubheading
+                        name={store.storeName}
+                        meta={groupMoneyMeta(store.total, store.unknownCount)}
+                      />
+                      <ul className={rowListClass}>
+                        {store.items.map((line) => renderLine(line, { editableSupplier: true }))}
+                      </ul>
+                      {store.legacyNote ? (
+                        <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
+                          <SectionLabel padded={false}>
+                            {i18n.t('order.notes.label')}
+                          </SectionLabel>
+                          <div className="mt-1 whitespace-pre-wrap text-old-body-sm leading-snug text-[var(--c-fg-muted)]">
+                            {store.legacyNote}
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </section>
             );
           })}
@@ -2334,19 +2315,12 @@ function VendorPickerSheet({
         <p className="px-1 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('run.previewSupplier.pickVendorHint')}
         </p>
+        {/* UI-15 (RUNWEB1-27): the kit's error with retry, and a spinner
+            while the stalls load (the list was just empty). */}
         {suppliersQuery.isError ? (
-          <div className="flex items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 ring-hairline">
-            <span className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('common.error')}
-            </span>
-            <button
-              type="button"
-              onClick={() => void suppliersQuery.refetch()}
-              className="press text-old-label font-semibold text-[var(--c-action)]"
-            >
-              {i18n.t('common.retry')}
-            </button>
-          </div>
+          <QueryErrorBanner query={suppliersQuery} />
+        ) : suppliersQuery.isPending ? (
+          <LoadingState variant="compact" />
         ) : null}
         <PickerGroup label={i18n.t('run.previewSupplier.pickVendorTitle')}>
           <PickerRow
@@ -2375,13 +2349,14 @@ export function RunSessionsCard({
   sessions,
   storeById,
   i18n,
-  ejecting,
+  ejectingSessionId,
   onEject,
 }: {
   sessions: NonNullable<ActiveRun['sessions']>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
-  ejecting: boolean;
+  /** The order being taken out, while that is on its way (RUNWEB1-29). */
+  ejectingSessionId: string | null;
   onEject: (session: NonNullable<ActiveRun['sessions']>[number]) => void;
 }) {
   // DX-BUY-7 (2026-11-01): collapsed to one line by default. The cards and
@@ -2395,7 +2370,7 @@ export function RunSessionsCard({
       const name = storeById.get(storeId)?.name ?? i18n.t('common.unknownStore');
       return n > 1 ? `${name} ×${n}` : name;
     })
-    .join(i18n.t('run.sessions.storeJoiner'));
+    .join(i18n.t('common.listSeparator'));
   return (
     <Card>
       <button
@@ -2457,8 +2432,9 @@ export function RunSessionsCard({
                 variant="pearl"
                 size="sm"
                 className="ml-auto"
-                disabled={ejecting}
-                loading={ejecting}
+                disabled={ejectingSessionId !== null}
+                // RUNWEB1-29: only the order being taken out spins.
+                loading={ejectingSessionId === sessionRow.id}
                 onClick={() => onEject(sessionRow)}
               >
                 {i18n.t('run.action.ejectSession')}

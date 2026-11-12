@@ -15,6 +15,9 @@ import { STALE_PRICE_DAYS } from './priceState';
 import { pendingExtrasOf } from './runProgress';
 import { buildStorePickList } from './storePickList';
 
+/** Lines signed short or wrong listed in the finish sheet; the rest are counted (RUNWEB1-32). */
+const RECEIPT_ISSUES_LISTED = 5;
+
 /** A pending reason-prompt confirm. The keys here are the ONLY transitions
  *  that need a confirmation; trivial actions (Buy, mark N/A) keep their
  *  existing inline sheets. */
@@ -33,7 +36,10 @@ export type ConfirmKind =
   | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string }
   // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
   // confirmation or undo.
-  | { kind: 'removeExpense'; expenseId: string; label: string };
+  | { kind: 'removeExpense'; expenseId: string; label: string }
+  // BUY-5: not buying what a newly joined order added. Review RUNWEB1-29:
+  // was the browser's / Telegram's own confirm, unlike every other step.
+  | { kind: 'dismissTopUp'; skuId: string; qty: string };
 
 /** What the run's confirm sheet asks (ConfirmSheet in @compass/ui). */
 export interface ConfirmCopy {
@@ -82,7 +88,7 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
             ? '\n\n' +
               i18n.t('run.confirm.startDelivery.pendingExtras', {
                 n: pendingExtras.length,
-                names: pendingExtras.map((e) => e.name).join(i18n.t('run.sessions.storeJoiner')),
+                names: pendingExtras.map((e) => e.name).join(i18n.t('common.listSeparator')),
               })
             : '';
         return {
@@ -192,9 +198,14 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
               finishSummary.byStore
                 .map((ps) => {
                   const mixed = ps.cash > 0 && ps.transfer > 0;
+                  // RUNWEB1-22: the catalog's "cash · transfer" line, not
+                  // labels and amounts glued in English order.
                   const tail = mixed
-                    ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
-                      ` · ${i18n.t('run.label.paymentTransfer')} ${formatMoney(ps.transfer)}`
+                    ? ' · ' +
+                      i18n.t('run.money.cashTransfer', {
+                        cash: formatMoney(ps.cash),
+                        transfer: formatMoney(ps.transfer),
+                      })
                     : '';
                   return i18n.t('common.labelValue', {
                     label: ctx.storeName(ps.storeId),
@@ -218,7 +229,7 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
               }) +
               '\n' +
               receiptIssues
-                .slice(0, 5)
+                .slice(0, RECEIPT_ISSUES_LISTED)
                 .map((sp) =>
                   i18n.t('run.confirm.finish.receiptIssueLine', {
                     sku: ctx.skuName(sp.skuId),
@@ -228,9 +239,11 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
                   }),
                 )
                 .join('\n') +
-              (receiptIssues.length > 5
+              (receiptIssues.length > RECEIPT_ISSUES_LISTED
                 ? '\n' +
-                  i18n.t('run.confirm.finish.receiptIssuesMore', { n: receiptIssues.length - 5 })
+                  i18n.t('run.confirm.finish.receiptIssuesMore', {
+                    n: receiptIssues.length - RECEIPT_ISSUES_LISTED,
+                  })
                 : '')
             : '';
         return {
@@ -337,7 +350,12 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
               ...(pick.total !== null && pick.total > 0
                 ? // DLV-18 (2026-10-30): goods only; the store's share of
                   // expenses is added on the final bill.
-                  [`${i18n.t('run.label.itemsTotal')} ${formatMoney(pick.total)} ${currency}`]
+                  [
+                    i18n.t('common.labelValue', {
+                      label: i18n.t('run.label.itemsTotal'),
+                      value: formatMoney(pick.total, currency),
+                    }),
+                  ]
                 : []),
               ...(pick.unavailable.length > 0
                 ? [i18n.t('run.filter.unavailable', { n: pick.unavailable.length })]
@@ -404,6 +422,14 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
           danger: true,
           requireReason: false,
         };
+      case 'dismissTopUp':
+        return {
+          title: i18n.t('run.topUp.dismiss'),
+          body: i18n.t('run.topUp.dismissConfirm', { qty: formatQty(kind.qty) }),
+          confirmLabel: i18n.t('run.topUp.dismiss'),
+          danger: false,
+          requireReason: false,
+        };
     }
   }
 }
@@ -428,7 +454,8 @@ export type ConfirmCommand =
       procedure: 'ejectSession';
       input: { runId: string; sessionId: string; reason: string | undefined };
     }
-  | { procedure: 'removeExpense'; input: { runId: string; expenseId: string; reason: string } };
+  | { procedure: 'removeExpense'; input: { runId: string; expenseId: string; reason: string } }
+  | { procedure: 'dismissTopUp'; input: { runId: string; skuId: string } };
 
 /** `reason` is what the sheet's reason field holds; the kinds without one send ''. */
 export function confirmCommandFor(
@@ -469,6 +496,8 @@ export function confirmCommandFor(
           procedure: 'removeExpense',
           input: { runId, expenseId: kind.expenseId, reason: '' },
         };
+      case 'dismissTopUp':
+        return { procedure: 'dismissTopUp', input: { runId, skuId: kind.skuId } };
     }
   }
 }

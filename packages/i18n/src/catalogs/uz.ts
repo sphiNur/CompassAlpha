@@ -1320,7 +1320,6 @@ export const uz = {
   'run.filter.noMatch': 'Mos mahsulot topilmadi',
   'run.label.confirmedFraction': '{done}/{total} tasdiqlandi',
   'run.label.itemsCount': '{n, plural, =1 {1 ta mahsulot} other {{n} ta mahsulot}}',
-  'run.label.skuCountAndQty': '{n, plural, =1 {1 ta mahsulot} other {{n} ta mahsulot}} · {qty}',
   'run.label.splitsMismatch': 'Taqsimot: {sum} / {target}',
   // Yetkazib berish bosqichi (M1.9 fix)
   'run.deliveryStage.pending': 'Yetkazilmagan',
@@ -1552,6 +1551,7 @@ export const uz = {
   'run.price.check.confirm': 'Ha, saqlash',
   'run.price.check.fix': 'Narxni oʻzgartirish',
   'run.action.supplier': 'Yetkazib beruvchi',
+  'run.action.supplierNone': 'Koʻrsatilmagan',
   'run.action.receiptPhoto': 'Chek surati (ixtiyoriy)',
   'run.action.allocateAcrossStores': 'Doʻkonlar boʻyicha taqsimlash',
   'run.action.actualQtyAriaLabel': 'haqiqiy miqdor',
@@ -1630,7 +1630,7 @@ export const uz = {
   'run.toast.startDeliveryUndone': 'Xaridga qaytdi',
   'run.toast.runFinished': 'Xarid tugadi',
   'run.history.title': 'Tarix',
-  'run.history.matchedRunsTotal': '(topilganlar)',
+  'run.history.matchedRunsTotal': '{total} (topilganlar)',
   'run.history.allStores': 'Barcha doʻkonlar',
   // M3.9: bekor qilingan run endi tarixda ko'rinmaydi — 4 kalit olib tashlandi.
   'run.cancel.reasonPlaceholder':
@@ -1989,7 +1989,7 @@ export const uz = {
   'sales.errors.storeNotFound':
     'Doʻkon topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
   'sales.errors.dishHasNoRecipe': 'Sotuvni yozishdan oldin taom uchun retsept belgilang.',
-  'run.action.addItem.storeAlreadyHasSkuShort': 'bor',
+  'run.action.addItem.storeAlreadyHasSkuShort': '{store} (bor)',
   'run.action.addItem.costModeTitle': 'Bir xil mahsulot narxi',
   'run.action.addItem.costModeMerge': 'Mavjudiga qoʻshish',
   'run.action.addItem.costModeSeparate': 'Alohida narx',
@@ -2020,6 +2020,7 @@ export const uz = {
   'run.history.filters': 'Filtrlar ({n})',
   'run.history.activeFilters': 'Faol filtrlar: {n}',
   'run.history.clearAll': 'Hammasini tozalash',
+  'run.history.removeFilter': 'Filtrni olib tashlash: {label}',
   'run.history.filterTitle': 'Tarixni filtrlash',
   'run.history.filterDescription': 'Natijalarni doʻkon, sana va toʻlov usuli boʻyicha filtrlang.',
   'run.history.resetFilters': 'Filtrlarni tozalash',
@@ -2446,7 +2447,6 @@ export const uz = {
   'run.gauge.progressLabel': 'Xarid jarayoni',
   'run.gauge.notFound': 'topilmadi {n}',
   'run.sessions.collapsed': '{n} ta buyurtma',
-  'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras':
     'Hali belgilanmagan — doʻkonlar soʻragan boshqa narsalar ({n}): {names}. Yetkazish boshlangach, ular xarid sahifasida koʻrinmaydi.',
   'approval.changed.title': 'Buyurtma siz ochganingizdan keyin oʻzgardi',

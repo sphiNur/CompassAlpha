@@ -39,23 +39,25 @@ import {
   QueryErrorBanner,
   EmptyState,
   Input,
+  LoadingState,
   Sheet,
-  Skeleton,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton } from '../hooks/usePageMainButton';
 import { scrollBehavior } from '../lib/reducedMotion';
-import { confirmThen } from '../lib/confirm';
-import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
+import { RUN_PAGE } from '../config/timings';
+import { readLocalPref, writeLocalPref } from '../lib/localPref';
+import { useDateFormat, useI18n, useProductName, useProductNameParts } from '../hooks/useI18n';
+import { rowName } from '../lib/productName';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { usePageMenu } from '../components/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { pendingChangeCount } from '../lib/pendingChanges';
-import { currencyOf, formatQty, formatMoney } from '../lib/format';
+import { currencyOf, formatMoney } from '../lib/format';
 import { runStepLabel } from '../lib/statusLabels/run';
 import { useCanSeePrices } from '../hooks/useStorePermission';
 import { itemProgressCounts } from './runs/lib/runProgress';
@@ -100,6 +102,7 @@ export function RunPage() {
   const i18n = useI18n();
   const dates = useDateFormat();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const session = useAuthStore((s) => s.session);
   const currency = currencyOf(session);
   const toast = useToast();
@@ -109,6 +112,8 @@ export function RunPage() {
   // is the page-level button, not a modal.
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
   const [inlineSavingSkuId, setInlineSavingSkuId] = useState<string | null>(null);
+  /** Taps of "N left" that found no row to buy on screen (RUNWEB1-14). */
+  const [revealPending, setRevealPending] = useState(0);
   // Which purchased row is mid-flight on a payment-method correction, so
   // that row's toggle greys out instead of accepting a second tap on a
   // slow link.
@@ -123,24 +128,13 @@ export function RunPage() {
   // Default ON — UZS pricing is the launch tenant's currency and
   // operators consistently type 5-6 digit prices. Persist per-user
   // via localStorage so the preference survives page navigation.
-  const [priceInThousands, setPriceInThousandsState] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('compass.run.priceInThousands');
-      if (saved === '0') return false;
-      if (saved === '1') return true;
-    } catch {
-      /* localStorage disabled / quota — non-fatal */
-    }
-    return true;
-  });
+  const [priceInThousands, setPriceInThousandsState] = useState<boolean>(
+    () => readLocalPref('compass.run.priceInThousands') !== '0',
+  );
   const togglePriceInThousands = useCallback(() => {
     setPriceInThousandsState((prev) => {
       const next = !prev;
-      try {
-        localStorage.setItem('compass.run.priceInThousands', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
+      writeLocalPref('compass.run.priceInThousands', next ? '1' : '0');
       return next;
     });
   }, []);
@@ -234,12 +228,17 @@ export function RunPage() {
     revisePurchase,
     flipPayment,
     markUnavailable,
-    dismissTopUp,
-    markExtraStatus,
+    markExtra,
     extraForExpense,
     sendConfirm,
     sendAddItem,
   } = mutations;
+  // Review RUNWEB1-31: the memos below depend on these, not on the
+  // mutation results, which are new objects on every render (so the
+  // memos ran every time). useMutation's `mutate` keeps its identity.
+  const { mutate: createRun, isPending: creatingRun } = create;
+  const purchase = purchaseItem.mutate;
+  const revise = revisePurchase.mutate;
 
   // ---- Derived state --------------------------------------------------
   const skuById = useMemo(() => {
@@ -321,7 +320,10 @@ export function RunPage() {
     activeRun ? { runId: activeRun.id } : { runId: '' },
     // P-4 (2026-10-31): realtime `run.changed` already refreshes this; poll
     // only while the socket is down instead of every 6 s on top of it.
-    { enabled: !!activeRun, refetchInterval: activeRun ? pollWhenOffline(6_000, realtimeLive) : false },
+    {
+      enabled: !!activeRun,
+      refetchInterval: activeRun ? pollWhenOffline(RUN_PAGE.offlinePollMs, realtimeLive) : false,
+    },
   );
   // R2-INT-1 / RE-DLV-1 (2026-10-31): writes saved offline show on their
   // item (bought, unavailable, delivered — waiting to sync) instead of the
@@ -397,7 +399,7 @@ export function RunPage() {
     if (purchaseItem.isPending) return;
     const t = setTimeout(() => {
       setInlineSavingSkuId((cur) => (cur === inlineSavingSkuId ? null : cur));
-    }, 5_000);
+    }, RUN_PAGE.savingHoldMs);
     return () => clearTimeout(t);
   }, [inlineSavingSkuId, purchaseItem.isPending, runDetailQuery.data?.items]);
 
@@ -468,12 +470,20 @@ export function RunPage() {
     return allStoresConfirmedOf(runDetailQuery.data.splits);
   }, [runDetailQuery.data]);
 
+  /**
+   * Review RUNWEB1-35 (2026-11-12): delivering to a store, recalling it
+   * and stepping back from delivery need delivery.dispatch (in some
+   * store); without it they were offered and then refused. Stores denied
+   * one by one come from the server (dispatchDeniedStoreIds).
+   */
+  const canDispatch = session?.permissions.includes('delivery.dispatch') ?? false;
+
   /** "We can still un-Start delivery" — true iff status=delivering AND
    *  no store has been delivered to. */
   const canUndoStartDelivery = useMemo(() => {
-    if (activeRun?.status !== 'delivering') return false;
+    if (activeRun?.status !== 'delivering' || !canDispatch) return false;
     return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.deliveredAt);
-  }, [activeRun?.status, runDetailQuery.data]);
+  }, [activeRun?.status, canDispatch, runDetailQuery.data]);
 
   /** M3.29 (2026-05-18): re-exposed. Lifted the "no items touched"
    *  gate (commands.ts:503); purchases survive the revert and the
@@ -554,7 +564,7 @@ export function RunPage() {
           : null;
       if (topUp) {
         withPriceCheck(d.skuId, [d.unitPrice], (confirmed) => {
-          revisePurchase.mutate({
+          revise({
             runId: d.runId,
             skuId: d.skuId,
             supplierId: d.supplierId,
@@ -586,14 +596,14 @@ export function RunPage() {
         (confirmed) => {
           const sent = confirmed ? { ...payload, priceConfirmed: true } : payload;
           if (d.isEdit) {
-            revisePurchase.mutate({ ...sent, reason: d.reason });
+            revise({ ...sent, reason: d.reason });
           } else {
-            purchaseItem.mutate(sent);
+            purchase(sent);
           }
         },
       );
     },
-    [purchaseItem, revisePurchase, withPriceCheck],
+    [purchase, revise, withPriceCheck],
   );
 
   // ---- MainButton -----------------------------------------------------
@@ -693,15 +703,15 @@ export function RunPage() {
                   i18n.t('run.errors.runDateInFuture')
                 : i18n.t('run.action.startPurchase'),
           onClick: () => {
-            if (offline || sessionIds.length === 0 || !dateOk || create.isPending) return;
-            create.mutate({
+            if (offline || sessionIds.length === 0 || !dateOk || creatingRun) return;
+            createRun({
               sessionIds,
               startImmediately: true,
               ...(runDate ? { date: runDate } : {}),
             });
           },
           visible: true,
-          active: !offline && sessionIds.length > 0 && dateOk && !create.isPending,
+          active: !offline && sessionIds.length > 0 && dateOk && !creatingRun,
         };
       }
       return { text: '', onClick: () => {}, visible: false, active: false };
@@ -751,9 +761,12 @@ export function RunPage() {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
             onClick: () => {
               const next = document.querySelector('[data-run-item-pending]');
-              next?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+              if (next) next.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+              // RUNWEB1-14: none on screen (the by-store view, or a search
+              // or filter hiding them): the panel shows the list again.
+              else setRevealPending((n) => n + 1);
             },
-            visible: pendingCount > 0,
+            visible: true,
             active: true,
           };
         }
@@ -864,7 +877,8 @@ export function RunPage() {
     chosenSessionIds,
     runDateChoice,
     previewToday,
-    create,
+    createRun,
+    creatingRun,
   ]);
 
   // ---- Confirm-sheet wiring --------------------------------------------
@@ -884,10 +898,10 @@ export function RunPage() {
             summary: finishSummary,
             currency,
             storeName: (id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'),
-            skuName: (skuId) => {
-              const sku = skuById.get(skuId);
-              return sku ? productName(sku) : i18n.t('common.unknownProduct');
-            },
+            // NEW-03: the main name in the confirmations, as the rows give it.
+            skuName: (skuId) =>
+              rowName(productNameParts, skuById.get(skuId), i18n.t('common.unknownProduct'))
+                .primary,
           })
         : null,
     [
@@ -897,7 +911,7 @@ export function RunPage() {
       finishSummary,
       currency,
       i18n,
-      productName,
+      productNameParts,
       skuById,
       storeById,
     ],
@@ -999,10 +1013,10 @@ export function RunPage() {
         BottomNav) is the app frame, and per-page actions ("Undo
         start purchase", "Cancel run") now live in the gear ⚙️ on the
         right side of Telegram's chrome (registered via usePageMenu
-        below). What remains in-body is a one-line context strip
-        showing the current store and, when a run is active, a small
-        "#3 · purchasing" tag so the user sees both store-scope and
-        run state without losing 60+ px to a redundant header bar. */
+        below). What remains in-body is a one-line strip, while a run
+        is active, naming it ("#3 · purchasing"), so the user sees the
+        run state without losing 60+ px to a redundant header bar. (It
+        named the store too until M3.5; RUNWEB1-30.) */
     <div className="flex flex-col pb-24">
       {/* M3.5: store-switcher pill moved to SettingsSheet. Sticky strip
          now only renders when there's an active run to label.
@@ -1033,21 +1047,22 @@ export function RunPage() {
               user is looking when the setting matters, the suffix states
               the current unit rather than naming an operation, and the
               sticky bar gets its width back for the run identity. */}
-          {/* M3.41 (2026-05-21): "+ add item" — only shown during
-              purchasing AND when I hold the run claim (C.2 gate). The
-              domain layer enforces the same constraints; gating the UI
-              hides the affordance to avoid a confusing tap-then-fail.
-              The button opens AddItemSheet which collects SKU + qty +
-              price + store split + reason. */}
+          {/* M3.41 (2026-05-21): "+ add item" — only shown while the run
+              is being bought (the claim gate went with the claim UI,
+              UIUX-B1). The domain layer enforces the same constraints;
+              gating the UI hides the affordance to avoid a confusing
+              tap-then-fail. The button opens AddItemSheet which collects
+              SKU + qty + price + store split + reason. */}
+          {/* RUNWEB1-27: the kit's small button (was a hand-made pill). */}
           {editing ? (
-            <button
-              type="button"
+            <Button
+              size="sm"
+              className="shrink-0"
               onClick={() => setAddItemDraft(newAddItemDraft(activeRun.id))}
               title={i18n.t('run.action.addItem.title')}
-              className="hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
             >
               {i18n.t('run.action.addItem.button')}
-            </button>
+            </Button>
           ) : null}
           {/* 2026-07-30 (flow review): this line is the definite article
               for everything below it — every submission, item and price on
@@ -1092,12 +1107,16 @@ export function RunPage() {
                 <span className="font-semibold text-[var(--c-fg)]">
                   · {i18n.t('run.gauge.spent', { total: formatMoney(gauge.money.total) })}
                 </span>
-                <span className="text-[var(--c-fg-muted)]">
-                  {i18n.t('run.gauge.split', {
-                    cash: formatMoney(gauge.money.cash),
-                    transfer: formatMoney(gauge.money.transfer),
-                  })}
-                </span>
+                {/* UI-3 (RUNWEB1-27): all cash, the default, needs no
+                    "transfer 0"; the finish sheet splits only then too. */}
+                {gauge.money.transfer > 0 ? (
+                  <span className="text-[var(--c-fg-muted)]">
+                    {i18n.t('run.gauge.split', {
+                      cash: formatMoney(gauge.money.cash),
+                      transfer: formatMoney(gauge.money.transfer),
+                    })}
+                  </span>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -1238,7 +1257,8 @@ export function RunPage() {
           <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : runListState === 'loading' ? (
           // P-2 (2026-10-31): not "nothing to plan" while it loads.
-          <RunListSkeleton label={i18n.t('common.loading')} />
+          // UI-15 (RUNWEB1-27): the kit's spinner, as every other load.
+          <LoadingState />
         ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
@@ -1260,6 +1280,8 @@ export function RunPage() {
                     i18n={i18n}
                     runDate={runDateChoice ?? p.today ?? ''}
                     onRunDateChange={(d) => setRunDateChoice(d || null)}
+                    // The main button says "tick at least one order".
+                    noneSelectedHint={false}
                   />
                   {selectedPreview && selectedPreview.plannedItems.length > 0 ? (
                     <PreviewSummaryCard
@@ -1292,7 +1314,7 @@ export function RunPage() {
             sessions={runDetailQuery.data.sessions ?? []}
             storeById={storeById}
             i18n={i18n}
-            ejecting={ejectSession.isPending}
+            ejectingSessionId={ejectSession.isPending ? ejectSession.variables.sessionId : null}
             onEject={(sessionRow) => {
               const storeName =
                 storeById.get(sessionRow.storeId)?.name ?? i18n.t('common.unknownStore');
@@ -1362,6 +1384,8 @@ export function RunPage() {
             priceInThousands={priceInThousands}
             onTogglePriceUnit={togglePriceInThousands}
             savingSkuId={inlineSavingSkuId}
+            revealPending={revealPending}
+            canDispatch={canDispatch}
             onSavePurchaseInline={({
               skuId,
               actualQty,
@@ -1433,8 +1457,13 @@ export function RunPage() {
               // An unavailable item comes back as pending (with the whole
               // demand) through the existing restore flow.
               if (item.status === 'unavailable') {
-                const sku = skuById.get(item.skuId);
-                const skuName = sku ? productName(sku) : i18n.t('common.unknownProduct');
+                // NEW-03: the main name, as the row's own entry to this
+                // confirmation gives it (not "Main (Secondary)").
+                const skuName = rowName(
+                  productNameParts,
+                  skuById.get(item.skuId),
+                  i18n.t('common.unknownProduct'),
+                ).primary;
                 setConfirmAction({ kind: 'unmarkUnavailable', skuId: item.skuId, skuName });
                 return;
               }
@@ -1452,9 +1481,12 @@ export function RunPage() {
               setPurchaseDraft((d) => (d ? topUpDraft(d, topUp) : d));
             }}
             onTopUpDismiss={(item) =>
-              confirmThen(i18n.t('run.topUp.dismissConfirm', { qty: formatQty(item.topUpQty ?? '0') }), () =>
-                dismissTopUp.mutate({ runId: activeRun!.id, skuId: item.skuId }),
-              )
+              // RUNWEB1-29: the run's confirm sheet, as every other step.
+              setConfirmAction({
+                kind: 'dismissTopUp',
+                skuId: item.skuId,
+                qty: item.topUpQty ?? '0',
+              })
             }
             onEditPrice={(item) => {
               openPurchaseEdit(item);
@@ -1502,7 +1534,7 @@ export function RunPage() {
               setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
             }
             onMarkExtraStatus={(sessionId, extraIndex, status, expectedSeq) =>
-              markExtraStatus.mutate({ sessionId, extraIndex, status, expectedSeq })
+              markExtra(activeRun.id, { sessionId, extraIndex, status, expectedSeq })
             }
             onRecordExtraExpense={(storeId, extra) => {
               const expenseId = newClientId();
@@ -1703,6 +1735,8 @@ export function RunPage() {
             value={unavailableNote}
             onChange={(e) => setUnavailableNote(e.target.value)}
             placeholder={i18n.t('run.action.unavailableReasonPlaceholder')}
+            // RUNWEB1-28: a name that stays once something is typed.
+            aria-label={i18n.t('run.action.unavailableReasonPlaceholder')}
             autoFocus
           />
         </div>
@@ -1740,18 +1774,6 @@ export function RunPage() {
           - Pending store rows: tap → deliver-confirm sheet
           - Delivered store rows: tap → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
-    </div>
-  );
-}
-
-/** P-2: placeholder rows while run.list loads, shaped like the purchase list. */
-function RunListSkeleton({ label }: { label: string }) {
-  return (
-    <div role="status" aria-label={label} className="flex flex-col gap-2">
-      <Skeleton className="h-9 w-2/3 rounded-[var(--r-pill)]" />
-      {[0, 1, 2, 3].map((i) => (
-        <Skeleton key={i} className="h-14 rounded-[var(--r-card)]" />
-      ))}
     </div>
   );
 }

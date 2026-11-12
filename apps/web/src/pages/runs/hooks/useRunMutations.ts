@@ -13,8 +13,14 @@ import { haptic } from '../../../lib/telegram';
 import { useI18n } from '../../../hooks/useI18n';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { useQueueOnNetworkError, useStableIdempotencyKey } from '../../../hooks/useOfflineWrite';
+import { enqueueWrite } from '../../../lib/outbox/engine';
+import type { MutationInput } from '../../../lib/trpcPaths';
+import { RUN_PAGE } from '../../../config/timings';
 import type { AddItemCommand } from '../lib/addItem';
 import type { ConfirmCommand } from '../lib/confirmCopy';
+import { extraStatusOf, withExtraStatus, withRecordedPurchase } from '../lib/pendingOverlay';
+
+type MarkExtraInput = MutationInput<'order.markExtraStatus'>;
 
 /** What a write does to the page's own state. */
 export interface RunMutationEffects {
@@ -45,7 +51,7 @@ export function useRunMutations(on: RunMutationEffects) {
       setTimeout(() => {
         void utils.run.get.invalidate();
         if (includeList) void utils.run.list.invalidate();
-      }, 650);
+      }, RUN_PAGE.refetchDelayMs);
     },
     [utils],
   );
@@ -185,7 +191,22 @@ export function useRunMutations(on: RunMutationEffects) {
         idempotencyKey: ctx?.idempotencyKey,
         failedKey: 'run.toast.couldNotAddExpense',
         queuedKey: 'run.toast.purchaseSavedOffline',
-        onQueued: on.addItemSaved,
+        onQueued: () => {
+          on.addItemSaved();
+          // RUNWEB1-17 (2026-11-12): the item it was opened from is marked
+          // bought when the expense is sent; offline that mark was lost and
+          // starting delivery warned about an item already paid for.
+          const fromExtra = extraForExpense.current;
+          if (fromExtra && fromExtra.expenseId === vars.expenseId) {
+            extraForExpense.current = null;
+            void enqueueWrite('order.markExtraStatus', {
+              sessionId: fromExtra.sessionId,
+              extraIndex: fromExtra.idx,
+              status: 'bought',
+              expectedSeq: fromExtra.seq,
+            }).catch(() => undefined);
+          }
+        },
       }),
   });
   const removeExpense = trpc.run.removeExpense.useMutation({
@@ -214,6 +235,10 @@ export function useRunMutations(on: RunMutationEffects) {
   const purchaseItem = trpc.run.purchaseItem.useMutation({
     ...purchaseKey,
     onSuccess: (_data, vars) => {
+      // RUNWEB1-37: bought on its row now, not after the read below.
+      utils.run.get.setData({ runId: vars.runId }, (old) =>
+        old ? withRecordedPurchase(old, vars) : old,
+      );
       invalidateRunQuietly(true);
       on.purchaseSaved(vars);
       haptic('success');
@@ -403,12 +428,10 @@ export function useRunMutations(on: RunMutationEffects) {
   });
   // M3.37 (2026-05-19, Wave2 #5): purchaser cycles an extra row's
   // outcome (pending → bought → unavailable → pending). One mutation
-  // call per tap — the row is small, payload tiny, and the realtime
-  // run.changed pubsub feeds a coarse refetch so the new status lands
-  // before the next user input even on slow networks. No offline
-  // queue: an unmarked extra is functionally identical to "pending",
-  // so re-queueing on flaky reconnects would create more confusion
-  // than it would resolve.
+  // call per tap. No offline queue for a tap: an unmarked extra is
+  // functionally identical to "pending", so re-queueing on flaky
+  // reconnects would create more confusion than it would resolve (a
+  // priced extra's mark is queued with its expense, above).
   const markExtraStatus = trpc.order.markExtraStatus.useMutation({
     onSuccess: () => {
       invalidateRunQuietly();
@@ -421,6 +444,40 @@ export function useRunMutations(on: RunMutationEffects) {
       errToast('common.errors.actionFailed')(err);
     },
   });
+  /**
+   * Review RUNWEB1-17 (2026-11-12): a tap took a second or more to show on
+   * a weak line, and a second tap meanwhile worked out the same next status
+   * from the old one. The row now shows its new status at once, goes back
+   * if the mark fails, and the returned promise (settled, never rejected)
+   * lets it wait for the answer before taking another tap.
+   */
+  const markExtra = (runId: string, input: MarkExtraInput): Promise<void> => {
+    const paint = (status: MarkExtraInput['status']) =>
+      utils.run.get.setData({ runId }, (old) => {
+        if (!old) return old;
+        const next = withExtraStatus(
+          old.sessionExtrasByStore,
+          input.sessionId,
+          input.extraIndex,
+          status,
+        );
+        return next === old.sessionExtrasByStore ? old : { ...old, sessionExtrasByStore: next };
+      });
+    const was = extraStatusOf(
+      utils.run.get.getData({ runId })?.sessionExtrasByStore,
+      input.sessionId,
+      input.extraIndex,
+    );
+    // A read already on its way would draw the old status over this one.
+    void utils.run.get.cancel({ runId });
+    paint(input.status);
+    return markExtraStatus.mutateAsync(input).then(
+      () => undefined,
+      () => {
+        if (was) paint(was);
+      },
+    );
+  };
   // UIUX-B1 (2026-07-06): the C.2/M3.38 exclusive-claim subsystem
   // (claim/release mutations, auto-claim/auto-release effects, the
   // claimed-by-other banner) was deleted — collaborationEnabled has
@@ -471,6 +528,9 @@ export function useRunMutations(on: RunMutationEffects) {
       case 'removeExpense':
         removeExpense.mutate(c.input, after);
         break;
+      case 'dismissTopUp':
+        dismissTopUp.mutate(c.input, after);
+        break;
     }
   };
 
@@ -519,7 +579,7 @@ export function useRunMutations(on: RunMutationEffects) {
     cancelRun,
     finish,
     refinalize,
-    markExtraStatus,
+    markExtra,
     /** The other item an expense was opened from, marked bought once the expense saves. */
     extraForExpense,
     sendConfirm,

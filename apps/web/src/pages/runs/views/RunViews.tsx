@@ -13,14 +13,22 @@
  *
  * All props-driven; mutations stay in RunPage and arrive as callbacks.
  */
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   logPurchaseAbandon,
   logPurchaseEntry,
   logPurchaseUnavailable,
 } from '../lib/purchaseTelemetry';
 import type { ComponentProps, ReactNode } from 'react';
-import { Button, Card, Input, NameCell, SectionLabel, focusAfter } from '@compass/ui';
+import {
+  Button,
+  Card,
+  Input,
+  NameCell,
+  SectionLabel,
+  disabledClass,
+  focusAfter,
+} from '@compass/ui';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
@@ -42,22 +50,24 @@ import { proportionalSplitQty } from '../lib/splitQty';
 import { paidPerStore } from '../lib/purchaseOverrides';
 import { expenseLine, expensesTotal } from '../lib/expenseMoney';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
-import { otherStoreSkusOf, type ActiveRun } from '../types';
+import {
+  otherStoreSkusOf,
+  type ActiveRun,
+  type ExtraStatus,
+  type InlinePurchase,
+  type MarkExtraStatus,
+  type RunExtra,
+  type SkuLite,
+  type StoreLite,
+} from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { rowName } from '../../../lib/productName';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 import { isPositiveQty } from '@compass/contracts/limits';
 import type { PaymentMethod } from '@compass/contracts';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
+import { RUN_PAGE } from '../../../config/timings';
 
-/**
- * GroupCardHeader — the "group title + right-aligned count·qty meta"
- * strip at the top of every grouped run card. Was typed byte-identically
- * in PerStoreView + PerVendorView and divergently in PerCategoryView's
- * <summary> (py-2, count inlined after the name). One copy now; the
- * per-category view renders it inside its <summary> so the collapse
- * affordance is preserved while the chrome matches the other two views.
- */
 /**
  * RE-COPY-2 (2026-10-31): a price in thousands with the catalog's suffix
  * ("98千" / "98 тыс." / "98 ming"), not a Latin K in every language.
@@ -66,28 +76,56 @@ function thousands(i18n: ReturnType<typeof useI18n>, v: string | number | null |
   return formatMoneyThousands(v, i18n.t('common.priceThousands', { n: '{n}' }));
 }
 
-function GroupCardHeader({ title, meta }: { title: ReactNode; meta: ReactNode }) {
+/** A transfer's tint: its chip and its payment toggle (one copy, RUNWEB1-27). */
+const TRANSFER_TINT =
+  'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]';
+
+/**
+ * GroupCardHeader — the "group title + right-aligned count meta" strip at
+ * the top of every grouped run card. Was typed byte-identically in
+ * PerStoreView + PerVendorView and divergently in PerCategoryView. One
+ * copy now; the per-category view draws it inside its collapse button,
+ * as spans (`inButton`), so the chrome matches the other two views.
+ */
+function GroupCardHeader({
+  title,
+  meta,
+  inButton = false,
+}: {
+  title: ReactNode;
+  meta: ReactNode;
+  inButton?: boolean;
+}) {
+  const Box = inButton ? 'span' : 'div';
   return (
-    <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-old-label text-[var(--c-fg-muted)]">
+    <Box className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-old-label text-[var(--c-fg-muted)]">
       <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">{title}</span>
       <span className="tabular-nums">{meta}</span>
-    </div>
+    </Box>
   );
 }
 
+/**
+ * Per-store view (2026-05-05): what each store of a multi-store run asked
+ * for, read-only — "Store A wants 2kg apples, Store B 3kg" before walking
+ * the market. Buying happens in the item list. Each card: the store, its
+ * item count, then one row per item with that store's quantity and a
+ * mark for bought / not available. (Its description used to sit, orphaned,
+ * in RunPanels; review RUNWEB1-30.)
+ */
 export function PerStoreView({
   run,
   storeById,
   skuById,
   productName,
   skusByStore,
+  itemBySku,
 }: {
   run: ActiveRun;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  /** The run's items by product, indexed once by the panel (RUNWEB1-20). */
+  itemBySku: ReadonlyMap<string, ActiveRun['items'][number]>;
+  storeById: Map<string, StoreLite>;
+  skuById: Map<string, SkuLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   skusByStore: Map<string, Array<{ skuId: string; qty: string }>>;
 }) {
@@ -99,13 +137,6 @@ export function PerStoreView({
   // M3.34 and falls back to the raw string for exotic free-text units.
   const unitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
-  // Indexed once. Every row was doing run.items.find(...), which on an
-  // 87-item run is ~7,600 comparisons per render, repeated whenever the
-  // 6-second poll hands back a new array.
-  const itemBySku = useMemo(
-    () => new Map(run.items.map((it) => [it.skuId, it])),
-    [run.items],
-  );
   const orderedStores = useMemo(() => {
     const ids = [...skusByStore.keys()];
     ids.sort((a, b) => {
@@ -121,16 +152,14 @@ export function PerStoreView({
       {orderedStores.map((storeId) => {
         const store = storeById.get(storeId);
         const rows = skusByStore.get(storeId) ?? [];
-        const totalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
         const storeNote = run.sessionNotesByStore?.[storeId]?.trim();
         return (
           <Card key={storeId}>
             <GroupCardHeader
               title={store?.name ?? i18n.t('common.unknownStore')}
-              meta={i18n.t('run.label.skuCountAndQty', {
-                n: rows.length,
-                qty: formatQty(String(totalQty)),
-              })}
+              // RUNWEB1-29: the count only; kg, pieces and bunches added
+              // up to a number that meant nothing.
+              meta={i18n.t('run.label.itemsCount', { n: rows.length })}
             />
             {/* M3.31 (2026-05-18, A.1): "其他物品" surfaces here in three
                 forms — M3.16-C structured extras (one row per item) +
@@ -220,6 +249,16 @@ export function PerStoreView({
                       <span aria-hidden className={`shrink-0 text-old-body ${tone}`}>
                         {mark}
                       </span>
+                      {/* RUNWEB1-28: the mark's meaning for screen readers. */}
+                      <span className="sr-only">
+                        {i18n.t(
+                          status === 'purchased'
+                            ? 'run.extras.status.bought'
+                            : status === 'unavailable'
+                              ? 'run.extras.status.unavailable'
+                              : 'run.extras.status.pending',
+                        )}
+                      </span>
                       <NameCell className="flex-1" {...name} primaryClassName="font-normal" />
                       <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                         {formatQty(r.qty)} {unitLabel(r.sku?.unit, r.qty)}
@@ -236,7 +275,7 @@ export function PerStoreView({
 }
 
 /**
- * Per-vendor read-only view for an ACTIVE run (M3.27, 2026-05-18).
+ * Per-vendor view for an ACTIVE run (M3.27, 2026-05-18).
  *
  * Mirrors `PerStoreView`'s look-and-feel but groups by the preferred
  * supplier resolved server-side (`run.supplierBySku`). SKUs with no
@@ -245,12 +284,14 @@ export function PerStoreView({
  * view uses, so the purchaser can see at a glance which stalls still
  * have outstanding work.
  *
- * Read-only: actual purchase recording happens in the aggregate view.
- * Switching to per-vendor at the bazaar is for "what do I still need
- * from stall X" planning, not for editing.
+ * Its rows are the item list's purchase rows, so an item can be bought
+ * from here too; the view answers "what do I still need from stall X".
+ * (Review RUNWEB1-30: this said read-only, which it no longer is.)
  */
 export function PerVendorView({
   run,
+  itemBySku,
+  isMultiStoreRun,
   skuById,
   storeById,
   productName,
@@ -270,11 +311,16 @@ export function PerVendorView({
   paymentBusySkuId,
 }: {
   run: ActiveRun;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  /** The run's items by product, indexed once by the panel (RUNWEB1-20). */
+  itemBySku: ReadonlyMap<string, ActiveRun['items'][number]>;
+  /**
+   * M3.52: the run spans two stores or more, so EVERY row shows its
+   * per-store chips (a single-store-demand row in a multi-store run had
+   * no store label and looked ambiguous).
+   */
+  isMultiStoreRun: boolean;
+  skuById: Map<string, SkuLite>;
+  storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   savingSkuId: string | null;
@@ -288,65 +334,21 @@ export function PerVendorView({
   priceInThousands: boolean;
   onTogglePriceUnit: () => void;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
-  onSavePurchaseInline: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    /**
-     * Where the purchase actually happened. Only the by-stall view can
-     * know this (the purchaser is working one stall at a time), so the
-     * other views omit it and the handler falls back to null rather
-     * than guessing from the SKU's preferred supplier.
-     */
-    supplierId?: string | null;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  onSavePurchaseInline: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
   onUnmark?: (skuId: string, skuName: string) => void;
   /** M3.37 (Wave2 #5): tap-to-cycle extras status. */
-  onMarkExtraStatus: (
-    sessionId: string,
-    extraIndex: number,
-    status: 'pending' | 'bought' | 'unavailable',
-    /** APR-18: the session's lastSeq the row was read at. */
-    expectedSeq?: number,
-  ) => void;
-  onRecordExtraExpense: (
-    storeId: string,
-    extra: {
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    },
-  ) => void;
+  onMarkExtraStatus: MarkExtraStatus;
+  onRecordExtraExpense: (storeId: string, extra: RunExtra) => void;
   onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
-  // Indexed once each — every row did run.items.find(...) plus
-  // run.splits.filter(...) (now rowSplitsOf), which on an 87-item run with
-  // ~260 splits is roughly 30,000 comparisons per render, recomputed
-  // whenever the 6-second poll returns fresh array identities.
-  const itemBySku = useMemo(
-    () => new Map(run.items.map((it) => [it.skuId, it])),
-    [run.items],
-  );
   // One save per stall for as long as onSavePurchaseInline stays the same:
   // a closure per row drew every memo()'d row again (review RUNWEB1-07).
   const saveAt = useMemo(() => {
@@ -360,20 +362,6 @@ export function PerVendorView({
       return save;
     };
   }, [onSavePurchaseInline]);
-  // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
-  // whether to render per-store chips on EVERY row of the run (true
-  // when the run spans ≥2 stores) — without this single-store-demand
-  // rows in a multi-store run had no store label and looked ambiguous.
-  // Falls back to splits for legacy runs missing perStoreDemand.
-  const isMultiStoreRun = useMemo(() => {
-    const ids = new Set<string>();
-    for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
-    if (ids.size === 0) {
-      for (const sp of run.splits) ids.add(sp.storeId);
-    }
-    return ids.size > 1;
-  }, [run.perStoreDemand, run.splits]);
-
   // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
   const buckets = useMemo(() => {
     type Bucket = {
@@ -408,15 +396,11 @@ export function PerVendorView({
   return (
     <div className="flex flex-col gap-2">
       {buckets.map((b) => {
-        const totalQty = b.items.reduce((s, r) => s + Number(r.plannedQty || 0), 0);
         return (
           <Card key={b.supplierId ?? '__unassigned__'}>
             <GroupCardHeader
               title={b.supplierName}
-              meta={i18n.t('run.label.skuCountAndQty', {
-                n: b.items.length,
-                qty: formatQty(String(totalQty)),
-              })}
+              meta={i18n.t('run.label.itemsCount', { n: b.items.length })}
             />
             <ul className="flex flex-col" role="list">
               {b.items
@@ -565,48 +549,32 @@ export function RunExtrasCard({
    *  an extra records an expense for its store, so it is offered only for
    *  those stores; the others say who does it. */
   purchaseScopeStoreIds?: string[] | null;
-  sessionExtrasByStore?: Record<
-    string,
-    Array<{
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    }>
-  >;
+  sessionExtrasByStore?: Record<string, RunExtra[]>;
   sessionNotesByStore?: Record<string, string>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   /** M3.37 (Wave2 #5): when true, tap a row to cycle pending → bought
    *  → unavailable → pending. Only true during run.status='purchasing'. */
   editable?: boolean;
-  onMarkExtraStatus?: (
-    sessionId: string,
-    extraIndex: number,
-    status: 'pending' | 'bought' | 'unavailable',
-    /** APR-18: the session's lastSeq the row was read at. */
-    expectedSeq?: number,
-  ) => void;
-  onRecordExtraExpense?: (
-    storeId: string,
-    extra: {
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: 'pending' | 'bought' | 'unavailable';
-      sessionId?: string;
-      idx?: number;
-      sessionSeq?: number;
-    },
-  ) => void;
+  onMarkExtraStatus?: MarkExtraStatus;
+  onRecordExtraExpense?: (storeId: string, extra: RunExtra) => void;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
+  // RUNWEB1-17: rows whose mark is on its way; each takes no tap until
+  // the server has answered (its new status already shows).
+  const [marking, setMarking] = useState<ReadonlySet<string>>(() => new Set());
+  const mark = (e: RunExtra, sessionId: string, idx: number, next: ExtraStatus) => {
+    const key = `${sessionId}:${idx}`;
+    setMarking((cur) => new Set(cur).add(key));
+    void onMarkExtraStatus?.(sessionId, idx, next, e.sessionSeq).then(() =>
+      setMarking((cur) => {
+        const out = new Set(cur);
+        out.delete(key);
+        return out;
+      }),
+    );
+  };
   const resolveStoreName = (id: string) => storeById.get(id)?.name ?? i18n.t('common.unknownStore');
   const storeIds = [
     ...new Set([
@@ -620,9 +588,7 @@ export function RunExtrasCard({
   });
   if (storeIds.length === 0) return null;
   // M3.37: small lookup for the visual + accessible label per status.
-  const statusVisual = (
-    status: 'pending' | 'bought' | 'unavailable',
-  ): { mark: string; tone: string; label: string } => {
+  const statusVisual = (status: ExtraStatus): { mark: string; tone: string; label: string } => {
     switch (status) {
       case 'bought':
         return {
@@ -644,9 +610,7 @@ export function RunExtrasCard({
         };
     }
   };
-  const cycle = (
-    s: 'pending' | 'bought' | 'unavailable',
-  ): 'pending' | 'bought' | 'unavailable' =>
+  const cycle = (s: ExtraStatus): ExtraStatus =>
     s === 'pending' ? 'bought' : s === 'bought' ? 'unavailable' : 'pending';
   const anyTappable =
     editable &&
@@ -724,10 +688,9 @@ export function RunExtrasCard({
                             <button
                               type="button"
                               title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
-                              onClick={() =>
-                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status), e.sessionSeq)
-                              }
-                              className="flex min-h-11 min-w-0 flex-1 items-center gap-2 self-stretch rounded-[var(--r-utility)] text-left active:bg-[var(--c-surface-2)]"
+                              disabled={marking.has(`${e.sessionId}:${e.idx}`)}
+                              onClick={() => mark(e, e.sessionId!, e.idx!, cycle(status))}
+                              className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 self-stretch rounded-[var(--r-utility)] text-left active:bg-[var(--c-surface-2)] ${disabledClass}`}
                             >
                               {inner}
                             </button>
@@ -779,7 +742,8 @@ export function RunExtrasCard({
  * (admin reports can still see the add → remove timeline).
  *
  * Display per row:
- *   {label} · {qty} {unitHint} × {unitPrice} = {total} · 💵/🏦 · [✗ del?]
+ *   {label} · [transfer] · {stores} · [✗ del?]
+ *   {qty} {unit} × {unitPrice} = {total} · {reason}
  *
  * The card's section header summarizes total expense count + sum so
  * the manager glancing at the run page has the off-plan number front
@@ -798,16 +762,18 @@ export function ExpensesCard({
   /** D9: expenses also split to stores this purchaser does not buy for. */
   otherStoreExpenseIds?: string[];
   expenses: ActiveRun['expenses'];
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
-  /** When true (status='purchasing' + claim is mine), show the ✗ delete
-   *  button on each row. Read-only otherwise. */
+  /** While the run is being bought: "+ Expense", and the ✗ delete on
+   *  each row this purchaser may remove. Read-only otherwise. */
   editable: boolean;
   onRemove: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
 }) {
   const currency = useCurrency();
+  // RUNWEB1-24: an item's unit was shown as its code ("bunch").
+  const unitLabel = useUnitLabel();
   const list = expenses ?? [];
   // DX-HIS-2: no amount when a price is hidden (not "0"); D1 cents.
   const grandTotal = expensesTotal(list);
@@ -827,11 +793,8 @@ export function ExpensesCard({
         // below it and the first expense's ✗ reaches 12px above its row,
         // so 8px of gap let a tap below "+ Expense" land on ✗.
         <div className="flex justify-end px-4 pb-4">
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={onOpenExpense}
-          >
+          {/* UI-5 (RUNWEB1-27): quiet, one accent per screen. */}
+          <Button size="sm" variant="secondary" onClick={onOpenExpense}>
             {i18n.t('run.action.addExpense.button')}
           </Button>
         </div>
@@ -851,7 +814,7 @@ export function ExpensesCard({
           // was archived after the expense landed.
           const storeNames = e.storeSplits
             .map((sp) => storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore'))
-            .join(' · ');
+            .join(i18n.t('common.listSeparator'));
           const unitPriceDisplay =
             total === null
               ? null
@@ -878,9 +841,7 @@ export function ExpensesCard({
                 </span>
                 {isTransfer ? (
                   <span
-                    aria-label={i18n.t('run.label.paymentTransfer')}
-                    title={i18n.t('run.label.paymentTransfer')}
-                    className="shrink-0 rounded-[var(--r-pill)] bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] px-1.5 py-0.5 text-old-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+                    className={`shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label ${TRANSFER_TINT}`}
                   >
                     {i18n.t('run.label.paymentTransfer')}
                   </span>
@@ -902,7 +863,7 @@ export function ExpensesCard({
               </div>
               <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                 <span className="tabular-nums">
-                  {formatQty(e.qty)} {e.unitHint ?? ''}
+                  {formatQty(e.qty)} {unitLabel(e.unitHint, e.qty)}
                   {unitPriceDisplay === null ? null : <> × {unitPriceDisplay}</>}
                 </span>
                 {total === null ? null : (
@@ -940,10 +901,10 @@ export function ExpensesCard({
 
 export function PerCategoryView({
   run,
+  isMultiStoreRun,
   skuById,
   categoryById,
   storeById,
-  productName,
   i18n,
   priceInThousands,
   onTogglePriceUnit,
@@ -958,37 +919,17 @@ export function PerCategoryView({
   paymentBusySkuId,
 }: {
   run: ActiveRun;
-  skuById: Map<
-    string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
-  >;
+  /** See PerVendorView. */
+  isMultiStoreRun: boolean;
+  skuById: Map<string, SkuLite>;
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
-  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  storeById: Map<string, StoreLite>;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
   onTogglePriceUnit: () => void;
   savingSkuId: string | null;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
-  onSavePurchaseInline: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    /**
-     * Where the purchase actually happened. Only the by-stall view can
-     * know this (the purchaser is working one stall at a time), so the
-     * other views omit it and the handler falls back to null rather
-     * than guessing from the SKU's preferred supplier.
-     */
-    supplierId?: string | null;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  onSavePurchaseInline: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
@@ -998,12 +939,6 @@ export function PerCategoryView({
   paymentBusySkuId: string | null;
 }) {
   const productNameParts = useProductNameParts();
-  const demandStoreIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
-    if (ids.size === 0) for (const sp of run.splits) ids.add(sp.storeId);
-    return [...ids];
-  }, [run.perStoreDemand, run.splits]);
   const groups = useMemo(() => {
     const byCategory = new Map<string, ActiveRun['items']>();
     for (const item of run.items) {
@@ -1021,72 +956,98 @@ export function PerCategoryView({
             ? // 2026-07-26: was a hard-coded Chinese literal.
               i18n.t('run.view.uncategorized')
             : categoryById.has(categoryId)
-              ? productName(categoryById.get(categoryId)!)
+              ? // NEW-03: the name in the screen's language, not "Fruit
+                // (Фрукты)" cut short on one line; the stall language is
+                // for what is sent to stalls.
+                productNameParts(categoryById.get(categoryId)!).primary
               : i18n.t('common.unknownCategory'),
         items,
       }))
       .sort((a, b) => a.name.localeCompare(b.name, i18n.locale));
-  }, [categoryById, i18n, productName, run.items, skuById]);
+  }, [categoryById, i18n, productNameParts, run.items, skuById]);
+
+  // RUNWEB1-27 / RUNWEB1-28: a Card whose header is a button that says
+  // whether the group is open (it was a <details> whose <summary> held a
+  // div and hid its marker); a shut group draws no rows.
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (categoryId: string) =>
+    setShut((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(categoryId)) next.add(categoryId);
+      return next;
+    });
+  const panelIdBase = useId();
 
   return (
     <div className="flex flex-col gap-2">
       {groups.map((group) => {
-        const totalQty = group.items.reduce((s, it) => s + Number(it.plannedQty || 0), 0);
+        const open = !shut.has(group.categoryId);
+        const panelId = `${panelIdBase}-${group.categoryId}`;
         return (
-        <details
-          key={group.categoryId}
-          open
-          className="overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline"
-        >
-          {/* Unified (2026-07-05): the category header now renders the
-              same GroupCardHeader as the per-store / per-vendor views
-              (was px-4 py-2 with the count inlined after the name — a
-              third chrome for the same semantic element). The <summary>
-              wrapper keeps the native collapse affordance. */}
-          <summary className="cursor-pointer list-none">
-            <GroupCardHeader
-              title={group.name}
-              meta={i18n.t('run.label.skuCountAndQty', {
-                n: group.items.length,
-                qty: formatQty(String(totalQty)),
-              })}
-            />
-          </summary>
-          <ul className="flex flex-col" role="list">
-            {group.items.map((item) => {
-              const sku = skuById.get(item.skuId);
-              const name = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
-              const actualSplits = rowSplitsOf(run.splits, item.skuId);
-              return (
-                <PurchaseRow
-                  key={item.skuId}
-                  item={item}
-                  servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
-                  name={name}
-                  unitCode={sku?.unit}
-                  step={sku?.step ?? '0.1'}
-                  demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
-                  storeById={storeById}
-                  actualSplits={actualSplits}
-                  isMultiStoreRun={demandStoreIds.length > 1}
-                  lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
-                  lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
-                  i18n={i18n}
-                  priceInThousands={priceInThousands}
-                  onTogglePriceUnit={onTogglePriceUnit}
-                  saving={savingSkuId === item.skuId}
-                  onSave={onSavePurchaseInline}
-                  onMarkNa={onMarkNa}
-                  onEdit={onEditPurchased}
-                  onUnmark={onUnmark}
-                  onOpenAdvanced={onOpenAdvancedPurchase}
-                  onSetPaymentMethod={onSetPaymentMethod}
-                  paymentBusy={paymentBusySkuId === item.skuId}
-                />
-              );
-            })}
-          </ul>
-        </details>
+          <Card key={group.categoryId} className="overflow-hidden">
+            {/* Unified (2026-07-05): the category header renders the same
+                GroupCardHeader as the per-store / per-vendor views. */}
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={open ? panelId : undefined}
+              onClick={() => toggle(group.categoryId)}
+              className="block w-full text-left"
+            >
+              <GroupCardHeader
+                inButton
+                title={
+                  <>
+                    <span
+                      aria-hidden
+                      className="mr-1 font-mono text-old-label text-[var(--c-fg-muted)]"
+                    >
+                      {open ? '▾' : '▸'}
+                    </span>
+                    {group.name}
+                  </>
+                }
+                // RUNWEB1-29: the count only (units were added up).
+                meta={i18n.t('run.label.itemsCount', { n: group.items.length })}
+              />
+            </button>
+            {open ? (
+              <ul id={panelId} className="flex flex-col" role="list">
+                {group.items.map((item) => {
+                  const sku = skuById.get(item.skuId);
+                  const name = rowName(productNameParts, sku, i18n.t('common.unknownProduct'));
+                  const actualSplits = rowSplitsOf(run.splits, item.skuId);
+                  return (
+                    <PurchaseRow
+                      key={item.skuId}
+                      item={item}
+                      servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
+                      name={name}
+                      unitCode={sku?.unit}
+                      step={sku?.step ?? '0.1'}
+                      demand={demandBySku.get(item.skuId) ?? NO_DEMAND}
+                      storeById={storeById}
+                      actualSplits={actualSplits}
+                      isMultiStoreRun={isMultiStoreRun}
+                      lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
+                      lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
+                      i18n={i18n}
+                      priceInThousands={priceInThousands}
+                      onTogglePriceUnit={onTogglePriceUnit}
+                      saving={savingSkuId === item.skuId}
+                      onSave={onSavePurchaseInline}
+                      onMarkNa={onMarkNa}
+                      onEdit={onEditPurchased}
+                      onUnmark={onUnmark}
+                      onOpenAdvanced={onOpenAdvancedPurchase}
+                      onSetPaymentMethod={onSetPaymentMethod}
+                      paymentBusy={paymentBusySkuId === item.skuId}
+                    />
+                  );
+                })}
+              </ul>
+            ) : null}
+          </Card>
         );
       })}
     </div>
@@ -1134,9 +1095,11 @@ export function PerCategoryView({
  * qty AND price as the only compressible thing on the row. A long name
  * deleted both numbers and then overflowed the button.
  *
- * Money floor is honest about the worst case: '1,250,000' is 10 glyphs,
- * ui-monospace advances 0.6em, so at text-old-label (11px) that is 66px and
- * fits in 68. No money string is ever clipped.
+ * Money floor is honest about the worst case: '1,250,000' is 10 glyphs;
+ * at 0.6em a glyph (ui-monospace, which amounts used when this was sized;
+ * the body font's tabular figures are no wider) that is 66px at
+ * text-old-label (11px), and it fits in 68. No money string is ever
+ * clipped.
  *
  * Classes, not an inline style, so the narrow layout can replace them.
  * Its two lines are packed together in the middle of the row.
@@ -1203,8 +1166,7 @@ const CTRL_COMMIT =
   'bg-[var(--c-action)] font-semibold text-[var(--c-action-fg)] active:opacity-80';
 const CTRL_OFF = 'bg-[var(--c-surface-2)] font-semibold text-[var(--c-fg-muted)]';
 const CTRL_QUIET = 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] active:opacity-70';
-const CTRL_TRANSFER =
-  'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)] active:opacity-70';
+const CTRL_TRANSFER = `${TRANSFER_TINT} active:opacity-70`;
 
 /* px-4 (16) + state cell (20) + gap (6) — lines a second line up with
  * the name's left edge. */
@@ -1311,7 +1273,7 @@ export const PurchaseRow = memo(function PurchaseRow({
    * across multiple stores ("店A 2kg · 店B 3kg") — they only saw
    * the aggregate qty.
    */
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  storeById: Map<string, StoreLite>;
   /**
    * M3.52: post-purchase per-store actual allocation (from
    * run.splits filtered to this skuId). For pending rows it's empty
@@ -1357,18 +1319,7 @@ export const PurchaseRow = memo(function PurchaseRow({
    */
   onTogglePriceUnit: () => void;
   saving: boolean;
-  onSave: (payload: {
-    skuId: string;
-    actualQty: string;
-    unitPrice: string;
-    storeSplits: Array<{
-      storeId: string;
-      qty: string;
-      unitPrice?: string;
-      paymentMethod?: PaymentMethod;
-    }>;
-    paymentMethod: PaymentMethod;
-  }) => void;
+  onSave: (payload: InlinePurchase) => void;
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
   /** Absent while the goods are going out (review RUNAPI-02). */
@@ -1511,9 +1462,6 @@ export const PurchaseRow = memo(function PurchaseRow({
    * conditions. Now it only fires when the explicit ✓ Save button
    * is tapped. After save, the row flips to read-only "purchased"
    * state — no more accidental edits.
-   *
-   * Returns true on success so the caller can update local "saved"
-   * state before the server roundtrip lands.
    */
   /**
    * Inline save with proportional auto-split.
@@ -1615,7 +1563,10 @@ export const PurchaseRow = memo(function PurchaseRow({
     // DX-IX-4 (2026-11-01): the editor closes once the line is bought;
     // keyboard focus moves on to the next line still to buy (or the page)
     // instead of dropping to <body>.
-    focusAfter(() => document.querySelector<HTMLElement>('[data-run-item-pending] button'), 3000);
+    focusAfter(
+      () => document.querySelector<HTMLElement>('[data-run-item-pending] button'),
+      RUN_PAGE.nextRowFocusWaitMs,
+    );
   };
 
   // Live "total = qty × price" hint shown below the inputs. Helps the
@@ -2142,7 +2093,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                 // moves to the next line instead.
                 'flex h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] px-2 text-old-label font-medium active:opacity-70 ' +
                 (paymentMethod === 'transfer'
-                  ? 'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
+                  ? TRANSFER_TINT
                   : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
               }
             >
@@ -2225,7 +2176,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                   (sp) =>
                     `${storeById.get(sp.storeId)?.name ?? i18n.t('common.unknownStore')} ${formatQty(sp.qty)} ${unitFor(sp.qty)}`,
                 )
-                .join(' · '),
+                .join(i18n.t('common.listSeparator')),
             })}
           </p>
         ) : null}
@@ -2347,10 +2298,8 @@ export const PurchaseRow = memo(function PurchaseRow({
             <button
               type="button"
               // aria-pressed so the control announces that it IS a
-              // toggle and which way it currently sits. The CONTAINER
-              // carries the visual state, not the emoji: colour emoji
-              // ignore the ink token, so 💵 vs 🏦 alone is a weak signal
-              // at arm's length in sunlight.
+              // toggle and which way it currently sits. The word says
+              // which method; the container's tint backs it up.
               aria-pressed={isTransfer}
               aria-label={paymentAria}
               title={paymentLabel}

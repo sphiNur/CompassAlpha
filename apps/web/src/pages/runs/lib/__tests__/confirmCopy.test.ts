@@ -120,6 +120,12 @@ describe('confirmCommandFor', () => {
       confirmCommandFor({ kind: 'deliverStore', storeId: 's', storeName: 'S' }, 'r1', ''),
     ).toEqual({ procedure: 'deliverToStore', input: { runId: 'r1', storeId: 's' } });
   });
+
+  test('not buying a top-up names the item (RUNWEB1-29)', () => {
+    expect(
+      confirmCommandFor({ kind: 'dismissTopUp', skuId: 'k', qty: '2' }, 'r1', 'typed'),
+    ).toEqual({ procedure: 'dismissTopUp', input: { runId: 'r1', skuId: 'k' } });
+  });
 });
 
 describe('confirmCopyFor', () => {
@@ -150,6 +156,16 @@ describe('confirmCopyFor', () => {
     ).toEqual([false, true, true, false]);
   });
 
+  test('not buying a top-up asks, with the quantity, in the run sheet (RUNWEB1-29)', () => {
+    expect(copy({ kind: 'dismissTopUp', skuId: 'k', qty: '2.5' })).toEqual({
+      title: 'run.topUp.dismiss',
+      body: 'run.topUp.dismissConfirm {"qty":"2.5"}',
+      confirmLabel: 'run.topUp.dismiss',
+      danger: false,
+      requireReason: false,
+    });
+  });
+
   test('undoing an added row says it is removed', () => {
     expect(copy({ kind: 'undoPurchase', skuId: 'k', skuName: 'K', added: true }).body).toBe(
       'run.confirm.undoPurchase.bodyAdded',
@@ -167,12 +183,16 @@ describe('confirmCopyFor', () => {
           A: [
             { name: 'Napkins', qty: '1', unit: 'pack' },
             { name: 'Ice', qty: '2', unit: 'kg', status: 'bought' },
+            { name: 'Soap', qty: '1', unit: 'pcs' },
           ],
         },
       }),
     ).body;
     expect(body).toContain('run.confirm.startDelivery.body');
-    expect(body).toContain('run.confirm.startDelivery.pendingExtras {"n":1,"names":"Napkins"}');
+    // The names are a list in the screen's language (RUNWEB1-22).
+    expect(body).toContain(
+      'run.confirm.startDelivery.pendingExtras {"n":2,"names":"Napkinscommon.listSeparatorSoap"}',
+    );
     expect(copy('startDelivery').body).toBe('run.confirm.startDelivery.body');
   });
 
@@ -186,7 +206,9 @@ describe('confirmCopyFor', () => {
       }),
     ).body;
     expect(body).toBe(
-      'run.label.itemsCount {"n":1} · run.label.itemsTotal 200 UZS\nrun.confirm.deliver.body',
+      'run.label.itemsCount {"n":1} · ' +
+        'common.labelValue {"label":"run.label.itemsTotal","value":"200 UZS"}\n' +
+        'run.confirm.deliver.body',
     );
   });
 
@@ -224,7 +246,7 @@ describe('confirmCopyFor', () => {
     );
     expect(body).toContain(
       '\n\nrun.confirm.finish.perStoreHeading\n' +
-        'common.labelValue {"label":"store:B","value":"130 · run.label.paymentCash 100 · run.label.paymentTransfer 30"}\n' +
+        'common.labelValue {"label":"store:B","value":"130 · run.money.cashTransfer {\\"cash\\":\\"100\\",\\"transfer\\":\\"30\\"}"}\n' +
         'common.labelValue {"label":"store:A","value":"100"}',
     );
     expect(body).toContain(

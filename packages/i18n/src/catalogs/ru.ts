@@ -1318,8 +1318,6 @@ export const ru = {
   'run.label.confirmedFraction': 'подтверждено {done}/{total}',
   'run.label.itemsCount':
     '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
-  'run.label.skuCountAndQty':
-    '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty}',
   'run.label.splitsMismatch': 'Распределение: {sum} / {target}',
   // Этапы доставки (M1.9 fix)
   'run.deliveryStage.pending': 'Не доставлено',
@@ -1564,6 +1562,7 @@ export const ru = {
   'run.price.check.confirm': 'Да, сохранить',
   'run.price.check.fix': 'Изменить цену',
   'run.action.supplier': 'Поставщик',
+  'run.action.supplierNone': 'Не указан',
   'run.action.receiptPhoto': 'Фото чека (необязательно)',
   'run.action.allocateAcrossStores': 'Распределить по магазинам',
   'run.action.actualQtyAriaLabel': 'фактическое количество',
@@ -1642,7 +1641,7 @@ export const ru = {
   'run.toast.startDeliveryUndone': 'Назад к закупке',
   'run.toast.runFinished': 'Закупка завершена',
   'run.history.title': 'История',
-  'run.history.matchedRunsTotal': '(по найденным)',
+  'run.history.matchedRunsTotal': '{total} (по найденным)',
   'run.history.allStores': 'Все магазины',
   // M3.9: отменённые run больше не показываются в истории — 4 ключа удалены.
   'run.cancel.reasonPlaceholder': 'Почему отменяете? (необязательно — поможет команде разобраться)',
@@ -2004,7 +2003,7 @@ export const ru = {
   'sales.errors.storeNotFound':
     'Магазин не найден — возможно, его только что архивировали. Обновите страницу.',
   'sales.errors.dishHasNoRecipe': 'Сначала задайте рецепт для этого блюда.',
-  'run.action.addItem.storeAlreadyHasSkuShort': 'уже есть',
+  'run.action.addItem.storeAlreadyHasSkuShort': '{store} (уже есть)',
   'run.action.addItem.costModeTitle': 'Цена того же товара',
   'run.action.addItem.costModeMerge': 'Объединить',
   'run.action.addItem.costModeSeparate': 'Отдельная цена',
@@ -2036,6 +2035,7 @@ export const ru = {
   'run.history.filters': 'Фильтры ({n})',
   'run.history.activeFilters': 'Активные фильтры: {n}',
   'run.history.clearAll': 'Очистить всё',
+  'run.history.removeFilter': 'Убрать фильтр: {label}',
   'run.history.filterTitle': 'Фильтры истории',
   'run.history.filterDescription': 'Отберите результаты по магазину, дате и способу оплаты.',
   'run.history.resetFilters': 'Сбросить фильтры',
@@ -2466,7 +2466,6 @@ export const ru = {
   'run.gauge.notFound': 'не найдено {n}',
   'run.sessions.collapsed':
     '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
-  'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras':
     'Не отмечено — прочие товары от магазинов ({n}): {names}. После начала доставки они пропадут со страницы закупки.',
   'approval.changed.title': 'Заказ изменился после того, как вы его открыли',

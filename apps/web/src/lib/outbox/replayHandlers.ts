@@ -19,6 +19,8 @@ import type { ReplayFn } from './engine';
 export const REPLAYED_PROCEDURES = [
   'order.adjustItem',
   'order.setSessionExtras',
+  // RUNWEB1-17: an "other item" priced offline, marked bought with its expense.
+  'order.markExtraStatus',
   'run.purchaseItem',
   'run.markUnavailable',
   'run.deliverToStore',
@@ -76,6 +78,7 @@ export function replayHandlers(utils: Utils): Record<ReplayedProcedure, ReplayFn
       void utils.order.todaySession.invalidate();
       void utils.order.todayBatches.invalidate();
     }),
+    'order.markExtraStatus': replay(utils.client.order.markExtraStatus.mutate, run),
     'run.purchaseItem': replay(utils.client.run.purchaseItem.mutate, runAndList),
     'run.markUnavailable': replay(utils.client.run.markUnavailable.mutate, run),
     'run.deliverToStore': replay(utils.client.run.deliverToStore.mutate, runAndList),

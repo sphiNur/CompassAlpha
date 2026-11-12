@@ -1,4 +1,4 @@
-import { Segmented } from '@compass/ui';
+import { Segmented, type SegmentedProps } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { useI18n } from '../hooks/useI18n';
 
@@ -23,9 +23,18 @@ export interface PaymentMethodChipsProps {
   value: PaymentMethod;
   onChange: (method: PaymentMethod) => void;
   className?: string;
+  /** Review RUNWEB2-23: a store's own method, in its row, is the small one. */
+  size?: SegmentedProps<PaymentMethod>['size'];
+  equalWidth?: boolean;
 }
 
-export function PaymentMethodChips({ value, onChange, className }: PaymentMethodChipsProps) {
+export function PaymentMethodChips({
+  value,
+  onChange,
+  className,
+  size,
+  equalWidth,
+}: PaymentMethodChipsProps) {
   const i18n = useI18n();
   // DX-VIS-6 / DX-VIS-7 (2026-11-01): was two hand-rolled 32px buttons
   // whose state was colour only. Segmented gives each a 44px tap area and
@@ -33,6 +42,8 @@ export function PaymentMethodChips({ value, onChange, className }: PaymentMethod
   return (
     <Segmented
       className={className}
+      size={size}
+      equalWidth={equalWidth}
       value={value}
       onChange={onChange}
       ariaLabel={i18n.t('run.label.paymentMethod')}
