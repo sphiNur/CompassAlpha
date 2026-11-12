@@ -15,7 +15,7 @@ export const uz = {
   'nav.confirm': 'Qabul',
   'nav.history': 'Tarix',
   'nav.settlement': 'Kun yakuni',
-  'nav.admin': 'Boshqaruv',
+  'nav.admin': 'Admin',
   // D17 (2026-10-31): bottom-nav labels only. Seven tabs share 360 px, about
   // 47 px each at 11 px; the full nav.* names stay for screen readers.
   'nav.short.order': 'Buyurtma',
@@ -278,8 +278,7 @@ export const uz = {
   'people.noPermsAssigned': 'Ruxsatlar tayinlanmagan.',
   'people.nameOverrideHint':
     'Foydalanuvchi birinchi kirishdan keyin oʻz ismini oʻzgartira olmaydi — administrator bu yerda har doim oʻzgartirishi mumkin.',
-  'people.noStoresInOrg':
-    'Hali doʻkon yoʻq. Avval Boshqaruv › Doʻkonlar boʻlimida doʻkon yarating.',
+  'people.noStoresInOrg': 'Hali doʻkon yoʻq. Avval Admin › Doʻkonlar boʻlimida doʻkon yarating.',
   'people.storeScopeHint':
     'Xodimlar faqat oʻzlari biriktirilgan doʻkonlar uchun buyurtma bera va yetkazishni tasdiqlay oladi. Administratorlar barcha doʻkonlarni koʻradi.',
   'people.globalGrantLockedHint':
@@ -702,7 +701,7 @@ export const uz = {
   'auth.onboarding.failed': 'Ismni saqlab boʻlmadi. Qayta urinib koʻring.',
   'auth.noStoreYet.title': 'Hali doʻkon yoʻq',
   'auth.noStoreYet.body':
-    'Avval Boshqaruv › Doʻkonlar boʻlimida doʻkon yarating: buyurtma, qabul, kun yakuni va sotuv doʻkon boʻyicha yuritiladi.',
+    'Avval Admin › Doʻkonlar boʻlimida doʻkon yarating: buyurtma, qabul, kun yakuni va sotuv doʻkon boʻyicha yuritiladi.',
   'auth.noStoreYet.action': 'Doʻkon yaratish',
   'auth.blocked.signedInAs': 'Siz {name} sifatida kirgansiz',
   'auth.blocked.signOut': 'Chiqish',
@@ -1972,7 +1971,7 @@ export const uz = {
   'sales.form.qtyLabel': 'Porsiya',
   'sales.form.recordBtn': 'Yozish',
   'sales.form.noDishesYet':
-    'Hech qanday taom yoʻq. Avval Boshqaruv › Katalog › Taomlar boʻlimida qoʻshing.',
+    'Hech qanday taom yoʻq. Avval Admin › Katalog › Taomlar boʻlimida qoʻshing.',
   'sales.list.title': 'Bugungi sotuvlar',
   'sales.list.capReached':
     'Roʻyxatda faqat oxirgi {n} ta sotuv koʻrsatilmoqda; jami barcha sotuvlarni hisobga oladi.',
@@ -2099,7 +2098,7 @@ export const uz = {
     'Doʻkon xodimlarini yuklab boʻlmadi. Sahifani yangilab, qayta urinib koʻring.',
   'settlement.wages.rosterEmptyTitle': 'Doʻkonda faol xodim yoʻq',
   'settlement.wages.rosterEmptyBody':
-    'Ish haqini kiritishdan oldin Boshqaruv › Doʻkonlar › Jamoa boʻlimida xodimlarni bu doʻkonga qoʻshing yoki biriktiring.',
+    'Ish haqini kiritishdan oldin Admin › Doʻkonlar › Jamoa boʻlimida xodimlarni bu doʻkonga qoʻshing yoki biriktiring.',
   'settlement.wages.noEmployeeMatch': 'Bu vazifa yoki qidiruvga mos xodim topilmadi.',
   'settlement.wages.noRole': 'Vazifa biriktirilmagan',
   'settlement.wages.status': 'Toʻlov holati',
@@ -2376,11 +2375,11 @@ export const uz = {
   // 2026-10-31 (D6 / D10 / HIS-15 / R2-HIS-3 / CLS-24 / R2-INT-2).
   'sales.errors.qtyPrecision': 'Porsiyalar yuzdan birlarda: kamida 0,01, koʻpi bilan 2 kasr.',
   'sales.form.noDishesAskAdmin':
-    'Hali taomlar yoʻq, shuning uchun sotuvni yozib boʻlmaydi. Administratordan Boshqaruv › Katalog › Taomlar boʻlimida qoʻshishni soʻrang.',
+    'Hali taomlar yoʻq, shuning uchun sotuvni yozib boʻlmaydi. Administratordan Admin › Katalog › Taomlar boʻlimida qoʻshishni soʻrang.',
   'sales.form.noRecipeYet':
-    'Hech bir taomda hali retsept yoʻq. Sotuvni yozish uchun Boshqaruv › Katalog › Taomlar boʻlimida retsept kiriting.',
+    'Hech bir taomda hali retsept yoʻq. Sotuvni yozish uchun Admin › Katalog › Taomlar boʻlimida retsept kiriting.',
   'sales.form.noRecipeAskAdmin':
-    'Hech bir taomda hali retsept yoʻq, shuning uchun sotuvni yozib boʻlmaydi. Administratordan Boshqaruv › Katalog › Taomlar boʻlimida retseptlarni kiritishni soʻrang.',
+    'Hech bir taomda hali retsept yoʻq, shuning uchun sotuvni yozib boʻlmaydi. Administratordan Admin › Katalog › Taomlar boʻlimida retseptlarni kiritishni soʻrang.',
   'finance.tsv.title': 'Moliya hisoboti {start} → {end}',
   'finance.tsv.date': 'Sana',
   'finance.tsv.run': 'Xarid',

@@ -177,6 +177,7 @@ export const SAME_AS_EN_ALLOW: Record<string, string> = {
   'uz unit.ml': 'unit symbol',
   'uz nav.short.admin':
     '«Admin» is the usual Uzbek word too (adminlar); «Boshqaruv» does not fit the nav',
+  'uz nav.admin': 'the same word as uz nav.short.admin, which the bottom bar shows',
 };
 
 // ── 8. Terminology (D15) ────────────────────────────────────────────────
