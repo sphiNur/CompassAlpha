@@ -1139,13 +1139,15 @@ export function OrderPage() {
             In the default 30px strip the area stuck out of the top edge,
             under the header. */}
         <StickyPageBar className="min-h-12 py-1">
-          <button
-            type="button"
-            className="hit-44 text-old-label font-semibold text-[var(--c-action)]"
+          {/* Review ORD-22 (2026-11): the kit's Button, not a hand-made link (UI-16). */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-3 font-semibold"
             onClick={() => setViewBatchId(null)}
           >
-            ‹ {i18n.t('order.batches.backToCurrent')}
-          </button>
+            <span aria-hidden>‹</span> {i18n.t('order.batches.backToCurrent')}
+          </Button>
           <span className="ml-auto shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
             {dateLabel}
           </span>
@@ -1344,13 +1346,14 @@ export function OrderPage() {
           ChipBar — the actual filters the user interacts with. */}
       <StickyPageBar direction="col">
         {canLeaveNewBatch ? (
-          <button
-            type="button"
-            className="hit-44 self-start text-old-label font-semibold text-[var(--c-action)]"
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-3 self-start font-semibold"
             onClick={leaveNewBatch}
           >
-            ‹ {i18n.t('order.batches.backToReceipt')}
-          </button>
+            <span aria-hidden>‹</span> {i18n.t('order.batches.backToReceipt')}
+          </Button>
         ) : null}
         {/* 2026-07-30 (flow review): the store you are ordering for was
             stated NOWHERE on this page. See the StoreChip docblock —
@@ -1386,14 +1389,16 @@ export function OrderPage() {
               first-of-the-day order, with nothing saying the earlier
               batches exist. */}
           {(batchesQuery.data?.length ?? 0) > 1 ? (
-            <button
-              type="button"
+            // ORD-22: the kit's Button, not a hand-made pill (UI-16).
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 tabular-nums"
               onClick={() => setBatchesOpen(true)}
-              className="press hit-44 shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
             >
               {/* U5: the draft being filled in is not counted. */}
               {i18n.t('order.batches.today', { n: sentBatchCount(batchesQuery.data) })}
-            </button>
+            </Button>
           ) : null}
         </div>
         {/* V4: -my-1.5 py-1.5 instead of py-0 — same layout, but the

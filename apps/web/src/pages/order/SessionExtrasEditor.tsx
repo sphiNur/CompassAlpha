@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Button, cn, FieldError, Input, SectionLabel, Select } from '@compass/ui';
+import { Button, cn, FieldError, Input, SectionLabel, Select, surfaceClass } from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import {
   badExtraQty,
@@ -222,7 +222,7 @@ export function SessionExtrasEditor({
       </div>
 
       {isReadOnly ? (
-        <ul className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline">
+        <ul className={cn(surfaceClass, 'flex flex-col gap-1 px-3 py-2')}>
           {cleanedView.map((r, i) => (
             <li
               key={`${r.name}-${i}`}
@@ -302,12 +302,7 @@ function ExtraRowEditor({
   const suggestions = otherSuggestions(suggestionsQuery.data ?? [], row.name);
 
   return (
-    <div
-      className={cn(
-        'rounded-[var(--r-card)] bg-[var(--c-surface)] p-2 ring-hairline',
-        invalid && 'ring-1 ring-[var(--c-danger)]',
-      )}
-    >
+    <div className={cn(surfaceClass, 'p-2', invalid && 'ring-1 ring-[var(--c-danger)]')}>
       {/* Walkthrough F1 (2026-11-05): name, qty, unit and remove shared one
           line, leaving the name a sliver (and less in Russian). The name
           now has its own line; qty and unit sit under it. */}
@@ -439,8 +434,9 @@ function RemoveExtraButton({ label, onClick }: { label: string; onClick: () => v
       type="button"
       aria-label={label}
       onClick={onClick}
+      // ORD-22: hit-44, a 44 px tap area around the 36 px circle.
       className={cn(
-        'press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+        'press hit-44 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
         'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
         'hover:text-[var(--c-danger)]',
       )}

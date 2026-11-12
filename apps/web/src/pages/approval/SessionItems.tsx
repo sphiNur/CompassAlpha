@@ -6,6 +6,7 @@ import {
   NameCell,
   OfflineState,
   QtyControl,
+  QueryErrorBanner,
   SectionLabel,
   isWaitingOffline,
 } from '@compass/ui';
@@ -178,9 +179,11 @@ export function SessionItems({
     return <OfflineState compact className="border-t border-[var(--c-divider)]" />;
   }
   if (detail.isError) {
+    // Review ORD-22 (2026-11): the kit's error, with why and a retry; it
+    // was one red line with neither (UI-15).
     return (
-      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-danger)]">
-        {i18n.t('approval.items.failed')}
+      <div className="border-t border-[var(--c-divider)] px-4 py-3">
+        <QueryErrorBanner query={detail} title={i18n.t('approval.items.failed')} />
       </div>
     );
   }

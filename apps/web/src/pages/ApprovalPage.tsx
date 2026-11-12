@@ -22,10 +22,9 @@ import {
   EmptyState,
   Field,
   Input,
+  Segmented,
   Sheet,
   StickyPageBar,
-  Tab,
-  Tabs,
   focusAfter,
   useToast,
 } from '@compass/ui';
@@ -351,7 +350,7 @@ export function ApprovalPage() {
 
   if (!session) return null;
 
-  // M1.11 cleanup (2026-05-08): subtitle dropped — the Tabs row
+  // M1.11 cleanup (2026-05-08): subtitle dropped — the status switch
   // immediately below + the empty-state Card (when count===0) +
   // the Card list itself already convey "what state am I in" and
   // "how many". The redundant "X items" line just compressed the
@@ -359,26 +358,26 @@ export function ApprovalPage() {
   return (
     <div className="flex flex-col">
       {/* M3.5: store-switcher pill moved to SettingsSheet. The sticky
-         band now only carries the approval-state Tabs. */}
+         band now only carries the approval-state switch. */}
       <StickyPageBar direction="col">
         {/* 2026-07-30: which store's queue am I looking at? The list is
             filtered by store context but never said so. On 'all' the chip
             reads 所有门店, which is equally load-bearing. Answered by the
             chip in Shell's top strip now (same day) rather than a copy
-            per page — this strip is back to just the state Tabs. */}
-        {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
-            tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
-            `ChipBar`-as-tabs with role=tablist/tab on the buttons
-            but no keyboard-cycle behaviour. */}
-        <Tabs
+            per page — this strip is back to just the state switch. */}
+        {/* Review ORD-22 (2026-11): the kit's Segmented, as every other
+            page switches its views (UI-16); this was the one <Tabs> in
+            the app. One Tab stop, arrow keys between the states. */}
+        <Segmented<ApprovalTab>
           value={tab}
-          onChange={(v) => setTab(v as ApprovalTab)}
+          onChange={setTab}
           ariaLabel={i18n.t('approval.tabsAriaLabel')}
-        >
-          <Tab value="pending">{i18n.t(TAB_LABEL_KEYS.pending)}</Tab>
-          <Tab value="approved">{i18n.t(TAB_LABEL_KEYS.approved)}</Tab>
-          <Tab value="rejected">{i18n.t(TAB_LABEL_KEYS.rejected)}</Tab>
-        </Tabs>
+          options={[
+            { value: 'pending', label: i18n.t(TAB_LABEL_KEYS.pending) },
+            { value: 'approved', label: i18n.t(TAB_LABEL_KEYS.approved) },
+            { value: 'rejected', label: i18n.t(TAB_LABEL_KEYS.rejected) },
+          ]}
+        />
       </StickyPageBar>
 
       {myStores.length === 0 &&

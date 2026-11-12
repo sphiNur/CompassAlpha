@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { cn, EmptyState, NameCell, QtyControl, SectionLabel } from '@compass/ui';
+import { cn, EmptyState, NameCell, QtyControl, SectionLabel, surfaceClass } from '@compass/ui';
 import { groupCatalog } from './catalogGroups';
 import { submittedDiff } from './submittedDiff';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../hooks/useI18n';
@@ -123,8 +123,10 @@ export function ReviewList({
           (the last one paid). Products without one are left out of the
           total and counted, so the staff knows the figure is partial.
           (Added 2026-05-05.) */}
+      {/* Review ORD-22 (2026-11): a card, as content is; grey is for
+          inputs (UI-13). */}
       {estimate.known > 0 ? (
-        <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
+        <div className={cn(surfaceClass, 'px-4 py-2.5')}>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-old-body font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('order.review.estimatedTotal')}
@@ -146,7 +148,7 @@ export function ReviewList({
           {i18n.t('order.submitted.summary')}
         </p>
       ) : null}
-      <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline">
+      <div className={surfaceClass}>
         {groups.map((g) => (
           <section key={g.key} className="border-b border-[var(--c-divider)] last:border-b-0">
             <SectionLabel as="h3" className="pt-2.5">
