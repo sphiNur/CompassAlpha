@@ -7,11 +7,11 @@ export {
   CardTitle,
   CardMeta,
   CardBody,
-  CardFooter,
   surfaceClass,
   rowListClass,
   rowGroupClass,
 } from './components/Card';
+export type { CardProps } from './components/Card';
 export { pillButtonClass } from './components/pill';
 export { disabledClass, disabledLook } from './components/disabled';
 export { Input } from './components/Input';
@@ -29,42 +29,42 @@ export type { CheckboxProps } from './components/Checkbox';
 export { Switch } from './components/Switch';
 export type { SwitchProps } from './components/Switch';
 export { Badge } from './components/Badge';
+export type { BadgeProps } from './components/Badge';
 export { QtyControl } from './components/QtyControl';
-export {
-  Sheet,
-  SheetHeader,
-  SheetBody,
-  SheetFooter,
-  // Sheet-stack counter (M1.5) — Section frames import these to
-  // disable their own BackButton hook while sheets are open.
-  useSheetCount,
-  getSheetCount,
-  subscribeSheetCount,
-} from './components/Sheet';
+export type { QtyControlProps } from './components/QtyControl';
+// getSheetCount: how many sheets are open (M1.5). The web app's update
+// check does not reload the page under one.
+export { Sheet, getSheetCount } from './components/Sheet';
+export type { SheetProps } from './components/Sheet';
 // DX-IX-2/3/4: focus into a sheet, back to its opener, and after actions.
-export { focusAfter, FOCUS_FALLBACK_SELECTOR } from './sheetFocus';
-// 2026-10-21 audit CA-34: shared Telegram BackButton owner stack.
-export {
-  createBackHandlerStack,
-  pushTelegramBackHandler,
-  telegramBackStack,
-} from './telegramBackStack';
-export type { BackButtonLike, BackHandlerStack } from './telegramBackStack';
+export { focusAfter } from './sheetFocus';
+// 2026-10-21 audit CA-34: the Telegram BackButton's one owner stack; sheets
+// and pages push their handler, the last one pushed owns the button.
+export { pushTelegramBackHandler } from './telegramBackStack';
 export { Banner } from './components/Banner';
+export type { BannerProps } from './components/Banner';
 export { Spinner } from './components/Spinner';
+export type { SpinnerProps } from './components/Spinner';
 export { EmptyState } from './components/EmptyState';
+export type { EmptyStateProps } from './components/EmptyState';
 export { Disclosure } from './components/Disclosure';
-export { LoadingState, type LoadingStateVariant } from './components/LoadingState';
+export type { DisclosureProps } from './components/Disclosure';
+export { LoadingState } from './components/LoadingState';
+export type { LoadingStateProps, LoadingStateVariant } from './components/LoadingState';
 export { isWaitingOffline, OfflineState, PendingState } from './components/OfflineState';
 export { DataState, QueryErrorBanner } from './components/DataState';
+export type { DataStateProps, QueryLike } from './components/DataState';
 export { Skeleton } from './components/Skeleton';
-export { Stepper } from './components/Stepper';
+export type { SkeletonProps } from './components/Skeleton';
 export { ChipBar, Chip } from './components/Chip';
-export { Tabs, Tab } from './components/Tabs';
+export type { ChipBarProps, ChipProps, ChipVariant } from './components/Chip';
 export { Segmented } from './components/Segmented';
 export type { SegmentedProps, SegmentedOption } from './components/Segmented';
 export { Avatar } from './components/Avatar';
-export { normalizeDecimalInput, readDecimalText, setDecimalLocale } from './decimalText';
+export type { AvatarProps } from './components/Avatar';
+export { readDecimalText, setDecimalLocale } from './decimalText';
+// Review UI-35: the one quantity formatter, the app's and QtyControl's.
+export { formatQty } from './formatQty';
 export type { DecimalRead } from './decimalText';
 export { SectionHeader } from './components/SectionHeader';
 export type { SectionHeaderProps } from './components/SectionHeader';
@@ -92,22 +92,27 @@ export type {
   FieldProps,
   FieldGroupProps,
   PickerRowProps,
+  PickerGroupProps,
   NameCellProps,
 } from './components/Rows';
 export { FieldError } from './components/FieldError';
-export { ConfirmSheet, confirmCancelPolicy } from './components/ConfirmSheet';
+export { ConfirmSheet } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';
 export { PhotoCapture } from './components/PhotoCapture';
 export type { PhotoUploader, PresignedUpload, PhotoCaptureProps } from './components/PhotoCapture';
 export { ToastProvider, useToast } from './components/Toast';
-export type { ToastAction, ToastTone } from './components/Toast';
+export type {
+  ToastAction,
+  ToastContextValue,
+  ToastProviderProps,
+  ToastTone,
+} from './components/Toast';
 export {
   IconOrder,
   IconApprove,
   IconRun,
   IconConfirm,
   IconAdmin,
-  IconDebug,
   IconWorkspace,
   IconPeople,
   IconCatalog,
@@ -121,6 +126,7 @@ export {
   IconShield,
 } from './components/NavIcon';
 export { ThemeProvider, useTheme } from './theme';
+// DEFAULT_UI_LABELS: for a host's test that its labels cover every key.
 export { UiLabelsProvider, useUiLabels, DEFAULT_UI_LABELS } from './labels';
 export type { UiLabels } from './labels';
 export { useTapGuard } from './useTapGuard';

@@ -2,7 +2,7 @@
 
 > Tokens-first, theme-switchable, a11y-by-default. Built on Tailwind v3 + Radix UI.
 > What to render and what not to: [UI_STANDARDS.md](UI_STANDARDS.md).
-> Two themes: **Native** (Telegram-themed) and **Apple** (high-contrast polished).
+> Three themes: **Native** (the default; light or dark as Telegram or the phone says), **Dark** and **Apple** (high-contrast polished, light only).
 
 ## Tokens
 
@@ -44,8 +44,8 @@ so HDR + sRGB renders match perceived hue.
 System font stack via `--font-sans`. One scale, the `text-old-*`
 utilities (packages/ui/tailwind.preset.js; the `old-` prefix is historical):
 display 24 · h1 19 · h2 15 · h3 14 · body 13 · body-sm 12 · label 11 ·
-tiny 9 px. Which size is for what is written above `--text-display` in
-`packages/ui/src/tokens.css`. No arbitrary `text-[15px]`, and nothing
+tiny 9 px. Which size is for what is written next to the scale in
+`packages/ui/tailwind.preset.js`. No arbitrary `text-[15px]`, and nothing
 uppercase (UI-11): a section heading is `SectionLabel`.
 
 ## Components
@@ -58,17 +58,16 @@ Each is theme-agnostic via tokens.
 | `Button` | 6 variants: primary / secondary / ghost / utility / danger / pearl. `loading` shows Spinner. |
 | `Card` / `CardHeader` / `CardTitle` / `CardMeta` | Polymorphic. `interactive` adds press affordance. |
 | `Input` | Pill-shaped (`--r-pill`). `invalid` highlights with `--c-danger`. |
-| `Sheet` | Bottom sheet via Radix Dialog. Three slots: header / body / footer. |
+| `Sheet` | Bottom sheet via Radix Dialog. Three slots: header / body / footer. Closes by backdrop tap, Esc, the Telegram BackButton, or a pull down on its handle or title. |
 | `Banner` | 4 tones: info / success / warn / danger. Optional `action` slot. |
 | `Spinner` | Pure SVG, animates via Tailwind `animate-spin`. |
-| `EmptyState` | Centered icon + title + optional description + action. |
+| `EmptyState` | Centered title + optional description + action; `compact` for a line inside a list. |
 | `DataState<T>` | Five-state wrapper for `useQuery` data. **Wrap every page in this.** |
 | `Skeleton` | `animate-pulse` placeholder. |
-| `Stepper` | Numbered step indicator with done/active/pending styles. |
 | `Chip` / `ChipBar` | Sub-nav category chips. |
-| `Avatar` | Initials fallback when `src` missing. |
-| `QtyControl` | 44×44 circular chips, long-press accelerator (350ms hold → 90ms tick). |
-| `Badge` | Status pill. Pass `status` for auto-tone or `tone` directly. |
+| `Avatar` | Initials when `src` is missing or fails to load. Decorative unless given a `label` (the name is beside it). |
+| `QtyControl` | 36 px (`sm` 28 px) circular − / + keys that tap as 44 px, long-press accelerator (350ms hold → 90ms tick). |
+| `Badge` | Status pill: the localized words as children, and a `tone` (UI-2). |
 
 ## A11y rules
 

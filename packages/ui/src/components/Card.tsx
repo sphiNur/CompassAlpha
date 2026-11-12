@@ -25,7 +25,7 @@ export const rowListClass = 'flex flex-col divide-y divide-[var(--c-divider)]';
  */
 export const rowGroupClass = `${rowListClass} overflow-hidden ${surfaceClass}`;
 
-interface CardProps extends HTMLAttributes<HTMLElement> {
+export interface CardProps extends HTMLAttributes<HTMLElement> {
   interactive?: boolean;
   // 'li' (A11Y-14): a card that is an item of a <ul role="list">.
   as?: 'div' | 'section' | 'article' | 'li';
@@ -47,7 +47,10 @@ export function CardHeader({ className, children }: { className?: string; childr
     // same density as the bottom nav. The header still has no bottom
     // padding because consumers either follow it with a button row
     // (which carries its own py-2) or end the card right after.
-    <header className={cn('flex items-start justify-between gap-3 px-4 pt-3', className)}>
+    // --card-pad (16 px) as CardBody, not a second spelling (UI-34).
+    <header
+      className={cn('flex items-start justify-between gap-3 px-[var(--card-pad)] pt-3', className)}
+    >
       {children}
     </header>
   );
@@ -78,29 +81,10 @@ export function CardMeta({ className, children }: { className?: string; children
  * Card body — the canonical padded content region. Exists so consumers
  * STOP hand-rolling `px-4 py-3` (which is why py-2 / py-2.5 / py-3 card
  * bodies coexisted across the app). Compose Card > CardHeader? >
- * CardBody > CardFooter? and never type body padding again.
+ * CardBody and never type body padding again.
  */
 export function CardBody({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div className={cn('px-[var(--card-pad)] py-3', className)}>{children}</div>
-  );
-}
-
-/**
- * Card footer — the bordered action strip at the bottom of a card
- * (Edit / Archive rows in the admin catalog, etc.). One definition of
- * the `border-t divider` + gutter so the strip stops drifting between
- * px-4 py-2 and px-3 py-2 per call site.
- */
-export function CardFooter({ className, children }: { className?: string; children: ReactNode }) {
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-2 border-t border-[var(--c-divider)] px-[var(--card-pad)] py-2',
-        className,
-      )}
-    >
-      {children}
-    </div>
   );
 }

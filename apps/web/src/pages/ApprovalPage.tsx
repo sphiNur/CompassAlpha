@@ -448,8 +448,9 @@ export function ApprovalPage() {
                   <CardHeader className="flex-wrap">
                     <div className="flex min-w-[8rem] flex-1 items-center gap-3">
                       {/* The avatar is the SUBMITTER's photo (`attribAvatarUrl`),
-                          so `name` — which supplies both the alt text and the
-                          initials fallback — has to be the submitter too.
+                          so `name` — which supplies the initials fallback —
+                          has to be the submitter too. (Since UI-24 the
+                          avatar has no alt text: the name is on the card.)
                           2026-07-30: it was the STORE name, so a screen reader
                           announced a person's face as "Store A", and a
                           submitter without a photo got the store's initials. */}
@@ -667,8 +668,10 @@ export function ApprovalPage() {
                       {/* UI-2 (declutter): status is stated once — by the
                           已拒绝 tab and the danger-tone box. The callout
                           shows only the reason; previously it doubled
-                          "已拒绝" in both the title and the body line. */}
-                      <Banner tone="danger">
+                          "已拒绝" in both the title and the body line.
+                          A note, not an alert (UI-22): the rejected tab
+                          draws one per card, all at once. */}
+                      <Banner tone="danger" role="note">
                         {row.rejectReason
                           ? row.rejectReason
                           : i18n.t('order.status.rejectedNoReason')}

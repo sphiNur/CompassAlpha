@@ -251,7 +251,6 @@ export function DebugPage() {
                 <DetailRow
                   label={i18n.t('ops.debug.status.waiting')}
                   value={health.data.outboxPending}
-                  mono
                 />
                 {/* UI-14: the build is a code, so monospace. */}
                 <DetailRow

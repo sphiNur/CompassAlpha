@@ -9,7 +9,9 @@ import { disabledLook } from './disabled';
  *   - Always pair with a label (the `label` prop OR an external <label>
  *     wrapping it). Bare checkboxes lose context for screen readers
  *     AND grow the tap-target only on the box itself.
- *   - The whole label area is the tap-target — 44×24min iOS HIG.
+ *   - The whole label row is the tap target, at least 44 px tall
+ *     (--control-h; review UI-36: it was 32, and the iOS HIG minimum is
+ *     44×44, not the "44×24" this said).
  *   - When disabled, opacity drops; the surrounding label dims too so
  *     the user understands the row is non-interactive, not just the
  *     box.
@@ -53,7 +55,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
         'bg-[var(--c-surface-2)] ring-field transition-colors',
         'peer-checked:bg-[var(--c-action)] peer-checked:[box-shadow:none]',
         'peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--c-ring)] peer-focus-visible:ring-offset-2',
-        'peer-focus-visible:ring-offset-[var(--c-bg)]',
+        'peer-focus-visible:ring-offset-[var(--c-ring-offset)]',
         // UI-11: dimmed once — here when bare, by the label otherwise.
         label === undefined && 'peer-disabled:opacity-50',
         invalid && 'ring-2 ring-[var(--c-danger)]',
@@ -105,7 +107,11 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
     <label
       htmlFor={inputId}
       className={cn(
-        'press flex cursor-pointer items-start gap-2.5 rounded-[var(--r-utility)] py-1.5',
+        // UI-36: at least 44 px tall. A one-line row centres its box and
+        // text in that height; a row with a hint is taller already and
+        // keeps the box on the label's line.
+        'press flex min-h-[var(--control-h)] cursor-pointer gap-2.5 rounded-[var(--r-utility)] py-1.5',
+        hint ? 'items-start' : 'items-center',
         disabled && disabledLook,
         className,
       )}

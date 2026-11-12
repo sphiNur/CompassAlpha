@@ -1,5 +1,14 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
 import { useUiLabels } from '../labels';
@@ -82,7 +91,7 @@ function useSheetPresence(open: boolean, onOpenChange: (open: boolean) => void):
   }, [open]);
 }
 
-interface SheetProps {
+export interface SheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: ReactNode;
@@ -170,6 +179,132 @@ export function guardedClose(
     .finally(() => {
       asking.current = false;
     });
+}
+
+/**
+ * Review UI-26 (2026-11-12): the top chrome a sheet or a toast keeps clear
+ * of. In Telegram that is its Close / ⋯ row over the page with the safe
+ * area above it (--app-chrome-reserve, which the host measures and sets;
+ * TopBar reserves the same strip); elsewhere the safe area alone.
+ */
+export const TOP_CHROME = 'var(--app-chrome-reserve, var(--app-safe-top))';
+
+/**
+ * A sheet is at most 90% of the screen, and its top stays 8 px below the
+ * top chrome when the keyboard leaves a short viewport. That second term
+ * subtracted only --app-safe-top (16 px on Android, where env() is 0), so
+ * a tall sheet's handle and title could slide under Telegram's buttons
+ * (UI-26). Exported for tests.
+ */
+export const SHEET_MAX_HEIGHT = `min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - ${TOP_CHROME} - 8px))`;
+
+/** A flick: let go while moving down at least this fast (px per ms)… */
+const SHEET_FLICK_SPEED = 0.5;
+/** …after a pull of at least this much (px), so a tap's jitter is none. */
+const SHEET_FLICK_MIN_PX = 24;
+
+/**
+ * Review UI-25 (2026-11-12): whether letting go of a sheet pulled down by
+ * its header closes it: pulled past a quarter of its height, or flicked
+ * down. Otherwise it springs back. `pulled` and `height` in px (down is
+ * positive), `speed` in px per ms when the finger lifted. Exported for
+ * tests.
+ */
+export function sheetDragCloses(pulled: number, speed: number, height: number): boolean {
+  if (pulled <= 0) return false;
+  if (speed >= SHEET_FLICK_SPEED && pulled >= SHEET_FLICK_MIN_PX) return true;
+  return pulled >= height / 4;
+}
+
+/** Back to where an open sheet rests, with no transform left on it. */
+function springSheetBack(panel: HTMLElement | null): void {
+  if (!panel?.style.transform) return;
+  panel.style.transition = 'transform var(--t-quick) var(--easing)';
+  panel.style.transform = '';
+  panel.style.removeProperty('--sheet-drag');
+}
+
+interface SheetDrag {
+  pointerId: number;
+  startY: number;
+  lastY: number;
+  lastTime: number;
+  speed: number;
+}
+
+/**
+ * Review UI-25: the pull behind the drag handle, which drew a handle but
+ * had no drag. A finger (touch or pen; a mouse has Esc and the backdrop)
+ * on the header pulls the panel down; see sheetDragCloses. The panel
+ * follows through its inline transform, set directly so a drag renders
+ * nothing, and only while pulled: a transform left on the panel would
+ * make it the containing block of anything fixed inside it. A close
+ * slides out from where the finger let go (--sheet-drag, read by
+ * slideDown in tokens.css).
+ */
+function useSheetDrag(
+  open: boolean,
+  contentRef: RefObject<HTMLDivElement | null>,
+  close: () => void,
+): HTMLAttributes<HTMLDivElement> {
+  const drag = useRef<SheetDrag | null>(null);
+  const pull = (px: number) => {
+    const panel = contentRef.current;
+    if (!panel) return;
+    panel.style.transition = 'none';
+    panel.style.transform = `translateY(${px}px)`;
+    panel.style.setProperty('--sheet-drag', `${px}px`);
+  };
+  const springBack = () => springSheetBack(contentRef.current);
+  // Reopened while still sliding out: start from the top again.
+  useEffect(() => {
+    if (open) springSheetBack(contentRef.current);
+  }, [open, contentRef]);
+  return {
+    onPointerDown: (e) => {
+      if (e.pointerType === 'mouse' || drag.current) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      drag.current = {
+        pointerId: e.pointerId,
+        startY: e.clientY,
+        lastY: e.clientY,
+        lastTime: e.timeStamp,
+        speed: 0,
+      };
+    },
+    onPointerMove: (e) => {
+      const d = drag.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      d.speed = (e.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastTime);
+      d.lastY = e.clientY;
+      d.lastTime = e.timeStamp;
+      pull(Math.max(0, e.clientY - d.startY));
+    },
+    onPointerUp: (e) => {
+      const d = drag.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      drag.current = null;
+      const panel = contentRef.current;
+      // A finger that stopped before it lifted did not flick.
+      const speed = e.timeStamp - d.lastTime > 100 ? 0 : d.speed;
+      const pulled = Math.max(0, e.clientY - d.startY);
+      if (!panel || !sheetDragCloses(pulled, speed, panel.offsetHeight)) {
+        springBack();
+        return;
+      }
+      close();
+      // Still open on the next frame (unsaved changes ask first; a
+      // pending confirm cannot close): spring back.
+      requestAnimationFrame(() => {
+        if (panel.getAttribute('data-state') === 'open') springBack();
+      });
+    },
+    onPointerCancel: (e) => {
+      if (drag.current?.pointerId !== e.pointerId) return;
+      drag.current = null;
+      springBack();
+    },
+  };
 }
 
 /**
@@ -284,6 +419,7 @@ function OpenedSheet({
     keyboardDownTargetRef: focusTitleOnOpen ? titleRef : undefined,
     returnFocusRef,
   });
+  const drag = useSheetDrag(open, contentRef, () => requestOpenChange(false));
 
   return (
     <Dialog.Root open={open} onOpenChange={requestOpenChange}>
@@ -310,16 +446,15 @@ function OpenedSheet({
             // later one replaced the whole property and the lift was lost.
             'pb-[var(--app-safe-bottom)] outline-none shadow-sheet',
           )}
-          style={{
-            maxHeight:
-              'min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - var(--app-safe-top) - 8px))',
-          }}
+          style={{ maxHeight: SHEET_MAX_HEIGHT }}
           aria-describedby={description ? descriptionId : undefined}
           tabIndex={-1}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
         >
-          <SheetHeader>
+          {/* The header (handle and title) pulls the sheet down (UI-25);
+              touch-none keeps the pull from panning the page. */}
+          <SheetHeader className="touch-none" {...drag}>
             {/* Drag handle — slightly bolder + wider than the previous
                 40×4 hairline so first-time users can read it as "this is
                 draggable" without us having to render an explicit Cancel
@@ -352,8 +487,12 @@ function OpenedSheet({
   );
 }
 
-export function SheetHeader({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-[var(--app-inline-x)] pt-3 pb-2', className)}>{children}</div>;
+export function SheetHeader({ children, className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('px-[var(--app-inline-x)] pt-3 pb-2', className)} {...rest}>
+      {children}
+    </div>
+  );
 }
 
 export function SheetBody({ children, className }: { children: ReactNode; className?: string }) {
@@ -363,7 +502,6 @@ export function SheetBody({ children, className }: { children: ReactNode; classN
         'min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--app-inline-x)] pb-4',
         className,
       )}
-      data-scroll-locked
     >
       {children}
     </div>
@@ -378,8 +516,8 @@ export function SheetFooter({ children, className }: { children: ReactNode; clas
         // M3.15 (2026-05-16): pt-3 / pb-4 → pt-2 / pb-3. The footer
         // CTA inside now reads as a peer of the bottom nav rather than
         // a separate "primary CTA bar" with its own breathing room.
-        'sticky bottom-0 mt-auto bg-[var(--c-surface)] px-4 pb-3 pt-2',
-        'px-[var(--app-inline-x)]',
+        // One side inset, --app-inline-x; a px-4 before it was overridden (UI-34).
+        'sticky bottom-0 mt-auto bg-[var(--c-surface)] px-[var(--app-inline-x)] pb-3 pt-2',
         'border-t border-[var(--c-divider)]',
         className,
       )}

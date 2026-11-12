@@ -1,8 +1,7 @@
 /**
  * Review UI-15 (2026-11-10): the type scale lives with the components
- * (tailwind.preset.js), and the two other places that name its sizes
- * agree with it: tailwind-merge's list in cn.ts and the --text-* vars in
- * tokens.css.
+ * (tailwind.preset.js), and tailwind-merge's list in cn.ts agrees with it.
+ * Review UI-34 (2026-11-12): tokens.css keeps no --text-* copy of it.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -26,11 +25,8 @@ describe('type scale (UI-15)', () => {
     }
   });
 
-  test('each size matches its --text-* var in tokens.css', () => {
-    for (const [name, [size]] of Object.entries(FONT_SIZE_SCALE)) {
-      const v = new RegExp(`--text-${name.replace(/^old-/, '')}:\\s*([^;]+);`).exec(css);
-      expect(v?.[1]?.trim()).toBe(size);
-    }
+  test('tokens.css has no second copy of the sizes to keep in sync', () => {
+    expect(css).not.toMatch(/--text-[a-z-]+:/);
   });
 
   test('tokens.css carries the animations and the scrollbar rule the components use', () => {

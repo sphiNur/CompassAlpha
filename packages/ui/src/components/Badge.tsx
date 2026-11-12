@@ -19,32 +19,18 @@ const badge = cva(
   },
 );
 
-export interface BadgeProps
-  extends HTMLAttributes<HTMLSpanElement>,
-    VariantProps<typeof badge> {
-  status?: string;
-}
+/**
+ * A status pill. The caller passes the words, already localized (UI-2),
+ * and picks the tone. Review UI-19 (2026-11-12): a `status` prop that
+ * chose the tone from a status enum, and showed the raw enum ("rejected")
+ * when no words were given, is gone; no page used it.
+ */
+export type BadgeProps = HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badge>;
 
-const STATUS_TO_TONE: Record<string, BadgeProps['tone']> = {
-  draft: 'muted',
-  submitted: 'info',
-  approved: 'success',
-  rejected: 'danger',
-  in_run: 'action',
-  archived: 'muted',
-  planned: 'info',
-  purchasing: 'action',
-  delivering: 'action',
-  finished: 'success',
-  cancelled: 'danger',
-};
-
-export function Badge({ className, tone, status, children, ...rest }: BadgeProps) {
-  const resolvedTone: BadgeProps['tone'] =
-    tone ?? (status ? STATUS_TO_TONE[status] ?? 'info' : 'info');
+export function Badge({ className, tone, children, ...rest }: BadgeProps) {
   return (
-    <span className={cn(badge({ tone: resolvedTone }), className)} {...rest}>
-      {children ?? status}
+    <span className={cn(badge({ tone }), className)} {...rest}>
+      {children}
     </span>
   );
 }

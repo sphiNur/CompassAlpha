@@ -44,7 +44,7 @@ export type ChipVariant = 'toggles' | 'radio';
 
 const ChipVariantContext = createContext<ChipVariant>('radio');
 
-interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
 }
 
@@ -63,7 +63,7 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
       type="button"
       {...semantics}
       // Pill visual (h-8 / --r-pill / text-old-label font-medium) lives
-      // in pillButtonClass, shared with Tab. Its `shrink-0
+      // in pillButtonClass. Its `shrink-0
       // whitespace-nowrap` keep chips their natural width so the parent
       // ChipBar (overflow-x-auto) pans horizontally instead of squishing
       // each chip into a char-per-line column (CJK/Cyrillic). M2.4 text,
@@ -76,10 +76,15 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
   );
 }
 
-interface ChipBarProps {
+export interface ChipBarProps {
   children: ReactNode;
   className?: string;
-  ariaLabel?: string;
+  /**
+   * What the chips choose or filter, announced to screen readers.
+   * Required (review UI-21), as on Segmented: a group named only by its
+   * chips says nothing about what they are for.
+   */
+  ariaLabel: string;
   /** See the ChipVariant docblock. Defaults to 'radio'. */
   variant?: ChipVariant;
   /**
@@ -110,7 +115,12 @@ export function ChipBar({
         // bouncing the parent page on iOS — without it, a fast horizontal
         // chip-pan can briefly disable the page's vertical scroll.
         style={{ overscrollBehaviorX: 'contain' }}
-        className={cn('flex gap-1.5 overflow-x-auto px-4 py-1.5 scrollbar-hide', className)}
+        // --app-inline-x (16 px): the page's side inset, as the list under
+        // the strip (UI-34).
+        className={cn(
+          'flex gap-1.5 overflow-x-auto px-[var(--app-inline-x)] py-1.5 scrollbar-hide',
+          className,
+        )}
       >
         {children}
       </div>

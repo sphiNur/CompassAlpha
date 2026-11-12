@@ -3,7 +3,7 @@ import { cn } from '../cn';
 
 /**
  * StickyPageBar — the page's sticky top strip: the SearchInput+ChipBar
- * on Order, the Tabs on Approval, the run-date on Confirm/Run.
+ * on Order, the state switch on Approval, the run-date on Confirm/Run.
  *
  * Owns the chrome that was copy-pasted verbatim into 4 pages: `sticky
  * top-0 z-[1]` + `border-b divider` + `bg-bg` + `px-4 py-2`.
@@ -25,7 +25,7 @@ import { cn } from '../cn';
  *     run-date + toggles). Pass a min-height via `className` if the
  *     strip must reserve height when its content is short.
  *   - 'col' — stacked (Order's SearchInput over ChipBar, Approval's
- *     Tabs).
+ *     state switch).
  *
  * From the 2026-07 frontend audit (T2 primitive-gap: sticky top strip).
  */

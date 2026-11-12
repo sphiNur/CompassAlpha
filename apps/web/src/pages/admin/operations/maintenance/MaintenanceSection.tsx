@@ -192,7 +192,8 @@ export function MaintenanceSection() {
 
           {/* ============ Nuclear option ============ */}
           <div className="mt-6">
-            <Banner tone="danger" title={i18n.t('ops.maint.wipeTitle')}>
+            {/* A standing warning, not an alert (UI-22). */}
+            <Banner tone="danger" role="note" title={i18n.t('ops.maint.wipeTitle')}>
               {i18n.t('ops.maint.wipeBody')}
             </Banner>
             <div className="mt-3">

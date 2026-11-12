@@ -45,8 +45,12 @@ export function SectionRow({
       <button
         type="button"
         onClick={onClick}
+        // Review UI-23 (2026-11-12): the keyboard focus outline is drawn
+        // inside the row. Outside it, the row group's overflow-hidden cut
+        // off its sides (and the top of the first row, the bottom of the
+        // last), so it was hard to see which row had focus.
         className={cn(
-          'press flex w-full items-center gap-3 px-4 py-3 text-left',
+          'press flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-offset-[-2px]',
         )}
       >
         {icon ? <span className={cn('shrink-0', iconColor)}>{icon}</span> : null}
@@ -122,7 +126,11 @@ export function ListRow({
       <button
         type="button"
         onClick={onClick}
-        className={cn('press flex w-full items-center gap-3 px-4 py-3 text-left', className)}
+        // The focus outline inside the row, as on SectionRow (UI-23).
+        className={cn(
+          'press flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-offset-[-2px]',
+          className,
+        )}
       >
         {inner}
       </button>
@@ -143,22 +151,14 @@ export function ListRow({
 export interface DetailRowProps {
   label: ReactNode;
   value: ReactNode;
-  mono?: boolean;
   className?: string;
 }
 
-export function DetailRow({ label, value, mono, className }: DetailRowProps) {
+export function DetailRow({ label, value, className }: DetailRowProps) {
   return (
     <div className={cn('flex min-w-0 items-baseline justify-between gap-3', className)}>
       <span className="min-w-0 text-old-body-sm text-[var(--c-fg-muted)]">{label}</span>
-      <span
-        className={cn(
-          'min-w-0 truncate text-right text-old-body text-[var(--c-fg)]',
-          mono && 'tabular-nums',
-        )}
-      >
-        {value}
-      </span>
+      <span className="min-w-0 truncate text-right text-old-body text-[var(--c-fg)]">{value}</span>
     </div>
   );
 }
@@ -336,8 +336,8 @@ export function FieldGroup({ label, hint, error, children, className }: FieldGro
 /**
  * Field label — the one definition of a form-field label (sentence
  * case, `text-old-label font-semibold text-fg-muted`): Field, FieldGroup
- * and PhotoCapture draw theirs with it. Deliberately sentence-case:
- * uppercase eyebrows are `SectionLabel`, a different role.
+ * and PhotoCapture draw theirs with it. A section heading is
+ * `SectionLabel`, a different role (both sentence case, UI-11).
  *
  * With `htmlFor` it is the `<label>` of that control (Field's, UI-01);
  * without, a title the caller ties to its content by `id`.
@@ -464,16 +464,14 @@ export function PickerRow({
  * ring-hairline` panel every picker used, now also the radiogroup that
  * names the choice and moves between rows with the arrow keys.
  */
-export function PickerGroup({
-  label,
-  children,
-  className,
-}: {
-  /** What is being chosen, e.g. "Language". */
+export interface PickerGroupProps {
+  /** What is being chosen, e.g. "Language"; the group's accessible name. */
   label: string;
   children: ReactNode;
   className?: string;
-}) {
+}
+
+export function PickerGroup({ label, children, className }: PickerGroupProps) {
   const roving = useRovingRadio<HTMLDivElement>({ followFocus: false });
   return (
     <div

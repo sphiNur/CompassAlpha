@@ -40,7 +40,7 @@
 | `packages/contracts` | tRPC 路由的 Zod schema（前后端共用）                                       |
 | `packages/db`        | Drizzle schema + 69 个迁移 + RLS 策略                                      |
 | `packages/domain`    | 纯函数领域核心：events / decide / apply / state（无副作用，单元测试 100%） |
-| `packages/ui`        | 约 30 个组件（Radix 原语 + CVA 变体 + Tailwind）+ ThemeProvider            |
+| `packages/ui`        | 约 30 个组件（Radix Dialog + CVA 变体 + Tailwind）+ ThemeProvider          |
 | `packages/i18n`      | 自研轻量 ICU 解析器 + 4 个 catalog (zh/ru/uz/en)，CI 校验对齐              |
 | `packages/telemetry` | 客户端日志 + batch span，发到 api 的 `system.log` 接口                     |
 | `packages/cli`       | `compass org/user/platform/project` 子命令                                 |
@@ -517,10 +517,10 @@ apps/web/src/
 
 ### 5.3 设计系统
 
-- 约 30 个组件，基于 **Radix Primitives**（Dialog / Tooltip / Toast 等）+ **CVA**（class-variance-authority）+ Tailwind utility classes
+- 约 30 个组件：**CVA**（class-variance-authority）+ Tailwind utility classes；只有 Sheet 用了 Radix（Dialog），Toast 等其余组件是自己写的（review UI-20 删掉了没用上的 Popover / Toast / Tooltip 依赖）
 - **Theme**：CSS variables，通过 `data-theme="native|apple|dark"` 切换。`native` 主题跟随 Telegram `themeChanged` 事件
 - **Typography**：M3.14 字号 scale (24/19/15/14/13/12/11/10/9)，对 Android Telegram WebView 调校
-- **Sheet 组件**：自动接管 Telegram BackButton 关闭顶层 sheet（M1.5），全局 sheet 计数让 SectionFrame 在 sheet 打开时让出 BackButton
+- **Sheet 组件**：打开时接管 Telegram BackButton，只关闭最上层的 sheet（M1.5；CA-34 起由 `telegramBackStack` 的栈统一管理，页面的返回键也登记在这个栈上）。全局 sheet 计数供 toast 跟随打开的 sheet，以及版本检查在有 sheet 打开时不刷新页面
 
 ### 5.4 路由
 

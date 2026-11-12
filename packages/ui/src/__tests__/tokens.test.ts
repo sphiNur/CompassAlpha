@@ -95,9 +95,13 @@ describe.each([
 
 /**
  * Custom properties the host app sets at run time, which the components
- * read with a fallback: the MainButton height (Toast keeps clear of it).
+ * read with a fallback: the MainButton height (Toast keeps clear of it)
+ * and Telegram's top chrome (sheets and toasts keep below it, UI-26).
  */
-const HOST_VARS = ['--app-main-btn-h'];
+const HOST_VARS = ['--app-main-btn-h', '--app-chrome-reserve'];
+
+/** Set by a component on its own element while it runs: a pulled sheet (UI-25). */
+const RUNTIME_VARS = ['--sheet-drag'];
 
 /** The package's own sources: not its tests or their helpers in src/testing. */
 const componentFiles = () =>
@@ -122,7 +126,7 @@ describe('colour tokens in use', () => {
     const missing: string[] = [];
     for (const file of componentFiles()) {
       for (const name of readProperties(readFileSync(file, 'utf8'))) {
-        if (!declared.has(name) && !HOST_VARS.includes(name)) {
+        if (!declared.has(name) && !HOST_VARS.includes(name) && !RUNTIME_VARS.includes(name)) {
           missing.push(`${name} (${file.slice(file.indexOf('/src/') + 1)})`);
         }
       }
@@ -138,6 +142,15 @@ describe('colour tokens in use', () => {
   });
 });
 
+describe('one token per value (review UI-34)', () => {
+  test('every focus ring is offset in --c-ring-offset', () => {
+    const stray = componentFiles()
+      .filter((file) => readFileSync(file, 'utf8').includes('ring-offset-[var(--c-bg)]'))
+      .map((file) => file.slice(file.indexOf('/src/') + 1));
+    expect(stray).toEqual([]);
+  });
+});
+
 describe('tap areas', () => {
   const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
 
@@ -145,6 +158,21 @@ describe('tap areas', () => {
     for (const name of ['Button.tsx', 'pill.ts', 'Segmented.tsx', 'QtyControl.tsx']) {
       expect({ name, hit: read(name).includes('hit-44') }).toEqual({ name, hit: true });
     }
+  });
+
+  test('a labelled Checkbox or Switch row is at least 44px tall (review UI-36)', () => {
+    for (const name of ['Checkbox.tsx', 'Switch.tsx']) {
+      const row = read(name).includes('min-h-[var(--control-h)]');
+      expect({ name, row }).toEqual({ name, row: true });
+    }
+  });
+
+  test("the search field's clear button carries hit-44 (review UI-30)", () => {
+    const clear = /<button[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/.exec(
+      read('SearchInput.tsx'),
+    )![1]!;
+    expect(clear).toContain('hit-44');
+    expect(clear).toContain('w-8');
   });
 
   test('Button does not clip its own tap area', () => {

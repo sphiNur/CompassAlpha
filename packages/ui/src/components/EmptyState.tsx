@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from '../cn';
 
-interface EmptyStateProps {
-  icon?: ReactNode;
+export interface EmptyStateProps {
   title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
@@ -16,14 +15,7 @@ interface EmptyStateProps {
   compact?: boolean;
 }
 
-export function EmptyState({
-  icon,
-  title,
-  description,
-  action,
-  className,
-  compact,
-}: EmptyStateProps) {
+export function EmptyState({ title, description, action, className, compact }: EmptyStateProps) {
   if (compact) {
     return (
       <div className={cn('flex flex-col items-center gap-2 px-4 py-6 text-center', className)}>
@@ -44,8 +36,12 @@ export function EmptyState({
     );
   }
   return (
-    <div className={cn('flex flex-col items-center justify-center gap-3 px-6 py-12 text-center', className)}>
-      {icon ? <div className="text-[var(--c-fg-subtle)] text-3xl">{icon}</div> : null}
+    <div
+      className={cn(
+        'flex flex-col items-center justify-center gap-3 px-6 py-12 text-center',
+        className,
+      )}
+    >
       {/* h2 (A11Y-10, 2026-10-31): an empty state is the page's content
           under its <h1>; as h3 it skipped a heading level. */}
       <h2 className="text-old-h2 font-semibold text-[var(--c-fg)]">{title}</h2>

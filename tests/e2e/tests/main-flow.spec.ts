@@ -138,7 +138,7 @@ test('place an order', async () => {
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('1,000');
   await expect(custom).toHaveValue('1,000');
-  await expect(sheet().getByRole('button', { name: 'Set 1000 kg' })).toBeEnabled();
+  await expect(sheet().getByRole('button', { name: 'Set 1,000 kg' })).toBeEnabled();
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('0.0004');
   await expect(sheet().getByRole('alert')).toHaveText('At most 3 decimals');

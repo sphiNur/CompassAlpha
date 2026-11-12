@@ -119,7 +119,7 @@ bun run scripts/deploy.ts --dry   # 只跑 smoke，不部署
 4. **类型贯通到 SQL**：Drizzle SQL-first，前后端 tRPC 类型推断，Zod schema 跨端共用。
 5. **可观测性是一等公民**：每个请求带 traceId（前端生成、后端透传），客户端日志批量上报，结构化日志可按它串起来；接 OpenTelemetry 是 M2 的计划。
 6. **i18n 不打折**：所有面向用户的字符串走 Lingui ICU，CI grep 检查 zh/en/ru/uz 全键存在。
-7. **a11y 默认**：Concord 组件全部基于 Radix 原语，键盘可达、ARIA 正确、reduce-motion 尊重。
+7. **a11y 默认**：Concord 组件用原生元素（弹层 Sheet 用 Radix Dialog），键盘可达、ARIA 正确、reduce-motion 尊重。
 
 ## 与 CompassBeta 的兼容性
 

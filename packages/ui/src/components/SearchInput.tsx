@@ -7,9 +7,9 @@ import { useUiLabels } from '../labels';
  * clear button. Sibling of `Input` for the specific search-bar UX.
  *
  * Why not just use Input with a leading-slot prop:
- *   - The clear button needs to know `value` and call back to the
- *     caller's `onChange` with empty string. Bolting that onto Input
- *     would muddle Input's "minimal pass-through" role.
+ *   - The clear button needs to know `value` and call the caller's
+ *     `onClear`. Bolting that onto Input would muddle Input's "minimal
+ *     pass-through" role.
  *   - The cluster of icon+input+clear has its own padding semantics
  *     (icon eats 8px on the left, clear sits 8px from the right).
  *
@@ -20,9 +20,13 @@ import { useUiLabels } from '../labels';
  */
 export interface SearchInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
-  /** Fires when the trailing X button is tapped. Optional — if not
-   *  provided, the helper synthesizes a synthetic onChange with ''. */
-  onClear?: () => void;
+  /**
+   * Fires when the trailing X button is tapped: empty the value. Required
+   * (review UI-30): without it the button made up a change event from
+   * `document.activeElement`, which on Android is the button itself once
+   * tapped, so nothing cleared.
+   */
+  onClear: () => void;
   /** Name of the clear button (a11y). Defaults to the host's `clearSearch` label. */
   clearAriaLabel?: string;
 }
@@ -64,7 +68,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           // V9: the field's edge at 3:1 against the page (--c-field-border).
           'outline-none ring-field',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
-          'focus-visible:ring-offset-[var(--c-bg)]',
+          'focus-visible:ring-offset-[var(--c-ring-offset)]',
           // The browser's native `<input type=search>` cancel decoration
           // collides with our X button on WebKit. Hide it.
           '[&::-webkit-search-cancel-button]:appearance-none',
@@ -76,30 +80,10 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         <button
           type="button"
           aria-label={clearAriaLabel ?? labels.clearSearch}
-          onClick={() => {
-            if (onClear) {
-              onClear();
-              return;
-            }
-            // Synthesize a change event with empty value so the
-            // caller's onChange handler sees the clear in the same
-            // shape as a normal keystroke.
-            const target = (
-              document.activeElement instanceof HTMLInputElement
-                ? document.activeElement
-                : null
-            ) as HTMLInputElement | null;
-            if (onChange && target) {
-              const synthetic = {
-                ...({} as React.ChangeEvent<HTMLInputElement>),
-                currentTarget: { ...target, value: '' } as HTMLInputElement,
-                target: { ...target, value: '' } as HTMLInputElement,
-              };
-              onChange(synthetic as React.ChangeEvent<HTMLInputElement>);
-            }
-          }}
+          onClick={onClear}
           className={cn(
-            'absolute inset-y-0 right-1 flex w-8 items-center justify-center',
+            // hit-44 (UI-30): 32 px wide to look at, 44 to tap.
+            'hit-44 absolute inset-y-0 right-1 flex w-8 items-center justify-center',
             'text-[var(--c-fg-muted)] hover:text-[var(--c-fg)]',
             'focus-visible:outline-none focus-visible:rounded-full',
             'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]',

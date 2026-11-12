@@ -30,21 +30,14 @@
  * which would mis-align with our font.
  */
 
-/** Quantities: at most 3 decimals (DB precision), trailing zeros dropped. */
-export const QTY_MAX_DECIMALS = 3;
-
 /**
  * Comma-thousands, up to 3 decimals, no trailing zeros.
  * Returns the original string when the input isn't a finite number,
  * which lets us pipe possibly-empty server values through without
- * breaking.
+ * breaking. Review UI-35 (2026-11-12): it lives in @compass/ui, so
+ * QtyControl shows quantities the same way.
  */
-export function formatQty(v: string | number | null | undefined): string {
-  if (v === null || v === undefined || v === '') return '';
-  const n = typeof v === 'number' ? v : Number(v);
-  if (!Number.isFinite(n)) return String(v);
-  return qtyFormatter.format(n);
-}
+export { formatQty } from '@compass/ui';
 
 /**
  * Server decimal → a string safe to put in `<input type="number">`.
@@ -163,11 +156,6 @@ const DEFAULT_MONEY_DECIMALS = 2;
 const thousandsFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 0,
   maximumFractionDigits: DEFAULT_MONEY_DECIMALS,
-});
-
-const qtyFormatter = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: QTY_MAX_DECIMALS,
 });
 
 const minorUnitsCache = new Map<string, number>();
