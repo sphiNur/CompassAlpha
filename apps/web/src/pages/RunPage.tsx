@@ -1593,7 +1593,6 @@ export function RunPage() {
         suppliers={purchaseSuppliers}
         productName={productName}
         photoUploader={photoUploader}
-        i18n={i18n}
         priceInThousands={priceInThousands}
         onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setPurchaseDraft(null)}
@@ -1637,7 +1636,6 @@ export function RunPage() {
         storeById={storeById}
         productName={productName}
         photoUploader={photoUploader}
-        i18n={i18n}
         priceInThousands={priceInThousands}
         onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setAddItemDraft(null)}

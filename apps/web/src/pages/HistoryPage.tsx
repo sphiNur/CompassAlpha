@@ -18,7 +18,7 @@ import {
 } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../lib/trpc';
-import { useDateFormat, useI18n, useProductNameParts } from '../hooks/useI18n';
+import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
 import { useAuthStore } from '../stores/authStore';
 import { useReportStore } from '../hooks/useReportStore';
@@ -57,8 +57,6 @@ export function HistoryPage() {
   const i18n = useI18n();
   const dates = useDateFormat();
   const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
-  // UI-4 (review RUNWEB2-06): names on two lines, never "primary (secondary)".
-  const productNameParts = useProductNameParts();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [otherFilters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
@@ -386,8 +384,6 @@ export function HistoryPage() {
       onClearSearchOrFilters={clearAll}
       storeById={storeById}
       skuById={skuById}
-      productNameParts={productNameParts}
-      i18n={i18n}
     />
   );
 }

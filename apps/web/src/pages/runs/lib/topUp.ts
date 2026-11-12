@@ -27,7 +27,7 @@
 import { toCents } from '@compass/contracts/money';
 import { milliQty, qtyMilliOrZero } from '@compass/contracts/quantity';
 import type { PaymentMethod } from '@compass/contracts';
-import type { PurchaseDraft } from '../sheets/RunSheets';
+import type { PurchaseDraft } from '../sheets/drafts';
 import { editPricingFromSplits } from './purchaseOverrides';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 
