@@ -191,10 +191,21 @@ export function decide(
       assertActiveStream(state);
       assertCanEditSession(state, command.actor);
       const target = command.targetMemberId ?? command.actor.memberId;
-      if (target !== command.actor.memberId && !command.actor.permissions.has('order.approve')) {
-        throw forbidden('order.errors.cannotEditOthersLine');
+      if (target !== command.actor.memberId) {
+        if (!command.actor.permissions.has('order.approve')) {
+          throw forbidden('order.errors.cannotEditOthersLine');
+        }
+        // Review ORD-34 (2026-11): as for AdjustItem, someone else's line
+        // must exist; a note on it used to make one of quantity 0.
+        if (!state.items.has(itemKey(command.skuId, target))) {
+          throw validation('order.errors.targetLineNotFound', {
+            skuId: command.skuId,
+            target,
+          });
+        }
       }
-      const note = command.note?.trim() ?? null;
+      // ORD-34: spaces alone are no note (they were kept as '').
+      const note = command.note?.trim() || null;
       if (note && note.length > 500) throw validation('order.errors.noteTooLong');
       const prev = state.items.get(itemKey(command.skuId, target))?.note ?? null;
       if (prev === note) return [];
@@ -558,9 +569,10 @@ export function decide(
       //   - status='in_run' but runId !== command.runId  → no-op (the
       //     session has been re-attached to a different run; ejecting
       //     against the OLD runId would be a lie).
-      //   - any other status (draft/submitted/rejected/archived)       → no-op
+      //   - any other status (draft/submitted/rejected)  → no-op
       //     (caller is racing against another workflow; not our job to
-      //     destabilize it).
+      //     destabilize it). An archived session is refused above
+      //     (assertActiveStream: order.errors.archived).
       // The repair worker (Wave2 #15 part B) sweeps for stuck sessions
       // and emits a fresh EjectFromRun targeted at the CURRENT runId,
       // so misalignments self-heal.
