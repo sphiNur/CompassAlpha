@@ -2760,7 +2760,8 @@ export const en = {
   'attendance.settings.graceHint':
     'Clocking in this many minutes after the start is not counted as late.',
   'attendance.settings.saved': 'Clock-in rules saved',
-  'attendance.errors.punchFailed': 'Could not clock in. Try again.',
+  // I18N1-08: a clock-out falls back to this too; it said "clock in".
+  'attendance.errors.punchFailed': 'Could not record the punch. Try again.',
   'attendance.errors.saveFailed': 'Could not save. Try again.',
   'attendance.errors.notEnabled': 'Clocking in is not switched on for you at this store.',
   'attendance.errors.otherDevice':

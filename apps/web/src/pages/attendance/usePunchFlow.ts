@@ -49,7 +49,7 @@ export function usePunchFlow(opts: {
       },
       haptic,
       refresh: () => void live.current.utils.attendance.me.invalidate(),
-      failed: (err) => live.current.errToast('attendance.errors.punchFailed')(err),
+      failed: (err, fallback) => live.current.errToast(fallback)(err),
       onConsent: () => live.current.opts.onConsent(),
       onEnroll: () => live.current.opts.onEnroll(),
       onAgain: (identify, notice) => live.current.opts.onAgain(identify, notice),

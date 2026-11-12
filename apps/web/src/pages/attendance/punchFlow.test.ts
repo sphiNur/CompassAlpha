@@ -74,7 +74,7 @@ function setup(opts: { deviceId?: string | null } = {}) {
     },
     haptic: (kind) => void log.push(`haptic ${kind}`),
     refresh: () => void log.push('refresh'),
-    failed: (err) => void log.push(`toast ${(err as Error).message}`),
+    failed: (err, fallback) => void log.push(`toast ${(err as Error).message} | ${fallback}`),
     onConsent: () => void log.push('consent'),
     onEnroll: () => void log.push('enroll'),
     onAgain: (identify, notice) => void log.push(`again ${identify} ${notice ?? '-'}`),
@@ -150,7 +150,7 @@ describe('punchFlow: a punch', () => {
     const t = setup();
     t.answerChallenges(refusal('attendance.errors.notEnabled'));
     await t.flow.start(false, HERE, 'in');
-    expect(t.log).toEqual(['toast attendance.errors.notEnabled']);
+    expect(t.log).toEqual(['toast attendance.errors.notEnabled | attendance.errors.punchFailed']);
     expect(t.flow.getState()).toMatchObject({ flow: null, preparing: false });
   });
 
@@ -548,7 +548,9 @@ describe('punchFlow: "Not <name>"', () => {
     t.flow.undo();
     t.undos[0]!.reject(refusal('attendance.errors.undoTooLate'));
     await t.settle();
-    expect(t.log.at(-1)).toBe('toast attendance.errors.undoTooLate');
+    // Review ATT-17: a refusal with no reason of its own is not "could not
+    // clock in"; the undo falls back to the generic sentence.
+    expect(t.log.at(-1)).toBe('toast attendance.errors.undoTooLate | common.errors.actionFailed');
     expect(t.flow.getState().last?.id).toBe('p1');
   });
 

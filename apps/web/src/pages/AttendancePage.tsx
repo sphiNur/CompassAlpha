@@ -149,12 +149,14 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const consentGive = trpc.attendance.faceConsentGive.useMutation({
     onSuccess: () => void utils.attendance.me.invalidate(),
   });
+  // Review ATT-17: agreeing or withdrawing is not a punch; a failure the
+  // server names no reason for said "could not clock in".
   const consentWithdraw = trpc.attendance.faceConsentWithdraw.useMutation({
     onSuccess: () => {
       setWithdrawOpen(false);
       void utils.attendance.me.invalidate();
     },
-    onError: errToast('attendance.errors.punchFailed'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
@@ -403,7 +405,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                         setConsentOpen(false);
                         startEnroll(true);
                       },
-                      onError: errToast('attendance.errors.punchFailed'),
+                      onError: errToast('common.errors.actionFailed'),
                     },
                   );
                 }}
