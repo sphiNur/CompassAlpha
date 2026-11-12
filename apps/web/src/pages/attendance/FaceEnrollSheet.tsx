@@ -368,8 +368,9 @@ function FaceRing({
               <path
                 d="M5 12.5l4.5 4.5L19 7.5"
                 fill="none"
-                // On the success fill, as the kit's Stepper draws its tick
-                // (white was faint on the dark theme's lighter green).
+                // On the success fill, the inverse text colour: near-white
+                // in the light theme, near-black in the dark one (white was
+                // faint on the dark theme's lighter green).
                 style={{ stroke: 'var(--c-fg-inverse)' }}
                 strokeWidth={2.5}
                 strokeLinecap="round"
