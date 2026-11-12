@@ -157,11 +157,6 @@ export const REQUIRED_CATEGORIES: Record<Lang, string[]> = {
   zh: ['other'],
 };
 
-// ── 5. Chinese punctuation ──────────────────────────────────────────────
-
-/** zh keys whose half-width punctuation is deliberate, with the reason. */
-export const ZH_PUNCT_ALLOW: Record<string, string> = {};
-
 // ── 7. Values left in English ───────────────────────────────────────────
 
 /** `lang key` → why the value may equal the English one. */
@@ -284,9 +279,6 @@ export const COPY_BANNED: Record<Lang, Array<{ pattern: RegExp; use: string }>> 
     { pattern: /lugʻat/i, use: 'say what is missing' },
   ],
 };
-
-/** `lang key` → why the value may keep a word from COPY_BANNED. */
-export const COPY_BANNED_ALLOW: Record<string, string> = {};
 
 // ── 12. ru gender shortcuts ─────────────────────────────────────────────
 
