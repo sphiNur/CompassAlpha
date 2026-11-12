@@ -158,12 +158,8 @@ async function readSessionPayload(
   //
   // Two passes — `allow` first (additive), then `deny` (subtractive)
   // so deny always wins on conflict. Expired overrides are filtered
-  // server-side: cheaper than a per-request cron sweep.
-  //
-  // M0 simplification: store-scoped overrides land in the same
-  // permission set regardless of which store the request targets.
-  // Per-store gating moves to a request-time check when the
-  // store-scope middleware grows; the schema is forward-compatible.
+  // server-side: cheaper than a per-request cron sweep. A store-scoped
+  // override counts in its own store only (below).
   const overrides = await db
     .select({
       permissionKey: s.memberPermissionOverrides.permissionKey,

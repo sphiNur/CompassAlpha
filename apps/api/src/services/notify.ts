@@ -23,7 +23,7 @@
  * Channel = 'bot' for now (WebPush lands later). Body is a short Markdown
  * line with a deep link back into the Mini App.
  */
-import { eq, and, ne, inArray, or, isNull, gt } from 'drizzle-orm';
+import { eq, and, inArray, or, isNull, gt } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
@@ -371,11 +371,6 @@ export async function notifyOthersWithPermission(
   const targets = excludeUserId ? all.filter((u) => u !== excludeUserId) : all;
   await dispatch(db, orgId, targets, envelope);
 }
-
-// Re-export for routers that just need the type without pulling in the impl.
-export type { DB };
-// Suppress unused-import warning in some TS configs.
-void ne;
 
 /**
  * Each recipient's UI language: their own setting, else the org default.

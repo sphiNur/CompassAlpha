@@ -146,26 +146,6 @@ class Logger {
   }
 
   // Convenience helpers -------------------------------------------------
-  click(label: string, target?: string, data?: Record<string, unknown>): void {
-    this.log('debug', 'click', { action: label, target, data });
-  }
-  nav(from: string, to: string): void {
-    this.log('debug', 'nav', { action: 'route', target: to, data: { from } });
-  }
-  rpcRequest(name: string, traceId?: string): void {
-    this.log('debug', 'rpc.request', { action: name, traceId });
-  }
-  rpcResponse(name: string, ms: number, traceId?: string): void {
-    this.log('debug', 'rpc.response', { action: name, traceId, data: { ms } });
-  }
-  rpcError(name: string, err: { message?: string; code?: string }, traceId?: string): void {
-    this.log('warn', 'rpc.error', {
-      action: name,
-      traceId,
-      errorMsg: err.message ?? 'unknown',
-      data: { code: err.code },
-    });
-  }
   error(err: unknown, target?: string): void {
     const e = err instanceof Error ? err : new Error(String(err));
     this.log('error', 'error', { target, errorMsg: e.message, errorStack: e.stack });

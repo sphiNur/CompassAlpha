@@ -31,10 +31,10 @@ const LOG_LIMIT = { window: 60_000, max: 60 } as const;
 /**
  * Lenient batch shape. We accept anything that has an `events` array,
  * normalize each event ourselves, and clamp/drop fields that don't fit
- * our DB columns. The strict ClientLogEventSchema is preserved in
- * @compass/contracts for typing the FE writer; the server, by contrast,
- * is forgiving so a stale FE bundle with a slightly different shape
- * still gets ingested instead of 400-looping into oblivion.
+ * our DB columns. The web's writer has its own type (LogEvent in
+ * @compass/telemetry); the server is forgiving so a stale FE bundle with
+ * a slightly different shape still gets ingested instead of 400-looping
+ * into oblivion.
  */
 const LooseLogBatchSchema = z.object({
   events: z.array(z.record(z.unknown())).max(CLIENT_LOG_BATCH_MAX),

@@ -1,9 +1,7 @@
 /**
- * Compass Telegram bot — M2 deliverable.
- *
- * For M0 we ship the entry point + grammY bootstrap so the deploy topology
- * is real (process exists, healthcheck wired). The notification dispatcher
- * lands when the outbox worker is implemented.
+ * Compass Telegram bot: answers /start (with an invite fallback) and /id
+ * by long polling. It sends no notifications; the outbox worker
+ * (apps/worker) delivers those through the Bot API relay.
  *
  * Run with: TELEGRAM_BOT_TOKEN=... bun run src/main.ts
  */

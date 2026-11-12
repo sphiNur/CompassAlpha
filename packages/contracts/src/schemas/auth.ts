@@ -218,15 +218,3 @@ export const CreateOrganizationInputSchema = z.object({
   locale: LocaleSchema.optional(),
   timezone: TimeZoneSchema.optional(),
 });
-
-export const AuthTokensSchema = z.object({
-  accessToken: z.string(),
-  refreshToken: z.string(),
-  accessExpiresAt: z.string(),
-  refreshExpiresAt: z.string(),
-});
-
-export const LoginOutputSchema = z.object({
-  tokens: AuthTokensSchema,
-  session: SessionSchema,
-});

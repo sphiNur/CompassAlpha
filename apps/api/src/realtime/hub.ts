@@ -200,11 +200,6 @@ class Hub {
     return n;
   }
 
-  // Useful for tests + /debug.
-  orgCount(): number {
-    return this.subs.size;
-  }
-
   /**
    * Broadcast an app-level keepalive to every connected sink across
    * every org (M3.8, 2026-05-15). Called on a fixed interval from

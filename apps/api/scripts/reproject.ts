@@ -55,7 +55,7 @@
  *   - Time bounds: ~50 ms per 1000 events on a warm DB connection.
  */
 import { sql } from 'drizzle-orm';
-import { getDb, schema as s, closeDb, type DB } from '@compass/db';
+import { getDb, closeDb, type DB } from '@compass/db';
 import { applyRun, emptyRunState, type RunEvent } from '@compass/domain/run';
 import {
   apply as applyOrder,
@@ -197,9 +197,6 @@ async function main() {
       });
     }
   });
-
-  // Suppress unused-symbol warning if a section gets disabled in a future revision.
-  void s;
 
   const elapsedMs = Date.now() - t0;
   console.log(
