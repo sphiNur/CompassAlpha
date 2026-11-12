@@ -255,9 +255,7 @@ export function PurchaseSheet({
           disabled={!canSubmit}
           onClick={() =>
             draft &&
-            (canSubmit
-              ? onSubmit(draft)
-              : toast.error(i18n.t('run.errors.splitsMustSum')))
+            (canSubmit ? onSubmit(draft) : toast.error(i18n.t('run.errors.splitSumMismatch')))
           }
         >
           {!splitMatches

@@ -1777,7 +1777,6 @@ export const ru = {
   'run.errors.unmarkReasonRequired': 'Опишите, почему теперь доступно.',
   'run.errors.recallReasonRequired': 'Опишите причину отзыва.',
   'run.errors.undoReasonRequired': 'Укажите, почему возвращаете на предыдущий этап.',
-  'run.errors.splitsMustSum': 'Сумма по магазинам должна равняться фактическому кол-ву.',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Для этого магазина нет позиций',

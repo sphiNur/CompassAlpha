@@ -1784,7 +1784,7 @@ export const en = {
     'This product is not in this run — it may have just been removed. Refresh to check.',
   'run.errors.invalidQty': 'The quantity or price is not a valid number. Enter it again.',
   'run.errors.qtyMustBePositive': 'Quantity must be positive.',
-  'run.errors.splitSumMismatch': 'Store split must sum to actual quantity.',
+  'run.errors.splitSumMismatch': 'The store split must add up to the actual quantity.',
   'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable.',
   'run.errors.itemNotPending': 'Only a pending item can be marked unavailable.',
   'run.errors.itemAlreadyPurchased':
@@ -1845,7 +1845,6 @@ export const en = {
   'run.errors.unmarkReasonRequired': 'Please describe why this is available now.',
   'run.errors.recallReasonRequired': 'Please describe why you are recalling this.',
   'run.errors.undoReasonRequired': 'Please describe why you are reverting.',
-  'run.errors.splitsMustSum': 'Splits must add up to the actual quantity.',
 
   // ── 12. Confirm page (delivery acceptance) ──────────────────────
   'confirm.empty.noItems': 'No items for this store',

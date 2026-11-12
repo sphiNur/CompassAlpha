@@ -1557,7 +1557,6 @@ export const zh = {
   'run.errors.unmarkReasonRequired': '请说明现在为何能买到。',
   'run.errors.recallReasonRequired': '请说明撤回原因。',
   'run.errors.undoReasonRequired': '请说明回退原因。',
-  'run.errors.splitsMustSum': '门店分配总数必须等于实际数量。',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': '本店没有商品',

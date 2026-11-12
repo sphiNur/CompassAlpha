@@ -1766,7 +1766,6 @@ export const uz = {
   'run.errors.unmarkReasonRequired': 'Hozir nima uchun mavjudligini yozing.',
   'run.errors.recallReasonRequired': 'Qaytarish sababini yozing.',
   'run.errors.undoReasonRequired': 'Ortga qaytarish sababini yozing.',
-  'run.errors.splitsMustSum': 'Taqsimot yigʻindisi haqiqiy miqdorga teng boʻlishi shart.',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Bu doʻkon uchun mahsulot yoʻq',
