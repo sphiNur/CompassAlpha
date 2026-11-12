@@ -445,13 +445,24 @@ apps/web/src/
 │   ├── shell/              # 外壳的各部分：tab 表、页面表、底部导航、顶栏、深链、离线横幅、主按钮
 │   ├── ErrorBoundary.tsx
 │   └── useWarmRunQueries.ts # 启动时预取采购页的数据
-├── pages/
-│   ├── OrderPage.tsx       (1403 行) — 下单
-│   ├── ApprovalPage.tsx    (650 行)  — 审批
-│   ├── RunPage.tsx         (3480 行, M3 拆分目标) — 采购 + 配送 + 验收
-│   ├── ConfirmPage.tsx     (506 行)  — 验收
-│   ├── AdminPage.tsx       (7477 行, M3 拆分目标) — 管理员
-│   └── DebugPage.tsx       (346 行)  — 调试（admin 子 tab）
+├── pages/                  # 底部 tab 各一个页面文件；页面自己的部件、hook、纯函数和测试放在对应目录
+│   ├── OrderPage.tsx       # 下单
+│   ├── order/              # 商品行、今日批次条、送出前的清单、送出后的回执、其他物品编辑、采购中横幅，及纯函数
+│   ├── ApprovalPage.tsx    # 审核：待审的订单
+│   ├── approval/           # 一张订单的商品和每个人要的数量（SessionItems），及纯函数
+│   ├── RunPage.tsx         # 采购：计划、采购、送到各店，各店验收后结束
+│   ├── runs/               # 采购页的面板（components/）、弹层（sheets/）、视图（views/）、采购历史（history/）和纯函数（lib/）
+│   ├── ConfirmPage.tsx     # 验收：门店验收送到的商品
+│   ├── confirm/            # 商品行、问题弹层和它的表单 hook、没买到的商品、等待送达、主按钮，及纯函数
+│   ├── HistoryPage.tsx     # 历史：采购记录（搜索、筛选、分页都在服务端）
+│   ├── SettlementPage.tsx  # 日结：一个门店当天的现金结算
+│   ├── settlement/         # 草稿模型和存储、表单 hook、金额输入、费用和工资明细、汇总、历史
+│   ├── SalesPage.tsx       # 销售：给没有日结权限的成员录销售
+│   ├── AttendancePage.tsx  # 考勤：上下班打卡
+│   ├── attendance/         # 打卡流程、人脸录入，以及管理里的考勤（AttendanceAdmin）
+│   ├── AdminPage.tsx       # 管理：分区列表，点进各分区
+│   ├── admin/              # 管理的各分区：catalog/、operations/、people/、stores/、platform/
+│   └── DebugPage.tsx       # 调试台：超级管理员在 管理 › 运营 › 实时动态 里打开
 ├── components/
 │   ├── LanguageSheet.tsx
 │   ├── SettingsSheet.tsx
