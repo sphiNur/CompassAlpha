@@ -109,7 +109,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         // V9: the field's edge at 3:1 against the page (--c-field-border).
         'outline-none ring-field',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
-        'focus-visible:ring-offset-[var(--c-bg)]',
+        'focus-visible:ring-offset-[var(--c-ring-offset)]',
         disabledClass,
         // 2026-11-05: iOS draws date/time fields with the native control's
         // own minimum width and centred text, ignoring w-full — 营业日期 ran

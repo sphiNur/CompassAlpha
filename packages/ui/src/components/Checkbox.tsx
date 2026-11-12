@@ -53,7 +53,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
         'bg-[var(--c-surface-2)] ring-field transition-colors',
         'peer-checked:bg-[var(--c-action)] peer-checked:[box-shadow:none]',
         'peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--c-ring)] peer-focus-visible:ring-offset-2',
-        'peer-focus-visible:ring-offset-[var(--c-bg)]',
+        'peer-focus-visible:ring-offset-[var(--c-ring-offset)]',
         // UI-11: dimmed once — here when bare, by the label otherwise.
         label === undefined && 'peer-disabled:opacity-50',
         invalid && 'ring-2 ring-[var(--c-danger)]',

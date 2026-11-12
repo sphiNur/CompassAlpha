@@ -68,7 +68,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           // V9: the field's edge at 3:1 against the page (--c-field-border).
           'outline-none ring-field',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
-          'focus-visible:ring-offset-[var(--c-bg)]',
+          'focus-visible:ring-offset-[var(--c-ring-offset)]',
           // The browser's native `<input type=search>` cancel decoration
           // collides with our X button on WebKit. Hide it.
           '[&::-webkit-search-cancel-button]:appearance-none',

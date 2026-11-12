@@ -43,7 +43,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         // V9: the field's edge at 3:1 against the page (--c-field-border).
         'outline-none ring-field',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
-        'focus-visible:ring-offset-[var(--c-bg)]',
+        'focus-visible:ring-offset-[var(--c-ring-offset)]',
         disabledClass,
         marked && 'ring-2 ring-[var(--c-danger)]',
         className,

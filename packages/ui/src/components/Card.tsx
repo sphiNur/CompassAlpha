@@ -47,7 +47,10 @@ export function CardHeader({ className, children }: { className?: string; childr
     // same density as the bottom nav. The header still has no bottom
     // padding because consumers either follow it with a button row
     // (which carries its own py-2) or end the card right after.
-    <header className={cn('flex items-start justify-between gap-3 px-4 pt-3', className)}>
+    // --card-pad (16 px) as CardBody, not a second spelling (UI-34).
+    <header
+      className={cn('flex items-start justify-between gap-3 px-[var(--card-pad)] pt-3', className)}
+    >
       {children}
     </header>
   );

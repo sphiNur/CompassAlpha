@@ -44,8 +44,8 @@ so HDR + sRGB renders match perceived hue.
 System font stack via `--font-sans`. One scale, the `text-old-*`
 utilities (packages/ui/tailwind.preset.js; the `old-` prefix is historical):
 display 24 · h1 19 · h2 15 · h3 14 · body 13 · body-sm 12 · label 11 ·
-tiny 9 px. Which size is for what is written above `--text-display` in
-`packages/ui/src/tokens.css`. No arbitrary `text-[15px]`, and nothing
+tiny 9 px. Which size is for what is written next to the scale in
+`packages/ui/tailwind.preset.js`. No arbitrary `text-[15px]`, and nothing
 uppercase (UI-11): a section heading is `SectionLabel`.
 
 ## Components

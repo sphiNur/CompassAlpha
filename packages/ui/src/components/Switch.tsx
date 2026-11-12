@@ -49,7 +49,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
         'bg-[var(--c-surface-2)] ring-field',
         'peer-checked:bg-[var(--c-action)] peer-checked:[box-shadow:none]',
         'peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--c-ring)] peer-focus-visible:ring-offset-2',
-        'peer-focus-visible:ring-offset-[var(--c-bg)]',
+        'peer-focus-visible:ring-offset-[var(--c-ring-offset)]',
         // UI-11: dimmed once — here when bare, by the label otherwise.
         label === undefined && 'peer-disabled:opacity-50',
         'peer-checked:[&>span]:translate-x-3 peer-checked:[&>span]:bg-[var(--c-action-fg)]',

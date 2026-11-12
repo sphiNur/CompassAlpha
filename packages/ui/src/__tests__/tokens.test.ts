@@ -142,6 +142,15 @@ describe('colour tokens in use', () => {
   });
 });
 
+describe('one token per value (review UI-34)', () => {
+  test('every focus ring is offset in --c-ring-offset', () => {
+    const stray = componentFiles()
+      .filter((file) => readFileSync(file, 'utf8').includes('ring-offset-[var(--c-bg)]'))
+      .map((file) => file.slice(file.indexOf('/src/') + 1));
+    expect(stray).toEqual([]);
+  });
+});
+
 describe('tap areas', () => {
   const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
 

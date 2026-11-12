@@ -56,7 +56,6 @@
   --c-success: oklch(51% 0.14 145);
   --c-warning: oklch(72% 0.15 75);
   --c-danger: oklch(54% 0.21 25);
-  --c-info: oklch(60% 0.13 240);
 
   /* Status ink (2026-07-27).
    *
@@ -86,7 +85,6 @@
   --c-warn-bg: oklch(96% 0.07 75);
   --c-success-bg: oklch(95% 0.06 145);
   --c-danger-bg: oklch(96% 0.06 25);
-  --c-info-bg: oklch(95% 0.04 240);
 
   /* Status ink on the tints above (V7, 2026-10-30). Banner, Badge,
    * Toast and the ops activity list used to hard-code these as
@@ -126,7 +124,7 @@
    * accumulated across call sites. Consume via `px-[var(--card-pad)]`,
    * `h-[var(--control-h)]` etc. — never re-type a raw px height.
    *
-   *   --card-pad       Card body/footer inner padding (== px-4).
+   *   --card-pad       A card's inner padding: CardHeader and CardBody.
    *   --control-h      Every text field: Input (also type="number"),
    *                    SearchInput, Select (and raw <input>/<select>),
    *                    and the md Button that sits next to them.
@@ -151,7 +149,6 @@
 
   /* Layout */
   --app-header-h: 56px;
-  --app-subnav-h: 48px;
   --app-nav-h: 64px;
   --app-viewport-h: 100dvh;
   /* V12 (2026-10-31): 16px, the px-4 every page body uses. As
@@ -185,52 +182,10 @@
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Inter', 'PingFang SC',
     'Hiragino Sans GB', sans-serif;
-  --font-mono: ui-monospace, 'JetBrains Mono', 'Menlo', 'Cascadia Mono', monospace;
 
-  /* Typography scale (M3.14, 2026-05-16: about 20% smaller, because
-   * Telegram's WebView on the Android phones the stores use draws type a
-   * tier larger than on iOS). These vars mirror the `text-old-*`
-   * utilities in apps/web/tailwind.config.js. Use the utilities at call
-   * sites and these vars only in plain CSS.
-   *
-   * The `old-` prefix is from when a redesign's larger scale held the
-   * plain names. The owner kept the current look (2026-11-05) and that
-   * scale is gone (review UI-16), so this is the one scale.
-   *
-   * Roles (docs/UI_STANDARDS.md):
-   *
-   *   page title                    text-old-h1, in SectionHeader    19px
-   *   card / empty-state title      text-old-h2 semibold (CardTitle)  15px
-   *   input value                   text-old-h3                       14px
-   *   list-row primary, body copy   text-old-body                     13px
-   *   section heading               SectionLabel: text-old-body
-   *                                 semibold, sentence case (UI-11)   13px
-   *   description, toast body       text-old-body-sm                  12px
-   *   form label, meta, pills       text-old-label (FieldLabel for
-   *                                 form labels; pills font-medium)   11px
-   *   footnote                      text-old-tiny                      9px
-   *   money                         the body font with tabular-nums,
-   *                                 never font-mono (UI-14)
-   *
-   * Nothing is uppercase (the CI typography guard fails on it), so there
-   * is no eyebrow style. Hierarchy comes from weight and the three inks
-   * (--c-fg, --c-fg-muted, --c-fg-subtle) before size (UI_STANDARDS, core
-   * principle). A screen that needs an exception says why in a one-line
-   * comment.
-   *
-   * Full review 2026-11 (UI-17): this block used to recommend the
-   * redesign's `text-h2` / `text-body`, an uppercase eyebrow for
-   * SectionLabel and font-mono for money, all against UI-11 / UI-14 and CI.
-   */
-  --text-display: 24px;
-  --text-h1: 19px;
-  --text-h2: 15px;
-  --text-h3: 14px;
-  --text-body: 13px;
-  --text-body-sm: 12px;
-  --text-label: 11px;
-  --text-meta: 10px;
-  --text-tiny: 9px;
+  /* Type sizes are the text-old-* utilities, defined with their roles in
+   * ../tailwind.preset.js. Review UI-34 (2026-11-12): the --text-* vars
+   * that copied them here, to be kept in sync by hand, had no reader. */
 }
 
 :root[data-theme='dark'],
@@ -272,7 +227,6 @@
   --c-warn-bg: oklch(28% 0.07 75);
   --c-success-bg: oklch(28% 0.06 145);
   --c-danger-bg: oklch(28% 0.07 25);
-  --c-info-bg: oklch(28% 0.05 240);
   --c-success-ink: oklch(86% 0.1 145);
   --c-warn-ink: oklch(86% 0.1 75);
   --c-danger-ink: oklch(84% 0.08 25);

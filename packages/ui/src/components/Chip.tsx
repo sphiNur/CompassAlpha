@@ -115,7 +115,12 @@ export function ChipBar({
         // bouncing the parent page on iOS — without it, a fast horizontal
         // chip-pan can briefly disable the page's vertical scroll.
         style={{ overscrollBehaviorX: 'contain' }}
-        className={cn('flex gap-1.5 overflow-x-auto px-4 py-1.5 scrollbar-hide', className)}
+        // --app-inline-x (16 px): the page's side inset, as the list under
+        // the strip (UI-34).
+        className={cn(
+          'flex gap-1.5 overflow-x-auto px-[var(--app-inline-x)] py-1.5 scrollbar-hide',
+          className,
+        )}
       >
         {children}
       </div>

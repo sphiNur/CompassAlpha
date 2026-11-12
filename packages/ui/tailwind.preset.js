@@ -31,11 +31,34 @@
  *     SectionLabel, form labels FieldLabel, and CI fails on `uppercase`
  *     (UI-11).
  *
- * Roles per size: src/tokens.css, above --text-display.
+ * The `old-` prefix is from when a redesign's larger scale held the
+ * plain names. The owner kept the current look (2026-11-05) and that
+ * scale is gone (review UI-16), so this is the one scale.
  *
- * Sizes (keep in sync with the --text-* vars in src/tokens.css; the
- * names are registered with tailwind-merge in src/cn.ts, and a test
- * checks both):
+ * Roles (docs/UI_STANDARDS.md):
+ *
+ *   page title                    text-old-h1, in SectionHeader    19px
+ *   card / empty-state title      text-old-h2 semibold (CardTitle)  15px
+ *   input value                   text-old-h3                       14px
+ *   list-row primary, body copy   text-old-body                     13px
+ *   section heading               SectionLabel: text-old-body
+ *                                 semibold, sentence case (UI-11)   13px
+ *   description, toast body       text-old-body-sm                  12px
+ *   form label, meta, pills       text-old-label (FieldLabel for
+ *                                 form labels; pills font-medium)   11px
+ *   footnote                      text-old-tiny                      9px
+ *   money                         the body font with tabular-nums,
+ *                                 never font-mono (UI-14)
+ *
+ * Nothing is uppercase (the CI typography guard fails on it), so there
+ * is no eyebrow style. Hierarchy comes from weight and the three inks
+ * (--c-fg, --c-fg-muted, --c-fg-subtle) before size (UI_STANDARDS, core
+ * principle). A screen that needs an exception says why in a one-line
+ * comment. (Review UI-34, 2026-11-12: the roles moved here from
+ * tokens.css, whose --text-* copies of these sizes had no reader.)
+ *
+ * Sizes (the names are registered with tailwind-merge in src/cn.ts, and
+ * a test checks that):
  *   display 24 · h1 19 · h2 15 · h3 14 · body 13 · body-sm 12 ·
  *   label 11 · meta 10 (deprecated) · tiny 9
  */
