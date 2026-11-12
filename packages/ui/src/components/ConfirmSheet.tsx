@@ -50,8 +50,9 @@ export interface ConfirmSheetProps {
   reason?: string;
   onReasonChange?: (s: string) => void;
   /** Show an explicit Cancel button. Defaults to false because three
-   *  dismiss paths (backdrop tap, swipe-down, Telegram BackButton) make
-   *  a fourth redundant on mobile. We force-show it when there is a
+   *  dismiss paths (backdrop tap, swipe-down on the handle or title,
+   *  Telegram BackButton) make a fourth redundant on mobile. (The
+   *  swipe exists since review UI-25; the handle had no drag before.) We force-show it when there is a
    *  reason input — the soft keyboard covers the backdrop and the user
    *  needs an explicit "back out" target. Pass true to override e.g.
    *  for desktop-only flows. */

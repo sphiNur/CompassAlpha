@@ -58,7 +58,7 @@ Each is theme-agnostic via tokens.
 | `Button` | 6 variants: primary / secondary / ghost / utility / danger / pearl. `loading` shows Spinner. |
 | `Card` / `CardHeader` / `CardTitle` / `CardMeta` | Polymorphic. `interactive` adds press affordance. |
 | `Input` | Pill-shaped (`--r-pill`). `invalid` highlights with `--c-danger`. |
-| `Sheet` | Bottom sheet via Radix Dialog. Three slots: header / body / footer. |
+| `Sheet` | Bottom sheet via Radix Dialog. Three slots: header / body / footer. Closes by backdrop tap, Esc, the Telegram BackButton, or a pull down on its handle or title. |
 | `Banner` | 4 tones: info / success / warn / danger. Optional `action` slot. |
 | `Spinner` | Pure SVG, animates via Tailwind `animate-spin`. |
 | `EmptyState` | Centered title + optional description + action; `compact` for a line inside a list. |

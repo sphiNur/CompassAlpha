@@ -99,6 +99,9 @@ describe.each([
  */
 const HOST_VARS = ['--app-main-btn-h'];
 
+/** Set by a component on its own element while it runs: a pulled sheet (UI-25). */
+const RUNTIME_VARS = ['--sheet-drag'];
+
 /** The package's own sources: not its tests or their helpers in src/testing. */
 const componentFiles = () =>
   sources(UI_SRC).filter((f) => !f.includes('__tests__') && !f.includes('/src/testing/'));
@@ -122,7 +125,7 @@ describe('colour tokens in use', () => {
     const missing: string[] = [];
     for (const file of componentFiles()) {
       for (const name of readProperties(readFileSync(file, 'utf8'))) {
-        if (!declared.has(name) && !HOST_VARS.includes(name)) {
+        if (!declared.has(name) && !HOST_VARS.includes(name) && !RUNTIME_VARS.includes(name)) {
           missing.push(`${name} (${file.slice(file.indexOf('/src/') + 1)})`);
         }
       }

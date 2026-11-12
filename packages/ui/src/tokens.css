@@ -373,9 +373,11 @@
     transform: translateY(0);
   }
 }
+/* A sheet pulled down by its handle slides out from where it was let go
+   (--sheet-drag, set by Sheet's drag; review UI-25). */
 @keyframes slideDown {
   from {
-    transform: translateY(0);
+    transform: translateY(var(--sheet-drag, 0px));
   }
   to {
     transform: translateY(100%);

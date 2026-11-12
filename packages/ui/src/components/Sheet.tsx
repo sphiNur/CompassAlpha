@@ -1,5 +1,14 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
 import { useUiLabels } from '../labels';
@@ -172,6 +181,115 @@ export function guardedClose(
     });
 }
 
+/** A flick: let go while moving down at least this fast (px per ms)… */
+const SHEET_FLICK_SPEED = 0.5;
+/** …after a pull of at least this much (px), so a tap's jitter is none. */
+const SHEET_FLICK_MIN_PX = 24;
+
+/**
+ * Review UI-25 (2026-11-12): whether letting go of a sheet pulled down by
+ * its header closes it: pulled past a quarter of its height, or flicked
+ * down. Otherwise it springs back. `pulled` and `height` in px (down is
+ * positive), `speed` in px per ms when the finger lifted. Exported for
+ * tests.
+ */
+export function sheetDragCloses(pulled: number, speed: number, height: number): boolean {
+  if (pulled <= 0) return false;
+  if (speed >= SHEET_FLICK_SPEED && pulled >= SHEET_FLICK_MIN_PX) return true;
+  return pulled >= height / 4;
+}
+
+/** Back to where an open sheet rests, with no transform left on it. */
+function springSheetBack(panel: HTMLElement | null): void {
+  if (!panel?.style.transform) return;
+  panel.style.transition = 'transform var(--t-quick) var(--easing)';
+  panel.style.transform = '';
+  panel.style.removeProperty('--sheet-drag');
+}
+
+interface SheetDrag {
+  pointerId: number;
+  startY: number;
+  lastY: number;
+  lastTime: number;
+  speed: number;
+}
+
+/**
+ * Review UI-25: the pull behind the drag handle, which drew a handle but
+ * had no drag. A finger (touch or pen; a mouse has Esc and the backdrop)
+ * on the header pulls the panel down; see sheetDragCloses. The panel
+ * follows through its inline transform, set directly so a drag renders
+ * nothing, and only while pulled: a transform left on the panel would
+ * make it the containing block of anything fixed inside it. A close
+ * slides out from where the finger let go (--sheet-drag, read by
+ * slideDown in tokens.css).
+ */
+function useSheetDrag(
+  open: boolean,
+  contentRef: RefObject<HTMLDivElement | null>,
+  close: () => void,
+): HTMLAttributes<HTMLDivElement> {
+  const drag = useRef<SheetDrag | null>(null);
+  const pull = (px: number) => {
+    const panel = contentRef.current;
+    if (!panel) return;
+    panel.style.transition = 'none';
+    panel.style.transform = `translateY(${px}px)`;
+    panel.style.setProperty('--sheet-drag', `${px}px`);
+  };
+  const springBack = () => springSheetBack(contentRef.current);
+  // Reopened while still sliding out: start from the top again.
+  useEffect(() => {
+    if (open) springSheetBack(contentRef.current);
+  }, [open, contentRef]);
+  return {
+    onPointerDown: (e) => {
+      if (e.pointerType === 'mouse' || drag.current) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      drag.current = {
+        pointerId: e.pointerId,
+        startY: e.clientY,
+        lastY: e.clientY,
+        lastTime: e.timeStamp,
+        speed: 0,
+      };
+    },
+    onPointerMove: (e) => {
+      const d = drag.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      d.speed = (e.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastTime);
+      d.lastY = e.clientY;
+      d.lastTime = e.timeStamp;
+      pull(Math.max(0, e.clientY - d.startY));
+    },
+    onPointerUp: (e) => {
+      const d = drag.current;
+      if (!d || e.pointerId !== d.pointerId) return;
+      drag.current = null;
+      const panel = contentRef.current;
+      // A finger that stopped before it lifted did not flick.
+      const speed = e.timeStamp - d.lastTime > 100 ? 0 : d.speed;
+      const pulled = Math.max(0, e.clientY - d.startY);
+      if (!panel || !sheetDragCloses(pulled, speed, panel.offsetHeight)) {
+        springBack();
+        return;
+      }
+      close();
+      // Still open on the next frame (unsaved changes ask first; a
+      // pending confirm cannot close): spring back.
+      requestAnimationFrame(() => {
+        if (panel.getAttribute('data-state') === 'open') springBack();
+      });
+    },
+    onPointerCancel: (e) => {
+      if (drag.current?.pointerId !== e.pointerId) return;
+      drag.current = null;
+      springBack();
+    },
+  };
+}
+
 /**
  * True from the first time `open` is true onwards. DX-PFE-5 (2026-11-01):
  * every closed sheet still rendered Radix's Dialog root, provider, portal
@@ -284,6 +402,7 @@ function OpenedSheet({
     keyboardDownTargetRef: focusTitleOnOpen ? titleRef : undefined,
     returnFocusRef,
   });
+  const drag = useSheetDrag(open, contentRef, () => requestOpenChange(false));
 
   return (
     <Dialog.Root open={open} onOpenChange={requestOpenChange}>
@@ -319,7 +438,9 @@ function OpenedSheet({
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
         >
-          <SheetHeader>
+          {/* The header (handle and title) pulls the sheet down (UI-25);
+              touch-none keeps the pull from panning the page. */}
+          <SheetHeader className="touch-none" {...drag}>
             {/* Drag handle — slightly bolder + wider than the previous
                 40×4 hairline so first-time users can read it as "this is
                 draggable" without us having to render an explicit Cancel
@@ -352,8 +473,12 @@ function OpenedSheet({
   );
 }
 
-export function SheetHeader({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-[var(--app-inline-x)] pt-3 pb-2', className)}>{children}</div>;
+export function SheetHeader({ children, className, ...rest }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('px-[var(--app-inline-x)] pt-3 pb-2', className)} {...rest}>
+      {children}
+    </div>
+  );
 }
 
 export function SheetBody({ children, className }: { children: ReactNode; className?: string }) {
