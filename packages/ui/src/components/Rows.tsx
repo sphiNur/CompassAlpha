@@ -45,8 +45,12 @@ export function SectionRow({
       <button
         type="button"
         onClick={onClick}
+        // Review UI-23 (2026-11-12): the keyboard focus outline is drawn
+        // inside the row. Outside it, the row group's overflow-hidden cut
+        // off its sides (and the top of the first row, the bottom of the
+        // last), so it was hard to see which row had focus.
         className={cn(
-          'press flex w-full items-center gap-3 px-4 py-3 text-left',
+          'press flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-offset-[-2px]',
         )}
       >
         {icon ? <span className={cn('shrink-0', iconColor)}>{icon}</span> : null}
@@ -122,7 +126,11 @@ export function ListRow({
       <button
         type="button"
         onClick={onClick}
-        className={cn('press flex w-full items-center gap-3 px-4 py-3 text-left', className)}
+        // The focus outline inside the row, as on SectionRow (UI-23).
+        className={cn(
+          'press flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-offset-[-2px]',
+          className,
+        )}
       >
         {inner}
       </button>
