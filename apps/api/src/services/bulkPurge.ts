@@ -9,8 +9,14 @@
  * was enough. They are now refused on production unless the server's
  * .env sets COMPASS_ALLOW_BULK_PURGE=true for the maintenance window.
  *
- * Production = NODE_ENV=production or COMPASS_RELEASE_CHANNEL=production
- * (either one; dev login reads the same two, in routers/auth/modes.ts).
+ * Production = NODE_ENV=production or COMPASS_RELEASE_CHANNEL=production:
+ * either signal is enough. That is stricter than the sign-in rules'
+ * releaseChannel() (routers/auth/modes.ts), where a set channel wins over
+ * NODE_ENV: with NODE_ENV=production and COMPASS_RELEASE_CHANNEL=staging
+ * the sign-in rules see staging, and these purges still refuse. On
+ * purpose (review ADM2-27, 2026-11-12; this comment used to call the two
+ * readings the same): a mistyped channel must not open a wipe of
+ * customer data. A staging server that runs as production sets the switch.
  *
  * The per-item deletes on the maintenance page (one order, one run) are
  * not covered: they refuse other people's records by themselves (CAT-3,

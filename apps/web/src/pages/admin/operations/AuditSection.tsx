@@ -20,9 +20,8 @@ import { auditChangeLines, type ChangeFormat } from './auditChangeLines';
 /**
  * Admin audit log (added 2026-05-05).
  *
- * Renders rows from `domain.policy_decisions`, which now gets a row
- * for every catalog/role/permission mutation an admin runs (see
- * `auditAdmin()` helper in apps/api/src/services/adminAudit.ts).
+ * Renders rows from `domain.policy_decisions`, which gets a row for every
+ * `auditAdmin()` call (apps/api/src/services/adminAudit.ts).
  *
  * Display goal: a busy chain owner should be able to skim "what
  * happened in the last hour" and answer:
@@ -30,13 +29,11 @@ import { auditChangeLines, type ChangeFormat } from './auditChangeLines';
  *   - Who promoted Ali to manager?
  *   - When did Aziz get the `order.approve` override?
  *
- * The action keys we currently emit are:
- *   admin.store.{create|update|delete}
- *   admin.category.{create|update|delete}
- *   admin.sku.{create|update|delete}
- *   admin.supplier.{create|update|delete}
- *   admin.role.{create|update|delete}
- *   admin.memberPermission.{allow|deny|revoke}
+ * auditSentence.ts words each action and sorts it into a filter; an action
+ * it does not know gets a generic line under "Other". Review ADM2-40
+ * (2026-11-12): the list of actions kept here named six objects and missed
+ * the rest (members, invites, purges, imports…); the auditAdmin calls are
+ * the list.
  */
 export function AdminAuditSection() {
   const i18n = useI18n();
@@ -82,13 +79,15 @@ export function AdminAuditSection() {
     () => new Map(sessionStores.map((s) => [s.id, s.name])),
     [sessionStores],
   );
+  // ADM2-34: "All", "Members" and "Other" are the filter's own words; the
+  // rest name the admin sections the actions belong to.
   const categoryLabel: Record<AuditCategory | 'all', string> = {
-    all: i18n.t('order.categories.all'),
-    people: i18n.t('admin.tile.members'),
+    all: i18n.t('ops.audit.filter.all'),
+    people: i18n.t('ops.audit.filter.people'),
     roles: i18n.t('admin.section.permissions'),
     stores: i18n.t('admin.section.stores'),
     catalog: i18n.t('admin.section.catalog'),
-    other: i18n.t('settlement.expenseCategory.other'),
+    other: i18n.t('ops.audit.filter.other'),
   };
   // Catalog rows get a per-kind badge (SKUs / Suppliers …) instead of
   // the generic "Catalog"; one without a kind (an import) keeps it.

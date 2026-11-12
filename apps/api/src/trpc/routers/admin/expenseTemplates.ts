@@ -1,5 +1,4 @@
 /** The organisation's recurring run expenses (expense templates). */
-import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
@@ -12,6 +11,7 @@ import { authedProcedure } from '../../trpc';
 import { auditChanges } from '../../../services/auditChanges';
 import { requireAdmin, requireOrgAdmin } from './guards';
 import { broadcastCatalog } from './notify';
+import { orgRowOr404 } from './orgRows';
 import { auditAdmin } from '../../../services/adminAudit';
 import { readExpenseTemplates } from '../../../services/expenseTemplates';
 
@@ -71,17 +71,15 @@ export const expenseTemplateProcedures = {
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const existing = await tx.query.expenseTemplates.findFirst({
-          where: (et, { eq: eq2, and: and2 }) =>
-            and2(eq2(et.id, input.templateId), eq2(et.orgId, orgId)),
-        });
-        if (!existing) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'admin.errors.expenseTemplateNotFound',
-          });
-        }
-        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        const existing = await orgRowOr404(
+          tx,
+          s.expenseTemplates,
+          orgId,
+          input.templateId,
+          'admin.errors.expenseTemplateNotFound',
+        );
+        // ADM2-36: typed by the table, as the catalog's edits.
+        const patch: Partial<typeof s.expenseTemplates.$inferInsert> = { updatedAt: new Date() };
         if (input.label !== undefined) patch.label = input.label;
         if (input.unitHint !== undefined) patch.unitHint = input.unitHint;
         if (input.defaultQty !== undefined) patch.defaultQty = input.defaultQty;
@@ -126,16 +124,13 @@ export const expenseTemplateProcedures = {
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const existing = await tx.query.expenseTemplates.findFirst({
-          where: (et, { eq: eq2, and: and2 }) =>
-            and2(eq2(et.id, input.templateId), eq2(et.orgId, orgId)),
-        });
-        if (!existing) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'admin.errors.expenseTemplateNotFound',
-          });
-        }
+        await orgRowOr404(
+          tx,
+          s.expenseTemplates,
+          orgId,
+          input.templateId,
+          'admin.errors.expenseTemplateNotFound',
+        );
         // Soft-delete to keep old runs' "auto-attached from template X"
         // audit trail intact. Archived templates skip the auto-attach
         // loop in run.create.

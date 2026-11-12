@@ -25,15 +25,34 @@ import {
   useIsOrgAdmin,
 } from './CatalogParts';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
+import { changedFields, hasChanges } from './editPatch';
 
-interface SupplierDraft {
-  supplierId?: string;
+/** A supplier's fields as the editor types them ('' for none). */
+interface SupplierText {
   name: string;
   contactPhone: string;
   contactTg: string;
   address: string;
   notes: string;
-  isArchived: boolean;
+}
+
+interface SupplierDraft extends SupplierText {
+  supplierId?: string;
+  /** What an edit opened with, as sent (ADM2-24); a save sends the rest. */
+  opened?: SupplierFields;
+}
+
+type SupplierFields = ReturnType<typeof supplierFields>;
+
+/** The fields as the API takes them: an empty one is null. */
+function supplierFields(d: SupplierText) {
+  return {
+    name: d.name,
+    contactPhone: d.contactPhone || null,
+    contactTg: d.contactTg || null,
+    address: d.address || null,
+    notes: d.notes || null,
+  };
 }
 
 export function SuppliersSection() {
@@ -89,7 +108,6 @@ export function SuppliersSection() {
             contactTg: '',
             address: '',
             notes: '',
-            isArchived: false,
           })
         }
         showArchived={includeArchived}
@@ -121,17 +139,16 @@ export function SuppliersSection() {
                 {canWrite ? (
                   <CatalogRowActions
                     archived={sp.isArchived}
-                    onEdit={() =>
-                      setDraft({
-                        supplierId: sp.id,
+                    onEdit={() => {
+                      const text = {
                         name: sp.name,
                         contactPhone: sp.contactPhone ?? '',
                         contactTg: sp.contactTg ?? '',
                         address: sp.address ?? '',
                         notes: sp.notes ?? '',
-                        isArchived: sp.isArchived,
-                      })
-                    }
+                      };
+                      setDraft({ supplierId: sp.id, ...text, opened: supplierFields(text) });
+                    }}
                     confirmArchive={i18n.t('catalog.supplier.confirmArchive', { name: sp.name })}
                     onArchive={() => remove.mutate({ supplierId: sp.id })}
                     onUnarchive={() => update.mutate({ supplierId: sp.id, isArchived: false })}
@@ -154,25 +171,19 @@ export function SuppliersSection() {
             disabled={!draft?.name.trim()}
             onClick={() => {
               if (!draft) return;
-              if (draft.supplierId) {
-                update.mutate({
-                  supplierId: draft.supplierId,
-                  name: draft.name,
-                  contactPhone: draft.contactPhone || null,
-                  contactTg: draft.contactTg || null,
-                  address: draft.address || null,
-                  notes: draft.notes || null,
-                  isArchived: draft.isArchived,
-                });
-              } else {
-                create.mutate({
-                  name: draft.name,
-                  contactPhone: draft.contactPhone || null,
-                  contactTg: draft.contactTg || null,
-                  address: draft.address || null,
-                  notes: draft.notes || null,
-                });
+              const fields = supplierFields(draft);
+              if (!draft.supplierId) {
+                create.mutate(fields);
+                return;
               }
+              // ADM2-24: only what this edit changed. Nothing changed:
+              // nothing to save.
+              const changes = draft.opened ? changedFields(fields, draft.opened) : fields;
+              if (!hasChanges(changes)) {
+                setDraft(null);
+                return;
+              }
+              update.mutate({ supplierId: draft.supplierId, ...changes });
             }}
           >
             {draft?.supplierId ? i18n.t('common.save') : i18n.t('common.create')}

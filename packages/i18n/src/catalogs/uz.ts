@@ -116,6 +116,10 @@ export const uz = {
   'admin.store.confirmArchive': '«{name}» arxivlansinmi?',
   'admin.store.confirmArchiveBusy':
     '{name} doʻkonida hali {orders} ta yakunlanmagan buyurtma va {runs} ta davom etayotgan xarid bor. Arxivlangandan keyin ular oʻz joyida qoladi. Baribir arxivlansinmi?',
+  'admin.store.confirmPause':
+    '«{name}» toʻxtatilsinmi? Doʻkon qayta faollashtirilmaguncha unga buyurtma berib boʻlmaydi.',
+  'admin.store.confirmPauseBusy':
+    '{name} doʻkonida hali {orders} ta yakunlanmagan buyurtma va {runs} ta davom etayotgan xarid bor. Ular oʻz joyida qoladi, lekin doʻkon qayta faollashtirilmaguncha yangi buyurtma berib boʻlmaydi. Baribir toʻxtatilsinmi?',
   'admin.store.tabTeam': 'Jamoa',
   'admin.store.tabInventory': 'Ombor',
   'admin.store.tabSales': 'Sotuv',
@@ -173,7 +177,7 @@ export const uz = {
   'ops.maint.wipeTitle': 'Butun ish maydonini tozalash',
   'ops.maint.wipeBody':
     'Pastdagi tugma bu ish maydoni yaratgan barcha hodisa, xarid, buyurtma va bildirishnomalarni (hali yuborilmaganlarini ham) oʻchiradi — kundan qatʼi nazar. Faqat noldan boshlash kerak boʻlganda ishlating.',
-  'ops.maint.purgeAllTitle': 'BARCHA test maʼlumotlarini tozalash',
+  'ops.maint.purgeAllTitle': 'Barcha test maʼlumotlarini tozalash',
   'ops.maint.purgeAllBody':
     '1-qadam nechta yozuv oʻchishini koʻrsatadi. 2-qadam siz ish maydoni nomini kiritganingizdan keyin oʻchiradi.',
   'ops.maint.previewEverything': 'Hammasini oldindan koʻrish',
@@ -375,8 +379,8 @@ export const uz = {
   'ops.debug.reload': 'Qayta yuklash',
   'ops.debug.signOut': 'Chiqish va qaytadan boshlash',
   'ops.history.allStores': 'Barcha doʻkonlar',
-  'ops.history.decidedIn': '· {n} daqiqada hal qilindi',
-  'ops.history.decidedBy': '· {name}',
+  'ops.history.decidedIn': '{n} daqiqada hal qilindi',
+  'ops.history.decidedBy': '{name}',
   'ops.history.skuCount': '{n} ta mahsulot',
   'ops.purge.runLabel': 'Xarid {date} #{n}',
   'ops.purge.deleteSessionTitle': 'Buyurtmani oʻchirish',
@@ -394,6 +398,9 @@ export const uz = {
   'ops.purge.kind.history': 'Tarix yozuvlari',
   'ops.purge.kind.appLogs': 'Ilova jurnallari',
   'ops.purge.kind.other': 'Boshqa',
+  'ops.purge.count.orders': '{n} ta buyurtma',
+  'ops.purge.count.runs': '{n} ta xarid',
+  'ops.purge.purchaser': 'Xaridor: {name}',
   'ops.maint.confirmResetBody':
     'Tasdiqlash uchun {date} sanasini kiriting. Buni ortga qaytarib boʻlmaydi.',
   'ops.maint.confirmResetLabel': 'Tozalanadigan sana',
@@ -429,7 +436,6 @@ export const uz = {
     'Bu ruxsat butun ish maydonida sizda yoʻq, shuning uchun uni rolga qoʻsha olmaysiz.',
   'people.grantInStores': 'Tanlangan doʻkonlarda',
   'stores.codeLabel': 'kod {code}',
-  'stores.noCode': 'kodsiz',
   'stores.paused': 'toʻxtatilgan',
   'stores.archived': 'arxivlangan',
   'stores.pickSourceStore': '— manba doʻkonni tanlang —',
@@ -479,7 +485,7 @@ export const uz = {
   'time.hoursAgo': '{n} soat oldin',
   'time.daysAgo': '{n} kun oldin',
   'ops.history.submittedAgo': '{when} yuborilgan',
-  'ops.history.byWhom': '{name} tomonidan',
+  'ops.history.submittedBy': '{name} tomonidan {when} yuborilgan',
   'ops.history.rejectionReason': 'Rad etish sababi: {reason}',
   'ops.purge.sessionMeta': '{status} · {items} · {date}',
   'ops.purge.runMeta': '{status} · {sessions}',
@@ -1840,6 +1846,9 @@ export const uz = {
   'admin.field.code': 'Kod',
   'admin.field.address': 'Manzil',
   'admin.field.timezone': 'Vaqt mintaqasi',
+  'admin.store.timezoneWorkspace': 'Ish maydoni bilan bir xil ({timezone})',
+  'admin.store.timezoneCommon': 'Asosiy vaqt mintaqalari',
+  'admin.store.timezoneOther': 'Boshqa vaqt mintaqalari',
   'admin.field.phone': 'Telefon',
   'admin.field.notes': 'Izohlar',
   'admin.field.tgUsername': 'Telegram nomi',
@@ -1848,7 +1857,6 @@ export const uz = {
   'admin.field.assignedStores': 'Tayinlangan doʻkonlar',
   'admin.field.displayNameOverride': 'Koʻrinadigan ism (admin)',
   'admin.field.codePlaceholder': 'Ichki kod, ixtiyoriy',
-  'admin.field.timezonePlaceholder': 'masalan, Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': 'masalan, shift-lead',
   'admin.field.memberNamePlaceholder': 'Koʻrinadigan ism',
   'admin.label.counting': 'Hisoblanmoqda…',
@@ -2079,7 +2087,6 @@ export const uz = {
   'settlement.details.historicalReadOnlyBody':
     'Bu kun yakuni tafsilotlar joriy etilishidan oldin yozilgan. Tarixiy jami saqlanadi va uni qismlarga ajratib yoki oʻzgartirib boʻlmaydi.',
   'settlement.expenses.remove': 'Oʻchirish',
-  'settlement.expenseCategory.other': 'Boshqa',
   'settlement.wages.title': 'Ish haqi tafsiloti',
   'settlement.wages.totals': 'Toʻlangan {paid} · Toʻlanmagan {unpaid}',
   'settlement.wages.add': '+ Ish haqi qoʻshish',
@@ -2294,6 +2301,9 @@ export const uz = {
   'run.action.addItem.mergePurchasedHint':
     'Doʻkonni mavjud xarid mahsulotiga qoʻshish: narx, yetkazib beruvchi va chek saqlanadi; bu yerdagi boshqa narx faqat shu doʻkon uchun qoʻllanadi.',
   'ops.audit.filterLabel': 'Turi boʻyicha filtr',
+  'ops.audit.filter.all': 'Hammasi',
+  'ops.audit.filter.people': 'Aʼzolar',
+  'ops.audit.filter.other': 'Boshqa',
   'ops.audit.emptyTitle': 'Hozircha admin amallari yoʻq',
   'ops.audit.emptyBody': 'Katalog va rol oʻzgarishlari shu yerda koʻrinadi.',
   'ops.audit.emptyStoreTitle': '{store} doʻkonida amallar yoʻq',

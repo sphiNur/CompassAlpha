@@ -109,6 +109,10 @@ export const ru = {
   'admin.store.confirmArchive': 'Архивировать «{name}»?',
   'admin.store.confirmArchiveBusy':
     'У магазина «{name}» ещё {orders, plural, one {# незавершённый заказ} few {# незавершённых заказа} many {# незавершённых заказов} other {# незавершённого заказа}} и {runs, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}} в работе. После архивации они останутся как есть. Всё равно архивировать?',
+  'admin.store.confirmPause':
+    'Приостановить «{name}»? Пока магазин снова не станет активным, заказать для него будет нельзя.',
+  'admin.store.confirmPauseBusy':
+    'У магазина «{name}» ещё {orders, plural, one {# незавершённый заказ} few {# незавершённых заказа} many {# незавершённых заказов} other {# незавершённого заказа}} и {runs, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}} в работе. Они останутся как есть, но новых заказов не будет, пока магазин снова не станет активным. Всё равно приостановить?',
   'admin.store.tabTeam': 'Команда',
   'admin.store.tabInventory': 'Склад',
   'admin.store.tabSales': 'Продажи',
@@ -165,7 +169,7 @@ export const ru = {
   'ops.maint.wipeTitle': 'Очистить всё рабочее пространство',
   'ops.maint.wipeBody':
     'Кнопка ниже удалит все события, закупки, заказы и уведомления (включая ещё не отправленные), которые когда-либо создавало это рабочее пространство — независимо от даты. Только для полного старта с нуля.',
-  'ops.maint.purgeAllTitle': 'Удалить ВСЕ тестовые данные',
+  'ops.maint.purgeAllTitle': 'Удалить все тестовые данные',
   'ops.maint.purgeAllBody':
     'Шаг 1 показывает, сколько записей будет удалено. Шаг 2 удаляет после того, как вы введёте название рабочего пространства.',
   'ops.maint.previewEverything': 'Предпросмотр всего',
@@ -368,8 +372,8 @@ export const ru = {
   'ops.debug.reload': 'Перезагрузить',
   'ops.debug.signOut': 'Выйти и начать заново',
   'ops.history.allStores': 'Все магазины',
-  'ops.history.decidedIn': '· решено за {n} мин',
-  'ops.history.decidedBy': '· {name}',
+  'ops.history.decidedIn': 'решено за {n} мин',
+  'ops.history.decidedBy': '{name}',
   'ops.history.skuCount':
     '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}',
   'ops.purge.runLabel': 'Закупка {date} №{n}',
@@ -388,6 +392,11 @@ export const ru = {
   'ops.purge.kind.history': 'Записи истории',
   'ops.purge.kind.appLogs': 'Журналы приложения',
   'ops.purge.kind.other': 'Прочее',
+  'ops.purge.count.orders':
+    '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
+  'ops.purge.count.runs':
+    '{n, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}}',
+  'ops.purge.purchaser': 'Закупщик: {name}',
   'ops.maint.confirmResetBody': 'Введите дату {date} для подтверждения. Это нельзя отменить.',
   'ops.maint.confirmResetLabel': 'Дата сброса',
   'ops.purge.deleteRows':
@@ -424,7 +433,6 @@ export const ru = {
     'У вас нет этого права во всём рабочем пространстве, поэтому добавить его в роль нельзя.',
   'people.grantInStores': 'В отдельных магазинах',
   'stores.codeLabel': 'код {code}',
-  'stores.noCode': 'без кода',
   'stores.paused': 'приостановлен',
   'stores.archived': 'в архиве',
   'stores.pickSourceStore': '— выберите исходный магазин —',
@@ -484,7 +492,7 @@ export const ru = {
   'time.hoursAgo': '{n} ч назад',
   'time.daysAgo': '{n} дн. назад',
   'ops.history.submittedAgo': 'отправлено {when}',
-  'ops.history.byWhom': '(автор: {name})',
+  'ops.history.submittedBy': 'отправлено {when} (автор: {name})',
   'ops.history.rejectionReason': 'Причина отказа: {reason}',
   'ops.purge.sessionMeta': '{status} · {items} · {date}',
   'ops.purge.runMeta': '{status} · {sessions}',
@@ -1854,6 +1862,9 @@ export const ru = {
   'admin.field.code': 'Код',
   'admin.field.address': 'Адрес',
   'admin.field.timezone': 'Часовой пояс',
+  'admin.store.timezoneWorkspace': 'Как у рабочего пространства ({timezone})',
+  'admin.store.timezoneCommon': 'Основные часовые пояса',
+  'admin.store.timezoneOther': 'Другие часовые пояса',
   'admin.field.phone': 'Телефон',
   'admin.field.notes': 'Заметки',
   'admin.field.tgUsername': 'Имя в Telegram',
@@ -1862,7 +1873,6 @@ export const ru = {
   'admin.field.assignedStores': 'Назначенные магазины',
   'admin.field.displayNameOverride': 'Отображаемое имя (правка администратора)',
   'admin.field.codePlaceholder': 'Внутренний код, необязательно',
-  'admin.field.timezonePlaceholder': 'например, Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': 'например, shift-lead',
   'admin.field.memberNamePlaceholder': 'Отображаемое имя',
   'admin.label.counting': 'Подсчёт…',
@@ -2095,7 +2105,6 @@ export const ru = {
   'settlement.details.historicalReadOnlyBody':
     'Это закрытие дня сделано до появления детализации. Историческая сумма сохранена и не может быть разбита на строки или изменена.',
   'settlement.expenses.remove': 'Удалить',
-  'settlement.expenseCategory.other': 'Другое',
   'settlement.wages.title': 'Детали зарплаты',
   'settlement.wages.totals': 'Выплачено {paid} · Не выплачено {unpaid}',
   'settlement.wages.add': '+ Добавить зарплату',
@@ -2309,6 +2318,9 @@ export const ru = {
   'run.action.addItem.mergePurchasedHint':
     'Добавить магазин в существующую позицию закупки: цена, поставщик и чек сохраняются; другая цена здесь применится только к этому магазину.',
   'ops.audit.filterLabel': 'Фильтр по типу',
+  'ops.audit.filter.all': 'Все',
+  'ops.audit.filter.people': 'Участники',
+  'ops.audit.filter.other': 'Другое',
   'ops.audit.emptyTitle': 'Действий администраторов пока нет',
   'ops.audit.emptyBody': 'Здесь появятся изменения каталога и ролей.',
   'ops.audit.emptyStoreTitle': 'В «{store}» нет действий',

@@ -41,6 +41,7 @@ import { nativeConfirm } from '../shared';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people';
 import { StoreInventoryTab } from './inventory/StoreInventoryTab';
+import { StoreTimeZoneSelect } from './StoreTimeZoneSelect';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
 
 interface StoreDraft {
@@ -55,10 +56,6 @@ interface StoreDraft {
    *  default to '' (no default) and can be set after creation. */
   defaultRoleSlug: string;
 }
-
-// EMPTY_STORE was used by the old combined create/edit sheet; the
-// store list now uses a small create-only sheet inline (just name +
-// code + address + timezone — defaults set later in Settings tab).
 
 // ============ Stores (M1.4 store-first) ============
 
@@ -210,6 +207,14 @@ export function StoresHomeSection({
             ) : null}
             {rows.map((st) => {
               const count = memberCounts.byStore.get(st.id) ?? 0;
+              // Review ADM2-25 (2026-11-12): no "no code" and no "0 members"
+              // (UI-3); a store with neither has no second line.
+              const meta = [
+                st.code ? i18n.t('stores.codeLabel', { code: st.code }) : null,
+                count > 0 ? i18n.t('admin.label.memberCount', { n: count }) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
               return (
                 <li key={st.id}>
                   {/* M1.11: Stores home tile slimmed from 3 muted-meta
@@ -235,13 +240,11 @@ export function StoresHomeSection({
                       <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
                         {st.name}
                       </span>
-                      <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-                        {st.code
-                          ? i18n.t('stores.codeLabel', { code: st.code })
-                          : i18n.t('stores.noCode')}
-                        {' · '}
-                        {i18n.t('admin.label.memberCount', { n: count })}
-                      </span>
+                      {meta ? (
+                        <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
+                          {meta}
+                        </span>
+                      ) : null}
                     </span>
                     {/* UIUX-B1: active is the silent default; only the
                         exception (paused) earns ink. */}
@@ -319,13 +322,9 @@ export function StoresHomeSection({
               />
             </Field>
             <Field label={i18n.t('admin.field.timezone')}>
-              <Input
+              <StoreTimeZoneSelect
                 value={createDraft.timezone}
-                onChange={(e) =>
-                  setCreateDraft({ ...createDraft, timezone: e.target.value })
-                }
-                maxLength={64}
-                placeholder={i18n.t('admin.field.timezonePlaceholder')}
+                onChange={(timezone) => setCreateDraft({ ...createDraft, timezone })}
               />
             </Field>
             <p className="text-old-label text-[var(--c-fg-muted)]">
@@ -573,11 +572,9 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
         />
       </Field>
       <Field label={i18n.t('admin.field.timezone')}>
-        <Input
+        <StoreTimeZoneSelect
           value={draft.timezone}
-          onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-          maxLength={64}
-          placeholder={i18n.t('admin.field.timezonePlaceholder')}
+          onChange={(timezone) => setDraft({ ...draft, timezone })}
           disabled={!canAdmin}
         />
       </Field>
@@ -629,19 +626,35 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
         <Button
           loading={update.isPending}
           disabled={!canAdmin || !dirty || !draft.name.trim()}
-          onClick={() => {
-            update.mutate({
-              storeId: draft.storeId!,
-              name: draft.name,
-              code: draft.code || null,
-              address: draft.address || null,
-              timezone: draft.timezone || null,
-              // Only org.admin may send isActive (CA-08); others omit it.
-              ...(isOrgAdmin ? { isActive: draft.isActive } : {}),
-              defaultRoleSlug: draft.defaultRoleSlug
-                ? draft.defaultRoleSlug
-                : null,
-            });
+          onClick={async () => {
+            const save = () =>
+              update.mutate({
+                storeId: draft.storeId!,
+                name: draft.name,
+                code: draft.code || null,
+                address: draft.address || null,
+                timezone: draft.timezone || null,
+                // Only org.admin may send isActive (CA-08); others omit it.
+                ...(isOrgAdmin ? { isActive: draft.isActive } : {}),
+                defaultRoleSlug: draft.defaultRoleSlug ? draft.defaultRoleSlug : null,
+              });
+            // ADM2-41: a paused store takes no orders, so pausing asks
+            // first and says what is still open there, as archiving does.
+            if (!(isOrgAdmin && store.isActive && !draft.isActive)) return save();
+            const impact = await utils.admin.storeArchiveImpact
+              .fetch({ storeId })
+              .catch(() => null);
+            const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
+            nativeConfirm(
+              busy
+                ? i18n.t('admin.store.confirmPauseBusy', {
+                    name: store.name,
+                    orders: impact.openOrders,
+                    runs: impact.activeRuns,
+                  })
+                : i18n.t('admin.store.confirmPause', { name: store.name }),
+              save,
+            );
           }}
         >
           {i18n.t('common.save')}
@@ -732,20 +745,23 @@ function StoreCloneRolesSheet({
 
   const [sourceStoreId, setSourceStoreId] = useState('');
   const [includeMembers, setIncludeMembers] = useState(false);
+  const targetStoreId = target?.targetStoreId ?? null;
 
+  // Review ADM2-23 (2026-11-12): start over only when the target store
+  // changes. The parent passes a new `target` object on every render, so
+  // a refetch or a realtime push cleared the source store and "also
+  // members" the person had just picked.
   useEffect(() => {
-    if (target) {
+    if (targetStoreId) {
       setSourceStoreId('');
       setIncludeMembers(false);
     }
-  }, [target]);
+  }, [targetStoreId]);
 
   const sourceCandidates = useMemo(() => {
-    if (!target) return [];
-    return sessionStores.filter(
-      (st) => adminStoreIds.has(st.id) && st.id !== target.targetStoreId,
-    );
-  }, [sessionStores, adminStoreIds, target]);
+    if (!targetStoreId) return [];
+    return sessionStores.filter((st) => adminStoreIds.has(st.id) && st.id !== targetStoreId);
+  }, [sessionStores, adminStoreIds, targetStoreId]);
 
   const cloneMut = trpc.admin.storeCloneRoles.useMutation({
     onSuccess: (data) => {

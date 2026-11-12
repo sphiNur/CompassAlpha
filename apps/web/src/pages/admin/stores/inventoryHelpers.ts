@@ -3,8 +3,10 @@
  */
 import type { CatalogKey } from '@compass/i18n';
 import {
+  MOVEMENT_REASONS,
   WASTAGE_QTY_MESSAGE,
   wastageQtyProblem,
+  type MovementReason,
   type WastageQtyProblem,
 } from '@compass/contracts/limits';
 import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts/quantity';
@@ -26,20 +28,11 @@ export function skusWithoutLevel<T extends { id: string; isArchived?: boolean }>
   return skus.filter((sku) => !sku.isArchived && !stocked.has(sku.id));
 }
 
-/** Movement reasons the ledger writes (see packages/db schema/inventory.ts). */
-export const MOVEMENT_REASONS = [
-  'delivery_received',
-  'stocktake',
-  'wastage',
-  'consumption',
-  'consumption_reversed',
-  'transfer_in',
-  'transfer_out',
-  'adjustment',
-] as const;
-export type MovementReason = (typeof MOVEMENT_REASONS)[number];
-
-/** Narrow a raw `movements.reason` to a known one (null → show raw). */
+/**
+ * Narrow a raw `movements.reason` to a known one (null → show raw). The
+ * reasons are MOVEMENT_REASONS in @compass/contracts/limits, which the
+ * API's stock writes use too (review ADM2-34).
+ */
 export function knownMovementReason(reason: string): MovementReason | null {
   return (MOVEMENT_REASONS as readonly string[]).includes(reason)
     ? (reason as MovementReason)

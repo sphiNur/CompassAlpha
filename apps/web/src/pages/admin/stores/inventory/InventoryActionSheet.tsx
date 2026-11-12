@@ -143,12 +143,8 @@ export function InventoryActionSheet({
         action && action.skuId ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''
       }
       footer={
-        // 2026-07-30: dropped `!getTg() &&` — same defect as the dish
-        // editor. `getTg()` is truthy in any browser (the Telegram SDK
-        // is a static script tag), and nothing drives the native
-        // MainButton for this sheet, so stocktake / wastage had no
-        // submit button in any environment. See the dish editor's
-        // footer (catalog/DishesSection.tsx) for the full write-up.
+        // Submit is the sheet's own button, in Telegram and in a browser
+        // alike, as in the dish editor (2026-07-30).
         action ? (
           <>
             {/* CMP-INV-3: wastage can only be saved once it is complete,

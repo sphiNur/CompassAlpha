@@ -125,6 +125,10 @@ export const en = {
   'admin.store.confirmArchive': 'Archive "{name}"?',
   'admin.store.confirmArchiveBusy':
     '{name} still has {orders, plural, one {# open order} other {# open orders}} and {runs, plural, one {# run} other {# runs}} under way. They stay as they are after archiving. Archive anyway?',
+  'admin.store.confirmPause':
+    'Pause "{name}"? No orders can be placed for it until it is active again.',
+  'admin.store.confirmPauseBusy':
+    '{name} still has {orders, plural, one {# open order} other {# open orders}} and {runs, plural, one {# run} other {# runs}} under way. They stay as they are, but no new orders can be placed until the store is active again. Pause anyway?',
   'admin.store.tabTeam': 'Team',
   'admin.store.tabInventory': 'Inventory',
   'admin.store.tabSales': 'Sales',
@@ -397,8 +401,8 @@ export const en = {
   'ops.debug.reload': 'Reload',
   'ops.debug.signOut': 'Sign out and start again',
   'ops.history.allStores': 'All stores',
-  'ops.history.decidedIn': '· decided in {n} min',
-  'ops.history.decidedBy': '· by {name}',
+  'ops.history.decidedIn': 'decided in {n} min',
+  'ops.history.decidedBy': 'by {name}',
   'ops.history.skuCount': '{n, plural, one {# product} other {# products}}',
   'ops.purge.runLabel': 'Run {date} #{n}',
   'ops.purge.deleteSessionTitle': 'Delete order',
@@ -416,6 +420,11 @@ export const en = {
   'ops.purge.kind.history': 'History records',
   'ops.purge.kind.appLogs': 'App logs',
   'ops.purge.kind.other': 'Other',
+  // Review ADM2-34 (2026-11-12): the cleanup screens' own words; they borrowed
+  // the purchasing and finance counts and order history's "by {name}".
+  'ops.purge.count.orders': '{n, plural, one {# order} other {# orders}}',
+  'ops.purge.count.runs': '{n, plural, one {# run} other {# runs}}',
+  'ops.purge.purchaser': 'Purchaser: {name}',
   'ops.maint.confirmResetBody': 'Type the date {date} to confirm. This cannot be undone.',
   'ops.maint.confirmResetLabel': 'Date to reset',
   'ops.purge.deleteRows': 'Delete {n, plural, one {# record} other {# records}}',
@@ -449,7 +458,6 @@ export const en = {
     'You do not have this permission across the workspace, so it cannot go into a role.',
   'people.grantInStores': 'In specific stores',
   'stores.codeLabel': 'code {code}',
-  'stores.noCode': 'no code',
   'stores.paused': 'paused',
   'stores.archived': 'archived',
   'stores.pickSourceStore': '— choose a source store —',
@@ -510,7 +518,7 @@ export const en = {
   'time.hoursAgo': '{n}h ago',
   'time.daysAgo': '{n}d ago',
   'ops.history.submittedAgo': 'submitted {when}',
-  'ops.history.byWhom': 'by {name}',
+  'ops.history.submittedBy': 'submitted {when} by {name}',
   'ops.history.rejectionReason': 'Rejection reason: {reason}',
   'ops.purge.sessionMeta': '{status} · {items} · {date}',
   'ops.purge.runMeta': '{status} · {sessions}',
@@ -1112,9 +1120,10 @@ export const en = {
   'admin.toast.supplierCreated': 'Supplier created',
   'admin.toast.supplierUpdated': 'Supplier updated',
   'admin.toast.supplierArchived': 'Supplier archived',
-  'admin.toast.sessionDeleted': 'Deleted order — {n, plural, one {# row} other {# rows}} removed',
-  'admin.toast.runDeleted': 'Deleted run — {n, plural, one {# row} other {# rows}} removed',
-  'admin.toast.dateReset': 'Reset {date}: {n, plural, one {# row} other {# rows}} deleted',
+  'admin.toast.sessionDeleted':
+    'Deleted order — {n, plural, one {# record} other {# records}} removed',
+  'admin.toast.runDeleted': 'Deleted run — {n, plural, one {# record} other {# records}} removed',
+  'admin.toast.dateReset': 'Reset {date}: {n, plural, one {# record} other {# records}} deleted',
   'admin.toast.dataPurged': 'Deleted {n, plural, one {# record} other {# records}}',
 
   // ── 7. Upload errors ───────────────────────────────────────────
@@ -1937,6 +1946,9 @@ export const en = {
   'admin.field.code': 'Code',
   'admin.field.address': 'Address',
   'admin.field.timezone': 'Time zone',
+  'admin.store.timezoneWorkspace': 'Same as the workspace ({timezone})',
+  'admin.store.timezoneCommon': 'Common time zones',
+  'admin.store.timezoneOther': 'Other time zones',
   'admin.field.phone': 'Phone',
   'admin.field.notes': 'Notes',
   'admin.field.tgUsername': 'Telegram username',
@@ -1946,7 +1958,6 @@ export const en = {
   'admin.field.displayNameOverride': 'Display name (admin override)',
   // 2026-10-30: input placeholders that were hard-coded English (12-工程 F8).
   'admin.field.codePlaceholder': 'Optional internal code',
-  'admin.field.timezonePlaceholder': 'e.g. Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': 'e.g. shift-lead',
   'admin.field.memberNamePlaceholder': 'Display name',
   'admin.label.counting': 'Counting…',
@@ -2188,7 +2199,6 @@ export const en = {
   'settlement.details.historicalReadOnlyBody':
     'This daily close predates detailed entries. Its total is preserved and cannot be itemized or edited.',
   'settlement.expenses.remove': 'Remove',
-  'settlement.expenseCategory.other': 'Other',
   'settlement.wages.title': 'Wage details',
   'settlement.wages.totals': 'Paid {paid} · Unpaid {unpaid}',
   'settlement.wages.add': '+ Add wage',
@@ -2396,6 +2406,11 @@ export const en = {
   'run.action.addItem.mergePurchasedHint':
     'Add this store to the existing purchase item. Its price, supplier and receipt stay as recorded; a different price here is kept for this store only.',
   'ops.audit.filterLabel': 'Filter by type',
+  // Review ADM2-34: the audit filters' own words (they borrowed the order page's
+  // "All", the home tile's "Members" and an expense category's "Other").
+  'ops.audit.filter.all': 'All',
+  'ops.audit.filter.people': 'Members',
+  'ops.audit.filter.other': 'Other',
   'ops.audit.emptyTitle': 'No admin actions yet',
   'ops.audit.emptyBody': 'Catalog edits and role changes will appear here as they happen.',
   'ops.audit.emptyStoreTitle': 'No actions in {store}',

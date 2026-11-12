@@ -150,9 +150,10 @@ export const StoreUpdateInputSchema = z.object({
 export const StoreCloneRolesInputSchema = z.object({
   sourceStoreId: UuidSchema,
   targetStoreId: UuidSchema,
-  /** When true, also assign the source's members to the target store
-   *  (MSA rows). Off by default — chain expansion usually wants the
-   *  ROLE shape replicated but staffed by different people. */
+  /** When true, the source's active members come along: their roles in
+   *  the source store and their assignment to it. Off by default, when
+   *  only the default role is copied — chain expansion usually wants the
+   *  ROLE shape replicated but staffed by different people (ADM2-31). */
   includeMembers: z.boolean().default(false),
 });
 

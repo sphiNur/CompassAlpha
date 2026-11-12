@@ -31,6 +31,7 @@ import {
   CatalogRowHeader,
   CatalogToolbar,
   ReadOnlyHint,
+  SortIndexField,
   useIsOrgAdmin,
 } from './CatalogParts';
 import {
@@ -41,6 +42,7 @@ import {
   type CatalogNames,
 } from './catalogNames';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
+import { readSortIndex } from './sortIndex';
 
 interface SkuDraft {
   skuId?: string;
@@ -51,7 +53,8 @@ interface SkuDraft {
   unit: SkuUnit;
   /** M3.14 + 2026-07-30: only the canonical grid — see SkuStepSchema. */
   step: SkuStep;
-  sortIndex: number;
+  /** As typed (NEW-07); readSortIndex reads it. */
+  sortText: string;
 }
 
 /** Example names, each in its own field's language. */
@@ -137,11 +140,15 @@ export function SkusSection() {
     onError: errToast('common.errors.actionFailed'),
   });
 
-  const categoryName = (id: string | null): string => {
-    if (!id) return '—';
+  // ADM2-25: a product without a category says nothing about it (UI-3);
+  // its facts line used to start with "— · ". ADM2-26: the category in the
+  // reader's language only, not "primary (secondary)" inline (UI-4), and
+  // its slug when it has no name (the parts read "—" then, never '').
+  const categoryName = (id: string | null): string | null => {
+    if (!id) return null;
     const c = categoriesQuery.data?.find((x) => x.id === id);
     if (!c) return i18n.t('common.unknownCategory');
-    return productName({ names: c.names }) || c.slug;
+    return hasAnyName(c.names) ? productNameParts({ names: c.names }).primary : c.slug;
   };
 
   const editor = useEditorSheet(
@@ -150,6 +157,7 @@ export function SkusSection() {
     (d) => d.skuId ?? 'new',
     create.isPending || update.isPending,
   );
+  const sortIndex = draft ? readSortIndex(draft.sortText) : null;
 
   return (
     <div className="px-4 py-3">
@@ -163,7 +171,7 @@ export function SkusSection() {
             names: { ...EMPTY_NAMES },
             unit: 'pcs',
             step: '1',
-            sortIndex: 100,
+            sortText: '100',
           })
         }
         showArchived={includeArchived}
@@ -214,21 +222,25 @@ export function SkusSection() {
                 // The name in the reader's language only; the others list
                 // under it (CategoriesSection, COREWEB2-18).
                 const name = productNameParts({ names });
-                const primary = name.primary || sk.code || i18n.t('common.unknownProduct');
+                // ADM2-26: as the categories, the code takes over only when
+                // there is no name at all.
+                const named = hasAnyName(names);
+                const primary = named ? name.primary : sk.code || i18n.t('common.unknownProduct');
                 return (
                   <li key={sk.id}>
                     <CatalogRowHeader
                       title={primary}
-                      titleLang={name.primary ? name.primaryLang : undefined}
+                      titleLang={named ? name.primaryLang : undefined}
                       names={names}
-                      meta={
-                        <>
-                          {categoryName(sk.categoryId)} · {unitLabel.uncounted(sk.unit)} ·{' '}
-                          {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
-                          {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
-                          {sk.code ? ` · ${sk.code}` : ''}
-                        </>
-                      }
+                      meta={[
+                        categoryName(sk.categoryId),
+                        unitLabel.uncounted(sk.unit),
+                        // DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500".
+                        i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) }),
+                        sk.code,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                       archived={sk.isArchived}
                     />
                     {canWrite ? (
@@ -244,7 +256,7 @@ export function SkusSection() {
                             // both Selects have a valid initial selection.
                             unit: snapUnitToCanonical(sk.unit),
                             step: snapStepToCanonical(sk.step),
-                            sortIndex: sk.sortIndex,
+                            sortText: String(sk.sortIndex),
                           })
                         }
                         confirmArchive={i18n.t('catalog.sku.confirmArchive', { name: primary })}
@@ -270,9 +282,11 @@ export function SkusSection() {
           <Button
             block
             loading={create.isPending || update.isPending}
-            disabled={!draft || !hasAnyName(draft.names) || !draft.unit.trim()}
+            disabled={
+              !draft || !hasAnyName(draft.names) || !draft.unit.trim() || sortIndex === null
+            }
             onClick={() => {
-              if (!draft) return;
+              if (!draft || sortIndex === null) return;
               const names = cleanNames(draft.names);
               if (draft.skuId) {
                 update.mutate({
@@ -282,7 +296,7 @@ export function SkusSection() {
                   names,
                   unit: draft.unit,
                   step: draft.step,
-                  sortIndex: draft.sortIndex,
+                  sortIndex,
                 });
               } else {
                 create.mutate({
@@ -291,7 +305,7 @@ export function SkusSection() {
                   names,
                   unit: draft.unit,
                   step: draft.step,
-                  sortIndex: draft.sortIndex,
+                  sortIndex,
                 });
               }
             }}
@@ -323,7 +337,7 @@ export function SkusSection() {
                     const n = c.names;
                     return (
                       <option key={c.id} value={c.id}>
-                        {productName({ names: n }) || c.slug}
+                        {hasAnyName(n) ? productName({ names: n }) : c.slug}
                         {c.isArchived ? ` (${i18n.t('common.archived')})` : ''}
                       </option>
                     );
@@ -369,13 +383,10 @@ export function SkusSection() {
                 placeholder={i18n.t('common.optional')}
               />
             </Field>
-            <Field label={i18n.t('admin.field.sortIndex')}>
-              <Input
-                type="number"
-                value={String(draft.sortIndex)}
-                onChange={(e) => setDraft({ ...draft, sortIndex: Number(e.target.value) || 0 })}
-              />
-            </Field>
+            <SortIndexField
+              text={draft.sortText}
+              onText={(sortText) => setDraft({ ...draft, sortText })}
+            />
           </div>
         ) : null}
       </Sheet>

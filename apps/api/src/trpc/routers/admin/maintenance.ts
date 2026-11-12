@@ -38,6 +38,7 @@ import { env } from '../../../env';
 import { requireAdmin } from './guards';
 import { broadcastPurged } from './notify';
 import { getAdminReadScope, runTouchesStores } from './scope';
+import { orgRowOr404 } from './orgRows';
 import { auditAdmin } from '../../../services/adminAudit';
 import { executeRows } from '../../../services/sqlRows';
 
@@ -636,7 +637,10 @@ export const maintenanceProcedures = {
         // the admin's stores; naming a store outside them is refused.
         const historyScope = await getAdminReadScope(tx, ctx.session!);
         if (historyScope !== null && input?.storeId && !historyScope.has(input.storeId)) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.notAssignedToStore' });
+          // Review ADM2-31 (2026-11-12): the admin refusal. It said "you are
+          // not assigned to this store", which is not why: the scope holds
+          // the stores they administer, paused and archived ones included.
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
         }
         const historyStoreFilter =
           historyScope === null
@@ -793,13 +797,13 @@ export const maintenanceProcedures = {
     refuseGuardWaiverInProduction(input.requireOnlyTestSessions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const session = await tx.query.orderSessionsV.findFirst({
-        where: (sess, { eq: eq2, and: and2 }) =>
-          and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, orgId)),
-      });
-      if (!session) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.sessionNotFound' });
-      }
+      const session = await orgRowOr404(
+        tx,
+        s.orderSessionsV,
+        orgId,
+        input.sessionId,
+        'admin.errors.sessionNotFound',
+      );
       // Refuse an order in a run, someone else's, or one someone else
       // acted on. The maintenance list shows the same reason on its row
       // (ADM2-08).
@@ -859,12 +863,13 @@ export const maintenanceProcedures = {
     refuseGuardWaiverInProduction(input.requireOnlyTestSessions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const run = await tx.query.marketRunsV.findFirst({
-        where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.id, input.runId), eq2(r.orgId, orgId)),
-      });
-      if (!run) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.runNotFound' });
-      }
+      const run = await orgRowOr404(
+        tx,
+        s.marketRunsV,
+        orgId,
+        input.runId,
+        'admin.errors.runNotFound',
+      );
       const sessionIds = run.sessionIdsJson;
 
       // Refuse a run with someone else's orders in it, or one that

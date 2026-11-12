@@ -12,10 +12,11 @@ import {
   isWaitingOffline,
   rowGroupClass,
 } from '@compass/ui';
+import type { MovementReason } from '@compass/contracts/limits';
 import { trpc } from '../../../../lib/trpc';
 import { formatQty } from '../../../../lib/format';
 import { useDateFormat, useI18n, useUnitLabel } from '../../../../hooks/useI18n';
-import { knownMovementReason, signedDelta, type MovementReason } from '../inventoryHelpers';
+import { knownMovementReason, signedDelta } from '../inventoryHelpers';
 
 /** 2026-10-21: localized label per ledger reason. */
 const MOVEMENT_REASON_LABEL = {

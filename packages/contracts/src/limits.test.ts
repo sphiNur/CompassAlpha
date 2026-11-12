@@ -16,6 +16,7 @@ import {
   ORDER_QTY_MAX,
   SKU_STEPS,
   SKU_UNITS,
+  SORT_INDEX_RANGE,
   settlementMoneyProblem,
   stocktakeCountProblem,
   TAX_RATE_MESSAGE,
@@ -29,7 +30,7 @@ import {
   SettlementMoneySchema,
   SignedSettlementMoneySchema,
 } from './schemas/settlement';
-import { SkuStepSchema, SkuUnitSchema } from './schemas/catalog';
+import { SkuStepSchema, SkuUnitSchema, SortIndexSchema } from './schemas/catalog';
 import { PurchasePriceSchema } from './schemas/run';
 import { AttendancePolicySaveInputSchema } from './schemas/attendance';
 import * as barrel from './index';
@@ -203,6 +204,23 @@ describe('limits.ts', () => {
           form: policy(field(n)),
         });
       }
+    }
+  });
+
+  it('a sort position takes a minus sign and the schema’s range (NEW-07)', () => {
+    expect(wholeNumberIn('-5', SORT_INDEX_RANGE)).toBe(-5);
+    expect(Object.is(wholeNumberIn('-0', SORT_INDEX_RANGE), 0)).toBe(true);
+    for (const text of ['', '-', '--1', '1-', '-1.5', '+1', ' -1']) {
+      expect({ text, read: wholeNumberIn(text, SORT_INDEX_RANGE) }).toEqual({ text, read: null });
+    }
+    // A range that starts at zero still refuses the sign (NEW-06).
+    expect(wholeNumberIn('-0', ATTENDANCE_GRACE_MINUTES)).toBeNull();
+    const { min, max } = SORT_INDEX_RANGE;
+    for (const n of [min - 1, min, max, max + 1]) {
+      expect({ n, form: wholeNumberIn(String(n), SORT_INDEX_RANGE) !== null }).toEqual({
+        n,
+        form: SortIndexSchema.safeParse(n).success,
+      });
     }
   });
 });

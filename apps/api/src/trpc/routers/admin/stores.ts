@@ -26,6 +26,7 @@ import { auditChanges } from '../../../services/auditChanges';
 import { requireAdmin, requireOrgAdmin } from './guards';
 import { broadcastCatalog, broadcastPeople } from './notify';
 import { getActorAdminStoreIds, notAdminOfStore, getAdminReadScope } from './scope';
+import { orgRowOr404 } from './orgRows';
 import { granterOf, missingRoleKey, assertCanPassOnRole } from './grants';
 import { roleNameForAudit, auditAdmin } from '../../../services/adminAudit';
 
@@ -124,14 +125,15 @@ export const storeProcedures = {
           throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
       }
-      const existing = await tx.query.stores.findFirst({
-        where: (st, { eq: eq2, and: and2 }) =>
-          and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
-      });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
-      }
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      const existing = await orgRowOr404(
+        tx,
+        s.stores,
+        orgId,
+        input.storeId,
+        'admin.errors.storeNotFound',
+      );
+      // ADM2-36: typed by the table, as the catalog's edits.
+      const patch: Partial<typeof s.stores.$inferInsert> = { updatedAt: new Date() };
       if (input.name !== undefined) patch.name = input.name;
       if (input.code !== undefined) patch.code = input.code;
       if (input.address !== undefined) patch.address = input.address;
@@ -219,7 +221,7 @@ export const storeProcedures = {
       if (patch.defaultRoleId !== undefined && patch.defaultRoleId !== existing.defaultRoleId) {
         changes.defaultRole = [
           await roleNameForAudit(tx, existing.defaultRoleId),
-          await roleNameForAudit(tx, patch.defaultRoleId as string | null),
+          await roleNameForAudit(tx, patch.defaultRoleId),
         ];
       }
       await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, {
@@ -270,13 +272,13 @@ export const storeProcedures = {
     requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
-      const existing = await tx.query.stores.findFirst({
-        where: (st, { eq: eq2, and: and2 }) =>
-          and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
-      });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
-      }
+      const existing = await orgRowOr404(
+        tx,
+        s.stores,
+        orgId,
+        input.storeId,
+        'admin.errors.storeNotFound',
+      );
       // ADM-18 (2026-10-30): archiving it again rewrote the date and the audit.
       if (existing.deletedAt) return { ok: true };
       // Soft delete via deleted_at timestamp + isActive=false. Hard delete
@@ -300,13 +302,20 @@ export const storeProcedures = {
    * it manually means: list store A's people → for each, grant the
    * same role in store C. Tedious and error-prone.
    *
-   * What the clone does:
-   *   - For every store-scoped role binding in `sourceStoreId`, create
-   *     an equivalent binding in `targetStoreId` (same member, same
-   *     role). Existing bindings are skipped (idempotent re-runs).
-   *   - When `includeMembers=true`, also assign each source member to
-   *     the target store via MSA. Off by default — most chain expansion
-   *     wants the SHAPE replicated, staffed by different people.
+   * What the clone does (review ADM2-31, 2026-11-12: this said the
+   * bindings were always copied, and `includeMembers` only added the
+   * store assignments):
+   *   - The source's default role for newcomers becomes the target's,
+   *     when the actor could grant it there (D7 / RE-ADM-2). Roles are
+   *     org-wide, so that default is the store's role "shape". Without
+   *     `includeMembers` this is all that is copied.
+   *   - With `includeMembers`, the source's active members come along:
+   *     each live store-scoped role binding in `sourceStoreId` gets an
+   *     equivalent binding in `targetStoreId` (same member, role and
+   *     expiry), and each assignment to the source store is copied to
+   *     the target. Existing ones are skipped (idempotent re-runs). Off
+   *     by default — most chain expansion wants the SHAPE replicated,
+   *     staffed by different people.
    *   - Per-binding rank gate: skip (don't fail the whole op) any
    *     binding whose role outranks the actor's rank in the target.
    *     Counted separately and returned so the operator knows.
@@ -329,29 +338,31 @@ export const storeProcedures = {
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const [sourceStore, targetStore] = await Promise.all([
-          tx.query.stores.findFirst({
-            where: (st, { eq: eq2, and: and2 }) =>
-              and2(eq2(st.id, input.sourceStoreId), eq2(st.orgId, orgId)),
-          }),
-          tx.query.stores.findFirst({
-            where: (st, { eq: eq2, and: and2 }) =>
-              and2(eq2(st.id, input.targetStoreId), eq2(st.orgId, orgId)),
-          }),
-        ]);
-        if (!sourceStore || !targetStore) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
-        }
+        const sourceStore = await orgRowOr404(
+          tx,
+          s.stores,
+          orgId,
+          input.sourceStoreId,
+          'admin.errors.storeNotFound',
+        );
+        const targetStore = await orgRowOr404(
+          tx,
+          s.stores,
+          orgId,
+          input.targetStoreId,
+          'admin.errors.storeNotFound',
+        );
         // C2: actor must administer BOTH ends. Reading the source's
         // shape AND writing into the target both qualify as admin
         // actions.
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        if (!allowed.includes(input.sourceStoreId) || !allowed.includes(input.targetStoreId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
-        }
+        const outside = [input.sourceStoreId, input.targetStoreId].filter(
+          (id) => !allowed.includes(id),
+        );
+        // ADM2-31: a paused or archived store is outside every admin's
+        // list; say that (ADM-16) rather than "not this store's admin",
+        // which an org admin got for a paused store.
+        if (outside.length > 0) throw await notAdminOfStore(tx, orgId, outside);
         const targetActorRank = await getActorMaxRankInStore(
           tx,
           orgId,
@@ -468,10 +479,18 @@ export const storeProcedures = {
             });
           }
           // Also populate the target's store assignments from the source's.
+          // ADM2-31: active members only, as with the bindings above; an
+          // invited or suspended member was assigned to the new store too.
           const sourceMsa = await tx
             .select({ memberId: s.memberStoreAssignments.memberId })
             .from(s.memberStoreAssignments)
-            .where(eq(s.memberStoreAssignments.storeId, input.sourceStoreId));
+            .innerJoin(s.members, eq(s.members.id, s.memberStoreAssignments.memberId))
+            .where(
+              and(
+                eq(s.memberStoreAssignments.storeId, input.sourceStoreId),
+                eq(s.members.status, 'active'),
+              ),
+            );
           for (const r of sourceMsa) {
             const inserted = await tx
               .insert(s.memberStoreAssignments)

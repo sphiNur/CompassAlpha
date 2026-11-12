@@ -339,22 +339,10 @@ export function DishesSection() {
         {...editor}
         title={draft?.dishId ? i18n.t('dishes.sheet.editTitle') : i18n.t('dishes.sheet.newTitle')}
         footer={
-          // 2026-07-30: was `!getTg() && draft`, i.e. "only outside
-          // Telegram, because inside it the native MainButton is the CTA".
-          // Two things were wrong with that. `getTg()` is truthy in ANY
-          // browser — index.html loads telegram-web-app.js statically — so
-          // the footer never rendered anywhere. And nothing has driven the
-          // native MainButton for this sheet since M3.49 retired it in
-          // favour of the in-DOM PageMainButton, which this page doesn't
-          // register either. Net result: creating or editing a dish was
-          // impossible, in every environment. Verified in the browser —
-          // the sheet's only button was "+ 添加食材".
-          //
-          // M3.49 already made exactly this fix for ConfirmPage's issue
-          // sheet and RunSheets' confirm sheet ("Was `!inTelegram` … no
-          // longer correct"); these two admin sheets were missed.
-          // CLS-13 (2026-10-30): without dishes.manage the sheet is a
-          // read-only view; Save used to be offered and then refused.
+          // Save is the sheet's own button, in Telegram and in a browser
+          // alike (2026-07-30). CLS-13 (2026-10-30): without dishes.manage
+          // the sheet is a read-only view; Save used to be offered and then
+          // refused.
           draft && canManage ? (
             <Button block loading={save.isPending} onClick={handleSave}>
               {i18n.t('common.save')}

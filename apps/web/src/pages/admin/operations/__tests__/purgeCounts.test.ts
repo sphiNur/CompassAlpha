@@ -1,30 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { purgeCountsByKind, resetConfirmMatches, wipeConfirmMatches } from '../purgeCounts';
+import { resetConfirmMatches, wipeConfirmMatches } from '../purgeCounts';
 
-describe('purgeCountsByKind (CMP-OPS-6)', () => {
-  test('table names become kinds; parts of one thing are added; zeros dropped', () => {
-    expect(
-      purgeCountsByKind({
-        'domain.events': 118,
-        'domain.snapshots': 2,
-        'read_model.order_sessions_v': 7,
-        'read_model.market_runs_v': 3,
-        'sync.outbox': 0,
-      }),
-    ).toEqual([
-      { kind: 'orders', n: 7 },
-      { kind: 'runs', n: 3 },
-      { kind: 'history', n: 120 },
-    ]);
-  });
-
-  test('a table this build does not know goes under "other", last', () => {
-    expect(purgeCountsByKind({ 'read_model.something_new_v': 4, 'ops.notifications': 1 })).toEqual([
-      { kind: 'notifications', n: 1 },
-      { kind: 'other', n: 4 },
-    ]);
-  });
-});
+// purgeCountsByKind moved to @compass/contracts/limits (ADM2-34); its
+// tests are packages/contracts/src/purgeKinds.test.ts.
 
 describe('resetConfirmMatches (CMP-OPS-5)', () => {
   test('only the exact date confirms', () => {

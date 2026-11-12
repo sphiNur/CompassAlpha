@@ -225,6 +225,82 @@ export const WASTAGE_QTY_MESSAGE = {
 /** The longest note a stocktake or a wastage keeps. */
 export const INVENTORY_NOTE_MAX = 500;
 
+/**
+ * The reasons a stock movement is booked under (inventory.movements.reason,
+ * a varchar the code fills). Review ADM2-34 (2026-11-12): the list lived
+ * in the web alone, pointing at the db schema's comment; the stock writes
+ * of the inventory router and the stores screen's labels share it now.
+ */
+export const MOVEMENT_REASONS = [
+  'delivery_received',
+  'stocktake',
+  'wastage',
+  'consumption',
+  'consumption_reversed',
+  'transfer_in',
+  'transfer_out',
+  'adjustment',
+] as const;
+export type MovementReason = (typeof MOVEMENT_REASONS)[number];
+
+/**
+ * What a maintenance purge deletes, in the app's words (CMP-OPS-6): its
+ * preview counts rows by table, `schema.table` (purgePlans.purgeKey), and
+ * each table's rows count as one kind. Review ADM2-34 (2026-11-12): the map
+ * was the web's, keyed by table names only the API knows, so a renamed or
+ * new table quietly became "Other". It is shared now, and an API test
+ * fails for a table a purge deletes from that the map lacks.
+ */
+export const PURGE_KINDS = [
+  'orders',
+  'orderLines',
+  'runs',
+  'runLines',
+  'runStoreLines',
+  'expenses',
+  'stockMovements',
+  'priceHistory',
+  'notifications',
+  'pendingMessages',
+  'history',
+  'appLogs',
+  'other',
+] as const;
+export type PurgeKind = (typeof PURGE_KINDS)[number];
+
+/** The kind of each table a purge deletes from; anything else is "other". */
+export const PURGE_KIND_BY_TABLE: Readonly<Record<string, Exclude<PurgeKind, 'other'>>> = {
+  'read_model.order_sessions_v': 'orders',
+  'read_model.order_items_v': 'orderLines',
+  'read_model.market_runs_v': 'runs',
+  'read_model.run_items_v': 'runLines',
+  'read_model.run_item_stores_v': 'runStoreLines',
+  'read_model.run_expenses_v': 'expenses',
+  'inventory.movements': 'stockMovements',
+  'inventory.price_history': 'priceHistory',
+  'ops.notifications': 'notifications',
+  'sync.outbox': 'pendingMessages',
+  'domain.events': 'history',
+  'domain.snapshots': 'history',
+  'ops.client_logs': 'appLogs',
+};
+
+/** Non-zero counts by kind, in PURGE_KINDS order ("Other" last). */
+export function purgeCountsByKind(
+  byTable: Record<string, number>,
+): Array<{ kind: PurgeKind; n: number }> {
+  const sums = new Map<PurgeKind, number>();
+  for (const [table, n] of Object.entries(byTable)) {
+    if (!(n > 0)) continue;
+    const kind = PURGE_KIND_BY_TABLE[table] ?? 'other';
+    sums.set(kind, (sums.get(kind) ?? 0) + n);
+  }
+  return PURGE_KINDS.filter((kind) => sums.has(kind)).map((kind) => ({
+    kind,
+    n: sums.get(kind)!,
+  }));
+}
+
 export type RecipeQtyProblem = 'format' | 'notPositive';
 
 /**
@@ -377,16 +453,29 @@ export const ATTENDANCE_OVERTIME_AFTER_MINUTES = {
 } as const satisfies WholeNumberRange;
 
 /**
+ * A catalog sort position (categories, products, expense templates).
+ * CAT-10: the int column takes far more; a million either way is plenty.
+ * SortIndexSchema and the catalog editors share it (review NEW-07).
+ */
+export const SORT_INDEX_RANGE = {
+  min: -1_000_000,
+  max: 1_000_000,
+} as const satisfies WholeNumberRange;
+
+/**
  * The whole number a field holds, when it is one and inside `range`;
  * otherwise null. `value` is the field's normalised text (a number field
  * hands that on). Review NEW-06 (2026-11-11): the attendance form read
  * its fields with `Number()`, so an emptied grace field was 0 minutes and
- * saved as such, and "1e2" was 100.
+ * saved as such, and "1e2" was 100. Review NEW-07 (2026-11-12): a minus
+ * sign is read where the range goes below zero (sort positions); "-0" is 0.
  */
 export function wholeNumberIn(value: string, range: WholeNumberRange): number | null {
-  if (!/^\d{1,9}$/.test(value)) return null;
+  const pattern = range.min < 0 ? /^-?\d{1,9}$/ : /^\d{1,9}$/;
+  if (!pattern.test(value)) return null;
   const n = Number(value);
-  return n >= range.min && n <= range.max ? n : null;
+  if (n < range.min || n > range.max) return null;
+  return n === 0 ? 0 : n;
 }
 
 /**
