@@ -1275,7 +1275,7 @@ export function RunHistoryDetailSheet({
                       </div>
                       <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
                         <span className="min-w-0">
-                          {`${formatQty(ex.qty)}${ex.unitHint ? ` ${ex.unitHint}` : ''}`}
+                          {`${formatQty(ex.qty)}${ex.unitHint ? ` ${unitLabel(ex.unitHint, ex.qty)}` : ''}`}
                           {ex.unitPrice != null ? ` × ${formatMoney(ex.unitPrice)}` : ''}
                           {ex.reason ? ` · ${ex.reason}` : ''}
                         </span>

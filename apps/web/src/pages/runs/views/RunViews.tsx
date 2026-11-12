@@ -767,6 +767,8 @@ export function ExpensesCard({
   onOpenExpense: () => void;
 }) {
   const currency = useCurrency();
+  // RUNWEB1-24: an item's unit was shown as its code ("bunch").
+  const unitLabel = useUnitLabel();
   const list = expenses ?? [];
   // DX-HIS-2: no amount when a price is hidden (not "0"); D1 cents.
   const grandTotal = expensesTotal(list);
@@ -861,7 +863,7 @@ export function ExpensesCard({
               </div>
               <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                 <span className="tabular-nums">
-                  {formatQty(e.qty)} {e.unitHint ?? ''}
+                  {formatQty(e.qty)} {unitLabel(e.unitHint, e.qty)}
                   {unitPriceDisplay === null ? null : <> × {unitPriceDisplay}</>}
                 </span>
                 {total === null ? null : (

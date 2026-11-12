@@ -13,7 +13,7 @@
  * is open fall into the right default without resetting earlier ticks.
  */
 import { Card, Checkbox, SectionLabel } from '@compass/ui';
-import type { useI18n } from '../../../hooks/useI18n';
+import { useDateFormat, type useI18n } from '../../../hooks/useI18n';
 import {
   batchNumbers,
   daysOld,
@@ -45,6 +45,7 @@ export function SessionPicker({
   /** Render without the Card chrome (inside a Sheet). */
   bare?: boolean;
 }) {
+  const dates = useDateFormat();
   const groups = groupSessionsByDate(sessions, today, i18n.locale);
   const selected = new Set(selectedSessionIds(sessions, today, overrides));
   const isChecked = (id: string) => selected.has(id);
@@ -75,7 +76,8 @@ export function SessionPicker({
                   onChange={(e) => onChange(withGroupSelection(overrides, group, e.target.checked))}
                   label={
                     <span className="text-old-body font-semibold tabular-nums">
-                      {group.date || '—'}
+                      {/* RUNWEB1-23: in the screen's language, as the run's date is. */}
+                      {dates.calendarDay(group.date) || '—'}
                     </span>
                   }
                 />

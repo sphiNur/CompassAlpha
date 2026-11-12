@@ -58,6 +58,7 @@ import { useI18n, useProductNameParts, useUnitLabel, useVendorI18n } from '../..
 import { useCurrency } from '../../../hooks/useCurrency';
 import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
 import { scrollBehavior } from '../../../lib/reducedMotion';
+import { readLocalPref, writeLocalPref } from '../../../lib/localPref';
 import { PhotoThumb, PhotoViewerSheet, type ViewedPhoto } from '../../../components/PhotoThumb';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
@@ -318,21 +319,13 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   // key; old values 'aggregate'|'perStore' continue to round-trip.
   type ViewMode = 'aggregate' | 'perStore' | 'perVendor' | 'perCategory';
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('compass.run.viewMode');
-      if (saved === 'perStore' || saved === 'perVendor' || saved === 'perCategory') return saved;
-      return 'aggregate';
-    } catch {
-      return 'aggregate';
-    }
+    const saved = readLocalPref('compass.run.viewMode');
+    if (saved === 'perStore' || saved === 'perVendor' || saved === 'perCategory') return saved;
+    return 'aggregate';
   });
   const setViewModePersist = (mode: ViewMode) => {
     setViewMode(mode);
-    try {
-      localStorage.setItem('compass.run.viewMode', mode);
-    } catch {
-      /* localStorage disabled / quota — non-fatal */
-    }
+    writeLocalPref('compass.run.viewMode', mode);
   };
   // Perf (2026-11-05): regrouping re-mounts every row (~150 ms on a slow
   // phone). The chips follow `viewMode` at once; the lists render from this
@@ -1300,13 +1293,13 @@ export function PreviewSummaryCard({
   toast: ReturnType<typeof useToast>;
 }) {
   const [view, setView] = useState<PreviewView>(() => {
-    if (typeof window !== 'undefined') {
-      const v = window.localStorage.getItem(PREVIEW_VIEW_STORAGE_KEY);
-      // The whitelist already excluded 'overall', so a stored value from
-      // before that tab was removed falls through to the default below —
-      // no migration needed.
-      if (v === 'byStore' || v === 'bySupplier') return v;
-    }
+    // RUNWEB1-21: read through lib/localPref, which a blocked storage
+    // cannot make throw (this read was the one left unguarded).
+    const v = readLocalPref(PREVIEW_VIEW_STORAGE_KEY);
+    // The whitelist already excluded 'overall', so a stored value from
+    // before that tab was removed falls through to the default below —
+    // no migration needed.
+    if (v === 'byStore' || v === 'bySupplier') return v;
     // Adaptive, NOT hard-coded to bySupplier. That view is built purely
     // from preview.supplierBySku, which the server fills only from
     // `sku_supplier_links WHERE is_preferred` — and the sole writer of
@@ -1366,7 +1359,7 @@ export function PreviewSummaryCard({
   });
   const currency = useCurrency();
   // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
-  const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
+  const currentUnitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
   // COREWEB2-12: what is sent to a stall is in the stall's language.
   const vendorI18n = useVendorI18n();
@@ -1386,9 +1379,7 @@ export function PreviewSummaryCard({
    */
   const chooseView = useCallback((v: PreviewView) => {
     setView(v);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, v);
-    }
+    writeLocalPref(PREVIEW_VIEW_STORAGE_KEY, v);
   }, []);
 
   const storeNameById = useMemo(() => {

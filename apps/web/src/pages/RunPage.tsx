@@ -48,6 +48,7 @@ import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton } from '../hooks/usePageMainButton';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { RUN_PAGE } from '../config/timings';
+import { readLocalPref, writeLocalPref } from '../lib/localPref';
 import { confirmThen } from '../lib/confirm';
 import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
@@ -126,24 +127,13 @@ export function RunPage() {
   // Default ON — UZS pricing is the launch tenant's currency and
   // operators consistently type 5-6 digit prices. Persist per-user
   // via localStorage so the preference survives page navigation.
-  const [priceInThousands, setPriceInThousandsState] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('compass.run.priceInThousands');
-      if (saved === '0') return false;
-      if (saved === '1') return true;
-    } catch {
-      /* localStorage disabled / quota — non-fatal */
-    }
-    return true;
-  });
+  const [priceInThousands, setPriceInThousandsState] = useState<boolean>(
+    () => readLocalPref('compass.run.priceInThousands') !== '0',
+  );
   const togglePriceInThousands = useCallback(() => {
     setPriceInThousandsState((prev) => {
       const next = !prev;
-      try {
-        localStorage.setItem('compass.run.priceInThousands', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
+      writeLocalPref('compass.run.priceInThousands', next ? '1' : '0');
       return next;
     });
   }, []);
