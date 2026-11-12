@@ -34,6 +34,7 @@ import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { moneyLine } from '../../../lib/money';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 import { readSortIndex } from './sortIndex';
+import { changedFields, hasChanges } from './editPatch';
 
 // ============ Expense Templates (M3.57) ============
 //
@@ -46,8 +47,8 @@ import { readSortIndex } from './sortIndex';
 // store-tier admins can audit the configured list. Archiving hides a
 // template from new runs; it can be restored.
 
-interface ExpenseTemplateDraft {
-  templateId?: string;
+/** A template's fields as the editor holds them. */
+interface ExpenseTemplateText {
   label: string;
   unitHint: string;
   defaultQty: string;
@@ -55,9 +56,28 @@ interface ExpenseTemplateDraft {
    *  it is not sent, so it stays as saved. */
   defaultUnitPrice: string | null;
   defaultPaymentMethod: PaymentMethod;
+}
+
+interface ExpenseTemplateDraft extends ExpenseTemplateText {
+  templateId?: string;
   /** As typed (NEW-07); readSortIndex reads it. */
   sortText: string;
-  isArchived: boolean;
+  /** What an edit opened with, as sent (ADM2-24); a save sends the rest. */
+  opened?: ExpenseTemplateFields;
+}
+
+type ExpenseTemplateFields = ReturnType<typeof templateFields>;
+
+/** The fields as the API takes them; a hidden price stays null and is never sent. */
+function templateFields(d: ExpenseTemplateText, sortIndex: number) {
+  return {
+    label: d.label.trim(),
+    unitHint: d.unitHint.trim() || null,
+    defaultQty: d.defaultQty,
+    defaultUnitPrice: d.defaultUnitPrice,
+    defaultPaymentMethod: d.defaultPaymentMethod,
+    sortIndex,
+  };
 }
 
 export function ExpenseTemplatesSection() {
@@ -119,7 +139,6 @@ export function ExpenseTemplatesSection() {
             defaultUnitPrice: '',
             defaultPaymentMethod: 'cash',
             sortText: '0',
-            isArchived: false,
           })
         }
         showArchived={includeArchived}
@@ -175,18 +194,21 @@ export function ExpenseTemplatesSection() {
                   {canWrite ? (
                     <CatalogRowActions
                       archived={tpl.isArchived}
-                      onEdit={() =>
-                        setDraft({
-                          templateId: tpl.id,
+                      onEdit={() => {
+                        const text = {
                           label: tpl.label,
                           unitHint: tpl.unitHint ?? '',
                           defaultQty: tpl.defaultQty,
                           defaultUnitPrice: tpl.defaultUnitPrice,
                           defaultPaymentMethod: paymentMethodOrCash(tpl.defaultPaymentMethod),
+                        };
+                        setDraft({
+                          templateId: tpl.id,
+                          ...text,
                           sortText: String(tpl.sortIndex),
-                          isArchived: tpl.isArchived,
-                        })
-                      }
+                          opened: templateFields(text, tpl.sortIndex),
+                        });
+                      }}
                       confirmArchive={i18n.t('admin.confirm.archiveExpenseTemplate', {
                         label: tpl.label,
                       })}
@@ -223,25 +245,26 @@ export function ExpenseTemplatesSection() {
             }
             onClick={() => {
               if (!draft || sortIndex === null) return;
-              const fields = {
-                label: draft.label.trim(),
-                unitHint: draft.unitHint.trim() || null,
-                defaultQty: draft.defaultQty,
-                defaultPaymentMethod: draft.defaultPaymentMethod,
-                sortIndex,
-              };
-              const price = draft.defaultUnitPrice;
-              if (draft.templateId) {
-                update.mutate({
-                  templateId: draft.templateId,
-                  ...fields,
-                  ...(price === null ? {} : { defaultUnitPrice: price }),
-                  isArchived: draft.isArchived,
-                });
-              } else if (price !== null) {
+              const fields = templateFields(draft, sortIndex);
+              if (!draft.templateId) {
+                const { defaultUnitPrice, ...rest } = fields;
                 // A new template's price is typed, never hidden.
-                create.mutate({ ...fields, defaultUnitPrice: price });
+                if (defaultUnitPrice !== null) create.mutate({ ...rest, defaultUnitPrice });
+                return;
               }
+              // ADM2-24: only what this edit changed. A hidden price is null
+              // on both sides, so it is never among the changes.
+              const changes = draft.opened ? changedFields(fields, draft.opened) : fields;
+              if (!hasChanges(changes)) {
+                setDraft(null);
+                return;
+              }
+              const { defaultUnitPrice, ...rest } = changes;
+              update.mutate({
+                templateId: draft.templateId,
+                ...rest,
+                ...(defaultUnitPrice ? { defaultUnitPrice } : {}),
+              });
             }}
           >
             {i18n.t('common.save')}
