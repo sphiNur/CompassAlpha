@@ -14,11 +14,9 @@ import { inRunState } from './inRunState';
 export function InRunBanner({
   runId,
   storeId,
-  showBody = true,
 }: {
   runId: string | null | undefined;
   storeId: string;
-  showBody?: boolean;
 }) {
   const i18n = useI18n();
   // Review ORD-26 (2026-11): only this store's progress (run.storeProgress,
@@ -34,7 +32,7 @@ export function InRunBanner({
   if (state === 'buying') {
     return (
       <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-        {showBody ? i18n.t('order.banner.inRun.body') : null}
+        {i18n.t('order.banner.inRun.body')}
       </Banner>
     );
   }
