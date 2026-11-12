@@ -8,21 +8,14 @@
  *
  * Interpolation is `{name}`; plurals are real ICU `{n, plural, ...}` blocks
  * selected via `Intl.PluralRules` (see selectPlurals below — it replaced a
- * stub that silently dropped the plural noun in en/ru/uz). Dependency-free;
- * swap in @formatjs/intl-messageformat if we ever need select/date/number
- * sub-formats too.
+ * stub that silently dropped the plural noun in en/ru/uz). Dependency-free
+ * (review I18N1-25 removed the unused @formatjs/intl); M2 may bring in
+ * @formatjs/intl-messageformat for select/date/number sub-formats.
  */
 import { getLoadedCatalog, type Locale, type CatalogKey } from './catalogs/index';
 
-export type { Locale, CatalogKey, CatalogModule } from './catalogs/index';
-export {
-  loadCatalog,
-  ensureCatalog,
-  preloadCatalog,
-  isLoaded,
-  isCatalogKey,
-  getLoadedCatalog,
-} from './catalogs/index';
+export type { Locale, CatalogKey } from './catalogs/index';
+export { loadCatalog, ensureCatalog, isLoaded, isCatalogKey } from './catalogs/index';
 
 // Walk order: requested locale → en (when loaded) → other-loaded
 // locales in a stable order. The "other loaded" tail is rarely hit

@@ -52,11 +52,9 @@ updates:
       # there.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
-      # Major versions of the build tool and of the message formatter are
-      # migrations, not updates: each gets planned and done by hand.
+      # A major version of the build tool is a migration, not an update:
+      # it gets planned and done by hand.
       - dependency-name: 'vite'
-        update-types: ['version-update:semver-major']
-      - dependency-name: '@formatjs/intl'
         update-types: ['version-update:semver-major']
       # Tailwind 4 changes defaults every screen relies on; like vite, a
       # major version is a migration done by hand.
