@@ -69,14 +69,15 @@ export async function getActorStoreIds(
  * manager permission from A as effective in B.
  *
  * Global deny wins over global allow. Store-level resolution is delegated
- * to `effectivePermissionsForStore`, where global + store allows are also
+ * to `effectivePermissionsForStores`, where global + store allows are also
  * applied before denies.
  */
 export async function getActorStoreIdsForPermission(
   db: DB,
   memberId: string,
   permissionKey: PermissionKey,
-  permissions: ReadonlySet<string>,
+  /** Unused: the flat session set proves nothing about one store. */
+  _permissions: ReadonlySet<string>,
 ): Promise<string[] | null> {
   // Review ADM1-30 (2026-11-12): the global half is hasGlobalPermission
   // (global grants and allows, then denies), of which this was a copy. A
@@ -113,13 +114,10 @@ export async function getActorStoreIdsForPermission(
     : await loadAssignedStoreIds(db, memberId);
   if (candidateStoreIds.length === 0) return [];
 
-  const resolved = await Promise.all(
-    candidateStoreIds.map(async (storeId) => ({
-      storeId,
-      permissions: await effectivePermissionsForStore(db, memberId, storeId, permissions),
-    })),
-  );
-  return resolved.filter((row) => row.permissions.has(permissionKey)).map((row) => row.storeId);
+  // Review ADM1-31 (2026-11-12): every candidate store in one lookup, not
+  // two queries for each.
+  const byStore = await effectivePermissionsForStores(db, memberId, candidateStoreIds);
+  return candidateStoreIds.filter((storeId) => byStore.get(storeId)?.has(permissionKey));
 }
 
 /**
@@ -592,9 +590,15 @@ export async function financeStoreIds(
   db: DB,
   session: { memberId: string; permissions: ReadonlySet<string> },
 ): Promise<string[] | null> {
+  // Review ADM1-31 (2026-11-12): the keys side by side, not one after
+  // the other.
+  const perKey = await Promise.all(
+    FINANCE_KEYS.map((key) =>
+      getActorStoreIdsForPermission(db, session.memberId, key, session.permissions),
+    ),
+  );
   const union = new Set<string>();
-  for (const key of FINANCE_KEYS) {
-    const ids = await getActorStoreIdsForPermission(db, session.memberId, key, session.permissions);
+  for (const ids of perKey) {
     if (ids === null) return null;
     for (const id of ids) union.add(id);
   }

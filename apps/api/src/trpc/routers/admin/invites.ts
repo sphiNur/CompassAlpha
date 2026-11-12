@@ -120,6 +120,9 @@ export const inviteProcedures = {
       );
       // ADM-15 (2026-10-30): links whose inviter has since lost the
       // authority are refused on accept; stop listing them as pending.
+      // Review ADM1-31 (2026-11-12): links with the same inviter, stores
+      // and grants are asked about once; each answer takes several reads.
+      const verdicts = new Map<string, Promise<boolean>>();
       const visible: typeof inScope = [];
       for (const r of inScope) {
         const invite = {
@@ -128,9 +131,13 @@ export const inviteProcedures = {
           storeIds: r.storeIds,
           grants: r.grants ?? [],
         };
-        if (await inviterStillAuthorized(ctx.db, tx, invite)) {
-          visible.push(r);
+        const key = JSON.stringify([invite.invitedBy, invite.storeIds, invite.grants]);
+        let verdict = verdicts.get(key);
+        if (!verdict) {
+          verdict = inviterStillAuthorized(ctx.db, tx, invite);
+          verdicts.set(key, verdict);
         }
+        if (await verdict) visible.push(r);
       }
       if (visible.length === 0) return [];
       const storeIds = [...new Set(visible.flatMap((r) => r.storeIds))];

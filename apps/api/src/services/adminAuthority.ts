@@ -86,12 +86,21 @@ export async function grantBinding(
   return { outcome: 'held', bindingId: held?.id ?? '' };
 }
 
-async function maxRankWhere(
-  tx: DB,
-  orgId: string,
-  userId: string,
-  counts: (binding: { scopeType: string; scopeId: string | null }) => boolean,
-): Promise<number> {
+/** A person's ranks, from one read of their live bindings (loadRanks). */
+export interface Ranks {
+  /** Every binding, in any scope (getActorMaxRank). */
+  any: number;
+  /** Global bindings alone (getActorMaxGlobalRank). */
+  global: number;
+  /** Global bindings plus that store's (getActorMaxRankInStore). */
+  inStore: (storeId: string) => number;
+}
+
+/**
+ * The person's ranks in every scope at once. Review ADM1-31 (2026-11-12):
+ * a check over several stores read the same bindings again for each one.
+ */
+export async function loadRanks(tx: DB, orgId: string, userId: string): Promise<Ranks> {
   const rows = await tx
     .select({
       rank: s.roles.rank,
@@ -102,11 +111,21 @@ async function maxRankWhere(
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
     .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, userId), bindingIsLive()));
-  let max = 0;
-  for (const r of rows) {
-    if (counts(r) && r.rank > max) max = r.rank;
-  }
-  return max;
+  const maxWhere = (counts: (b: (typeof rows)[number]) => boolean) => {
+    let max = 0;
+    for (const r of rows) {
+      if (counts(r) && r.rank > max) max = r.rank;
+    }
+    return max;
+  };
+  return {
+    any: maxWhere(() => true),
+    global: maxWhere((b) => b.scopeType === 'global'),
+    inStore: (storeId) =>
+      maxWhere(
+        (b) => b.scopeType === 'global' || (b.scopeType === 'store' && b.scopeId === storeId),
+      ),
+  };
 }
 
 /**
@@ -114,8 +133,8 @@ async function maxRankWhere(
  * Rank the person acted ON with it; an actor's weight depends on where
  * they act (getActorMaxGlobalRank, getActorMaxRankInStore).
  */
-export function getActorMaxRank(tx: DB, orgId: string, userId: string): Promise<number> {
-  return maxRankWhere(tx, orgId, userId, () => true);
+export async function getActorMaxRank(tx: DB, orgId: string, userId: string): Promise<number> {
+  return (await loadRanks(tx, orgId, userId)).any;
 }
 
 /**
@@ -126,8 +145,12 @@ export function getActorMaxRank(tx: DB, orgId: string, userId: string): Promise<
  * edit or delete roles of their own tier, suspend or remove a fellow
  * admin, set them a global override.
  */
-export function getActorMaxGlobalRank(tx: DB, orgId: string, userId: string): Promise<number> {
-  return maxRankWhere(tx, orgId, userId, (b) => b.scopeType === 'global');
+export async function getActorMaxGlobalRank(
+  tx: DB,
+  orgId: string,
+  userId: string,
+): Promise<number> {
+  return (await loadRanks(tx, orgId, userId)).global;
 }
 
 /**
@@ -136,18 +159,13 @@ export function getActorMaxGlobalRank(tx: DB, orgId: string, userId: string): Pr
  * store. Ranking across the org instead let someone with rank 50 in
  * Store A grant rank 40 in Store B, where they have no authority at all.
  */
-export function getActorMaxRankInStore(
+export async function getActorMaxRankInStore(
   tx: DB,
   orgId: string,
   userId: string,
   storeId: string,
 ): Promise<number> {
-  return maxRankWhere(
-    tx,
-    orgId,
-    userId,
-    (b) => b.scopeType === 'global' || (b.scopeType === 'store' && b.scopeId === storeId),
-  );
+  return (await loadRanks(tx, orgId, userId)).inStore(storeId);
 }
 
 /**
@@ -233,7 +251,32 @@ export async function passesOnAnyKey(db: DB, tx: DB, granter: Granter): Promise<
       ),
     )
     .limit(1);
-  return !!superAdmin || (await isPlatformAdmin(db, granter.userId));
+  return !!superAdmin || (await platformAdminInTx(db, tx, granter.userId));
+}
+
+/**
+ * isPlatformAdmin once per transaction and user. Review ADM1-31
+ * (2026-11-12): passesOnAnyKey runs for every store an invite or a staff
+ * copy touches, and each lookup opened a system transaction of its own.
+ * Platform administrators are kept outside the organisation, by the
+ * platform screens, never inside an admin transaction, so the answer
+ * holds while the transaction lasts. Never kept on the root handle.
+ */
+const platformAdminByTx = new WeakMap<DB, Map<string, Promise<boolean>>>();
+
+function platformAdminInTx(db: DB, tx: DB, userId: string): Promise<boolean> {
+  if (tx === db) return isPlatformAdmin(db, userId);
+  let byUser = platformAdminByTx.get(tx);
+  if (!byUser) {
+    byUser = new Map();
+    platformAdminByTx.set(tx, byUser);
+  }
+  let answer = byUser.get(userId);
+  if (!answer) {
+    answer = isPlatformAdmin(db, userId);
+    byUser.set(userId, answer);
+  }
+  return answer;
 }
 
 /**
