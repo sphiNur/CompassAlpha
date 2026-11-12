@@ -63,6 +63,8 @@ export type { SegmentedProps, SegmentedOption } from './components/Segmented';
 export { Avatar } from './components/Avatar';
 export type { AvatarProps } from './components/Avatar';
 export { readDecimalText, setDecimalLocale } from './decimalText';
+// Review UI-35: the one quantity formatter, the app's and QtyControl's.
+export { formatQty } from './formatQty';
 export type { DecimalRead } from './decimalText';
 export { SectionHeader } from './components/SectionHeader';
 export type { SectionHeaderProps } from './components/SectionHeader';

@@ -4,6 +4,7 @@ import { cn } from '../cn';
 import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { QTY_DECIMALS, isMultipleOfStep, readQtyDraft } from '../qtyDraft';
+import { formatQty } from '../formatQty';
 import { Input } from './Input';
 import { Field } from './Rows';
 
@@ -130,7 +131,7 @@ export function QtyControl({
       // M3.35 (2026-05-19): previously this rounded `value + step` to a
       // multiple of step. That meant a row already at 0.5 with step=1
       // jumped to 2 on tap-+ (Math.round(1.5)=2), not 1.5 — and the
-      // display showed "1" via the lossy formatter below. Net effect:
+      // display showed "1" via a lossy formatter. Net effect:
       // staff submitted 0.5 kg, approver opened in claim mode and saw
       // "1 kg" without touching anything.
       //
@@ -200,7 +201,7 @@ export function QtyControl({
       disabled && 'opacity-40 pointer-events-none',
     );
 
-  const display = formatQty(value, step);
+  const display = formatQty(value);
   const unitAt = (qty: number): string | undefined => (unitFor ? unitFor(qty) : unit);
   const shownUnit = unitAt(value);
   const showZero = value === 0;
@@ -397,19 +398,19 @@ function QtyQuickPickSheet({
   const draftProblem = read.ok
     ? null
     : read.reason === 'belowMin'
-      ? labels.qtyAtLeast(formatQty(min, step))
+      ? labels.qtyAtLeast(formatQty(min))
       : read.reason === 'aboveMax'
-        ? labels.qtyAtMost(formatQty(max, step))
+        ? labels.qtyAtMost(formatQty(max))
         : read.reason === 'tooPrecise'
           ? labels.qtyMaxDecimals(QTY_DECIMALS)
           : read.reason === 'notMultiple'
-            ? labels.qtyNotMultiple(formatQty(step, step))
+            ? labels.qtyNotMultiple(formatQty(step))
             : labels.qtyEnterNumber;
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
   const draftUnit = unitAt(sanitizedDraft ?? current);
   const setLabel = labels.setValue(
-    (sanitizedDraft !== null ? formatQty(sanitizedDraft, step) : '—') +
+    (sanitizedDraft !== null ? formatQty(sanitizedDraft) : '—') +
       (draftUnit ? ' ' + draftUnit : ''),
   );
 
@@ -486,7 +487,7 @@ function QtyQuickPickSheet({
                       ✓
                     </span>
                   ) : null}
-                  {formatQty(p, step)}
+                  {formatQty(p)}
                   {unitAt(p) ? <span className="ml-1 opacity-70">{unitAt(p)}</span> : null}
                 </button>
               );
@@ -543,14 +544,4 @@ export function stepQty(
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(Math.max(v, min), max);
-}
-
-function formatQty(v: number, _step: number): string {
-  // M3.35 (2026-05-19): display the actual value, not a step-snapped
-  // version. Previously `step >= 1` forced Math.round which turned a
-  // legitimate 0.5 kg into "1 kg" on screen — divergent from server
-  // truth. Trim to 3 decimals (DB precision), Number() strips trailing
-  // zeros so whole-step values still read as "3" rather than "3.000".
-  // `step` kept in signature so callers don't have to change.
-  return String(Number(v.toFixed(3)));
 }
