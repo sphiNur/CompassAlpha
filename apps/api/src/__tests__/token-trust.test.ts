@@ -18,7 +18,7 @@ import { SignJWT } from 'jose';
 import { getDb, provisionOrganization, schema as s, withSystemContext } from '@compass/db';
 import { env } from '../env';
 import { appRouter } from '../trpc/router';
-import { AUTH_LIMIT } from '../trpc/routers/auth';
+import { AUTH_LIMIT } from '../trpc/routers/auth/limits';
 import { createContext, type RequestContext } from '../trpc/context';
 import { verifyRefresh } from '../infra/jwt';
 import { trustedClientIp, CLIENT_IP_HEADER, PROXY_KEY_HEADER } from '../services/clientIp';

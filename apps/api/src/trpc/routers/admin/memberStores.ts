@@ -199,7 +199,8 @@ export const memberStoreProcedures = {
    * "Detach" means: remove the MSA row AND revoke every store-scoped
    * role binding the member holds in that store, in one transaction.
    * Without the role-binding revoke, the member would still see the
-   * store via the auth.ts UNION (binding scopeIds count too) and
+   * store in their session (services/sessionPayload.ts: binding
+   * scopeIds count too) and
    * appear "removed but still hanging on" — confusing for operators.
    *
    * This is the right primitive for the "员工不在这家店干了" UX:

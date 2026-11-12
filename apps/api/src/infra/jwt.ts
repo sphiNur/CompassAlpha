@@ -5,7 +5,8 @@ import { env } from '../env';
 const accessSecret = new TextEncoder().encode(env.JWT_SECRET);
 const refreshSecret = new TextEncoder().encode(env.JWT_REFRESH_SECRET);
 
-const ACCESS_TTL = '15m';
+/** How long a login (access) token lives. */
+const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL = '30d';
 
 /**
@@ -44,8 +45,16 @@ export async function signAccess(claims: AccessClaims): Promise<string> {
   return await new SignJWT(claims as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: TOKEN_ALG, typ: ACCESS_TYP })
     .setIssuedAt()
-    .setExpirationTime(ACCESS_TTL)
+    .setExpirationTime(`${ACCESS_TTL_SECONDS}s`)
     .sign(accessSecret);
+}
+
+/**
+ * When a login token signed now runs out. Sign-in and refresh tell the
+ * client, which refreshes before then.
+ */
+export function accessTokenExpiry(): Date {
+  return new Date(Date.now() + ACCESS_TTL_SECONDS * 1000);
 }
 
 export async function verifyAccess(token: string): Promise<AccessClaims> {

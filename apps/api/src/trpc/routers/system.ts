@@ -21,7 +21,8 @@ import { env } from '../../env';
  * limit by event count because honest spikes (e.g. an error storm in
  * the WebView) legitimately fill a single batch to the 200 cap.
  *
- * Keyed on the trusted client address like auth.ts (AUTH-6). Without
+ * Keyed on the trusted client address like sign-in (routers/auth/limits.ts,
+ * AUTH-6). Without
  * one the caller shares a bucket with ten times the budget: telemetry
  * keeps flowing behind a misconfigured proxy, but no longer unlimited.
  */
