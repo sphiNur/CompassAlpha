@@ -7,7 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
 import {
-  effectivePermissionsForStore,
+  effectivePermissionsForStores,
   getActorStoreIds,
   getActorStoreIdsForPermission,
   resolveRunCreateStoreScope,
@@ -36,6 +36,19 @@ export async function runInvolvedStoreIds(
     columns: { storeId: true },
   });
   return [...new Set(rows.map((r) => r.storeId))];
+}
+
+/**
+ * A run, with its stores when the caller has already read them, so one
+ * request reads them once (review RUNAPI-12: run.get read them up to
+ * three times).
+ */
+export type RunStores = { sessionIdsJson: string[]; involvedStoreIds?: readonly string[] };
+
+function storesOf(db: DB, run: RunStores): Promise<readonly string[]> {
+  return run.involvedStoreIds
+    ? Promise.resolve(run.involvedStoreIds)
+    : runInvolvedStoreIds(db, run);
 }
 
 /**
@@ -78,11 +91,11 @@ export function assertStoreIdsWithinRunCreateScope(
 export async function assertRunCreateScopeForRun(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: string[] },
+  run: RunStores,
 ): Promise<void> {
   const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx.session!);
   if (allowedStoreIds === null) return;
-  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  const involvedStoreIds = await storesOf(db, run);
   const allowed = new Set(allowedStoreIds);
   if (involvedStoreIds.every((storeId) => allowed.has(storeId))) return;
   throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
@@ -95,31 +108,19 @@ export async function assertRunCreateScopeForRun(
  * role may put `run.amend` in the flat session union, but can never satisfy
  * this gate by itself.
  */
-export async function canAmendRun(
-  db: DB,
-  ctx: RequestContext,
-  run: { sessionIdsJson: string[] },
-): Promise<boolean> {
+export async function canAmendRun(db: DB, ctx: RequestContext, run: RunStores): Promise<boolean> {
   const globallyGranted = await hasGlobalPermission(db, ctx.session!.memberId, 'run.amend');
   if (!globallyGranted) return false;
 
-  const storeIds = await runInvolvedStoreIds(db, run);
-  for (const storeId of storeIds) {
-    const effective = await effectivePermissionsForStore(
-      db,
-      ctx.session!.memberId,
-      storeId,
-      ctx.session!.permissions,
-    );
-    if (!effective.has('run.amend')) return false;
-  }
-  return true;
+  const storeIds = await storesOf(db, run);
+  const byStore = await effectivePermissionsForStores(db, ctx.session!.memberId, storeIds);
+  return storeIds.every((storeId) => byStore.get(storeId)?.has('run.amend') ?? false);
 }
 
 export async function assertCanAmendRun(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: string[] },
+  run: RunStores,
 ): Promise<void> {
   if (await canAmendRun(db, ctx, run)) return;
   throw new TRPCError({
@@ -139,7 +140,7 @@ export async function assertCanAmendRun(
 export async function assertRunPermissionForAllStores(
   db: DB,
   ctx: RequestContext,
-  run: { sessionIdsJson: string[] },
+  run: RunStores,
   permissionKey: string,
   item?: {
     skuId: string;
@@ -155,7 +156,7 @@ export async function assertRunPermissionForAllStores(
     ctx.session!.permissions,
   );
   if (allowedStoreIds === null) return;
-  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  const involvedStoreIds = await storesOf(db, run);
   const allowed = new Set(allowedStoreIds);
   if (involvedStoreIds.length > 0 && involvedStoreIds.every((storeId) => allowed.has(storeId))) {
     return;
@@ -199,7 +200,7 @@ export async function assertRunPermissionForAllStores(
 export async function finishBlockedReasonFor(
   db: DB,
   ctx: RequestContext,
-  run: { status: string; sessionIdsJson: string[] },
+  run: RunStores & { status: string },
 ): Promise<string | null> {
   if (run.status === 'amending') {
     return (await canAmendRun(db, ctx, run)) ? null : 'run.errors.cannotAmend';
@@ -214,7 +215,7 @@ export async function finishBlockedReasonFor(
   );
   if (allowedStoreIds === null) return null;
   const allowed = new Set(allowedStoreIds);
-  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  const involvedStoreIds = await storesOf(db, run);
   if (involvedStoreIds.length > 0 && involvedStoreIds.every((id) => allowed.has(id))) return null;
   return involvedStoreIds.some((id) => allowed.has(id))
     ? 'run.errors.runHasOtherStores'

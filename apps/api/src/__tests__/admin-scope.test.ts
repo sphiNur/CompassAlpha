@@ -17,7 +17,11 @@ import { describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { appRouter } from '../trpc/router';
-import { effectivePermissionsForStore, getActorStoreIds } from '../services/storeScope';
+import {
+  effectivePermissionsForStore,
+  effectivePermissionsForStores,
+  getActorStoreIds,
+} from '../services/storeScope';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext, callerFor } from './helpers/ctx';
@@ -100,6 +104,55 @@ describe('P0 store-manager scope', () => {
       expect(atStoreB.has('order.approve')).toBe(false);
       expect(atStoreB.has('users.manage')).toBe(false);
       expect(atStoreB.has('order.draft')).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'RUNAPI-12: one call resolves every store: its bindings, the global ones, and denies last',
+    async () => {
+      const fx = fixture();
+      const db = getDb(undefined, { system: 'maintenance' });
+      const storeA = await makeStore(`BatchA-${Math.random()}`);
+      const storeB = await makeStore(`BatchB-${Math.random()}`);
+      const storeC = await makeStore(`BatchC-${Math.random()}`);
+      const user = await makeUser('Batch Resolver');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(memberId, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      const override = (
+        permissionKey: string,
+        effect: 'allow' | 'deny',
+        scope: { scopeType: 'global'; scopeId: null } | { scopeType: 'store'; scopeId: string },
+      ) => ({ memberId, permissionKey, effect, ...scope, grantedBy: fx.superAdminUserId });
+      await db
+        .insert(s.memberPermissionOverrides)
+        .values([
+          override('order.approve', 'deny', { scopeType: 'store', scopeId: storeA.id }),
+          override('delivery.dispatch', 'allow', { scopeType: 'store', scopeId: storeB.id }),
+          override('prices.view', 'allow', { scopeType: 'global', scopeId: null }),
+        ]);
+
+      const byStore = await effectivePermissionsForStores(db, memberId, [
+        storeA.id,
+        storeB.id,
+        storeC.id,
+        storeA.id,
+      ]);
+      expect(byStore.size).toBe(3);
+      const atA = byStore.get(storeA.id)!;
+      expect(atA.has('users.manage')).toBe(true);
+      expect(atA.has('order.approve')).toBe(false);
+      expect(atA.has('prices.view')).toBe(true);
+      const atB = byStore.get(storeB.id)!;
+      expect(atB.has('order.draft')).toBe(true);
+      expect(atB.has('delivery.dispatch')).toBe(true);
+      expect(atB.has('users.manage')).toBe(false);
+      expect([...byStore.get(storeC.id)!]).toEqual(['prices.view']);
+      // The one-store call is the same resolver.
+      expect(
+        [...(await effectivePermissionsForStore(db, memberId, storeB.id, new Set()))].sort(),
+      ).toEqual([...atB].sort());
+      expect((await effectivePermissionsForStores(db, memberId, [])).size).toBe(0);
     },
   );
 

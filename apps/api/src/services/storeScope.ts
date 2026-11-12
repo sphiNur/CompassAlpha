@@ -7,7 +7,7 @@
  * hold it to manage staff in their own stores.
  */
 import { TRPCError } from '@trpc/server';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { ORG_WIDE_PERMISSION_KEYS } from '@compass/contracts';
@@ -265,12 +265,33 @@ export async function effectivePermissionsForStore(
   storeId: string,
   _sessionPermissions: ReadonlySet<string>,
 ): Promise<ReadonlySet<string>> {
+  return (await effectivePermissionsForStores(db, memberId, [storeId])).get(storeId) ?? new Set();
+}
+
+/**
+ * effectivePermissionsForStore for several stores in two queries: every
+ * active global binding and override of the member, and those scoped to
+ * any of the stores. Each store gets the set the one-store call gives it.
+ *
+ * Review RUNAPI-12 (2026-11-12): run.get, the amend check, the session
+ * payload and the attendance home called the one-store version once per
+ * store, two queries each.
+ */
+export async function effectivePermissionsForStores(
+  db: DB,
+  memberId: string,
+  storeIds: readonly string[],
+): Promise<Map<string, ReadonlySet<string>>> {
+  const ids = [...new Set(storeIds)];
+  const byStore = new Map<string, ReadonlySet<string>>();
+  if (ids.length === 0) return byStore;
   const now = new Date();
   const [rolePermissionRows, overrides] = await Promise.all([
     db
       .select({
         permissionKey: s.rolePermissions.permissionKey,
         scopeType: s.memberRoleBindings.scopeType,
+        scopeId: s.memberRoleBindings.scopeId,
       })
       .from(s.memberRoleBindings)
       .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
@@ -281,7 +302,7 @@ export async function effectivePermissionsForStore(
             eq(s.memberRoleBindings.scopeType, 'global'),
             and(
               eq(s.memberRoleBindings.scopeType, 'store'),
-              eq(s.memberRoleBindings.scopeId, storeId),
+              inArray(s.memberRoleBindings.scopeId, ids),
             ),
           ),
           or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
@@ -292,6 +313,7 @@ export async function effectivePermissionsForStore(
         permissionKey: s.memberPermissionOverrides.permissionKey,
         effect: s.memberPermissionOverrides.effect,
         scopeType: s.memberPermissionOverrides.scopeType,
+        scopeId: s.memberPermissionOverrides.scopeId,
       })
       .from(s.memberPermissionOverrides)
       .where(
@@ -301,7 +323,7 @@ export async function effectivePermissionsForStore(
             eq(s.memberPermissionOverrides.scopeType, 'global'),
             and(
               eq(s.memberPermissionOverrides.scopeType, 'store'),
-              eq(s.memberPermissionOverrides.scopeId, storeId),
+              inArray(s.memberPermissionOverrides.scopeId, ids),
             ),
           ),
           or(
@@ -312,32 +334,38 @@ export async function effectivePermissionsForStore(
       ),
   ]);
 
-  // A store-scoped role/override must never yield org-wide authority, even
-  // when a legacy row happens to carry an org-wide key.
-  const effective = new Set(
-    rolePermissionRows
-      .filter((row) => grantCounts(row.permissionKey, row.scopeType))
-      .map((row) => row.permissionKey),
-  );
-  for (const override of overrides) {
-    if (
-      override.effect === 'allow' &&
-      override.permissionKey &&
-      grantCounts(override.permissionKey, override.scopeType)
-    ) {
-      effective.add(override.permissionKey);
+  for (const storeId of ids) {
+    const applies = (row: { scopeType: string; scopeId: string | null }) =>
+      row.scopeType === 'global' || (row.scopeType === 'store' && row.scopeId === storeId);
+    const storeOverrides = overrides.filter(applies);
+    // A store-scoped role/override must never yield org-wide authority, even
+    // when a legacy row happens to carry an org-wide key.
+    const effective = new Set(
+      rolePermissionRows
+        .filter((row) => applies(row) && grantCounts(row.permissionKey, row.scopeType))
+        .map((row) => row.permissionKey),
+    );
+    for (const override of storeOverrides) {
+      if (
+        override.effect === 'allow' &&
+        override.permissionKey &&
+        grantCounts(override.permissionKey, override.scopeType)
+      ) {
+        effective.add(override.permissionKey);
+      }
     }
-  }
-  for (const override of overrides) {
-    if (
-      override.effect === 'deny' &&
-      override.permissionKey &&
-      grantCounts(override.permissionKey, override.scopeType)
-    ) {
-      effective.delete(override.permissionKey);
+    for (const override of storeOverrides) {
+      if (
+        override.effect === 'deny' &&
+        override.permissionKey &&
+        grantCounts(override.permissionKey, override.scopeType)
+      ) {
+        effective.delete(override.permissionKey);
+      }
     }
+    byStore.set(storeId, effective);
   }
-  return effective;
+  return byStore;
 }
 
 /**

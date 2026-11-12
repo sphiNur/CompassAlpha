@@ -9,7 +9,7 @@ import { schema as s, type DB } from '@compass/db';
 import { ADMIN_RANK } from '@compass/contracts';
 import {
   effectiveGlobalPermissions,
-  effectivePermissionsForStore,
+  effectivePermissionsForStores,
 } from '../../../services/storeScope';
 import {
   grantRefusal,
@@ -223,15 +223,10 @@ async function actorKeySets(
 }> {
   const session = ctx.session!;
   const global = await effectiveGlobalPermissions(tx, session.memberId);
-  const perStore = await Promise.all(
-    storeIds.map(
-      async (id) =>
-        [
-          id,
-          await effectivePermissionsForStore(tx, session.memberId, id, session.permissions),
-        ] as const,
-    ),
-  );
+  // Review RUNAPI-12 (2026-11-12): every store in one lookup, not two
+  // queries for each store the admin manages.
+  const byStore = await effectivePermissionsForStores(tx, session.memberId, storeIds);
+  const perStore = storeIds.map((id) => [id, byStore.get(id) ?? new Set<string>()] as const);
   return { global, perStore };
 }
 

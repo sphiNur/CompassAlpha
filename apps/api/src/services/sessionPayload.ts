@@ -15,7 +15,7 @@ import { isPlatformAdmin } from './platformAdmin';
 import {
   adminScopeOf,
   adminStoresOf,
-  effectivePermissionsForStore,
+  effectivePermissionsForStores,
   flatEffectivePermissions,
 } from './storeScope';
 import { readSubscriptionState, type SubscriptionState } from './subscription';
@@ -191,7 +191,7 @@ async function readSessionPayload(
   // The flat set the client gets: keys effective in at least one scope,
   // overrides applied per scope (ADM-3: a deny in ONE store used to be
   // collapsed into the flat set and hid Manage for a two-store manager).
-  // Per-store checks still run through effectivePermissionsForStore.
+  // Per-store checks still run through effectivePermissionsForStore(s).
   const keysByRole = new Map<string, string[]>();
   for (const p of perms) {
     keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
@@ -348,11 +348,13 @@ async function readSessionPayload(
   // member's stores, so store-bound tabs can follow the selected store.
   // `permissions` above stays the flat union every older client reads.
   const storePermissions: Record<string, string[]> = {};
-  const permSet = new Set(permKeys);
+  const permsByStore = await effectivePermissionsForStores(
+    db,
+    member.id,
+    storeRows.map((st) => st.id),
+  );
   for (const st of storeRows) {
-    storePermissions[st.id] = [
-      ...(await effectivePermissionsForStore(db, member.id, st.id, permSet)),
-    ];
+    storePermissions[st.id] = [...(permsByStore.get(st.id) ?? [])];
   }
 
   return {

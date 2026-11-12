@@ -170,14 +170,20 @@ export async function runSimpleCommand(
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return withRunStreamRetry(ctx, async (tx) => {
-    const run = await loadRun(tx, ctx.session!.orgId, runId);
-    let state = await loadRunState(tx, run.id);
+    const loaded = await loadRun(tx, ctx.session!.orgId, runId);
+    let state = await loadRunState(tx, loaded.id);
+    const runStoreIds = options?.withRunStoreIds
+      ? await runInvolvedStoreIds(tx, loaded)
+      : undefined;
+    // Review RUNAPI-12 (2026-11-12): the permission checks below reuse the
+    // stores read here instead of reading them again.
+    const run = runStoreIds ? { ...loaded, involvedStoreIds: runStoreIds } : loaded;
     const scope: {
       runStoreIds?: string[];
       readStoreIds?: ReadonlySet<string> | null;
       nextRunIndex?: number;
     } = {
-      ...(options?.withRunStoreIds ? { runStoreIds: await runInvolvedStoreIds(tx, run) } : {}),
+      ...(runStoreIds ? { runStoreIds } : {}),
     };
     if (options?.nextRunIndexOn) {
       const [row] = await tx
