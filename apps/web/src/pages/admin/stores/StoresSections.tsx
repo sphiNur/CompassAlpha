@@ -41,6 +41,7 @@ import { nativeConfirm } from '../shared';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people';
 import { StoreInventoryTab } from './inventory/StoreInventoryTab';
+import { StoreTimeZoneSelect } from './StoreTimeZoneSelect';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
 
 interface StoreDraft {
@@ -321,13 +322,9 @@ export function StoresHomeSection({
               />
             </Field>
             <Field label={i18n.t('admin.field.timezone')}>
-              <Input
+              <StoreTimeZoneSelect
                 value={createDraft.timezone}
-                onChange={(e) =>
-                  setCreateDraft({ ...createDraft, timezone: e.target.value })
-                }
-                maxLength={64}
-                placeholder={i18n.t('admin.field.timezonePlaceholder')}
+                onChange={(timezone) => setCreateDraft({ ...createDraft, timezone })}
               />
             </Field>
             <p className="text-old-label text-[var(--c-fg-muted)]">
@@ -575,11 +572,9 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
         />
       </Field>
       <Field label={i18n.t('admin.field.timezone')}>
-        <Input
+        <StoreTimeZoneSelect
           value={draft.timezone}
-          onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-          maxLength={64}
-          placeholder={i18n.t('admin.field.timezonePlaceholder')}
+          onChange={(timezone) => setDraft({ ...draft, timezone })}
           disabled={!canAdmin}
         />
       </Field>
@@ -631,19 +626,35 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
         <Button
           loading={update.isPending}
           disabled={!canAdmin || !dirty || !draft.name.trim()}
-          onClick={() => {
-            update.mutate({
-              storeId: draft.storeId!,
-              name: draft.name,
-              code: draft.code || null,
-              address: draft.address || null,
-              timezone: draft.timezone || null,
-              // Only org.admin may send isActive (CA-08); others omit it.
-              ...(isOrgAdmin ? { isActive: draft.isActive } : {}),
-              defaultRoleSlug: draft.defaultRoleSlug
-                ? draft.defaultRoleSlug
-                : null,
-            });
+          onClick={async () => {
+            const save = () =>
+              update.mutate({
+                storeId: draft.storeId!,
+                name: draft.name,
+                code: draft.code || null,
+                address: draft.address || null,
+                timezone: draft.timezone || null,
+                // Only org.admin may send isActive (CA-08); others omit it.
+                ...(isOrgAdmin ? { isActive: draft.isActive } : {}),
+                defaultRoleSlug: draft.defaultRoleSlug ? draft.defaultRoleSlug : null,
+              });
+            // ADM2-41: a paused store takes no orders, so pausing asks
+            // first and says what is still open there, as archiving does.
+            if (!(isOrgAdmin && store.isActive && !draft.isActive)) return save();
+            const impact = await utils.admin.storeArchiveImpact
+              .fetch({ storeId })
+              .catch(() => null);
+            const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
+            nativeConfirm(
+              busy
+                ? i18n.t('admin.store.confirmPauseBusy', {
+                    name: store.name,
+                    orders: impact.openOrders,
+                    runs: impact.activeRuns,
+                  })
+                : i18n.t('admin.store.confirmPause', { name: store.name }),
+              save,
+            );
           }}
         >
           {i18n.t('common.save')}

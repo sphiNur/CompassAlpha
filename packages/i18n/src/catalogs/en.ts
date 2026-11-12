@@ -125,6 +125,10 @@ export const en = {
   'admin.store.confirmArchive': 'Archive "{name}"?',
   'admin.store.confirmArchiveBusy':
     '{name} still has {orders, plural, one {# open order} other {# open orders}} and {runs, plural, one {# run} other {# runs}} under way. They stay as they are after archiving. Archive anyway?',
+  'admin.store.confirmPause':
+    'Pause "{name}"? No orders can be placed for it until it is active again.',
+  'admin.store.confirmPauseBusy':
+    '{name} still has {orders, plural, one {# open order} other {# open orders}} and {runs, plural, one {# run} other {# runs}} under way. They stay as they are, but no new orders can be placed until the store is active again. Pause anyway?',
   'admin.store.tabTeam': 'Team',
   'admin.store.tabInventory': 'Inventory',
   'admin.store.tabSales': 'Sales',
@@ -1942,6 +1946,9 @@ export const en = {
   'admin.field.code': 'Code',
   'admin.field.address': 'Address',
   'admin.field.timezone': 'Time zone',
+  'admin.store.timezoneWorkspace': 'Same as the workspace ({timezone})',
+  'admin.store.timezoneCommon': 'Common time zones',
+  'admin.store.timezoneOther': 'Other time zones',
   'admin.field.phone': 'Phone',
   'admin.field.notes': 'Notes',
   'admin.field.tgUsername': 'Telegram username',
@@ -1951,7 +1958,6 @@ export const en = {
   'admin.field.displayNameOverride': 'Display name (admin override)',
   // 2026-10-30: input placeholders that were hard-coded English (12-工程 F8).
   'admin.field.codePlaceholder': 'Optional internal code',
-  'admin.field.timezonePlaceholder': 'e.g. Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': 'e.g. shift-lead',
   'admin.field.memberNamePlaceholder': 'Display name',
   'admin.label.counting': 'Counting…',

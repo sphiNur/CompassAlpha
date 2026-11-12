@@ -103,6 +103,9 @@ export const zh = {
   'admin.store.confirmArchive': '归档「{name}」？',
   'admin.store.confirmArchiveBusy':
     '{name} 还有 {orders} 份未完成的订单、{runs} 张进行中的采购单。归档后这些单据会留在原处，仍要归档吗？',
+  'admin.store.confirmPause': '暂停「{name}」？重新启用前，这家门店不能下单。',
+  'admin.store.confirmPauseBusy':
+    '{name} 还有 {orders} 份未完成的订单、{runs} 张进行中的采购单。暂停后这些单据会留在原处，但重新启用前不能再下单。仍要暂停吗？',
   'admin.store.tabTeam': '人员',
   'admin.store.tabInventory': '库存',
   'admin.store.tabSales': '销售',
@@ -1634,6 +1637,9 @@ export const zh = {
   'admin.field.code': '编号',
   'admin.field.address': '地址',
   'admin.field.timezone': '时区',
+  'admin.store.timezoneWorkspace': '与工作区相同（{timezone}）',
+  'admin.store.timezoneCommon': '常用时区',
+  'admin.store.timezoneOther': '其他时区',
   'admin.field.phone': '电话',
   'admin.field.notes': '备注',
   'admin.field.tgUsername': 'Telegram 用户名',
@@ -1642,7 +1648,6 @@ export const zh = {
   'admin.field.assignedStores': '所属门店',
   'admin.field.displayNameOverride': '显示名称（管理员覆盖）',
   'admin.field.codePlaceholder': '内部编号（可选）',
-  'admin.field.timezonePlaceholder': '例如：Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': '例如：shift-lead',
   'admin.field.memberNamePlaceholder': '显示名称',
   'admin.label.counting': '正在统计…',

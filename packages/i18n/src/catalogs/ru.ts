@@ -109,6 +109,10 @@ export const ru = {
   'admin.store.confirmArchive': 'Архивировать «{name}»?',
   'admin.store.confirmArchiveBusy':
     'У магазина «{name}» ещё {orders, plural, one {# незавершённый заказ} few {# незавершённых заказа} many {# незавершённых заказов} other {# незавершённого заказа}} и {runs, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}} в работе. После архивации они останутся как есть. Всё равно архивировать?',
+  'admin.store.confirmPause':
+    'Приостановить «{name}»? Пока магазин снова не станет активным, заказать для него будет нельзя.',
+  'admin.store.confirmPauseBusy':
+    'У магазина «{name}» ещё {orders, plural, one {# незавершённый заказ} few {# незавершённых заказа} many {# незавершённых заказов} other {# незавершённого заказа}} и {runs, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}} в работе. Они останутся как есть, но новых заказов не будет, пока магазин снова не станет активным. Всё равно приостановить?',
   'admin.store.tabTeam': 'Команда',
   'admin.store.tabInventory': 'Склад',
   'admin.store.tabSales': 'Продажи',
@@ -1858,6 +1862,9 @@ export const ru = {
   'admin.field.code': 'Код',
   'admin.field.address': 'Адрес',
   'admin.field.timezone': 'Часовой пояс',
+  'admin.store.timezoneWorkspace': 'Как у рабочего пространства ({timezone})',
+  'admin.store.timezoneCommon': 'Основные часовые пояса',
+  'admin.store.timezoneOther': 'Другие часовые пояса',
   'admin.field.phone': 'Телефон',
   'admin.field.notes': 'Заметки',
   'admin.field.tgUsername': 'Имя в Telegram',
@@ -1866,7 +1873,6 @@ export const ru = {
   'admin.field.assignedStores': 'Назначенные магазины',
   'admin.field.displayNameOverride': 'Отображаемое имя (правка администратора)',
   'admin.field.codePlaceholder': 'Внутренний код, необязательно',
-  'admin.field.timezonePlaceholder': 'например, Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': 'например, shift-lead',
   'admin.field.memberNamePlaceholder': 'Отображаемое имя',
   'admin.label.counting': 'Подсчёт…',

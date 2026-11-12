@@ -116,6 +116,10 @@ export const uz = {
   'admin.store.confirmArchive': '«{name}» arxivlansinmi?',
   'admin.store.confirmArchiveBusy':
     '{name} doʻkonida hali {orders} ta yakunlanmagan buyurtma va {runs} ta davom etayotgan xarid bor. Arxivlangandan keyin ular oʻz joyida qoladi. Baribir arxivlansinmi?',
+  'admin.store.confirmPause':
+    '«{name}» toʻxtatilsinmi? Doʻkon qayta faollashtirilmaguncha unga buyurtma berib boʻlmaydi.',
+  'admin.store.confirmPauseBusy':
+    '{name} doʻkonida hali {orders} ta yakunlanmagan buyurtma va {runs} ta davom etayotgan xarid bor. Ular oʻz joyida qoladi, lekin doʻkon qayta faollashtirilmaguncha yangi buyurtma berib boʻlmaydi. Baribir toʻxtatilsinmi?',
   'admin.store.tabTeam': 'Jamoa',
   'admin.store.tabInventory': 'Ombor',
   'admin.store.tabSales': 'Sotuv',
@@ -1842,6 +1846,9 @@ export const uz = {
   'admin.field.code': 'Kod',
   'admin.field.address': 'Manzil',
   'admin.field.timezone': 'Vaqt mintaqasi',
+  'admin.store.timezoneWorkspace': 'Ish maydoni bilan bir xil ({timezone})',
+  'admin.store.timezoneCommon': 'Asosiy vaqt mintaqalari',
+  'admin.store.timezoneOther': 'Boshqa vaqt mintaqalari',
   'admin.field.phone': 'Telefon',
   'admin.field.notes': 'Izohlar',
   'admin.field.tgUsername': 'Telegram nomi',
@@ -1850,7 +1857,6 @@ export const uz = {
   'admin.field.assignedStores': 'Tayinlangan doʻkonlar',
   'admin.field.displayNameOverride': 'Koʻrinadigan ism (admin)',
   'admin.field.codePlaceholder': 'Ichki kod, ixtiyoriy',
-  'admin.field.timezonePlaceholder': 'masalan, Asia/Tashkent',
   'admin.field.roleSlugPlaceholder': 'masalan, shift-lead',
   'admin.field.memberNamePlaceholder': 'Koʻrinadigan ism',
   'admin.label.counting': 'Hisoblanmoqda…',
