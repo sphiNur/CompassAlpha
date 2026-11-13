@@ -26,6 +26,7 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
+  useArchivedToast,
 } from './CatalogParts';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import {
@@ -81,10 +82,13 @@ export function CategoriesSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
+  const archivedToast = useArchivedToast();
   const remove = trpc.admin.categoryDelete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       void utils.admin.categoryList.invalidate();
-      toast.info(i18n.t('admin.toast.categoryArchived'));
+      archivedToast(i18n.t('admin.toast.categoryArchived'), () =>
+        update.mutate({ categoryId: vars.categoryId, isArchived: false }),
+      );
     },
     onError: errToast('common.errors.actionFailed'),
   });
@@ -150,7 +154,6 @@ export function CategoriesSection() {
                           sortText: String(c.sortIndex),
                         })
                       }
-                      confirmArchive={i18n.t('catalog.category.confirmArchive', { name: title })}
                       onArchive={() => remove.mutate({ categoryId: c.id })}
                       onUnarchive={() => update.mutate({ categoryId: c.id, isArchived: false })}
                       unarchiving={update.isPending && update.variables?.categoryId === c.id}

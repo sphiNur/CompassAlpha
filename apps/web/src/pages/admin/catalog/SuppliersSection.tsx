@@ -17,7 +17,13 @@ import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { useI18n } from '../../../hooks/useI18n';
-import { CatalogRowActions, CatalogRowHeader, CatalogToolbar, ReadOnlyHint } from './CatalogParts';
+import {
+  CatalogRowActions,
+  CatalogRowHeader,
+  CatalogToolbar,
+  ReadOnlyHint,
+  useArchivedToast,
+} from './CatalogParts';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { changedFields, hasChanges } from './editPatch';
@@ -76,10 +82,13 @@ export function SuppliersSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
+  const archivedToast = useArchivedToast();
   const remove = trpc.admin.supplierDelete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       void utils.admin.supplierList.invalidate();
-      toast.info(i18n.t('admin.toast.supplierArchived'));
+      archivedToast(i18n.t('admin.toast.supplierArchived'), () =>
+        update.mutate({ supplierId: vars.supplierId, isArchived: false }),
+      );
     },
     onError: errToast('common.errors.actionFailed'),
   });
@@ -144,7 +153,6 @@ export function SuppliersSection() {
                       };
                       setDraft({ supplierId: sp.id, ...text, opened: supplierFields(text) });
                     }}
-                    confirmArchive={i18n.t('catalog.supplier.confirmArchive', { name: sp.name })}
                     onArchive={() => remove.mutate({ supplierId: sp.id })}
                     onUnarchive={() => update.mutate({ supplierId: sp.id, isArchived: false })}
                     unarchiving={update.isPending && update.variables?.supplierId === sp.id}

@@ -87,15 +87,10 @@ export const en = {
   'catalog.category.emptyBody': 'Used to group products on the order page.',
   'catalog.sku.new': 'New product',
   'catalog.sku.edit': 'Edit product',
-  'catalog.sku.confirmArchive':
-    'Archive product "{name}"? It no longer shows up for ordering; past records are kept.',
   'catalog.supplier.new': 'New supplier',
   'catalog.supplier.edit': 'Edit supplier',
   'catalog.supplier.emptyTitle': 'No suppliers',
   'catalog.supplier.emptyBody': 'Track who you buy from at the market.',
-  'catalog.supplier.confirmArchive':
-    'Archive supplier "{name}"? It can no longer be picked for purchases; past records are kept.',
-  'catalog.category.confirmArchive': 'Archive category "{name}"?',
   'catalog.category.meta': 'Short code {slug} · order {sort}',
   'catalog.category.slugPlaceholder': 'e.g. dairy',
   'catalog.sku.stepMeta': 'order step {step}',
@@ -1280,6 +1275,7 @@ export const en = {
   'approval.unknownReviewer': 'another reviewer',
   'approval.unapprove': 'Reverse approval',
   'approval.undo': 'Undo',
+  'common.undo': 'Undo',
   'approval.toast.approved': 'Approved ✓',
   'approval.toast.rejected': 'Rejected',
   'approval.toast.released': 'Put back — others can review it now',
@@ -2026,8 +2022,6 @@ export const en = {
   'admin.field.defaultPaymentMethod': 'Default payment',
   'admin.sheet.newExpenseTemplate': 'New expense template',
   'admin.sheet.editExpenseTemplate': 'Edit template',
-  'admin.confirm.archiveExpenseTemplate':
-    'Archive template "{label}"? It will no longer be offered as a shortcut when adding an expense on the purchase page. Expenses already recorded stay as they are.',
   'admin.toast.expenseTemplateCreated': 'Template added',
   'admin.toast.expenseTemplateUpdated': 'Template updated',
   'admin.toast.expenseTemplateArchived': 'Template archived',
@@ -2050,7 +2044,7 @@ export const en = {
   'dishes.field.unitPrice': 'Price per serving',
   'dishes.field.qtyPlaceholder': 'quantity per serving',
   'dishes.field.pickSku': 'Pick ingredient…',
-  'dishes.confirm.archive': 'Archive "{name}"?',
+  'dishes.toast.archived': 'Dish archived',
   'dishes.errors.cannotManage': 'Editing the menu needs a permission an admin can give you.',
   'dishes.readOnly':
     "You can view this dish's recipe; editing the menu needs a permission an admin can give you.",

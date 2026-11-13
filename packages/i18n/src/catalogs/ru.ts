@@ -71,15 +71,10 @@ export const ru = {
   'catalog.category.emptyBody': 'Группируют товары на странице заказа.',
   'catalog.sku.new': 'Новый товар',
   'catalog.sku.edit': 'Изменить товар',
-  'catalog.sku.confirmArchive':
-    'Архивировать товар «{name}»? Его больше не будет при заказе; история сохранится.',
   'catalog.supplier.new': 'Новый поставщик',
   'catalog.supplier.edit': 'Изменить поставщика',
   'catalog.supplier.emptyTitle': 'Нет поставщиков',
   'catalog.supplier.emptyBody': 'Учёт того, у кого вы покупаете на рынке.',
-  'catalog.supplier.confirmArchive':
-    'Архивировать поставщика «{name}»? Его больше нельзя будет выбрать в закупках; история сохранится.',
-  'catalog.category.confirmArchive': 'Архивировать категорию «{name}»?',
   'catalog.category.meta': 'Символьный код {slug} · порядок {sort}',
   'catalog.category.slugPlaceholder': 'например, dairy',
   'catalog.sku.stepMeta': 'шаг заказа {step}',
@@ -1218,6 +1213,7 @@ export const ru = {
   'approval.unknownReviewer': 'другой проверяющий',
   'approval.unapprove': 'Отменить одобрение',
   'approval.undo': 'Отменить',
+  'common.undo': 'Отменить',
   'approval.toast.approved': 'Одобрено ✓',
   'approval.toast.rejected': 'Отклонено',
   'approval.toast.released': 'Возвращено в очередь — проверить может любой',
@@ -1928,8 +1924,6 @@ export const ru = {
   'admin.field.defaultPaymentMethod': 'Оплата по умолч.',
   'admin.sheet.newExpenseTemplate': 'Новый шаблон расхода',
   'admin.sheet.editExpenseTemplate': 'Изменить шаблон',
-  'admin.confirm.archiveExpenseTemplate':
-    'Архивировать шаблон «{label}»? Он больше не будет предлагаться при добавлении расхода на странице закупки. Уже записанные расходы не изменятся.',
   'admin.toast.expenseTemplateCreated': 'Шаблон добавлен',
   'admin.toast.expenseTemplateUpdated': 'Шаблон обновлён',
   'admin.toast.expenseTemplateArchived': 'Шаблон в архиве',
@@ -1954,7 +1948,7 @@ export const ru = {
   'dishes.field.unitPrice': 'Цена за порцию',
   'dishes.field.qtyPlaceholder': 'кол-во на порцию',
   'dishes.field.pickSku': 'Выберите ингредиент…',
-  'dishes.confirm.archive': 'Архивировать «{name}»?',
+  'dishes.toast.archived': 'Блюдо архивировано',
   'dishes.errors.cannotManage':
     'Для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.readOnly':

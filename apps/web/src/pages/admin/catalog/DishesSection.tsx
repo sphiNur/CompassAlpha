@@ -25,8 +25,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney } from '../../../lib/format';
 import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
-import { confirmThen } from '../../../lib/confirm';
-import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
+import { CatalogNameFields, CatalogToolbar, useArchivedToast } from './CatalogParts';
 import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
 import { checkDishDraft, type DishIngredientDraft } from './dishDraft';
 import { haptic } from '../../../lib/telegram';
@@ -163,15 +162,20 @@ export function DishesSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const archive = trpc.dishes.archive.useMutation({
-    onSuccess: () => {
-      invalidate();
-      toast.success(i18n.t('common.saved'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
   const unarchive = trpc.dishes.unarchive.useMutation({
     onSuccess: invalidate,
+    onError: errToast('common.errors.actionFailed'),
+  });
+  // D3 (2026-11-13): archiving no longer asks first; the toast's Undo
+  // and the row's Unarchive take it back.
+  const archivedToast = useArchivedToast();
+  const archive = trpc.dishes.archive.useMutation({
+    onSuccess: (_data, vars) => {
+      invalidate();
+      archivedToast(i18n.t('dishes.toast.archived'), () =>
+        unarchive.mutate({ dishId: vars.dishId }),
+      );
+    },
     onError: errToast('common.errors.actionFailed'),
   });
 
@@ -270,8 +274,6 @@ export function DishesSection() {
           <ul className={rowGroupClass} role="list">
             {rows.map((d) => {
               const names = d.names;
-              // One line for the archive question; two in the row (UI-4).
-              const name = productName({ names });
               const ingCount = (ingredientsByDish.get(d.id) ?? []).length;
               return (
                 <li key={d.id} className={'px-4 py-3 ' + (d.isArchived ? 'opacity-60' : '')}>
@@ -316,11 +318,7 @@ export function DishesSection() {
                         <Button
                           size="sm"
                           variant="danger-ghost"
-                          onClick={() =>
-                            confirmThen(i18n.t('dishes.confirm.archive', { name }), () =>
-                              archive.mutate({ dishId: d.id }),
-                            )
-                          }
+                          onClick={() => archive.mutate({ dishId: d.id })}
                         >
                           {i18n.t('common.archive')}
                         </Button>

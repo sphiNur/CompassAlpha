@@ -76,15 +76,10 @@ export const uz = {
   'catalog.category.emptyBody': 'Buyurtma sahifasida mahsulotlarni guruhlaydi.',
   'catalog.sku.new': 'Yangi mahsulot',
   'catalog.sku.edit': 'Mahsulotni tahrirlash',
-  'catalog.sku.confirmArchive':
-    '«{name}» mahsuloti arxivlansinmi? U endi buyurtmada koʻrinmaydi; tarix saqlanadi.',
   'catalog.supplier.new': 'Yangi yetkazib beruvchi',
   'catalog.supplier.edit': 'Yetkazib beruvchini tahrirlash',
   'catalog.supplier.emptyTitle': 'Yetkazib beruvchilar yoʻq',
   'catalog.supplier.emptyBody': 'Bozorda kimdan xarid qilayotganingizni yozib boring.',
-  'catalog.supplier.confirmArchive':
-    '«{name}» yetkazib beruvchisi arxivlansinmi? Uni endi xaridlarda tanlab boʻlmaydi; tarix saqlanadi.',
-  'catalog.category.confirmArchive': '«{name}» kategoriyasi arxivlansinmi?',
   'catalog.category.meta': 'Qisqa kod {slug} · tartib {sort}',
   'catalog.category.slugPlaceholder': 'masalan, dairy',
   'catalog.sku.stepMeta': 'buyurtma qadami {step}',
@@ -1215,6 +1210,7 @@ export const uz = {
     '{who} buyurtmani ochdi, lekin hech narsa qilmadi. Uni oʻzingiz tekshirasizmi?',
   'approval.unknownReviewer': 'boshqa tekshiruvchi',
   'approval.undo': 'Ortga qaytarish',
+  'common.undo': 'Ortga qaytarish',
   'approval.unapprove': 'Maʼqullashni qaytarib olish',
   'approval.toast.approved': 'Maʼqullandi ✓',
   'approval.toast.rejected': 'Rad etildi',
@@ -1912,8 +1908,6 @@ export const uz = {
   'admin.field.defaultPaymentMethod': 'Standart toʻlov',
   'admin.sheet.newExpenseTemplate': 'Yangi xarajat shabloni',
   'admin.sheet.editExpenseTemplate': 'Shablonni tahrirlash',
-  'admin.confirm.archiveExpenseTemplate':
-    '«{label}» shablonini arxivlaysizmi? Xarid sahifasida xarajat qoʻshishda u endi taklif qilinmaydi. Yozib boʻlingan xarajatlar oʻzgarmaydi.',
   'admin.toast.expenseTemplateCreated': 'Shablon qoʻshildi',
   'admin.toast.expenseTemplateUpdated': 'Shablon yangilandi',
   'admin.toast.expenseTemplateArchived': 'Shablon arxivga olindi',
@@ -1937,7 +1931,7 @@ export const uz = {
   'dishes.field.unitPrice': 'Bir porsiya narxi',
   'dishes.field.qtyPlaceholder': 'porsiyaga miqdor',
   'dishes.field.pickSku': 'Ingredient tanlang…',
-  'dishes.confirm.archive': '{name} arxivlansinmi?',
+  'dishes.toast.archived': 'Taom arxivlandi',
   'dishes.errors.cannotManage': 'Menyuni tahrirlash uchun administrator beradigan ruxsat kerak.',
   'dishes.readOnly':
     'Taom retseptini koʻrishingiz mumkin; menyuni tahrirlash uchun administrator beradigan ruxsat kerak.',
