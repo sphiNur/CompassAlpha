@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ConfirmContext } from '../confirm';
 import { createConfirmQueue } from '../confirmQueue';
 import { ConfirmSheet } from './ConfirmSheet';
@@ -11,7 +11,14 @@ import { ConfirmSheet } from './ConfirmSheet';
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [queue] = useState(createConfirmQueue);
-  const request = useSyncExternalStore(queue.subscribe, queue.current, queue.current);
+  // A plain subscription. With useSyncExternalStore (plus the render-time
+  // setShown below) the provider did not re-render after the sheet's own
+  // Cancel answered, and the question stayed open (e2e, count stock).
+  const [request, setRequest] = useState(queue.current);
+  useEffect(() => {
+    setRequest(queue.current());
+    return queue.subscribe(() => setRequest(queue.current()));
+  }, [queue]);
   // The last question stays rendered while the sheet slides away.
   const [shown, setShown] = useState(request);
   if (request && request !== shown) setShown(request);
