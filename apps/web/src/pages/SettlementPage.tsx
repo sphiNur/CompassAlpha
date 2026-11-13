@@ -23,7 +23,6 @@ import {
   LoadingState,
   PendingState,
   SectionLabel,
-  Select,
   Textarea,
 } from '@compass/ui';
 import { BACKDATE_LIMIT_DAYS } from '@compass/contracts/limits';
@@ -58,10 +57,8 @@ export function SettlementPage() {
   const {
     session,
     storesQuery,
-    eligibleStores,
     currentStoreId,
     requestedStoreId,
-    chooseStore,
     currency,
     businessDateQuery,
     businessDate,
@@ -99,7 +96,11 @@ export function SettlementPage() {
   // 2026-10-21 CA-09: sales entry block (see render). Review CONF-14: as
   // sales.record holds in this store, overrides included.
   const canRecordSales = hasStorePermission(session, currentStoreId, 'sales.record');
-  const [salesOpen, setSalesOpen] = useState(false);
+  // S2 (2026-11-13): open by default. The Sales tab is hidden for whoever
+  // holds settlement.record (app/shell/tabs.ts, `hiddenWith`), which this
+  // page needs in its store, so here the block is the member's only way
+  // to record sales.
+  const [salesOpen, setSalesOpen] = useState(true);
 
   const mainButtonText = saving
     ? i18n.t('settlement.save.saving')
@@ -138,22 +139,10 @@ export function SettlementPage() {
       />
     </Field>
   ) : null;
-  const storeSelector =
-    eligibleStores.length > 1 && currentStoreId ? (
-      <Field label={i18n.t('settlement.store.label')}>
-        <Select
-          value={currentStoreId}
-          aria-label={i18n.t('settlement.store.label')}
-          onChange={(event) => chooseStore(event.target.value)}
-        >
-          {eligibleStores.map((store) => (
-            <option key={store.id} value={store.id}>
-              {store.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
-    ) : null;
+  // Simplification S1 (2026-11-13): the page follows the top bar's store.
+  // Its own store picker repeated that choice; a member with several stores
+  // switches in the top bar, which asks about unsaved input the same way
+  // (useLeaveGuards).
 
   if (storesQuery.isPending) {
     return (
@@ -207,7 +196,6 @@ export function SettlementPage() {
   if (!businessDate) {
     return (
       <PageFrame>
-        {storeSelector}
         {businessDateQuery.isError ? (
           <Banner
             tone="danger"
@@ -234,7 +222,6 @@ export function SettlementPage() {
   if (!dateValid) {
     return (
       <PageFrame>
-        {storeSelector}
         {dateField}
         <Banner
           tone="warn"
@@ -251,7 +238,6 @@ export function SettlementPage() {
   if (!draftSynchronized) {
     return (
       <PageFrame>
-        {storeSelector}
         {/* CONF-02: offline with no saved copy of this day, say so; a
             bare spinner turned until the network came back. */}
         <PendingState query={closeQuery} variant="block" />
@@ -262,15 +248,12 @@ export function SettlementPage() {
   return (
     <div className="flex flex-col gap-3 pb-4">
       <div className="flex flex-col gap-3 px-4 pt-3">
-        {/* 2026-11-05: store and business date sit in a card like every
-            other group on this page; outside one, their labels started
-            16 px left of the section labels and card fields below. */}
-        {storeSelector || dateField ? (
+        {/* 2026-11-05: the business date sits in a card like every other
+            group on this page; outside one, its label started 16 px left
+            of the section labels and card fields below. */}
+        {dateField ? (
           <Card>
-            <CardBody className="flex flex-col gap-3">
-              {storeSelector}
-              {dateField}
-            </CardBody>
+            <CardBody className="flex flex-col gap-3">{dateField}</CardBody>
           </Card>
         ) : null}
 
@@ -279,9 +262,8 @@ export function SettlementPage() {
           // lives here too. Self-contained (own state + mutation, keyed by
           // store so a half-picked dish never carries over); it never
           // touches `draft`, so the dirty-form guards and MainButton save
-          // keep tracking the settlement alone. Collapsed by default so
-          // the (up to 200-row) list doesn't push the close form away and
-          // its queries only run once opened.
+          // keep tracking the settlement alone. Open by default (S2, see
+          // salesOpen); the member can still fold it away.
           // CONF-11: the kit's Disclosure; the open state stays here, as the
           // form is drawn again from scratch when the day or store changes.
           <Disclosure
@@ -392,9 +374,9 @@ export function SettlementPage() {
                     <ExpenseLines
                       lines={draft.operatingExpenseItems}
                       update={edit.expenses}
+                      storeId={currentStoreId}
                       total={totals.expenses.value}
                       currency={currency}
-                      confirmRemoval={!!existing}
                       reveal={reveal}
                     />
 
@@ -409,7 +391,6 @@ export function SettlementPage() {
                       paidTotal={totals.paidWages.value}
                       unpaidTotal={totals.unpaidWages.value}
                       currency={currency}
-                      confirmRemoval={!!existing}
                       reveal={reveal}
                     />
                   </CardBody>

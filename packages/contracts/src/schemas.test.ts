@@ -130,14 +130,15 @@ describe('daily-close money', () => {
     });
   });
 
-  it('an expense or wage line without a reason or a name gets a catalog key (CONF-19)', () => {
+  it('an expense line without a reason or a wage line without a name gets a catalog key (CONF-19)', () => {
     expect(verdict(SettlementOperatingExpenseItemSchema, { amount: '10.00', reason: '  ' })).toBe(
       'settlement.errors.invalidDetails',
     );
     const wage = { status: 'paid', amount: '10.00', reason: 'Shift' };
-    expect(verdict(SettlementWageItemSchema, { ...wage, reason: '' })).toBe(
-      'settlement.errors.invalidDetails',
-    );
+    // S4 (2026-11-13): a wage line's reason is optional; absent reads as ''.
+    expect(verdict(SettlementWageItemSchema, { ...wage, reason: '' })).toBe('ok');
+    expect(SettlementWageItemSchema.parse({ status: 'paid', amount: '10.00' }).reason).toBe('');
+    expect(verdict(SettlementWageItemSchema, { ...wage, reason: 'x'.repeat(501) })).not.toBe('ok');
     expect(verdict(SettlementWageItemSchema, { ...wage, personName: ' ' })).toBe(
       'settlement.errors.employeeRequired',
     );

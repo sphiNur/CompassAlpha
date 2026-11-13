@@ -1915,7 +1915,7 @@ export const ru = {
   'admin.subsection.expenseTemplatesHint': 'Быстрые шаблоны для ежедневных расходов магазинов',
   'admin.action.newExpenseTemplate': 'Новый шаблон',
   'admin.expenseTemplates.intro':
-    'Шаблоны только заполняют форму расхода на странице закупки. Закупщик всё равно выбирает дату, магазин, сумму, чек и причину для каждого фактического расхода.',
+    'Шаблоны только заполняют расход на странице закупки или в закрытии дня. Сумму и причину каждого фактического расхода всё равно указывают отдельно, а на странице закупки — ещё дату, магазин и чек.',
   'admin.expenseTemplates.empty.title': 'Шаблонов пока нет',
   'admin.expenseTemplates.empty.body':
     'Добавьте частые названия вроде грузчика, такси или парковки, чтобы быстрее вводить ежедневные расходы магазинов без автоматического создания затрат.',
@@ -1929,7 +1929,7 @@ export const ru = {
   'admin.sheet.newExpenseTemplate': 'Новый шаблон расхода',
   'admin.sheet.editExpenseTemplate': 'Изменить шаблон',
   'admin.confirm.archiveExpenseTemplate':
-    'Архивировать шаблон «{label}»? Он больше не будет предлагаться при добавлении расхода на странице закупки. Уже записанные расходы не изменятся.',
+    'Архивировать шаблон «{label}»? Он больше не будет предлагаться при добавлении расхода на странице закупки или в закрытии дня. Уже записанные расходы не изменятся.',
   'admin.toast.expenseTemplateCreated': 'Шаблон добавлен',
   'admin.toast.expenseTemplateUpdated': 'Шаблон обновлён',
   'admin.toast.expenseTemplateArchived': 'Шаблон в архиве',
@@ -2062,7 +2062,6 @@ export const ru = {
   'run.history.nextPage': 'Следующая страница',
 
   // ── 19. Ежедневное закрытие ─────────────────────────────────────────
-  'settlement.store.label': 'Магазин',
   'settlement.date.label': 'Рабочая дата',
   'settlement.date.timezone': 'Часовой пояс магазина: {timezone}',
   'settlement.group.revenue': 'Выручка',
@@ -2086,6 +2085,7 @@ export const ru = {
   'settlement.expenses.title': 'Детали операционных расходов',
   'settlement.expenses.total': 'Итого {money}',
   'settlement.expenses.add': '+ Добавить расход',
+  'settlement.expenses.templates': 'Добавить по шаблону',
   'settlement.expenses.empty': 'Операционные расходы ещё не записаны.',
   'settlement.expenses.itemNumber': 'Расход {n}',
   'settlement.expenses.amount': 'Сумма',
@@ -2126,11 +2126,9 @@ export const ru = {
   'settlement.wages.status.unpaid': 'Не выплачено',
   'settlement.wages.amount': 'Сумма',
   'settlement.wages.reason': 'Смена, период или причина',
-  'settlement.wages.reasonPlaceholder': 'Обязательно, например, дневная смена 5 ноября',
+  'settlement.wages.reasonPlaceholder': 'Необязательно, например, дневная смена 5 ноября',
   'settlement.wages.remove': 'Удалить',
   'settlement.confirm.discard': 'Отменить несохранённые изменения закрытия дня?',
-  'settlement.confirm.removeDetail':
-    'Удалить эту строку? Сохранённое закрытие дня изменится, только когда вы нажмёте «Сохранить исправление».',
   'settlement.note.placeholder': 'Необязательное рабочее примечание',
   'settlement.correction.placeholder': 'Почему данные за этот день исправляются?',
   'settlement.correction.required': 'Перед сохранением укажите причину исправления.',
@@ -2168,7 +2166,7 @@ export const ru = {
   'settlement.errors.goToFirst': 'Перейти',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',
   'settlement.errors.invalidDetailsBody':
-    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты выберите сотрудника и укажите сумму и смену или причину.',
+    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты выберите сотрудника и укажите сумму.',
   'settlement.errors.detailLimit':
     'В одном закрытии дня может быть не более {count, plural, one {# строки} few {# строк} many {# строк} other {# строки}} расходов и {count, plural, one {# строки} few {# строк} many {# строк} other {# строки}} зарплаты.',
   'settlement.errors.stores':

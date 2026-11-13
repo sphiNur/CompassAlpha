@@ -8,6 +8,7 @@ import {
   draftFromRecord,
   editedFields,
   emptyDraft,
+  expenseFromTemplate,
   isAllZeroClose,
   isValidOperatingExpense,
   isValidWageItem,
@@ -21,6 +22,7 @@ import {
   settlementSummary,
   sumItemAmounts,
   toMoneyInput,
+  wageAmountOnPick,
   type OperatingExpenseDraft,
   type SettlementDraft,
   type SettlementRecord,
@@ -226,7 +228,50 @@ describe('line checks', () => {
   test('a wage line names an employee only when that is required', () => {
     expect(isValidWageItem(wage({ memberId: null }), false)).toBe(true);
     expect(isValidWageItem(wage({ memberId: null }), true)).toBe(false);
-    expect(isValidWageItem(wage({ reason: '' }), false)).toBe(false);
+    expect(isValidWageItem(wage({ amount: '' }), false)).toBe(false);
+  });
+
+  test('S4: a wage line needs no reason', () => {
+    expect(isValidWageItem(wage({ reason: '' }), true)).toBe(true);
+    expect(isValidWageItem(wage({ reason: '  ' }), true)).toBe(true);
+  });
+});
+
+describe('S4: choosing an employee fills the amount with their daily wage', () => {
+  test('an empty amount takes the daily wage', () => {
+    expect(wageAmountOnPick('', '120000.00')).toBe('120000');
+    expect(wageAmountOnPick(' ', '99.50')).toBe('99.5');
+  });
+
+  test('a typed amount, no wage set or a zero wage leaves it', () => {
+    expect(wageAmountOnPick('500', '120000.00')).toBe('500');
+    expect(wageAmountOnPick('', null)).toBe('');
+    expect(wageAmountOnPick('', '0.00')).toBe('');
+  });
+});
+
+describe('S5: an expense line from a template', () => {
+  const template = { id: 't-1', label: 'Porter', defaultQty: '2.000', defaultUnitPrice: '7.25' };
+
+  test('takes the label as its reason and qty × price as its amount', () => {
+    const line = expenseFromTemplate(template);
+    expect(line).toMatchObject({ amount: '14.5', reason: 'Porter', persistedId: null });
+    expect(isValidOperatingExpense(line)).toBe(true);
+  });
+
+  test('rounds the line half-up to cents (D1)', () => {
+    expect(
+      expenseFromTemplate({ ...template, defaultQty: '0.333', defaultUnitPrice: '0.15' }).amount,
+    ).toBe('0.05');
+  });
+
+  test('leaves the amount to type without prices.view or at 0', () => {
+    expect(expenseFromTemplate({ ...template, defaultUnitPrice: null }).amount).toBe('');
+    expect(expenseFromTemplate({ ...template, defaultUnitPrice: '0.00' }).amount).toBe('');
+  });
+
+  test('each line is its own', () => {
+    expect(expenseFromTemplate(template).id).not.toBe(expenseFromTemplate(template).id);
   });
 });
 

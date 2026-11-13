@@ -6,7 +6,7 @@
  * SettlementPage.
  */
 import type { SettlementWageItem } from '@compass/contracts';
-import { addMoney, centsToMoney, toCents } from '@compass/contracts/money';
+import { addMoney, centsToMoney, lineCents, toCents } from '@compass/contracts/money';
 import { SETTLEMENT_MAX_CENTS, settlementMoneyProblem } from '@compass/contracts/limits';
 import { newClientId } from '../../lib/clientId';
 
@@ -246,13 +246,22 @@ export function isValidOperatingExpense(item: OperatingExpenseDraft): boolean {
   );
 }
 
+/** S4 (2026-11-13): a wage line's reason is optional. */
 export function isValidWageItem(item: WageItemDraft, requireSelectedMember: boolean): boolean {
   return (
     item.isHistorical ||
-    ((!requireSelectedMember || !!item.memberId) &&
-      item.reason.trim().length > 0 &&
-      (moneyToCents(item.amount) ?? 0n) > 0n)
+    ((!requireSelectedMember || !!item.memberId) && (moneyToCents(item.amount) ?? 0n) > 0n)
   );
+}
+
+/**
+ * S4 (2026-11-13): the amount a wage line takes when its employee is
+ * chosen: their daily wage, unless an amount is already typed or none is
+ * set.
+ */
+export function wageAmountOnPick(currentAmount: string, dailyWage: string | null): string {
+  if (currentAmount.trim() !== '' || dailyWage === null) return currentAmount;
+  return toCents(dailyWage) > 0n ? toMoneyInput(dailyWage) : currentAmount;
 }
 
 export function comparableOperatingExpenseItems(items: readonly OperatingExpenseDraft[]) {
@@ -294,6 +303,33 @@ export function sameDetailItems(left: unknown, right: unknown): boolean {
 /** An empty expense line. */
 export function newOperatingExpense(): OperatingExpenseDraft {
   return { id: newClientId(), persistedId: null, amount: '', reason: '', isHistorical: false };
+}
+
+/** An expense template as the close offers it (settlement.expenseTemplates). */
+export type ExpenseTemplate = {
+  id: string;
+  label: string;
+  defaultQty: string;
+  /** Null without prices.view in the close's store. */
+  defaultUnitPrice: string | null;
+};
+
+/**
+ * S5 (2026-11-13): an expense line from a template: its label as the
+ * reason and, when its price is shown, qty × price (rounded as every
+ * line, D1) as the amount. Without a price, or at 0, the amount is left
+ * to type.
+ */
+export function expenseFromTemplate(template: ExpenseTemplate): OperatingExpenseDraft {
+  const cents =
+    template.defaultUnitPrice === null
+      ? 0n
+      : lineCents(template.defaultQty, template.defaultUnitPrice);
+  return {
+    ...newOperatingExpense(),
+    amount: cents > 0n ? toMoneyInput(centsToMoney(cents)) : '',
+    reason: template.label,
+  };
 }
 
 /** An empty wage line: paid, no employee chosen yet. */

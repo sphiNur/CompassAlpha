@@ -21,16 +21,21 @@ export interface FieldReveal {
   leave: (key: string) => void;
 }
 
-/** What a line's amount and reason show as wrong right now. */
+/**
+ * What a line's amount and reason show as wrong right now. S4
+ * (2026-11-13): a wage line's reason is optional (`reasonRequired`
+ * false), so it is never missing.
+ */
 export function lineProblems(
   line: { id: string; amount: string; reason: string; isHistorical: boolean },
   reveal: FieldReveal,
+  { reasonRequired = true }: { reasonRequired?: boolean } = {},
 ): { amount: MoneyProblem | null; reasonMissing: boolean } {
   const amount = line.isHistorical ? null : moneyProblem(line.amount, { positive: true });
   return {
     amount: reveal.shows(amount !== null, `${line.id}:amount`) ? amount : null,
     reasonMissing: reveal.shows(
-      !line.isHistorical && line.reason.trim().length === 0,
+      reasonRequired && !line.isHistorical && line.reason.trim().length === 0,
       `${line.id}:reason`,
     ),
   };

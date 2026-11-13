@@ -1899,7 +1899,7 @@ export const uz = {
   'admin.subsection.expenseTemplatesHint': 'Kunlik doʻkon xarajatlari uchun tezkor shablonlar',
   'admin.action.newExpenseTemplate': 'Yangi shablon',
   'admin.expenseTemplates.intro':
-    'Shablonlar faqat xarid sahifasidagi xarajat formasini tez toʻldiradi. Xaridor har bir haqiqiy kunlik xarajat uchun sana, doʻkon, summa, chek va sababni baribir tanlaydi.',
+    'Shablonlar faqat xarid sahifasida yoki kun yakunida xarajatni tez toʻldiradi. Har bir haqiqiy xarajatning summasi va sababi baribir alohida koʻrsatiladi, xarid sahifasida esa sana, doʻkon va chek ham.',
   'admin.expenseTemplates.empty.title': 'Hali shablon yoʻq',
   'admin.expenseTemplates.empty.body':
     'Hammol, taksi yoki mashina toʻxtash joyi kabi nomlarni qoʻshing, shunda kunlik doʻkon xarajatlarini avtomatik yaratmasdan tezroq kiritish mumkin.',
@@ -1913,7 +1913,7 @@ export const uz = {
   'admin.sheet.newExpenseTemplate': 'Yangi xarajat shabloni',
   'admin.sheet.editExpenseTemplate': 'Shablonni tahrirlash',
   'admin.confirm.archiveExpenseTemplate':
-    '«{label}» shablonini arxivlaysizmi? Xarid sahifasida xarajat qoʻshishda u endi taklif qilinmaydi. Yozib boʻlingan xarajatlar oʻzgarmaydi.',
+    '«{label}» shablonini arxivlaysizmi? Xarid sahifasida yoki kun yakunida xarajat qoʻshishda u endi taklif qilinmaydi. Yozib boʻlingan xarajatlar oʻzgarmaydi.',
   'admin.toast.expenseTemplateCreated': 'Shablon qoʻshildi',
   'admin.toast.expenseTemplateUpdated': 'Shablon yangilandi',
   'admin.toast.expenseTemplateArchived': 'Shablon arxivga olindi',
@@ -2044,7 +2044,6 @@ export const uz = {
   'run.history.nextPage': 'Keyingi sahifa',
 
   // ── 19. Kunlik hisob-kitob ──────────────────────────────────────────
-  'settlement.store.label': 'Doʻkon',
   'settlement.date.label': 'Hisob sanasi',
   'settlement.date.timezone': 'Doʻkon vaqt mintaqasi: {timezone}',
   'settlement.group.revenue': 'Tushum',
@@ -2068,6 +2067,7 @@ export const uz = {
   'settlement.expenses.title': 'Kunlik xarajatlar tafsiloti',
   'settlement.expenses.total': 'Jami {money}',
   'settlement.expenses.add': '+ Xarajat qoʻshish',
+  'settlement.expenses.templates': 'Shablondan qoʻshish',
   'settlement.expenses.empty': 'Kunlik xarajatlar hali kiritilmagan.',
   'settlement.expenses.itemNumber': 'Xarajat {n}',
   'settlement.expenses.amount': 'Summa',
@@ -2108,11 +2108,9 @@ export const uz = {
   'settlement.wages.status.unpaid': 'Toʻlanmagan',
   'settlement.wages.amount': 'Summa',
   'settlement.wages.reason': 'Smena, davr yoki sabab',
-  'settlement.wages.reasonPlaceholder': 'Majburiy, masalan, 5-noyabr kunduzgi smena',
+  'settlement.wages.reasonPlaceholder': 'Ixtiyoriy, masalan, 5-noyabr kunduzgi smena',
   'settlement.wages.remove': 'Oʻchirish',
   'settlement.confirm.discard': 'Saqlanmagan kun yakuni oʻzgarishlari bekor qilinsinmi?',
-  'settlement.confirm.removeDetail':
-    'Bu qator oʻchirilsinmi? Saqlangan kun yakuni faqat «Tuzatishni saqlash»ni bosganingizda oʻzgaradi.',
   'settlement.note.placeholder': 'Ixtiyoriy ish izohi',
   'settlement.correction.placeholder': 'Bu kun maʼlumoti nega tuzatilmoqda?',
   'settlement.correction.required': 'Oʻzgarishlarni saqlashdan oldin tuzatish sababini kiriting.',
@@ -2150,7 +2148,7 @@ export const uz = {
   'settlement.errors.goToFirst': 'Oʻtish',
   'settlement.errors.invalidDetails': 'Har bir xarajat va ish haqi qatorini toʻldiring.',
   'settlement.errors.invalidDetailsBody':
-    'Har bir kunlik xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni tanlang, summa va smena yoki sababni kiriting.',
+    'Har bir kunlik xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni tanlang va summani kiriting.',
   'settlement.errors.detailLimit':
     'Har bir kun yakunida koʻpi bilan {count} ta xarajat va {count} ta ish haqi qatori boʻlishi mumkin.',
   'settlement.errors.stores':

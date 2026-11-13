@@ -553,10 +553,110 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(roster.find((row) => row.memberId === fx.assignedOnlyEmployeeMemberId)).toEqual(
       expect.objectContaining({ displayName: 'Assigned Only Employee', roles: [] }),
     );
-    expect(Object.keys(employee ?? {})).toEqual(['memberId', 'displayName', 'roles']);
+    expect(Object.keys(employee ?? {})).toEqual(['memberId', 'displayName', 'roles', 'dailyWage']);
 
     const error = await errorOf(() =>
       fx.cashierCaller.settlement.wageRoster({ storeId: fx.foreignStoreId }),
+    );
+    expect(error?.code).toBe('FORBIDDEN');
+  });
+
+  test("S4: the wage roster carries each person's daily wage in effect on the day", async () => {
+    const fx = fixture!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db.insert(s.attendancePayRates).values([
+      {
+        orgId: fx.orgId,
+        memberId: fx.wageEmployeeMemberId,
+        dailyWage: '100.00',
+        effectiveFrom: '2020-01-01',
+      },
+      {
+        orgId: fx.orgId,
+        memberId: fx.wageEmployeeMemberId,
+        dailyWage: '150.50',
+        effectiveFrom: '2999-01-01',
+      },
+    ]);
+    const wageOn = async (date?: string) => {
+      const roster = await fx.cashierCaller.settlement.wageRoster({
+        storeId: fx.ownStoreId,
+        ...(date ? { date } : {}),
+      });
+      return Object.fromEntries(roster.map((row) => [row.memberId, row.dailyWage]));
+    };
+    const today = await wageOn();
+    expect(today[fx.wageEmployeeMemberId]).toBe('100.00');
+    // No rate set: nothing to start a line from.
+    expect(today[fx.assignedOnlyEmployeeMemberId]).toBeNull();
+    expect((await wageOn('2019-12-31'))[fx.wageEmployeeMemberId]).toBeNull();
+    expect((await wageOn('2999-06-01'))[fx.wageEmployeeMemberId]).toBe('150.50');
+  });
+
+  test('S4: a wage line saves without a reason', async () => {
+    const fx = fixture!;
+    const saved = await fx.caller.settlement.save(
+      saveInput(fx.ownStoreId, freshDate(), 0, {
+        wagesPaid: '20',
+        wagesAccrued: '5',
+        wageItems: [
+          { memberId: fx.wageEmployeeMemberId, status: 'paid', amount: '20', reason: '' },
+          // An older client may leave it out; it reads as ''.
+          { memberId: fx.wageEmployeeMemberId, status: 'unpaid', amount: '5' } as never,
+        ],
+      }),
+    );
+    expect(saved.wageItems.map((item) => item.reason)).toEqual(['', '']);
+  });
+
+  test('S5: the close offers the expense templates, with prices only under prices.view here', async () => {
+    const fx = fixture!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db
+      .insert(s.permissions)
+      .values({ key: 'prices.view', description: 'prices.view' })
+      .onConflictDoNothing();
+    const [template] = await db
+      .insert(s.expenseTemplates)
+      .values({
+        orgId: fx.orgId,
+        label: 'Porter',
+        unitHint: 'trip',
+        defaultQty: '2',
+        defaultUnitPrice: '7.50',
+      })
+      .returning();
+    await db
+      .insert(s.expenseTemplates)
+      .values({ orgId: fx.orgId, label: 'Old taxi', defaultUnitPrice: '1', isArchived: true });
+
+    const cashierView = await fx.cashierCaller.settlement.expenseTemplates({
+      storeId: fx.ownStoreId,
+    });
+    expect(cashierView).toEqual([
+      {
+        id: template!.id,
+        label: 'Porter',
+        unitHint: 'trip',
+        defaultQty: '2.000',
+        defaultUnitPrice: null,
+      },
+    ]);
+
+    // prices.view in this store shows the default price.
+    await db.insert(s.memberPermissionOverrides).values({
+      memberId: fx.memberId,
+      permissionKey: 'prices.view',
+      effect: 'allow',
+      scopeType: 'store',
+      scopeId: fx.ownStoreId,
+      grantedBy: fx.userId,
+    });
+    const managerView = await fx.caller.settlement.expenseTemplates({ storeId: fx.ownStoreId });
+    expect(managerView.map((row) => row.defaultUnitPrice)).toEqual(['7.50']);
+
+    const error = await errorOf(() =>
+      fx.cashierCaller.settlement.expenseTemplates({ storeId: fx.foreignStoreId }),
     );
     expect(error?.code).toBe('FORBIDDEN');
   });

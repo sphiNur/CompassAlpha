@@ -1689,7 +1689,7 @@ export const zh = {
   'admin.subsection.expenseTemplatesHint': '每日门店开销的快捷填充模板',
   'admin.action.newExpenseTemplate': '新建模板',
   'admin.expenseTemplates.intro':
-    '模板只用于预填采购页的开销表单。每笔实际开销，采购员仍要选择业务日期、门店、金额、收据和原因。',
+    '模板只用于预填采购页和日结里的开销。每笔实际开销仍要自己确认金额和原因；在采购页还要选择业务日期、门店和收据。',
   'admin.expenseTemplates.empty.title': '还没有模板',
   'admin.expenseTemplates.empty.body':
     '把常见名称（搬运费、打车费、停车费等）加在这里，采购员每天录入门店额外开销时可以快速套用。',
@@ -1703,7 +1703,7 @@ export const zh = {
   'admin.sheet.newExpenseTemplate': '新建开销模板',
   'admin.sheet.editExpenseTemplate': '编辑模板',
   'admin.confirm.archiveExpenseTemplate':
-    '归档模板「{label}」？采购页记开销时不再提供这个快捷模板；已经记下的开销不受影响。',
+    '归档模板「{label}」？采购页和日结里记开销时不再提供这个快捷模板；已经记下的开销不受影响。',
   'admin.toast.expenseTemplateCreated': '模板已添加',
   'admin.toast.expenseTemplateUpdated': '模板已更新',
   'admin.toast.expenseTemplateArchived': '模板已归档',
@@ -1818,7 +1818,6 @@ export const zh = {
   'run.history.nextPage': '下一页',
 
   // ── 19. 每日结算 ────────────────────────────────────────────────
-  'settlement.store.label': '门店',
   'settlement.date.label': '营业日期',
   'settlement.date.timezone': '门店时区：{timezone}',
   'settlement.group.revenue': '收入',
@@ -1842,6 +1841,7 @@ export const zh = {
   'settlement.expenses.title': '日常支出明细',
   'settlement.expenses.total': '合计 {money}',
   'settlement.expenses.add': '+ 添加支出',
+  'settlement.expenses.templates': '从模板添加',
   'settlement.expenses.empty': '暂未记录日常支出。',
   'settlement.expenses.itemNumber': '支出 {n}',
   'settlement.expenses.amount': '金额',
@@ -1878,10 +1878,9 @@ export const zh = {
   'settlement.wages.status.unpaid': '未发',
   'settlement.wages.amount': '金额',
   'settlement.wages.reason': '班次、发薪周期或原因',
-  'settlement.wages.reasonPlaceholder': '必填，例如：11 月 5 日白班',
+  'settlement.wages.reasonPlaceholder': '可选，例如：11 月 5 日白班',
   'settlement.wages.remove': '删除',
   'settlement.confirm.discard': '放弃这次没保存的日结修改？',
-  'settlement.confirm.removeDetail': '删掉这条明细？点「保存更正」之前，已保存的日结不会变。',
   'settlement.note.placeholder': '业务备注（可选）',
   'settlement.correction.placeholder': '为什么要更正这一天的日结？',
   'settlement.correction.required': '保存更改前请填写更正原因。',
@@ -1917,7 +1916,7 @@ export const zh = {
   'settlement.errors.goToFirst': '去改正',
   'settlement.errors.invalidDetails': '请补全每一条支出和工资明细。',
   'settlement.errors.invalidDetailsBody':
-    '每条日常支出都要填写正数金额和支出原因；每条工资都要选择员工，并填写金额和班次或原因。',
+    '每条日常支出都要填写正数金额和支出原因；每条工资都要选择员工并填写金额。',
   'settlement.errors.detailLimit': '每次日结最多可填写 {count} 条支出明细和 {count} 条工资明细。',
   'settlement.errors.stores': '没能加载可日结的门店，刷新再试一次。',
   'settlement.errors.businessDate': '没能加载这家门店的营业日期，刷新再试一次。',
