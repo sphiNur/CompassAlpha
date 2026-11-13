@@ -19,6 +19,7 @@ import {
   Input,
   SectionLabel,
   rowGroupClass,
+  useToast,
 } from '@compass/ui';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
@@ -30,6 +31,7 @@ import { EnrollPhotos, PunchPhotoStrip } from './AttendancePhotos';
 export function AttendanceReview({ storeId }: { storeId: string }) {
   const i18n = useI18n();
   const dates = useDateFormat();
+  const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const queue = trpc.attendance.reviewQueue.useQuery({ storeId });
@@ -42,6 +44,7 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
   const review = trpc.attendance.reviewPunch.useMutation({
     onSuccess: () => {
       haptic('success');
+      toast.success(i18n.t('attendance.toast.punchReviewed'));
       refresh();
     },
     onError: errToast('attendance.errors.saveFailed'),
@@ -49,6 +52,7 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
   const voidPunch = trpc.attendance.voidPunch.useMutation({
     onSuccess: () => {
       haptic('success');
+      toast.success(i18n.t('attendance.toast.punchVoided'));
       setVoiding(null);
       setReason('');
       refresh();
@@ -204,6 +208,7 @@ function EnrollItem({
 }) {
   const i18n = useI18n();
   const dates = useDateFormat();
+  const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [rejecting, setRejecting] = useState(false);
@@ -213,8 +218,13 @@ function EnrollItem({
     memberId: enrollment.memberId,
   });
   const decide = trpc.attendance.faceEnrollDecide.useMutation({
-    onSuccess: () => {
+    onSuccess: (_r, input) => {
       haptic('success');
+      toast.success(
+        i18n.t(
+          input.approve ? 'attendance.toast.enrollApproved' : 'attendance.toast.enrollRejected',
+        ),
+      );
       void utils.attendance.reviewQueue.invalidate();
       void utils.attendance.sheet.invalidate();
       void utils.attendance.faceEnrollment.invalidate();

@@ -50,6 +50,7 @@ export function AttendanceSettings({ storeId }: { storeId: string }) {
 
 function PeopleBlock({ storeId }: { storeId: string }) {
   const i18n = useI18n();
+  const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   // COREWEB2-21: the org's today, not the phone's.
@@ -58,8 +59,11 @@ function PeopleBlock({ storeId }: { storeId: string }) {
   // The sheet's member list carries the switch and the bound phone.
   const sheet = trpc.attendance.sheet.useQuery({ storeId, from: addDays(t, -1), to: t });
   const memberSet = trpc.attendance.memberSet.useMutation({
-    onSuccess: () => {
+    onSuccess: (_r, input) => {
       haptic('success');
+      toast.success(
+        i18n.t(input.enabled ? 'attendance.toast.clockingOn' : 'attendance.toast.clockingOff'),
+      );
       void utils.attendance.sheet.invalidate();
     },
     onError: errToast('attendance.errors.saveFailed'),
@@ -67,6 +71,7 @@ function PeopleBlock({ storeId }: { storeId: string }) {
   const resetDevice = trpc.attendance.resetDevice.useMutation({
     onSuccess: () => {
       haptic('success');
+      toast.success(i18n.t('attendance.toast.deviceReset'));
       void utils.attendance.sheet.invalidate();
     },
     onError: errToast('attendance.errors.saveFailed'),
@@ -161,6 +166,7 @@ function FaceEnrollLine({
   status: 'approved' | 'pending' | 'rejected' | 'none';
 }) {
   const i18n = useI18n();
+  const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [show, setShow] = useState(false);
@@ -172,6 +178,7 @@ function FaceEnrollLine({
   const reset = trpc.attendance.faceEnrollReset.useMutation({
     onSuccess: () => {
       haptic('success');
+      toast.success(i18n.t('attendance.toast.enrollReset'));
       setShow(false);
       void utils.attendance.sheet.invalidate();
       void utils.attendance.faceEnrollment.invalidate();
