@@ -1296,8 +1296,12 @@ export const en = {
   'approval.confirm.reject.title': 'Reject this order?',
   'approval.confirm.reject.body':
     'The submitter will see your reason. They can revise and resubmit.',
-  'approval.confirm.reject.reasonPlaceholder': 'e.g. duplicate order',
   'approval.confirm.reject.reasonLabel': 'Reason (required — the submitter will see it)',
+  'approval.rejectPreset.label': 'Common reasons',
+  'approval.rejectPreset.duplicate': 'Duplicate order',
+  'approval.rejectPreset.wrongQty': 'Wrong quantities',
+  'approval.rejectPreset.overBudget': 'Over budget',
+  'approval.rejectPreset.notNeeded': 'Not needed today',
   'approval.confirm.unapprove.title': 'Reverse approval?',
   'approval.confirm.unapprove.body':
     'Returns this order to the queue. Only allowed before it is added to a run.',

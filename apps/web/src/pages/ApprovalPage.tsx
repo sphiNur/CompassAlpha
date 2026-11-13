@@ -16,6 +16,8 @@ import { useMutationState } from '@tanstack/react-query';
 import { getMutationKey } from '@trpc/react-query';
 import {
   Button,
+  Chip,
+  ChipBar,
   DataState,
   EmptyState,
   Field,
@@ -53,6 +55,17 @@ const TAB_LABEL_KEYS: Record<ApprovalTab, CatalogKey> = {
   approved: 'approval.tab.approved',
   rejected: 'approval.tab.rejected',
 };
+
+/**
+ * Reject reasons a tap fills in (2026-11-13). The reason stays required
+ * and free text; a chip only writes its words into the field.
+ */
+const REJECT_PRESET_KEYS: readonly CatalogKey[] = [
+  'approval.rejectPreset.duplicate',
+  'approval.rejectPreset.wrongQty',
+  'approval.rejectPreset.overBudget',
+  'approval.rejectPreset.notNeeded',
+];
 
 /** D12: how long the approval toast offers to take it back. */
 const UNDO_APPROVE_MS = 5000;
@@ -517,14 +530,33 @@ export function ApprovalPage() {
           </Button>
         }
       >
-        <div className="py-3">
+        <div className="flex flex-col gap-2 py-3">
+          <ChipBar
+            ariaLabel={i18n.t('approval.rejectPreset.label')}
+            // Choosing writes into the field: arrows only move focus.
+            followFocus={false}
+            className="-mx-4 -my-1.5 px-4 py-1.5"
+          >
+            {REJECT_PRESET_KEYS.map((key) => {
+              const text = i18n.t(key);
+              return (
+                <Chip
+                  key={key}
+                  selected={rejectReason.trim() === text}
+                  onClick={() => setRejectReason(text)}
+                >
+                  {text}
+                </Chip>
+              );
+            })}
+          </ChipBar>
           {/* A11Y-9 (2026-10-31): a real label; the placeholder ("例如：重复
-              下单") was the field's only name and vanished on typing. */}
+              下单") was the field's only name and vanished on typing. The
+              example placeholder went with the reason chips above. */}
           <Field label={i18n.t('approval.confirm.reject.reasonLabel')}>
             <Input
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder={i18n.t('approval.confirm.reject.reasonPlaceholder')}
               maxLength={500}
               required
               aria-required

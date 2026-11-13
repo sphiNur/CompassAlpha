@@ -1234,8 +1234,12 @@ export const ru = {
   'approval.confirm.reject.title': 'Отклонить заказ?',
   'approval.confirm.reject.body':
     'Отправитель увидит вашу причину, сможет исправить заказ и отправить его снова.',
-  'approval.confirm.reject.reasonPlaceholder': 'например, дублирующий заказ',
   'approval.confirm.reject.reasonLabel': 'Причина (обязательно, её увидит отправитель)',
+  'approval.rejectPreset.label': 'Частые причины',
+  'approval.rejectPreset.duplicate': 'Повторный заказ',
+  'approval.rejectPreset.wrongQty': 'Неверное количество',
+  'approval.rejectPreset.overBudget': 'Превышен бюджет',
+  'approval.rejectPreset.notNeeded': 'Сегодня не нужно',
   'approval.confirm.unapprove.title': 'Отменить одобрение?',
   'approval.confirm.unapprove.body':
     'Заказ вернётся в очередь. Возможно только до включения в закупку.',

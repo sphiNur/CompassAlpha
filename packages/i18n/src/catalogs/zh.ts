@@ -1097,8 +1097,12 @@ export const zh = {
   'approval.items.failed': '明细没加载出来，刷新再试一次。',
   'approval.confirm.reject.title': '拒绝这份订单？',
   'approval.confirm.reject.body': '提交人会看到你填的原因，可以修改后重新提交。',
-  'approval.confirm.reject.reasonPlaceholder': '例如：重复下单',
   'approval.confirm.reject.reasonLabel': '拒绝原因（必填，提交人会看到）',
+  'approval.rejectPreset.label': '常用原因',
+  'approval.rejectPreset.duplicate': '重复下单',
+  'approval.rejectPreset.wrongQty': '数量不对',
+  'approval.rejectPreset.overBudget': '超出预算',
+  'approval.rejectPreset.notNeeded': '今天不需要',
   'approval.confirm.unapprove.title': '撤销通过？',
   'approval.confirm.unapprove.body': '订单回到待审核。加入采购单之前才能撤回。',
 

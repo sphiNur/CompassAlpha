@@ -1235,8 +1235,12 @@ export const uz = {
   'approval.confirm.reject.title': 'Buyurtmani rad etamizmi?',
   'approval.confirm.reject.body':
     'Yuboruvchi sababingizni koʻradi va oʻzgartirib qaytadan yuborishi mumkin.',
-  'approval.confirm.reject.reasonPlaceholder': 'masalan, takroriy buyurtma',
   'approval.confirm.reject.reasonLabel': 'Sabab (majburiy, yuboruvchi koʻradi)',
+  'approval.rejectPreset.label': 'Koʻp uchraydigan sabablar',
+  'approval.rejectPreset.duplicate': 'Takroriy buyurtma',
+  'approval.rejectPreset.wrongQty': 'Miqdor notoʻgʻri',
+  'approval.rejectPreset.overBudget': 'Byudjetdan oshib ketdi',
+  'approval.rejectPreset.notNeeded': 'Bugun kerak emas',
   'approval.confirm.unapprove.title': 'Maʼqullash qaytarib olinsinmi?',
   'approval.confirm.unapprove.body':
     'Buyurtma navbatga qaytariladi. Faqat xaridga qoʻshilmasdan oldin mumkin.',
