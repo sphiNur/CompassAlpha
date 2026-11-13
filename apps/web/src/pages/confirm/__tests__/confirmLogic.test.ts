@@ -271,7 +271,9 @@ describe('issueFormCheck (review CONF-07)', () => {
       canSave: true,
       saveBlockedBy: null,
     });
-    expect(issueFormCheck(form({ status: 'wrong', note: '   ', received: '1' }), idle)).toMatchObject({
+    expect(
+      issueFormCheck(form({ status: 'wrong', note: '   ', received: '1' }), idle),
+    ).toMatchObject({
       noteMissing: true,
       canSave: false,
     });
