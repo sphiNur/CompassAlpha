@@ -513,7 +513,7 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
             {topUps.map((it) => (
               <li
                 key={it.skuId}
-                className="flex flex-wrap items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0"
+                className="flex flex-wrap items-center gap-x-2 gap-y-3 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0"
               >
                 <span className="min-w-0 flex-1">
                   <NameCell
@@ -1761,7 +1761,7 @@ export function PreviewSummaryCard({
         <button
           type="button"
           onClick={() => setVendorPickerFor(line.skuId)}
-          className="press min-w-0 max-w-full text-left text-[var(--c-fg)]"
+          className="press hit-44 min-w-0 max-w-full text-left text-[var(--c-fg)]"
           title={i18n.t('run.previewSupplier.changeVendor')}
         >
           {nameText}
@@ -1961,19 +1961,15 @@ export function PreviewSummaryCard({
               count: there is no view that isolates those yet, and a chip
               that goes nowhere is worse than a number. */}
           {previewStats.noSupplier > 0 || previewStats.total > previewStats.known ? (
-            <div className="mb-1.5 flex flex-wrap gap-1.5">
+            <div className="mb-1.5 flex flex-wrap gap-x-1.5 gap-y-3">
               {previewStats.noSupplier > 0 ? (
                 <button
                   type="button"
                   onClick={() => chooseView('bySupplier')}
-                  // 36px, not the 44px the purchase row's ✓ gets. Measured
-                  // at 22px on a real instance, which is too small to hit
-                  // reliably one-handed — but this is a once-per-run
-                  // navigation shortcut whose worst failure is "tap again",
-                  // not a control that commits money hundreds of times a
-                  // trip. The static counter beside it matches so the row
-                  // reads as one band.
-                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-old-label text-[var(--c-warning-fg)] ring-hairline"
+                  // 36px to look at, matching the static counter beside it
+                  // so the row reads as one band; hit-44 makes it 44 to tap
+                  // (WALK-03, 2026-11-13). It measured 22px once.
+                  className="press hit-44 flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-old-label text-[var(--c-warning-fg)] ring-hairline"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
                 </button>

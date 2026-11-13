@@ -190,6 +190,23 @@ describe('tap areas', () => {
     expect(segment).not.toMatch(/\btruncate\b|overflow-hidden|overflow-clip/);
   });
 
+  test('every Button size taps as 44: hit-44 is in the base classes (review WALK-03)', () => {
+    // sm is 32 px to look at; the base classes are what every size shares.
+    const base = /const button = cva\(\s*\[([\s\S]*?)\]/.exec(read('Button.tsx'))![1]!;
+    expect(base).toContain('hit-44');
+    const sm = /\bsm: '([^']*)'/.exec(read('Button.tsx'))![1]!;
+    expect(sm).not.toMatch(/overflow|hit-/);
+  });
+
+  test('a wrapping ChipBar keeps its lines 12px apart (review WALK-03)', () => {
+    // 32 px chips with a 44 px hit-44 area: lines closer than 12 px
+    // overlap, and the later line takes the taps (Finance tapped as 38).
+    const bar = /export function ChipBar[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/.exec(
+      read('Chip.tsx'),
+    )![1]!;
+    expect(bar).toMatch(/flex-wrap[^']*gap-y-3/);
+  });
+
   test('hit-44 is at least 44px in both directions', () => {
     const rule = /\.hit-44::after\s*\{([^}]*)\}/.exec(css)![1]!;
     expect(rule).toContain('width: max(100%, 44px)');

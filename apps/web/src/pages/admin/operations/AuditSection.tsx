@@ -230,7 +230,7 @@ export function AdminAuditSection() {
                             like a debugger artifact to non-tech users. */}
                         {isSuperAdmin ? (
                           <details className="mt-2">
-                            <summary className="cursor-pointer text-old-label font-medium text-[var(--c-fg-muted)]">
+                            <summary className="hit-44 cursor-pointer text-old-label font-medium text-[var(--c-fg-muted)]">
                               {i18n.t('ops.audit.inputs')} · {r.action}
                               {r.resourceId ? ` · ${r.resourceId.slice(0, 8)}…` : ''}
                             </summary>

@@ -85,3 +85,22 @@ Clock-in stops at the camera: Chrome's fake camera shows a drawn
 silhouette, which the face tracker does not take for a face. A count's
 "Save?" question is the browser's own dialog, so it is in the card's
 notes, not in a screenshot.
+
+## Tap-target audit
+
+`tap-audit.tutorial.ts` (its own config, `tap-audit.config.ts`) uses the
+same stack and demo workspace to measure every control's tap area on
+every tab, admin page and the sheets their buttons open, as each person,
+at 360×740 and 390×844, in each language (review WALK-03). It writes
+`report.json` and `report.md` listing every control under 44×44:
+
+```bash
+cd tests/e2e && E2E_DATABASE_URL=postgres://compass:compass@localhost:5433/compass_e2e_tutorial \
+  E2E_API_PORT=3198 E2E_WEB_PORT=5298 PLAYWRIGHT_CHANNEL=chrome \
+  TAP_AUDIT_LANGS=en TAP_AUDIT_VIEWPORTS=390 TAP_AUDIT_CRAWL=390 \
+  pnpm exec playwright test -c tutorial/tap-audit.config.ts
+```
+
+All four languages at both widths take about an hour; narrow it with
+`TAP_AUDIT_LANGS`, `TAP_AUDIT_VIEWPORTS` and `TAP_AUDIT_CRAWL` (the widths
+at which buttons are tapped to open sheets, or `none`).

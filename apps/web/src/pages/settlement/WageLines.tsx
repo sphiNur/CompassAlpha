@@ -213,7 +213,7 @@ export function WageLines({
           unpaid: formatMoney(unpaidTotal, currency),
         })}
       >
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-x-2 gap-y-3">
           <Button
             size="sm"
             variant="ghost"

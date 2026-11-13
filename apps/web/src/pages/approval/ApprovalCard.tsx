@@ -289,7 +289,7 @@ export function ApprovalCard({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-3 px-4 py-3">
         {/* DX-IX-9 (2026-11-01): review decisions are not kept
           on the phone, so offline they are disabled with the
           reason, rather than failing after the tap. */}

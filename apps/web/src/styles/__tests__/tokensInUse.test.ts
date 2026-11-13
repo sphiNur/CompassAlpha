@@ -119,6 +119,62 @@ describe('D18: text fields are 44px', () => {
   });
 });
 
+describe('WALK-03: tap areas the pages draw themselves', () => {
+  const tsx = () =>
+    sources(WEB_SRC)
+      .filter((f) => f.endsWith('.tsx'))
+      // Code only: a comment may name an element.
+      .map((f) => [rel(f), readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '')] as const);
+
+  test('a ChipBar that wraps says so with `wrap`, not its own flex-wrap', () => {
+    // Its own flex-wrap kept the scroller's 6 px gap between lines, and
+    // each line's hit-44 area covered the next (Finance chips tapped as 38).
+    const own: string[] = [];
+    for (const [file, src] of tsx()) {
+      for (const m of src.matchAll(/<ChipBar\b[^>]*>/g)) {
+        if (/flex-wrap/.test(m[0])) own.push(`${file}: ${m[0].replace(/\s+/g, ' ')}`);
+      }
+    }
+    expect(own).toEqual([]);
+  });
+
+  test('a row of small controls that wraps keeps its lines 12px apart', () => {
+    // Button sm and chips are 32 px with a 44 px hit-44 area; wrapped
+    // lines 8 px apart overlap, and the lower line takes the taps (the
+    // review card's Approve tapped as 40 px in ru at 360 px).
+    const tight = /(^|\s)gap-(0\.5|1|1\.5|2|2\.5)(\s|$)/;
+    const found: string[] = [];
+    for (const [file, src] of tsx()) {
+      const lines = src.split('\n');
+      lines.forEach((line, i) => {
+        const cls = /className="([^"]*)"/.exec(line)?.[1];
+        if (!cls || !cls.includes('flex-wrap') || !tight.test(cls)) return;
+        // The element's children: up to its closing tag.
+        const indent = line.search(/\S/) - (line.includes('<') ? 0 : 2);
+        const body: string[] = [];
+        for (const next of lines.slice(i + 1, i + 60)) {
+          if (next.trimStart().startsWith('</') && next.search(/\S/) === indent) break;
+          body.push(next);
+        }
+        const small = body.join('\n').match(/size="sm"|<Chip\b/g)?.length ?? 0;
+        if (small >= 2) found.push(`${file}:${i + 1}: ${cls}`);
+      });
+    }
+    expect(found).toEqual([]);
+  });
+
+  test('a <summary> taps as 44', () => {
+    const short: string[] = [];
+    for (const [file, src] of tsx()) {
+      for (const m of src.matchAll(/<summary\b[^>]*>/g)) {
+        if (!/hit-44|min-h-11|min-h-\[var\(--control-h\)\]/.test(m[0]))
+          short.push(`${file}: ${m[0]}`);
+      }
+    }
+    expect(short).toEqual([]);
+  });
+});
+
 describe('purchase row controls', () => {
   test('the row controls are at least 44 wide and grow with their label', () => {
     const src = readFileSync(join(WEB_SRC, 'pages/runs/views/RunViews.tsx'), 'utf8');
