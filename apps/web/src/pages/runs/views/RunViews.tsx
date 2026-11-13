@@ -957,7 +957,9 @@ export function PerCategoryView({
               aria-expanded={open}
               aria-controls={open ? panelId : undefined}
               onClick={() => toggle(group.categoryId)}
-              className="block w-full text-left"
+              // WALK-03 (2026-11-13): 44 px tall; the header alone was 31,
+              // and the card's overflow-hidden leaves no room for hit-44.
+              className="flex min-h-11 w-full flex-col justify-center text-left"
             >
               <GroupCardHeader
                 inButton
