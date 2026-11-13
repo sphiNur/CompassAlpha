@@ -403,10 +403,11 @@ export function ToastProvider({
           // 2026-10-21 FE-05: + the in-page main button's height (published
           // by the host Shell as --app-main-btn-h, 0 when none) so toasts
           // stack ABOVE "Submit / Save" instead of on top of it.
+          // 2026-11-14: + the gap the floating nav capsule keeps below it.
           bottom:
             sheetOffset !== null
               ? `${sheetOffset}px`
-              : 'calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px) + var(--app-main-btn-h, 0px) + 12px)',
+              : 'calc(var(--app-safe-bottom, 0px) + var(--app-nav-float, 0px) + var(--app-nav-h, 64px) + var(--app-main-btn-h, 0px) + 12px)',
           left: 0,
           right: 0,
           display: 'flex',

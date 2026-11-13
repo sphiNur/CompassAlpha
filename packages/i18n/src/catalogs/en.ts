@@ -130,6 +130,13 @@ export const en = {
   'admin.store.tabSales': 'Sales',
   'admin.store.tabSettings': 'Settings',
   'nav.primaryAriaLabel': 'Main sections',
+  // Owner, 2026-11-14: a bottom bar of four tabs + More when a member
+  // sees more than five; More opens the rest in a sheet.
+  'nav.more': 'More',
+  'nav.short.more': 'More',
+  'nav.moreAria': 'More sections',
+  'nav.moreCurrentAria': 'More sections, now: {label}',
+  'nav.badge.inside': '{label}, something inside is waiting',
   'admin.store.createHint':
     'You can set the default role and other settings after the store is created — open it from the list and switch to the Settings tab.',
   'admin.store.readOnlyBody':

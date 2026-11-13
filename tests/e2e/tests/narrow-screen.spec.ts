@@ -14,6 +14,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { API_URL } from '../env';
+import { openTab } from './nav';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -31,7 +32,7 @@ test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
   // A development build signs the admin straight in, as in the story.
   await page.goto('/');
-  await page.getByTestId('nav-run').click();
+  await openTab(page, 'run');
   await expect(main()).toContainText(/\d+ bought/);
   accessToken = await page.evaluate(
     () => JSON.parse(localStorage.getItem('compass.auth')!).state.accessToken as string,

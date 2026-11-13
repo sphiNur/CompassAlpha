@@ -109,6 +109,13 @@ export const zh = {
   'admin.store.tabSales': '销售',
   'admin.store.tabSettings': '设置',
   'nav.primaryAriaLabel': '主要分区',
+  // Owner, 2026-11-14: a bottom bar of four tabs + More when a member
+  // sees more than five; More opens the rest in a sheet.
+  'nav.more': '更多',
+  'nav.short.more': '更多',
+  'nav.moreAria': '更多分区',
+  'nav.moreCurrentAria': '更多分区，当前：{label}',
+  'nav.badge.inside': '{label}，里面有待处理的事项',
   'admin.store.createHint':
     '默认角色和其他设置可以在门店创建后再设——从列表里打开它，切到「设置」标签。',
   'admin.store.readOnlyBody': '你不是这家门店的管理员。设置可见但无法用你的账号修改。',

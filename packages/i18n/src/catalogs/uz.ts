@@ -121,6 +121,13 @@ export const uz = {
   'admin.store.tabSales': 'Sotuv',
   'admin.store.tabSettings': 'Sozlamalar',
   'nav.primaryAriaLabel': 'Asosiy boʻlimlar',
+  // Owner, 2026-11-14: a bottom bar of four tabs + More when a member
+  // sees more than five; More opens the rest in a sheet.
+  'nav.more': 'Yana',
+  'nav.short.more': 'Yana',
+  'nav.moreAria': 'Boshqa boʻlimlar',
+  'nav.moreCurrentAria': 'Boshqa boʻlimlar, hozir: {label}',
+  'nav.badge.inside': '{label}, ichida kutayotgan ishlar bor',
   'admin.store.createHint':
     'Standart rol va boshqa sozlamalarni doʻkon yaratilgandan keyin belgilash mumkin — roʻyxatdan ochib, «Sozlamalar» yorligʻiga oʻting.',
   'admin.store.readOnlyBody':

@@ -37,6 +37,7 @@ import type { ConsoleMessage, Page } from 'playwright';
 import {
   PRIMARY_NAV_SELECTOR,
   blockRealtime,
+  clickNavTab,
   catchUnstubbedTrpc,
   createReport,
   fakeSession,
@@ -369,6 +370,32 @@ async function run() {
     await page.waitForSelector(PRIMARY_NAV_SELECTOR, { timeout: 8_000 });
     record('Auth + Shell ready', true);
 
+    // ---- Bottom nav: four tabs + More (owner, 2026-11-14) ----
+    // The stubbed super admin sees seven tabs: review, buying, the daily
+    // close and admin in the bar, the rest behind More. The start opens
+    // Order, which lives in More, so More stands for it.
+    const barLabels = await page
+      .locator(`${PRIMARY_NAV_SELECTOR} button`)
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()));
+    record(
+      'BottomNav shows Review / Run / Close / Admin and More (standing for Order)',
+      JSON.stringify(barLabels) === JSON.stringify(['Review', 'Run', 'Close', 'Admin', 'Order']),
+      barLabels.join(' / '),
+    );
+    await page.click(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-more"]`);
+    const moreRows = await page
+      .locator('[role="dialog"] [data-testid^="nav-"]')
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()));
+    record(
+      'More lists Order / Receiving / History',
+      JSON.stringify(moreRows) === JSON.stringify(['Order', 'Receiving', 'History']),
+      moreRows.join(' / '),
+    );
+    await page.keyboard.press('Escape');
+    await page
+      .waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5_000 })
+      .catch(() => {});
+
     // ---- Order page interaction ----
     // BottomNav order tab is the default per Shell's first tab (nav.counts
     // is stubbed with nothing to review, so the start stays off Review).
@@ -460,7 +487,7 @@ async function run() {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
     }
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Review")`);
+    await clickNavTab(page, 'approve');
     await waitForText(page, [/Pending/, /Approved/, /Rejected/]);
     const approveText = await page.evaluate(() => document.body.innerText);
     record(
@@ -477,7 +504,7 @@ async function run() {
     );
 
     // ---- Run tab ----
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Run")`);
+    await clickNavTab(page, 'run');
     const runLoaded = await page
       .waitForFunction(
         () =>
@@ -495,7 +522,7 @@ async function run() {
     );
 
     // ---- History tab: server search/filter/pagination shell ----
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("History")`);
+    await clickNavTab(page, 'history');
     await page
       .waitForFunction(
         () =>
@@ -515,7 +542,7 @@ async function run() {
     );
 
     // ---- Daily close tab ----
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Close")`);
+    await clickNavTab(page, 'settlement');
     await page
       .waitForFunction(
         () =>
@@ -649,7 +676,7 @@ async function run() {
     // ---- Confirm tab ----
     // UX-07: leaving with unsaved settlement input asks in the app's own
     // sheet (no longer Telegram's popup); "Discard" lets the tab change.
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Receive")`);
+    await clickNavTab(page, 'confirm');
     const leaveAsked = page.getByRole('dialog', { name: /daily-close changes/ });
     const leavePrompted = await leaveAsked
       .waitFor({ state: 'visible', timeout: 5_000 })
@@ -682,7 +709,7 @@ async function run() {
     // Roles & Permissions (promoted from People sub-tab), Catalog
     // (Stores moved out), Operations. People management lives inside
     // Stores → <store> → Team.
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Admin")`);
+    await clickNavTab(page, 'admin');
     const adminHomeLoaded = await page
       .waitForFunction(
         () =>

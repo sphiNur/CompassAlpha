@@ -67,7 +67,18 @@ function card(page: Page, id: string, role: Role, title: string): Card {
 
 const main = (page: Page): Locator => page.getByRole('main');
 const sheet = (page: Page): Locator => page.getByRole('dialog');
-const tab = (page: Page, name: string): Locator => page.getByTestId(`nav-${name}`);
+/**
+ * Opens a tab: in the bottom bar, or through More when this role has more
+ * than five tabs and the tab is not one of the four in the bar (2026-11-14).
+ */
+async function tapTab(c: Card, page: Page, stepId: string, name: string): Promise<void> {
+  const nav = page.getByTestId('primary-nav');
+  await nav.waitFor();
+  const inBar = nav.getByTestId(`nav-${name}`);
+  if (await inBar.isVisible()) return c.tap(stepId, inBar);
+  await c.tap('open-more', page.getByTestId('nav-more'));
+  await c.tap(stepId, sheet(page).getByTestId(`nav-${name}`));
+}
 const mainButton = (page: Page): Locator => page.getByTestId('page-main-button');
 /** The innermost list item naming the product. */
 const row = (page: Page, code: string): Locator =>
@@ -114,7 +125,7 @@ async function addToOrder(page: Page, code: string, n: number): Promise<void> {
 test("staff: submit today's order", async () => {
   const page = await phone('staff');
   const c = card(page, 'staff-submit-order', 'staff', "Submit today's order");
-  await c.tap('open-order', tab(page, 'order'));
+  await tapTab(c, page, 'open-order', 'order');
   const plus = (code: string) => row(page, code).getByRole('button', { name: t('qty.increment') });
   await c.shot('add-beef', plus('BEEF'), { taps: 2, note: 'each + adds one step (0.5 kg)' });
   await addToOrder(page, 'BEEF', 2);
@@ -147,7 +158,7 @@ test('staff: withdraw an order', async () => {
 test('manager: reject an order with a preset reason', async () => {
   const page = await phone('manager');
   const c = card(page, 'manager-reject-order', 'manager', 'Reject an order');
-  await c.tap('open-review', tab(page, 'approve'));
+  await tapTab(c, page, 'open-review', 'approve');
   await c.tap(
     'reject',
     main(page).getByRole('button', { name: t('approval.reject'), exact: true }),
@@ -178,7 +189,7 @@ test('staff: fix a rejected order and send it again', async () => {
 test('manager: approve an order', async () => {
   const page = await phone('manager');
   const c = card(page, 'manager-approve-order', 'manager', 'Approve an order');
-  await c.tap('open-review', tab(page, 'approve'));
+  await tapTab(c, page, 'open-review', 'approve');
   await c.tap('view-items', main(page).getByRole('button', { name: t('approval.viewItems') }), {
     note: 'optional: check the lines first',
   });
@@ -197,7 +208,7 @@ test('manager: approve an order', async () => {
 test('purchaser: start purchase', async () => {
   const page = await phone('purchaser');
   const c = card(page, 'purchaser-start-purchase', 'purchaser', 'Start purchase');
-  await c.tap('open-run', tab(page, 'run'));
+  await tapTab(c, page, 'open-run', 'run');
   await expect(mainButton(page)).toHaveText(t('run.action.startPurchase'));
   await c.tap('start-purchase', mainButton(page));
   await expect(
@@ -250,11 +261,8 @@ test('purchaser: mark an item unavailable', async () => {
     'na',
     row(page, 'MILK').getByRole('button', { name: t('run.action.markNa'), exact: true }),
   );
+  // A preset reason marks the item at once (#470); there is no second tap.
   await c.tap('pick-reason', choice(sheet(page), t('run.unavailable.preset.soldOut')));
-  await c.tap(
-    'confirm',
-    sheet(page).getByRole('button', { name: t('run.action.markNa'), exact: true }),
-  );
   await expect(sheet(page)).toBeHidden();
   await expect(row(page, 'MILK')).toContainText(t('run.unavailable.preset.soldOut'));
   await expect(row(page, 'MILK').getByRole('textbox')).toHaveCount(0);
@@ -292,7 +300,7 @@ const verdict = (page: Page, code: string, key: 'confirm.status.ok' | 'confirm.s
 test('staff: report a short line', async () => {
   const page = await phone('staff');
   const c = card(page, 'staff-report-short', 'staff', 'Report a short line');
-  await c.tap('open-receive', tab(page, 'confirm'));
+  await tapTab(c, page, 'open-receive', 'confirm');
   await reach(page, verdict(page, 'TOMATO', 'confirm.status.short'));
   await c.tap('short', verdict(page, 'TOMATO', 'confirm.status.short'));
   await dump(page, 'staff-short-sheet');
@@ -405,7 +413,7 @@ const adminRow = (page: Page, text: string): Locator =>
 test('manager: count stock', async () => {
   const page = await phone('manager');
   const c = card(page, 'manager-count-stock', 'manager', 'Count stock');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('count-stock', adminRow(page, t('inventory.count.title')));
   const field = (code: string) =>
     sheet(page).getByRole('textbox', {
@@ -431,7 +439,7 @@ test('manager: count stock', async () => {
 test('manager: invite a member', async () => {
   const page = await phone('manager');
   const c = card(page, 'manager-invite', 'manager', 'Invite a member');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('invite', adminRow(page, t('admin.section.invite')));
   await dump(page, 'manager-invite-hub');
   await c.tap(
@@ -459,7 +467,7 @@ test('manager: invite a member', async () => {
 test('manager: approve a face enrollment', async () => {
   const page = await phone('manager');
   const c = card(page, 'manager-approve-face', 'manager', 'Approve a face enrollment');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('attendance', adminRow(page, t('admin.section.attendance')));
   await c.tap(
     'check',
@@ -483,7 +491,7 @@ test('staff who clocks in: the clock-in screen', async () => {
   // The face was approved on the manager's phone a moment ago.
   await page.reload();
   await main(page).waitFor();
-  await c.tap('open-clock', tab(page, 'attendance'));
+  await tapTab(c, page, 'open-clock', 'attendance');
   const clockIn = main(page).getByRole('button', { name: t('attendance.clock.in'), exact: true });
   await reach(page, clockIn);
   await c.tap('clock-in', clockIn);
@@ -505,7 +513,7 @@ const plusButton = (page: Page, text: string): Locator =>
 test('owner: create a store', async () => {
   const page = await phone('owner');
   const c = card(page, 'owner-create-store', 'owner', 'Create a store');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('stores', adminRow(page, t('admin.section.stores')));
   await c.tap('new-store', plusButton(page, t('admin.store.new')));
   const name = sheet(page).getByRole('textbox').first();
@@ -520,7 +528,7 @@ test('owner: create a store', async () => {
 test('owner: add a product', async () => {
   const page = await phone('owner');
   const c = card(page, 'owner-add-product', 'owner', 'Add a product');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('catalog', adminRow(page, t('admin.section.catalog')));
   await c.tap('products', adminRow(page, t('admin.subsection.skus')));
   await c.tap('new-product', plusButton(page, t('catalog.sku.new')));
@@ -548,7 +556,7 @@ test('owner: add a product', async () => {
 test('owner: invite with a role', async () => {
   const page = await phone('owner');
   const c = card(page, 'owner-invite', 'owner', 'Invite someone with a role');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('stores', adminRow(page, t('admin.section.stores')));
   await c.tap('store', adminRow(page, STORES[lang].central));
   await dump(page, 'owner-store-team');
@@ -585,7 +593,7 @@ test('owner: invite with a role', async () => {
 test('owner: switch on clocking', async () => {
   const page = await phone('owner');
   const c = card(page, 'owner-switch-clocking', 'owner', 'Switch on clocking for someone');
-  await c.tap('open-admin', tab(page, 'admin'));
+  await tapTab(c, page, 'open-admin', 'admin');
   await c.tap('attendance', adminRow(page, t('admin.section.attendance')));
   await c.tap(
     'settings',

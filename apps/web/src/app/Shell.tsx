@@ -16,6 +16,7 @@ import { OfflineBanner } from './shell/OfflineBanner';
 import { PageMainButton } from './shell/PageMainButton';
 import { PAGES } from './shell/pages';
 import { ReviewLanding } from './shell/ReviewLanding';
+import { useScrollChrome } from './shell/scrollChrome';
 import { SkipLinks } from './shell/SkipLinks';
 import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
 import { TopBar } from './shell/TopBar';
@@ -59,6 +60,8 @@ function ShellInner() {
   const visible = shellTabs(session, storePerms);
   usePagePrefetch(session);
   const { tab, selectTab, mainRef, saveScroll } = useShellTab(visible);
+  // 2026-11-14: the fades and the nav capsule's size follow <main>'s scroll.
+  const scrollChrome = useScrollChrome(mainRef, tab);
 
   // A11Y-10 (2026-10-31): the document title names the page and the store
   // ("下单 · Central Kitchen · Compass"); it used to be "Compass" on every
@@ -90,7 +93,9 @@ function ShellInner() {
 
   return (
     <div
-      className="flex min-h-0 flex-col bg-[var(--c-bg)]"
+      ref={scrollChrome.rootRef}
+      // relative: the nav capsule floats over the page (BottomNav.tsx).
+      className="relative flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
       <SkipLinks hasNav={showsNav(visible)} />
@@ -101,74 +106,84 @@ function ShellInner() {
       ) : null}
       <TopBar onOpenSettings={openSettings} />
       <LiveAnnouncer />
-      <main
-        ref={mainRef}
-        id="main-content"
-        // DX-IX-3 / DX-IX-4: where focus lands when the element that had it
-        // is gone (a sheet's opener removed by its action). Focusable from
-        // script only; no ring, it is the page itself.
-        tabIndex={-1}
-        data-focus-fallback=""
-        onScroll={saveScroll}
-        className="min-h-0 flex-1 overflow-y-auto outline-none"
-        // Native iOS momentum scrolling. Without this, scroll inside
-        // the WebView feels stuttery and stops abruptly when you lift
-        // your finger — Telegram's WebView doesn't enable this by
-        // default. -webkit-overflow-scrolling: touch is the iOS-only
-        // way to opt in. overscroll-behavior: contain prevents the
-        // bounce from propagating to Telegram's container, which
-        // sometimes manifested as a "scroll stalls" feeling.
-        style={{
-          WebkitOverflowScrolling: 'touch',
-          overscrollBehaviorY: 'contain',
-          // COREWEB1-07: a phone on its side puts the notch and rounded
-          // corners over the left and right; pages add their px-4 inside.
-          paddingLeft: 'var(--app-safe-left, 0px)',
-          paddingRight: 'var(--app-safe-right, 0px)',
-        }}
-      >
-        <OfflineBanner />
-        {session?.subscription && !session.subscription.writeAccess ? (
-          <div className="px-4 pt-3">
-            <Banner tone="warn" title={i18n.t('subscription.readOnlyTitle')}>
-              {i18n.t('subscription.readOnlyBody')}
-            </Banner>
-          </div>
-        ) : null}
-        {tabLabel && !TABS_WITH_OWN_H1.has(tab) ? <h1 className="sr-only">{tabLabel}</h1> : null}
-        {/* SHL-3 (2026-10-30): a member whose roles open no tab got an
+      {/* 2026-11-14: the page fades where it scrolls under the top bar and
+          the nav capsule (.app-fade in styles/index.css). */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div aria-hidden className="app-fade app-fade-top" />
+        <main
+          ref={mainRef}
+          id="main-content"
+          // DX-IX-3 / DX-IX-4: where focus lands when the element that had it
+          // is gone (a sheet's opener removed by its action). Focusable from
+          // script only; no ring, it is the page itself.
+          tabIndex={-1}
+          data-focus-fallback=""
+          onScroll={(e) => {
+            saveScroll(e);
+            scrollChrome.onScroll(e);
+          }}
+          // app-main: room under the last content for the nav capsule.
+          className="app-main min-h-0 flex-1 overflow-y-auto outline-none"
+          // Native iOS momentum scrolling. Without this, scroll inside
+          // the WebView feels stuttery and stops abruptly when you lift
+          // your finger — Telegram's WebView doesn't enable this by
+          // default. -webkit-overflow-scrolling: touch is the iOS-only
+          // way to opt in. overscroll-behavior: contain prevents the
+          // bounce from propagating to Telegram's container, which
+          // sometimes manifested as a "scroll stalls" feeling.
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorY: 'contain',
+            // COREWEB1-07: a phone on its side puts the notch and rounded
+            // corners over the left and right; pages add their px-4 inside.
+            paddingLeft: 'var(--app-safe-left, 0px)',
+            paddingRight: 'var(--app-safe-right, 0px)',
+          }}
+        >
+          <OfflineBanner />
+          {session?.subscription && !session.subscription.writeAccess ? (
+            <div className="px-4 pt-3">
+              <Banner tone="warn" title={i18n.t('subscription.readOnlyTitle')}>
+                {i18n.t('subscription.readOnlyBody')}
+              </Banner>
+            </div>
+          ) : null}
+          {tabLabel && !TABS_WITH_OWN_H1.has(tab) ? <h1 className="sr-only">{tabLabel}</h1> : null}
+          {/* SHL-3 (2026-10-30): a member whose roles open no tab got an
             empty bar over the order page. */}
-        {visible.length > 0 ? (
-          <PageErrorBoundary
-            key={tab}
-            // Review COREWEB1-23 (2026-11-11): an error is a danger
-            // Banner with retry, as DataState draws one (UI-15), not the
-            // empty-list look.
-            fallback={(retry) => (
-              <div className="px-4 pt-3">
-                <Banner
-                  tone="danger"
-                  title={i18n.t('shell.pageError.title')}
-                  action={
-                    <Button size="sm" variant="secondary" onClick={retry}>
-                      {i18n.t('common.retry')}
-                    </Button>
-                  }
-                >
-                  {i18n.t('shell.pageError.body')}
-                </Banner>
-              </div>
-            )}
-          >
-            {PAGES[tab]()}
-          </PageErrorBoundary>
-        ) : (
-          <EmptyState
-            title={i18n.t('shell.noTabs.title')}
-            description={i18n.t('shell.noTabs.body')}
-          />
-        )}
-      </main>
+          {visible.length > 0 ? (
+            <PageErrorBoundary
+              key={tab}
+              // Review COREWEB1-23 (2026-11-11): an error is a danger
+              // Banner with retry, as DataState draws one (UI-15), not the
+              // empty-list look.
+              fallback={(retry) => (
+                <div className="px-4 pt-3">
+                  <Banner
+                    tone="danger"
+                    title={i18n.t('shell.pageError.title')}
+                    action={
+                      <Button size="sm" variant="secondary" onClick={retry}>
+                        {i18n.t('common.retry')}
+                      </Button>
+                    }
+                  >
+                    {i18n.t('shell.pageError.body')}
+                  </Banner>
+                </div>
+              )}
+            >
+              {PAGES[tab]()}
+            </PageErrorBoundary>
+          ) : (
+            <EmptyState
+              title={i18n.t('shell.noTabs.title')}
+              description={i18n.t('shell.noTabs.body')}
+            />
+          )}
+        </main>
+        {showsNav(visible) ? <div aria-hidden className="app-fade app-fade-bottom" /> : null}
+      </div>
 
       {/* M3.49 (2026-05-23): in-page primary action button. Telegram's
           native MainButton lives BELOW the WebView, so it pushed the
@@ -177,10 +192,17 @@ function ShellInner() {
           all times. This in-DOM button sits ABOVE the nav, so when
           it appears/disappears the NAV doesn't move — only the
           page-content area shrinks/grows. Driven by the same
-          usePageMainButton hook every page already uses. */}
+          usePageMainButton hook every page already uses. 2026-11-14:
+          the floating capsule sits over this bar's foot, under the
+          button. */}
       <PageMainButton />
 
-      <BottomNav tabs={visible} tab={tab} onSelect={selectTab} />
+      <BottomNav
+        tabs={visible}
+        tab={tab}
+        onSelect={selectTab}
+        permissions={session?.permissions ?? []}
+      />
       <ReviewLanding visibleKeys={visible.map((t) => t.key)} currentTab={tab} />
     </div>
   );

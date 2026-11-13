@@ -147,9 +147,30 @@
   --t-base: 240ms;
   --easing: cubic-bezier(0.2, 0.7, 0.2, 1);
 
+  /* Bottom nav (owner, 2026-11-14): a capsule over the page, floating
+   * --app-nav-float above the phone's bottom bar and inset
+   * --app-nav-inset-x from the sides. Translucent (blurred behind) where
+   * the browser can blur, solid otherwise and under reduced transparency;
+   * the active tab is a --c-nav-active pill. */
+  --c-nav-surface: oklch(100% 0 0 / 0.74);
+  --c-nav-surface-solid: oklch(100% 0 0);
+  --c-nav-active: oklch(94% 0.03 250);
+  --shadow-nav: 0 6px 20px oklch(0% 0 0 / 0.12), 0 1px 3px oklch(0% 0 0 / 0.08);
+
   /* Layout */
   --app-header-h: 56px;
-  --app-nav-h: 64px;
+  /* The capsule's height (the full-width bar it replaced was 64px), and
+   * its height while the page scrolls down: still a 48px tap. The shell
+   * sets --app-nav-h and --app-nav-float to 0 when there is no nav, so
+   * --app-nav-reserve (the room the page keeps under its last content)
+   * is then the phone's bottom bar alone. */
+  --app-nav-h: 60px;
+  --app-nav-h-compact: 48px;
+  --app-nav-float: 12px;
+  --app-nav-inset-x: 12px;
+  --app-nav-reserve: calc(var(--app-nav-h) + var(--app-nav-float) + var(--app-safe-bottom));
+  /* How far the page fades where it scrolls under the top bar and the nav. */
+  --app-fade-h: 12px;
   --app-viewport-h: 100dvh;
   /* V12 (2026-10-31): 16px, the px-4 every page body uses. As
    * clamp(12px, 4vw, 20px) it came out at 14.4 / 15.6 / 17.2px on 360 /
@@ -230,6 +251,12 @@
   --c-success-ink: oklch(86% 0.1 145);
   --c-warn-ink: oklch(86% 0.1 75);
   --c-danger-ink: oklch(84% 0.08 25);
+  /* The nav capsule: one step above the raised surfaces, so it reads
+   * over the cards it floats on. */
+  --c-nav-surface: oklch(29% 0.012 240 / 0.78);
+  --c-nav-surface-solid: oklch(29% 0.012 240);
+  --c-nav-active: oklch(34% 0.06 250);
+  --shadow-nav: 0 6px 20px oklch(0% 0 0 / 0.45), 0 1px 3px oklch(0% 0 0 / 0.3);
 }
 
 :root[data-theme='apple'] {

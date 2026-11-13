@@ -19,6 +19,7 @@ import {
   type Browser,
   type BrowserContext,
   type BrowserContextOptions,
+  type Page,
   type Request,
 } from 'playwright';
 import { lookup } from 'node:dns/promises';
@@ -42,6 +43,21 @@ export const HEADLESS = process.env.HEADLESS !== '0';
  *  keeps the smokes passing against the previous production bundle. */
 export const PRIMARY_NAV_SELECTOR =
   ':is([data-testid="primary-nav"], nav[aria-label="Main sections"])';
+
+/**
+ * Opens a bottom-nav tab by its key (`data-testid="nav-<key>"`). With more
+ * than five tabs the bar holds four and More (2026-11-14); a tab that is
+ * not in the bar is opened from the More sheet.
+ */
+export async function clickNavTab(page: Page, key: string): Promise<void> {
+  const inBar = page.locator(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-${key}"]`);
+  if ((await inBar.count()) > 0) {
+    await inBar.click();
+    return;
+  }
+  await page.click(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-more"]`);
+  await page.click(`[role="dialog"] [data-testid="nav-${key}"]`);
+}
 
 export interface Check {
   name: string;

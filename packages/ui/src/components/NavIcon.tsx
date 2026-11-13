@@ -149,6 +149,18 @@ export function IconSettlement(props: IconProps) {
   );
 }
 
+/** The bottom nav's More item: the sections that do not fit the bar. */
+export function IconMore(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    </svg>
+  );
+}
+
 export function IconActivity(props: IconProps) {
   return (
     <svg {...svgBase(props)}>

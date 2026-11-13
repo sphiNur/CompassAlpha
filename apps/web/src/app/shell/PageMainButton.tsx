@@ -39,12 +39,18 @@ export function PageMainButton() {
   // toast stack (anchored above the nav) clears it instead of covering it.
   const barRef = useRef<HTMLDivElement>(null);
   const shown = Boolean(state?.visible);
+  // 2026-11-14: `data-main-button` on <html> tells the shell's CSS
+  // (styles/index.css) that the page ends above this bar, so <main> keeps
+  // no room of its own for the floating nav and shows no bottom fade.
   useLayoutEffect(() => {
     const el = barRef.current;
+    const html = typeof document !== 'undefined' ? document.documentElement : null;
     if (!shown || !el) {
       publishMainButtonInset(0);
+      html?.removeAttribute('data-main-button');
       return;
     }
+    html?.setAttribute('data-main-button', '');
     publishMainButtonInset(el.offsetHeight);
     const ro =
       typeof ResizeObserver !== 'undefined'
@@ -54,6 +60,7 @@ export function PageMainButton() {
     return () => {
       ro?.disconnect();
       publishMainButtonInset(0);
+      html?.removeAttribute('data-main-button');
     };
   }, [shown]);
 
@@ -63,46 +70,54 @@ export function PageMainButton() {
   // order (aria-disabled) and points at the problem when used.
   const explains = !interactable && !busy && !!state.onInactiveClick;
   const hint = !interactable && !busy ? state.inactiveHint : undefined;
+  // 2026-11-14: the nav capsule floats over the foot of this bar (its
+  // room is --app-nav-reserve under the button), so the button sits
+  // above the capsule, never under it. The published height is the
+  // button's own part, above that room.
   return (
     <div
-      ref={barRef}
       className="shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
-      style={{
-        // The page's own side inset, or more on a phone on its side,
-        // where the notch and rounded corners are (COREWEB1-07). Review
-        // COREWEB1-31 (2026-11-12): the inset is the token, not 16px.
-        paddingLeft: 'max(var(--app-inline-x), var(--app-safe-left, 0px))',
-        paddingRight: 'max(var(--app-inline-x), var(--app-safe-right, 0px))',
-        paddingTop: 8,
-        paddingBottom: 8,
-      }}
+      style={{ paddingBottom: 'var(--app-nav-reserve)' }}
     >
-      {hint ? (
-        <p
-          id="page-main-button-hint"
-          data-testid="page-main-button-hint"
-          className="mb-2 text-center text-old-label text-[var(--c-fg-muted)]"
-        >
-          {hint}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        data-testid="page-main-button"
-        disabled={!interactable && !explains}
-        aria-disabled={explains || undefined}
-        aria-describedby={hint ? 'page-main-button-hint' : undefined}
-        onClick={explains ? state.onInactiveClick : guardTap(state.onClick, state.text)}
-        aria-busy={busy || undefined}
-        className={
-          'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
-          (interactable
-            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
-            : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-        }
+      <div
+        ref={barRef}
+        style={{
+          // The page's own side inset, or more on a phone on its side,
+          // where the notch and rounded corners are (COREWEB1-07). Review
+          // COREWEB1-31 (2026-11-12): the inset is the token, not 16px.
+          paddingLeft: 'max(var(--app-inline-x), var(--app-safe-left, 0px))',
+          paddingRight: 'max(var(--app-inline-x), var(--app-safe-right, 0px))',
+          paddingTop: 8,
+          paddingBottom: 8,
+        }}
       >
-        <span className="min-w-0 truncate">{state.text}</span>
-      </button>
+        {hint ? (
+          <p
+            id="page-main-button-hint"
+            data-testid="page-main-button-hint"
+            className="mb-2 text-center text-old-label text-[var(--c-fg-muted)]"
+          >
+            {hint}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          data-testid="page-main-button"
+          disabled={!interactable && !explains}
+          aria-disabled={explains || undefined}
+          aria-describedby={hint ? 'page-main-button-hint' : undefined}
+          onClick={explains ? state.onInactiveClick : guardTap(state.onClick, state.text)}
+          aria-busy={busy || undefined}
+          className={
+            'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
+            (interactable
+              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
+              : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+          }
+        >
+          <span className="min-w-0 truncate">{state.text}</span>
+        </button>
+      </div>
     </div>
   );
 }
