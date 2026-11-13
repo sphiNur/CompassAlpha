@@ -1,13 +1,14 @@
 /**
  * Shared run-domain types (Phase 4 step 4 of the 2026-07 frontend audit).
  *
- * ActiveRun is the FE-side shape of run.get's payload that the
- * orchestrator (RunPage) and every grouped view / row leaf agree on.
- * Moved verbatim out of RunPage.tsx so runs/views can import it without
- * reaching back into the god-file.
+ * ActiveRun is run.get's payload as the orchestrator (RunPage) and every
+ * grouped view / row leaf read it. Review RUNWEB1-19 / RUNWEB2-31
+ * (2026-11-12): it, and the history list's row, are the server's own
+ * types now (RouterOutputs), where they were written out by hand.
  */
 import type { PaymentMethod } from '@compass/contracts';
 import type { ProductNameParts } from '../../lib/productName';
+import type { RouterOutputs } from '../../lib/trpc';
 
 /**
  * Preview-shaped rows for the pre-run summary card (整体 / 按店铺 /
@@ -61,140 +62,115 @@ export type PreviewSupplierGroup = {
   unknownCount: number;
 };
 
-export interface ActiveRun {
-  id: string;
-  status: string;
-  /** DLV-14: stores this actor may not dispatch to (store-scoped deny). */
-  dispatchDeniedStoreIds?: string[];
-  /** BUY-6: stores this actor purchases for; null/absent = all. */
-  purchaseScopeStoreIds?: string[] | null;
-  /** BUY-6: items that also serve stores outside that scope (read-only). */
-  otherStoreSkuIds?: string[];
-  /** D9: expenses split to stores outside that scope (not removable). */
-  otherStoreExpenseIds?: string[];
-  /** RE-DLV-3: why finish (or closing a correction) would be refused for
-   *  this actor, as an error key; null/absent = not refused. */
-  finishBlockedReason?: string | null;
-  items: Array<{
-    skuId: string;
-    plannedQty: string;
-    purchasedQty: string | null;
-    status: string;
-    unavailableNote: string | null;
-    unitPrice: string | null;
-    supplierId?: string | null;
-    receiptPhotoUrl?: string | null;
-    /** M1.14: 'cash' | 'transfer'. Optional because legacy data
-     *  pre-migration may be missing the column on rare occasions; the
-     *  inline row defaults to 'cash' when undefined. */
-    paymentMethod?: string | null;
-    /** M3.41 (2026-05-21): true when this row was added mid-run by the
-     *  purchaser via AddPurchaserItem. Drives the "+" badge on the row
-     *  and the breakdown in finish summary. Default false. */
-    addedByPurchaser?: boolean;
-    /** BUY-5: demand that joined after the item was decided. */
-    topUpQty?: string | null;
-    /** R2-INT-1: a queued (offline) purchase or mark, not yet synced. */
-    pendingSync?: boolean;
-  }>;
-  splits: Array<{
-    runId: string;
-    skuId: string;
-    storeId: string;
-    qty: string;
-    unitPrice?: string | null;
-    paymentMethod?: string | null;
-    deliveredAt: Date | string | null;
-    confirmedAt: Date | string | null;
-    /** Receiver's per-line status (ok | short | wrong | quality). */
-    confirmStatus?: string | null;
-    /** 2026-10-21 CA-06: qty actually received on a problem line. */
-    confirmReceivedQty?: string | null;
-    /** DLV-7: the receiver's note and photo on a problem line. */
-    confirmNote?: string | null;
-    confirmPhotoUrl?: string | null;
-    /** R2-INT-1: a queued (offline) change to this split, not yet synced. */
-    pendingSync?: boolean;
-  }>;
-  perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
-  sessions?: Array<{
-    id: string;
-    storeId: string;
-    submittedByMemberId: string | null;
-    initiatedByMemberId: string | null;
-    submittedByDisplayName: string | null;
-    itemCount: number;
-    totalQty: string;
-    extrasCount: number;
-    status: string;
-  }>;
-  lastPriceBySku?: Record<string, string>;
-  /**
-   * When each reference price was observed (ISO). Parallel to
-   * lastPriceBySku rather than folded into it: that map feeds the
-   * inline price prefill in three places, and reshaping the money path
-   * to carry a timestamp is a bad trade for a display concern.
-   */
-  lastPriceObservedAtBySku?: Record<string, string>;
-  /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
-  sessionNotesByStore?: Record<string, string>;
-  /** M3.16-C: per-store structured extras ("其他物品" rows).
-   *  M3.37: each row now also carries `sessionId` + `idx` + optional
-   *  `status` so the FE can route taps into `order.markExtraStatus`. */
-  sessionExtrasByStore?: Record<
-    string,
-    Array<{
-      name: string;
-      qty: string;
-      unit: string;
-      note?: string;
-      status?: ExtraStatus;
-      sessionId?: string;
-      idx?: number;
-      /** APR-18: the session's lastSeq, sent back as expectedSeq. */
-      sessionSeq?: number;
-    }>
-  >;
-  /** 2026-10-21 CA-11: server-computed items / expenses / total (run.get). */
-  money?: { itemsTotal: string; expensesTotal: string; total: string };
-  /** M3.44 (2026-05-22): active (non-removed) off-catalog expenses. */
-  expenses?: Array<{
-    id: string;
-    label: string;
-    unitHint: string | null;
-    qty: string;
-    unitPrice: string;
-    /**
-     * Review RUNWEB2-31: a store's share only. Unlike an item's split, an
-     * expense's has no price or method of its own (RunExpenseAdded keeps
-     * {storeId, qty}); the type said it had, inviting money worked out
-     * from fields the server never sends.
-     */
-    storeSplits: Array<{ storeId: string; qty: string }>;
-    paymentMethod: string;
-    receiptPhotoUrl: string | null;
-    reason: string;
-    addedByMemberId: string;
-    addedAt: string;
-    /** CMP-BUY-2: recorded offline, not on the server yet. */
-    pendingSync?: boolean;
-  }>;
-  /** M3.27: preferred-supplier per SKU (mirrors preview.supplierBySku),
-   *  powers the active-run "by vendor" view. Null entries = SKUs
-   *  with no preferred link — bucketed under "unassigned" in the FE. */
-  supplierBySku?: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      contactPhone: string | null;
-      contactTg: string | null;
-      defaultPrice?: string | null;
-      lastSeenPrice?: string | null;
-      estimatedUnitPrice?: string | null;
-    } | null
-  >;
+type RunGet = RouterOutputs['run']['get'];
+type RunGetItem = RunGet['items'][number];
+type RunGetSplit = RunGet['splits'][number];
+type RunGetExtra = RunGet['sessionExtrasByStore'][string][number];
+
+/** R2-INT-1 / CMP-BUY-2: a write queued offline, not on the server yet. */
+interface PendingSync {
+  pendingSync?: boolean;
 }
+
+/**
+ * A product on the run, by run.get's types. The parts a row can do
+ * without are optional, as they always were here:
+ *   - paymentMethod (M1.14): 'cash' | 'transfer'; a row without one is
+ *     cash.
+ *   - addedByPurchaser (M3.41): added mid-run by the purchaser (the "+"
+ *     badge, and its line in the finish summary).
+ *   - topUpQty (BUY-5): demand that joined after the item was decided.
+ */
+export type RunItem = Pick<
+  RunGetItem,
+  'skuId' | 'plannedQty' | 'purchasedQty' | 'status' | 'unavailableNote' | 'unitPrice'
+> &
+  Partial<
+    Pick<
+      RunGetItem,
+      'supplierId' | 'receiptPhotoUrl' | 'paymentMethod' | 'addedByPurchaser' | 'topUpQty'
+    >
+  > &
+  PendingSync;
+
+/**
+ * One store's share of a product. confirmStatus is the receiver's
+ * verdict on the line (ok | short | wrong | quality); on a problem line,
+ * confirmReceivedQty is what arrived (CA-06) and confirmNote /
+ * confirmPhotoUrl the receiver's note and photo (DLV-7).
+ */
+export type RunSplit = Pick<
+  RunGetSplit,
+  'runId' | 'skuId' | 'storeId' | 'qty' | 'deliveredAt' | 'confirmedAt'
+> &
+  Partial<
+    Pick<
+      RunGetSplit,
+      | 'unitPrice'
+      | 'paymentMethod'
+      | 'confirmStatus'
+      | 'confirmReceivedQty'
+      | 'confirmNote'
+      | 'confirmPhotoUrl'
+    >
+  > &
+  PendingSync;
+
+/**
+ * An off-catalog expense (M3.44), active (not removed). A store's share
+ * is {storeId, qty} only: unlike an item's split it has no price or
+ * method of its own (RunExpenseAdded keeps none).
+ */
+export type RunExpense = RunGet['expenses'][number] & PendingSync;
+
+/**
+ * run.get's payload. A field a screen can do without stays optional, so
+ * a run saved for an offline start before the field existed, and the
+ * tests' small runs, still fit; a field the server renames or retypes
+ * fails to compile here instead of reading as absent. Of note:
+ *   - status is the server's text column: a string, not a union.
+ *   - dispatchDeniedStoreIds (DLV-14): stores this actor may not dispatch
+ *     to (store-scoped deny).
+ *   - purchaseScopeStoreIds (BUY-6): stores this actor purchases for;
+ *     null/absent = all. otherStoreSkuIds: items that also serve stores
+ *     outside it (read-only); otherStoreExpenseIds (D9): expenses split
+ *     to such stores (not removable).
+ *   - finishBlockedReason (RE-DLV-3): why finish (or closing a
+ *     correction) would be refused for this actor, as an error key.
+ *   - lastPriceObservedAtBySku: when each reference price was observed
+ *     (ISO). Parallel to lastPriceBySku rather than folded into it: that
+ *     map feeds the inline price prefill in three places, and reshaping
+ *     the money path to carry a timestamp is a bad trade for a display
+ *     concern.
+ *   - sessionNotesByStore (M1.8): each store's session notes ("其他物品",
+ *     legacy); sessionExtrasByStore (M3.16-C) the structured ones.
+ *   - money (2026-10-21 CA-11): the server's items / expenses / total.
+ *   - supplierBySku (M3.27): each SKU's preferred supplier, for the "by
+ *     vendor" view; null = none ("unassigned").
+ */
+export type ActiveRun = Pick<RunGet, 'id' | 'status'> &
+  Partial<
+    Pick<
+      RunGet,
+      | 'dispatchDeniedStoreIds'
+      | 'purchaseScopeStoreIds'
+      | 'otherStoreSkuIds'
+      | 'otherStoreExpenseIds'
+      | 'finishBlockedReason'
+      | 'perStoreDemand'
+      | 'sessions'
+      | 'lastPriceBySku'
+      | 'lastPriceObservedAtBySku'
+      | 'sessionNotesByStore'
+      | 'money'
+      | 'supplierBySku'
+    >
+  > & {
+    items: RunItem[];
+    splits: RunSplit[];
+    sessionExtrasByStore?: Record<string, RunExtra[]>;
+    expenses?: RunExpense[];
+  };
 
 /**
  * Review RUNWEB1-19 (2026-11-12): the shapes the run screens pass around,
@@ -233,11 +209,65 @@ export type InlinePurchase = {
   paymentMethod: PaymentMethod;
 };
 
-/** An "other item"'s outcome (M3.37); a row without one is pending. */
-export type ExtraStatus = 'pending' | 'bought' | 'unavailable';
+/**
+ * What a purchase row can do (review RUNWEB1-19): one object, handed from
+ * the panel through the grouped views to each row, instead of seven
+ * handlers threaded through every view. The panel builds it from stable
+ * stand-ins (useStableCallbacks), so the memo()'d rows hold.
+ */
+export interface RunRowActions {
+  /**
+   * Flip the price field between UZS and thousands-of-UZS (2026-07-30).
+   *
+   * The control used to be a `×千` pill in the sticky bar whose meaning
+   * lived ONLY in a `title` attribute — invisible on touch, where there is
+   * no hover. It defaulted to ON and silently multiplied every price the
+   * purchaser typed by 1000. Moving it onto the unit suffix beside the
+   * price input puts it where the user is already looking when the setting
+   * matters, and lets the suffix state the current unit instead of naming
+   * an operation.
+   */
+  togglePriceUnit: () => void;
+  /** Record the purchase (✓). Only the by-stall view sends supplierId. */
+  save: (payload: InlinePurchase) => void;
+  markNa: (skuId: string) => void;
+  /** Open a bought row's purchase for correction. */
+  edit: (item: RunItem) => void;
+  /** Mark a not-available row available again. Absent while the goods
+   *  are going out (review RUNAPI-02). */
+  unmark?: (skuId: string, skuName: string) => void;
+  /** The full purchase sheet, for a split the row cannot work out. */
+  openAdvanced: (item: RunItem) => void;
+  /**
+   * Correct the payment method of an ALREADY purchased row, from the row
+   * itself.
+   *
+   * The one-tap ✓ path has no method control, and `paymentMethod`
+   * defaults to 'cash' — so since the collapsed row became the default
+   * for every priced item, the fast path has been booking everything as
+   * cash and `totalCash` / `totalTransfer` drift by construction.
+   *
+   * This deliberately does NOT go through `save`. That reaches
+   * `PurchaseItem`, which has no already-purchased guard and emits a
+   * fresh `ItemPurchased`; the projection then appends an undeduped
+   * `price_history` row per tap and upserts `run_item_stores_v` with
+   * `unitPrice: split.unitPrice ?? null`, silently erasing per-store
+   * price overrides. The caller routes this through `revisePurchase`.
+   */
+  setPaymentMethod: (item: RunItem, next: PaymentMethod) => void;
+}
 
-/** An "other item" a store asked for, as run.get lists it (M3.16-C). */
-export type RunExtra = NonNullable<ActiveRun['sessionExtrasByStore']>[string][number];
+/** An "other item"'s outcome (M3.37); a row without one is pending. */
+export type ExtraStatus = NonNullable<RunGetExtra['status']>;
+
+/**
+ * An "other item" a store asked for, as run.get lists it (M3.16-C), with
+ * its place in its session for order.markExtraStatus (M3.37) and the
+ * session's lastSeq, sent back as expectedSeq (APR-18). Those three are
+ * optional here: a run saved before they existed has none.
+ */
+export type RunExtra = Omit<RunGetExtra, 'sessionId' | 'idx' | 'sessionSeq'> &
+  Partial<Pick<RunGetExtra, 'sessionId' | 'idx' | 'sessionSeq'>>;
 
 /**
  * Marks one "other item" (M3.37). Settles, never rejects, once the server
@@ -263,35 +293,36 @@ export function otherStoreSkusOf(run: Pick<ActiveRun, 'otherStoreSkuIds'>): Read
   return set;
 }
 
-/** A row of run.history: one finished or cancelled run and its totals. */
-export interface RunListRow {
-  id: string;
-  runDate: string;
-  runIndex: number;
-  status: string;
-  actualTotal: string | null;
-  /** M1.14: cash + transfer breakdown of actualTotal. Both NULL on
-   *  legacy finished runs that pre-date the field; FE falls back to
-   *  showing only the lump-sum total in that case. */
-  actualCashTotal?: string | null;
-  actualTransferTotal?: string | null;
-  /**
-   * 2026-10-21 CA-11: run.history's actualTotal is items + expenses; these
-   * are its two parts (one money definition everywhere — items / expenses
-   * / total). Optional so other row shapes still fit.
-   */
-  itemsTotal?: string | null;
-  expensesTotal?: string | null;
-  finishedAt: Date | string | null;
-  storeTotals?: RunListStoreTotal[];
-}
+type HistoryRow = RouterOutputs['run']['history']['rows'][number];
+type HistoryStoreTotal = HistoryRow['storeTotals'][number];
 
-export interface RunListStoreTotal {
-  storeId: string;
-  total: string;
-  itemsTotal?: string;
-  expensesTotal?: string;
-  cash: string;
-  transfer: string;
-  itemCount: number;
-}
+/**
+ * A row of run.history: one finished or cancelled run and its totals, by
+ * the server's types (review RUNWEB2-31). actualTotal is items + expenses
+ * (2026-10-21 CA-11: itemsTotal and expensesTotal are its parts), and
+ * actualCashTotal / actualTransferTotal its cash and transfer parts
+ * (M1.14). Those two may be null where a run predates the split: the
+ * list then shows the total alone (the server sends 0 for such a run now).
+ */
+export type RunListRow = Pick<
+  HistoryRow,
+  | 'id'
+  | 'runDate'
+  | 'runIndex'
+  | 'status'
+  | 'actualTotal'
+  | 'itemsTotal'
+  | 'expensesTotal'
+  | 'finishedAt'
+> & {
+  actualCashTotal: HistoryRow['actualCashTotal'] | null;
+  actualTransferTotal: HistoryRow['actualTransferTotal'] | null;
+  storeTotals: RunListStoreTotal[];
+};
+
+/** A store's part of a history row; its items / expenses parts may be absent. */
+export type RunListStoreTotal = Pick<
+  HistoryStoreTotal,
+  'storeId' | 'total' | 'cash' | 'transfer' | 'itemCount'
+> &
+  Partial<Pick<HistoryStoreTotal, 'itemsTotal' | 'expensesTotal'>>;

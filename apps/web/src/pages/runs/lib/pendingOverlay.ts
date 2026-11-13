@@ -14,57 +14,16 @@
  */
 import type { PaymentMethod } from '@compass/contracts';
 import type { PendingWrite } from '../../../lib/outbox/policy';
-import type { ExtraStatus } from '../types';
+import type { ExtraStatus, RunExpense, RunExtra, RunItem, RunSplit } from '../types';
 
-type Split = {
-  runId: string;
-  skuId: string;
-  storeId: string;
-  qty: string;
-  unitPrice?: string | null;
-  paymentMethod?: string | null;
-  deliveredAt: Date | string | null;
-  confirmedAt: Date | string | null;
-  confirmStatus?: string | null;
-  confirmReceivedQty?: string | null;
-  confirmNote?: string | null;
-  confirmPhotoUrl?: string | null;
-  /** Set on a split whose queued change has not reached the server. */
-  pendingSync?: boolean;
-};
-
-type Item = {
-  skuId: string;
-  plannedQty?: string;
-  supplierId?: string | null;
-  addedByPurchaser?: boolean;
-  status: string;
-  purchasedQty: string | null;
-  unitPrice: string | null;
-  unavailableNote: string | null;
-  paymentMethod?: string | null;
-  /** Set on an item whose queued change has not reached the server. */
-  pendingSync?: boolean;
-};
-
-type Expense = {
-  id: string;
-  label: string;
-  unitHint: string | null;
-  qty: string;
-  unitPrice: string;
-  storeSplits: StoreSplitInput[];
-  paymentMethod: string;
-  receiptPhotoUrl: string | null;
-  reason: string;
-  addedByMemberId: string;
-  addedAt: string;
-  /** CMP-BUY-2: recorded offline, not on the server yet. */
-  pendingSync?: boolean;
-};
-
+// Review RUNWEB2-31 (2026-11-12): the run's own types (runs/types.ts, from
+// run.get's), where this file wrote out a third copy. An item may come
+// without its planned quantity: the overlays never read it.
+type Split = RunSplit;
+type Item = Omit<RunItem, 'plannedQty'> & Partial<Pick<RunItem, 'plannedQty'>>;
+type Expense = RunExpense;
 /** An "other item" a store asked for (M3.37); absent status reads as pending. */
-type Extra = { sessionId?: string; idx?: number; status?: ExtraStatus };
+type Extra = Pick<RunExtra, 'sessionId' | 'idx' | 'status'>;
 
 export type OverlayRun = {
   id: string;

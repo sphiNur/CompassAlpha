@@ -41,7 +41,6 @@ import {
   Input,
   LoadingState,
   Sheet,
-  useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -106,7 +105,6 @@ export function RunPage() {
   const productNameParts = useProductNameParts();
   const session = useAuthStore((s) => s.session);
   const currency = currencyOf(session);
-  const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
 
   // Q7(a): `createOpen` is gone with the create sheet — starting a run
@@ -1243,7 +1241,6 @@ export function RunPage() {
           today={previewToday}
           overrides={sessionOverrides}
           onChange={setSessionOverrides}
-          i18n={i18n}
         />
       </Sheet>
 
@@ -1278,7 +1275,6 @@ export function RunPage() {
                     today={p.today ?? null}
                     overrides={sessionOverrides}
                     onChange={setSessionOverrides}
-                    i18n={i18n}
                     runDate={runDateChoice ?? p.today ?? ''}
                     onRunDateChange={(d) => setRunDateChoice(d || null)}
                     // The main button says "tick at least one order".
@@ -1289,8 +1285,6 @@ export function RunPage() {
                       preview={selectedPreview}
                       skuById={skuById}
                       productName={productName}
-                      i18n={i18n}
-                      toast={toast}
                     />
                   ) : null}
                 </>
@@ -1314,7 +1308,6 @@ export function RunPage() {
           <RunSessionsCard
             sessions={runDetailQuery.data.sessions ?? []}
             storeById={storeById}
-            i18n={i18n}
             ejectingSessionId={ejectSession.isPending ? ejectSession.variables.sessionId : null}
             onEject={(sessionRow) => {
               const storeName =
@@ -1369,8 +1362,6 @@ export function RunPage() {
             }}
             skuById={skuById}
             productName={productName}
-            i18n={i18n}
-            toast={toast}
           />
         ) : null}
 
@@ -1381,7 +1372,6 @@ export function RunPage() {
             categoryById={categoryById}
             storeById={storeById}
             productName={productName}
-            i18n={i18n}
             priceInThousands={priceInThousands}
             onTogglePriceUnit={togglePriceInThousands}
             savingSkuId={inlineSavingSkuId}

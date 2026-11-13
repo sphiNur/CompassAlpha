@@ -79,6 +79,7 @@ import type {
   PreviewStoreGroup,
   PreviewSupplierGroup,
   RunExtra,
+  RunRowActions,
   SkuLite,
   StoreLite,
 } from '../types';
@@ -175,7 +176,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   categoryById,
   storeById,
   productName,
-  i18n,
   priceInThousands,
   onTogglePriceUnit,
   savingSkuId,
@@ -209,7 +209,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
   storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, inline price input + sheet input display `value/1000`
    *  and parse back to raw UZS on save. Page-level toggle in the
    *  sticky header. */
@@ -243,12 +242,36 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
   onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
+  const i18n = useI18n();
   // 2026-07-26: the AGGREGATE view — the default screen during an
   // actual run — passed the raw canonical unit code down to
   // PurchaseRow, so the same SKU read "bunch" here and "把" on the
   // preview card. Same fix as the three grouped views in RunViews.
   const unitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
+  // Review RUNWEB1-19: what a purchase row can do, as one object for the
+  // rows and the grouped views. Its handlers are ActiveRunPanel's
+  // stand-ins, so it changes only when one comes or goes (unmark).
+  const rowActions = useMemo<RunRowActions>(
+    () => ({
+      togglePriceUnit: onTogglePriceUnit,
+      save: onSavePurchaseInline,
+      markNa: onMarkNa,
+      edit: onEditPurchased,
+      unmark: onUnmark,
+      openAdvanced: onOpenAdvancedPurchase,
+      setPaymentMethod: onSetPaymentMethod,
+    }),
+    [
+      onTogglePriceUnit,
+      onSavePurchaseInline,
+      onMarkNa,
+      onEditPurchased,
+      onUnmark,
+      onOpenAdvancedPurchase,
+      onSetPaymentMethod,
+    ],
+  );
 
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -601,7 +624,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
       ) : null}
       {showViewToggle && shownViewMode === 'perVendor' && showPerVendor ? (
         <PerVendorView
-          onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
           run={run}
           itemBySku={itemBySku}
@@ -609,39 +631,26 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           skuById={skuById}
           storeById={storeById}
           productName={productName}
-          i18n={i18n}
           priceInThousands={priceInThousands}
-          onTogglePriceUnit={onTogglePriceUnit}
           savingSkuId={savingSkuId}
           demandBySku={demandBySku}
-          onSavePurchaseInline={onSavePurchaseInline}
-          onMarkNa={onMarkNa}
-          onOpenAdvancedPurchase={onOpenAdvancedPurchase}
-          onEditPurchased={onEditPurchased}
-          onUnmark={onUnmark}
+          rowActions={rowActions}
           onMarkExtraStatus={onMarkExtraStatus}
           onRecordExtraExpense={onRecordExtraExpense}
         />
       ) : null}
       {showViewToggle && shownViewMode === 'perCategory' && showPerCategory ? (
         <PerCategoryView
-          onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
           run={run}
           isMultiStoreRun={isMultiStoreRun}
           skuById={skuById}
           categoryById={categoryById}
           storeById={storeById}
-          i18n={i18n}
           priceInThousands={priceInThousands}
-          onTogglePriceUnit={onTogglePriceUnit}
           savingSkuId={savingSkuId}
           demandBySku={demandBySku}
-          onSavePurchaseInline={onSavePurchaseInline}
-          onMarkNa={onMarkNa}
-          onOpenAdvancedPurchase={onOpenAdvancedPurchase}
-          onEditPurchased={onEditPurchased}
-          onUnmark={onUnmark}
+          rowActions={rowActions}
         />
       ) : null}
       {showAggregate && plannedOrEditing && run.items.length > 0 ? (
@@ -736,7 +745,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
               return (
                 <PurchaseRow
                   key={it.skuId}
-                  onTogglePriceUnit={onTogglePriceUnit}
                   item={it}
                   servesOtherStores={otherStoreSkusOf(run).has(it.skuId)}
                   name={name}
@@ -748,15 +756,9 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
                   isMultiStoreRun={isMultiStoreRun}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   lastPriceObservedAt={run.lastPriceObservedAtBySku?.[it.skuId] ?? null}
-                  i18n={i18n}
                   priceInThousands={priceInThousands}
                   saving={savingSkuId === it.skuId}
-                  onSave={onSavePurchaseInline}
-                  onMarkNa={onMarkNa}
-                  onEdit={onEditPurchased}
-                  onUnmark={onUnmark}
-                  onOpenAdvanced={onOpenAdvancedPurchase}
-                  onSetPaymentMethod={onSetPaymentMethod}
+                  actions={rowActions}
                   paymentBusy={paymentBusySkuId === it.skuId}
                 />
               );
@@ -1071,7 +1073,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
           sessionExtrasByStore={run.sessionExtrasByStore}
           sessionNotesByStore={run.sessionNotesByStore}
           storeById={storeById}
-          i18n={i18n}
           editable={editingPhase}
           onMarkExtraStatus={onMarkExtraStatus}
           onRecordExtraExpense={onRecordExtraExpense}
@@ -1088,7 +1089,6 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
         <ExpensesCard
           expenses={run.expenses}
           storeById={storeById}
-          i18n={i18n}
           priceInThousands={priceInThousands}
           editable={editingPhase}
           onRemove={onRemoveExpense}
@@ -1225,8 +1225,6 @@ export function PreviewSummaryCard({
   preview,
   skuById,
   productName,
-  i18n,
-  toast,
 }: {
   preview: {
     // M3.24 (2026-05-18): nullable when the caller didn't ask for a
@@ -1261,9 +1259,9 @@ export function PreviewSummaryCard({
   };
   skuById: Map<string, SkuLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  i18n: ReturnType<typeof useI18n>;
-  toast: ReturnType<typeof useToast>;
 }) {
+  const i18n = useI18n();
+  const toast = useToast();
   const [view, setView] = useState<PreviewView>(() => {
     // RUNWEB1-21: read through lib/localPref, which a blocked storage
     // cannot make throw (this read was the one left unguarded).
@@ -2242,8 +2240,6 @@ export function PreviewSummaryCard({
           }
           currentSupplierId={preview.supplierBySku[vendorPickerFor]?.id ?? null}
           onClose={() => setVendorPickerFor(null)}
-          i18n={i18n}
-          toast={toast}
         />
       ) : null}
     </Card>
@@ -2263,16 +2259,14 @@ function VendorPickerSheet({
   skuName,
   currentSupplierId,
   onClose,
-  i18n,
-  toast,
 }: {
   skuId: string;
   skuName: string;
   currentSupplierId: string | null;
   onClose: () => void;
-  i18n: ReturnType<typeof useI18n>;
-  toast: ReturnType<typeof useToast>;
 }) {
+  const i18n = useI18n();
+  const toast = useToast();
   const utils = trpc.useUtils();
   // 2026-10-21 audit CA-05: was admin.supplierList, which requires
   // users.manage — a pure purchaser got FORBIDDEN and an empty list.
@@ -2348,17 +2342,16 @@ function VendorPickerSheet({
 export function RunSessionsCard({
   sessions,
   storeById,
-  i18n,
   ejectingSessionId,
   onEject,
 }: {
   sessions: NonNullable<ActiveRun['sessions']>;
   storeById: Map<string, StoreLite>;
-  i18n: ReturnType<typeof useI18n>;
   /** The order being taken out, while that is on its way (RUNWEB1-29). */
   ejectingSessionId: string | null;
   onEject: (session: NonNullable<ActiveRun['sessions']>[number]) => void;
 }) {
+  const i18n = useI18n();
   // DX-BUY-7 (2026-11-01): collapsed to one line by default. The cards and
   // their 「移出采购单」 buttons (a rare, reversing action) took the top of
   // the screen and pushed the first item to y≈440–560.
