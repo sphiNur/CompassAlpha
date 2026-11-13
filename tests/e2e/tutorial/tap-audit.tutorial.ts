@@ -232,7 +232,9 @@ async function goView(page: Page, auth: string, nav: Nav): Promise<boolean> {
     },
     [auth, JSON.stringify(nav)],
   );
-  await page.reload();
+  // Opened as a link to the tab: a plain start would land on Review
+  // while an order waits there (ReviewLanding).
+  await page.goto(`/${nav.tab}`);
   try {
     await page.getByRole('main').waitFor({ timeout: 15_000 });
   } catch {
