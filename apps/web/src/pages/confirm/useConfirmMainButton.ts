@@ -15,6 +15,8 @@ export function useConfirmMainButton(
     submitConfirm: () => void;
     /** Open the summary sheet (U4). */
     openConfirm: () => void;
+    /** UX-01: mark every line OK, then open the summary sheet. */
+    markAllAndConfirm: () => void;
   },
 ): void {
   const i18n = useI18n();

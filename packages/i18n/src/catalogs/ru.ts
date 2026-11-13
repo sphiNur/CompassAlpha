@@ -231,6 +231,7 @@ export const ru = {
   'people.transferAction': 'Перевести',
   'people.transferFrom': 'Откуда',
   'people.transferTo': 'Куда',
+  'people.transferPickStore': 'Выберите магазин, куда перевести.',
   'people.transferNoDestTitle': 'Нет подходящих магазинов',
   'people.transferNoDestBody':
     'Вы не администрируете другие магазины. Попросите администратора сначала добавить вас в магазин назначения.',
@@ -527,6 +528,9 @@ export const ru = {
   'common.errors.invalidDecimal': 'Введите число, не более 3 знаков после запятой.',
   'common.errors.invalidPhotoUrl': 'Не удалось использовать фото. Сделайте снимок ещё раз.',
   'common.errors.positiveDecimal': 'Введите число больше 0, не более 3 знаков после запятой.',
+  'common.hint.fillIn': 'Заполните поле «{field}».',
+  'common.hint.choose': 'Выберите: «{field}».',
+  'common.hint.wholeNumber': '«{field}»: введите целое число от {min} до {max}.',
   'common.errors.invalidDate': 'Неверная дата. Выберите её заново в календаре.',
   'order.errors.tooManyExtras': 'В заказе может быть не больше 50 других позиций.',
   'order.errors.invalidExtraName': 'Укажите название (до 200 символов).',
@@ -1507,6 +1511,7 @@ export const ru = {
   'run.action.markUnavailableDesc': 'Объясните команде, почему не удалось купить.',
   'run.action.unavailableReasonPlaceholder': 'Причина',
   'run.unavailable.presetsHint': 'Нажмите на причину, чтобы сразу отметить «нет»',
+  'run.unavailable.reasonNeeded': 'Нажмите причину выше или введите свою.',
   'run.unavailable.preset.soldOut': 'Нет в продаже',
   'run.unavailable.preset.tooExpensive': 'Слишком дорого',
   'run.unavailable.preset.poorQuality': 'Плохое качество',
@@ -1540,6 +1545,7 @@ export const ru = {
   'run.errors.alreadyInRun': 'Этот товар уже в закупке — отредактируйте существующую позицию.',
   'run.errors.storeNotInRun': 'Этот магазин не входит в текущую закупку.',
   'run.errors.addReasonRequired': 'Укажите причину добавления.',
+  'run.errors.addPickProduct': 'Выберите товар.',
   // M3.44 (2026-05-22): расходы вне каталога
   'run.action.addItem.modeSku': 'Товар из каталога',
   'run.action.addItem.modeExpense': 'Вне каталога',
@@ -1775,6 +1781,7 @@ export const ru = {
   'confirm.progress': 'Проверено {done}/{total}',
   'confirm.markAllOk': 'Всё OK',
   'confirm.confirmStoreBlocked': 'Осталось проверить: {n}',
+  'confirm.allOkConfirm': 'Всё OK · Подтвердить приёмку',
   'confirm.confirmingHint': 'Подтверждение…',
   'confirm.toast.markedOk': 'Отмечено: OK',
   'confirm.toast.allMarkedOk':
@@ -2493,8 +2500,8 @@ export const ru = {
     '{n, plural, one {Сохранить # позицию} few {Сохранить {n} позиции} many {Сохранить {n} позиций} other {Сохранить {n} позиции}}',
   'inventory.count.fixRows':
     '{n, plural, one {Исправьте # строку} few {Исправьте {n} строки} many {Исправьте {n} строк} other {Исправьте {n} строки}}',
-  'inventory.count.confirm':
-    '{counted, plural, one {Посчитан # товар} few {Посчитано {counted} товара} many {Посчитано {counted} товаров} other {Посчитано {counted} товара}}, {differ, plural, =0 {расхождений с остатком нет} one {с остатком расходится #} few {с остатком расходятся {differ}} many {с остатком расходятся {differ}} other {с остатком расходятся {differ}}}. Сохранить?',
+  'inventory.count.saveDiffer':
+    '{n, plural, one {Сохранить # позицию} few {Сохранить {n} позиции} many {Сохранить {n} позиций} other {Сохранить {n} позиции}} · {differ, plural, one {# расходится} few {{differ} расходятся} many {{differ} расходятся} other {{differ} расходятся}}',
   'inventory.count.saved':
     '{n, plural, one {Сохранена # позиция.} few {Сохранено {n} позиции.} many {Сохранено {n} позиций.} other {Сохранено {n} позиции.}}',
   'inventory.count.empty': 'В каталоге пока нет товаров',
@@ -2644,6 +2651,7 @@ export const ru = {
   'attendance.shift.start': 'Начало',
   'attendance.shift.end': 'Конец',
   'attendance.shift.overnightHint': 'Заканчивается на следующий день.',
+  'attendance.shift.sameTimes': 'Начало и конец не могут совпадать.',
   'attendance.shift.note': 'Заметка',
   'attendance.shift.notePlaceholder': 'например, кухня',
   'attendance.shift.delete': 'Удалить смену',
@@ -2677,6 +2685,7 @@ export const ru = {
   'attendance.settings.geoSet': 'Место магазина: {lat}, {lng}',
   'attendance.settings.geoNotSet': 'Место магазина ещё не задано',
   'attendance.settings.useHere': 'Взять моё текущее место',
+  'attendance.settings.locationNeeded': 'Сначала задайте место магазина: нажмите «{action}».',
   'attendance.settings.geoCoarse':
     'Телефон определил место с точностью лишь до {m} м; попробуйте ещё раз у окна.',
   'attendance.settings.radius': 'Радиус (метры)',

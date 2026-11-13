@@ -36,7 +36,6 @@ import { STOCKTAKE_BATCH_MAX, STOCKTAKE_COUNT_MESSAGE } from '@compass/contracts
 import { newIdempotencyKey, trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { formatQty } from '../../../../lib/format';
-import { confirmNative } from '../../../../lib/confirm';
 import { haptic } from '../../../../lib/telegram';
 import { normalizeQuery, rankNameLike } from '../../../../lib/searchMatch';
 import { rowName } from '../../../../lib/productName';
@@ -49,6 +48,7 @@ import {
 import { groupCatalog } from '../../../order/catalogGroups';
 import {
   countableProducts,
+  countSaveLabel,
   countsToSave,
   countSummary,
   inParts,
@@ -168,15 +168,13 @@ export function StockCountSheet({
     }
   };
 
+  // UX-06 (2026-11-13): no dialog in front of the save; the button says
+  // what it records ("Save 2 counts · 1 differs").
   const onSave = () => {
     if (summary.counted === 0 || summary.invalid > 0 || saving) return;
-    // The one confirmation: what is about to be recorded.
-    void confirmNative(
-      i18n.t('inventory.count.confirm', { counted: summary.counted, differ: summary.differ }),
-    ).then((yes) => {
-      if (yes) void save();
-    });
+    void save();
   };
+  const saveLabel = countSaveLabel(summary);
 
   // The keyboard's next / enter key moves to the next row's field; on the
   // last row it closes the keyboard.
@@ -205,27 +203,19 @@ export function StockCountSheet({
       title={i18n.t('inventory.count.title')}
       description={storeName}
       footer={
-        <>
-          {summary.invalid > 0 ? (
-            <p
-              id="count-invalid"
-              className="pb-2 text-center text-old-body-sm text-[var(--c-fg-muted)]"
-            >
-              {i18n.t('inventory.count.fixRows', { n: summary.invalid })}
-            </p>
-          ) : null}
-          <Button
-            block
-            loading={saving}
-            disabled={summary.counted === 0 || summary.invalid > 0}
-            aria-describedby={summary.invalid > 0 ? 'count-invalid' : undefined}
-            onClick={onSave}
-          >
-            {summary.counted > 0
-              ? i18n.t('inventory.count.save', { n: summary.counted })
-              : i18n.t('common.save')}
-          </Button>
-        </>
+        <Button
+          block
+          loading={saving}
+          disabled={summary.counted === 0 || summary.invalid > 0}
+          // UX-05: the kit's line over a disabled Save says why. Nothing
+          // typed yet needs no line: the hint over the list says what to do.
+          disabledHint={
+            summary.invalid > 0 ? i18n.t('inventory.count.fixRows', { n: summary.invalid }) : ''
+          }
+          onClick={onSave}
+        >
+          {i18n.t(saveLabel.key, saveLabel.vars)}
+        </Button>
       }
     >
       <div className="flex flex-col gap-3 py-3">

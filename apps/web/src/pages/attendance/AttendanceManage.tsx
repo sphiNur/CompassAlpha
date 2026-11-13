@@ -671,6 +671,12 @@ function ManualPunchForm(props: {
       <Button
         block
         disabled={!/^\d{2}:\d{2}$/.test(time) || reason.trim().length === 0}
+        // UX-05: which field the disabled Save is waiting for.
+        disabledHint={i18n.t('common.hint.fillIn', {
+          field: i18n.t(
+            !/^\d{2}:\d{2}$/.test(time) ? 'attendance.manual.time' : 'attendance.manual.reason',
+          ),
+        })}
         loading={props.saving}
         onClick={props.onSave}
       >
@@ -893,6 +899,18 @@ function ShiftSheet({
     /^\d{2}:\d{2}$/.test(form.start) &&
     /^\d{2}:\d{2}$/.test(form.end) &&
     form.start !== form.end;
+  // UX-05: what the disabled Save is waiting for.
+  const saveHint = !form
+    ? ''
+    : !form.memberId
+      ? i18n.t('common.hint.choose', { field: i18n.t('attendance.shift.person') })
+      : !/^\d{2}:\d{2}$/.test(form.start)
+        ? i18n.t('common.hint.fillIn', { field: i18n.t('attendance.shift.start') })
+        : !/^\d{2}:\d{2}$/.test(form.end)
+          ? i18n.t('common.hint.fillIn', { field: i18n.t('attendance.shift.end') })
+          : form.start === form.end
+            ? i18n.t('attendance.shift.sameTimes')
+            : '';
 
   return (
     <Sheet
@@ -947,6 +965,7 @@ function ShiftSheet({
           <Button
             block
             disabled={!valid}
+            disabledHint={saveHint}
             loading={save.isPending}
             onClick={() =>
               save.mutate({

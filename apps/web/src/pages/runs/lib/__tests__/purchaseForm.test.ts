@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { PaymentMethod } from '@compass/contracts';
 import { stepDraftChange } from '../../../../hooks/useDraftChanged';
 import {
+  addItemBlockedBy,
   addItemDraftEdits,
   purchaseDraftCheck,
   purchaseDraftEdits,
@@ -87,16 +88,20 @@ describe('purchaseDraftCheck', () => {
       splitMatches: true,
       reasonOk: true,
       canSubmit: true,
+      blockedBy: null,
     });
   });
 
   test('a price with a third decimal may not, as the server refuses it', () => {
-    expect(purchaseDraftCheck(purchase({ unitPrice: '12000.505' })).canSubmit).toBe(false);
+    const r = purchaseDraftCheck(purchase({ unitPrice: '12000.505' }));
+    expect(r.canSubmit).toBe(false);
+    expect(r.blockedBy).toBe('price');
   });
 
   test("a store's own price with a third decimal may not either", () => {
     const d = purchase({ perStorePricing: true, splitPrices: new Map([['store-b', '9.999']]) });
     expect(purchaseDraftCheck(d).canSubmit).toBe(false);
+    expect(purchaseDraftCheck(d).blockedBy).toBe('storePrice');
   });
 
   test('store quantities that do not add up say so', () => {
@@ -104,6 +109,13 @@ describe('purchaseDraftCheck', () => {
     expect(r.splitMatches).toBe(false);
     expect(r.splitTotal).toBe(10);
     expect(r.canSubmit).toBe(false);
+  });
+
+  test('UX-05: a quantity of 0 is what Save waits for', () => {
+    const d = purchase({ actualQty: '0', splits: new Map([['store-a', '0']]) });
+    expect(purchaseDraftCheck(d).blockedBy).toBe('qty');
+    // A split that does not add up is said on the button, not twice.
+    expect(purchaseDraftCheck(purchase({ actualQty: '11' })).blockedBy).toBeNull();
   });
 
   test('an edit needs a reason', () => {
@@ -229,5 +241,20 @@ describe('addItemDraftEdits: what counts as an edit (RUNWEB2-07)', () => {
     const changed = sheet(addItemDraftEdits, opened);
     expect(changed({ ...opened, actualQty: '3', splits: new Map([['store-a', '3']]) })).toBe(true);
     expect(changed({ ...opened, splits: new Map([['store-a', '3']]) })).toBe(false);
+  });
+});
+
+describe('addItemBlockedBy (UX-05)', () => {
+  const priced = (over: Partial<AddItemFormDraft> = {}) => addItem({ unitPrice: '5000', ...over });
+
+  test('names the first thing Save waits for, in the form order', () => {
+    expect(addItemBlockedBy(priced({ mode: 'sku' }))).toBe('product');
+    expect(addItemBlockedBy(priced({ label: '' }))).toBe('label');
+    expect(addItemBlockedBy(priced({ splits: new Map() }))).toBe('store');
+    expect(addItemBlockedBy(priced({ actualQty: '0' }))).toBe('qty');
+    expect(addItemBlockedBy(priced({ unitPrice: '1.234' }))).toBe('price');
+    expect(addItemBlockedBy(priced({ actualQty: '3' }))).toBe('split');
+    expect(addItemBlockedBy(priced({ reason: ' ' }))).toBe('reason');
+    expect(addItemBlockedBy(priced())).toBeNull();
   });
 });

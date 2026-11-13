@@ -83,6 +83,13 @@ export function CatalogImportSheet({
           block
           loading={run.isPending}
           disabled={!sourceOrgId || !p || nothingNew || preview.isFetching}
+          // UX-05: no workspace chosen yet. "Everything is already here"
+          // and "no other workspace" are said once, in the body.
+          disabledHint={
+            !sourceOrgId && (sources.data?.length ?? 0) > 0
+              ? i18n.t('catalog.import.sourcePlaceholder')
+              : ''
+          }
           onClick={() => run.mutate({ sourceOrgId, includeSuppliers })}
         >
           {i18n.t('catalog.import.submit')}

@@ -122,6 +122,18 @@ export function ManualInviteSheet({
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
   const canSubmit =
     (isLink || tgIdValid) && (!requiresStore || hasStore) && !!pickedRole && !pickedRoleBlocked;
+  // UX-05: what the disabled submit is waiting for. A blocked role says
+  // so under its field already.
+  const submitHint =
+    !isLink && !tgIdValid
+      ? tgProblem && draft?.tgUserId.trim()
+        ? i18n.t(TG_USER_ID_MESSAGE)
+        : i18n.t('common.hint.fillIn', { field: i18n.t('admin.field.tgUserId') })
+      : !pickedRole
+        ? i18n.t('common.hint.choose', { field: i18n.t('admin.field.role') })
+        : requiresStore && !hasStore
+          ? i18n.t('admin.invite.pickStore')
+          : '';
   // DX-ADM-28: typed id / name or a picked role is input worth asking about.
   const inviteChanged =
     !!draft &&
@@ -141,6 +153,7 @@ export function ManualInviteSheet({
           size="lg"
           loading={pending}
           disabled={!canSubmit}
+          disabledHint={submitHint}
           onClick={() => onSubmit(roleSlug)}
         >
           {i18n.t(isLink ? 'admin.invite.link.submit' : 'admin.invite.byTgId.submit')}

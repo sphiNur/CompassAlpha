@@ -36,6 +36,7 @@ import { addDays, orgToday } from '../../lib/calendarDate';
 import { useAuthStore } from '../../stores/authStore';
 import { nativeConfirm } from '../admin/shared';
 import { EnrollPhotos } from './AttendancePhotos';
+import { ITEM_MONEY_PROBLEM_MESSAGE } from '../settlement/moneyProblem';
 
 type Policy = RouterOutputs['attendance']['policyGet'];
 
@@ -244,7 +245,8 @@ function WageField({
   // The number field hands on its normalised reading ("1 500,5" → "1500.5").
   const [text, setText] = useState(shown);
   // Review CONF-10: the server's rule for a daily wage (SettlementMoneySchema).
-  const valid = settlementMoneyProblem(text) === null;
+  const problem = settlementMoneyProblem(text);
+  const valid = problem === null;
   const save = trpc.attendance.payRateSet.useMutation({
     onSuccess: () => {
       haptic('success');
@@ -278,6 +280,15 @@ function WageField({
           size="sm"
           variant="secondary"
           disabled={!valid || text === shown}
+          // UX-05: why Save waits, once the wage was changed (an untouched
+          // row stays quiet; the red edge marks the field).
+          disabledHint={
+            problem !== null && text !== shown
+              ? i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[problem], {
+                  field: i18n.t('attendance.settings.dailyWage'),
+                })
+              : ''
+          }
           loading={save.isPending}
           onClick={() => save.mutate({ storeId, memberId, dailyWage: text, effectiveFrom: today })}
         >
@@ -331,6 +342,24 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   // 2026-11-07).
   const canSave =
     graceOk && overtimeOk && (!requireGeo || geo !== null) && (geo === null || radiusOk);
+  // UX-05: what the disabled Save is waiting for, in the form's order.
+  const wholeNumberHint = (field: string, range: { min: number; max: number }) =>
+    i18n.t('common.hint.wholeNumber', { field, ...range });
+  const saveHint =
+    requireGeo && geo === null
+      ? i18n.t('attendance.settings.locationNeeded', {
+          action: i18n.t('attendance.settings.useHere'),
+        })
+      : geo !== null && !radiusOk
+        ? wholeNumberHint(i18n.t('attendance.settings.radius'), ATTENDANCE_RADIUS_M)
+        : !graceOk
+          ? wholeNumberHint(i18n.t('attendance.settings.grace'), ATTENDANCE_GRACE_MINUTES)
+          : !overtimeOk
+            ? wholeNumberHint(
+                i18n.t('attendance.settings.overtimeAfter'),
+                ATTENDANCE_OVERTIME_AFTER_MINUTES,
+              )
+            : '';
 
   const takeCurrentLocation = async () => {
     setLocating(true);
@@ -460,6 +489,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
       <Button
         block
         disabled={!canSave}
+        disabledHint={saveHint}
         loading={save.isPending}
         onClick={() => {
           if (graceNum === null || overtimeNum === null) return;

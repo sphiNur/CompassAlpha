@@ -1772,6 +1772,12 @@ export function RunPage() {
             block
             variant="danger"
             disabled={!unavailableNote.trim() || (markUnavailable.isPending && !typedNoteSending)}
+            // UX-05: N/A waits for a reason (not while a preset is sending).
+            disabledHint={
+              unavailableNote.trim() || markUnavailable.isPending
+                ? ''
+                : i18n.t('run.unavailable.reasonNeeded')
+            }
             loading={typedNoteSending}
             onClick={guardUnavailable(() => sendUnavailable(unavailableNote.trim()), 'unavailable')}
           >

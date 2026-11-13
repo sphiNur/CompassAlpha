@@ -259,6 +259,7 @@ export const en = {
   'people.transferAction': 'Transfer',
   'people.transferFrom': 'From',
   'people.transferTo': 'To',
+  'people.transferPickStore': 'Choose the store to move them to.',
   'people.transferNoDestTitle': 'No eligible destinations',
   'people.transferNoDestBody':
     "You don't administer any other store. Ask an admin to add you to the destination first.",
@@ -576,6 +577,10 @@ export const en = {
   'common.errors.invalidDecimal': 'Enter a number with at most 3 decimals.',
   'common.errors.invalidPhotoUrl': 'The photo could not be used. Take it again.',
   'common.errors.positiveDecimal': 'Enter a number above 0 with at most 3 decimals.',
+  // UX-05 (2026-11-13): the line over a disabled Save that says what is missing.
+  'common.hint.fillIn': 'Fill in "{field}".',
+  'common.hint.choose': 'Choose "{field}".',
+  'common.hint.wholeNumber': '"{field}": enter a whole number from {min} to {max}.',
   'common.errors.invalidDate': 'Not a valid date. Pick it again from the calendar.',
   'order.errors.tooManyExtras': 'An order can have at most 50 other items.',
   'order.errors.invalidExtraName': 'Give the item a name (up to 200 characters).',
@@ -1569,6 +1574,7 @@ export const en = {
   'run.action.markUnavailableDesc': "Tell the team why this couldn't be bought.",
   'run.action.unavailableReasonPlaceholder': 'Reason',
   'run.unavailable.presetsHint': 'Tap a reason to mark it right away',
+  'run.unavailable.reasonNeeded': 'Tap a reason above, or type one.',
   'run.unavailable.preset.soldOut': 'Sold out',
   'run.unavailable.preset.tooExpensive': 'Too expensive',
   'run.unavailable.preset.poorQuality': 'Poor quality',
@@ -1601,6 +1607,7 @@ export const en = {
   'run.errors.alreadyInRun': 'This product is already in the run — use Edit on the existing item.',
   'run.errors.storeNotInRun': 'That store is not part of this run.',
   'run.errors.addReasonRequired': 'Reason is required for purchaser additions.',
+  'run.errors.addPickProduct': 'Pick a product.',
   // M3.44 (2026-05-22): off-catalog expenses (porter / taxi / one-off items)
   'run.action.addItem.modeSku': 'Catalog product',
   'run.action.addItem.modeExpense': 'Off-catalog',
@@ -1845,6 +1852,8 @@ export const en = {
   'confirm.progress': 'Checked {done}/{total}',
   'confirm.markAllOk': 'All OK',
   'confirm.confirmStoreBlocked': '{n} still to check',
+  // UX-01 (2026-11-13): the main button while no line is checked yet.
+  'confirm.allOkConfirm': 'All OK · Confirm receipt',
   'confirm.confirmingHint': 'Confirming…',
   'confirm.toast.markedOk': 'Marked OK',
   'confirm.toast.allMarkedOk': '{n, plural, one {# item} other {# items}} marked OK',
@@ -2580,8 +2589,8 @@ export const en = {
   'inventory.count.fieldAria': 'Counted: {name}',
   'inventory.count.save': '{n, plural, one {Save # count} other {Save # counts}}',
   'inventory.count.fixRows': '{n, plural, one {# row needs fixing} other {# rows need fixing}}',
-  'inventory.count.confirm':
-    '{counted, plural, one {# product counted} other {# products counted}}, {differ, plural, =0 {none differ from stock} one {# differs from stock} other {# differ from stock}}. Save?',
+  'inventory.count.saveDiffer':
+    '{n, plural, one {Save # count} other {Save # counts}} · {differ, plural, one {# differs} other {# differ}}',
   'inventory.count.saved': '{n, plural, one {# count saved.} other {# counts saved.}}',
   'inventory.count.empty': 'No products in the catalog yet',
   'sales.toast.recordedNegative': 'Recorded. Stock is now below zero for: {items}. Count it soon.',
@@ -2733,6 +2742,7 @@ export const en = {
   'attendance.shift.start': 'Starts',
   'attendance.shift.end': 'Ends',
   'attendance.shift.overnightHint': 'Ends the next day.',
+  'attendance.shift.sameTimes': 'The start and the end cannot be the same time.',
   'attendance.shift.note': 'Note',
   'attendance.shift.notePlaceholder': 'e.g. kitchen',
   'attendance.shift.delete': 'Delete shift',
@@ -2766,6 +2776,7 @@ export const en = {
   'attendance.settings.geoSet': 'Store location: {lat}, {lng}',
   'attendance.settings.geoNotSet': 'Store location not set yet',
   'attendance.settings.useHere': 'Use where I am now',
+  'attendance.settings.locationNeeded': 'Set the store location first: tap "{action}".',
   'attendance.settings.geoCoarse':
     'The phone placed you within {m} m only; try again by a window for a closer fix.',
   'attendance.settings.radius': 'Radius (meters)',

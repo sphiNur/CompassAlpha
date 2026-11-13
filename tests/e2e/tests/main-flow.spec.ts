@@ -9,7 +9,7 @@
  * Each step saves a screenshot to the report, so a run is also a record
  * of what every screen looked like.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Dialog, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expectTappable } from './tap-area';
@@ -284,16 +284,16 @@ test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
-  // C1: "All OK" marks the lines at once; Confirm receipt is the check.
-  await main().getByRole('button', { name: 'All OK' }).click();
-  await expect(main()).toContainText(/Checked\s*2\/2/);
-  await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
-  await evidence('receiving-checked');
-  await expect(mainButton()).toHaveText('Confirm receipt');
+  // UX-01: with nothing checked, the main button marks every line OK (the
+  // same write as the "All OK" button above the list) and opens the
+  // summary; Confirm receipt there is the check.
+  await expect(mainButton()).toHaveText('All OK · Confirm receipt');
   await mainButton().click();
-  // U4: the irreversible confirmation goes through a summary sheet.
-  // CONF-20: only the verdicts given.
+  // U4: the irreversible confirmation goes through a summary sheet; while it
+  // is open the page behind it is hidden from the tree, so the summary is
+  // the proof that both lines were marked OK. CONF-20: only the verdicts given.
   await expect(sheet().getByTestId('confirm-final-summary')).toHaveText('OK: 2');
+  await evidence('receiving-checked');
   await sheet().getByRole('button', { name: 'Confirm receipt' }).click();
   await expect(mainButton()).toBeHidden();
 });
@@ -535,16 +535,18 @@ test('count the whole store on one screen', async () => {
   expect(await asked).toMatch(/discard/i);
   await expect(apple).toHaveValue('7');
 
-  // Rows left empty are not counted; the summary is the one confirmation.
-  const summary = new Promise<string>((resolve) =>
-    page.once('dialog', (dialog) => {
-      resolve(dialog.message());
-      void dialog.accept();
-    }),
-  );
-  await count.getByRole('button', { name: 'Save 2 counts' }).click();
-  expect(await summary).toBe('2 products counted, 2 differ from stock. Save?');
+  // Rows left empty are not counted. UX-06: the Save button carries the
+  // summary; no dialog asks again.
+  const dialogs: string[] = [];
+  const onDialog = (dialog: Dialog) => {
+    dialogs.push(dialog.message());
+    void dialog.dismiss();
+  };
+  page.on('dialog', onDialog);
+  await count.getByRole('button', { name: 'Save 2 counts · 2 differ', exact: true }).click();
   await expect(count).toBeHidden();
+  page.off('dialog', onDialog);
+  expect(dialogs).toEqual([]);
   await expect(item('Apple')).toContainText(/7\s*kg/);
   await expect(item('Banana')).toContainText(/2\.5\s*kg/);
   await evidence('count-mode-saved');

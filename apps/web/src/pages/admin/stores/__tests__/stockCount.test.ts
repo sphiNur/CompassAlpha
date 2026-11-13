@@ -2,9 +2,11 @@
  * D1 (2026-11-13): count mode — which rows were counted, what a save
  * sends, and the summary shown before it.
  */
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { format, loadCatalog, type Locale } from '@compass/i18n';
 import {
   countableProducts,
+  countSaveLabel,
   countSummary,
   countsToSave,
   inParts,
@@ -99,5 +101,33 @@ describe('the Admin home shortcut', () => {
     const both = { s1: ['inventory.adjust'], s2: ['inventory.adjust'] };
     expect(soleCountStore({ permissions: [], storePermissions: both, stores })).toBeNull();
     expect(soleCountStore({ permissions: [], storePermissions: {}, stores })).toBeNull();
+  });
+});
+
+describe('UX-06: the Save button carries the summary', () => {
+  const label = (counted: number, differ: number, locale: Locale = 'en') => {
+    const l = countSaveLabel({ counted, differ, invalid: 0 });
+    return format(l.key, locale, l.vars);
+  };
+  beforeAll(async () => {
+    await Promise.all((['en', 'ru', 'zh', 'uz'] as const).map((l) => loadCatalog(l)));
+  });
+
+  test('nothing typed: plain Save', () => {
+    expect(countSaveLabel({ counted: 0, differ: 0, invalid: 0 })).toEqual({ key: 'common.save' });
+  });
+
+  test('says how many differ, and nothing about differences when none do', () => {
+    expect(label(2, 1)).toBe('Save 2 counts · 1 differs');
+    expect(label(1, 1)).toBe('Save 1 count · 1 differs');
+    expect(label(5, 3)).toBe('Save 5 counts · 3 differ');
+    expect(label(2, 0)).toBe('Save 2 counts');
+  });
+
+  test('plural forms in the other languages', () => {
+    expect(label(5, 2, 'ru')).toBe('Сохранить 5 позиций · 2 расходятся');
+    expect(label(21, 1, 'ru')).toBe('Сохранить 21 позицию · 1 расходится');
+    expect(label(2, 1, 'zh')).toBe('保存 2 项盘点 · 1 项不符');
+    expect(label(2, 1, 'uz')).toBe('2 ta sanoqni saqlash · 1 tasi farq qiladi');
   });
 });

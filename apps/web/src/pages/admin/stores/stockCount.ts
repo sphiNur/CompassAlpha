@@ -2,7 +2,7 @@
  * Count mode (D1, 2026-11-13): the pure part of counting a whole store
  * on one screen. Each product row takes the quantity found on the shelf;
  * a row left empty is not counted. One save records every count typed,
- * after a summary ("12 products counted, 3 differ from stock").
+ * from a Save button that says what it records ("Save 12 counts · 3 differ").
  *
  * The draft holds, per product, what the number field hands its parent:
  * the normalised number ("1,5" → "1.5"), or the text as typed when it is
@@ -86,6 +86,23 @@ export function countSummary(
     if (qtyMilli(draft[skuId]!.trim()) !== qtyMilliOrZero(onHand(skuId))) differ += 1;
   }
   return { counted, differ, invalid };
+}
+
+/**
+ * UX-06 (2026-11-13): the Save button carries the summary that a system
+ * dialog used to ask about ("Save 2 counts · 1 differs"); a count that
+ * matches the stock everywhere says nothing about differences (UI-3).
+ */
+export function countSaveLabel(summary: CountSummary): {
+  key: 'common.save' | 'inventory.count.save' | 'inventory.count.saveDiffer';
+  vars?: { n: number; differ?: number };
+} {
+  if (summary.counted === 0) return { key: 'common.save' };
+  if (summary.differ === 0) return { key: 'inventory.count.save', vars: { n: summary.counted } };
+  return {
+    key: 'inventory.count.saveDiffer',
+    vars: { n: summary.counted, differ: summary.differ },
+  };
 }
 
 /** The draft without the rows a save recorded (a part of a long count). */

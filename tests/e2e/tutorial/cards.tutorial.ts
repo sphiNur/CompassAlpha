@@ -310,7 +310,11 @@ test('staff: report a short line', async () => {
 test('staff: confirm a receipt (All OK)', async () => {
   const page = await phone('staff');
   const c = card(page, 'staff-confirm-receipt', 'staff', 'Confirm a receipt');
-  await c.tap('all-ok', main(page).getByRole('button', { name: t('confirm.markAllOk') }));
+  // UX-01: exact, the main button reads "All OK · Confirm receipt" until then.
+  await c.tap(
+    'all-ok',
+    main(page).getByRole('button', { name: t('confirm.markAllOk'), exact: true }),
+  );
   await expect(verdict(page, 'BEEF', 'confirm.status.ok')).toBeChecked();
   await c.tap('confirm-receipt', mainButton(page));
   await c.tap(
@@ -413,17 +417,13 @@ test('manager: count stock', async () => {
   await field('BEEF').fill('1.2');
   await c.shot('type-tomato', field('TOMATO'), { note: 'rows left empty are not counted' });
   await field('TOMATO').fill('1.5');
-  const asked = new Promise<string>((resolve) =>
-    page.once('dialog', (d) => {
-      resolve(d.message());
-      void d.accept();
-    }),
-  );
+  // UX-06: the Save button says how many counts differ; no dialog follows.
   await c.tap(
     'save',
-    sheet(page).getByRole('button', { name: t('inventory.count.save', { n: 2 }) }),
+    sheet(page).getByRole('button', {
+      name: new RegExp(`^${escapeRegExp(t('inventory.count.save', { n: 2 }))}`),
+    }),
   );
-  c.note(`the app then asks "${await asked}" in a system dialog (not in the screenshots); tap OK`);
   await expect(sheet(page)).toBeHidden();
   await c.shot('saved', null);
 });
