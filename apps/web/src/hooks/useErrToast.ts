@@ -35,8 +35,10 @@
  * refresh") otherwise. `common.error` ("Something went wrong") is a
  * title, not a toast: it says neither why nor what to do.
  */
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@compass/ui';
 import { haptic } from '../lib/telegram';
+import { isStaleVersionError } from '../lib/conflict';
 import {
   errorVars,
   serverErrorKey,
@@ -45,6 +47,12 @@ import {
   type WriteFallbackKey,
 } from '../lib/errorText';
 import { useI18n } from './useI18n';
+
+/**
+ * How long the stale-version toast keeps its Refresh button up: the
+ * sentence is long, and 4 s left little time to reach the button.
+ */
+export const STALE_TOAST_MS = 8000;
 
 export interface ErrToastOptions {
   /**
@@ -65,6 +73,7 @@ export function useErrToast(): (
 ) => (err: unknown) => void {
   const i18n = useI18n();
   const toast = useToast();
+  const queryClient = useQueryClient();
   return (defaultKey, options) => (err: unknown) => {
     haptic('error');
     // Which sentence, and with which placeholders: see writeErrorTextOf.
@@ -72,7 +81,27 @@ export function useErrToast(): (
       online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
       retrySafe: options?.retrySafe ?? false,
     });
-    toast.error(i18n.t(key, withPermissionName(vars, i18n.t)));
+    const text = i18n.t(key, withPermissionName(vars, i18n.t));
+    if (!isStaleVersionError(err)) {
+      toast.error(text);
+      return;
+    }
+    // UX-22: "Someone just changed this. Refresh…" comes with the button.
+    // The error does not say which records changed, so Refresh marks every
+    // cached query out of date and refetches the ones on screen; the rest
+    // reload when next shown. A page holds a handful of queries, and the
+    // persisted cache (lib/queryPersist.ts) keeps working offline.
+    toast.show(text, {
+      tone: 'danger',
+      ttlMs: STALE_TOAST_MS,
+      actions: [
+        {
+          label: i18n.t('common.refresh'),
+          emphasis: 'primary',
+          onClick: () => void queryClient.invalidateQueries(),
+        },
+      ],
+    });
   };
 }
 

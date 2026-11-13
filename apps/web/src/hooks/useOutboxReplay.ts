@@ -15,6 +15,7 @@
  * module that imported hooks.
  */
 import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import {
@@ -29,6 +30,7 @@ import {
 import type { OutboxOwner } from '../lib/outbox/policy';
 import { replayHandlers } from '../lib/outbox/replayHandlers';
 import { offlineDropText, offlineDropToastOptions } from '../lib/offlineDrop';
+import { isStaleVersionKey } from '../lib/conflict';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from './useI18n';
 
@@ -49,8 +51,21 @@ export function useOutboxReplay(): void {
 function useOfflineDropToast(): (info: OfflineDropInfo) => void {
   const i18n = useI18n();
   const toast = useToast();
-  return (info) =>
-    toast.show(offlineDropText(i18n.t, info), offlineDropToastOptions(i18n.t('common.gotIt')));
+  const queryClient = useQueryClient();
+  return (info) => {
+    // UX-22: refused for a stale version → Refresh, as in useErrToast.
+    const refresh =
+      info.reason === 'rejected' && isStaleVersionKey(info.message)
+        ? {
+            label: i18n.t('common.refresh'),
+            onClick: () => void queryClient.invalidateQueries(),
+          }
+        : undefined;
+    toast.show(
+      offlineDropText(i18n.t, info),
+      offlineDropToastOptions(i18n.t('common.gotIt'), refresh),
+    );
+  };
 }
 
 /**

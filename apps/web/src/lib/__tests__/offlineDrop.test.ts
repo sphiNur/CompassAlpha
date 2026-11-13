@@ -96,4 +96,14 @@ describe('the dropped-write toast stays (DX-DLV-06)', () => {
     expect(opts.ttlMs).toBe(0);
     expect(opts.actions).toEqual([{ label: 'Got it' }]);
   });
+
+  test('a stale-version refusal also offers Refresh, first (UX-22)', () => {
+    const onClick = () => {};
+    const opts = offlineDropToastOptions('Got it', { label: 'Refresh', onClick });
+    expect(opts.ttlMs).toBe(0);
+    expect(opts.actions).toEqual([
+      { label: 'Refresh', onClick, emphasis: 'primary' },
+      { label: 'Got it' },
+    ]);
+  });
 });

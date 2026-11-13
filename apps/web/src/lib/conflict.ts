@@ -29,3 +29,24 @@ export function conflictKind(error: unknown): ConflictKind | null {
   if (message === 'common.errors.idempotencyKeyReused') return 'keyReused';
   return null;
 }
+
+/**
+ * Every key the server sends for "changed since you read it": the order's
+ * (also the daily close's) and the run's.
+ */
+const STALE_VERSION_KEYS: ReadonlySet<string> = new Set([STALE_KEY, 'run.errors.staleSeq']);
+
+/** A server message that says the screen's version is out of date. */
+export function isStaleVersionKey(message: unknown): boolean {
+  return typeof message === 'string' && STALE_VERSION_KEYS.has(message);
+}
+
+/**
+ * UX-22 (2026-11-14): a write refused because the record changed since the
+ * screen read it, whichever key the server used, in the message or in
+ * `data.i18nKey`. Error toasts then offer Refresh (hooks/useErrToast.ts).
+ */
+export function isStaleVersionError(error: unknown): boolean {
+  const e = error as { data?: { i18nKey?: unknown }; message?: unknown } | null | undefined;
+  return isStaleVersionKey(e?.message) || isStaleVersionKey(e?.data?.i18nKey);
+}

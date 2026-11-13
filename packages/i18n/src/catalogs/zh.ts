@@ -33,6 +33,7 @@ export const zh = {
   'common.remove': '移除',
   'common.save': '保存',
   'common.retry': '重试',
+  'common.refresh': '刷新',
   'common.loading': '加载中…',
   'common.errorUnknown': '未知错误',
   'common.priceThousands': '{n}千',

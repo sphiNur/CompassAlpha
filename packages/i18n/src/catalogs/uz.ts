@@ -40,6 +40,7 @@ export const uz = {
   'common.remove': 'Olib tashlash',
   'common.save': 'Saqlash',
   'common.retry': 'Qayta urinish',
+  'common.refresh': 'Yangilash',
   'common.loading': 'Yuklanmoqda…',
   'common.errorUnknown': 'Nomaʼlum xato',
   'common.priceThousands': '{n} ming',
