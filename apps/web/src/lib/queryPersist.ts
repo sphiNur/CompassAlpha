@@ -74,6 +74,8 @@ export const PERSISTED_QUERIES: ReadonlySet<string> = new Set<QueryPath>([
   'order.extrasSuggestions',
   'run.list',
   'run.get',
+  // Review ORD-26 (2026-11): the order page's banner for an order in a run.
+  'run.storeProgress',
   'run.history',
   'run.historyDetail',
   'run.expenseTemplates',

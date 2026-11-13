@@ -165,8 +165,9 @@ export const catalogRouter = router({
    *   - avg30d — mean over 30 days
    *
    * Optional `skuIds` filter — if present, returns ONLY those SKUs (to
-   * keep the OrderPage review-sheet payload small). Omitted = all SKUs
-   * with at least one observation in 30 days.
+   * keep the OrderPage review-sheet payload small). Omitted = every SKU
+   * ever priced. Review ORD-26 (2026-11): an empty list returns none; it
+   * used to mean every SKU (loadSkuPriceStats).
    */
   skuPriceStats: authedProcedure.input(SkuPriceStatsInputSchema).query(async ({ ctx, input }) => {
     // HIS-4 / ORD-12 (2026-10-30): no prices for members without

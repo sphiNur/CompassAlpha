@@ -47,7 +47,7 @@ import {
   submittedSnapshot,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
-import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
+import { priceStoreIds, pricesVisibleFor, redactMoneyFor } from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import type { RequestContext } from '../context';
 import { readOrderEvents } from '../../services/orderStream';
@@ -584,10 +584,11 @@ export const orderRouter = router({
           for (const skuId of perSku.keys()) allSkuIds.add(skuId);
         }
         // Staff without prices.view get no estimate (HIS-4 / ORD-12) —
-        // prices.view in THIS store (D6 / RE-SHL-3, 2026-10-31).
+        // prices.view in THIS store (D6 / RE-SHL-3, 2026-10-31). Nothing
+        // is looked up for them, and each row is redacted (ORD-33).
+        const priceStores = await priceStoreIds(tx, ctx.session!);
         const priceStats =
-          allSkuIds.size > 0 &&
-          pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [input.storeId])
+          allSkuIds.size > 0 && pricesVisibleFor(priceStores, [input.storeId])
             ? await loadSkuLastPrices(tx, ctx.session!.orgId, [...allSkuIds])
             : new Map();
 
@@ -608,7 +609,7 @@ export const orderRouter = router({
             [...perSku.entries()].map(([skuId, qty]) => ({ skuId, qty: milliQty(qty) })),
             priceStats,
           );
-          return {
+          return redactMoneyFor(priceStores, [input.storeId], {
             id: sess.id,
             status: sess.status,
             /** 1-based position among today's batches — what the UI labels. */
@@ -620,7 +621,7 @@ export const orderRouter = router({
             estimatedTotal: est.known > 0 ? est.total : null,
             /** ORD-4: the reason, so a rejected batch can say why. */
             rejectReason: sess.status === 'rejected' ? (sess.rejectReason ?? null) : null,
-          };
+          });
         });
       });
     }),
@@ -911,7 +912,8 @@ export const orderRouter = router({
           totalQty: 0n,
           contributors: new Set<string>(),
         };
-        // Absent for an order of a store the reader may not price.
+        // Absent for an order of a store the reader may not price, whose
+        // row is redacted below too (ORD-33).
         const est = estimateBySession.get(sess.id);
         const priced = est !== undefined && est.known > 0;
         const store = storeById.get(sess.storeId);
@@ -923,7 +925,7 @@ export const orderRouter = router({
         const prevClaimer = sess.previousClaimerMemberId
           ? memberById.get(sess.previousClaimerMemberId)
           : null;
-        return {
+        return redactMoneyFor(priceStores, [sess.storeId], {
           ...sess,
           claimedAt: sess.claimedAt?.toISOString() ?? null,
           submittedAt: sess.submittedAt?.toISOString() ?? null,
@@ -960,7 +962,7 @@ export const orderRouter = router({
           /** The same total, split by how each product was last paid. */
           estimatedCash: priced ? est.cash : null,
           estimatedTransfer: priced ? est.transfer : null,
-        };
+        });
       });
     });
   }),

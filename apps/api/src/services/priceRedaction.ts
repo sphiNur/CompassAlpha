@@ -9,8 +9,13 @@ import { getActorStoreIdsForPermission } from './storeScope';
  * price in the organisation.
  */
 
-/** Scalar fields that carry an amount of money. */
-const PRICE_KEYS = new Set([
+/**
+ * Scalar fields that carry an amount of money, wherever they sit in an
+ * answer. Review ORD-33 (2026-11): money-fields.test.ts fails when an
+ * order, approval or price answer gains a field nobody classified, so a
+ * new money field lands here (and is redacted) rather than slipping past.
+ */
+export const MONEY_FIELDS = [
   'unitPrice',
   'plannedTotal',
   'actualTotal',
@@ -35,14 +40,23 @@ const PRICE_KEYS = new Set([
   'totalActual',
   'totalCash',
   'totalTransfer',
-]);
+  // Review ORD-33 (2026-11): catalog.skuPriceStats' figures. That answer
+  // is emptied whole for a reader without prices; named here so they are
+  // money wherever else they appear.
+  'lastPrice',
+  'avg7d',
+  'avg30d',
+] as const;
+export type MoneyField = (typeof MONEY_FIELDS)[number];
+const PRICE_KEYS: ReadonlySet<string> = new Set(MONEY_FIELDS);
 
 /** Maps from an id to a price (or when it was paid): emptied. */
-const PRICE_MAPS = new Set([
+export const PRICE_MAP_FIELDS = [
   'lastPriceBySku',
   'lastPriceObservedAtBySku',
   'lastPurchasePriceBySku',
-]);
+] as const;
+const PRICE_MAPS: ReadonlySet<string> = new Set(PRICE_MAP_FIELDS);
 
 /**
  * A copy of `value` with every money field set to null and price maps
@@ -59,6 +73,23 @@ export function withoutPrices<T>(value: T): T {
     else out[key] = withoutPrices(v);
   }
   return out as T;
+}
+
+/**
+ * Review ORD-33 (2026-11): the one way an answer's money is hidden from a
+ * reader. `value` belongs to `storeIds`; unless prices.view is effective
+ * for the reader in every one of them (`pricesVisibleFor` over
+ * `priceStoreIds`), each money field is nulled and each price map emptied
+ * (`withoutPrices`). Quantities, counts and statuses stay. It replaces
+ * the order router's per-field checks and the run reads' hand-written
+ * pair; new endpoints that return money pass their answer through here.
+ */
+export function redactMoneyFor<T>(
+  priceStores: readonly string[] | null,
+  storeIds: Iterable<string>,
+  value: T,
+): T {
+  return pricesVisibleFor(priceStores, storeIds) ? value : withoutPrices(value);
 }
 
 /**

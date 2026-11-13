@@ -196,6 +196,12 @@ export const SimpleRunCommandSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/** run.storeProgress: how far one store's part of a run has got (review ORD-26). */
+export const RunStoreProgressInputSchema = z.object({
+  runId: UuidSchema,
+  storeId: UuidSchema,
+});
+
 /**
  * Correct the calendar date a run's spend is booked under (2026-07-30).
  * Super-admin only; see the RunDateChanged event docblock in

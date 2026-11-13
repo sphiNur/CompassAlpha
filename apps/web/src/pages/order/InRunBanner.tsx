@@ -14,25 +14,25 @@ import { inRunState } from './inRunState';
 export function InRunBanner({
   runId,
   storeId,
-  showBody = true,
 }: {
   runId: string | null | undefined;
   storeId: string;
-  showBody?: boolean;
 }) {
   const i18n = useI18n();
-  const runQuery = trpc.run.get.useQuery(
-    { runId: runId ?? '' },
+  // Review ORD-26 (2026-11): only this store's progress (run.storeProgress,
+  // with run.get's checks); it read the whole of run.get for a status.
+  const progress = trpc.run.storeProgress.useQuery(
+    { runId: runId ?? '', storeId },
     { enabled: !!runId, retry: false },
   );
   const setTab = useNavStore((s) => s.setTab);
   // Review ORD-28 (2026-11): the shared per-store check (hasStorePermission).
   const canConfirm = useStorePermission('delivery.confirm', storeId);
-  const state = inRunState(runQuery.data, storeId);
+  const state = inRunState(progress.data, storeId);
   if (state === 'buying') {
     return (
       <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-        {showBody ? i18n.t('order.banner.inRun.body') : null}
+        {i18n.t('order.banner.inRun.body')}
       </Banner>
     );
   }
