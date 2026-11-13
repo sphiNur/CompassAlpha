@@ -78,6 +78,8 @@ export function useSubmitBatch({
   const submitIdemRef = useRef<{ sessionId: string; key: string } | null>(null);
   /** Guards handleSubmit across its async flush phase (double taps). */
   const submittingRef = useRef(false);
+  /** The "submitted ✓ Withdraw" toast, while it may still be up. */
+  const submittedToastRef = useRef<string | null>(null);
   const submit = trpc.order.submit.useMutation({
     retry: false,
     trpc: { context: submitIdemCtx },
@@ -90,7 +92,7 @@ export function useSubmitBatch({
       // O1 (2026-11-13): Submit is one tap now, so the toast offers the
       // way back at once. The receipt's banner keeps Withdraw after it
       // goes, until a reviewer picks the batch up.
-      toast.show(i18n.t('order.toast.submitted'), {
+      submittedToastRef.current = toast.show(i18n.t('order.toast.submitted'), {
         tone: 'success',
         ttlMs: WITHDRAW_TOAST_MS,
         actions: [
@@ -118,6 +120,13 @@ export function useSubmitBatch({
     },
   });
   const withdraw = trpc.order.withdraw.useMutation({
+    // 2026-11-13: a withdraw from the receipt's banner left the
+    // "submitted ✓ Withdraw" toast up for the rest of its 5 s, offering
+    // to take back a batch already taken back. It goes at the tap.
+    onMutate: () => {
+      if (submittedToastRef.current) toast.dismiss(submittedToastRef.current);
+      submittedToastRef.current = null;
+    },
     onSuccess: () => {
       onWithdrawn();
       // CA-26: the withdrawn session will be re-submitted as a new

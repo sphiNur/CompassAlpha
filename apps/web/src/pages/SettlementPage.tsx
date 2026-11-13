@@ -85,6 +85,7 @@ export function SettlementPage() {
     versionConflict,
     canSave,
     fieldsToFix,
+    saveHint,
     formRef,
     reveal,
     revealFor,
@@ -117,6 +118,7 @@ export function SettlementPage() {
       !tooOldForNew,
     active: canSave && !saving,
     onInactiveClick: fieldsToFix > 0 ? showFirstFieldToFix : undefined,
+    inactiveHint: saveHint,
   });
 
   if (!session) return null;

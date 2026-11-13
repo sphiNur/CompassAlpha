@@ -97,16 +97,15 @@ export function AttendanceAdmin() {
             { value: 'sheet', label: i18n.t('attendance.view.sheet') },
             {
               value: 'review',
-              // Review ATT-16: the count stays whole beside the word. As one
-              // string, four segments at 320 px in Russian or Uzbek cut the
-              // number off first. The space keeps the two apart for a
-              // screen reader.
+              // Review ATT-16: the count stays whole. 2026-11-13: the
+              // segment's label wraps (Segmented), so where the word and
+              // the count do not fit on one line the count goes under it.
               label:
                 toReview > 0 ? (
-                  <span className="flex min-w-0 items-center justify-center gap-1">
-                    <span className="min-w-0 truncate">{i18n.t('attendance.view.review')}</span>{' '}
-                    <span className="shrink-0 tabular-nums">{toReview}</span>
-                  </span>
+                  <>
+                    {i18n.t('attendance.view.review')}{' '}
+                    <span className="whitespace-nowrap tabular-nums">{toReview}</span>
+                  </>
                 ) : (
                   i18n.t('attendance.view.review')
                 ),

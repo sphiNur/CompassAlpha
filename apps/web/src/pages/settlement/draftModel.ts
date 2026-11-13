@@ -7,7 +7,11 @@
  */
 import type { SettlementWageItem } from '@compass/contracts';
 import { addMoney, centsToMoney, lineCents, toCents } from '@compass/contracts/money';
-import { SETTLEMENT_MAX_CENTS, settlementMoneyProblem } from '@compass/contracts/limits';
+import {
+  SETTLEMENT_MAX_CENTS,
+  settlementMoneyProblem,
+  type SettlementMoneyProblem,
+} from '@compass/contracts/limits';
 import { newClientId } from '../../lib/clientId';
 
 export type MoneyField =
@@ -490,6 +494,76 @@ export function countFieldsToFix(
     draft.operatingExpenseItems.filter((item) => !isValidOperatingExpense(item)).length +
     draft.wageItems.filter((item) => !isValidWageItem(item, wageSelectionRequired)).length +
     (correctionReady ? 0 : 1)
+  );
+}
+
+/**
+ * 2026-11-13: the first thing, in screen order, that keeps the save
+ * button grey, so the bar can say it ("Expense 1 · Amount: enter the
+ * amount."). An expense from a template has no amount for a member who
+ * cannot see prices, and the grey button gave no reason. Null when the
+ * form itself does not stop the save.
+ */
+export type SaveBlocker =
+  | {
+      kind: 'money';
+      field: (typeof DIRECT_MONEY_FIELDS)[number];
+      problem: SettlementMoneyProblem;
+    }
+  | { kind: 'expenseAmount'; n: number; problem: SettlementMoneyProblem }
+  | { kind: 'expenseReason'; n: number }
+  | { kind: 'wageEmployee'; n: number }
+  | { kind: 'wageAmount'; n: number; problem: SettlementMoneyProblem }
+  | { kind: 'totalTooLarge' }
+  | { kind: 'correctionReason' }
+  | { kind: 'noChanges' };
+
+export function firstSaveBlocker(q: {
+  draft: SettlementDraft;
+  totals: ReturnType<typeof detailTotals>;
+  wageSelectionRequired: boolean;
+  correctionReady: boolean;
+  hasChanges: boolean;
+}): SaveBlocker | null {
+  const { draft } = q;
+  const money = (field: (typeof DIRECT_MONEY_FIELDS)[number]): SaveBlocker | null => {
+    const problem = settlementMoneyProblem(draft[field].trim(), {
+      signed: field === 'priorPurchaseAdjustment',
+    });
+    return problem ? { kind: 'money', field, problem } : null;
+  };
+  const lineAmount = (amount: string) => settlementMoneyProblem(amount.trim(), { positive: true });
+  const expense = (): SaveBlocker | null => {
+    for (const [index, item] of draft.operatingExpenseItems.entries()) {
+      if (item.isHistorical) continue;
+      const problem = lineAmount(item.amount);
+      if (problem) return { kind: 'expenseAmount', n: index + 1, problem };
+      if (item.reason.trim().length === 0) return { kind: 'expenseReason', n: index + 1 };
+    }
+    return null;
+  };
+  const wage = (): SaveBlocker | null => {
+    for (const [index, item] of draft.wageItems.entries()) {
+      if (item.isHistorical) continue;
+      if (q.wageSelectionRequired && !item.memberId) return { kind: 'wageEmployee', n: index + 1 };
+      const problem = lineAmount(item.amount);
+      if (problem) return { kind: 'wageAmount', n: index + 1, problem };
+    }
+    return null;
+  };
+  const totalsValid =
+    q.totals.expenses.valid && q.totals.paidWages.valid && q.totals.unpaidWages.valid;
+  return (
+    money('onlineRevenue') ??
+    money('invoicedCashRevenue') ??
+    expense() ??
+    wage() ??
+    money('nextPurchaseReserve') ??
+    money('priorPurchaseAdjustment') ??
+    money('cashOnHand') ??
+    (totalsValid ? null : { kind: 'totalTooLarge' }) ??
+    (q.correctionReady ? null : { kind: 'correctionReason' }) ??
+    (q.hasChanges ? null : { kind: 'noChanges' })
   );
 }
 

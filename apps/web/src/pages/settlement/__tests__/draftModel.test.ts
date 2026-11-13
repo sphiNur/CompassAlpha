@@ -9,6 +9,7 @@ import {
   editedFields,
   emptyDraft,
   expenseFromTemplate,
+  firstSaveBlocker,
   isAllZeroClose,
   isValidOperatingExpense,
   isValidWageItem,
@@ -375,6 +376,88 @@ describe('what stops the save', () => {
 
   test('the purchase adjustment is the one amount that may be negative', () => {
     expect(countFieldsToFix(draft({ priorPurchaseAdjustment: '-5' }), true, true)).toBe(0);
+  });
+});
+
+describe('why the save button is grey (2026-11-13)', () => {
+  const blocker = (
+    form: SettlementDraft,
+    q: { wageSelectionRequired?: boolean; correctionReady?: boolean; hasChanges?: boolean } = {},
+  ) =>
+    firstSaveBlocker({
+      draft: form,
+      totals: detailTotals(form),
+      wageSelectionRequired: q.wageSelectionRequired ?? true,
+      correctionReady: q.correctionReady ?? true,
+      hasChanges: q.hasChanges ?? true,
+    });
+
+  test('a template expense without a price names its line', () => {
+    const line = expenseFromTemplate({
+      id: 't-1',
+      label: 'Porter',
+      defaultQty: '1.000',
+      defaultUnitPrice: null,
+    });
+    expect(blocker(draft({ operatingExpenseItems: [expense(), line] }))).toEqual({
+      kind: 'expenseAmount',
+      n: 2,
+      problem: 'empty',
+    });
+    expect(blocker(draft({ operatingExpenseItems: [expense({ amount: '0' })] }))).toEqual({
+      kind: 'expenseAmount',
+      n: 1,
+      problem: 'zero',
+    });
+  });
+
+  test('the first problem in screen order', () => {
+    expect(
+      blocker(
+        draft({
+          cashOnHand: '-1',
+          operatingExpenseItems: [expense({ reason: ' ' })],
+          wageItems: [wage({ memberId: null })],
+        }),
+      ),
+    ).toEqual({ kind: 'expenseReason', n: 1 });
+    expect(blocker(draft({ cashOnHand: '-1', wageItems: [wage({ memberId: null })] }))).toEqual({
+      kind: 'wageEmployee',
+      n: 1,
+    });
+    expect(
+      blocker(draft({ wageItems: [wage({ memberId: null })] }), { wageSelectionRequired: false }),
+    ).toBeNull();
+    expect(blocker(draft({ wageItems: [wage({ amount: '1.234' })] }))).toEqual({
+      kind: 'wageAmount',
+      n: 1,
+      problem: 'decimals',
+    });
+    expect(blocker(draft({ cashOnHand: '-1' }))).toEqual({
+      kind: 'money',
+      field: 'cashOnHand',
+      problem: 'negative',
+    });
+    expect(blocker(draft({ priorPurchaseAdjustment: '-5' }))).toBeNull();
+  });
+
+  test('a historical line never blocks', () => {
+    expect(
+      blocker(draft({ operatingExpenseItems: [expense({ reason: '', isHistorical: true })] })),
+    ).toBeNull();
+  });
+
+  test('the correction reason, then nothing changed', () => {
+    expect(blocker(draft(), { correctionReady: false })).toEqual({ kind: 'correctionReason' });
+    expect(blocker(draft(), { hasChanges: false })).toEqual({ kind: 'noChanges' });
+    expect(blocker(draft())).toBeNull();
+  });
+
+  test('a line total past the largest amount', () => {
+    const big = expense({ amount: '999999999999' });
+    expect(blocker(draft({ operatingExpenseItems: [big, big, big, big, big] }))).toEqual({
+      kind: 'totalTooLarge',
+    });
   });
 });
 

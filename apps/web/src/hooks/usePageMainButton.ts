@@ -40,6 +40,12 @@ interface PageMainButtonState {
    * settlement page jumps to the first field to fix).
    */
   onInactiveClick?: () => void;
+  /**
+   * 2026-11-13: one line over the inactive button saying why it is
+   * inactive ("Expense 1 · Amount: enter the amount."). A greyed save with
+   * no reason left a cashier stuck on a template expense without a price.
+   */
+  inactiveHint?: string;
 }
 
 let _pageMainButton: PageMainButtonState | null = null;
@@ -77,7 +83,12 @@ export function usePageMainButtonState(): PageMainButtonState | null {
 export function usePageMainButton(
   text: string,
   onClick: () => void,
-  opts?: { visible?: boolean; active?: boolean; onInactiveClick?: () => void },
+  opts?: {
+    visible?: boolean;
+    active?: boolean;
+    onInactiveClick?: () => void;
+    inactiveHint?: string;
+  },
 ): void {
   // Keep the click callback in a ref so re-renders don't republish
   // state — we only republish when text/visible/active actually flip.
@@ -93,6 +104,7 @@ export function usePageMainButton(
   const safeText = (text ?? '').trim();
   const wantVisible = opts?.visible !== false && !!safeText;
   const wantActive = opts?.active !== false;
+  const inactiveHint = opts?.inactiveHint?.trim() || undefined;
   const stateRef = useRef<PageMainButtonState>({
     text: safeText,
     onClick: () => onClickRef.current(),
@@ -105,6 +117,7 @@ export function usePageMainButton(
     visible: wantVisible,
     active: wantActive,
     onInactiveClick: inactiveClick,
+    inactiveHint,
   };
   const handleRef = useRef<OwnerHandle<PageMainButtonState> | null>(null);
   // Register once per mount so a text/visibility change never reorders
@@ -124,6 +137,7 @@ export function usePageMainButton(
       visible: wantVisible,
       active: wantActive,
       onInactiveClick: inactiveClick,
+      inactiveHint,
     });
-  }, [safeText, wantVisible, wantActive, inactiveClick]);
+  }, [safeText, wantVisible, wantActive, inactiveClick, inactiveHint]);
 }

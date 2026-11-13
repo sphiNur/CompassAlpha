@@ -62,6 +62,7 @@ export function PageMainButton() {
   // A11Y-2: an inactive button whose page can say why stays in the Tab
   // order (aria-disabled) and points at the problem when used.
   const explains = !interactable && !busy && !!state.onInactiveClick;
+  const hint = !interactable && !busy ? state.inactiveHint : undefined;
   return (
     <div
       ref={barRef}
@@ -76,11 +77,21 @@ export function PageMainButton() {
         paddingBottom: 8,
       }}
     >
+      {hint ? (
+        <p
+          id="page-main-button-hint"
+          data-testid="page-main-button-hint"
+          className="mb-2 text-center text-old-label text-[var(--c-fg-muted)]"
+        >
+          {hint}
+        </p>
+      ) : null}
       <button
         type="button"
         data-testid="page-main-button"
         disabled={!interactable && !explains}
         aria-disabled={explains || undefined}
+        aria-describedby={hint ? 'page-main-button-hint' : undefined}
         onClick={explains ? state.onInactiveClick : guardTap(state.onClick, state.text)}
         aria-busy={busy || undefined}
         className={

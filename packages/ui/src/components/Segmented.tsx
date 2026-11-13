@@ -11,7 +11,8 @@ import { useRovingRadio } from '../rovingRadio';
  *     scroll sideways when the row overflows.
  *   - Segmented: switching between views, or a tight bounded set
  *     (2-4 options) that drives one piece of state. NEVER scrolls —
- *     overflow is a contract bug. Also used for form-field toggles
+ *     overflow is a contract bug; an equal-width label too long for its
+ *     segment wraps to a second line. Also used for form-field toggles
  *     (kg vs lb, 0.5 vs 1).
  *
  * Added M3.16 (2026-05-16) to consolidate three inline segmented
@@ -135,16 +136,22 @@ export function Segmented<V extends string>({
               if (!blocked && !active) onChange(opt.value);
             }}
             className={cn(
-              'hit-44 inline-flex items-center justify-center whitespace-nowrap font-medium tabular-nums',
+              'hit-44 inline-flex items-center justify-center font-medium tabular-nums',
               !blocked && 'press',
               'first:rounded-l-[var(--r-utility)] last:rounded-r-[var(--r-utility)]',
-              isSm ? 'px-2 text-old-label' : 'px-3 text-old-body-sm',
+              isSm ? 'px-2 text-old-label' : 'text-old-body-sm',
               // 2026-11-05: min-w-0 on equal segments — a long ru/uz label
               // used to widen the bar past a narrow screen. The label span
-              // truncates, not the button: a button that hides its overflow
+              // wraps, not the button: a button that hides its overflow
               // clips its own hit-44 area (review UI-06, 2026-11-09), as in
               // Button.
-              equalWidth ? 'min-w-0 flex-1' : 'shrink-0',
+              // 2026-11-13: equal segments keep 6 px a side, not 12, and
+              // their label takes two lines rather than an ellipsis. Four
+              // segments at 360-390 px cut Uzbek and Russian labels
+              // ("Tekshir… 1", "Sozlamal…"). Two lines fit the bar's height.
+              equalWidth
+                ? cn('min-w-0 flex-1 whitespace-normal', !isSm && 'px-1.5')
+                : cn('shrink-0 whitespace-nowrap', !isSm && 'px-3'),
               active
                 ? `${activeBg} ${activeFg} font-semibold`
                 : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
@@ -152,7 +159,15 @@ export function Segmented<V extends string>({
               opt.disabled && !disabled && !active && 'opacity-40',
             )}
           >
-            <span className={equalWidth ? 'min-w-0 truncate' : undefined}>{opt.label}</span>
+            <span
+              className={
+                equalWidth
+                  ? 'line-clamp-2 min-w-0 break-words text-center leading-tight'
+                  : undefined
+              }
+            >
+              {opt.label}
+            </span>
           </button>
         );
       })}
