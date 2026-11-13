@@ -7,6 +7,7 @@
  */
 import type { ReactNode } from 'react';
 import { Button, EmptyState, Field, Input, Textarea, rowListClass } from '@compass/ui';
+import { useAmountInFull } from '../../hooks/useAmountInFull';
 import { useI18n } from '../../hooks/useI18n';
 import { ITEM_MONEY_PROBLEM_MESSAGE, moneyProblem, type MoneyProblem } from './moneyProblem';
 
@@ -122,9 +123,14 @@ export function LineAmountField({
   onChange: (value: string) => void;
 }) {
   const i18n = useI18n();
+  // UX-08: the amount grouped, with its currency, while it is a valid one
+  // (a line's amount is above zero; `problem` is only the shown one).
+  const inFull = useAmountInFull(value);
+  const valid = moneyProblem(value, { positive: true }) === null;
   return (
     <Field
       label={label}
+      hint={valid ? inFull : null}
       error={problem ? i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[problem], { field: name }) : null}
     >
       <Input

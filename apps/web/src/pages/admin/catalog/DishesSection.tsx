@@ -23,7 +23,8 @@ import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../hooks/useErrToast';
-import { formatMoney } from '../../../lib/format';
+import { formatAmountInFull, formatMoney } from '../../../lib/format';
+import { useCurrency } from '../../../hooks/useCurrency';
 import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
 import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
 import { useUndoToast } from '../../../hooks/useUndoToast';
@@ -103,6 +104,7 @@ export function DishesSection() {
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
 
   const [draft, setDraft] = useState<DishDraft | null>(null);
+  const currency = useCurrency();
 
   const skuById = useMemo(() => {
     const m = new Map<
@@ -366,7 +368,11 @@ export function DishesSection() {
                 placeholder="D-12"
               />
             </Field>
-            <Field label={i18n.t('dishes.field.unitPrice')}>
+            {/* UX-08: the price grouped, with its currency, under the field. */}
+            <Field
+              label={i18n.t('dishes.field.unitPrice')}
+              hint={formatAmountInFull(draft.unitPrice, currency)}
+            >
               <Input
                 type="number"
                 value={draft.unitPrice}

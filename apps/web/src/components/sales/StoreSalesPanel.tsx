@@ -55,7 +55,19 @@ import { moneyLine } from '../../lib/money';
 /** The most stock items the below-zero warning names (review CONF-24). */
 const NEGATIVE_NAMES_SHOWN = 3;
 
-export function StoreSalesPanel({ storeId, className }: { storeId: string; className?: string }) {
+export function StoreSalesPanel({
+  storeId,
+  className,
+  listTitle = true,
+}: {
+  storeId: string;
+  className?: string;
+  /**
+   * UX-25 (2026-11-14): false where the caller already heads the panel
+   * "Today's sales" (the daily close's disclosure); it read twice.
+   */
+  listTitle?: boolean;
+}) {
   const dateFmt = useDateFormat();
   const i18n = useI18n();
   const toast = useToast();
@@ -349,7 +361,9 @@ export function StoreSalesPanel({ storeId, className }: { storeId: string; class
       {/* Today's sales list. */}
       <div>
         {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-        <SectionLabel className="mb-2 px-0">{i18n.t('sales.list.title')}</SectionLabel>
+        {listTitle ? (
+          <SectionLabel className="mb-2 px-0">{i18n.t('sales.list.title')}</SectionLabel>
+        ) : null}
         {listView === 'loading' ? (
           <LoadingState variant="compact" />
         ) : listView === 'error' ? (

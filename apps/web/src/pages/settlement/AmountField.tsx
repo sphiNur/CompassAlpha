@@ -4,6 +4,7 @@
  * SettlementPage.
  */
 import { Field, Input } from '@compass/ui';
+import { useAmountInFull } from '../../hooks/useAmountInFull';
 import { useI18n } from '../../hooks/useI18n';
 import { isMoney } from './draftModel';
 import { MONEY_PROBLEM_MESSAGE, moneyProblem } from './moneyProblem';
@@ -33,6 +34,8 @@ export function AmountField({
   // too long all read "enter a number, at most two decimals".
   const problem = isMoney(value, signed) ? null : (moneyProblem(value, { signed }) ?? 'notNumber');
   const shown = problem !== null && revealError;
+  // UX-08: the amount grouped, with its currency, while it is a valid one.
+  const inFull = useAmountInFull(value);
   // A11Y-2 (2026-10-31): the reason sits under the field it is about and
   // is tied to it (the Field does that, UI-02). It used to be one unnamed
   // banner ~1,100 px further down, and the field only turned its edge red
@@ -40,6 +43,7 @@ export function AmountField({
   return (
     <Field
       label={label}
+      hint={problem === null ? inFull : null}
       error={
         problem !== null && shown ? i18n.t(MONEY_PROBLEM_MESSAGE[problem], { field: label }) : null
       }

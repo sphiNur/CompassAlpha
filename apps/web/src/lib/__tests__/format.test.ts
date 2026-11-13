@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 
-import { formatMoney, formatMoneyThousands, formatQty, minorUnits, toQtyInput } from '../format';
+import {
+  formatAmountInFull,
+  formatMoney,
+  formatMoneyThousands,
+  formatQty,
+  minorUnits,
+  toQtyInput,
+} from '../format';
 
 /**
  * These tests exist because PurchaseRow seeded its qty input with
@@ -136,5 +143,25 @@ describe('formatMoneyThousands', () => {
     expect(formatMoneyThousands('92000.5')).toBe('92,000.50');
     expect(formatMoneyThousands('33333.33')).toBe('33,333.33');
     expect(formatMoneyThousands('4515')).toBe('4,515');
+  });
+});
+
+// UX-08 (2026-11-14): the grouped preview under a full-amount field.
+describe('formatAmountInFull', () => {
+  it('groups a typed amount and names the currency', () => {
+    expect(formatAmountInFull('830000', 'UZS')).toBe('830,000 UZS');
+    expect(formatAmountInFull('1250000.5', 'UZS')).toBe('1,250,000.50 UZS');
+    expect(formatAmountInFull(' 999 ', 'USD')).toBe('999 USD');
+    expect(formatAmountInFull('-20000', 'UZS')).toBe('-20,000 UZS');
+  });
+
+  it('shows nothing for an empty field or one that is not an amount', () => {
+    expect(formatAmountInFull('', 'UZS')).toBeNull();
+    expect(formatAmountInFull('   ', 'UZS')).toBeNull();
+    expect(formatAmountInFull('abc', 'UZS')).toBeNull();
+    expect(formatAmountInFull('1.005', 'UZS')).toBeNull();
+    expect(formatAmountInFull('1e3', 'UZS')).toBeNull();
+    expect(formatAmountInFull('1,000', 'UZS')).toBeNull();
+    expect(formatAmountInFull('1234567890123', 'UZS')).toBeNull();
   });
 });
