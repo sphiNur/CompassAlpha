@@ -1,14 +1,14 @@
 /**
- * Each tab's page. Every page but Order is lazy: its own chunk, downloaded
- * when the tab is first opened, or before (usePagePrefetch.ts, main.tsx).
- * OrderPage stays in the entry chunk because nearly every user lands on it.
+ * Each tab's page. Every page is lazy: its own chunk, downloaded when the
+ * tab is first opened, or before (usePagePrefetch.ts, main.tsx). Order,
+ * where nearly every user lands, starts downloading with the entry
+ * (pageChunks.ts).
  *
  * Review COREWEB1-10 (2026-11-12): out of Shell.tsx.
  */
 import { Suspense, type ReactNode } from 'react';
 import { Spinner } from '@compass/ui';
 import { resilientLazy } from '../../components/resilientLazy';
-import { OrderPage } from '../../pages/OrderPage';
 import type { Tab } from '../../stores/navStore';
 import {
   importAdminPage,
@@ -16,6 +16,7 @@ import {
   importAttendancePage,
   importConfirmPage,
   importHistoryPage,
+  importOrderPage,
   importRunPage,
   importSalesPage,
   importSettlementPage,
@@ -51,6 +52,10 @@ const ConfirmPage = resilientLazy(importConfirmPage);
 // 2026-11-05: clock in / out, only for members switched on for it.
 const AttendancePage = resilientLazy(importAttendancePage);
 
+// 2026-11-13: out of the entry chunk for the startup budget (scripts/
+// check-entry-budget.ts); main.tsx starts it with the entry.
+const OrderPage = resilientLazy(importOrderPage);
+
 // Loading fallback for lazily-imported pages. Centered spinner so the
 // blip between bundle download and render doesn't look like a stall.
 // 80dvh (at most the screen above the nav) keeps it visually placed where
@@ -64,7 +69,11 @@ function PageLoading() {
 }
 
 export const PAGES: Record<Tab, () => ReactNode> = {
-  order: () => <OrderPage />,
+  order: () => (
+    <Suspense fallback={<PageLoading />}>
+      <OrderPage />
+    </Suspense>
+  ),
   approve: () => (
     <Suspense fallback={<PageLoading />}>
       <ApprovalPage />
