@@ -65,6 +65,23 @@ describe('estimateLines', () => {
     expect(est.unknown).toBe(1);
   });
 
+  test('a product with no last price is unknown; a line of 0 is not counted at all', () => {
+    const prices = new Map<string, { lastPrice: string | null }>([
+      ['onion', { lastPrice: null }],
+      ['apple', { lastPrice: '10.00' }],
+    ]);
+    const est = estimateLines(
+      [
+        { skuId: 'onion', qty: '3' },
+        { skuId: 'apple', qty: '0' },
+        { skuId: 'never-priced', qty: '0' },
+        { skuId: 'apple', qty: '1' },
+      ],
+      prices,
+    );
+    expect(est).toEqual({ total: '10.00', cash: '10.00', transfer: '0.00', known: 1, unknown: 1 });
+  });
+
   test('is all cash when nothing is known about payment', () => {
     const est = estimateLines(lines, stats);
     expect(est.cash).toBe('140.00');
