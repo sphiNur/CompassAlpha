@@ -15,6 +15,8 @@ export default defineConfig({
   ...base,
   testDir: '.',
   testMatch: /\.tutorial\.ts$/,
+  // The tap-target audit has its own config (tap-audit.config.ts).
+  testIgnore: /tap-audit\.tutorial\.ts$/,
   globalSetup: './global-setup.ts',
   // Each card is a test; seeding runs in the first one's beforeAll.
   timeout: 3 * 60_000,
