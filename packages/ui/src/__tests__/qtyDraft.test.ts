@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { readQtyDraft } from '../qtyDraft';
+import { setDecimalLocale } from '../decimalText';
 
 // F13 / ORD-8 (2026-10-30): an emptied field, "abc" or "-3" all became
 // "Set 0 kg" and tapping it wiped the line.
@@ -58,5 +59,37 @@ describe('readQtyDraft', () => {
     expect(readQtyDraft('0.75', { ...range, step: 0.25 })).toEqual({ ok: true, value: 0.75 });
     expect(readQtyDraft('3', { ...range, step: 1 })).toEqual({ ok: true, value: 3 });
     expect(readQtyDraft('0.3', { ...range, step: 1 })).toEqual({ ok: false, reason: 'notMultiple' });
+  });
+
+  describe('UX-17: the custom field reads separators per UI language', () => {
+    afterEach(() => setDecimalLocale(null));
+
+    it('ru / uz: a decimal comma, spaces between thousands', () => {
+      for (const lang of ['ru', 'uz']) {
+        setDecimalLocale(lang);
+        expect(readQtyDraft('1,5', range)).toEqual({ ok: true, value: 1.5 });
+        expect(readQtyDraft('0,25', range)).toEqual({ ok: true, value: 0.25 });
+        expect(readQtyDraft('1 234,5', { min: 0, max: 99999 })).toEqual({
+          ok: true,
+          value: 1234.5,
+        });
+      }
+    });
+
+    it('en / zh: "1,000" is one thousand', () => {
+      setDecimalLocale('en');
+      expect(readQtyDraft('1,000', range)).toEqual({ ok: true, value: 1000 });
+      expect(readQtyDraft('1.5', range)).toEqual({ ok: true, value: 1.5 });
+    });
+
+    it('keeps the step and precision rules after a comma', () => {
+      setDecimalLocale('ru');
+      const halves = { ...range, step: 0.5 };
+      expect(readQtyDraft('1,5', halves)).toEqual({ ok: true, value: 1.5 });
+      expect(readQtyDraft('1,25', halves)).toEqual({ ok: false, reason: 'notMultiple' });
+      expect(readQtyDraft('0,0004', range)).toEqual({ ok: false, reason: 'tooPrecise' });
+      expect(readQtyDraft('-1,5', range)).toEqual({ ok: false, reason: 'belowMin' });
+      expect(readQtyDraft('1,2,3', range)).toEqual({ ok: false, reason: 'notNumber' });
+    });
   });
 });

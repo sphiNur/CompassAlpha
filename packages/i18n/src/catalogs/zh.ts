@@ -37,7 +37,7 @@ export const zh = {
   'common.priceThousands': '{n}千',
   'qty.decrement': '减少',
   'qty.increment': '增加',
-  'qty.pickAria': '数量 {value}——点击选择',
+  'qty.pickAria': '数量 {value}——点击快速选择',
   'qty.groupAria': '{item}的数量',
   'a11y.results.products': '找到 {n} 个商品',
   'a11y.results.items': '显示 {n} 项',

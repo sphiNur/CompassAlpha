@@ -1,3 +1,5 @@
+import { readDecimalText } from './decimalText';
+
 /**
  * Reads the free-entry field of QtyControl's quick-pick sheet (F13 /
  * ORD-8, 2026-10-30). It used to go through `Number(draft)` and a clamp:
@@ -6,8 +8,10 @@
  * the line. A value the user did not type is never offered now — the
  * button stays disabled and the sheet says why.
  *
- * Expects the field already normalised by the number Input ("1,5" → "1.5");
- * text that is not one number arrives as typed and is refused here.
+ * UX-17 (2026-11-14): the text goes through readDecimalText here too, so a
+ * ru / uz decimal comma ("1,5") is read the same as in every other number
+ * field even when the caller hands over the raw typed text. Text that is
+ * not one number is refused, never guessed.
  */
 export type QtyDraft =
   | { ok: true; value: number }
@@ -34,8 +38,10 @@ export function readQtyDraft(
   draft: string,
   { min, max, step }: { min: number; max: number; step?: number },
 ): QtyDraft {
-  const s = draft.trim();
-  if (s === '') return { ok: false, reason: 'empty' };
+  if (draft.trim() === '') return { ok: false, reason: 'empty' };
+  const read = readDecimalText(draft);
+  if (!read.ok) return { ok: false, reason: 'notNumber' };
+  const s = read.value;
   // Number() accepts '0x10', '1e3' and ' '; a quantity field should not.
   if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return { ok: false, reason: 'notNumber' };
   const n = Number(s);
