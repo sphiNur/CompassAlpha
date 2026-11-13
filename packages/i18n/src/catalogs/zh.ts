@@ -1320,7 +1320,7 @@ export const zh = {
   'run.action.markUnavailable': '标为缺货',
   'run.action.markUnavailableDesc': '请说明无法购买的原因。',
   'run.action.unavailableReasonPlaceholder': '原因',
-  'run.unavailable.presets': '常见原因',
+  'run.unavailable.presetsHint': '点一下原因即标为缺货',
   'run.unavailable.preset.soldOut': '卖完了',
   'run.unavailable.preset.tooExpensive': '太贵',
   'run.unavailable.preset.poorQuality': '质量不好',

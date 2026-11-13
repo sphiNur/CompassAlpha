@@ -1488,7 +1488,7 @@ export const uz = {
   'run.action.markUnavailable': 'Yoʻq deb belgilash',
   'run.action.markUnavailableDesc': 'Nima uchun ololmaganingizni jamoaga tushuntiring.',
   'run.action.unavailableReasonPlaceholder': 'Sabab',
-  'run.unavailable.presets': 'Koʻp uchraydigan sabablar',
+  'run.unavailable.presetsHint': 'Sababni bosing — darhol «Yoʻq» deb belgilanadi',
   'run.unavailable.preset.soldOut': 'Sotuvda yoʻq',
   'run.unavailable.preset.tooExpensive': 'Juda qimmat',
   'run.unavailable.preset.poorQuality': 'Sifati yomon',

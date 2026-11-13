@@ -1562,7 +1562,7 @@ export const en = {
   'run.action.markUnavailable': 'Mark unavailable',
   'run.action.markUnavailableDesc': "Tell the team why this couldn't be bought.",
   'run.action.unavailableReasonPlaceholder': 'Reason',
-  'run.unavailable.presets': 'Common reasons',
+  'run.unavailable.presetsHint': 'Tap a reason to mark it right away',
   'run.unavailable.preset.soldOut': 'Sold out',
   'run.unavailable.preset.tooExpensive': 'Too expensive',
   'run.unavailable.preset.poorQuality': 'Poor quality',

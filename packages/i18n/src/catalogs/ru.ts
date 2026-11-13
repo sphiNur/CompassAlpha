@@ -1500,7 +1500,7 @@ export const ru = {
   'run.action.markUnavailable': 'Отметить как «нет»',
   'run.action.markUnavailableDesc': 'Объясните команде, почему не удалось купить.',
   'run.action.unavailableReasonPlaceholder': 'Причина',
-  'run.unavailable.presets': 'Частые причины',
+  'run.unavailable.presetsHint': 'Нажмите на причину, чтобы сразу отметить «нет»',
   'run.unavailable.preset.soldOut': 'Нет в продаже',
   'run.unavailable.preset.tooExpensive': 'Слишком дорого',
   'run.unavailable.preset.poorQuality': 'Плохое качество',

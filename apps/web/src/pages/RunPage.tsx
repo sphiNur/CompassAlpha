@@ -36,11 +36,13 @@ import {
   ChipBar,
   ConfirmSheet,
   DataState,
+  FieldGroup,
   QueryErrorBanner,
   EmptyState,
   Input,
   LoadingState,
   Sheet,
+  useTapGuard,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -250,6 +252,17 @@ export function RunPage() {
   const { mutate: createRun, isPending: creatingRun } = create;
   const startingPurchase = mutations.startPurchase.isPending;
   const startingDelivery = mutations.startDelivery.isPending;
+  // R4 (2026-11-13): a reason tapped in the mark-unavailable sheet sends
+  // at once. One guard for the reasons and the button: the second of two
+  // quick taps is dropped before the pending lock is drawn (BUY-12).
+  const guardUnavailable = useTapGuard();
+  const sendUnavailable = (note: string) => {
+    if (!unavailableFor || !note || markUnavailable.isPending) return;
+    markUnavailable.mutate({ runId: unavailableFor.runId, skuId: unavailableFor.skuId, note });
+  };
+  const typedNoteSending =
+    markUnavailable.isPending &&
+    !UNAVAILABLE_PRESETS.some((key) => i18n.t(key) === markUnavailable.variables?.note);
   /**
    * Simplification (2026-11-13): a step another tap undoes is sent with
    * no sheet (confirmCopy.ts DirectStep). A second tap while the same
@@ -1758,43 +1771,40 @@ export function RunPage() {
           <Button
             block
             variant="danger"
-            disabled={!unavailableNote.trim()}
-            loading={markUnavailable.isPending}
-            onClick={() => {
-              if (!unavailableFor) return;
-              markUnavailable.mutate({
-                runId: unavailableFor.runId,
-                skuId: unavailableFor.skuId,
-                note: unavailableNote.trim(),
-              });
-            }}
+            disabled={!unavailableNote.trim() || (markUnavailable.isPending && !typedNoteSending)}
+            loading={typedNoteSending}
+            onClick={guardUnavailable(() => sendUnavailable(unavailableNote.trim()), 'unavailable')}
           >
             {i18n.t('run.action.markNa')}
           </Button>
         }
       >
-        <div className="flex flex-col gap-2 py-3">
-          {/* R4 (2026-11-13): one tap on a common reason fills the field
-              (and a second tap clears it); typing stays possible. */}
-          <ChipBar
-            variant="toggles"
-            ariaLabel={i18n.t('run.unavailable.presets')}
-            className="-mx-4 -my-1.5 px-4 py-1.5"
-          >
-            {UNAVAILABLE_PRESETS.map((key) => {
-              const text = i18n.t(key);
-              const selected = unavailableNote.trim() === text;
-              return (
-                <Chip
-                  key={key}
-                  selected={selected}
-                  onClick={() => setUnavailableNote(selected ? '' : text)}
-                >
-                  {text}
-                </Chip>
-              );
-            })}
-          </ChipBar>
+        <div className="flex flex-col gap-3 py-3">
+          {/* R4 (2026-11-13): a common reason marks the item at once (open
+              row → N/A → reason); the hint says so. Typing a reason and
+              the button below still work. Kit buttons, not chips: a chip
+              reads as a choice to confirm. */}
+          <FieldGroup label={i18n.t('run.unavailable.presetsHint')}>
+            <div className="flex flex-wrap gap-x-1.5 gap-y-3">
+              {UNAVAILABLE_PRESETS.map((key) => {
+                const text = i18n.t(key);
+                const sending =
+                  markUnavailable.isPending && markUnavailable.variables?.note === text;
+                return (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant="secondary"
+                    disabled={markUnavailable.isPending && !sending}
+                    loading={sending}
+                    onClick={guardUnavailable(() => sendUnavailable(text), 'unavailable')}
+                  >
+                    {text}
+                  </Button>
+                );
+              })}
+            </div>
+          </FieldGroup>
           <Input
             value={unavailableNote}
             onChange={(e) => setUnavailableNote(e.target.value)}
