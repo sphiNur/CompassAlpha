@@ -609,7 +609,10 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(saved.wageItems.map((item) => item.reason)).toEqual(['', '']);
   });
 
-  test('S5: the close offers the expense templates, with prices only under prices.view here', async () => {
+  // UX-15 (owner, 2026-11-13): the default price is a preset for whoever
+  // may record the close, prices.view or not (it was redacted under
+  // ADM2-01 before).
+  test('S5/UX-15: the close offers the expense templates with their default price to whoever records it', async () => {
     const fx = fixture!;
     const db = getDb(undefined, { system: 'maintenance' });
     await db
@@ -639,21 +642,29 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
         label: 'Porter',
         unitHint: 'trip',
         defaultQty: '2.000',
-        defaultUnitPrice: null,
+        defaultUnitPrice: '7.50',
       },
     ]);
 
-    // prices.view in this store shows the default price.
-    await db.insert(s.memberPermissionOverrides).values({
-      memberId: fx.memberId,
-      permissionKey: 'prices.view',
-      effect: 'allow',
-      scopeType: 'store',
-      scopeId: fx.ownStoreId,
-      grantedBy: fx.userId,
+    // An explicit prices.view deny in this store does not hide it either.
+    const [deny] = await db
+      .insert(s.memberPermissionOverrides)
+      .values({
+        memberId: fx.cashierMemberId,
+        permissionKey: 'prices.view',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: fx.ownStoreId,
+        grantedBy: fx.userId,
+      })
+      .returning();
+    const deniedView = await fx.cashierCaller.settlement.expenseTemplates({
+      storeId: fx.ownStoreId,
     });
-    const managerView = await fx.caller.settlement.expenseTemplates({ storeId: fx.ownStoreId });
-    expect(managerView.map((row) => row.defaultUnitPrice)).toEqual(['7.50']);
+    await db
+      .delete(s.memberPermissionOverrides)
+      .where(eq(s.memberPermissionOverrides.id, deny!.id));
+    expect(deniedView.map((row) => row.defaultUnitPrice)).toEqual(['7.50']);
 
     const error = await errorOf(() =>
       fx.cashierCaller.settlement.expenseTemplates({ storeId: fx.foreignStoreId }),

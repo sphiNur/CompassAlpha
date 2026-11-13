@@ -34,6 +34,7 @@ import { StoreContextEmpty } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
 import { sentBatchCount } from './order/batchCount';
 import { orderableSkus } from './order/catalogGroups';
+import { repeatOrderFill } from './order/repeatOrder';
 import { sessionLoadState } from './order/sessionLoadState';
 import { otherRejectedBatch } from './order/batchStatus';
 import { BatchReceipt } from './order/BatchReceipt';
@@ -193,6 +194,25 @@ export function OrderPage() {
     sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? sessionQuery.data.id : null;
   const showExtrasEditor =
     !!currentStoreId && (extrasSessionId !== null || (!isReadOnly && sessionQuery.isSuccess));
+
+  // UX-02 (2026-11-13): an empty draft offers the last sent order's lines,
+  // set through the same write a + tap makes (outbox, debounced, per
+  // store), so they can be changed before Submit. Nothing is submitted.
+  // Asked for only while the draft is empty.
+  const draftEmpty =
+    !!currentStoreId && !isReadOnly && sessionQuery.isSuccess && selectedCount === 0;
+  const lastSubmittedQuery = trpc.order.lastSubmitted.useQuery(
+    { storeId: currentStoreId ?? '' },
+    { enabled: draftEmpty },
+  );
+  const repeatFill = useMemo(
+    () => repeatOrderFill(lastSubmittedQuery.data?.lines ?? [], allSkus),
+    [lastSubmittedQuery.data, allSkus],
+  );
+  const repeatLastOrder = () => {
+    if (!currentStoreId) return;
+    for (const line of repeatFill) handleQtyChange(currentStoreId, line.skuId, line.qty);
+  };
 
   // The page's main button submits (simplification O1, 2026-11-13: one
   // tap, owner approved). It used to open the review sheet, and Submit
@@ -464,6 +484,17 @@ export function OrderPage() {
             myMemberId={session.member.memberId}
             editing
           />
+        </div>
+      ) : null}
+
+      {draftEmpty && repeatFill.length > 0 ? (
+        <div className="flex flex-col gap-1.5 px-4 pt-3">
+          <Button block variant="secondary" onClick={repeatLastOrder}>
+            {i18n.t('order.repeatLast.action')}
+          </Button>
+          <p className="text-center text-old-label text-[var(--c-fg-muted)]">
+            {i18n.t('order.repeatLast.hint')}
+          </p>
         </div>
       ) : null}
 

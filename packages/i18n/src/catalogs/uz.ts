@@ -1133,6 +1133,10 @@ export const uz = {
   'order.action.submitting': 'Yuborilmoqda…',
   'order.review.title': 'Buyurtmani koʻrib chiqing',
   'order.review.view': 'Buyurtmani koʻrish',
+  // UX-02 (2026-11-13): an empty draft offers the last sent order's lines.
+  'order.repeatLast.action': 'Oxirgi buyurtmani takrorlash',
+  'order.repeatLast.hint':
+    'Oxirgi buyurtmadagi mahsulotlar va miqdorlar qoʻyiladi. Yuborishdan oldin ularni oʻzgartirish mumkin.',
   'order.review.itemsCount': '{n} ta mahsulot',
   'order.review.empty': 'Hozircha hech narsa tanlanmagan.',
   'order.review.archived': 'Sotuvdan olingan',

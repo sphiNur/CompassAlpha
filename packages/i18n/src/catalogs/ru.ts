@@ -1134,6 +1134,10 @@ export const ru = {
   'order.action.submitting': 'Отправляем…',
   'order.review.title': 'Проверьте заказ',
   'order.review.view': 'Посмотреть заказ',
+  // UX-02 (2026-11-13): an empty draft offers the last sent order's lines.
+  'order.repeatLast.action': 'Повторить прошлый заказ',
+  'order.repeatLast.hint':
+    'Подставит товары и количества из прошлого заказа. Перед отправкой их можно изменить.',
   'order.review.itemsCount':
     '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
   'order.review.empty': 'Пока ничего не выбрано.',

@@ -314,7 +314,7 @@ export type ExpenseTemplate = {
   id: string;
   label: string;
   defaultQty: string;
-  /** Null without prices.view in the close's store. */
+  /** Null only from an older server (before UX-15 it needed prices.view). */
   defaultUnitPrice: string | null;
 };
 

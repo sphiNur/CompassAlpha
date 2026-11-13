@@ -42,6 +42,14 @@ export const TodayBatchesInputSchema = z.object({
   date: DateStringSchema.optional(),
 });
 
+/**
+ * UX-02 (2026-11-13): the store's last sent order, whose lines the Order
+ * page offers to copy into an empty draft ("Repeat last order").
+ */
+export const LastSubmittedInputSchema = z.object({
+  storeId: UuidSchema,
+});
+
 /** One order, by id: sessionDetail, submittedVersion, releaseClaim. */
 export const SessionDetailInputSchema = z.object({
   sessionId: UuidSchema,

@@ -45,7 +45,7 @@ import {
   serializeSettlements,
 } from '../../services/settlement';
 import { loadWageRoster } from '../../services/wageRoster';
-import { readExpenseTemplates } from '../../services/expenseTemplates';
+import { readExpenseTemplateRows } from '../../services/expenseTemplates';
 
 type SettlementSession = {
   memberId: string;
@@ -176,27 +176,28 @@ export const settlementRouter = router({
 
   /**
    * S5 (2026-11-13): the organisation's expense templates, offered on the
-   * close as shortcuts that add a filled-in expense line. A default price
-   * comes back only with prices.view in this store (null otherwise); the
-   * line's amount is then typed.
+   * close as shortcuts that add a filled-in expense line.
+   *
+   * UX-15 (owner, 2026-11-13): the default price comes back to everyone
+   * who may record the close here (settlement.record, checked by
+   * authorizeSettlementStore), prices.view or not. On the close it is a
+   * preset amount, not a purchase price, and a cashier tapping a template
+   * gets the line's amount filled instead of typing it. The admin list and
+   * the run sheet keep the ADM2-01 redaction.
    */
   expenseTemplates: authedProcedure
     .input(SettlementExpenseTemplatesInputSchema)
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         const session = ctx.session!;
-        const store = await authorizeSettlementStore(tx, session, input.storeId);
-        const [templates, effective] = await Promise.all([
-          readExpenseTemplates(tx, session, false),
-          effectivePermissionsForStore(tx, session.memberId, store.id, session.permissions),
-        ]);
-        const showPrices = effective.has('prices.view');
+        await authorizeSettlementStore(tx, session, input.storeId);
+        const templates = await readExpenseTemplateRows(tx, session.orgId, false);
         return templates.map((template) => ({
           id: template.id,
           label: template.label,
           unitHint: template.unitHint,
           defaultQty: template.defaultQty,
-          defaultUnitPrice: showPrices ? template.defaultUnitPrice : null,
+          defaultUnitPrice: template.defaultUnitPrice,
         }));
       });
     }),

@@ -93,6 +93,7 @@ const NOT_MONEY = [
   'totalQty',
   'totals',
   'items',
+  'lines',
   'extras',
   'splits',
   'extrasJson',
