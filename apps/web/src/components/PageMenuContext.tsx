@@ -13,6 +13,9 @@
  * Shell's <SettingsSheet> render them at the top, above the global
  * Profile / Language / About sections.
  *
+ * UX-09 (2026-11-14): people rarely found the gear, so the top bar's ⋮
+ * button (app/shell/TopBar.tsx) opens the same sheet too.
+ *
  * Pages call `usePageMenu([...])` once per render; the unmount cleanup
  * clears the registration so navigating away doesn't strand stale
  * actions in the sheet.
