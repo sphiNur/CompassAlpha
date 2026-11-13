@@ -5,14 +5,19 @@
  * as soon as the entry runs, instead of after the auth check and the
  * saved-data restore have drawn the Shell).
  *
- * The order page stays in the entry chunk: nearly every signed-in person
- * has the Order tab, and it is the default first tab.
+ * The order page is lazy too (2026-11-13, startup budget): it was ~16 KB
+ * gzip of the entry chunk. Nearly every signed-in person has the Order tab
+ * and it is the default first tab, so main.tsx starts its chunk with the
+ * entry, side by side with the language catalog, whenever the app does
+ * not reopen on another tab: no extra round trip before the first screen.
  */
 import { AUTH_STORAGE_KEY } from '../stores/authStore';
 import { isTab, NAV_STORAGE_KEY, type Tab } from '../stores/navStore';
 
 export const importAdminPage = () =>
   import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
+export const importOrderPage = () =>
+  import('../pages/OrderPage').then((m) => ({ default: m.OrderPage }));
 export const importRunPage = () => import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
 export const importHistoryPage = () =>
   import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
@@ -27,12 +32,10 @@ export const importAttendancePage = () =>
 export const importConfirmPage = () =>
   import('../pages/ConfirmPage').then((m) => ({ default: m.ConfirmPage }));
 
-/** Every tab but Order, whose page is in the entry chunk. */
-type LazyTab = Exclude<Tab, 'order'>;
-
-// Review COREWEB1-11 (2026-11-11): keyed by every lazy tab, so a new tab
+// Review COREWEB1-11 (2026-11-11): keyed by every tab, so a new tab
 // cannot be left out of the preload.
-const PAGE_IMPORTS: Record<LazyTab, () => Promise<unknown>> = {
+const PAGE_IMPORTS: Record<Tab, () => Promise<unknown>> = {
+  order: importOrderPage,
   approve: importApprovalPage,
   run: importRunPage,
   history: importHistoryPage,
@@ -44,23 +47,20 @@ const PAGE_IMPORTS: Record<LazyTab, () => Promise<unknown>> = {
 };
 
 /**
- * Whether a value names a lazy tab. `in` alone also took a stored
- * "toString" or "constructor" (Object.prototype's), which main.tsx then
- * called as a page import at start.
+ * Start downloading a tab's page chunk. The promise settles once it is in
+ * (or failed) and never rejects: a failure is left to the page's own
+ * import (resilientLazy shows a retry there). `isTab` rather than `in`,
+ * which also took a stored "toString" or "constructor"
+ * (Object.prototype's) and called it as a page import at start.
  */
-function isLazyTab(tab: unknown): tab is LazyTab {
-  return isTab(tab) && tab in PAGE_IMPORTS;
-}
-
-/**
- * Start downloading a tab's page chunk without waiting for it. A failure
- * is left to the page's own import (resilientLazy shows a retry there).
- */
-export function preloadPage(tab: Tab): void {
-  if (!isLazyTab(tab)) return;
-  PAGE_IMPORTS[tab]().catch(() => {
-    /* offline or a removed chunk: the page's own import handles it */
-  });
+export function preloadPage(tab: Tab): Promise<void> {
+  if (!isTab(tab)) return Promise.resolve();
+  return PAGE_IMPORTS[tab]().then(
+    () => undefined,
+    () => {
+      /* offline or a removed chunk: the page's own import handles it */
+    },
+  );
 }
 
 /**
@@ -83,9 +83,10 @@ export function preloadSettingsSheet(): void {
 /**
  * The tab the app will reopen on, read from storage before React starts:
  * the persisted bottom tab, when someone is signed in. Null when there is
- * no session or nothing usable is stored. The Shell still checks it
- * against the person's permissions; a guess that turns out unusable only
- * costs one chunk download.
+ * no session or nothing usable is stored (main.tsx then starts Order, the
+ * default tab). The Shell still checks it against the person's
+ * permissions; a guess that turns out unusable only costs one chunk
+ * download.
  */
 export function savedTab(storage: Pick<Storage, 'getItem'>): Tab | null {
   try {
@@ -97,7 +98,7 @@ export function savedTab(storage: Pick<Storage, 'getItem'>): Tab | null {
       state?: { tab?: unknown };
     } | null;
     const tab = nav?.state?.tab;
-    return isLazyTab(tab) ? tab : null;
+    return isTab(tab) ? tab : null;
   } catch {
     return null;
   }

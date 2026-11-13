@@ -32,6 +32,9 @@ export function usePagePrefetch(session: AuthSession | null): void {
   // same way for the people who have those tabs.
   const canApprove = !!session?.permissions.includes('order.approve');
   const canConfirm = !!session?.permissions.includes('delivery.confirm');
+  // 2026-11-13: Order left the entry chunk. main.tsx starts it unless the
+  // app reopens on another tab; then it is warmed here like the others.
+  const canOrder = !!session?.permissions.includes('order.draft');
   const signedIn = session !== null;
   useEffect(() => {
     if (!signedIn) return;
@@ -44,9 +47,10 @@ export function usePagePrefetch(session: AuthSession | null): void {
       if (canRun) preloadPage('run');
       if (canApprove) preloadPage('approve');
       if (canConfirm) preloadPage('confirm');
+      if (canOrder) preloadPage('order');
       preloadSettingsSheet();
     };
     if (ric) ric(kick);
     else setTimeout(kick, 0);
-  }, [signedIn, canAdmin, canRun, canApprove, canConfirm]);
+  }, [signedIn, canAdmin, canRun, canApprove, canConfirm, canOrder]);
 }

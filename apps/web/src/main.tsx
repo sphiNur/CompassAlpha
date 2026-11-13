@@ -31,7 +31,9 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     // R2-SHL-1 (2026-10-31): this first page loaded before the worker
     // existed; hand it the files already loaded (lazy page chunks among
     // them) so an offline reload after this one visit finds them.
-    void navigator.serviceWorker.ready.then((registration) => {
+    // The start page's chunk is waited for, so it is among them even when
+    // the worker became ready first.
+    void Promise.all([navigator.serviceWorker.ready, startPage]).then(([registration]) => {
       const urls = performance
         .getEntriesByType('resource')
         .map((entry) => entry.name)
@@ -61,6 +63,8 @@ if (!container) throw new Error('Root not found');
 //     message and reload button over the splash; a catalog that lands later
 //     still removes both.
 //   - DX-PFE-3: the page the app reopens on is a lazy chunk; start it now.
+//     Order, the default tab, when nothing else is saved (it left the entry
+//     chunk for the startup budget, 2026-11-13).
 const catalogReady = ensureCatalog(startLocale());
 const reopenTab = (() => {
   try {
@@ -69,7 +73,7 @@ const reopenTab = (() => {
     return null;
   }
 })();
-if (reopenTab) preloadPage(reopenTab);
+const startPage = preloadPage(reopenTab ?? 'order');
 
 // The splash lives inside #root; React would replace it on the first
 // render. Lift it above the app instead and remove it once the catalog is

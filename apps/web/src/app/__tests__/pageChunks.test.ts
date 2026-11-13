@@ -21,12 +21,12 @@ describe('savedTab (DX-PFE-3: preload the page the app reopens on)', () => {
     ).toBe('approve');
   });
 
-  test('nothing to preload: the order tab is in the entry chunk', () => {
+  test('the order tab too: its page left the entry chunk (startup budget, 2026-11-13)', () => {
     expect(
       savedTab(
         storage({ 'compass.auth': signedIn, 'compass.nav.v1': { state: { tab: 'order' } } }),
       ),
-    ).toBeNull();
+    ).toBe('order');
   });
 
   test('no session, no saved tab or junk: null', () => {
@@ -53,6 +53,10 @@ describe('savedTab (DX-PFE-3: preload the page the app reopens on)', () => {
       const nav = { state: { tab } };
       expect(savedTab(storage({ 'compass.auth': signedIn, 'compass.nav.v1': nav }))).toBeNull();
     }
-    expect(() => preloadPage('order')).not.toThrow();
+    expect(() => preloadPage('toString' as never)).not.toThrow();
+  });
+
+  test('preloadPage never rejects, whatever it is given', async () => {
+    await expect(preloadPage('toString' as never)).resolves.toBeUndefined();
   });
 });
