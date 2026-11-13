@@ -18,6 +18,7 @@ import {
   Button,
   Card,
   DataState,
+  EmptyState,
   Field,
   Input,
   SectionLabel,
@@ -87,13 +88,21 @@ function PeopleBlock({ storeId }: { storeId: string }) {
         {i18n.t('attendance.settings.peopleHint')}
       </p>
       <DataState query={sheet}>
-        {(data) => (
-          // Review ATT-07 (UI-6): one card of rows, not a card per person.
-          <ul className={rowGroupClass} role="list">
-            {data.members
-              .filter((m) => m.inStore)
-              .sort(sheetMemberOrder(i18n.locale))
-              .map((m) => (
+        {(data) => {
+          const people = data.members.filter((m) => m.inStore);
+          // UX-20 (2026-11-14): a store with nobody in its team said so
+          // with an empty card.
+          if (people.length === 0) {
+            return (
+              <Card>
+                <EmptyState compact title={i18n.t('attendance.settings.peopleEmpty')} />
+              </Card>
+            );
+          }
+          return (
+            // Review ATT-07 (UI-6): one card of rows, not a card per person.
+            <ul className={rowGroupClass} role="list">
+              {people.sort(sheetMemberOrder(i18n.locale)).map((m) => (
                 <li key={m.memberId} className="px-4 py-3">
                   <Switch
                     label={m.name}
@@ -147,8 +156,9 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                   ) : null}
                 </li>
               ))}
-          </ul>
-        )}
+            </ul>
+          );
+        }}
       </DataState>
     </section>
   );

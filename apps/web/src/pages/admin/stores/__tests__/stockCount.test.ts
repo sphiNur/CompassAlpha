@@ -11,7 +11,7 @@ import {
   countsToSave,
   inParts,
   rowProblem,
-  soleCountStore,
+  countShortcutStore,
   typedRows,
   withoutSaved,
 } from '../stockCount';
@@ -87,20 +87,32 @@ describe('the Admin home shortcut', () => {
   const stores = [
     { id: 's1', name: 'North' },
     { id: 's2', name: 'South' },
+    { id: 's3', name: 'East' },
   ];
-  test('offered for the one store where stock may be counted', () => {
+  const both = { s1: ['inventory.adjust'], s2: ['inventory.adjust'], s3: [] };
+
+  test('the one store where stock may be counted, whatever the top bar says', () => {
     const session = {
       permissions: ['inventory.adjust'],
-      storePermissions: { s1: ['inventory.adjust'], s2: [] },
+      storePermissions: { s1: ['inventory.adjust'], s2: [], s3: [] },
       stores,
     };
-    expect(soleCountStore(session)?.id).toBe('s1');
+    expect(countShortcutStore(session, null)?.id).toBe('s1');
+    expect(countShortcutStore(session, 's2')?.id).toBe('s1');
   });
 
-  test('not offered with several such stores, or none', () => {
-    const both = { s1: ['inventory.adjust'], s2: ['inventory.adjust'] };
-    expect(soleCountStore({ permissions: [], storePermissions: both, stores })).toBeNull();
-    expect(soleCountStore({ permissions: [], storePermissions: {}, stores })).toBeNull();
+  test('UX-12: with several, the top-bar store when stock may be counted there', () => {
+    const session = { permissions: [], storePermissions: both, stores };
+    expect(countShortcutStore(session, 's2')?.id).toBe('s2');
+    expect(countShortcutStore(session, 's1')?.id).toBe('s1');
+    // Not countable in the top-bar store, or "All stores": hidden.
+    expect(countShortcutStore(session, 's3')).toBeNull();
+    expect(countShortcutStore(session, null)).toBeNull();
+  });
+
+  test('not offered where stock may not be counted anywhere', () => {
+    const session = { permissions: [], storePermissions: {}, stores };
+    expect(countShortcutStore(session, 's1')).toBeNull();
   });
 });
 

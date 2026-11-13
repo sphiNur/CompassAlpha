@@ -119,15 +119,21 @@ export function inParts<T>(items: ReadonlyArray<T>, size: number): T[][] {
 }
 
 /**
- * The one store `session` may count stock in (inventory.adjust there,
- * store overrides included), or null when there are none or several:
- * the Admin home offers "Count stock" straight away only for one.
+ * The store the Admin home's "Count stock" row opens, or null when the
+ * row is hidden. D1 offered it only to someone who may count stock
+ * (inventory.adjust there, store overrides included) in exactly one store.
+ * UX-12 (2026-11-14): with several, it is the store in the top bar when
+ * stock may be counted there. "All stores" (`topBarStoreId` null) names
+ * no store, so the row stays hidden unless there is only one; the count
+ * is of one store, and choosing it in the top bar brings the row back.
  */
-export function soleCountStore<S extends { id: string; name: string }>(
+export function countShortcutStore<S extends { id: string; name: string }>(
   session: Parameters<typeof hasStorePermission>[0] & { stores: ReadonlyArray<S> },
+  topBarStoreId: string | null,
 ): S | null {
   const stores = session.stores.filter((st) =>
     hasStorePermission(session, st.id, 'inventory.adjust'),
   );
-  return stores.length === 1 ? stores[0]! : null;
+  if (stores.length === 1) return stores[0]!;
+  return stores.find((st) => st.id === topBarStoreId) ?? null;
 }
