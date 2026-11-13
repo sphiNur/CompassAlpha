@@ -99,7 +99,7 @@ export const RunPreviewInputSchema = z.object({
 
 /**
  * M3.31 A.2 (2026-05-18): attach more approved sessions to an existing
- * live run. Allowed in planned/purchasing only — see commands.ts. The
+ * live run. Allowed in planned/purchasing only — see run/decide/planning.ts. The
  * API aggregates the new sessions' demand into addedPlannedItems and
  * emits SessionsAttachedToRun on the run stream + AttachedToRun on
  * each new session stream (mirroring run.create's two-stream pattern).
@@ -136,7 +136,7 @@ export const PurchaseItemInputSchema = z.object({
  * as PurchaseItem but adds a required `reason` (audit string explaining
  * why the SKU wasn't on the original order) and the server-side
  * domain layer rejects skuId that's already in the run. See the
- * matching command in packages/domain/src/run/commands.ts.
+ * matching command in packages/domain/src/run/decide/purchasing.ts.
  */
 export const AddPurchaserItemInputSchema = z.object({
   runId: UuidSchema,
@@ -274,7 +274,7 @@ export const RunReasonOnlyInputSchema = z.object({
  * genuinely require a reason, enforced again in the domain layer).
  *
  * 2026-07-26: before this existed, cancel was broken end to end. The
- * domain deliberately allows an empty reason (run/commands.ts CancelRun,
+ * domain deliberately allows an empty reason (run/decide/closing.ts CancelRun,
  * M1.7: "most cancels are misclicks; hard-requiring a reason produces
  * 'asdf' noise") and the FE deliberately sends one (RunPage's cancel
  * branch sets requireReason:false / reasonOptional:true) — but the
