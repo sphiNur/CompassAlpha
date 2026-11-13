@@ -370,7 +370,8 @@ async function run() {
     record('Auth + Shell ready', true);
 
     // ---- Order page interaction ----
-    // BottomNav order tab is the default per Shell's first tab.
+    // BottomNav order tab is the default per Shell's first tab (nav.counts
+    // is stubbed with nothing to review, so the start stays off Review).
     // M1.12: PageHeader was removed — wait for an OrderPage-specific
     // affordance instead. The increment control exists on every SKU card,
     // so their presence both confirms render and is robust to whatever

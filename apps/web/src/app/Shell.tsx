@@ -15,6 +15,7 @@ import { LiveAnnouncer } from './shell/LiveAnnouncer';
 import { OfflineBanner } from './shell/OfflineBanner';
 import { PageMainButton } from './shell/PageMainButton';
 import { PAGES } from './shell/pages';
+import { ReviewLanding } from './shell/ReviewLanding';
 import { SkipLinks } from './shell/SkipLinks';
 import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
 import { TopBar } from './shell/TopBar';
@@ -179,6 +180,7 @@ function ShellInner() {
       <PageMainButton />
 
       <BottomNav tabs={visible} tab={tab} onSelect={selectTab} />
+      <ReviewLanding visibleKeys={visible.map((t) => t.key)} currentTab={tab} />
     </div>
   );
 }

@@ -67,6 +67,8 @@ export const PERSISTED_QUERIES: ReadonlySet<string> = new Set<QueryPath>([
   'catalog.categories',
   'catalog.suppliers',
   'system.appConfig',
+  // S2 (2026-11-13): the badges, and the Review landing on a cold start.
+  'nav.counts',
   'order.todaySession',
   'order.todayBatches',
   'order.pendingList',
