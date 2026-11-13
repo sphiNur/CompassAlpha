@@ -83,6 +83,7 @@ export const PERSISTED_QUERIES: ReadonlySet<string> = new Set<QueryPath>([
   'settlement.get',
   'settlement.recent',
   'settlement.wageRoster',
+  'settlement.expenseTemplates',
   'sales.list',
   'sales.summary',
   'dishes.list',

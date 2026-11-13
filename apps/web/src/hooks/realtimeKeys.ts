@@ -42,12 +42,13 @@ export const RUN_CHANGED_KEYS: QueryKey[] = [
 /**
  * Catalog changes ripple into the admin pages and into the catalog the
  * order screen reads; CAT-12 (2026-10-30): the purchaser's expense
- * templates too.
+ * templates too, and (S5, 2026-11-13) the daily close's.
  */
 export const CATALOG_CHANGED_KEYS: QueryKey[] = [
   ['admin'],
   ['catalog'],
   ['run', 'expenseTemplates'],
+  ['settlement', 'expenseTemplates'],
 ];
 
 /**
@@ -56,8 +57,15 @@ export const CATALOG_CHANGED_KEYS: QueryKey[] = [
  */
 export const PEOPLE_CHANGED_KEYS: QueryKey[] = [['admin']];
 
-/** A1 (2026-11-13): the Admin badge counts face enrollments to approve. */
-export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [['attendance'], ...NAV_KEYS];
+/**
+ * A1 (2026-11-13): the Admin badge counts face enrollments to approve.
+ * S4 (2026-11-13): the close's wage picker carries each daily wage.
+ */
+export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [
+  ['attendance'],
+  ['settlement', 'wageRoster'],
+  ...NAV_KEYS,
+];
 
 /**
  * Review CONF-26: a daily close saved elsewhere. Not `settlement.get`: a

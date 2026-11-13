@@ -505,6 +505,13 @@
       "when": 1792540000019,
       "tag": "0071_outbox_notifications_audit_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792540000020,
+      "tag": "0072_sales_void_reason_not_null",
+      "breakpoints": true
     }
   ]
 }

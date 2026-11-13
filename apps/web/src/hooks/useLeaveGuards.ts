@@ -28,8 +28,8 @@ export function useLeaveGuards({
 }): void {
   const { ask } = useStableCallbacks({ ask: confirmLeave });
   // The store chip is global chrome, so it cannot know whether this form
-  // is dirty. Register the same confirmation the page's own selector uses;
-  // this prevents an org admin switching stores from silently losing it.
+  // is dirty. Register the page's confirmation; this prevents a member
+  // switching stores from silently losing it.
   useEffect(
     () =>
       registerStoreChangeGuard((nextStoreId) => {

@@ -473,16 +473,29 @@ export async function stubAppReads(context: BrowserContext): Promise<void> {
     canRecordOperatingExpenses: true,
   });
   // The wage picker loads this roster only after a wage row is added.
+  // S4: choosing someone fills the line's amount with their daily wage.
   await stubTrpc(context, 'settlement.wageRoster', [
     {
       memberId: 'mem-wage-cashier',
       displayName: 'Wage Cashier',
       roles: [{ id: 'role-cashier', slug: 'cashier', name: 'Cashier' }],
+      dailyWage: '120000.00',
     },
     {
       memberId: 'mem-wage-manager',
       displayName: 'Wage Manager',
       roles: [{ id: 'role-manager', slug: 'manager', name: 'Manager' }],
+      dailyWage: null,
+    },
+  ]);
+  // S5: the close's expense template shortcuts.
+  await stubTrpc(context, 'settlement.expenseTemplates', [
+    {
+      id: 'tpl-porter',
+      label: 'Smoke Porter',
+      unitHint: 'trip',
+      defaultQty: '2.000',
+      defaultUnitPrice: '15000.00',
     },
   ]);
   await stubTrpc(context, 'settlement.recent', []);

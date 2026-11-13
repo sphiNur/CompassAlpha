@@ -1,7 +1,9 @@
 /**
  * The close's wage lines: adding them by hand or from attendance,
  * choosing who each one pays, changing and removing them. Review
- * CONF-06: moved out of SettlementPage.
+ * CONF-06: moved out of SettlementPage. S4 (2026-11-13): choosing the
+ * employee fills the amount with their daily wage, and the reason is
+ * optional.
  */
 import { useState } from 'react';
 import { Banner, Button, Field, PickerButton, Select, useToast } from '@compass/ui';
@@ -9,11 +11,10 @@ import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contra
 import { trpc } from '../../lib/trpc';
 import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
-import { confirmThen } from '../../lib/confirm';
 import { useErrToast } from '../../hooks/useErrToast';
 import { formatMoney } from '../../lib/format';
 import { newClientId } from '../../lib/clientId';
-import { newWageItem, type WageItemDraft } from './draftModel';
+import { newWageItem, wageAmountOnPick, type WageItemDraft } from './draftModel';
 import {
   DetailLineFrame,
   DetailLineList,
@@ -37,7 +38,6 @@ export function WageLines({
   paidTotal,
   unpaidTotal,
   currency,
-  confirmRemoval,
   reveal,
 }: {
   lines: Lines;
@@ -55,8 +55,6 @@ export function WageLines({
   paidTotal: string;
   unpaidTotal: string;
   currency: string;
-  /** Removing a line of a saved close asks first. */
-  confirmRemoval: boolean;
   reveal: FieldReveal;
 }) {
   const i18n = useI18n();
@@ -169,23 +167,29 @@ export function WageLines({
     }
   };
 
+  // S3 (2026-11-13): no confirmation, as for expense lines.
   const remove = (id: string) => {
     if (historical) return;
-    const drop = () => {
-      haptic('light');
-      update((current) => current.filter((line) => line.id !== id));
-    };
-    if (confirmRemoval) confirmThen(i18n.t('settlement.confirm.removeDetail'), drop);
-    else drop();
+    haptic('light');
+    update((current) => current.filter((line) => line.id !== id));
   };
 
   const pick = (employee: WagePick) => {
     if (!pickerFor) return;
-    change(pickerFor, {
-      memberId: employee.memberId,
-      personName: employee.displayName,
-      isHistorical: false,
-    });
+    const lineId = pickerFor;
+    update((current) =>
+      current.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              memberId: employee.memberId,
+              personName: employee.displayName,
+              amount: wageAmountOnPick(line.amount, employee.dailyWage),
+              isHistorical: false,
+            }
+          : line,
+      ),
+    );
     haptic('light');
     setPickerFor(null);
     setNewPickerFor(null);
@@ -255,6 +259,7 @@ export function WageLines({
 
       <WagePickerSheet
         storeId={storeId}
+        date={date}
         lineId={pickerFor}
         chosenMemberId={lines.find((line) => line.id === pickerFor)?.memberId ?? null}
         onPick={pick}
@@ -282,7 +287,7 @@ function WageLine({
   onRemove: (() => void) | undefined;
 }) {
   const i18n = useI18n();
-  const problems = lineProblems(wage, reveal);
+  const problems = lineProblems(wage, reveal, { reasonRequired: false });
   const employeeMissing = !wage.isHistorical && selectionRequired && !wage.memberId;
   const displayedEmployee = wage.isHistorical
     ? i18n.t('settlement.wages.historicalEmployee')

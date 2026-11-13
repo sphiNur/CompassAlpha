@@ -217,8 +217,13 @@ describe.skipIf(!SHOULD_RUN)('migration 0049 on the database', () => {
       .where(eq(s.sales.id, saleId));
     expect(row).toEqual({ at: null, by: null, reason: null });
     // sales_void_consistency_check: a reason without a time, or a time
-    // with an empty reason, is refused.
-    for (const half of [{ voidReason: 'wrong dish' }, { voidedAt: new Date(), voidReason: '' }]) {
+    // with an empty reason, is refused. 0072: a time with no reason at all
+    // too; 0049's check passed it (char_length(NULL) is NULL).
+    for (const half of [
+      { voidReason: 'wrong dish' },
+      { voidedAt: new Date(), voidReason: '' },
+      { voidedAt: new Date(), voidReason: null },
+    ]) {
       const refused = await pgErrorOf(() =>
         db.update(s.sales).set(half).where(eq(s.sales.id, saleId)),
       );

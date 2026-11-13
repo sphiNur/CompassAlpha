@@ -43,6 +43,16 @@ export const SettlementBusinessDateInputSchema = z.object({
 /** Active personnel available to select for wages in one store. */
 export const SettlementWageRosterInputSchema = z.object({
   storeId: UuidSchema,
+  /**
+   * S4 (2026-11-13): the day whose daily wage each person comes back with
+   * (the rate in effect then). Defaults to today in the store's timezone.
+   */
+  date: DateStringSchema.optional(),
+});
+
+/** S5 (2026-11-13): the expense templates the close offers as shortcuts. */
+export const SettlementExpenseTemplatesInputSchema = z.object({
+  storeId: UuidSchema,
 });
 
 /**
@@ -75,8 +85,12 @@ export const SettlementWageItemSchema = z.object({
   personName: z.string().trim().min(1, 'settlement.errors.employeeRequired').max(160).optional(),
   status: z.enum(['paid', 'unpaid']),
   amount: SettlementLineAmountSchema,
-  /** Shift, pay period, allowance, or another explanation for the wage. */
-  reason: z.string().trim().min(1, 'settlement.errors.invalidDetails').max(500),
+  /**
+   * Shift, pay period, allowance, or another explanation for the wage.
+   * S4 (2026-11-13): optional; the employee, the amount and paid / unpaid
+   * already say what the line is. Absent or blank is stored as ''.
+   */
+  reason: z.string().trim().max(500).default(''),
 });
 
 export const SettlementSaveInputSchema = SettlementGetInputSchema.extend({

@@ -573,7 +573,9 @@ export const sales = inventorySchema.table(
       .defaultNow(),
     createdAt: createdAt(),
     /** 2026-10-21 (0049): set by `sales.void`. NULL = the sale stands.
-     *  CHECK: voided_at and void_reason (1..300 chars) are set together. */
+     *  CHECK sales_void_consistency_check: voided_at and void_reason
+     *  (1..300 chars) are set together; 0072 refuses a void time with a
+     *  NULL reason, which 0049's check let through. */
     voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
     /** Who voided it. Deliberately not an FK, like recordedByMemberId. */
     voidedByMemberId: uuid('voided_by_member_id'),

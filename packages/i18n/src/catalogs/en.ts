@@ -2005,7 +2005,7 @@ export const en = {
   'admin.subsection.expenseTemplatesHint': 'Manual shortcuts for daily store expenses',
   'admin.action.newExpenseTemplate': 'New template',
   'admin.expenseTemplates.intro':
-    'Templates only prefill the purchase page expense form. Purchasers still choose the business date, store, amount, receipt, and reason for each real daily expense.',
+    'Templates only prefill an expense on the purchase page or in the daily close. Each real expense still gets its own amount and reason, and on the purchase page its business date, store, and receipt.',
   'admin.expenseTemplates.empty.title': 'No templates yet',
   'admin.expenseTemplates.empty.body':
     'Add common labels like porter fees, taxi, or parking so purchasers can fill daily store expenses faster without auto-creating costs.',
@@ -2147,7 +2147,6 @@ export const en = {
   'run.history.nextPage': 'Next page',
 
   // ── 19. Daily settlement ─────────────────────────────────────────────
-  'settlement.store.label': 'Store',
   'settlement.date.label': 'Business date',
   'settlement.date.timezone': 'Store time zone: {timezone}',
   'settlement.group.revenue': 'Revenue',
@@ -2171,6 +2170,7 @@ export const en = {
   'settlement.expenses.title': 'Operating expense details',
   'settlement.expenses.total': '{money} total',
   'settlement.expenses.add': '+ Add expense',
+  'settlement.expenses.templates': 'Add from a template',
   'settlement.expenses.empty': 'No operating expenses recorded.',
   'settlement.expenses.itemNumber': 'Expense {n}',
   'settlement.expenses.amount': 'Amount',
@@ -2209,11 +2209,9 @@ export const en = {
   'settlement.wages.status.unpaid': 'Unpaid',
   'settlement.wages.amount': 'Amount',
   'settlement.wages.reason': 'Shift, pay period, or reason',
-  'settlement.wages.reasonPlaceholder': 'Required, e.g. day shift on 5 Nov',
+  'settlement.wages.reasonPlaceholder': 'Optional, e.g. day shift on 5 Nov',
   'settlement.wages.remove': 'Remove',
   'settlement.confirm.discard': 'Discard the daily-close changes you have not saved?',
-  'settlement.confirm.removeDetail':
-    'Remove this line? The saved daily close changes only when you tap Save correction.',
   'settlement.note.placeholder': 'Optional operational note',
   'settlement.correction.placeholder': 'Why is this day being corrected?',
   'settlement.correction.required': 'Give a correction reason before saving changes.',
@@ -2251,7 +2249,7 @@ export const en = {
   'settlement.errors.goToFirst': 'Go to it',
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
-    'Each operating expense needs a positive amount and a reason; each wage entry needs an employee, an amount, and a shift or reason.',
+    'Each operating expense needs a positive amount and a reason; each wage entry needs an employee and an amount.',
   'settlement.errors.detailLimit':
     'Each daily close supports at most {count, plural, one {# expense row} other {# expense rows}} and {count, plural, one {# wage row} other {# wage rows}}.',
   'settlement.errors.stores': 'Could not load the stores for daily close. Refresh to try again.',

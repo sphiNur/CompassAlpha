@@ -6,11 +6,12 @@
  * never be sufficient for a store-scoped financial read or write.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
   SettlementBusinessDateInputSchema,
+  SettlementExpenseTemplatesInputSchema,
   SettlementGetInputSchema,
   SettlementRecentInputSchema,
   SettlementRevisionsInputSchema,
@@ -44,6 +45,7 @@ import {
   serializeSettlements,
 } from '../../services/settlement';
 import { loadWageRoster } from '../../services/wageRoster';
+import { readExpenseTemplates } from '../../services/expenseTemplates';
 
 type SettlementSession = {
   memberId: string;
@@ -128,14 +130,74 @@ export const settlementRouter = router({
       });
     }),
 
-  /** Active personnel in this store, with only their effective store roles. */
+  /**
+   * Active personnel in this store, with only their effective store roles.
+   * S4 (2026-11-13): and each one's daily wage on `date` (attendance
+   * settings; null when none is set), which a new wage line starts from.
+   * The close's own attendance fill (attendance.wageSuggestions) already
+   * hands the same figure to whoever records the close.
+   */
   wageRoster: authedProcedure
     .input(SettlementWageRosterInputSchema)
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
-        const store = await authorizeSettlementStore(tx, ctx.session!, input.storeId);
+        const session = ctx.session!;
+        const store = await authorizeSettlementStore(tx, session, input.storeId);
         if (!store.isActive || store.deletedAt) return [];
-        return loadWageRoster(tx, ctx.session!.orgId, store.id);
+        const roster = await loadWageRoster(tx, session.orgId, store.id);
+        if (roster.length === 0) return [];
+        const date = input.date ?? todayInTz(storeTimeZone(store.timezone, session.orgTimezone));
+        const rates = await tx
+          .select({
+            memberId: s.attendancePayRates.memberId,
+            dailyWage: s.attendancePayRates.dailyWage,
+          })
+          .from(s.attendancePayRates)
+          .where(
+            and(
+              eq(s.attendancePayRates.orgId, session.orgId),
+              inArray(
+                s.attendancePayRates.memberId,
+                roster.map((member) => member.memberId),
+              ),
+              lte(s.attendancePayRates.effectiveFrom, date),
+            ),
+          )
+          .orderBy(asc(s.attendancePayRates.effectiveFrom));
+        // The latest rate in effect on the day, as the attendance sheet reads it.
+        const wageOf = new Map<string, string>();
+        for (const rate of rates) wageOf.set(rate.memberId, rate.dailyWage);
+        return roster.map((member) => ({
+          ...member,
+          dailyWage: wageOf.get(member.memberId) ?? null,
+        }));
+      });
+    }),
+
+  /**
+   * S5 (2026-11-13): the organisation's expense templates, offered on the
+   * close as shortcuts that add a filled-in expense line. A default price
+   * comes back only with prices.view in this store (null otherwise); the
+   * line's amount is then typed.
+   */
+  expenseTemplates: authedProcedure
+    .input(SettlementExpenseTemplatesInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const session = ctx.session!;
+        const store = await authorizeSettlementStore(tx, session, input.storeId);
+        const [templates, effective] = await Promise.all([
+          readExpenseTemplates(tx, session, false),
+          effectivePermissionsForStore(tx, session.memberId, store.id, session.permissions),
+        ]);
+        const showPrices = effective.has('prices.view');
+        return templates.map((template) => ({
+          id: template.id,
+          label: template.label,
+          unitHint: template.unitHint,
+          defaultQty: template.defaultQty,
+          defaultUnitPrice: showPrices ? template.defaultUnitPrice : null,
+        }));
       });
     }),
 

@@ -64,6 +64,9 @@ describe('re-open refresh (COREWEB2-08)', () => {
         ['attendance'],
         ['settlement', 'recent'],
         ['settlement', 'revisions'],
+        // S4 / S5 (2026-11-13): the close's wage picker and templates.
+        ['settlement', 'wageRoster'],
+        ['settlement', 'expenseTemplates'],
       ].sort(),
     );
   });

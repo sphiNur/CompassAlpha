@@ -109,8 +109,9 @@ export function useSettlementForm() {
   );
 
   // Recover from a persisted/global store that the actor can see but where
-  // settlement.record is denied. Keep the shell context aligned with the
-  // page-local selector so navigation after a close stays in the same store.
+  // settlement.record is denied: the shell's store becomes the one the
+  // form is for. S1 (2026-11-13): the top bar's store is the only picker;
+  // the page's own repeated it.
   useEffect(() => {
     if (currentStoreId && currentStoreId !== requestedStoreId) {
       setCurrentStore(currentStoreId);
@@ -247,7 +248,7 @@ export function useSettlementForm() {
     storeId: requestedStoreId,
     saving: savingRef,
     // CONF-13: "discard" drops the stored draft too, as the page's own
-    // store and date pickers do; it used to come back as "restored".
+    // date picker does; it used to come back as "restored".
     confirmLeave: () =>
       confirmNative(i18n.t('settlement.confirm.discard')).then((ok) => {
         if (ok && storedDraftKey) forgetDraft(draftStorage(), storedDraftKey);
@@ -428,14 +429,8 @@ export function useSettlementForm() {
   return {
     session,
     storesQuery,
-    eligibleStores,
     currentStoreId,
     requestedStoreId,
-    /** Another store, after asking about unsaved input. */
-    chooseStore: (storeId: string) => {
-      if (storeId === currentStoreId) return;
-      confirmDiscardChanges(() => setCurrentStore(storeId));
-    },
     currency,
     businessDateQuery,
     businessDate,
