@@ -124,7 +124,10 @@ export function decideDelivery(
     case 'ConfirmStoreItem': {
       const target = receivingStore(state, command);
       const confirmSplit = receivedSplit(state, command.storeId, command.skuId);
-      if (command.status !== 'ok') {
+      // Simplification C2 (2026-11-13): a wrong or spoiled item needs a
+      // note; a short line says what is wrong through receivedQty, so its
+      // note is optional.
+      if (command.status === 'wrong' || command.status === 'quality') {
         const note = command.note?.trim() ?? '';
         if (!note) throw validation('run.errors.confirmNoteRequiredOnIssue');
       }

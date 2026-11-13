@@ -2164,6 +2164,7 @@ export const zh = {
   'confirm.unbought.ordered': '订了 {qty} {unit}',
   'confirm.unbought.reason': '采购员说明：{reason}',
   'confirm.issue.noteLabel': '哪里不对（必填）',
+  'confirm.issue.noteOptional': '哪里不对（可选）',
   'confirm.issue.noteRequired': '写下哪里不对，才能保存。',
   'confirm.issue.receivedQtyNotNumber': '请输入数字，例如 2 或 1.5。',
   'confirm.issue.receivedQtyTooPrecise': '最多 3 位小数。',

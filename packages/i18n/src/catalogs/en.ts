@@ -2538,6 +2538,7 @@ export const en = {
   'confirm.unbought.ordered': 'ordered {qty} {unit}',
   'confirm.unbought.reason': 'Purchaser: {reason}',
   'confirm.issue.noteLabel': 'What is wrong (required)',
+  'confirm.issue.noteOptional': 'What is wrong (optional)',
   'confirm.issue.noteRequired': 'Write what is wrong to save.',
   'confirm.issue.receivedQtyNotNumber': 'Enter a number, such as 2 or 1.5.',
   'confirm.issue.receivedQtyTooPrecise': 'At most 3 decimal places.',

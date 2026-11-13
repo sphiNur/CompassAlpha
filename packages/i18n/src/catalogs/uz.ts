@@ -2427,6 +2427,7 @@ export const uz = {
   'confirm.unbought.ordered': 'buyurtma: {qty} {unit}',
   'confirm.unbought.reason': 'Xaridor: {reason}',
   'confirm.issue.noteLabel': 'Nima notoʻgʻri (majburiy)',
+  'confirm.issue.noteOptional': 'Nima notoʻgʻri (ixtiyoriy)',
   'confirm.issue.noteRequired': 'Saqlash uchun nima notoʻgʻriligini yozing.',
   'confirm.issue.receivedQtyNotNumber': 'Raqam kiriting, masalan 2 yoki 1,5.',
   'confirm.issue.receivedQtyTooPrecise': 'Koʻpi bilan 3 ta kasr xonasi.',

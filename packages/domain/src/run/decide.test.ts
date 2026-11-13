@@ -373,12 +373,27 @@ describe('run.decide', () => {
     );
   });
 
-  test('ConfirmStoreItem with non-ok status requires note', () => {
+  test('ConfirmStoreItem wrong or quality requires a note', () => {
     let s = planAndPurchase();
     s = deliver(s);
-    expect(() =>
-      decideRun(s, confirmStoreItem({ skuId: 'sku-1', status: 'short', note: '' }), clock),
-    ).toThrow('run.errors.confirmNoteRequiredOnIssue');
+    for (const status of ['wrong', 'quality'] as const) {
+      expect(() =>
+        decideRun(s, confirmStoreItem({ skuId: 'sku-1', status, note: '' }), clock),
+      ).toThrow('run.errors.confirmNoteRequiredOnIssue');
+    }
+  });
+
+  test('ConfirmStoreItem short takes no note (C2)', () => {
+    let s = planAndPurchase();
+    s = deliver(s);
+    const out = decideRun(
+      s,
+      confirmStoreItem({ skuId: 'sku-1', status: 'short', note: '', receivedQty: '1' }),
+      clock,
+    );
+    expect(out.map((e) => e.type)).toContain('StoreItemConfirmed');
+    const ev = out.find((e) => e.type === 'StoreItemConfirmed');
+    expect(ev?.payload).toMatchObject({ status: 'short', note: null, receivedQty: '1' });
   });
 
   test('FinishRun requires all stores confirmed', () => {

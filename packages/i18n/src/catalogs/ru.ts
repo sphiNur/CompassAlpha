@@ -2447,6 +2447,7 @@ export const ru = {
   'confirm.unbought.ordered': 'заказано {qty} {unit}',
   'confirm.unbought.reason': 'Закупщик: {reason}',
   'confirm.issue.noteLabel': 'Что не так (обязательно)',
+  'confirm.issue.noteOptional': 'Что не так (необязательно)',
   'confirm.issue.noteRequired': 'Чтобы сохранить, напишите, что не так.',
   'confirm.issue.receivedQtyNotNumber': 'Введите число, например 2 или 1,5.',
   'confirm.issue.receivedQtyTooPrecise': 'Не больше 3 знаков после запятой.',

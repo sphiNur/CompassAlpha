@@ -5,7 +5,12 @@
 import { Button, Field, Input, PhotoCapture, Sheet, type PhotoUploader } from '@compass/ui';
 import { useI18n, useUnitLabel } from '../../hooks/useI18n';
 import { formatQty } from '../../lib/format';
-import { DECISION_LABEL, RECEIVED_QTY_MESSAGE, type IssueFormCheck } from './confirmLogic';
+import {
+  DECISION_LABEL,
+  RECEIVED_QTY_MESSAGE,
+  issueNoteRequired,
+  type IssueFormCheck,
+} from './confirmLogic';
 import type { IssueForm } from './useIssueForm';
 
 export function IssueSheet({
@@ -30,6 +35,8 @@ export function IssueSheet({
   const unitLabel = useUnitLabel();
   const draft = form.draft;
   const status = draft ? i18n.t(DECISION_LABEL[draft.status]) : '';
+  // C2: a short line's note is optional.
+  const noteRequired = draft ? issueNoteRequired(draft.status) : true;
   const receivedError =
     draft && check?.shownReceivedProblem
       ? i18n.t(RECEIVED_QTY_MESSAGE[check.shownReceivedProblem], { max: formatQty(draft.splitQty) })
@@ -39,7 +46,11 @@ export function IssueSheet({
       ? i18n.t('confirm.issue.photoUploading')
       : check?.saveBlockedBy === 'note'
         ? i18n.t('confirm.issue.noteRequired')
-        : null;
+        : check?.saveBlockedBy === 'qty' && draft && !check.received.ok
+          ? i18n.t(RECEIVED_QTY_MESSAGE[check.received.reason], {
+              max: formatQty(draft.splitQty),
+            })
+          : null;
   return (
     <Sheet
       open={!!draft}
@@ -125,7 +136,7 @@ export function IssueSheet({
           </Field>
         ) : null}
         <Field
-          label={i18n.t('confirm.issue.noteLabel')}
+          label={i18n.t(noteRequired ? 'confirm.issue.noteLabel' : 'confirm.issue.noteOptional')}
           error={check?.noteMissingShown ? i18n.t('confirm.issue.noteRequired') : null}
         >
           <Input
@@ -133,9 +144,9 @@ export function IssueSheet({
             onChange={(e) => form.setNote(e.target.value)}
             placeholder={i18n.t('confirm.issue.placeholder')}
             maxLength={500}
-            required
+            required={noteRequired}
             // The label says "(required)"; no "*" beside it.
-            aria-required
+            aria-required={noteRequired}
           />
         </Field>
         <PhotoCapture
