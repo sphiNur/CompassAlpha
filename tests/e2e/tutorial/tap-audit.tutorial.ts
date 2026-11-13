@@ -35,8 +35,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Locale } from '@compass/i18n';
 import { API_URL } from '../env';
-import { mutate, type Login } from './api';
-import { LOCALES, STORES, skuName, type Role } from './demo';
+import { mutate, signIn, type Login } from './api';
+import { LOCALES, PEOPLE, STORES, TG_IDS, skuName, type Role } from './demo';
 import { translator, type T } from './i18n';
 import { seedDemo, type Demo } from './seed';
 import { openAs } from './shots';
@@ -239,6 +239,18 @@ async function goView(page: Page, auth: string, nav: Nav): Promise<boolean> {
     return false;
   }
   await settle(page);
+  // The tab asked for is the one open (with a nav at all).
+  const navTabs = page.locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])');
+  if ((await navTabs.count()) > 0) {
+    const current = await page
+      .getByTestId(`nav-${nav.tab}`)
+      .getAttribute('aria-current')
+      .catch(() => null);
+    if (current !== 'page') {
+      console.log(`tap audit: could not open ${viewName(nav)}`);
+      return false;
+    }
+  }
   return true;
 }
 
@@ -320,8 +332,31 @@ const tapNth = (page: Page, i: number): Promise<boolean> =>
     return true;
   }, i);
 
+/**
+ * The audit's own sign-in per person, apart from the story's phones (a
+ * refresh token is good once, so two holders would revoke each other).
+ * An access token lasts 15 minutes, so each pass starts with a new one.
+ */
+const auditLogins = new Map<AuditRole, Login>();
+async function auditLogin(role: AuditRole): Promise<Login> {
+  const held = auditLogins.get(role);
+  let login: Login;
+  if (!held) {
+    login = await signIn(TG_IDS[role], PEOPLE.en[role], 'en');
+  } else {
+    const { tokens } = await mutate<{ tokens: { accessToken: string; refreshToken: string } }>(
+      '',
+      'auth.refresh',
+      { refreshToken: held.refreshToken },
+    );
+    login = { ...held, ...tokens };
+  }
+  auditLogins.set(role, login);
+  return login;
+}
+
 async function auditRole(stage: string, role: AuditRole, lang: Locale, width: string) {
-  const login: Login = demo.logins[role];
+  const login = await auditLogin(role);
   const session = await mutate<Login['session']>(login.accessToken, 'auth.setLocale', {
     locale: lang,
   });
@@ -355,7 +390,8 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
     // Nothing the audit taps is written.
     await context.route(`${API_URL}/trpc/**`, (route) => {
       const req = route.request();
-      if (req.method() === 'POST' && !req.url().includes('auth.refresh')) return route.abort();
+      // auth.refresh too: the audit keeps the tokens fresh (auditLogin).
+      if (req.method() === 'POST') return route.abort();
       return route.continue();
     });
     // A "leave with unsaved changes?" before a reload is answered yes, or
@@ -424,7 +460,7 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
     }
   } finally {
     await context.close();
-    await mutate(login.accessToken, 'auth.setLocale', { locale: 'en' });
+    await mutate(login.accessToken, 'auth.setLocale', { locale: 'en' }).catch(() => {});
   }
 }
 
