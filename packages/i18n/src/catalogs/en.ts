@@ -965,6 +965,8 @@ export const en = {
     'The link can be used once, expires in 7 days, and works only inside Telegram.',
   'admin.invite.link.submit': 'Create invite link',
   'admin.invite.link.copyTitle': 'Invite link',
+  'admin.invite.store': 'Store',
+  'admin.invite.pickStore': 'Pick a store',
   'admin.invite.tgIdHint':
     "Don't know their ID? Ask them to open the Mini App: it shows their Telegram ID on screen, and they can send it to you.",
   'admin.invite.clocksIn': 'Clocks in (attendance)',
@@ -2621,6 +2623,7 @@ export const en = {
   'admin.section.attendanceEnrollHint': 'Faces to approve: {n}',
   'admin.section.invite': 'Invite',
   'admin.section.inviteHint': 'Add someone to {store}',
+  'admin.section.inviteHintMany': 'Add someone to a store',
   'permission.attendance.clock': 'Clock in and out at their stores',
   'permission.attendance.manage': 'Plan shifts, review and correct attendance',
   'permission.group.attendance': 'Attendance',

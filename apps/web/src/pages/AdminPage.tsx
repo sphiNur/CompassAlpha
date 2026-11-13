@@ -99,6 +99,7 @@ import { PermissionsSection } from './admin/people';
 import { PlatformSection } from './admin/platform/PlatformSections';
 import { AttendanceAdmin } from './attendance/AttendanceAdmin';
 import { InviteFlow } from './admin/people/invite/InviteFlow';
+import { inviteStoreChoice } from './admin/people/invite/inviteStores';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -168,14 +169,20 @@ export function AdminPage() {
   // 2026-11-05: attendance sheet, roster and rules for the stores they manage.
   const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
   // D6 (2026-11-13): a manager of one store invites from here; the way
-  // was Stores › store › Team › Invite.
+  // was Stores › store › Team › Invite. S2 (2026-11-13): everyone who may
+  // invite into a store; with several, the sheet asks which one, starting
+  // from the store in the top bar.
   const adminStoreIds = useAdminStoreIds();
-  const inviteStoreId = isAdmin && adminStoreIds.size === 1 ? [...adminStoreIds][0]! : null;
-  const inviteStoreName = session?.stores.find((st) => st.id === inviteStoreId)?.name ?? null;
+  const navStoreCtx = useStoreContext();
+  const inviteChoice = inviteStoreChoice(
+    session?.stores ?? [],
+    adminStoreIds,
+    navStoreCtx.kind === 'specific' ? navStoreCtx.storeId : null,
+  );
+  const invites = isAdmin && inviteChoice.stores.length > 0;
   const [inviteOpen, setInviteOpen] = useState(false);
   // A1 (2026-11-13): the Admin badge's face enrollments, named on the
   // Attendance row. The bottom nav's query (same input, same cache).
-  const navStoreCtx = useStoreContext();
   const navCounts = trpc.nav.counts.useQuery(
     navStoreCtx.kind === 'specific' ? { storeId: navStoreCtx.storeId } : {},
     { enabled: seesAttendance && navStoreCtx.kind !== 'none', retry: false },
@@ -370,11 +377,15 @@ export function AdminPage() {
             />
             {/* D1 (2026-11-13): one tap to the count mode in a manager's one store. */}
             <StockCountShortcut />
-            {inviteStoreId && inviteStoreName ? (
+            {invites ? (
               <SectionRow
                 icon={<IconShare size={20} />}
                 label={i18n.t('admin.section.invite')}
-                hint={i18n.t('admin.section.inviteHint', { store: inviteStoreName })}
+                hint={
+                  inviteChoice.stores.length === 1
+                    ? i18n.t('admin.section.inviteHint', { store: inviteChoice.stores[0]!.name })
+                    : i18n.t('admin.section.inviteHintMany')
+                }
                 onClick={() => setInviteOpen(true)}
               />
             ) : null}
@@ -427,11 +438,12 @@ export function AdminPage() {
           />
         ) : null}
       </ul>
-      {inviteStoreId ? (
+      {invites ? (
         <InviteFlow
           open={inviteOpen}
           onClose={() => setInviteOpen(false)}
-          storeIds={[inviteStoreId]}
+          storeIds={inviteChoice.preselect ? [inviteChoice.preselect] : []}
+          storeChoices={inviteChoice.stores}
         />
       ) : null}
     </div>

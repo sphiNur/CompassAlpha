@@ -4,8 +4,8 @@
  * PeopleSection so the Admin home can open it for a manager of one store
  * without the Stores › store › Team detour.
  */
-import { useState } from 'react';
-import { useToast } from '@compass/ui';
+import { useEffect, useState } from 'react';
+import { Field, Select, useToast } from '@compass/ui';
 import { STALE } from '../../../../config/timings';
 import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
@@ -21,18 +21,25 @@ import { useStoreClocking } from '../../../attendance/useStoreClocking';
 import { InviteCopySheet } from '../InviteCopySheet';
 import { type InviteDraft, useActor } from '../shared';
 import { InviteHubSheet } from './InviteHubSheet';
+import type { InviteStore } from './inviteStores';
 import { ManualInviteSheet } from './ManualInviteSheet';
 
 export function InviteFlow({
   open,
   onClose,
   storeIds,
+  storeChoices,
   preferOrgTier = false,
 }: {
   open: boolean;
   onClose: () => void;
-  /** The stores the form starts with. */
+  /** The stores the form starts with (with `storeChoices`: the preselected one). */
   storeIds: string[];
+  /**
+   * S2 (2026-11-13): from the Admin home, the stores the person may invite
+   * into. With several, the hub asks which one first.
+   */
+  storeChoices?: readonly InviteStore[];
   /** The organisation-level list: an org-tier role is the default. */
   preferOrgTier?: boolean;
 }) {
@@ -44,6 +51,13 @@ export function InviteFlow({
   const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
   const [linkDraft, setLinkDraft] = useState<InviteDraft | null>(null);
   const [linkAction, setLinkAction] = useState<'share' | 'copy'>('share');
+  // S2: the store picked in the hub; each opening starts from the preselected one.
+  const picksStore = (storeChoices?.length ?? 0) > 1;
+  const preselected = storeIds[0] ?? '';
+  const [pickedStoreId, setPickedStoreId] = useState(preselected);
+  useEffect(() => {
+    if (open) setPickedStoreId(preselected);
+  }, [open, preselected]);
   // The inviter's own roles, for the rank rules (useActor).
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {
     enabled: open || !!manualDraft || !!linkDraft,
@@ -109,7 +123,7 @@ export function InviteFlow({
     tgUserId: '',
     displayName: '',
     roleSlug: '',
-    storeIds,
+    storeIds: picksStore ? (pickedStoreId ? [pickedStoreId] : []) : storeIds,
     clocksIn: false,
   });
 
@@ -118,6 +132,24 @@ export function InviteFlow({
       <InviteHubSheet
         open={open}
         onClose={onClose}
+        storePicker={
+          picksStore ? (
+            <Field label={i18n.t('admin.invite.store')}>
+              <Select value={pickedStoreId} onChange={(e) => setPickedStoreId(e.target.value)}>
+                {pickedStoreId ? null : (
+                  <option value="" disabled>
+                    {i18n.t('admin.invite.pickStore')}
+                  </option>
+                )}
+                {storeChoices!.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null
+        }
         onPickManual={() => {
           onClose();
           setManualDraft(freshDraft());

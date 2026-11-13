@@ -915,6 +915,8 @@ export const ru = {
     'Тот, кто откроет ссылку, присоединится к рабочему пространству с выбранными магазинами и ролью.',
   'admin.invite.link.hint': 'Ссылка одноразовая, действует 7 дней и открывается только в Telegram.',
   'admin.invite.link.submit': 'Создать ссылку',
+  'admin.invite.store': 'Магазин',
+  'admin.invite.pickStore': 'Выберите магазин',
   'admin.invite.tgIdHint':
     'Не знаете ID? Попросите человека открыть мини-приложение — там на экране будет его Telegram ID, пусть пришлёт его вам.',
   'admin.invite.clocksIn': 'Отмечается (учёт времени)',
@@ -2535,6 +2537,7 @@ export const ru = {
   'admin.section.attendanceEnrollHint': 'Лица на одобрение: {n}',
   'admin.section.invite': 'Пригласить',
   'admin.section.inviteHint': 'Добавить человека в {store}',
+  'admin.section.inviteHintMany': 'Добавить человека в магазин',
   'permission.attendance.clock': 'Отмечать приход и уход в своих магазинах',
   'permission.attendance.manage': 'Составлять смены, проверять и исправлять учёт времени',
   'permission.group.attendance': 'Учёт времени',
