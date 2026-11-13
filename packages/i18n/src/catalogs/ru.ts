@@ -76,7 +76,6 @@ export const ru = {
   'catalog.supplier.emptyTitle': 'Нет поставщиков',
   'catalog.supplier.emptyBody': 'Учёт того, у кого вы покупаете на рынке.',
   'catalog.category.meta': 'Символьный код {slug} · порядок {sort}',
-  'catalog.category.slugPlaceholder': 'например, dairy',
   'catalog.sku.stepMeta': 'шаг заказа {step}',
   'catalog.supplier.tgPlaceholder': 'имя пользователя (без @)',
   'catalog.readOnlyHint': 'Изменять каталог могут только администраторы рабочего пространства.',
@@ -189,7 +188,6 @@ export const ru = {
   'people.slugRule': 'Строчные латинские буквы, цифры и дефис, например night-shift.',
   'admin.errors.roleSlugInvalid':
     'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
-  'people.slugRequired': 'Обязательное поле.',
   'people.rankInvalid': 'Введите целое число от {min} до {max}.',
   'people.rankTierLocked':
     'Эта роль уже назначена участникам, поэтому её уровень не может пересечь отметку {rank}: если уровень не ниже {rank}, роль действует во всём рабочем пространстве, если ниже — в отдельных магазинах.',
@@ -1860,7 +1858,6 @@ export const ru = {
   'admin.field.assignedStores': 'Назначенные магазины',
   'admin.field.displayNameOverride': 'Отображаемое имя (правка администратора)',
   'admin.field.codePlaceholder': 'Внутренний код, необязательно',
-  'admin.field.roleSlugPlaceholder': 'например, shift-lead',
   'admin.field.memberNamePlaceholder': 'Отображаемое имя',
   'admin.label.counting': 'Подсчёт…',
   'admin.field.sortIndex': 'Порядок',

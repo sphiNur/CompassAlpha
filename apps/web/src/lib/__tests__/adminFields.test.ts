@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  codeFromName,
   defaultNewRoleRank,
   normaliseSlugInput,
   readRank,
@@ -71,5 +72,29 @@ describe('role identifier (DX-ADM-4)', () => {
     expect(normaliseSlugInput('night_shift')).toBe('night-shift');
     expect(slugIsValid(normaliseSlugInput('Night Shift'))).toBe(true);
     expect(slugIsValid(normaliseSlugInput('ночь'))).toBe(false);
+  });
+});
+
+describe('codeFromName (D2)', () => {
+  const none = new Set<string>();
+  test('a Latin name becomes a hyphenated code', () => {
+    expect(codeFromName(['Night Shift'], none, 'role')).toBe('night-shift');
+    expect(codeFromName(['  Sut mahsulotlari! '], none, 'category')).toBe('sut-mahsulotlari');
+    expect(codeFromName(['Oʻsimlik yogʻi'], none, 'category')).toBe('osimlik-yogi');
+  });
+  test('Cyrillic is written in Latin; a name without either falls back', () => {
+    expect(codeFromName(['Молочные продукты'], none, 'category')).toBe('molochnye-produkty');
+    expect(codeFromName(['蔬菜'], none, 'category')).toBe('category');
+    expect(codeFromName(['', null, '蔬菜', 'Vegetables'], none, 'category')).toBe('vegetables');
+  });
+  test('a code already in use gets the next free number', () => {
+    expect(codeFromName(['Dairy'], new Set(['dairy']), 'category')).toBe('dairy-2');
+    expect(codeFromName(['Dairy'], new Set(['dairy', 'dairy-2']), 'category')).toBe('dairy-3');
+    expect(codeFromName(['蔬菜'], new Set(['category']), 'category')).toBe('category-2');
+  });
+  test('the result always passes the server rule', () => {
+    for (const n of ['Night Shift', 'Молоко 3.2%', '蔬菜', 'Café', '--x--']) {
+      expect(slugIsValid(codeFromName([n], none, 'role'))).toBe(true);
+    }
   });
 });

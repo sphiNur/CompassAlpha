@@ -73,7 +73,6 @@ export const zh = {
   'catalog.supplier.emptyTitle': '暂无供应商',
   'catalog.supplier.emptyBody': '记录你在市场上从谁那里进货。',
   'catalog.category.meta': '标识 {slug} · 排序 {sort}',
-  'catalog.category.slugPlaceholder': '例如：dairy',
   'catalog.sku.stepMeta': '每次加减 {step}',
   'catalog.supplier.tgPlaceholder': '用户名（不带 @）',
   'catalog.readOnlyHint': '只有工作区管理员可以修改目录。',
@@ -179,7 +178,6 @@ export const zh = {
   'people.rankField': '等级（{min}–{max}）',
   'people.slugRule': '小写英文字母、数字和连字符（-），例如 night-shift。',
   'admin.errors.roleSlugInvalid': '只能用小写英文字母、数字和连字符（-），例如 night-shift。',
-  'people.slugRequired': '必填。',
   'people.rankInvalid': '填 {min} 到 {max} 之间的整数。',
   'people.rankTierLocked':
     '已有成员持有这个角色，等级不能跨过 {rank}：{rank} 及以上作用于整个工作区，低于 {rank} 只作用于单个门店。',
@@ -1638,7 +1636,6 @@ export const zh = {
   'admin.field.assignedStores': '所属门店',
   'admin.field.displayNameOverride': '显示名称（管理员覆盖）',
   'admin.field.codePlaceholder': '内部编号（可选）',
-  'admin.field.roleSlugPlaceholder': '例如：shift-lead',
   'admin.field.memberNamePlaceholder': '显示名称',
   'admin.label.counting': '正在统计…',
   'admin.field.sortIndex': '排序',

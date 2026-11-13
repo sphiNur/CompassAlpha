@@ -78,3 +78,83 @@ export function normaliseSlugInput(text: string): string {
 export function slugIsValid(slug: string): boolean {
   return SLUG_RE.test(slug);
 }
+
+/** Cyrillic letters (Russian and Uzbek) in Latin, for a code made from a name. */
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  а: 'a',
+  б: 'b',
+  в: 'v',
+  г: 'g',
+  д: 'd',
+  е: 'e',
+  ё: 'yo',
+  ж: 'zh',
+  з: 'z',
+  и: 'i',
+  й: 'y',
+  к: 'k',
+  л: 'l',
+  м: 'm',
+  н: 'n',
+  о: 'o',
+  п: 'p',
+  р: 'r',
+  с: 's',
+  т: 't',
+  у: 'u',
+  ф: 'f',
+  х: 'kh',
+  ц: 'ts',
+  ч: 'ch',
+  ш: 'sh',
+  щ: 'sch',
+  ъ: '',
+  ы: 'y',
+  ь: '',
+  э: 'e',
+  ю: 'yu',
+  я: 'ya',
+  ў: 'o',
+  қ: 'q',
+  ғ: 'g',
+  ҳ: 'h',
+};
+
+/** Longest code made from a name; a hand-typed one may be longer. */
+const CODE_FROM_NAME_MAX = 32;
+
+/**
+ * D2 (2026-11-13): the short code of a category or a role, made from its
+ * name when the field is left empty. The first name that has Latin or
+ * Cyrillic letters gives it ("Night shift" → "night-shift", "Молочные
+ * продукты" → "molochnye-produkty"); a name with neither (Chinese) gives
+ * `fallback`. A code already in `taken` gets a number: "dairy-2".
+ * The field stays editable for those who want their own.
+ */
+export function codeFromName(
+  names: ReadonlyArray<string | null | undefined>,
+  taken: ReadonlySet<string>,
+  fallback: string,
+): string {
+  let base = '';
+  for (const name of names) {
+    if (!name) continue;
+    const latin = [...name.normalize('NFKD').toLowerCase()]
+      .map((ch) => CYRILLIC_TO_LATIN[ch] ?? ch)
+      .join('')
+      .replace(/[̀-ͯʻʼ'’`]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .slice(0, CODE_FROM_NAME_MAX)
+      .replace(/^-+|-+$/g, '');
+    if (/[a-z]/.test(latin)) {
+      base = latin;
+      break;
+    }
+  }
+  if (!base) base = fallback;
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const code = `${base}-${n}`;
+    if (!taken.has(code)) return code;
+  }
+}

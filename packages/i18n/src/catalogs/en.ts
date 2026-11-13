@@ -92,7 +92,6 @@ export const en = {
   'catalog.supplier.emptyTitle': 'No suppliers',
   'catalog.supplier.emptyBody': 'Track who you buy from at the market.',
   'catalog.category.meta': 'Short code {slug} · order {sort}',
-  'catalog.category.slugPlaceholder': 'e.g. dairy',
   'catalog.sku.stepMeta': 'order step {step}',
   'catalog.supplier.tgPlaceholder': 'username (without @)',
   'catalog.readOnlyHint': 'Only workspace admins can change the catalog.',
@@ -218,7 +217,6 @@ export const en = {
   'people.slugRule': 'Lowercase Latin letters, digits and hyphens, e.g. night-shift.',
   'admin.errors.roleSlugInvalid':
     'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
-  'people.slugRequired': 'Required.',
   'people.rankInvalid': 'Enter a whole number from {min} to {max}.',
   'people.rankTierLocked':
     "Members hold this role, so its level can't cross {rank}: at {rank} and above a role covers the whole workspace, below it single stores.",
@@ -1946,7 +1944,6 @@ export const en = {
   'admin.field.displayNameOverride': 'Display name (admin override)',
   // 2026-10-30: input placeholders that were hard-coded English (12-工程 F8).
   'admin.field.codePlaceholder': 'Optional internal code',
-  'admin.field.roleSlugPlaceholder': 'e.g. shift-lead',
   'admin.field.memberNamePlaceholder': 'Display name',
   'admin.label.counting': 'Counting…',
   'admin.field.sortIndex': 'Sort order',

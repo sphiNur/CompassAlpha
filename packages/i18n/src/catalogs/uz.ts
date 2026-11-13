@@ -81,7 +81,6 @@ export const uz = {
   'catalog.supplier.emptyTitle': 'Yetkazib beruvchilar yoʻq',
   'catalog.supplier.emptyBody': 'Bozorda kimdan xarid qilayotganingizni yozib boring.',
   'catalog.category.meta': 'Qisqa kod {slug} · tartib {sort}',
-  'catalog.category.slugPlaceholder': 'masalan, dairy',
   'catalog.sku.stepMeta': 'buyurtma qadami {step}',
   'catalog.supplier.tgPlaceholder': 'foydalanuvchi nomi (@ belgisisiz)',
   'catalog.readOnlyHint': 'Katalogni faqat ish maydoni administratorlari oʻzgartira oladi.',
@@ -197,7 +196,6 @@ export const uz = {
   'people.slugRule': 'Kichik lotin harflari, raqamlar va chiziqcha, masalan night-shift.',
   'admin.errors.roleSlugInvalid':
     'Faqat kichik lotin harflari, raqamlar va chiziqcha (-), masalan night-shift.',
-  'people.slugRequired': 'Majburiy.',
   'people.rankInvalid': '{min} dan {max} gacha butun son kiriting.',
   'people.rankTierLocked':
     'Bu rol aʼzolarga biriktirilgan, shuning uchun darajasi {rank} chegarasidan oʻta olmaydi: {rank} va undan yuqori rol butun ish maydoniga, undan pasti alohida doʻkonlarga tegishli.',
@@ -1844,7 +1842,6 @@ export const uz = {
   'admin.field.assignedStores': 'Tayinlangan doʻkonlar',
   'admin.field.displayNameOverride': 'Koʻrinadigan ism (admin)',
   'admin.field.codePlaceholder': 'Ichki kod, ixtiyoriy',
-  'admin.field.roleSlugPlaceholder': 'masalan, shift-lead',
   'admin.field.memberNamePlaceholder': 'Koʻrinadigan ism',
   'admin.label.counting': 'Hisoblanmoqda…',
   'admin.field.sortIndex': 'Tartib',

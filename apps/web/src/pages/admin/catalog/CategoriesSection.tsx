@@ -30,6 +30,7 @@ import {
 } from './CatalogParts';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import {
+  CATALOG_LOCALES,
   EMPTY_NAMES,
   cleanNames,
   hasAnyName,
@@ -37,7 +38,7 @@ import {
   type CatalogNames,
 } from './catalogNames';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
-import { slugIsValid } from '../../../lib/adminFields';
+import { codeFromName, slugIsValid } from '../../../lib/adminFields';
 import { readSortIndex } from './sortIndex';
 
 interface CategoryDraft {
@@ -100,6 +101,19 @@ export function CategoriesSection() {
     create.isPending || update.isPending,
   );
   const sortIndex = draft ? readSortIndex(draft.sortText) : null;
+  // D2 (2026-11-13): an empty short code is made from the name, unique in
+  // the workspace; the field shows it as its placeholder.
+  const slugTyped = draft?.slug.trim() ?? '';
+  const autoSlug = draft
+    ? codeFromName(
+        CATALOG_LOCALES.map((l) => draft.names[l]),
+        new Set(
+          (categoriesQuery.data ?? []).filter((c) => c.id !== draft.categoryId).map((c) => c.slug),
+        ),
+        'category',
+      )
+    : '';
+  const slugToSend = slugTyped || autoSlug;
 
   return (
     <div className="px-4 py-3">
@@ -174,10 +188,7 @@ export function CategoriesSection() {
             block
             loading={create.isPending || update.isPending}
             disabled={
-              !draft?.slug.trim() ||
-              !slugIsValid(draft.slug) ||
-              !hasAnyName(draft.names) ||
-              sortIndex === null
+              !draft || !slugIsValid(slugToSend) || !hasAnyName(draft.names) || sortIndex === null
             }
             onClick={() => {
               if (!draft || sortIndex === null) return;
@@ -185,12 +196,12 @@ export function CategoriesSection() {
               if (draft.categoryId) {
                 update.mutate({
                   categoryId: draft.categoryId,
-                  slug: draft.slug,
+                  slug: slugToSend,
                   names,
                   sortIndex,
                 });
               } else {
-                create.mutate({ slug: draft.slug, names, sortIndex });
+                create.mutate({ slug: slugToSend, names, sortIndex });
               }
             }}
           >
@@ -200,25 +211,25 @@ export function CategoriesSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
+            <CatalogNameFields
+              names={draft.names}
+              onChange={(names) => setDraft({ ...draft, names })}
+              examples={CATEGORY_EXAMPLES}
+            />
             {/* CAT-10 (2026-10-30): the server takes a-z, 0-9 and "-" only;
-                anything else used to come back as 「出错了」. */}
+                anything else used to come back as 「出错了」. D2: below the names,
+                which fill it when it is left empty. */}
             <Field
               label={i18n.t('admin.field.slug')}
-              required
               error={draft.slug && !slugIsValid(draft.slug) ? i18n.t(SLUG_MESSAGE.category) : null}
             >
               <Input
                 value={draft.slug}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
                 maxLength={CATALOG_TEXT_MAX.categorySlug}
-                placeholder={i18n.t('catalog.category.slugPlaceholder')}
+                placeholder={autoSlug}
               />
             </Field>
-            <CatalogNameFields
-              names={draft.names}
-              onChange={(names) => setDraft({ ...draft, names })}
-              examples={CATEGORY_EXAMPLES}
-            />
             <SortIndexField
               text={draft.sortText}
               onText={(sortText) => setDraft({ ...draft, sortText })}
