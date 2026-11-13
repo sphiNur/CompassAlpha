@@ -113,7 +113,7 @@ test.beforeAll(async ({ browser: b }) => {
 
 test.afterAll(async () => {
   for (const { context } of phones.values()) await context.close();
-  writeReport();
+  writeReport(true);
 });
 
 async function phone(who: Role): Promise<Page> {
@@ -472,6 +472,7 @@ async function audit(stage: string, roles: AuditRole[]) {
       for (const role of roles) {
         const started = Date.now();
         await auditRole(stage, role, lang, width);
+        writeReport(); // so far, for a run that is stopped
         console.log(
           `tap audit: ${stage} ${role} ${lang}@${width} in ${Math.round((Date.now() - started) / 1000)}s, ${findings.size} under ${MIN} so far`,
         );
@@ -482,7 +483,7 @@ async function audit(stage: string, roles: AuditRole[]) {
   for (const { page } of phones.values()) await page.reload();
 }
 
-function writeReport() {
+function writeReport(final = false) {
   mkdirSync(OUT, { recursive: true });
   const rows = [...findings.values()].sort(
     (a, b) =>
@@ -510,7 +511,7 @@ function writeReport() {
     '',
   ].join('\n');
   writeFileSync(join(OUT, 'report.md'), md);
-  console.log(`tap audit: ${measured} measured, ${rows.length} under ${MIN} → ${OUT}`);
+  if (final) console.log(`tap audit: ${measured} measured, ${rows.length} under ${MIN} → ${OUT}`);
 }
 
 // ─────────────────────────────── the story ───────────────────────────────
