@@ -2,9 +2,10 @@
  * ApprovalPage — manager queue.
  *
  * Lists submitted sessions enriched with store / member / item-count metadata
- * (single round-trip via `order.pendingList`). Atomically claim → review →
- * approve / reject. Per-card item view uses the dedicated
- * `order.sessionDetail({id})` endpoint.
+ * (single round-trip via `order.pendingList`). Review → approve / reject;
+ * the first quantity change claims the order (V1: no separate claim
+ * step). Per-card item view uses the dedicated `order.sessionDetail({id})`
+ * endpoint.
  *
  * Review ORD-10 (2026-11, step 2): each order is an ApprovalCard
  * (approval/ApprovalCard.tsx); the page keeps the writes and what
@@ -15,6 +16,8 @@ import { useMutationState } from '@tanstack/react-query';
 import { getMutationKey } from '@trpc/react-query';
 import {
   Button,
+  Chip,
+  ChipBar,
   DataState,
   EmptyState,
   Field,
@@ -52,6 +55,17 @@ const TAB_LABEL_KEYS: Record<ApprovalTab, CatalogKey> = {
   approved: 'approval.tab.approved',
   rejected: 'approval.tab.rejected',
 };
+
+/**
+ * Reject reasons a tap fills in (2026-11-13). The reason stays required
+ * and free text; a chip only writes its words into the field.
+ */
+const REJECT_PRESET_KEYS: readonly CatalogKey[] = [
+  'approval.rejectPreset.duplicate',
+  'approval.rejectPreset.wrongQty',
+  'approval.rejectPreset.overBudget',
+  'approval.rejectPreset.notNeeded',
+];
 
 /** D12: how long the approval toast offers to take it back. */
 const UNDO_APPROVE_MS = 5000;
@@ -116,13 +130,6 @@ export function ApprovalPage() {
   // M1.9 (2026-05-07): the regex and handler shape live in one place
   // (hooks/useErrToast.ts), so pages cannot drift apart.
   const errToast = useErrToast();
-  const claim = trpc.order.claim.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate();
-      toast.info(i18n.t('approval.toast.claimed'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
   // 2026-10-21 audit CA-43 "approve what you saw": approve / reject send
   // the `lastSeq` of the row on screen; the server answers CONFLICT
   // order.errors.staleSeq when the staff changed the order after that.
@@ -351,7 +358,6 @@ export function ApprovalPage() {
   /** Which of a card's writes is on its way. */
   const busyFor = (sessionId: string): ApprovalCardBusy => ({
     approving: approve.isPending && approve.variables?.sessionId === sessionId,
-    claiming: claim.isPending && claim.variables?.sessionId === sessionId,
     takingOver: takeOverClaim.isPending && takeOverClaim.variables?.sessionId === sessionId,
     releasing: releaseClaim.isPending && releaseClaim.variables?.sessionId === sessionId,
     unapproving: unapprove.isPending && unapprove.variables?.sessionId === sessionId,
@@ -452,10 +458,6 @@ export function ApprovalPage() {
                   setRejectFor(row.id);
                   setRejectSeq(row.lastSeq);
                 }}
-                onClaim={() => {
-                  claim.mutate({ sessionId: row.id });
-                  setActiveSessionId(row.id);
-                }}
                 onRelease={() => {
                   letGo.current.add(row.id);
                   releaseClaim.mutate({ sessionId: row.id });
@@ -528,14 +530,33 @@ export function ApprovalPage() {
           </Button>
         }
       >
-        <div className="py-3">
+        <div className="flex flex-col gap-2 py-3">
+          <ChipBar
+            ariaLabel={i18n.t('approval.rejectPreset.label')}
+            // Choosing writes into the field: arrows only move focus.
+            followFocus={false}
+            className="-mx-4 -my-1.5 px-4 py-1.5"
+          >
+            {REJECT_PRESET_KEYS.map((key) => {
+              const text = i18n.t(key);
+              return (
+                <Chip
+                  key={key}
+                  selected={rejectReason.trim() === text}
+                  onClick={() => setRejectReason(text)}
+                >
+                  {text}
+                </Chip>
+              );
+            })}
+          </ChipBar>
           {/* A11Y-9 (2026-10-31): a real label; the placeholder ("例如：重复
-              下单") was the field's only name and vanished on typing. */}
+              下单") was the field's only name and vanished on typing. The
+              example placeholder went with the reason chips above. */}
           <Field label={i18n.t('approval.confirm.reject.reasonLabel')}>
             <Input
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder={i18n.t('approval.confirm.reject.reasonPlaceholder')}
               maxLength={500}
               required
               aria-required

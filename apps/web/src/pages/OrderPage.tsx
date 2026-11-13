@@ -194,13 +194,11 @@ export function OrderPage() {
   const showExtrasEditor =
     !!currentStoreId && (extrasSessionId !== null || (!isReadOnly && sessionQuery.isSuccess));
 
-  // Telegram MainButton — single point of control for the entire submit
-  // flow. State machine:
-  //   - sheet closed + items selected → "Review Order (3)"     → opens sheet
-  //   - sheet open + not pending      → "Submit order"          → fires submit
-  //   - sheet open + pending          → "Submitting…"  (disabled)
-  // No buttons inside the sheet body — the MainButton IS the action.
-  // The sheet handles its own dismissal via tap-outside / swipe-down.
+  // The page's main button submits (simplification O1, 2026-11-13: one
+  // tap, owner approved). It used to open the review sheet, and Submit
+  // was a second tap inside it. The sheet stays as an optional look
+  // ("View order" under the list, with its own Submit), and a sent batch
+  // can be taken back from the toast or the receipt's banner (Withdraw).
   const canSubmit = sessionStatus === 'draft' || sessionStatus === 'rejected';
   const { submit, withdraw, handleSubmit } = useSubmitBatch({
     storeId: currentStoreId,
@@ -224,37 +222,25 @@ export function OrderPage() {
   });
   const sessionBlocked = sessionLoad === 'blocked';
 
-  let mainButtonText: string;
-  if (submit.isPending) {
-    mainButtonText = i18n.t('order.action.submitting');
-  } else if (reviewOpen) {
-    mainButtonText = i18n.t('order.action.submitOrder');
-  } else {
-    mainButtonText = i18n.t('order.review', { n: selectedCount });
-  }
+  const mainButtonText = submit.isPending
+    ? i18n.t('order.action.submitting')
+    : i18n.t('order.action.submitCount', { n: selectedCount });
 
   const viewingOtherBatch = otherBatch !== null;
   usePageMainButton(
     mainButtonText,
     () => {
       if (!canSubmit || selectedCount === 0 || submit.isPending || viewingOtherBatch) return;
-      if (reviewOpen) {
-        if (!sessionQuery.data) return;
-        void handleSubmit();
-      } else {
-        setReviewOpen(true);
-      }
+      if (!sessionQuery.data) return;
+      // Offline, handleSubmit says that submitting needs a network.
+      void handleSubmit();
     },
     {
       // RE-ORD-1 (2026-10-30): while another batch is shown read-only the
       // button would still act on the current draft — tapping it submitted
       // a batch the user was not looking at. No main button there.
       visible: canSubmit && selectedCount > 0 && !sessionBlocked && !viewingOtherBatch,
-      active:
-        selectedCount > 0 &&
-        !submit.isPending &&
-        !sessionBlocked &&
-        !(reviewOpen && !offline.online),
+      active: selectedCount > 0 && !submit.isPending && !sessionBlocked,
     },
   );
 
@@ -585,6 +571,15 @@ export function OrderPage() {
         />
       ) : null}
 
+      {/* O1: the review is an optional look now; the main button submits. */}
+      {canSubmit && selectedCount > 0 ? (
+        <div className="flex justify-center px-4 py-3">
+          <Button variant="ghost" onClick={() => setReviewOpen(true)}>
+            {i18n.t('order.review.view')}
+          </Button>
+        </div>
+      ) : null}
+
       {/* An in-page "Review order (N)" fallback used to live here, gated on
           `!getTg()` — "only outside Telegram, where there's no MainButton".
           Deleted 2026-07-30. It never rendered (getTg() is truthy in any
@@ -595,12 +590,10 @@ export function OrderPage() {
           twice. The other five sites that conflated SDK-present with
           inside-Telegram needed real fixes; this one needed deleting. */}
 
-      {/* Review sheet — preview of what's being submitted. No buttons in
-          the body: inside Telegram the MainButton text changes from
-          "Review Order (N)" to "Submit order" while open, and that's the
-          submit trigger. Tap-outside / swipe-down dismisses the sheet.
-          Outside Telegram (rare — web preview) we render a single
-          fallback button in the footer since there's no MainButton. */}
+      {/* Review sheet — an optional preview of what is being submitted
+          (O1), opened from "View order". Its footer submits, since the
+          page's main button sits behind an open sheet. Tap-outside /
+          swipe-down dismisses it. */}
       {/* Today's batches, reachable while drafting. Without this the count
           above was informational only: you could see that an earlier batch
           existed but not what was in it or where it had got to. */}

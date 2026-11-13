@@ -317,8 +317,22 @@ export interface IssueFormCheck {
   noteMissingShown: boolean;
   canSave: boolean;
   waitingForPhoto: boolean;
-  /** DX-DLV-07: why Save is grey, said next to it instead of a dead button. */
-  saveBlockedBy: 'photo' | 'note' | null;
+  /**
+   * DX-DLV-07: why Save is grey, said next to it instead of a dead button.
+   * C2: 'qty' when the quantity is what is missing and its own error is
+   * not shown yet (a short line whose note is now optional).
+   */
+  saveBlockedBy: 'photo' | 'note' | 'qty' | null;
+}
+
+/**
+ * Whether a problem needs a note. Simplification C2 (2026-11-13): a short
+ * line already says what is wrong through the quantity that arrived, so
+ * its note is optional; a wrong or spoiled item still needs one (what
+ * arrived instead, what is wrong with it). The domain rule matches.
+ */
+export function issueNoteRequired(status: ConfirmDecisionStatus): boolean {
+  return status === 'wrong' || status === 'quality';
 }
 
 /** Whether the problem form may be saved, and what it says when not. */
@@ -327,21 +341,28 @@ export function issueFormCheck(
   q: { photoUploading: boolean; saving: boolean },
 ): IssueFormCheck {
   const received = checkReceivedQty(form.status, form.received, form.splitQty);
-  const noteMissing = form.note.trim().length === 0;
+  const noteMissing = issueNoteRequired(form.status) && form.note.trim().length === 0;
   const save = issueSaveState({
     reasonOk: !noteMissing && received.ok,
     photoUploading: q.photoUploading,
     saving: q.saving,
   });
+  const shownReceivedProblem =
+    !received.ok && (form.receivedTouched || form.saveTried) ? received.reason : null;
   return {
     received,
-    shownReceivedProblem:
-      !received.ok && (form.receivedTouched || form.saveTried) ? received.reason : null,
+    shownReceivedProblem,
     noteMissing,
     noteMissingShown: noteMissing && form.saveTried,
     canSave: save.canSave,
     waitingForPhoto: save.waitingForPhoto,
-    saveBlockedBy: save.waitingForPhoto ? 'photo' : noteMissing ? 'note' : null,
+    saveBlockedBy: save.waitingForPhoto
+      ? 'photo'
+      : noteMissing
+        ? 'note'
+        : !received.ok && shownReceivedProblem === null
+          ? 'qty'
+          : null,
   };
 }
 

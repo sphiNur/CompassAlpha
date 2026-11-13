@@ -223,26 +223,45 @@ describe('issueFormCheck (review CONF-07)', () => {
   });
   const idle = { photoUploading: false, saving: false };
 
-  it('a fresh form shows no errors but cannot be saved, and says why', () => {
+  it('a fresh short form shows no errors but cannot be saved, and says why', () => {
     expect(issueFormCheck(form(), idle)).toEqual({
       received: { ok: false, reason: 'required' },
       shownReceivedProblem: null,
-      noteMissing: true,
+      noteMissing: false,
       noteMissingShown: false,
       canSave: false,
       waitingForPhoto: false,
-      saveBlockedBy: 'note',
+      saveBlockedBy: 'qty',
     });
+  });
+
+  it('C2: a short line saves without a note; wrong and quality still need one', () => {
+    expect(issueFormCheck(form({ received: '1' }), idle)).toMatchObject({
+      noteMissing: false,
+      canSave: true,
+      saveBlockedBy: null,
+    });
+    for (const status of ['wrong', 'quality'] as const) {
+      expect(issueFormCheck(form({ status, received: '0' }), idle)).toMatchObject({
+        noteMissing: true,
+        canSave: false,
+        saveBlockedBy: 'note',
+      });
+    }
   });
 
   it('DX-DLV-07: the quantity error shows once the field was used, every error once Save was tried', () => {
     expect(issueFormCheck(form({ received: '3', receivedTouched: true }), idle)).toMatchObject({
       shownReceivedProblem: 'exceeds',
       noteMissingShown: false,
+      saveBlockedBy: null,
+    });
+    expect(issueFormCheck(form({ status: 'quality', saveTried: true }), idle)).toMatchObject({
+      noteMissingShown: true,
     });
     expect(issueFormCheck(form({ saveTried: true }), idle)).toMatchObject({
       shownReceivedProblem: 'required',
-      noteMissingShown: true,
+      noteMissingShown: false,
     });
   });
 
@@ -252,7 +271,9 @@ describe('issueFormCheck (review CONF-07)', () => {
       canSave: true,
       saveBlockedBy: null,
     });
-    expect(issueFormCheck(form({ note: '   ', received: '1' }), idle)).toMatchObject({
+    expect(
+      issueFormCheck(form({ status: 'wrong', note: '   ', received: '1' }), idle),
+    ).toMatchObject({
       noteMissing: true,
       canSave: false,
     });
