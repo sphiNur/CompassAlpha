@@ -22,6 +22,10 @@
  * movements sheet are components of their own (InventoryActionSheet,
  * InventoryMovementsSheet); with the list they were one function of
  * about 550 lines.
+ *
+ * D1 (2026-11-13): "Count stock" opens the count mode (StockCountSheet),
+ * every product of the store on one screen with one Save. A row's
+ * Stocktake stays for a single correction.
  */
 import { useMemo, useState } from 'react';
 import {
@@ -53,8 +57,10 @@ import {
   type InventorySku,
 } from './InventoryActionSheet';
 import { InventoryMovementsSheet } from './InventoryMovementsSheet';
+import { StockCountSheet } from './StockCountSheet';
+import { hasStorePermission } from '../../../../lib/storePermission';
 
-export function StoreInventoryTab({ storeId }: { storeId: string }) {
+export function StoreInventoryTab({ storeId, storeName }: { storeId: string; storeName?: string }) {
   const i18n = useI18n();
   // 2026-07-30 (flow review): on-hand quantities printed the raw canonical
   // unit while the rest of the app printed the localized label.
@@ -73,6 +79,10 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
   const canAdjust = useAuthStore(
     (s) => s.session?.permissions.includes('inventory.adjust') ?? false,
   );
+  // D1: the count mode asks this store's permissions (store overrides
+  // included), as the server's stocktakeBatch does.
+  const canCount = useAuthStore((s) => hasStorePermission(s.session, storeId, 'inventory.adjust'));
+  const [counting, setCounting] = useState(false);
 
   const skuById = useMemo(() => {
     const m = new Map<string, InventorySku>();
@@ -125,16 +135,24 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
 
   return (
     <div className="px-4 py-3">
-      {canAdjust && levelsQuery.isSuccess && openingCandidates.length > 0 ? (
-        <div className="mb-3 flex">
-          <Button
-            size="sm"
-            variant="pearl"
-            className="ml-auto"
-            onClick={() => setAction({ kind: 'stocktake', skuId: '', current: '0', pickSku: true })}
-          >
-            {i18n.t('inventory.action.addStocktake')}
-          </Button>
+      {canCount || (canAdjust && levelsQuery.isSuccess && openingCandidates.length > 0) ? (
+        <div className="mb-3 flex flex-wrap justify-end gap-2">
+          {canAdjust && levelsQuery.isSuccess && openingCandidates.length > 0 ? (
+            <Button
+              size="sm"
+              variant="pearl"
+              onClick={() =>
+                setAction({ kind: 'stocktake', skuId: '', current: '0', pickSku: true })
+              }
+            >
+              {i18n.t('inventory.action.addStocktake')}
+            </Button>
+          ) : null}
+          {canCount ? (
+            <Button size="sm" onClick={() => setCounting(true)}>
+              {i18n.t('inventory.count.title')}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {levelsQuery.isLoading ? (
@@ -234,6 +252,12 @@ export function StoreInventoryTab({ storeId }: { storeId: string }) {
         skuById={skuById}
         openingCandidates={openingCandidates}
         onHand={(skuId) => (levelsQuery.data ?? []).find((l) => l.skuId === skuId)?.onHand ?? '0'}
+      />
+      <StockCountSheet
+        storeId={storeId}
+        storeName={storeName}
+        open={counting}
+        onClose={() => setCounting(false)}
       />
       <InventoryMovementsSheet
         storeId={storeId}

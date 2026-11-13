@@ -2579,6 +2579,16 @@ export const en = {
   'inventory.errors.countDecimals': 'At most 3 decimal places.',
   'inventory.errors.countTooLarge': 'That is too large: at most 99,999,999.',
   'inventory.badge.negative': 'Below zero — count it',
+  'inventory.count.title': 'Count stock',
+  'inventory.count.hint': 'Type what is on the shelf. Rows left empty are not counted.',
+  'inventory.count.onHand': 'In stock: {qty}',
+  'inventory.count.fieldAria': 'Counted: {name}',
+  'inventory.count.save': '{n, plural, one {Save # count} other {Save # counts}}',
+  'inventory.count.fixRows': '{n, plural, one {# row needs fixing} other {# rows need fixing}}',
+  'inventory.count.confirm':
+    '{counted, plural, one {# product counted} other {# products counted}}, {differ, plural, =0 {none differ from stock} one {# differs from stock} other {# differ from stock}}. Save?',
+  'inventory.count.saved': '{n, plural, one {# count saved.} other {# counts saved.}}',
+  'inventory.count.empty': 'No products in the catalog yet',
   'sales.toast.recordedNegative': 'Recorded. Stock is now below zero for: {items}. Count it soon.',
   'sales.toast.recordedNegativeMore':
     'Recorded. Stock is now below zero for: {items} and {n} more products. Count them soon.',

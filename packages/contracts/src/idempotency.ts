@@ -45,6 +45,8 @@ export const IDEMPOTENT_ROUTES = [
   'inventory.recordWastage',
   // DX-INV-2 (2026-11-01): stocktake too; one stable key per count.
   'inventory.stocktake',
+  // D1 (2026-11-13): the count mode's save, one key per part sent.
+  'inventory.stocktakeBatch',
   'run.addExpense',
   'run.attachSessions',
   // BUY-9 (2026-10-30): declared idempotentMutation and given a stable

@@ -396,7 +396,7 @@ export function StoreDetailScreen({
         />
       ) : null}
       {effectiveSub === 'inventory' && focus.kind === 'store' ? (
-        <StoreInventoryTab storeId={focus.storeId} />
+        <StoreInventoryTab storeId={focus.storeId} storeName={focus.storeName} />
       ) : null}
       {effectiveSub === 'sales' && focus.kind === 'store' ? (
         <StoreSalesPanel storeId={focus.storeId} className="px-4 py-3" />

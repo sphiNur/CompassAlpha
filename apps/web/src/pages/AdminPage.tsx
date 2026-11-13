@@ -91,6 +91,7 @@ import {
 import type { AdminSection, CatalogSub, OperationsSub, StoreFocus } from '../stores/navStore';
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
+import { StockCountShortcut } from './admin/stores/inventory/StockCountShortcut';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
 import { PermissionsSection } from './admin/people';
 import { PlatformSection } from './admin/platform/PlatformSections';
@@ -350,6 +351,8 @@ export function AdminPage() {
               hint={i18n.t('admin.section.storesHint')}
               onClick={() => setSection('stores')}
             />
+            {/* D1 (2026-11-13): one tap to the count mode in a manager's one store. */}
+            <StockCountShortcut />
             {/* M1.11: Permissions had IconWorkspace, same as Organization above
             — visually ambiguous in the section list. Switched to a new
             shield icon (added to @compass/ui) which reads as "access /

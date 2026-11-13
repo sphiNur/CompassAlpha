@@ -1,7 +1,7 @@
 /**
  * Inventory router (M2.0a, 2026-05-08).
  *
- * Read + write surface for the inventory ledger. Three procedures:
+ * Read + write surface for the inventory ledger. Procedures:
  *
  *   levels(storeId)         — current on-hand per SKU (SUM of deltas
  *                              from inventory.movements). Returns one
@@ -17,6 +17,11 @@
  *                              can re-tally and post again; a retry of
  *                              the same post (same idempotency key)
  *                              replays instead (DX-INV-2).
+ *
+ *   stocktakeBatch(storeId, counts[], note?)
+ *                              — D1 (2026-11-13): the count mode's one
+ *                              save; each count applied as stocktake
+ *                              applies one, all in one transaction.
  *
  *   recordWastage(storeId, sku, qty, note)
  *                              — Subtract `qty` from on-hand with a
@@ -37,12 +42,13 @@
  *     quantity; money stays in run_items / run_item_stores.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import {
   InventoryMovementsInputSchema,
   InventoryStoreInputSchema,
+  StocktakeBatchInputSchema,
   StocktakeInputSchema,
   WastageInputSchema,
   milliQtyFixed,
@@ -54,6 +60,7 @@ import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
+import { inUuids } from '../../services/sqlIn';
 
 // 2026-10-21 CA-10/CA-57: `|| users.manage` fallback removed — it
 // overrode store-level denies of inventory.adjust for managers and
@@ -78,7 +85,7 @@ async function assertWritableStoreAndSku(
   tx: DB,
   orgId: string,
   storeId: string,
-  skuId: string,
+  skuIds: readonly string[],
 ): Promise<void> {
   const store = await tx.query.stores.findFirst({
     where: (st, { eq: eq2, and: and2 }) => and2(eq2(st.id, storeId), eq2(st.orgId, orgId)),
@@ -87,13 +94,125 @@ async function assertWritableStoreAndSku(
   if (!store || !store.isActive || store.deletedAt) {
     throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'auth.errors.storeArchived' });
   }
-  const sku = await tx.query.skus.findFirst({
-    where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, skuId), eq2(k.orgId, orgId)),
-    columns: { id: true },
-  });
-  if (!sku) {
+  // D1 (2026-11-13): every product of a count-mode save in one query.
+  const found = await tx
+    .select({ id: s.skus.id })
+    .from(s.skus)
+    .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, [...skuIds])));
+  if (found.length !== new Set(skuIds).size) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
   }
+}
+
+/**
+ * The checks every stock write makes, in the write's own transaction:
+ * the actor is bound to the store, `inventory.adjust` holds there after
+ * per-store overrides, and the store and products are writable.
+ */
+async function assertCanAdjustStore(
+  tx: DB,
+  session: { orgId: string; memberId: string; permissions: ReadonlySet<string> },
+  storeId: string,
+  skuIds: readonly string[],
+): Promise<void> {
+  // M3.7 (2026-05-15): store-scope assertion. The flat permission
+  // check only says "this user can adjust inventory somewhere".
+  // Without the assertion below, a manager-of-A with
+  // `inventory.adjust` could call stocktake({storeId: <Store B>})
+  // and post a delta to Store B's ledger. The effective-perm
+  // override check below isn't enough — it composes the perm set
+  // with per-store overrides but doesn't enforce store binding.
+  // CONF-23: both checks run in the write's own transaction; they
+  // used to take one each.
+  await assertActorAssignedToStore(tx, session.memberId, storeId, session.permissions);
+  // Per-store override check: an admin may have denied the actor
+  // `inventory.adjust` specifically for this store.
+  requireInventoryAdjust(
+    await effectivePermissionsForStore(tx, session.memberId, storeId, session.permissions),
+  );
+  await assertWritableStoreAndSku(tx, session.orgId, storeId, skuIds);
+}
+
+/** What one product's count did; `inventory.stocktake` returns it as is. */
+type StocktakeOutcome =
+  | { skipped: true; currentOnHand: string }
+  | { skipped: false; appliedDelta: string; newOnHand: string };
+
+/**
+ * Stocktake — set absolute on-hand for each product. Computes
+ * (target - current) and writes one ledger row per product capturing the
+ * delta, reason 'stocktake'. A product counted at exactly what the system
+ * thought writes no row (keep the ledger lean). D1 (2026-11-13): shared
+ * by the one-product stocktake and the count mode's batch, so a count
+ * means the same either way (a later purge books back what it absorbed:
+ * purgePlans' keepCountedStock looks for reason 'stocktake').
+ */
+async function applyStocktakes(
+  tx: DB,
+  orgId: string,
+  storeId: string,
+  memberId: string,
+  counts: ReadonlyArray<{ skuId: string; target: string }>,
+  note: string | undefined,
+): Promise<Array<{ skuId: string } & StocktakeOutcome>> {
+  // 2026-10-21 audit CA-54: serialize stocktakes per (store, sku) for the
+  // rest of this tx. Without it two concurrent counts both read the same
+  // SUM and both post a delta, double-applying it. D1: the locks of a
+  // batch are taken in one order, so two batches cannot deadlock.
+  const skuIds = counts.map((c) => c.skuId);
+  for (const skuId of [...skuIds].sort()) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${'inventory.stocktake:' + storeId + ':' + skuId}))`,
+    );
+  }
+  // Current SUM(delta) of every counted product, one round-trip.
+  const cur = OnHandBySkuRowsSchema.parse(
+    await tx.execute(sql`
+    SELECT sku_id::text AS sku_id, COALESCE(SUM(delta), 0)::text AS on_hand
+    FROM inventory.movements
+    WHERE org_id = ${orgId}
+      AND store_id = ${storeId}
+      AND sku_id IN ${inUuids(skuIds)}
+    GROUP BY sku_id
+  `),
+  );
+  const onHand = new Map(cur.map((r) => [r.sku_id, qtyMilliOrZero(r.on_hand)]));
+  const occurredAt = new Date();
+  const rows: Array<typeof s.inventoryMovements.$inferInsert> = [];
+  const out: Array<{ skuId: string } & StocktakeOutcome> = [];
+  for (const c of counts) {
+    // The schema's stocktakeCountProblem already refused anything but a
+    // non-negative decimal (CONF-23: a second check here was dead); it
+    // read the text trimmed. Review QTY-03 (2026-11-11): in thousandths.
+    const target = qtyMilli(c.target.trim());
+    const current = onHand.get(c.skuId) ?? 0n;
+    if (target === current) {
+      // No-op stocktake; counted exactly what we thought.
+      out.push({ skuId: c.skuId, skipped: true, currentOnHand: milliQtyFixed(current) });
+      continue;
+    }
+    const delta = milliQtyFixed(target - current);
+    rows.push({
+      orgId,
+      storeId,
+      skuId: c.skuId,
+      delta,
+      reason: 'stocktake',
+      note: note ?? null,
+      sourceType: null,
+      sourceId: null,
+      actorMemberId: memberId,
+      occurredAt,
+    });
+    out.push({
+      skuId: c.skuId,
+      skipped: false,
+      appliedDelta: delta,
+      newOnHand: milliQtyFixed(target),
+    });
+  }
+  if (rows.length > 0) await tx.insert(s.inventoryMovements).values(rows);
+  return out;
 }
 
 /** Rows of the raw queries below, checked instead of cast (review CONF-23). */
@@ -108,7 +227,7 @@ const LevelRowsSchema = z.array(
     movement_count: z.number(),
   }),
 );
-const OnHandRowsSchema = z.array(z.object({ on_hand: z.string() }));
+const OnHandBySkuRowsSchema = z.array(z.object({ sku_id: z.string(), on_hand: z.string() }));
 
 export const inventoryRouter = router({
   /**
@@ -202,91 +321,55 @@ export const inventoryRouter = router({
     }),
 
   /**
-   * Stocktake — set absolute on-hand. Computes (target - current) and
-   * writes a single ledger row capturing the delta. If the operator
-   * counted exactly what the system thought, delta = 0 and no row is
-   * written (keep the ledger lean).
+   * Stocktake of one product (applyStocktakes). Kept for a single
+   * correction and for the Fine app; the count mode uses stocktakeBatch.
    */
   // DX-INV-2 (2026-11-01): idempotent. A lost-response retry with the
   // same X-Idempotency-Key replays the first answer; without it the retry
   // recomputed the delta against stock that sales had moved meanwhile and
   // posted a second correction.
-  stocktake: idempotentMutation
-    .input(StocktakeInputSchema)
+  stocktake: idempotentMutation.input(StocktakeInputSchema).mutation(async ({ ctx, input }) => {
+    requireInventoryAdjust(ctx.session!.permissions);
+    return ctx.withOrg(async (tx): Promise<StocktakeOutcome> => {
+      const session = ctx.session!;
+      await assertCanAdjustStore(tx, session, input.storeId, [input.skuId]);
+      const [res] = await applyStocktakes(
+        tx,
+        session.orgId,
+        input.storeId,
+        session.memberId,
+        [{ skuId: input.skuId, target: input.target }],
+        input.note,
+      );
+      const { skuId: _skuId, ...outcome } = res!;
+      return outcome;
+    });
+  }),
+
+  /**
+   * D1 (2026-11-13): the count mode's save. Each count is applied exactly
+   * as `stocktake` applies one, all in one transaction: either every
+   * product typed is recorded, or none is. Idempotent like the others.
+   */
+  stocktakeBatch: idempotentMutation
+    .input(StocktakeBatchInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
-      // The schema's stocktakeCountProblem already refused anything but
-      // a non-negative decimal (CONF-23: a second check here was dead); it
-      // read the text trimmed. Review QTY-03 (2026-11-11): in thousandths.
-      const target = qtyMilli(input.target.trim());
       return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        // M3.7 (2026-05-15): store-scope assertion. The flat permission
-        // check only says "this user can adjust inventory somewhere".
-        // Without the assertion below, a manager-of-A with
-        // `inventory.adjust` could call stocktake({storeId: <Store B>})
-        // and post a delta to Store B's ledger. The effective-perm
-        // override check below isn't enough — it composes the perm set
-        // with per-store overrides but doesn't enforce store binding.
-        // CONF-23: both checks run in the write's own transaction; they
-        // used to take one each.
-        await assertActorAssignedToStore(
+        const session = ctx.session!;
+        const skuIds = input.counts.map((c) => c.skuId);
+        await assertCanAdjustStore(tx, session, input.storeId, skuIds);
+        const results = await applyStocktakes(
           tx,
-          ctx.session!.memberId,
+          session.orgId,
           input.storeId,
-          ctx.session!.permissions,
+          session.memberId,
+          input.counts,
+          input.note,
         );
-        // Per-store override check: an admin may have denied the actor
-        // `inventory.adjust` specifically for this store.
-        requireInventoryAdjust(
-          await effectivePermissionsForStore(
-            tx,
-            ctx.session!.memberId,
-            input.storeId,
-            ctx.session!.permissions,
-          ),
-        );
-        await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
-        // 2026-10-21 audit CA-54: serialize stocktakes per (store, sku)
-        // for the rest of this tx. Without it two concurrent counts both
-        // read the same SUM and both post a delta, double-applying it.
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${'inventory.stocktake:' + input.storeId + ':' + input.skuId}))`,
-        );
-        // Compute current SUM(delta) so we can write the right delta
-        // to make SUM = target. Single round-trip.
-        const cur = OnHandRowsSchema.parse(
-          await tx.execute(sql`
-          SELECT COALESCE(SUM(delta), 0)::text AS on_hand
-          FROM inventory.movements
-          WHERE org_id = ${orgId}
-            AND store_id = ${input.storeId}
-            AND sku_id = ${input.skuId}
-        `),
-        );
-        const current = qtyMilliOrZero(cur[0]?.on_hand);
-        const delta = milliQtyFixed(target - current);
-        if (target === current) {
-          // No-op stocktake; counted exactly what we thought. Don't
-          // bloat the ledger with empty rows.
-          return { skipped: true as const, currentOnHand: milliQtyFixed(current) };
-        }
-        await tx.insert(s.inventoryMovements).values({
-          orgId,
-          storeId: input.storeId,
-          skuId: input.skuId,
-          delta,
-          reason: 'stocktake',
-          note: input.note ?? null,
-          sourceType: null,
-          sourceId: null,
-          actorMemberId: ctx.session!.memberId,
-          occurredAt: new Date(),
-        });
         return {
-          skipped: false as const,
-          appliedDelta: delta,
-          newOnHand: milliQtyFixed(target),
+          applied: results.filter((r) => !r.skipped).length,
+          results,
         };
       });
     }),
@@ -298,43 +381,27 @@ export const inventoryRouter = router({
    */
   // 2026-10-21 audit CA-54: idempotent — a lost-response retry with the
   // same X-Idempotency-Key replays instead of subtracting the qty twice.
-  recordWastage: idempotentMutation
-    .input(WastageInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      requireInventoryAdjust(ctx.session!.permissions);
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        // M3.7: same gate as stocktake (above), in the same transaction.
-        await assertActorAssignedToStore(
-          tx,
-          ctx.session!.memberId,
-          input.storeId,
-          ctx.session!.permissions,
-        );
-        requireInventoryAdjust(
-          await effectivePermissionsForStore(
-            tx,
-            ctx.session!.memberId,
-            input.storeId,
-            ctx.session!.permissions,
-          ),
-        );
-        await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
-        // QTY-03: exact; the schema allows 3 decimals at most.
-        const negative = milliQtyFixed(-qtyMilli(input.qty));
-        await tx.insert(s.inventoryMovements).values({
-          orgId,
-          storeId: input.storeId,
-          skuId: input.skuId,
-          delta: negative,
-          reason: 'wastage',
-          note: input.note,
-          sourceType: 'manual',
-          sourceId: null,
-          actorMemberId: ctx.session!.memberId,
-          occurredAt: new Date(),
-        });
-        return { ok: true as const };
+  recordWastage: idempotentMutation.input(WastageInputSchema).mutation(async ({ ctx, input }) => {
+    requireInventoryAdjust(ctx.session!.permissions);
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      // M3.7: same gate as stocktake (above), in the same transaction.
+      await assertCanAdjustStore(tx, ctx.session!, input.storeId, [input.skuId]);
+      // QTY-03: exact; the schema allows 3 decimals at most.
+      const negative = milliQtyFixed(-qtyMilli(input.qty));
+      await tx.insert(s.inventoryMovements).values({
+        orgId,
+        storeId: input.storeId,
+        skuId: input.skuId,
+        delta: negative,
+        reason: 'wastage',
+        note: input.note,
+        sourceType: 'manual',
+        sourceId: null,
+        actorMemberId: ctx.session!.memberId,
+        occurredAt: new Date(),
       });
-    }),
+      return { ok: true as const };
+    });
+  }),
 });

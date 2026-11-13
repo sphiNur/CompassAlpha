@@ -188,6 +188,13 @@ export const STOCKTAKE_COUNT_MESSAGE = {
 } as const satisfies Record<StocktakeCountProblem, string>;
 
 /**
+ * D1 (2026-11-13): the most products one count-mode save sends
+ * (inventory.stocktakeBatch). The procedure takes one lock per product in
+ * its transaction; the web sends a longer count in parts of this size.
+ */
+export const STOCKTAKE_BATCH_MAX = 500;
+
+/**
  * A quantity as the API takes it: digits, at most three decimals (the
  * numeric(…,3) columns). `PositiveDecimalStringSchema` adds "above 0".
  * Review CONF-10 (2026-11-11): the run, order and receiving screens each
