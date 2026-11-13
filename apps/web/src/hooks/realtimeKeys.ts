@@ -56,7 +56,8 @@ export const CATALOG_CHANGED_KEYS: QueryKey[] = [
  */
 export const PEOPLE_CHANGED_KEYS: QueryKey[] = [['admin']];
 
-export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [['attendance']];
+/** A1 (2026-11-13): the Admin badge counts face enrollments to approve. */
+export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [['attendance'], ...NAV_KEYS];
 
 /**
  * Review CONF-26: a daily close saved elsewhere. Not `settlement.get`: a

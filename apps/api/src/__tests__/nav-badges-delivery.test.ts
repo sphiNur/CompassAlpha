@@ -214,6 +214,32 @@ describe.skipIf(!SHOULD_RUN)('nav badges and delivery links (PG-gated)', () => {
     expect((await manager.caller.nav.counts({ storeId: storeA })).run).toBeNull();
   });
 
+  test('nav.counts: face enrollments wait for the managers of their store (A1)', async () => {
+    const { db, orgId, manager, staff, buyerB, admin, storeA, storeB } = fix!;
+    const before = (await manager.caller.nav.counts({})).faceEnrollPending ?? 0;
+    const adminBefore = (await admin.caller.nav.counts({})).faceEnrollPending ?? 0;
+    await db
+      .insert(s.attendanceFaceEnrollments)
+      .values({ orgId, memberId: staff.memberId, storeId: storeA });
+    await db
+      .insert(s.attendanceFaceEnrollments)
+      .values({ orgId, memberId: buyerB.memberId, storeId: storeB });
+    // The manager of store A, whichever store is in the header.
+    expect((await manager.caller.nav.counts({})).faceEnrollPending).toBe(before + 1);
+    expect((await manager.caller.nav.counts({ storeId: storeA })).faceEnrollPending).toBe(
+      before + 1,
+    );
+    // Every store for the super admin.
+    expect((await admin.caller.nav.counts({})).faceEnrollPending).toBe(adminBefore + 2);
+    // Staff manage no attendance: no badge.
+    expect((await staff.caller.nav.counts({ storeId: storeA })).faceEnrollPending).toBeNull();
+    // A manager's own enrollment is not theirs to approve.
+    await db
+      .insert(s.attendanceFaceEnrollments)
+      .values({ orgId, memberId: manager.memberId, storeId: storeA });
+    expect((await manager.caller.nav.counts({})).faceEnrollPending).toBe(before + 1);
+  });
+
   test('nav.counts: 验收 follows delivery and recall; run.get names the recalled store', async () => {
     const { staff, manager, buyerB, admin, storeA, storeB } = fix!;
     const before = (await staff.caller.nav.counts({ storeId: storeA })).confirm ?? 0;

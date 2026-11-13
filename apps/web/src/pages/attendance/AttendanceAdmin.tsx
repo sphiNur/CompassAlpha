@@ -6,7 +6,7 @@
  * and on a store they don't manage attendance for it says so.
  */
 import { useMemo, useState } from 'react';
-import { EmptyState, Segmented } from '@compass/ui';
+import { Banner, Button, EmptyState, Segmented } from '@compass/ui';
 import { StoreContextEmpty } from '../../components/NoStoreYet';
 import { useStoreContext } from '../../hooks/useStoreContext';
 import { useI18n } from '../../hooks/useI18n';
@@ -46,6 +46,10 @@ export function AttendanceAdmin() {
     { enabled: !!storeId, refetchInterval: 60_000 },
   );
   const toReview = (queue.data?.punches.length ?? 0) + (queue.data?.enrollments.length ?? 0);
+  // A1 (2026-11-13): a face waiting for approval keeps that person from
+  // clocking in; say so on every view but To check, which lists them.
+  // Their own (not theirs to approve) is left out, as the Admin badge does.
+  const enrollWaiting = (queue.data?.enrollments ?? []).filter((e) => !e.own).length;
 
   if (!storeId) {
     if (stores.length > 0 && storeCtx.kind === 'all') return <StoreContextEmpty />;
@@ -68,6 +72,23 @@ export function AttendanceAdmin() {
   return (
     <div className="flex flex-col pb-6">
       <div className="flex flex-col gap-3 px-4 pb-3">
+        {enrollWaiting > 0 && view !== 'review' ? (
+          <Banner
+            tone="warn"
+            action={
+              <Button
+                size="sm"
+                variant="pearl"
+                className="hit-44"
+                onClick={() => setView('review')}
+              >
+                {i18n.t('attendance.admin.enrollBannerAction')}
+              </Button>
+            }
+          >
+            {i18n.t('attendance.admin.enrollBanner', { n: enrollWaiting })}
+          </Banner>
+        ) : null}
         <Segmented<View>
           value={view}
           onChange={setView}

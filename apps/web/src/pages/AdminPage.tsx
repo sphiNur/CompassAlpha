@@ -65,6 +65,7 @@ import { isInTelegram } from '../lib/telegram';
 import { useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../hooks/useAdminAuthority';
+import { useStoreContext } from '../hooks/useStoreContext';
 import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
@@ -172,6 +173,14 @@ export function AdminPage() {
   const inviteStoreId = isAdmin && adminStoreIds.size === 1 ? [...adminStoreIds][0]! : null;
   const inviteStoreName = session?.stores.find((st) => st.id === inviteStoreId)?.name ?? null;
   const [inviteOpen, setInviteOpen] = useState(false);
+  // A1 (2026-11-13): the Admin badge's face enrollments, named on the
+  // Attendance row. The bottom nav's query (same input, same cache).
+  const navStoreCtx = useStoreContext();
+  const navCounts = trpc.nav.counts.useQuery(
+    navStoreCtx.kind === 'specific' ? { storeId: navStoreCtx.storeId } : {},
+    { enabled: seesAttendance && navStoreCtx.kind !== 'none', retry: false },
+  );
+  const enrollWaiting = navCounts.data?.faceEnrollPending ?? 0;
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   // CAT-8 / HIS-10 (2026-10-30): the build flag hid only the menu row; a
   // restored navigation state opened the page itself.
@@ -393,7 +402,11 @@ export function AdminPage() {
               <SectionRow
                 icon={<IconAttendance size={20} />}
                 label={i18n.t('admin.section.attendance')}
-                hint={i18n.t('admin.section.attendanceHint')}
+                hint={
+                  enrollWaiting > 0
+                    ? i18n.t('admin.section.attendanceEnrollHint', { n: enrollWaiting })
+                    : i18n.t('admin.section.attendanceHint')
+                }
                 onClick={() => setSection('attendance')}
               />
             ) : null}

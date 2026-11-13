@@ -18,4 +18,10 @@ describe('navBadges (DX-SHL-23)', () => {
     expect(navBadges({ ...counts, settlementDue: false }, ['settlement'])).toEqual({});
     expect(navBadges(undefined, ['approve'])).toEqual({});
   });
+  it('A1: face enrollments to approve badge Admin', () => {
+    expect(navBadges({ ...counts, faceEnrollPending: 2 }, ['admin'])).toEqual({ admin: 2 });
+    expect(navBadges({ ...counts, faceEnrollPending: 0 }, ['admin'])).toEqual({});
+    expect(navBadges({ ...counts, faceEnrollPending: null }, ['admin'])).toEqual({});
+    expect(navBadges(counts, ['admin'])).toEqual({});
+  });
 });
