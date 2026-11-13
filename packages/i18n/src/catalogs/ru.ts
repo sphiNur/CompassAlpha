@@ -1210,7 +1210,6 @@ export const ru = {
   'approval.hideItems': 'Скрыть',
   'approval.approve': 'Одобрить',
   'approval.reject': 'Отклонить',
-  'approval.claim': 'Беру на проверку',
   'approval.release': 'Вернуть в очередь',
   'approval.takeOver': 'Взять на себя',
   'approval.confirmTakeover':
@@ -1220,7 +1219,6 @@ export const ru = {
   'approval.undo': 'Отменить',
   'approval.toast.approved': 'Одобрено ✓',
   'approval.toast.rejected': 'Отклонено',
-  'approval.toast.claimed': 'Теперь проверяете вы',
   'approval.toast.released': 'Возвращено в очередь — проверить может любой',
   'approval.toast.tookOver': 'Передано вам — теперь проверяете вы',
   'approval.toast.unapproved': 'Одобрение отменено',

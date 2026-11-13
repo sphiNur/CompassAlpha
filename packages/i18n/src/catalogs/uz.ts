@@ -1208,7 +1208,6 @@ export const uz = {
   'approval.hideItems': 'Yashirish',
   'approval.approve': 'Maʼqullash',
   'approval.reject': 'Rad etish',
-  'approval.claim': 'Men tekshiraman',
   'approval.release': 'Navbatga qaytarish',
   'approval.takeOver': 'Oʻzimga olish',
   'approval.confirmTakeover':
@@ -1218,7 +1217,6 @@ export const uz = {
   'approval.unapprove': 'Maʼqullashni qaytarib olish',
   'approval.toast.approved': 'Maʼqullandi ✓',
   'approval.toast.rejected': 'Rad etildi',
-  'approval.toast.claimed': 'Endi siz tekshiryapsiz',
   'approval.toast.released': 'Navbatga qaytarildi — boshqalar tekshira oladi',
   'approval.toast.tookOver': 'Siz oldingiz — endi siz tekshirasiz',
   'approval.toast.claimTimedOut':

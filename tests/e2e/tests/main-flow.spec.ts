@@ -177,7 +177,9 @@ test('place an order', async () => {
 test('approve it', async () => {
   await tab('approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
-  await main().getByRole('button', { name: "I'll review" }).click();
+  // V1: no claim step; Approve and Reject are on the card at once.
+  await expect(main().getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+  await main().getByRole('button', { name: 'View items' }).click();
   // The card also lists the order as submitted (原提交订单, no stepper);
   // the editable line is the one with the quantity control.
   const editable = main()
@@ -189,7 +191,7 @@ test('approve it', async () => {
     /^Quantity 2 kg/,
   );
   await expect(main().getByTestId('approval-original')).toContainText(/Apple\s*2 kg/);
-  await evidence('approval-claimed');
+  await evidence('approval-review');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
 });
@@ -425,7 +427,6 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
   // The order from the last test is approved and bought. Apple cost
   // 12,000 last time; typing the full "12000" while the unit is
   // thousands would record twelve million.
-  await main().getByRole('button', { name: "I'll review" }).click();
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
   await tab('run').click();

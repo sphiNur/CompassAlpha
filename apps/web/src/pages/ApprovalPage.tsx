@@ -2,9 +2,10 @@
  * ApprovalPage — manager queue.
  *
  * Lists submitted sessions enriched with store / member / item-count metadata
- * (single round-trip via `order.pendingList`). Atomically claim → review →
- * approve / reject. Per-card item view uses the dedicated
- * `order.sessionDetail({id})` endpoint.
+ * (single round-trip via `order.pendingList`). Review → approve / reject;
+ * the first quantity change claims the order (V1: no separate claim
+ * step). Per-card item view uses the dedicated `order.sessionDetail({id})`
+ * endpoint.
  *
  * Review ORD-10 (2026-11, step 2): each order is an ApprovalCard
  * (approval/ApprovalCard.tsx); the page keeps the writes and what
@@ -116,13 +117,6 @@ export function ApprovalPage() {
   // M1.9 (2026-05-07): the regex and handler shape live in one place
   // (hooks/useErrToast.ts), so pages cannot drift apart.
   const errToast = useErrToast();
-  const claim = trpc.order.claim.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate();
-      toast.info(i18n.t('approval.toast.claimed'));
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
   // 2026-10-21 audit CA-43 "approve what you saw": approve / reject send
   // the `lastSeq` of the row on screen; the server answers CONFLICT
   // order.errors.staleSeq when the staff changed the order after that.
@@ -351,7 +345,6 @@ export function ApprovalPage() {
   /** Which of a card's writes is on its way. */
   const busyFor = (sessionId: string): ApprovalCardBusy => ({
     approving: approve.isPending && approve.variables?.sessionId === sessionId,
-    claiming: claim.isPending && claim.variables?.sessionId === sessionId,
     takingOver: takeOverClaim.isPending && takeOverClaim.variables?.sessionId === sessionId,
     releasing: releaseClaim.isPending && releaseClaim.variables?.sessionId === sessionId,
     unapproving: unapprove.isPending && unapprove.variables?.sessionId === sessionId,
@@ -451,10 +444,6 @@ export function ApprovalPage() {
                 onReject={() => {
                   setRejectFor(row.id);
                   setRejectSeq(row.lastSeq);
-                }}
-                onClaim={() => {
-                  claim.mutate({ sessionId: row.id });
-                  setActiveSessionId(row.id);
                 }}
                 onRelease={() => {
                   letGo.current.add(row.id);

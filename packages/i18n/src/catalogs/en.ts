@@ -1272,7 +1272,6 @@ export const en = {
   'approval.hideItems': 'Hide items',
   'approval.approve': 'Approve',
   'approval.reject': 'Reject',
-  'approval.claim': "I'll review",
   'approval.release': 'Put back',
   'approval.takeOver': 'Take over',
   'approval.confirmTakeover':
@@ -1282,7 +1281,6 @@ export const en = {
   'approval.undo': 'Undo',
   'approval.toast.approved': 'Approved ✓',
   'approval.toast.rejected': 'Rejected',
-  'approval.toast.claimed': "You're reviewing this order",
   'approval.toast.released': 'Put back — others can review it now',
   'approval.toast.tookOver': 'Taken over — you are reviewing it now',
   'approval.toast.unapproved': 'Approval reversed',
