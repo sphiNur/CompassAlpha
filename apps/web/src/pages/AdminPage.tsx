@@ -50,6 +50,7 @@ import {
   Select,
   cn,
   rowGroupClass,
+  IconShare,
 } from '@compass/ui';
 import { TAX_RATE_MESSAGE, taxRateProblem, taxRateToSend } from '@compass/contracts/limits';
 import { trpc } from '../lib/trpc';
@@ -63,7 +64,7 @@ import { useNavStore } from '../stores/navStore';
 import { isInTelegram } from '../lib/telegram';
 import { useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
-import { useIsOrgAdmin } from '../hooks/useAdminAuthority';
+import { useAdminStoreIds, useIsOrgAdmin } from '../hooks/useAdminAuthority';
 import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
@@ -96,6 +97,7 @@ import { StockCountShortcut } from './admin/stores/inventory/StockCountShortcut'
 import { PermissionsSection } from './admin/people';
 import { PlatformSection } from './admin/platform/PlatformSections';
 import { AttendanceAdmin } from './attendance/AttendanceAdmin';
+import { InviteFlow } from './admin/people/invite/InviteFlow';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -164,6 +166,12 @@ export function AdminPage() {
   const seesCatalog = isOrgAdmin || (session?.permissions.includes('dishes.manage') ?? false);
   // 2026-11-05: attendance sheet, roster and rules for the stores they manage.
   const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
+  // D6 (2026-11-13): a manager of one store invites from here; the way
+  // was Stores › store › Team › Invite.
+  const adminStoreIds = useAdminStoreIds();
+  const inviteStoreId = isAdmin && adminStoreIds.size === 1 ? [...adminStoreIds][0]! : null;
+  const inviteStoreName = session?.stores.find((st) => st.id === inviteStoreId)?.name ?? null;
+  const [inviteOpen, setInviteOpen] = useState(false);
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   // CAT-8 / HIS-10 (2026-10-30): the build flag hid only the menu row; a
   // restored navigation state opened the page itself.
@@ -353,6 +361,14 @@ export function AdminPage() {
             />
             {/* D1 (2026-11-13): one tap to the count mode in a manager's one store. */}
             <StockCountShortcut />
+            {inviteStoreId && inviteStoreName ? (
+              <SectionRow
+                icon={<IconShare size={20} />}
+                label={i18n.t('admin.section.invite')}
+                hint={i18n.t('admin.section.inviteHint', { store: inviteStoreName })}
+                onClick={() => setInviteOpen(true)}
+              />
+            ) : null}
             {/* M1.11: Permissions had IconWorkspace, same as Organization above
             — visually ambiguous in the section list. Switched to a new
             shield icon (added to @compass/ui) which reads as "access /
@@ -398,6 +414,13 @@ export function AdminPage() {
           />
         ) : null}
       </ul>
+      {inviteStoreId ? (
+        <InviteFlow
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          storeIds={[inviteStoreId]}
+        />
+      ) : null}
     </div>
   );
 }

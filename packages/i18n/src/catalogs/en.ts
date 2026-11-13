@@ -967,7 +967,7 @@ export const en = {
   'admin.invite.link.copyTitle': 'Invite link',
   'admin.invite.tgIdHint':
     "Don't know their ID? Ask them to open the Mini App: it shows their Telegram ID on screen, and they can send it to you.",
-  'admin.invite.noRoleYet': '— no role yet (grant later) —',
+  'admin.invite.clocksIn': 'Clocks in (attendance)',
   'admin.invite.staffNeedStoreHint': 'Staff need an assigned store before they can place orders.',
   'admin.invite.onlyYourStoresHint': 'You can only invite into stores you administer.',
   'admin.invite.adminBypassHint':
@@ -2620,6 +2620,8 @@ export const en = {
   'nav.short.attendance': 'Clock',
   'admin.section.attendance': 'Attendance',
   'admin.section.attendanceHint': 'Who came, shift roster, clock-in rules',
+  'admin.section.invite': 'Invite',
+  'admin.section.inviteHint': 'Add someone to {store}',
   'permission.attendance.clock': 'Clock in and out at their stores',
   'permission.attendance.manage': 'Plan shifts, review and correct attendance',
   'permission.group.attendance': 'Attendance',

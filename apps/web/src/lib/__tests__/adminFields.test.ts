@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   codeFromName,
+  defaultInviteRole,
   defaultNewRoleRank,
   normaliseSlugInput,
   readRank,
@@ -96,5 +97,28 @@ describe('codeFromName (D2)', () => {
     for (const n of ['Night Shift', 'Молоко 3.2%', '蔬菜', 'Café', '--x--']) {
       expect(slugIsValid(codeFromName([n], none, 'role'))).toBe(true);
     }
+  });
+});
+
+describe('defaultInviteRole (D5)', () => {
+  const roles = [
+    { slug: 'admin', rank: 80 },
+    { slug: 'manager', rank: 60 },
+    { slug: 'cashier', rank: 30 },
+    { slug: 'staff', rank: 20 },
+  ];
+  test('a store invite starts as staff', () => {
+    expect(defaultInviteRole(roles, false, 80)).toBe('staff');
+  });
+  test('without staff on offer, the lowest store role', () => {
+    expect(defaultInviteRole(roles.slice(0, 3), false, 80)).toBe('cashier');
+  });
+  test('the organisation-level list starts with the lowest organisation role', () => {
+    expect(defaultInviteRole(roles, true, 80)).toBe('admin');
+    expect(defaultInviteRole(roles.slice(1), true, 80)).toBe('staff');
+  });
+  test('only organisation roles, or none', () => {
+    expect(defaultInviteRole([{ slug: 'admin', rank: 80 }], false, 80)).toBe('admin');
+    expect(defaultInviteRole([], false, 80)).toBe('');
   });
 });

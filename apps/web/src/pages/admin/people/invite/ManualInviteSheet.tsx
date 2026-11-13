@@ -9,13 +9,14 @@ import {
   QueryErrorBanner,
   Select,
   Sheet,
+  Switch,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { TG_USER_ID_MESSAGE } from '@compass/contracts/limits';
 import { trpc } from '../../../../lib/trpc';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
-import { tgIdProblem } from '../../../../lib/adminFields';
+import { defaultInviteRole, tgIdProblem } from '../../../../lib/adminFields';
 import { canGrantRole, rolePassesOn, type Actor } from '../../../../lib/authority';
 import { type InviteDraft } from '../shared';
 import { StoreCheckList } from '../StoreCheckList';
@@ -23,6 +24,8 @@ import { StoreCheckList } from '../StoreCheckList';
 export function ManualInviteSheet({
   mode = 'tgid',
   actor,
+  preferOrgTier = false,
+  clocksInOffered = false,
   draft,
   setDraft,
   onSubmit,
@@ -30,9 +33,14 @@ export function ManualInviteSheet({
 }: {
   mode?: 'tgid' | 'link';
   actor: Actor;
+  /** D5: the organisation-level list starts with an org-tier role. */
+  preferOrgTier?: boolean;
+  /** A3: show the "Clocks in" switch (InviteFlow decides). */
+  clocksInOffered?: boolean;
   draft: InviteDraft | null;
   setDraft: (d: InviteDraft | null) => void;
-  onSubmit: () => void;
+  /** Called with the role to send: the picked one, or the default. */
+  onSubmit: (roleSlug: string) => void;
   pending: boolean;
 }) {
   const isLink = mode === 'link';
@@ -84,7 +92,15 @@ export function ManualInviteSheet({
       ? ids.some((storeId) => !rolePassesOn(r, { type: 'store', storeId }))
       : !eligibleStores.some((st) => rolePassesOn(r, { type: 'store', storeId: st.id }));
   };
-  const pickedRole = sortedRoles.find((r) => r.slug === draft?.roleSlug) ?? null;
+  // D5 (2026-11-13): a role is required; until one is picked the form
+  // shows (and sends) a default the inviter may give.
+  const defaultRole = defaultInviteRole(
+    sortedRoles.filter((r) => rankAllows(r) && !keysMissing(r)),
+    preferOrgTier,
+    ADMIN_RANK,
+  );
+  const roleSlug = draft?.roleSlug || defaultRole;
+  const pickedRole = sortedRoles.find((r) => r.slug === roleSlug) ?? null;
   const pickedRoleOutranks = pickedRole ? !rankAllows(pickedRole) : false;
   const pickedRoleBlocked = pickedRole ? keysMissing(pickedRole) || pickedRoleOutranks : false;
 
@@ -104,10 +120,12 @@ export function ManualInviteSheet({
   const isOrgTierRole = (pickedRole?.rank ?? 0) >= ADMIN_RANK;
   const requiresStore = !isOrgTierRole;
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
-  const canSubmit = (isLink || tgIdValid) && (!requiresStore || hasStore) && !pickedRoleBlocked;
+  const canSubmit =
+    (isLink || tgIdValid) && (!requiresStore || hasStore) && !!pickedRole && !pickedRoleBlocked;
   // DX-ADM-28: typed id / name or a picked role is input worth asking about.
   const inviteChanged =
-    !!draft && (draft.tgUserId !== '' || draft.displayName !== '' || draft.roleSlug !== '');
+    !!draft &&
+    (draft.tgUserId !== '' || draft.displayName !== '' || draft.roleSlug !== '' || draft.clocksIn);
   return (
     <Sheet
       open={!!draft}
@@ -118,7 +136,13 @@ export function ManualInviteSheet({
         isLink ? 'admin.invite.link.description' : 'admin.invite.byTgId.description',
       )}
       footer={
-        <Button block size="lg" loading={pending} disabled={!canSubmit} onClick={onSubmit}>
+        <Button
+          block
+          size="lg"
+          loading={pending}
+          disabled={!canSubmit}
+          onClick={() => onSubmit(roleSlug)}
+        >
           {i18n.t(isLink ? 'admin.invite.link.submit' : 'admin.invite.byTgId.submit')}
         </Button>
       }
@@ -159,6 +183,7 @@ export function ManualInviteSheet({
           )}
           <Field
             label={i18n.t('admin.field.role')}
+            required
             error={
               pickedRoleOutranks
                 ? i18n.t('auth.errors.cannotGrantEqualOrHigher')
@@ -175,12 +200,11 @@ export function ManualInviteSheet({
               <QueryErrorBanner query={rolesQuery} />
             ) : (
               <Select
-                value={draft.roleSlug}
+                value={roleSlug}
                 onChange={(e) => setDraft({ ...draft, roleSlug: e.target.value })}
               >
-                <option value="">{i18n.t('admin.invite.noRoleYet')}</option>
                 {sortedRoles.map((r) => {
-                  const blocked = keysMissing(r) && r.slug !== draft.roleSlug;
+                  const blocked = keysMissing(r) && r.slug !== roleSlug;
                   return (
                     <option key={r.id} value={r.slug} disabled={blocked}>
                       {blocked
@@ -240,6 +264,13 @@ export function ManualInviteSheet({
               {i18n.t('admin.invite.adminBypassHint')}
             </p>
           )}
+          {clocksInOffered && requiresStore ? (
+            <Switch
+              label={i18n.t('admin.invite.clocksIn')}
+              checked={draft.clocksIn}
+              onChange={(e) => setDraft({ ...draft, clocksIn: e.target.checked })}
+            />
+          ) : null}
         </div>
       ) : null}
     </Sheet>

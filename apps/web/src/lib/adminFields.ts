@@ -158,3 +158,27 @@ export function codeFromName(
     if (!taken.has(code)) return code;
   }
 }
+
+/**
+ * D5 (2026-11-13): the role an invite starts with. An invite without a
+ * role left the person on "You can't use Compass yet", so the form always
+ * has one: staff when it may be given, else the lowest store role on
+ * offer, else the lowest role. On the organisation-level list the lowest
+ * organisation role comes first. `roles` are those the inviter may give.
+ */
+export function defaultInviteRole(
+  roles: ReadonlyArray<{ slug: string; rank: number }>,
+  preferOrgTier: boolean,
+  adminRank: number,
+): string {
+  const lowest = (list: ReadonlyArray<{ slug: string; rank: number }>) =>
+    list.reduce<{ slug: string; rank: number } | null>(
+      (best, r) => (best === null || r.rank < best.rank ? r : best),
+      null,
+    )?.slug ?? null;
+  const orgTier = roles.filter((r) => r.rank >= adminRank);
+  const storeTier = roles.filter((r) => r.rank < adminRank);
+  if (preferOrgTier && orgTier.length > 0) return lowest(orgTier)!;
+  if (storeTier.some((r) => r.slug === 'staff')) return 'staff';
+  return lowest(storeTier) ?? lowest(roles) ?? '';
+}

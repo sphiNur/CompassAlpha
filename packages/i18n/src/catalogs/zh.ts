@@ -828,7 +828,7 @@ export const zh = {
   'admin.invite.link.copyTitle': '邀请链接',
   'admin.invite.tgIdHint':
     '不知道对方的 ID？让对方先打开小程序，屏幕上会显示对方的 Telegram ID，请对方发给你。',
-  'admin.invite.noRoleYet': '——暂不分配角色（稍后授权）——',
+  'admin.invite.clocksIn': '需要打卡（考勤）',
   'admin.invite.staffNeedStoreHint': '员工需要被分配到门店后才能下单。',
   'admin.invite.onlyYourStoresHint': '你只能邀请到你管理的门店。',
   'admin.invite.adminBypassHint': '管理员 / 超级管理员默认能看到所有门店——无需分配。',
@@ -2239,6 +2239,8 @@ export const zh = {
   'nav.short.attendance': '考勤',
   'admin.section.attendance': '考勤',
   'admin.section.attendanceHint': '出勤、排班、打卡规则',
+  'admin.section.invite': '邀请',
+  'admin.section.inviteHint': '添加人员到{store}',
   'permission.attendance.clock': '在所属门店上下班打卡',
   'permission.attendance.manage': '排班、查看和更正考勤',
   'permission.group.attendance': '考勤',

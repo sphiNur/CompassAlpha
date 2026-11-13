@@ -917,7 +917,7 @@ export const ru = {
   'admin.invite.link.submit': 'Создать ссылку',
   'admin.invite.tgIdHint':
     'Не знаете ID? Попросите человека открыть мини-приложение — там на экране будет его Telegram ID, пусть пришлёт его вам.',
-  'admin.invite.noRoleYet': '— пока без роли (можно назначить позже) —',
+  'admin.invite.clocksIn': 'Отмечается (учёт времени)',
   'admin.invite.staffNeedStoreHint':
     'Сотрудникам нужно быть привязанными к магазину, чтобы оформлять заказы.',
   'admin.invite.onlyYourStoresHint': 'Вы можете приглашать только в магазины, которыми управляете.',
@@ -2534,6 +2534,8 @@ export const ru = {
   'nav.short.attendance': 'Отметка',
   'admin.section.attendance': 'Учёт времени',
   'admin.section.attendanceHint': 'Кто пришёл, график смен, правила отметки',
+  'admin.section.invite': 'Пригласить',
+  'admin.section.inviteHint': 'Добавить человека в {store}',
   'permission.attendance.clock': 'Отмечать приход и уход в своих магазинах',
   'permission.attendance.manage': 'Составлять смены, проверять и исправлять учёт времени',
   'permission.group.attendance': 'Учёт времени',
