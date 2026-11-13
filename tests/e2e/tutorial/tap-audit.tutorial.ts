@@ -358,7 +358,12 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
       if (req.method() === 'POST' && !req.url().includes('auth.refresh')) return route.abort();
       return route.continue();
     });
-    page.on('dialog', (d) => void d.dismiss().catch(() => {}));
+    // A "leave with unsaved changes?" before a reload is answered yes, or
+    // the reload waits forever; a confirm is answered no (nothing is done).
+    page.on(
+      'dialog',
+      (d) => void (d.type() === 'beforeunload' ? d.accept() : d.dismiss()).catch(() => {}),
+    );
     const auth = await page.evaluate(() => localStorage.getItem('compass.auth')!);
     const tabs = await page
       .locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])')
