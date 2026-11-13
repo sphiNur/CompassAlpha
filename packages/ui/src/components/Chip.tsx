@@ -93,6 +93,14 @@ export interface ChipBarProps {
    * move focus and Space / Enter chooses.
    */
   followFocus?: boolean;
+  /**
+   * The chips wrap onto more lines instead of scrolling sideways (a card
+   * too narrow for them in ru / uz). Wrapped lines sit 12 px apart: the
+   * chips are 32 px tall with a 44 px hit-44 area, and at the scroller's
+   * 6 px gap each line's tap area overlapped the next, so the first line
+   * tapped as 38 px (review WALK-03, 2026-11-13).
+   */
+  wrap?: boolean;
 }
 
 export function ChipBar({
@@ -101,6 +109,7 @@ export function ChipBar({
   ariaLabel,
   variant = 'radio',
   followFocus = true,
+  wrap = false,
 }: ChipBarProps) {
   const roving = useRovingRadio<HTMLDivElement>({ followFocus });
   const radio = variant === 'radio';
@@ -118,7 +127,9 @@ export function ChipBar({
         // --app-inline-x (16 px): the page's side inset, as the list under
         // the strip (UI-34).
         className={cn(
-          'flex gap-1.5 overflow-x-auto px-[var(--app-inline-x)] py-1.5 scrollbar-hide',
+          wrap
+            ? 'flex flex-wrap gap-x-1.5 gap-y-3'
+            : 'flex gap-1.5 overflow-x-auto px-[var(--app-inline-x)] py-1.5 scrollbar-hide',
           className,
         )}
       >

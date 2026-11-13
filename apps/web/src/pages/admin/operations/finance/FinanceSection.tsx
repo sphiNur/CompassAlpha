@@ -285,10 +285,7 @@ export function FinanceSection() {
         {/* DX-HIS-3 (2026-11-01): wrapping chips, not a segmented bar. In
             ru / uz at 360 px the five presets were 465 px wide in a 304 px
             card and «Произвольный» ran off screen. */}
-        <ChipBar
-          ariaLabel={i18n.t('finance.range.presets')}
-          className="flex-wrap overflow-visible px-0 py-0"
-        >
+        <ChipBar ariaLabel={i18n.t('finance.range.presets')} wrap>
           {(
             [
               ['today', 'finance.preset.today'],
@@ -399,10 +396,7 @@ export function FinanceSection() {
       <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
         {/* DX-HIS-3: chips that wrap; in uz at 360 px the three views
             were 355 px in 328 and 「Doʻkon boʻyicha」 was cut off. */}
-        <ChipBar
-          ariaLabel={i18n.t('finance.view.label')}
-          className="min-w-[11rem] flex-1 flex-wrap overflow-visible px-0 py-0"
-        >
+        <ChipBar ariaLabel={i18n.t('finance.view.label')} className="min-w-[11rem] flex-1" wrap>
           {(
             [
               ['daily', 'finance.view.daily'],
