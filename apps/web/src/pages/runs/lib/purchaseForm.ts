@@ -6,7 +6,7 @@
  *   main button each had a copy, and they had drifted: the page's still
  *   took a price with a third decimal, which the server refuses.
  * - Whether the store quantities add up to the quantity bought, by the
- *   server's own measure (`TOLERANCE` in packages/domain/src/run/commands.ts).
+ *   server's own measure (`TOLERANCE` in packages/domain/src/run/decide/guards.ts).
  *   The sheets allowed 0.001, so 1.001 split against 1 could be saved and
  *   came back refused.
  * - What counts as the person's own edit, for useDraftChanged: a tap
