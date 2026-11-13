@@ -1,9 +1,9 @@
 /**
- * Finished runs: the history by day, and one run's detail.
+ * Finished runs: the history by day, and one run's detail. What they
+ * read is services/runHistory.ts (review RUNAPI-13); here are the
+ * prices.view scope and the shape of the answer.
  */
 import { TRPCError } from '@trpc/server';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { schema as s } from '@compass/db';
 import { RunHistoryInputSchema, SimpleRunCommandSchema } from '@compass/contracts';
 import { getActorStoreIdsForPermission } from '../../../services/storeScope';
 import { authedProcedure } from '../../trpc';
@@ -15,14 +15,14 @@ import {
   splitsForReader,
 } from '../../../services/runReaderView';
 import { loadRunSessions, runSessionsView } from '../../../services/runSessionsView';
+import { moneyText, runDetailMoney } from '../../../services/runMoney';
+import { activeRunExpenses, runLines } from '../../../services/runRead';
 import {
-  moneyText,
-  runDetailMoney,
-  runMoneyLinesSql,
-  uuidListSql,
-  type RunMoneyLine,
-} from '../../../services/runMoney';
-import { executeRows } from '../../../services/sqlRows';
+  historyPage,
+  orgHasStore,
+  runDetailMoneyLines,
+  supplierNames,
+} from '../../../services/runHistory';
 import { loadRun } from './command';
 import { canAmendRun } from './scope';
 
@@ -65,236 +65,14 @@ export const historyProcedures = {
               message: 'auth.errors.notAssignedToStore',
             });
           }
-          const store = await tx.query.stores.findFirst({
-            where: (st, { and: and2, eq: eq2 }) =>
-              and2(eq2(st.id, query.storeId!), eq2(st.orgId, orgId)),
-            columns: { id: true },
-          });
-          if (!store) {
+          if (!(await orgHasStore(tx, orgId, query.storeId))) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
           }
           scopedStoreIds = [query.storeId];
         }
 
-        const storeIdsSql =
-          scopedStoreIds === null
-            ? null
-            : sql.join(
-                scopedStoreIds.map((id) => sql`${id}::uuid`),
-                sql`, `,
-              );
-        const splitScopeSql = storeIdsSql ? sql`AND ris.store_id IN (${storeIdsSql})` : sql``;
-        const sessionScopeSql = storeIdsSql ? sql`AND os.store_id IN (${storeIdsSql})` : sql``;
-        const expenseScopeSql = storeIdsSql
-          ? sql`AND (expense_split.value->>'storeId')::uuid IN (${storeIdsSql})`
-          : sql``;
-        const visibilitySql = storeIdsSql
-          ? sql`AND EXISTS (
-              SELECT 1
-              FROM read_model.order_sessions_v os
-              WHERE os.run_id = mr.id
-                AND os.org_id = ${orgId}
-                ${sessionScopeSql}
-            )`
-          : sql``;
-        const dateFromSql = query.dateFrom
-          ? sql`AND mr.run_date >= ${query.dateFrom}::date`
-          : sql``;
-        const dateToSql = query.dateTo ? sql`AND mr.run_date <= ${query.dateTo}::date` : sql``;
-
-        // Each token must match somewhere, while fields within a token
-        // are ORed. Item/vendor and expense matches are joined to the
-        // same visible store scope, preventing search-result side channels.
-        const searchTokens = (query.search ?? '').trim().split(/\s+/u).filter(Boolean).slice(0, 8);
-        const tokenPredicates = searchTokens.map((token) => {
-          // HIS-14 (2026-10-30): "%" or "_" typed in search matched every run.
-          const pattern = `%${token.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-          return sql`(
-            mr.run_date::text ILIKE ${pattern}
-            OR ('#' || (mr.run_index + 1)::text) ILIKE ${pattern}
-            OR EXISTS (
-              SELECT 1
-              FROM read_model.order_sessions_v os
-              INNER JOIN inventory.stores st ON st.id = os.store_id
-              WHERE os.run_id = mr.id
-                AND os.org_id = ${orgId}
-                ${sessionScopeSql}
-                AND (st.name ILIKE ${pattern} OR COALESCE(st.code, '') ILIKE ${pattern})
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM read_model.run_items_v ri_search
-              INNER JOIN read_model.run_item_stores_v ris
-                ON ris.run_id = ri_search.run_id AND ris.sku_id = ri_search.sku_id
-              INNER JOIN inventory.skus sku ON sku.id = ri_search.sku_id
-              LEFT JOIN inventory.suppliers supplier ON supplier.id = ri_search.supplier_id
-              WHERE ri_search.run_id = mr.id
-                AND ri_search.status = 'purchased'
-                ${splitScopeSql}
-                AND (
-                  COALESCE(sku.code, '') ILIKE ${pattern}
-                  -- RUNAPI-22: the names and aliases themselves, not their
-                  -- JSON text ("en" or "ru" matched every product).
-                  OR EXISTS (
-                    SELECT 1 FROM jsonb_path_query(sku.names, 'lax $.*') AS name(value)
-                    WHERE name.value #>> '{}' ILIKE ${pattern}
-                  )
-                  OR EXISTS (
-                    SELECT 1 FROM jsonb_path_query(sku.aliases, 'lax $.*[*]') AS alias(value)
-                    WHERE alias.value #>> '{}' ILIKE ${pattern}
-                  )
-                  OR COALESCE(supplier.name, '') ILIKE ${pattern}
-                )
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM read_model.run_expenses_v expense_search
-              CROSS JOIN LATERAL jsonb_array_elements(expense_search.store_splits_json)
-                AS expense_split(value)
-              WHERE expense_search.run_id = mr.id
-                AND expense_search.removed_at IS NULL
-                ${expenseScopeSql}
-                AND expense_search.label ILIKE ${pattern}
-            )
-          )`;
-        });
-        const searchSql =
-          tokenPredicates.length > 0 ? sql`AND ${sql.join(tokenPredicates, sql` AND `)}` : sql``;
-        const paymentSql =
-          query.payment === 'cash'
-            ? sql`AND COALESCE(vt.cash_total, 0) > 0
-                  AND COALESCE(vt.transfer_total, 0) = 0`
-            : query.payment === 'transfer'
-              ? sql`AND COALESCE(vt.transfer_total, 0) > 0
-                    AND COALESCE(vt.cash_total, 0) = 0`
-              : query.payment === 'mixed'
-                ? sql`AND COALESCE(vt.cash_total, 0) > 0
-                      AND COALESCE(vt.transfer_total, 0) > 0`
-                : sql``;
-
-        const historyCte = sql`
-          WITH candidate_runs AS (
-            SELECT mr.*
-            FROM read_model.market_runs_v mr
-            WHERE mr.org_id = ${orgId}
-              -- D5 (2026-10-31): the same runs finance counts; an
-              -- amending run is listed with its status (修改中).
-              AND mr.status IN ('finished', 'amending')
-              ${dateFromSql}
-              ${dateToSql}
-              ${visibilitySql}
-              ${searchSql}
-          ),
-          -- 2026-10-21 CA-11: the shared money-line definition
-          -- (services/runMoney.ts) — the same rows report.* sums.
-          money_lines AS (
-            ${runMoneyLinesSql({ runsSql: sql`candidate_runs`, storeIdsSql })}
-          ),
-          visible_totals AS (
-            SELECT
-              run_id,
-              COALESCE(SUM(amount), 0) AS total,
-              COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0) AS items_total,
-              COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0) AS expenses_total,
-              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0) AS cash_total,
-              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0) AS transfer_total,
-              (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
-            FROM money_lines
-            GROUP BY run_id
-          ),
-          visible_store_counts AS (
-            SELECT os.run_id, COUNT(DISTINCT os.store_id)::int AS store_count
-            FROM read_model.order_sessions_v os
-            INNER JOIN candidate_runs cr ON cr.id = os.run_id
-            WHERE os.org_id = ${orgId} ${sessionScopeSql}
-            GROUP BY os.run_id
-          ),
-          filtered AS (
-            SELECT
-              cr.id,
-              cr.run_date,
-              cr.run_index,
-              cr.status,
-              cr.finished_at,
-              COALESCE(vt.total, 0) AS actual_total,
-              COALESCE(vt.items_total, 0) AS items_total,
-              COALESCE(vt.expenses_total, 0) AS expenses_total,
-              COALESCE(vt.cash_total, 0) AS actual_cash_total,
-              COALESCE(vt.transfer_total, 0) AS actual_transfer_total,
-              COALESCE(vt.item_count, 0)::int AS item_count,
-              COALESCE(vsc.store_count, 0)::int AS store_count
-            FROM candidate_runs cr
-            LEFT JOIN visible_totals vt ON vt.run_id = cr.id
-            LEFT JOIN visible_store_counts vsc ON vsc.run_id = cr.id
-            WHERE TRUE ${paymentSql}
-          )
-        `;
-
-        type PageDbRow = {
-          id: string;
-          run_date: string;
-          run_index: number;
-          status: string;
-          finished_at: Date | string | null;
-          actual_total: string;
-          items_total: string;
-          expenses_total: string;
-          actual_cash_total: string;
-          actual_transfer_total: string;
-          item_count: number;
-          store_count: number;
-        };
-        const directionSql =
-          query.sort === 'oldest'
-            ? sql`run_date ASC, run_index ASC, id ASC`
-            : sql`run_date DESC, run_index DESC, id DESC`;
-        // DX-HIS-5 (2026-11-01): the list shows one row per day, so a page
-        // never splits a day. A day belongs to the page where its first
-        // run falls (pages of `pageSize` runs); a page holding no day start
-        // (one day longer than a page) is skipped, so pages stay dense.
-        // Before, the second trip of a day could open the next page with
-        // half the day's total on each.
-        const pagedCte = sql`
-          ${historyCte},
-          ordered AS (
-            SELECT f.*, (ROW_NUMBER() OVER (ORDER BY ${directionSql}) - 1)::int AS pos
-            FROM filtered f
-          ),
-          day_started AS (
-            SELECT o.*, MIN(o.pos) OVER (PARTITION BY o.run_date)::int AS day_pos
-            FROM ordered o
-          ),
-          paged AS (
-            SELECT d.*, DENSE_RANK() OVER (ORDER BY d.day_pos / ${query.pageSize}::int)::int AS page_no
-            FROM day_started d
-          )
-        `;
-        // The totals and the page count in one pass over the runs (review
-        // RUNAPI-21: each was a pass of its own, three with the page).
-        type SummaryDbRow = {
-          total_count: number;
-          total: string;
-          items_total: string;
-          expenses_total: string;
-          cash: string;
-          transfer: string;
-          pages: number;
-        };
-        const summaryRows = executeRows<SummaryDbRow>(
-          await tx.execute(sql`
-          ${pagedCte}
-          SELECT
-            COUNT(*)::int AS total_count,
-            COALESCE(SUM(actual_total), 0)::text AS total,
-            COALESCE(SUM(items_total), 0)::text AS items_total,
-            COALESCE(SUM(expenses_total), 0)::text AS expenses_total,
-            COALESCE(SUM(actual_cash_total), 0)::text AS cash,
-            COALESCE(SUM(actual_transfer_total), 0)::text AS transfer,
-            COALESCE(MAX(page_no), 0)::int AS pages
-          FROM paged
-        `),
-        );
-        const summary = summaryRows[0] ?? {
+        const page = await historyPage(tx, orgId, query, scopedStoreIds);
+        const summary = page.summary ?? {
           total_count: 0,
           total: '0',
           items_total: '0',
@@ -304,39 +82,8 @@ export const historyProcedures = {
           pages: 0,
         };
         const totalPages = Number(summary.pages ?? 0);
-        const pageRows = executeRows<PageDbRow & { pos: number }>(
-          await tx.execute(sql`
-          ${pagedCte}
-          SELECT
-            pos,
-            id::text AS id,
-            run_date::text AS run_date,
-            run_index,
-            status,
-            finished_at,
-            actual_total::text AS actual_total,
-            items_total::text AS items_total,
-            expenses_total::text AS expenses_total,
-            actual_cash_total::text AS actual_cash_total,
-            actual_transfer_total::text AS actual_transfer_total,
-            item_count,
-            store_count
-          FROM paged
-          WHERE page_no = ${query.page}
-          ORDER BY pos
-        `),
-        );
+        const { pageRows } = page;
 
-        type StoreTotalDbRow = {
-          run_id: string;
-          store_id: string;
-          total: string;
-          items_total: string;
-          expenses_total: string;
-          cash: string;
-          transfer: string;
-          item_count: number;
-        };
         const storeTotalsByRun = new Map<
           string,
           Array<{
@@ -349,47 +96,18 @@ export const historyProcedures = {
             itemCount: number;
           }>
         >();
-        const pageRunIds = pageRows.map((row) => row.id);
-        if (pageRunIds.length > 0) {
-          const runIdsSql = sql.join(
-            pageRunIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          );
-          const storeTotalRows = executeRows<StoreTotalDbRow>(
-            await tx.execute(sql`
-            WITH money_lines AS (
-              ${runMoneyLinesSql({
-                runsSql: sql`(SELECT unnest(ARRAY[${runIdsSql}]::uuid[]) AS id)`,
-                storeIdsSql,
-              })}
-            )
-            SELECT
-              run_id::text AS run_id,
-              store_id::text AS store_id,
-              COALESCE(SUM(amount), 0)::text AS total,
-              COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0)::text AS items_total,
-              COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0)::text AS expenses_total,
-              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0)::text AS cash,
-              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0)::text AS transfer,
-              (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
-            FROM money_lines
-            GROUP BY run_id, store_id
-            ORDER BY run_id, SUM(amount) DESC, store_id
-          `),
-          );
-          for (const row of storeTotalRows) {
-            const totals = storeTotalsByRun.get(row.run_id) ?? [];
-            totals.push({
-              storeId: row.store_id,
-              total: moneyText(row.total),
-              itemsTotal: moneyText(row.items_total),
-              expensesTotal: moneyText(row.expenses_total),
-              cash: moneyText(row.cash),
-              transfer: moneyText(row.transfer),
-              itemCount: row.item_count,
-            });
-            storeTotalsByRun.set(row.run_id, totals);
-          }
+        for (const row of page.storeTotalRows) {
+          const totals = storeTotalsByRun.get(row.run_id) ?? [];
+          totals.push({
+            storeId: row.store_id,
+            total: moneyText(row.total),
+            itemsTotal: moneyText(row.items_total),
+            expensesTotal: moneyText(row.expenses_total),
+            cash: moneyText(row.cash),
+            transfer: moneyText(row.transfer),
+            itemCount: row.item_count,
+          });
+          storeTotalsByRun.set(row.run_id, totals);
         }
 
         const totalCount = Number(summary.total_count ?? 0);
@@ -480,14 +198,7 @@ export const historyProcedures = {
         if (allowedStoreSet && visibleSessions.length === 0) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
         }
-        const allItems = await tx.query.runItemsV.findMany({
-          where: (item, { eq: eq2 }) => eq2(item.runId, run.id),
-          orderBy: (item, { asc }) => asc(item.skuId),
-        });
-        const allSplits = await tx.query.runItemStoresV.findMany({
-          where: (split, { eq: eq2 }) => eq2(split.runId, run.id),
-          orderBy: (split, { asc }) => [asc(split.skuId), asc(split.storeId)],
-        });
+        const { items: allItems, splits: allSplits } = await runLines(tx, run.id);
         const { splits, hiddenSkuIds } = splitsForReader(allItems, allSplits, allowedStoreSet);
         const { sessions, perStoreDemand, sessionNotesByStore, sessionExtrasByStore } =
           await runSessionsView(tx, visibleSessions, sessionItems);
@@ -498,50 +209,18 @@ export const historyProcedures = {
             ? allItems
             : itemsForStoreReader(allItems, splits, perStoreDemand, hiddenSkuIds);
 
-        const rawExpenses = await tx.query.runExpensesV.findMany({
-          where: (expense, { and: and2, eq: eq2, isNull }) =>
-            and2(eq2(expense.runId, run.id), isNull(expense.removedAt)),
-          orderBy: (expense, { asc }) => asc(expense.addedAt),
-        });
+        const rawExpenses = await activeRunExpenses(tx, run.id);
         const expenses = expensesForReader(rawExpenses, allowedStoreSet);
 
         // DX-HIS-6 (2026-11-01): the detail names each line's supplier.
-        // Names come with the payload: catalog.suppliers is not readable
-        // by every history reader (a store manager).
-        const supplierIds = [
+        const supplierNameById = await supplierNames(tx, ctx.session!.orgId, [
           ...new Set(items.map((item) => item.supplierId).filter((id): id is string => !!id)),
-        ];
-        const supplierNameById: Record<string, string> = {};
-        if (supplierIds.length > 0) {
-          const rows = await tx
-            .select({ id: s.suppliers.id, name: s.suppliers.name })
-            .from(s.suppliers)
-            .where(
-              and(eq(s.suppliers.orgId, ctx.session!.orgId), inArray(s.suppliers.id, supplierIds)),
-            );
-          for (const row of rows) supplierNameById[row.id] = row.name;
-        }
+        ]);
 
         // Review RUNWEB2-03 (2026-11): the money, from the lines the History
         // list row and report.* add up, in the stores this reader may see
         // prices in. The page recomputed it with its own copy of the rule.
-        const moneyLines = executeRows<RunMoneyLine>(
-          await tx.execute(sql`
-            SELECT
-              store_id::text AS "storeId",
-              kind,
-              sku_id::text AS "skuId",
-              expense_id::text AS "expenseId",
-              amount::text AS amount,
-              payment_method AS "paymentMethod"
-            FROM (
-              ${runMoneyLinesSql({
-                runsSql: sql`(SELECT ${run.id}::uuid AS id)`,
-                storeIdsSql: uuidListSql(allowedStoreIds),
-              })}
-            ) money_lines
-          `),
-        );
+        const moneyLines = await runDetailMoneyLines(tx, run.id, allowedStoreIds);
         const { byStore, bySku, bySplit, byExpense, ...runTotals } = runDetailMoney(moneyLines);
 
         return {
