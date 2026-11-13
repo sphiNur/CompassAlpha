@@ -21,10 +21,11 @@
  * around this (PunchSheet) shows the check and its result. Each try mounts
  * this afresh, so nothing of the last one (a half-done blink) carries over.
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, type RefObject } from 'react';
 import { Banner, Button } from '@compass/ui';
 import type { CatalogKey } from '@compass/i18n';
 import { useI18n } from '../../hooks/useI18n';
+import { useKeepInView } from '../../hooks/useKeepInView';
 import { haptic } from '../../lib/telegram';
 import { createActWatcher, type Act } from './faceActs';
 import { useAutoCapture, useCamera, useFrameLoop, useTracker } from './faceCapture';
@@ -151,6 +152,11 @@ export function PunchCamera({
     onGuide: setGuide,
   });
 
+  // The prompt over the picture's bottom edge comes back into view when it
+  // changes (review ATT-06).
+  const prompt = useRef<HTMLDivElement>(null);
+  useKeepInView(prompt, `${step} ${track.state} ${cam.ready}`);
+
   // This phone cannot take a face frame: no clocking on it by itself.
   const cannot = cam.problem !== null || track.state === 'failed';
   const title = i18n.t(
@@ -198,7 +204,11 @@ export function PunchCamera({
           <div
             // UI-8 exception: the camera picture looks the same in both
             // themes; the frame behind it stays black.
-            className="relative overflow-hidden rounded-[var(--r-card)] bg-black"
+            // Review ATT-06: the 3:4 picture is at most 0.41 of the screen's
+            // height wide, so at most 0.55 of it high. On a 360×640 phone,
+            // under the sheet's title, a notice and the colleague line, its
+            // bottom edge with the prompt stayed below the visible part.
+            className="relative mx-auto w-full max-w-[calc(var(--app-viewport-h,100dvh)*0.41)] overflow-hidden rounded-[var(--r-card)] bg-black"
           >
             <video
               ref={cam.setVideo}
@@ -210,6 +220,7 @@ export function PunchCamera({
               className="aspect-[3/4] w-full -scale-x-100 object-cover"
             />
             <FaceOverlay
+              promptRef={prompt}
               title={title}
               arrow={step === 'left' ? '←' : step === 'right' ? '→' : '●'}
               loading={track.state === 'loading'}
@@ -230,6 +241,7 @@ export function PunchCamera({
 
 /** The prompt over the front camera: what to do, the tracker's download, progress. */
 export function FaceOverlay({
+  promptRef,
   title,
   arrow,
   loading,
@@ -237,6 +249,7 @@ export function FaceOverlay({
   guide,
   progress,
 }: {
+  promptRef?: RefObject<HTMLDivElement>;
   title: string;
   arrow: string;
   loading: boolean;
@@ -247,6 +260,7 @@ export function FaceOverlay({
   const i18n = useI18n();
   return (
     <div
+      ref={promptRef}
       // UI-8 exception: text over the camera picture, white on a dark fade
       // in both themes, so it reads on any picture.
       className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-center text-white"

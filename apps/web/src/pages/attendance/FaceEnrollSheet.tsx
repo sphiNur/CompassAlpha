@@ -21,6 +21,7 @@ import type { EnrollPose } from '@compass/contracts/schemas/faceEnroll';
 import type { CatalogKey } from '@compass/i18n';
 import { Banner, Button, Sheet, Spinner } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
+import { useKeepInView } from '../../hooks/useKeepInView';
 import { haptic } from '../../lib/telegram';
 import { errorTextOf, serverErrorKey, type ErrorVars } from '../../lib/errorText';
 import { trpc } from '../../lib/trpc';
@@ -200,6 +201,21 @@ export function FaceEnrollSheet({
               ? 'attendance.enroll.rejectedTitle'
               : 'attendance.enroll.phase.position',
   );
+  // The line under the ring says what to do; it comes back into view when
+  // it changes (review ATT-06).
+  const guideText =
+    track.state === 'loading'
+      ? i18n.t('attendance.live.preparingPercent', { percent: track.percent })
+      : guide === 'center'
+        ? i18n.t('attendance.enroll.center')
+        : guide
+          ? i18n.t(`attendance.live.guide.${guide}`)
+          : phase === 'final'
+            ? i18n.t('attendance.live.guide.lookStraight')
+            : '';
+  const guideLine = useRef<HTMLParagraphElement>(null);
+  useKeepInView(guideLine, capturing ? `${guideText} ${cam.ready}` : null);
+
   const hint =
     phase === 'circle'
       ? i18n.t(slow ? 'attendance.enroll.slowHint' : 'attendance.enroll.circleHint')
@@ -277,18 +293,11 @@ export function FaceEnrollSheet({
 
         {capturing && !cannot ? (
           <p
+            ref={guideLine}
             className="min-h-6 text-center text-old-body font-semibold text-[var(--c-fg)]"
             aria-live="polite"
           >
-            {track.state === 'loading'
-              ? i18n.t('attendance.live.preparingPercent', { percent: track.percent })
-              : guide === 'center'
-                ? i18n.t('attendance.enroll.center')
-                : guide
-                  ? i18n.t(`attendance.live.guide.${guide}`)
-                  : phase === 'final'
-                    ? i18n.t('attendance.live.guide.lookStraight')
-                    : ''}
+            {guideText}
           </p>
         ) : null}
 
@@ -343,7 +352,11 @@ function FaceRing({
     );
   });
   return (
-    <div className="relative aspect-square w-full max-w-[300px]">
+    <div
+      // Review ATT-06: at most 0.45 of the screen's height, so on a phone
+      // held sideways the line under the ring stays near the visible part.
+      className="relative aspect-square w-full max-w-[min(300px,calc(var(--app-viewport-h,100dvh)*0.45))]"
+    >
       <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-hidden>
         {ticks}
       </svg>
