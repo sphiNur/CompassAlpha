@@ -74,8 +74,9 @@ function ShellInner() {
   }, [tabLabel, titleStoreName]);
 
   // The settings sheet: profile, language, about, and the page's own menu
-  // (M1.6, 2026-05-06). Telegram's gear in the bot's ⋯ menu opens it; in
-  // a browser, which has no gear, the header's button with the org name.
+  // (M1.6, 2026-05-06). Telegram's gear in the bot's ⋯ menu opens it, and
+  // so does the top bar: inside Telegram its ⋮ button, left of Telegram's
+  // ⋯ (UX-09, 2026-11-14); in a browser, the button with the org name.
   // It loads on the first open (pageChunks.ts) and then stays mounted, so
   // it closes with its animation.
   const [settingsOpen, setSettingsOpen] = useState(false);

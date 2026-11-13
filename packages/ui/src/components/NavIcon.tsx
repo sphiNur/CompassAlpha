@@ -196,3 +196,19 @@ export function IconShield(props: IconProps) {
     </svg>
   );
 }
+
+/**
+ * IconMoreVertical: three dots stacked, "more". Added 2026-11-14 (UX-09)
+ * for the top bar's way into settings inside Telegram. Vertical so it is
+ * not mistaken for Telegram's own horizontal ⋯ pill next to it; not a
+ * gear, which reads as the Admin tab (IconAdmin).
+ */
+export function IconMoreVertical(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <circle cx="12" cy="5.5" r="1" fill="currentColor" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+      <circle cx="12" cy="18.5" r="1" fill="currentColor" />
+    </svg>
+  );
+}

@@ -1,7 +1,15 @@
+import { IconMoreVertical } from '@compass/ui';
 import { StoreChip } from '../../components/StoreSwitcher';
 import { useI18n } from '../../hooks/useI18n';
 import { isInTelegram } from '../../lib/telegram';
 import { useAuthStore } from '../../stores/authStore';
+
+/** The strip's sides inside Telegram: its Close (left) and ⋯ (right), at
+ *  least the page's own inset where Telegram draws none (tdesktop: 0). */
+const STRIP_PAD_LEFT = 'max(var(--app-chrome-pad-left, 16px), var(--app-inline-x))';
+const STRIP_PAD_RIGHT = 'max(var(--app-chrome-pad-right, 16px), var(--app-inline-x))';
+/** The settings button's drawn size (UX-09). */
+const SETTINGS_W = '40px';
 
 /**
  * The top of the screen. Inside Telegram, the platform chrome (Close + bot
@@ -39,8 +47,8 @@ export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     // current store, sitting where Telegram puts a bot title:
     // between the Close button (left) and the ⋯ overflow (right).
     //
-    // Padding is the LARGER of the two chrome pads on BOTH sides,
-    // not each side's own value. Telegram's right cluster is wider
+    // Until UX-09 (below): padding is the LARGER of the two chrome
+    // pads on BOTH sides, not each side's own value. Telegram's right cluster is wider
     // than Close (96px vs 56px measured on Android), so per-side
     // padding centers the title in the free GAP — about 30px left
     // of the screen's center line, which reads as misaligned right
@@ -54,19 +62,55 @@ export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     // `--app-chrome-safe-top`, the same source the height came
     // from (box-border makes that padding eat the safe-area share
     // of `--app-chrome-reserve`, leaving exactly the button row).
+    //
+    // UX-09 (2026-11-14): the strip also carries a way into settings
+    // (and the page's own actions, e.g. Run's Back to plan / Cancel
+    // run), just left of Telegram's ⋯. Before, only Telegram's gear in
+    // that ⋯ menu opened the sheet, and people rarely found it; the gear
+    // still works. Each side is now padded by its own chrome button, and
+    // the store chip sits between two spacers that keep it on the
+    // screen's centre line while it fits there. A spacer's basis is how
+    // much wider the other side's obstacle is; it shrinks first (1000×)
+    // when the name is long, so the chip slides off centre before it
+    // truncates and gets the whole gap: at 360 px on Android
+    // 360 − 56 − 96 − 40 = 168 px, the same as before the button (the
+    // symmetric 96 + 96 padding left 168 too).
     return (
       <div
-        className="flex items-center justify-center"
+        className="flex items-center"
         style={{
           flexShrink: 0,
           height: 'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))',
           background: 'var(--c-bg)',
           paddingTop: 'var(--app-chrome-safe-top, 0px)',
-          paddingLeft: 'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
-          paddingRight: 'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
+          paddingLeft: STRIP_PAD_LEFT,
+          paddingRight: STRIP_PAD_RIGHT,
         }}
       >
+        <span
+          aria-hidden
+          className="shrink-[1000] grow"
+          style={{ flexBasis: `max(0px, ${STRIP_PAD_RIGHT} + ${SETTINGS_W} - ${STRIP_PAD_LEFT})` }}
+        />
         <StoreChip />
+        <span
+          aria-hidden
+          className="shrink-[1000] grow"
+          style={{ flexBasis: `max(0px, ${STRIP_PAD_LEFT} - ${STRIP_PAD_RIGHT} - ${SETTINGS_W})` }}
+        />
+        <button
+          type="button"
+          data-testid="open-settings"
+          aria-label={i18n.t('settings.title')}
+          aria-haspopup="dialog"
+          onClick={onOpenSettings}
+          // 40 px drawn, 44 px tapped (hit-44): the extra 2 px a side
+          // fall inside Telegram's over-measured 96 px reserve.
+          className="press hit-44 flex shrink-0 items-center justify-center rounded-full text-[var(--c-fg-muted)] active:opacity-60"
+          style={{ width: SETTINGS_W, height: SETTINGS_W }}
+        >
+          <IconMoreVertical size={22} />
+        </button>
       </div>
     );
   }
