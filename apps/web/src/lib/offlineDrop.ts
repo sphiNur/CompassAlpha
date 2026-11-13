@@ -52,10 +52,17 @@ export function offlineDropText(
  * toast now stays until it is dismissed with 知道了. The app shows it
  * from hooks/useOutboxReplay.ts.
  */
-export function offlineDropToastOptions(gotIt: string): {
+export function offlineDropToastOptions(
+  gotIt: string,
+  refresh?: { label: string; onClick: () => void },
+): {
   tone: 'danger';
   ttlMs: 0;
-  actions: Array<{ label: string }>;
+  actions: Array<{ label: string; onClick?: () => void; emphasis?: 'primary' }>;
 } {
-  return { tone: 'danger', ttlMs: 0, actions: [{ label: gotIt }] };
+  // UX-22: a write refused for a stale version also offers Refresh.
+  const actions = refresh
+    ? [{ ...refresh, emphasis: 'primary' as const }, { label: gotIt }]
+    : [{ label: gotIt }];
+  return { tone: 'danger', ttlMs: 0, actions };
 }

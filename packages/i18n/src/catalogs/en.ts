@@ -50,6 +50,7 @@ export const en = {
   'common.remove': 'Remove',
   'common.save': 'Save',
   'common.retry': 'Retry',
+  'common.refresh': 'Refresh',
   'common.loading': 'Loading…',
   'common.errorUnknown': 'Unknown error',
   'common.priceThousands': '{n}K',

@@ -33,6 +33,7 @@ export const ru = {
   'common.remove': 'Убрать',
   'common.save': 'Сохранить',
   'common.retry': 'Повторить',
+  'common.refresh': 'Обновить',
   'common.loading': 'Загрузка…',
   'common.errorUnknown': 'Неизвестная ошибка',
   'common.priceThousands': '{n} тыс.',
