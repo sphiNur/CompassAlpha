@@ -3,15 +3,21 @@
  * them. Review CONF-06: moved out of SettlementPage. CONF-22: whoever may
  * record the close records its expenses (the server's
  * canRecordOperatingExpenses is always true, kept for older clients), so
- * the "manager only" state is gone.
+ * the "manager only" state is gone. S5 (2026-11-13): the organisation's
+ * expense templates add a filled-in line.
  */
-import { Banner, Button, useToast } from '@compass/ui';
+import { Banner, Button, FieldGroup, useToast } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
+import { trpc } from '../../lib/trpc';
 import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
-import { confirmThen } from '../../lib/confirm';
 import { formatMoney } from '../../lib/format';
-import { newOperatingExpense, type OperatingExpenseDraft } from './draftModel';
+import {
+  expenseFromTemplate,
+  newOperatingExpense,
+  type ExpenseTemplate,
+  type OperatingExpenseDraft,
+} from './draftModel';
 import {
   DetailLineFrame,
   DetailLineList,
@@ -28,23 +34,27 @@ type Lines = OperatingExpenseDraft[];
 export function ExpenseLines({
   lines,
   update,
+  storeId,
   total,
   currency,
-  confirmRemoval,
   reveal,
 }: {
   lines: Lines;
   /** Changes the lines, from the draft's latest state. */
   update: (change: (lines: Lines) => Lines) => void;
+  /** The close's store, whose templates (and their prices) are offered. */
+  storeId: string;
   /** The lines' sum, as money text. */
   total: string;
   currency: string;
-  /** Removing a line of a saved close asks first. */
-  confirmRemoval: boolean;
   reveal: FieldReveal;
 }) {
   const i18n = useI18n();
   const toast = useToast();
+  // A default price comes back only with prices.view in this store; the
+  // line's amount is typed otherwise.
+  const templatesQuery = trpc.settlement.expenseTemplates.useQuery({ storeId });
+  const templates = templatesQuery.data ?? [];
   // A total-only row was created before this product recorded individual
   // entries. It has no trustworthy row-level author, so it must remain an
   // immutable historical total instead of being retroactively attributed to
@@ -53,7 +63,7 @@ export function ExpenseLines({
   const editable = !historical;
   const atLimit = lines.length >= MAX_DETAIL_ITEMS;
 
-  const add = () => {
+  const add = (line: OperatingExpenseDraft = newOperatingExpense()) => {
     if (!editable) {
       haptic('warning');
       toast.error(i18n.t('settlement.details.historicalReadOnly'));
@@ -65,22 +75,21 @@ export function ExpenseLines({
       return;
     }
     haptic('light');
-    update((current) => [...current, newOperatingExpense()]);
+    update((current) => [...current, line]);
   };
+  const addFromTemplate = (template: ExpenseTemplate) => add(expenseFromTemplate(template));
 
   const change = (id: string, patch: Partial<Omit<OperatingExpenseDraft, 'id'>>) => {
     if (!editable) return;
     update((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
   };
 
+  // S3 (2026-11-13): no confirmation. The removal is an unsaved edit:
+  // leaving without saving asks, and a saved close keeps its versions.
   const remove = (id: string) => {
     if (!editable) return;
-    const drop = () => {
-      haptic('light');
-      update((current) => current.filter((line) => line.id !== id));
-    };
-    if (confirmRemoval) confirmThen(i18n.t('settlement.confirm.removeDetail'), drop);
-    else drop();
+    haptic('light');
+    update((current) => current.filter((line) => line.id !== id));
   };
 
   return (
@@ -94,11 +103,31 @@ export function ExpenseLines({
           size="sm"
           variant="secondary"
           disabled={!editable || atLimit}
-          onClick={add}
+          onClick={() => add()}
         >
           {i18n.t('settlement.expenses.add')}
         </Button>
       </DetailListHeader>
+
+      {editable && templates.length > 0 ? (
+        <FieldGroup label={i18n.t('settlement.expenses.templates')}>
+          {/* As the run sheet's shortcuts (RUNWEB2-23): kit buttons with a
+              44 px tap, 12 px between wrapped rows. */}
+          <div className="flex flex-wrap gap-x-1.5 gap-y-3">
+            {templates.map((template) => (
+              <Button
+                key={template.id}
+                size="sm"
+                variant="secondary"
+                disabled={atLimit}
+                onClick={() => addFromTemplate(template)}
+              >
+                {template.label}
+              </Button>
+            ))}
+          </div>
+        </FieldGroup>
+      ) : null}
 
       {historical ? (
         <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>

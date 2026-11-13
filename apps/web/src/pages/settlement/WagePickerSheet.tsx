@@ -24,16 +24,21 @@ import { useI18n, useRoleLabels } from '../../hooks/useI18n';
 export interface WagePick {
   memberId: string;
   displayName: string;
+  /** S4: their daily wage on the close's day; null when none is set. */
+  dailyWage: string | null;
 }
 
 export function WagePickerSheet({
   storeId,
+  date,
   lineId,
   chosenMemberId,
   onPick,
   onClose,
 }: {
   storeId: string;
+  /** The close's day, for the daily wage in effect then. */
+  date: string;
   /** The wage line being filled in; `null` while the sheet is closed. */
   lineId: string | null;
   /** The employee the line already pays. */
@@ -56,6 +61,7 @@ export function WagePickerSheet({
       <WageRoster
         key={lineId ?? ''}
         storeId={storeId}
+        date={date}
         open={lineId !== null}
         chosenMemberId={chosenMemberId}
         onPick={onPick}
@@ -66,11 +72,13 @@ export function WagePickerSheet({
 
 function WageRoster({
   storeId,
+  date,
   open,
   chosenMemberId,
   onPick,
 }: {
   storeId: string;
+  date: string;
   open: boolean;
   chosenMemberId: string | null;
   onPick: (employee: WagePick) => void;
@@ -82,7 +90,7 @@ function WageRoster({
   // The picker loads only on demand. This returns a minimum, store-scoped
   // roster rather than the admin directory, so cashiers never receive data
   // about staff in other stores.
-  const rosterQuery = trpc.settlement.wageRoster.useQuery({ storeId }, { enabled: open });
+  const rosterQuery = trpc.settlement.wageRoster.useQuery({ storeId, date }, { enabled: open });
   const roster = rosterQuery.data;
   const roleOptions = useMemo(() => {
     const roles = (roster ?? []).flatMap((employee) => employee.roles);

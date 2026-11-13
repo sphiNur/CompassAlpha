@@ -539,6 +539,31 @@ async function run() {
       settlementText.split('\n').slice(0, 12).join(' / '),
     );
 
+    // S5 (2026-11-13): an expense template adds a line with its label as
+    // the reason and qty × price as the amount.
+    await page
+      .getByRole('group', { name: 'Add from a template' })
+      .getByRole('button', { name: 'Smoke Porter' })
+      .click()
+      .catch(() => {
+        /* record() below captures a missing shortcut */
+      });
+    const templateLine = {
+      amount: await page
+        .getByRole('textbox', { name: 'Expense 1 · Amount' })
+        .inputValue({ timeout: 5_000 })
+        .catch(() => ''),
+      reason: await page
+        .getByRole('textbox', { name: 'Expense 1 · Reason for expense' })
+        .inputValue({ timeout: 5_000 })
+        .catch(() => ''),
+    };
+    record(
+      'An expense template adds a filled-in expense line',
+      templateLine.amount === '30000' && templateLine.reason === 'Smoke Porter',
+      JSON.stringify(templateLine),
+    );
+
     // Wage rows must use the current store's employee picker instead of a
     // free-text recipient. Exercise its responsibility filter and selection
     // write-back, which is intentionally an on-demand settlement.wageRoster
@@ -609,6 +634,12 @@ async function run() {
         /Wage Cashier/.test(selectedWageText) && (await wagePicker.count()) === 0,
         selectedWageText.split('\n').slice(-12).join(' / '),
       );
+      // S4 (2026-11-13): and fills the amount with their daily wage.
+      const wageAmount = await page
+        .getByRole('textbox', { name: 'Wage 1 · Amount' })
+        .inputValue({ timeout: 5_000 })
+        .catch(() => '');
+      record('Choosing an employee fills in their daily wage', wageAmount === '120000', wageAmount);
     } else {
       record('Wage picker filters employees by responsibility', false, 'picker did not load');
       record('Wage picker writes selected employee into wage detail', false, 'picker did not load');
