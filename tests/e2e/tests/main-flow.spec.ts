@@ -302,9 +302,11 @@ test('finish the run and find it in history', async () => {
   await expect(main()).toContainText(/Stores\s*1\/1 confirmed/);
   await mainButton().click();
   // The split by payment method is what the purchaser signs off on.
-  await expect(sheet()).toContainText('total 114,000 UZS');
-  await expect(sheet()).toContainText('cash 24,000');
-  await expect(sheet()).toContainText('transfer 90,000');
+  // RUNWEB1-08: the figures are rows (label, then amount), the total once.
+  const figures = sheet().getByTestId('run-confirm-summary');
+  await expect(figures).toContainText(/2 items · 1 store\s*114,000 UZS/);
+  await expect(figures).toContainText(/Cash\s*24,000/);
+  await expect(figures).toContainText(/Transfer\s*90,000/);
   await evidence('run-finish-summary');
   await sheet().getByRole('button', { name: 'Finish run' }).click();
   await expect(main().getByRole('heading', { name: 'No approved orders yet' })).toBeVisible();

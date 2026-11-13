@@ -510,6 +510,7 @@ export const ru = {
   'common.clear': 'Очистить',
   'common.optional': 'Необязательно',
   'common.labelValue': '{label}: {value}',
+  'common.amountWithCurrency': '{amount} {currency}',
   'common.empty': 'Пусто',
   'unit.kg': 'кг',
   'unit.g': 'г',
@@ -1374,7 +1375,7 @@ export const ru = {
   'run.finish.carriedOver':
     '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} по прежней цене',
   'run.finish.carriedOverStale':
-    'из них {n} старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}}',
+    'Из них {n} старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}}',
   'run.purchase.pricingUniform': 'Единая цена / оплата',
   'run.purchase.pricingPerStore': 'Цена / оплата по магазинам',
   'run.previewSupplier.changeVendor': 'Сменить поставщика',
@@ -1525,8 +1526,8 @@ export const ru = {
     'например, Звонок повара / Акция на рынке / Бонус от поставщика',
   'run.action.addItem.save': 'Сохранить',
   'run.label.addedByPurchaser': 'Добавлено закупщиком по ходу',
-  'run.confirm.finish.addedByPurchaser':
-    '{n, plural, one {Добавлена # позиция} few {Добавлены # позиции} many {Добавлено # позиций} other {Добавлено # позиции}} сверх заказа · {total} {currency}',
+  'run.confirm.finish.addedCount':
+    '{n, plural, one {Добавлена # позиция} few {Добавлены # позиции} many {Добавлено # позиций} other {Добавлено # позиции}} сверх заказа',
   'run.toast.itemAdded': 'Позиция добавлена',
   'run.toast.couldNotAddItem': 'Не удалось добавить товар. Попробуйте ещё раз.',
   'run.errors.alreadyInRun': 'Этот товар уже в закупке — отредактируйте существующую позицию.',
@@ -1555,7 +1556,8 @@ export const ru = {
     'Не удалось сохранить расход. Проверьте сумму и попробуйте снова.',
   'run.confirm.finish.expenses':
     '{n, plural, one {# позиция вне каталога или расход} few {# позиции вне каталога или расхода} many {# позиций вне каталога или расходов} other {# позиции вне каталога или расхода}} · {total} {currency}',
-  'run.confirm.finish.perStoreHeading': 'Разбивка по магазинам:',
+  'run.confirm.finish.expensesCount':
+    '{n, plural, one {# позиция вне каталога или расход} few {# позиции вне каталога или расхода} many {# позиций вне каталога или расходов} other {# позиции вне каталога или расхода}}',
   'run.confirm.finish.receiptIssues':
     '{n, plural, one {# позиция принята с проблемой} few {# позиции приняты с проблемой} many {# позиций принято с проблемой} other {# позиции принято с проблемой}}; не получено примерно на {amount} {currency}. Счета магазинов по-прежнему считаются по распределённому количеству.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: принято {received}/{qty}',
@@ -1597,8 +1599,8 @@ export const ru = {
   'run.confirm.finish.title': 'Завершить закупку?',
   'run.confirm.finish.body':
     'Цены, количества и доставки будут зафиксированы. Исправить потом сможет только суперадмин, открыв закупку заново.',
-  'run.confirm.finish.summary':
-    '{items, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} · {stores, plural, one {# магазин} few {# магазина} many {# магазинов} other {# магазина}} · итого {total} {currency}',
+  'run.confirm.finish.counts':
+    '{items, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} · {stores, plural, one {# магазин} few {# магазина} many {# магазинов} other {# магазина}}',
   'run.label.paymentMethod': 'Способ оплаты',
   'run.label.paymentCash': 'Наличные',
   'run.label.paymentTransfer': 'Перевод',
@@ -1606,7 +1608,6 @@ export const ru = {
   'run.label.splitPreview': 'По магазинам: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Снова доступно: {name}',
   'run.reason.paymentMethodChanged': 'Способ оплаты исправлен в списке',
-  'run.confirm.finish.paymentBreakdown': 'наличные {cash} · перевод {transfer}',
   'run.confirm.cancel.title': 'Отменить всю закупку?',
   'run.confirm.cancel.body':
     'Закупка отменяется. Все заказы вернутся в «Одобренные», их можно будет запланировать снова. Записанные покупки сохранятся, но доставляться не будут.',
@@ -1697,8 +1698,7 @@ export const ru = {
   'run.action.refinalize': 'Сохранить правки',
   'run.toast.amendSaved': 'Правки сохранены, пересчитано',
   'run.confirm.refinalize.title': 'Сохранить правки?',
-  'run.confirm.refinalize.body':
-    'Закупка будет пересчитана по исправленным данным. Новая сумма: {total}.',
+  'run.confirm.refinalize.body': 'Закупка будет пересчитана по исправленным данным.',
   'run.amend.banner': 'Режим правки (суперадмин)',
   'run.amend.bannerHint':
     'Правка завершённой закупки. Нажмите «Сохранить правки» внизу, чтобы пересчитать.',
@@ -1777,7 +1777,6 @@ export const ru = {
   'run.errors.unmarkReasonRequired': 'Опишите, почему теперь доступно.',
   'run.errors.recallReasonRequired': 'Опишите причину отзыва.',
   'run.errors.undoReasonRequired': 'Укажите, почему возвращаете на предыдущий этап.',
-  'run.errors.splitsMustSum': 'Сумма по магазинам должна равняться фактическому кол-ву.',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Для этого магазина нет позиций',
@@ -2253,7 +2252,6 @@ export const ru = {
   'run.switcher.newRun': '+ Новая закупка',
   'run.switcher.option': '№{n} · {date} · {step}',
   'run.titleWithIndex': 'Закупка №{n}',
-  'run.confirm.finish.money': 'Товары {items} · расходы {expenses} · итого {total} {currency}',
   'run.errors.runDateInFuture': 'Дата закупки не может быть в будущем.',
   'run.errors.receivedQtyRequired': 'Укажите, сколько фактически получено.',
   'run.errors.receivedQtyInvalid': 'Полученное количество должно быть числом (0 или больше).',

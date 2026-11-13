@@ -540,6 +540,7 @@ export const en = {
   // 2026-10-30: "Label: value" built in code put a half-width colon into
   // Chinese (支付方式: 现金). The punctuation belongs to the language.
   'common.labelValue': '{label}: {value}',
+  'common.amountWithCurrency': '{amount} {currency}',
   'common.empty': 'Empty',
   // M3.34 (2026-05-19): canonical unit strings. SKU.unit stores one of
   // these; UI looks up via `useUnitLabel(unit)`.
@@ -1440,7 +1441,7 @@ export const en = {
   'run.price.daysAgo': '{n}d ago',
   'run.finish.carriedOver': '{n} priced the same as last time',
   'run.finish.carriedOverStale':
-    'of those, {n} from over {days, plural, one {# day} other {# days}} ago',
+    'Of those, {n} from over {days, plural, one {# day} other {# days}} ago',
   'run.purchase.pricingUniform': 'Uniform price / payment',
   'run.purchase.pricingPerStore': 'Per-store price / payment',
   // Manual supplier assignment from preview (M1.6 #1).
@@ -1586,8 +1587,8 @@ export const en = {
   'run.action.addItem.reasonPlaceholder': 'e.g. Chef call-in / Market deal / Stall freebie',
   'run.action.addItem.save': 'Save addition',
   'run.label.addedByPurchaser': 'Added by purchaser mid-run',
-  'run.confirm.finish.addedByPurchaser':
-    '{n, plural, one {# item} other {# items}} added beyond the original order · {total} {currency}',
+  'run.confirm.finish.addedCount':
+    '{n, plural, one {# item} other {# items}} added beyond the original order',
   'run.toast.itemAdded': 'Item added to the run',
   'run.toast.couldNotAddItem': 'Could not add the product. Try again.',
   'run.errors.alreadyInRun': 'This product is already in the run — use Edit on the existing item.',
@@ -1615,7 +1616,8 @@ export const en = {
   'run.toast.couldNotAddExpense': 'Could not save the expense. Check the amount and try again.',
   'run.confirm.finish.expenses':
     '{n, plural, one {# off-catalog item or expense} other {# off-catalog items or expenses}} · {total} {currency}',
-  'run.confirm.finish.perStoreHeading': 'Per-store split:',
+  'run.confirm.finish.expensesCount':
+    '{n, plural, one {# off-catalog item or expense} other {# off-catalog items or expenses}}',
   'run.confirm.finish.receiptIssues':
     '{n, plural, one {# item was} other {# items were}} received with a problem; about {amount} {currency} was not received. Store bills still charge the split quantities.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
@@ -1661,11 +1663,10 @@ export const en = {
   'run.confirm.finish.title': 'Finish this run?',
   'run.confirm.finish.body':
     'Prices, quantities and deliveries are locked. Only a super admin can reopen it for a correction.',
-  'run.confirm.finish.summary':
-    '{items, plural, one {# item} other {# items}} · {stores, plural, one {# store} other {# stores}} · total {total} {currency}',
-  // M1.14: payment-method labels + the optional cash/transfer breakdown
-  // line that appears in the finish-run confirm body when the run
-  // mixed both methods.
+  'run.confirm.finish.counts':
+    '{items, plural, one {# item} other {# items}} · {stores, plural, one {# store} other {# stores}}',
+  // M1.14: payment-method labels, also the finish sheet's cash and
+  // transfer rows when the run mixed both methods.
   'run.label.paymentMethod': 'Payment method',
   'run.label.paymentCash': 'Cash',
   'run.label.paymentTransfer': 'Transfer',
@@ -1673,7 +1674,6 @@ export const en = {
   'run.label.splitPreview': 'Split: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Mark available again: {name}',
   'run.reason.paymentMethodChanged': 'Payment method corrected on the row',
-  'run.confirm.finish.paymentBreakdown': 'cash {cash} · transfer {transfer}',
   'run.confirm.cancel.title': 'Cancel the entire run?',
   'run.confirm.cancel.body':
     'The run will be cancelled. All orders go back to Approved and can be planned again. Recorded purchases are kept but will not be delivered.',
@@ -1771,8 +1771,7 @@ export const en = {
   'run.action.refinalize': 'Save changes',
   'run.toast.amendSaved': 'Changes saved and totals recalculated',
   'run.confirm.refinalize.title': 'Save changes?',
-  'run.confirm.refinalize.body':
-    'The run will be recalculated from the corrected data. New total: {total}.',
+  'run.confirm.refinalize.body': 'The run will be recalculated from the corrected data.',
   'run.amend.banner': 'Correction mode (super admin)',
   'run.amend.bannerHint':
     'Editing a finished run. Tap "Save changes" at the bottom to recalculate when done.',
@@ -1784,7 +1783,7 @@ export const en = {
     'This product is not in this run — it may have just been removed. Refresh to check.',
   'run.errors.invalidQty': 'The quantity or price is not a valid number. Enter it again.',
   'run.errors.qtyMustBePositive': 'Quantity must be positive.',
-  'run.errors.splitSumMismatch': 'Store split must sum to actual quantity.',
+  'run.errors.splitSumMismatch': 'The store split must add up to the actual quantity.',
   'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable.',
   'run.errors.itemNotPending': 'Only a pending item can be marked unavailable.',
   'run.errors.itemAlreadyPurchased':
@@ -1845,7 +1844,6 @@ export const en = {
   'run.errors.unmarkReasonRequired': 'Please describe why this is available now.',
   'run.errors.recallReasonRequired': 'Please describe why you are recalling this.',
   'run.errors.undoReasonRequired': 'Please describe why you are reverting.',
-  'run.errors.splitsMustSum': 'Splits must add up to the actual quantity.',
 
   // ── 12. Confirm page (delivery acceptance) ──────────────────────
   'confirm.empty.noItems': 'No items for this store',
@@ -2342,7 +2340,6 @@ export const en = {
   'run.switcher.newRun': '+ New run',
   'run.switcher.option': '#{n} · {date} · {step}',
   'run.titleWithIndex': 'Run #{n}',
-  'run.confirm.finish.money': 'Items {items} · expenses {expenses} · total {total} {currency}',
   'run.errors.runDateInFuture': "The purchase date can't be in the future.",
   'run.errors.receivedQtyRequired': 'Enter how much actually arrived.',
   'run.errors.receivedQtyInvalid': 'Received quantity must be a number (0 or more).',

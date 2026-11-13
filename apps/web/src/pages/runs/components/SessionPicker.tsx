@@ -13,7 +13,7 @@
  * is open fall into the right default without resetting earlier ticks.
  */
 import { Card, Checkbox, Input, SectionLabel } from '@compass/ui';
-import { useDateFormat, type useI18n } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n } from '../../../hooks/useI18n';
 import {
   batchNumbers,
   daysOld,
@@ -29,7 +29,6 @@ export function SessionPicker({
   today,
   overrides,
   onChange,
-  i18n,
   runDate,
   onRunDateChange,
   bare = false,
@@ -39,7 +38,6 @@ export function SessionPicker({
   today: string | null;
   overrides: SessionOverrides;
   onChange: (next: Map<string, boolean>) => void;
-  i18n: ReturnType<typeof useI18n>;
   /** When set, a date input for the run's booking date is shown. */
   runDate?: string;
   onRunDateChange?: (date: string) => void;
@@ -51,6 +49,7 @@ export function SessionPicker({
    */
   noneSelectedHint?: boolean;
 }) {
+  const i18n = useI18n();
   const dates = useDateFormat();
   const groups = groupSessionsByDate(sessions, today, i18n.locale);
   const selected = new Set(selectedSessionIds(sessions, today, overrides));

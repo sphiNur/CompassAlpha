@@ -14,7 +14,7 @@
  */
 import { newClientId } from '../../../lib/clientId';
 import type { MutationInput } from '../../../lib/trpcPaths';
-import type { AddItemDraft } from '../sheets/RunSheets';
+import type { AddItemDraft } from '../sheets/drafts';
 import type { ActiveRun } from '../types';
 import { mergeIntoPurchasedItem, mergeSplitsIntoExistingItem } from './runStores';
 

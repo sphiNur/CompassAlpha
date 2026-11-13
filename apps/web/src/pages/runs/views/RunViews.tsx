@@ -19,7 +19,7 @@ import {
   logPurchaseEntry,
   logPurchaseUnavailable,
 } from '../lib/purchaseTelemetry';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   Button,
   Card,
@@ -54,9 +54,9 @@ import {
   otherStoreSkusOf,
   type ActiveRun,
   type ExtraStatus,
-  type InlinePurchase,
   type MarkExtraStatus,
   type RunExtra,
+  type RunRowActions,
   type SkuLite,
   type StoreLite,
 } from '../types';
@@ -295,19 +295,12 @@ export function PerVendorView({
   skuById,
   storeById,
   productName,
-  i18n,
   priceInThousands,
-  onTogglePriceUnit,
   savingSkuId,
   demandBySku,
-  onSavePurchaseInline,
-  onMarkNa,
-  onOpenAdvancedPurchase,
-  onEditPurchased,
-  onUnmark,
+  rowActions,
   onMarkExtraStatus,
   onRecordExtraExpense,
-  onSetPaymentMethod,
   paymentBusySkuId,
 }: {
   run: ActiveRun;
@@ -322,7 +315,6 @@ export function PerVendorView({
   skuById: Map<string, SkuLite>;
   storeById: Map<string, StoreLite>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  i18n: ReturnType<typeof useI18n>;
   savingSkuId: string | null;
   /** M3.43 (2026-05-22): per-vendor view now reuses the SAME inline
    *  PurchaseRow component the aggregate view uses, so the purchaser
@@ -330,38 +322,34 @@ export function PerVendorView({
    *  no more sheet-roundtrip per row. The original M3.36 tap-row →
    *  sheet pattern is preserved as the FALLBACK for rows whose qty
    *  diverges from the planned demand (handled by PurchaseRow
-   *  internally via onOpenAdvanced). */
+   *  internally via actions.openAdvanced). */
   priceInThousands: boolean;
-  onTogglePriceUnit: () => void;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
-  onSavePurchaseInline: (payload: InlinePurchase) => void;
-  onMarkNa: (skuId: string) => void;
-  onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
-  onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  /** Absent while the goods are going out (review RUNAPI-02). */
-  onUnmark?: (skuId: string, skuName: string) => void;
+  /** What a row can do (RUNWEB1-19). */
+  rowActions: RunRowActions;
   /** M3.37 (Wave2 #5): tap-to-cycle extras status. */
   onMarkExtraStatus: MarkExtraStatus;
   onRecordExtraExpense: (storeId: string, extra: RunExtra) => void;
-  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
   paymentBusySkuId: string | null;
 }) {
+  const i18n = useI18n();
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
   const productNameParts = useProductNameParts();
-  // One save per stall for as long as onSavePurchaseInline stays the same:
-  // a closure per row drew every memo()'d row again (review RUNWEB1-07).
-  const saveAt = useMemo(() => {
-    const bySupplier = new Map<string | null, ComponentProps<typeof PurchaseRow>['onSave']>();
+  // One set of row actions per stall, saving with that stall, for as long
+  // as the panel's actions stay the same: a closure per row drew every
+  // memo()'d row again (review RUNWEB1-07).
+  const actionsAt = useMemo(() => {
+    const bySupplier = new Map<string | null, RunRowActions>();
     return (supplierId: string | null) => {
-      let save = bySupplier.get(supplierId);
-      if (!save) {
-        save = (p) => onSavePurchaseInline({ ...p, supplierId });
-        bySupplier.set(supplierId, save);
+      let actions = bySupplier.get(supplierId);
+      if (!actions) {
+        actions = { ...rowActions, save: (p) => rowActions.save({ ...p, supplierId }) };
+        bySupplier.set(supplierId, actions);
       }
-      return save;
+      return actions;
     };
-  }, [onSavePurchaseInline]);
+  }, [rowActions]);
   // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
   const buckets = useMemo(() => {
     type Bucket = {
@@ -482,20 +470,13 @@ export function PerVendorView({
                       isMultiStoreRun={isMultiStoreRun}
                       lastPrice={run.lastPriceBySku?.[r.skuId] ?? null}
                       lastPriceObservedAt={run.lastPriceObservedAtBySku?.[r.skuId] ?? null}
-                      i18n={i18n}
                       priceInThousands={priceInThousands}
-                      onTogglePriceUnit={onTogglePriceUnit}
                       saving={savingSkuId === r.skuId}
                       // The one place in the app that knows WHERE a
                       // purchase happened: the purchaser is working
                       // this stall's bucket. Everything else sends
                       // null — see the handler in RunPage.
-                      onSave={saveAt(b.supplierId)}
-                      onMarkNa={onMarkNa}
-                      onEdit={onEditPurchased}
-                      onUnmark={onUnmark}
-                      onOpenAdvanced={onOpenAdvancedPurchase}
-                      onSetPaymentMethod={onSetPaymentMethod}
+                      actions={actionsAt(b.supplierId)}
                       paymentBusy={paymentBusySkuId === r.skuId}
                     />
                   );
@@ -515,7 +496,6 @@ export function PerVendorView({
         sessionExtrasByStore={run.sessionExtrasByStore}
         sessionNotesByStore={run.sessionNotesByStore}
         storeById={storeById}
-        i18n={i18n}
         // 2026-07-06: match the per-store path — editable during
         // purchasing AND super-admin amending (was purchasing-only,
         // making extras editability view-mode-dependent).
@@ -539,7 +519,6 @@ export function RunExtrasCard({
   sessionExtrasByStore,
   sessionNotesByStore,
   storeById,
-  i18n,
   editable = false,
   onMarkExtraStatus,
   onRecordExtraExpense,
@@ -552,13 +531,13 @@ export function RunExtrasCard({
   sessionExtrasByStore?: Record<string, RunExtra[]>;
   sessionNotesByStore?: Record<string, string>;
   storeById: Map<string, StoreLite>;
-  i18n: ReturnType<typeof useI18n>;
   /** M3.37 (Wave2 #5): when true, tap a row to cycle pending → bought
    *  → unavailable → pending. Only true during run.status='purchasing'. */
   editable?: boolean;
   onMarkExtraStatus?: MarkExtraStatus;
   onRecordExtraExpense?: (storeId: string, extra: RunExtra) => void;
 }) {
+  const i18n = useI18n();
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
   // RUNWEB1-17: rows whose mark is on its way; each takes no tap until
@@ -752,7 +731,6 @@ export function RunExtrasCard({
 export function ExpensesCard({
   expenses,
   storeById,
-  i18n,
   priceInThousands,
   editable,
   onRemove,
@@ -763,7 +741,6 @@ export function ExpensesCard({
   otherStoreExpenseIds?: string[];
   expenses: ActiveRun['expenses'];
   storeById: Map<string, StoreLite>;
-  i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
   /** While the run is being bought: "+ Expense", and the ✗ delete on
    *  each row this purchaser may remove. Read-only otherwise. */
@@ -771,6 +748,7 @@ export function ExpensesCard({
   onRemove: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
 }) {
+  const i18n = useI18n();
   const currency = useCurrency();
   // RUNWEB1-24: an item's unit was shown as its code ("bunch").
   const unitLabel = useUnitLabel();
@@ -905,17 +883,10 @@ export function PerCategoryView({
   skuById,
   categoryById,
   storeById,
-  i18n,
   priceInThousands,
-  onTogglePriceUnit,
   savingSkuId,
   demandBySku,
-  onSavePurchaseInline,
-  onMarkNa,
-  onOpenAdvancedPurchase,
-  onEditPurchased,
-  onUnmark,
-  onSetPaymentMethod,
+  rowActions,
   paymentBusySkuId,
 }: {
   run: ActiveRun;
@@ -924,20 +895,14 @@ export function PerCategoryView({
   skuById: Map<string, SkuLite>;
   categoryById: Map<string, { id: string; names: Record<string, string> }>;
   storeById: Map<string, StoreLite>;
-  i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
-  onTogglePriceUnit: () => void;
   savingSkuId: string | null;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
-  onSavePurchaseInline: (payload: InlinePurchase) => void;
-  onMarkNa: (skuId: string) => void;
-  onEditPurchased: (item: ActiveRun['items'][number]) => void;
-  /** Absent while the goods are going out (review RUNAPI-02). */
-  onUnmark?: (skuId: string, skuName: string) => void;
-  onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
-  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
+  /** What a row can do (RUNWEB1-19). */
+  rowActions: RunRowActions;
   paymentBusySkuId: string | null;
 }) {
+  const i18n = useI18n();
   const productNameParts = useProductNameParts();
   const groups = useMemo(() => {
     const byCategory = new Map<string, ActiveRun['items']>();
@@ -1031,16 +996,9 @@ export function PerCategoryView({
                       isMultiStoreRun={isMultiStoreRun}
                       lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
                       lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
-                      i18n={i18n}
                       priceInThousands={priceInThousands}
-                      onTogglePriceUnit={onTogglePriceUnit}
                       saving={savingSkuId === item.skuId}
-                      onSave={onSavePurchaseInline}
-                      onMarkNa={onMarkNa}
-                      onEdit={onEditPurchased}
-                      onUnmark={onUnmark}
-                      onOpenAdvanced={onOpenAdvancedPurchase}
-                      onSetPaymentMethod={onSetPaymentMethod}
+                      actions={rowActions}
                       paymentBusy={paymentBusySkuId === item.skuId}
                     />
                   );
@@ -1217,7 +1175,7 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
  * memo()'d, so its lists hand it the same arrays and handlers until they
  * change (lib/rowSplits.ts, review RUNWEB1-07).
  *
- * Auto-save logic: fires `onSave` when (a) the row is `pending`, (b) qty
+ * Auto-save logic: fires `actions.save` when (a) the row is `pending`, (b) qty
  * matches the per-store demand we know about (so we can derive splits
  * automatically), (c) price > 0. If qty differs from planned and the run
  * has multiple stores, we don't try to guess the new split — instead we
@@ -1239,16 +1197,9 @@ export const PurchaseRow = memo(function PurchaseRow({
   isMultiStoreRun,
   lastPrice,
   lastPriceObservedAt,
-  i18n,
   priceInThousands,
-  onTogglePriceUnit,
   saving,
-  onSave,
-  onMarkNa,
-  onEdit,
-  onUnmark,
-  onOpenAdvanced,
-  onSetPaymentMethod,
+  actions,
   paymentBusy,
   servesOtherStores = false,
 }: {
@@ -1302,48 +1253,17 @@ export const PurchaseRow = memo(function PurchaseRow({
   lastPrice: string | null;
   /** When that reference price was observed, ISO. Drives the stale mark. */
   lastPriceObservedAt?: string | null;
-  i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, the price input shows raw UZS / 1000. Save still
    *  emits raw UZS. */
   priceInThousands: boolean;
-  /**
-   * Flip the price field between UZS and thousands-of-UZS (2026-07-30).
-   *
-   * The control used to be a `×千` pill in the sticky bar whose meaning
-   * lived ONLY in a `title` attribute — invisible on touch, where there is
-   * no hover. It defaulted to ON and silently multiplied every price the
-   * purchaser typed by 1000. Moving it onto the unit suffix beside the
-   * price input puts it where the user is already looking when the setting
-   * matters, and lets the suffix state the current unit instead of naming
-   * an operation.
-   */
-  onTogglePriceUnit: () => void;
   saving: boolean;
-  onSave: (payload: InlinePurchase) => void;
-  onMarkNa: (skuId: string) => void;
-  onEdit: (item: ActiveRun['items'][number]) => void;
-  /** Absent while the goods are going out (review RUNAPI-02). */
-  onUnmark?: (skuId: string, skuName: string) => void;
-  onOpenAdvanced: (item: ActiveRun['items'][number]) => void;
-  /**
-   * Correct the payment method of an ALREADY purchased row, from the row
-   * itself.
-   *
-   * The one-tap ✓ path has no method control, and `paymentMethod`
-   * defaults to 'cash' — so since the collapsed row became the default
-   * for every priced item, the fast path has been booking everything as
-   * cash and `totalCash` / `totalTransfer` drift by construction.
-   *
-   * This deliberately does NOT go through `onSave`. That reaches
-   * `PurchaseItem`, which has no already-purchased guard and emits a
-   * fresh `ItemPurchased`; the projection then appends an undeduped
-   * `price_history` row per tap and upserts `run_item_stores_v` with
-   * `unitPrice: split.unitPrice ?? null`, silently erasing per-store
-   * price overrides. The caller routes this through `revisePurchase`.
-   */
-  onSetPaymentMethod: (item: ActiveRun['items'][number], next: PaymentMethod) => void;
+  /** What the row can do: save, mark, edit, … (RUNWEB1-19, runs/types.ts). */
+  actions: RunRowActions;
   paymentBusy: boolean;
 }) {
+  const i18n = useI18n();
+  /** Absent while the goods are going out (review RUNAPI-02). */
+  const unmark = actions.unmark;
   // Labels and tooltips name the product once, in the interface's language.
   const skuName = name.primary;
   const unitLabel = useUnitLabel();
@@ -1533,7 +1453,7 @@ export const PurchaseRow = memo(function PurchaseRow({
     if (!splits || splits.length === 0) {
       // No demand info available (legacy run pre-perStoreDemand).
       // Fall back to opening the full sheet.
-      onOpenAdvanced(item);
+      actions.openAdvanced(item);
       return;
     }
     const savedPrice = fromDisplayPrice(displayPrice, priceInThousands);
@@ -1548,7 +1468,7 @@ export const PurchaseRow = memo(function PurchaseRow({
       method: source === 'collapsed' ? 'cash' : paymentMethod,
       multiStore: isMultiStoreRun,
     });
-    onSave({
+    actions.save({
       skuId: item.skuId,
       actualQty,
       // M3.36: convert display → raw UZS at the network boundary.
@@ -1640,7 +1560,10 @@ export const PurchaseRow = memo(function PurchaseRow({
    *   - unavailable → omitted (no actual buy + the unavailability
    *     applies to all stores uniformly; chips would imply otherwise).
    */
-  const breakdown = item.status === 'pending' ? demand : actualSplits;
+  // Review RUNWEB2-31: typed as the wider of the two, so a chip reads a
+  // split's own price and method without a cast (demand has neither).
+  const breakdown: ReadonlyArray<(typeof actualSplits)[number]> =
+    item.status === 'pending' ? demand : actualSplits;
   const showBreakdown = isMultiStoreRun && breakdown.length >= 1;
   /**
    * On a SINGLE-store row the chip's quantity is the same number the row
@@ -1661,12 +1584,11 @@ export const PurchaseRow = memo(function PurchaseRow({
     <div className="flex flex-wrap items-center gap-1.5">
       {breakdown.map((d) => {
         const storeName = storeById.get(d.storeId)?.name ?? i18n.t('common.unknownStore');
-        const splitMeta = d as { unitPrice?: string | null; paymentMethod?: string | null };
         const overridePrice =
-          splitMeta.unitPrice && splitMeta.unitPrice !== item.unitPrice
-            ? toDisplayPrice(splitMeta.unitPrice, priceInThousands)
+          d.unitPrice && d.unitPrice !== item.unitPrice
+            ? toDisplayPrice(d.unitPrice, priceInThousands)
             : null;
-        const method = splitMeta.paymentMethod ?? null;
+        const method = d.paymentMethod ?? null;
         return (
           <span
             key={d.storeId}
@@ -1949,7 +1871,7 @@ export const PurchaseRow = memo(function PurchaseRow({
             onClick={() => {
               editorCommitted.current = true;
               logPurchaseUnavailable(msInEditor());
-              onMarkNa(item.skuId);
+              actions.markNa(item.skuId);
             }}
             className="shrink-0"
           >
@@ -2140,7 +2062,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                 ×1000 slip whenever the quantity is not 1. */}
             <PriceUnitSwitch
               priceInThousands={priceInThousands}
-              onToggle={onTogglePriceUnit}
+              onToggle={actions.togglePriceUnit}
               currency={currency}
               ariaLabel={i18n.t('run.label.priceUnitAria', { currency })}
             />
@@ -2203,7 +2125,7 @@ export const PurchaseRow = memo(function PurchaseRow({
           <button
             type="button"
             onClick={() => {
-              if (!pendingSync) onEdit(item);
+              if (!pendingSync) actions.edit(item);
             }}
             aria-disabled={pendingSync || undefined}
             title={i18n.t(pendingSync ? 'run.pendingSync.row' : 'run.action.editPurchase')}
@@ -2289,7 +2211,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                 value: i18n.t('run.label.paymentPerStore'),
               })}
               disabled={pendingSync}
-              onClick={() => onEdit(item)}
+              onClick={() => actions.edit(item)}
               className={`${ROW_CTRL} ${pendingSync ? CTRL_OFF : CTRL_QUIET}`}
             >
               <span className="text-old-label font-medium">{i18n.t('run.label.paymentPerStore')}</span>
@@ -2304,7 +2226,7 @@ export const PurchaseRow = memo(function PurchaseRow({
               aria-label={paymentAria}
               title={paymentLabel}
               disabled={paymentBusy || pendingSync}
-              onClick={() => onSetPaymentMethod(item, isTransfer ? 'cash' : 'transfer')}
+              onClick={() => actions.setPaymentMethod(item, isTransfer ? 'cash' : 'transfer')}
               className={`${ROW_CTRL} ${
                 paymentBusy || pendingSync ? CTRL_OFF : isTransfer ? CTRL_TRANSFER : CTRL_QUIET
               }`}
@@ -2365,11 +2287,11 @@ export const PurchaseRow = memo(function PurchaseRow({
         {/* This state's one control: put it back. Already routes through
             RunPage's ConfirmSheet. Not offered while the goods are going
             out (review RUNAPI-02): the line could not be bought then. */}
-        {onUnmark ? (
+        {unmark ? (
           <button
             type="button"
             disabled={pendingSync}
-            onClick={() => onUnmark(item.skuId, skuName)}
+            onClick={() => unmark(item.skuId, skuName)}
             aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
             title={i18n.t('run.action.unmarkUnavailable')}
             className={`${ROW_CTRL} ${CTRL_QUIET}`}
