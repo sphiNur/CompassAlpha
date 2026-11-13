@@ -624,7 +624,6 @@ export const zh = {
   'shell.skip.mainAction': '跳到主要操作',
   'shell.skip.nav': '跳到导航',
   'approval.offline.needsConnection': '审核需要联网：通过和拒绝不会先存在手机上。',
-  'workspace.switchConfirm': '切换到 {name}？这一页没保存的内容会丢失。',
   'workspace.switchConfirmPending':
     '切换到 {name}？在这里做的 {n} 项修改还没发出去，回到这个工作区后才会发送。这一页没保存的内容会丢失。',
   'storeSwitcher.switched': '已切换到 {store}',

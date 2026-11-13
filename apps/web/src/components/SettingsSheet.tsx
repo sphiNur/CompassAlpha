@@ -190,20 +190,15 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                             void mayLeaveWorkspace({
                               // COREWEB2-03: writes still waiting to be sent
                               // stay with this workspace; say so before
-                              // leaving it.
-                              confirm: async () => {
-                                const waiting = await waitingWriteCount();
-                                return confirmNative(
-                                  waiting > 0
-                                    ? i18n.t('workspace.switchConfirmPending', {
-                                        name: membership.orgName,
-                                        n: waiting,
-                                      })
-                                    : i18n.t('workspace.switchConfirm', {
-                                        name: membership.orgName,
-                                      }),
-                                );
-                              },
+                              // leaving it. D7: nothing else asks.
+                              waitingWrites: waitingWriteCount,
+                              confirmWaiting: (n) =>
+                                confirmNative(
+                                  i18n.t('workspace.switchConfirmPending', {
+                                    name: membership.orgName,
+                                    n,
+                                  }),
+                                ),
                               requestTabChange,
                               requestStoreChange,
                             }).then((ok) => {

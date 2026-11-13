@@ -676,8 +676,6 @@ export const uz = {
   'shell.skip.nav': 'Navigatsiyaga oʻtish',
   'approval.offline.needsConnection':
     'Tekshiruv uchun internet kerak: maʼqullash va rad etish telefonda saqlanmaydi.',
-  'workspace.switchConfirm':
-    '{name} ga oʻtilsinmi? Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
   'workspace.switchConfirmPending':
     '{name} ga oʻtilsinmi? Bu yerdagi {n} ta oʻzgarish hali yuborilmagan, ular shu ish maydoniga qaytganingizda yuboriladi. Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
   'storeSwitcher.switched': '{store} tanlandi',
