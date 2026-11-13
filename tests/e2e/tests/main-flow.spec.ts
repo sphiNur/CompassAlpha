@@ -509,6 +509,47 @@ test('a store that cannot be loaded, or is gone, says so', async ({ browser }) =
   await gone.close();
 });
 
+test('count the whole store on one screen', async () => {
+  // D1 (2026-11-13). The step before left Central Kitchen open on Settings.
+  await main().getByRole('radio', { name: 'Inventory' }).click();
+  await main().getByRole('button', { name: 'Count stock' }).click();
+  const count = sheet();
+  await expect(count.getByRole('heading', { name: 'Count stock' })).toBeVisible();
+  const apple = count.getByRole('textbox', { name: 'Counted: Apple' });
+  const banana = count.getByRole('textbox', { name: 'Counted: Banana' });
+  // Counts are typed top to bottom: the keyboard's next key moves on.
+  await apple.fill('7');
+  await apple.press('Enter');
+  await expect(banana).toBeFocused();
+  await page.keyboard.type('2,5');
+  await evidence('count-mode-typed');
+
+  // Closing with counts typed asks first; "no" keeps them.
+  const asked = new Promise<string>((resolve) =>
+    page.once('dialog', (dialog) => {
+      resolve(dialog.message());
+      void dialog.dismiss();
+    }),
+  );
+  await page.keyboard.press('Escape');
+  expect(await asked).toMatch(/discard/i);
+  await expect(apple).toHaveValue('7');
+
+  // Rows left empty are not counted; the summary is the one confirmation.
+  const summary = new Promise<string>((resolve) =>
+    page.once('dialog', (dialog) => {
+      resolve(dialog.message());
+      void dialog.accept();
+    }),
+  );
+  await count.getByRole('button', { name: 'Save 2 counts' }).click();
+  expect(await summary).toBe('2 products counted, 2 differ from stock. Save?');
+  await expect(count).toBeHidden();
+  await expect(item('Apple')).toContainText(/7\s*kg/);
+  await expect(item('Banana')).toContainText(/2\.5\s*kg/);
+  await evidence('count-mode-saved');
+});
+
 test('nothing went wrong along the way', () => {
   expect(problems).toEqual([]);
 });

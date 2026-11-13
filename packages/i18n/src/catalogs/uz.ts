@@ -2481,6 +2481,17 @@ export const uz = {
   'inventory.errors.countDecimals': 'Verguldan keyin koʻpi bilan 3 ta raqam.',
   'inventory.errors.countTooLarge': 'Juda katta: koʻpi bilan 99 999 999.',
   'inventory.badge.negative': 'Noldan kam — sanang',
+  'inventory.count.title': 'Qoldiqni sanash',
+  'inventory.count.hint': 'Javondagi miqdorni kiriting. Boʻsh qatorlar hisobga olinmaydi.',
+  'inventory.count.onHand': 'Qoldiq: {qty}',
+  'inventory.count.fieldAria': '{name}: sanalgan miqdor',
+  'inventory.count.save': '{n, plural, =1 {1 ta sanoqni saqlash} other {{n} ta sanoqni saqlash}}',
+  'inventory.count.fixRows':
+    '{n, plural, =1 {1 ta qatorni tuzating} other {{n} ta qatorni tuzating}}',
+  'inventory.count.confirm':
+    '{counted} ta mahsulot sanaldi, {differ} tasi qoldiqdan farq qiladi. Saqlansinmi?',
+  'inventory.count.saved': '{n} ta sanoq saqlandi.',
+  'inventory.count.empty': 'Katalogda hali mahsulot yoʻq',
   'sales.toast.recordedNegative': 'Yozildi. {items} qoldigʻi noldan kam boʻldi — sanab chiqing.',
   'sales.toast.recordedNegativeMore':
     'Yozildi. {items} va yana {n} ta mahsulot qoldigʻi noldan kam boʻldi — sanab chiqing.',

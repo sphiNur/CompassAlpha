@@ -2503,6 +2503,19 @@ export const ru = {
   'inventory.errors.countDecimals': 'Не больше 3 знаков после запятой.',
   'inventory.errors.countTooLarge': 'Слишком много: не больше 99 999 999.',
   'inventory.badge.negative': 'Меньше нуля — пересчитайте',
+  'inventory.count.title': 'Пересчёт остатков',
+  'inventory.count.hint': 'Введите количество на полке. Пустые строки не учитываются.',
+  'inventory.count.onHand': 'На остатке: {qty}',
+  'inventory.count.fieldAria': 'Посчитано: {name}',
+  'inventory.count.save':
+    '{n, plural, one {Сохранить # позицию} few {Сохранить {n} позиции} many {Сохранить {n} позиций} other {Сохранить {n} позиции}}',
+  'inventory.count.fixRows':
+    '{n, plural, one {Исправьте # строку} few {Исправьте {n} строки} many {Исправьте {n} строк} other {Исправьте {n} строки}}',
+  'inventory.count.confirm':
+    '{counted, plural, one {Посчитан # товар} few {Посчитано {counted} товара} many {Посчитано {counted} товаров} other {Посчитано {counted} товара}}, {differ, plural, =0 {расхождений с остатком нет} one {с остатком расходится #} few {с остатком расходятся {differ}} many {с остатком расходятся {differ}} other {с остатком расходятся {differ}}}. Сохранить?',
+  'inventory.count.saved':
+    '{n, plural, one {Сохранена # позиция.} few {Сохранено {n} позиции.} many {Сохранено {n} позиций.} other {Сохранено {n} позиции.}}',
+  'inventory.count.empty': 'В каталоге пока нет товаров',
   'sales.toast.recordedNegative': 'Записано. Остаток «{items}» ушёл в минус — пересчитайте.',
   'sales.toast.recordedNegativeMore': 'Записано. В минус ушли «{items}» и ещё {n} — пересчитайте.',
   'dishes.errors.archivedIngredient':
