@@ -919,11 +919,15 @@ export const ru = {
     'Тот, кто откроет ссылку, присоединится к рабочему пространству с выбранными магазинами и ролью.',
   'admin.invite.link.hint': 'Ссылка одноразовая, действует 7 дней и открывается только в Telegram.',
   'admin.invite.link.submit': 'Создать ссылку',
-  'admin.invite.store': 'Магазин',
   'admin.invite.pickStore': 'Выберите магазин',
   'admin.invite.tgIdHint':
     'Не знаете ID? Попросите человека открыть мини-приложение — там на экране будет его Telegram ID, пусть пришлёт его вам.',
   'admin.invite.clocksIn': 'Отмечается (учёт времени)',
+  'admin.invite.existing.title': '{name} уже участник',
+  'admin.invite.existing.titleNoName': 'Этот человек уже участник',
+  'admin.invite.existing.body': 'Добавить роль «{role}» в: {store}?',
+  'admin.invite.existing.bodyOrgWide': 'Добавить роль «{role}» на всё рабочее пространство?',
+  'admin.invite.existing.confirm': 'Добавить',
   'admin.invite.staffNeedStoreHint':
     'Сотрудникам нужно быть привязанными к магазину, чтобы оформлять заказы.',
   'admin.invite.onlyYourStoresHint': 'Вы можете приглашать только в магазины, которыми управляете.',

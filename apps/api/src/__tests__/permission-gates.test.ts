@@ -40,6 +40,10 @@ const ADMIN_READS: ReadonlyArray<[string, (c: Caller) => Promise<unknown>]> = [
   ['overview', (c) => c.admin.overview()],
   ['memberList', (c) => c.admin.memberList()],
   ['memberInviteList', (c) => c.admin.memberInviteList()],
+  [
+    'memberInvitePreview',
+    (c) => c.admin.memberInvitePreview({ tgUserId: '123456789', storeIds: [SOME_ID] }),
+  ],
   ['memberStoreAssignments', (c) => c.admin.memberStoreAssignments({ memberId: SOME_ID })],
   ['memberPermissionsList', (c) => c.admin.memberPermissionsList({ memberId: SOME_ID })],
   ['roleList', (c) => c.admin.roleList()],

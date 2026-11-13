@@ -539,6 +539,8 @@ export async function stubAppReads(context: BrowserContext): Promise<void> {
   await stubTrpc(context, 'admin.memberStoreAssignments', []);
   await stubTrpc(context, 'admin.storeList', []);
   await stubTrpc(context, 'admin.roleList', []);
+  // UX-24: the invite by Telegram ID's check, should a flow reach it.
+  await stubTrpc(context, 'admin.memberInvitePreview', { existing: false, displayName: null });
   await stubTrpc(context, 'admin.categoryList', []);
   await stubTrpc(context, 'admin.skuList', []);
   await stubTrpc(context, 'admin.supplierList', []);

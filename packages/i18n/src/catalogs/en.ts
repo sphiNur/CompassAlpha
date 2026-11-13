@@ -970,11 +970,15 @@ export const en = {
     'The link can be used once, expires in 7 days, and works only inside Telegram.',
   'admin.invite.link.submit': 'Create invite link',
   'admin.invite.link.copyTitle': 'Invite link',
-  'admin.invite.store': 'Store',
   'admin.invite.pickStore': 'Pick a store',
   'admin.invite.tgIdHint':
     "Don't know their ID? Ask them to open the Mini App: it shows their Telegram ID on screen, and they can send it to you.",
   'admin.invite.clocksIn': 'Clocks in (attendance)',
+  'admin.invite.existing.title': '{name} is already a member',
+  'admin.invite.existing.titleNoName': 'This person is already a member',
+  'admin.invite.existing.body': 'Add {role} at {store}?',
+  'admin.invite.existing.bodyOrgWide': 'Add {role} for the whole workspace?',
+  'admin.invite.existing.confirm': 'Add',
   'admin.invite.staffNeedStoreHint': 'Staff need an assigned store before they can place orders.',
   'admin.invite.onlyYourStoresHint': 'You can only invite into stores you administer.',
   'admin.invite.adminBypassHint':
