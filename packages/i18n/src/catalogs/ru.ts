@@ -1099,7 +1099,6 @@ export const ru = {
   'order.search.noMatches.title': 'Ничего не найдено',
   'order.search.noMatches.description': 'Попробуйте другое слово или сбросьте фильтр.',
   'order.totalQty': 'всего {qty} {unit}',
-  'order.review': 'Проверить заказ ({n})',
   'order.status.draft': 'Черновик',
   'order.status.submitted': 'Отправлено · ждёт проверки',
   'order.status.approved': 'Одобрено',
@@ -1137,8 +1136,10 @@ export const ru = {
   'order.toast.adjustFailed': 'Изменение не сохранилось. Попробуйте ещё раз.',
   'order.toast.syncing': 'Изменения ещё отправляются — нажмите «Отправить заказ» чуть позже.',
   'order.action.submitOrder': 'Отправить заказ',
+  'order.action.submitCount': 'Отправить заказ ({n})',
   'order.action.submitting': 'Отправляем…',
   'order.review.title': 'Проверьте заказ',
+  'order.review.view': 'Посмотреть заказ',
   'order.review.itemsCount':
     '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
   'order.review.empty': 'Пока ничего не выбрано.',
@@ -1210,7 +1211,6 @@ export const ru = {
   'approval.hideItems': 'Скрыть',
   'approval.approve': 'Одобрить',
   'approval.reject': 'Отклонить',
-  'approval.claim': 'Беру на проверку',
   'approval.release': 'Вернуть в очередь',
   'approval.takeOver': 'Взять на себя',
   'approval.confirmTakeover':
@@ -1220,7 +1220,6 @@ export const ru = {
   'approval.undo': 'Отменить',
   'approval.toast.approved': 'Одобрено ✓',
   'approval.toast.rejected': 'Отклонено',
-  'approval.toast.claimed': 'Теперь проверяете вы',
   'approval.toast.released': 'Возвращено в очередь — проверить может любой',
   'approval.toast.tookOver': 'Передано вам — теперь проверяете вы',
   'approval.toast.unapproved': 'Одобрение отменено',
@@ -1235,8 +1234,12 @@ export const ru = {
   'approval.confirm.reject.title': 'Отклонить заказ?',
   'approval.confirm.reject.body':
     'Отправитель увидит вашу причину, сможет исправить заказ и отправить его снова.',
-  'approval.confirm.reject.reasonPlaceholder': 'например, дублирующий заказ',
   'approval.confirm.reject.reasonLabel': 'Причина (обязательно, её увидит отправитель)',
+  'approval.rejectPreset.label': 'Частые причины',
+  'approval.rejectPreset.duplicate': 'Повторный заказ',
+  'approval.rejectPreset.wrongQty': 'Неверное количество',
+  'approval.rejectPreset.overBudget': 'Превышен бюджет',
+  'approval.rejectPreset.notNeeded': 'Сегодня не нужно',
   'approval.confirm.unapprove.title': 'Отменить одобрение?',
   'approval.confirm.unapprove.body':
     'Заказ вернётся в очередь. Возможно только до включения в закупку.',
@@ -1772,13 +1775,6 @@ export const ru = {
   'confirm.confirmStore': 'Подтвердить приёмку',
   'confirm.progress': 'Проверено {done}/{total}',
   'confirm.markAllOk': 'Всё OK',
-  'confirm.bulk.title':
-    'Отметить {n, plural, one {оставшуюся # позицию} few {оставшиеся # позиции} many {оставшиеся # позиций} other {оставшиеся # позиции}} как OK?',
-  'confirm.bulk.body':
-    'Изменяются только ещё не проверенные позиции. Это не подтверждает приёмку магазина.',
-  'confirm.bulk.hint': 'Каждая позиция будет записана как OK. Потом её можно изменить.',
-  'confirm.bulk.submit':
-    'Отметить {n, plural, one {# позицию} few {# позиции} many {# позиций} other {# позиции}} как OK',
   'confirm.confirmStoreBlocked': 'Осталось проверить: {n}',
   'confirm.confirmingHint': 'Подтверждение…',
   'confirm.toast.markedOk': 'Отмечено: OK',
@@ -2441,6 +2437,7 @@ export const ru = {
   'confirm.unbought.ordered': 'заказано {qty} {unit}',
   'confirm.unbought.reason': 'Закупщик: {reason}',
   'confirm.issue.noteLabel': 'Что не так (обязательно)',
+  'confirm.issue.noteOptional': 'Что не так (необязательно)',
   'confirm.issue.noteRequired': 'Чтобы сохранить, напишите, что не так.',
   'confirm.issue.receivedQtyNotNumber': 'Введите число, например 2 или 1,5.',
   'confirm.issue.receivedQtyTooPrecise': 'Не больше 3 знаков после запятой.',

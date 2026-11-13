@@ -148,8 +148,9 @@ test('place an order', async () => {
     'Quantity 2 kg — tap to choose',
   );
 
-  await expect(mainButton()).toHaveText('Review order (2)');
-  await mainButton().click();
+  // O1: the main button submits in one tap; the review is an optional look.
+  await expect(mainButton()).toHaveText('Submit order (2)');
+  await main().getByRole('button', { name: 'View order' }).click();
   // 2026-11-05: the review is editable — each line has the list's stepper.
   const reviewLine = (sku: string) => sheet().getByRole('listitem').filter({ hasText: sku }).last();
   await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
@@ -177,7 +178,9 @@ test('place an order', async () => {
 test('approve it', async () => {
   await tab('approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
-  await main().getByRole('button', { name: "I'll review" }).click();
+  // V1: no claim step; Approve and Reject are on the card at once.
+  await expect(main().getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+  await main().getByRole('button', { name: 'View items' }).click();
   // The card also lists the order as submitted (原提交订单, no stepper);
   // the editable line is the one with the quantity control.
   const editable = main()
@@ -189,7 +192,7 @@ test('approve it', async () => {
     /^Quantity 2 kg/,
   );
   await expect(main().getByTestId('approval-original')).toContainText(/Apple\s*2 kg/);
-  await evidence('approval-claimed');
+  await evidence('approval-review');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
 });
@@ -281,10 +284,8 @@ test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
+  // C1: "All OK" marks the lines at once; Confirm receipt is the check.
   await main().getByRole('button', { name: 'All OK' }).click();
-  await sheet()
-    .getByRole('button', { name: /Mark 2 items OK/ })
-    .click();
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
   await evidence('receiving-checked');
@@ -406,7 +407,6 @@ test('the next order shows what it should cost, and how it is usually paid', asy
   await add('Apple', 2);
   await add('Beef', 2);
   await mainButton().click();
-  await sheet().getByRole('button', { name: 'Submit order' }).click();
   await expect(main().getByRole('status')).toContainText('Submitted · awaiting review');
 
   await tab('approve').click();
@@ -427,7 +427,6 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
   // The order from the last test is approved and bought. Apple cost
   // 12,000 last time; typing the full "12000" while the unit is
   // thousands would record twelve million.
-  await main().getByRole('button', { name: "I'll review" }).click();
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
   await tab('run').click();

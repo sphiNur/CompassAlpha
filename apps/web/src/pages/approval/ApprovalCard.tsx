@@ -15,7 +15,6 @@ export type ApprovalTab = 'pending' | 'approved' | 'rejected';
 /** Which of a card's writes is on its way (each shows its own spinner). */
 export interface ApprovalCardBusy {
   approving: boolean;
-  claiming: boolean;
   takingOver: boolean;
   releasing: boolean;
   unapproving: boolean;
@@ -42,7 +41,6 @@ export function ApprovalCard({
   onHold,
   onApprove,
   onReject,
-  onClaim,
   onRelease,
   onTakeOver,
   onUnapprove,
@@ -67,7 +65,6 @@ export function ApprovalCard({
   onHold: (sessionId: string, hold: boolean) => void;
   onApprove: () => void;
   onReject: () => void;
-  onClaim: () => void;
   onRelease: () => void;
   /** Asked to confirm first. */
   onTakeOver: () => void;
@@ -304,12 +301,10 @@ export function ApprovalCard({
         {/* 2026-10-21 CA-42: an unclaimed order can be approved or
           rejected directly — the domain already allows it
           (commands.ts Approve/Reject only conflict when someone
-          ELSE holds the claim). Claim stays for editing
-          quantities, and another approver's claim still hides
-          these buttons. While a claim or approval for this row
-          is in flight the other actions wait, so a quick
-          Claim → Approve can't race two writes onto the same
-          order stream (the loser would fail with staleSeq). */}
+          ELSE holds the claim), and another approver's claim still
+          hides these buttons. Simplification V1 (2026-11-13): no
+          "I'll review" step in front of them; the first quantity
+          change claims the order (U2), and Release lets it go. */}
         {tab === 'pending' && (!row.claimedByMemberId || isClaimedByMe) && !canApproveRow ? (
           // DX-APR-8: every line set to 0 and no other items —
           // the server refuses to approve; say so instead.
@@ -320,39 +315,7 @@ export function ApprovalCard({
             {i18n.t('approval.allZeroRejectOnly')}
           </p>
         ) : null}
-        {tab === 'pending' && !row.claimedByMemberId ? (
-          <>
-            {canApproveRow ? (
-              <Button
-                size="sm"
-                variant="primary"
-                loading={busy.approving}
-                disabled={!online || adjusting || held || busy.claiming}
-                onClick={onApprove}
-              >
-                {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={!online || adjusting || busy.claiming || busy.approving}
-              onClick={onReject}
-            >
-              {i18n.t('approval.reject')}
-            </Button>
-            <Button
-              size="sm"
-              variant="pearl"
-              loading={busy.claiming}
-              disabled={!online || busy.approving}
-              onClick={onClaim}
-            >
-              {i18n.t('approval.claim')}
-            </Button>
-          </>
-        ) : null}
-        {tab === 'pending' && isClaimedByMe ? (
+        {tab === 'pending' && (!row.claimedByMemberId || isClaimedByMe) ? (
           <>
             {canApproveRow ? (
               <Button
@@ -365,18 +328,25 @@ export function ApprovalCard({
                 {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
               </Button>
             ) : null}
-            <Button size="sm" variant="danger" disabled={!online || adjusting} onClick={onReject}>
-              {i18n.t('approval.reject')}
-            </Button>
             <Button
               size="sm"
-              variant="pearl"
-              loading={busy.releasing}
-              disabled={!online}
-              onClick={onRelease}
+              variant="danger"
+              disabled={!online || adjusting || busy.approving}
+              onClick={onReject}
             >
-              {i18n.t('approval.release')}
+              {i18n.t('approval.reject')}
             </Button>
+            {isClaimedByMe ? (
+              <Button
+                size="sm"
+                variant="pearl"
+                loading={busy.releasing}
+                disabled={!online}
+                onClick={onRelease}
+              >
+                {i18n.t('approval.release')}
+              </Button>
+            ) : null}
           </>
         ) : null}
         {/* M1.7-fix (2026-05-07, audit HIGH #5): only show

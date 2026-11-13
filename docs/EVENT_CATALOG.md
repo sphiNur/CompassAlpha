@@ -71,7 +71,7 @@ are absent when the store pays the line's.
 | `ItemUnavailable` | `{skuId, note}` | |
 | `DeliveryStarted` | `{}` | All items must be purchased or unavailable, with no open top-up. |
 | `StoreDelivered` | `{storeId, deliveredByUserId}` | |
-| `StoreItemConfirmed` | `{storeId, skuId, status: 'ok' \| 'short' \| 'wrong' \| 'quality', note, photoUrl, receivedQty?}` | Note required when status ≠ 'ok'. `receivedQty`: how much of the split arrived usable; absent on `ok` and before 2026-10-21 (CA-06) = the full split. |
+| `StoreItemConfirmed` | `{storeId, skuId, status: 'ok' \| 'short' \| 'wrong' \| 'quality', note, photoUrl, receivedQty?}` | Note required for 'wrong' and 'quality'; optional (null) for 'short' and 'ok' (C2, 2026-11-13). `receivedQty`: how much of the split arrived usable; absent on `ok` and before 2026-10-21 (CA-06) = the full split. |
 | `StoreConfirmed` | `{storeId, confirmedByUserId}` | All purchased items at this store must have a `StoreItemConfirmed` (since 2026-10-30, DLV-19, none is implied). |
 | `RunFinished` | `{totalActual, totalCash?, totalTransfer?, itemsTotal?, expensesTotal?}` | All involved stores must be confirmed. `totalActual` is items only. `totalCash` / `totalTransfer`: absent before M1.14 (2026-05-08) = all cash. `itemsTotal` (= `totalActual`) / `expensesTotal`: absent before 2026-10-21 (CA-11); recompute from the read model. |
 | `RunCancelled` | `{reason: string \| null}` | `null` since M1.7 (2026-05-07): left blank. |
