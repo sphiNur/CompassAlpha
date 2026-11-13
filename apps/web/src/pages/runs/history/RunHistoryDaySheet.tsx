@@ -106,7 +106,7 @@ export function RunHistoryDaySheet({
                       className="flex flex-col gap-1 border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
                     >
                       {body}
-                      <div className="flex flex-wrap gap-1.5 pt-1">
+                      <div className="flex flex-wrap gap-x-1.5 gap-y-3 pt-1">
                         {st.lines.map((line) => (
                           <Button
                             size="sm"

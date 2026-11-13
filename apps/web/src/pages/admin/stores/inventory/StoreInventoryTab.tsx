@@ -136,7 +136,7 @@ export function StoreInventoryTab({ storeId, storeName }: { storeId: string; sto
   return (
     <div className="px-4 py-3">
       {canCount || (canAdjust && levelsQuery.isSuccess && openingCandidates.length > 0) ? (
-        <div className="mb-3 flex flex-wrap justify-end gap-2">
+        <div className="mb-3 flex flex-wrap justify-end gap-x-2 gap-y-3">
           {canAdjust && levelsQuery.isSuccess && openingCandidates.length > 0 ? (
             <Button
               size="sm"
@@ -189,7 +189,7 @@ export function StoreInventoryTab({ storeId, storeName }: { storeId: string; sto
                 {/* 2026-10-21: tap → recent movements sheet. */}
                 <button
                   type="button"
-                  className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+                  className="hit-44 flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
                   onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
                 >
                   <span className="flex min-w-0 items-baseline gap-2">

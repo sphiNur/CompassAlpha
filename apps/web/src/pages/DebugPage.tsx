@@ -267,7 +267,7 @@ export function DebugPage() {
         <CardHeader>
           <CardTitle>{i18n.t('ops.debug.actions')}</CardTitle>
         </CardHeader>
-        <div className="flex flex-wrap gap-2 px-4 pb-4 pt-2">
+        <div className="flex flex-wrap gap-x-2 gap-y-3 px-4 pb-4 pt-2">
           <Button
             size="sm"
             variant="pearl"

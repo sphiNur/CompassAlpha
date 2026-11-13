@@ -183,7 +183,7 @@ function FaceEnrollLine({
   const inUse = photos.data?.find((e) => e.status === 'approved') ?? photos.data?.[0];
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
         <span className="min-w-0 flex-1 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t(`attendance.enroll.status.${status}`)}
         </span>

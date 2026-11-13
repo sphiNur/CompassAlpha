@@ -150,7 +150,10 @@ function TabBar({ tabs, tab, onSelect }: BottomNavProps) {
               // flex-1 alone never shrank below the label, so at 320 px seven
               // ru tabs pushed the last one off screen and the page scrolled
               // sideways.
-              'press flex min-w-0 flex-auto flex-col items-center justify-center gap-1 px-0.5 ' +
+              // WALK-03 (2026-11-13): no narrower than 44 px while the bar
+              // has room (eight tabs at 352 px and up). Short labels took
+              // their width from the long ones: ru «Заказ» was 37 px at 360.
+              'press flex min-w-[min(2.75rem,12.5%)] flex-auto flex-col items-center justify-center gap-1 px-0.5 ' +
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >

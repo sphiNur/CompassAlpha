@@ -393,7 +393,7 @@ export function FinanceSection() {
       {/* View switcher + export (a real <Button> at sm/pearl, M3.17).
           DX-HIS-3: the export button gets its own line when the three
           views need the width (ru / uz at 360 px squeezed it to 24 px). */}
-      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-x-2 gap-y-3">
         {/* DX-HIS-3: chips that wrap; in uz at 360 px the three views
             were 355 px in 328 and 「Doʻkon boʻyicha」 was cut off. */}
         <ChipBar ariaLabel={i18n.t('finance.view.label')} className="min-w-[11rem] flex-1" wrap>

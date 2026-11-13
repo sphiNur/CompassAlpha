@@ -276,7 +276,7 @@ export function HistoryPage() {
             label={i18n.t('run.history.dateRange')}
             error={invalidDateRange ? i18n.t('run.errors.invalidDateRange') : null}
           >
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="mb-2 flex flex-wrap gap-x-2 gap-y-3">
               {[7, 30, 90].map((days) => (
                 <Button
                   key={days}

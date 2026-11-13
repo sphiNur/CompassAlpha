@@ -280,7 +280,7 @@ export function DishesSection() {
                   <button
                     type="button"
                     onClick={() => openForEdit(d.id)}
-                    className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+                    className="hit-44 flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">

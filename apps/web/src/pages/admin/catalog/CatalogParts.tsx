@@ -67,7 +67,7 @@ export function CatalogToolbar({
   const hasSwitch = showArchived !== undefined && onShowArchivedChange !== undefined;
   if (!newLabel && !children && !hasSwitch) return null;
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-3">
       {newLabel && onNew ? (
         <Button size="sm" onClick={onNew}>
           + {newLabel}

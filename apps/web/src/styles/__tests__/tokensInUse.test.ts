@@ -138,6 +138,31 @@ describe('WALK-03: tap areas the pages draw themselves', () => {
     expect(own).toEqual([]);
   });
 
+  test('a row of small controls that wraps keeps its lines 12px apart', () => {
+    // Button sm and chips are 32 px with a 44 px hit-44 area; wrapped
+    // lines 8 px apart overlap, and the lower line takes the taps (the
+    // review card's Approve tapped as 40 px in ru at 360 px).
+    const tight = /(^|\s)gap-(0\.5|1|1\.5|2|2\.5)(\s|$)/;
+    const found: string[] = [];
+    for (const [file, src] of tsx()) {
+      const lines = src.split('\n');
+      lines.forEach((line, i) => {
+        const cls = /className="([^"]*)"/.exec(line)?.[1];
+        if (!cls || !cls.includes('flex-wrap') || !tight.test(cls)) return;
+        // The element's children: up to its closing tag.
+        const indent = line.search(/\S/) - (line.includes('<') ? 0 : 2);
+        const body: string[] = [];
+        for (const next of lines.slice(i + 1, i + 60)) {
+          if (next.trimStart().startsWith('</') && next.search(/\S/) === indent) break;
+          body.push(next);
+        }
+        const small = body.join('\n').match(/size="sm"|<Chip\b/g)?.length ?? 0;
+        if (small >= 2) found.push(`${file}:${i + 1}: ${cls}`);
+      });
+    }
+    expect(found).toEqual([]);
+  });
+
   test('a <summary> taps as 44', () => {
     const short: string[] = [];
     for (const [file, src] of tsx()) {
