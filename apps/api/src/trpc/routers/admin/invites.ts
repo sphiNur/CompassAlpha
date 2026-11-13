@@ -22,7 +22,7 @@ import {
 import { assertCanAddMember } from '../../../services/subscription';
 import { requireAdmin } from './guards';
 import { broadcastPeople } from './notify';
-import { getAdminReadScope, inviteWithinScope, userInAnotherOrg } from './scope';
+import { getAdminReadScope, inviteWithinScope, userInAnotherOrg, visibleMemberIds } from './scope';
 import { granterOf, assertCanGrantTo, adminRankRoleIds } from './grants';
 import { auditAdmin } from '../../../services/adminAudit';
 import { planInvite } from './invitePlan';
@@ -232,6 +232,60 @@ export const inviteProcedures = {
         });
         broadcastPeople(orgId);
         return { ok: true as const };
+      });
+    }),
+
+  /**
+   * UX-24 (2026-11-14): what memberInviteByTgId would do with the same
+   * input, without doing it, so the form can ask before it adds a role to
+   * someone already here. Same gate, same plan (planInvite) and, for an
+   * existing member, the same refusals as the mutation (an inactive member,
+   * a picked role they may not be given), in the same order; it writes
+   * nothing. The name is said only to a caller whose member list shows
+   * this person (memberList's scope, CA-17), and never a `tg:` placeholder.
+   */
+  memberInvitePreview: authedProcedure
+    .input(InviteMemberByTgIdInputSchema)
+    .query(async ({ ctx, input }) => {
+      requireAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const plan = await planInvite(tx, ctx, input);
+        const user = await tx.query.users.findFirst({
+          where: (u, { eq: eq2 }) => eq2(u.tgUserId, input.tgUserId),
+        });
+        const member = user
+          ? await tx.query.members.findFirst({
+              where: (m, { eq: eq2, and: and2 }) =>
+                and2(eq2(m.orgId, orgId), eq2(m.userId, user.id)),
+            })
+          : undefined;
+        if (!user || !member) return { existing: false as const, displayName: null };
+        if (member.status !== 'active') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.memberInactiveReactivateFirst',
+          });
+        }
+        if (plan.picked) {
+          for (const grant of plan.grants) {
+            await assertCanGrantTo(
+              tx,
+              ctx,
+              member.userId,
+              grant.scopeType === 'store' && grant.scopeId
+                ? { type: 'store', storeId: grant.scopeId }
+                : { type: 'global' },
+            );
+          }
+        }
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        const visible = scope ? await visibleMemberIds(tx, scope, ctx.session!.memberId) : null;
+        const shown =
+          (!visible || visible.has(member.id)) && !user.displayName.startsWith('tg:')
+            ? user.displayName
+            : null;
+        return { existing: true as const, displayName: shown };
       });
     }),
 

@@ -6,8 +6,13 @@ function StoreName({ store }: { store: { name: string; code?: string | null } })
   return (
     <>
       {store.name}
+      {/* UX-23: a space between, so the accessible name reads "Central
+          CENTRAL", not "CentralCENTRAL". */}
       {store.code ? (
-        <span className="ml-2 text-old-label text-[var(--c-fg-muted)]">{store.code}</span>
+        <>
+          {' '}
+          <span className="ml-1.5 text-old-label text-[var(--c-fg-muted)]">{store.code}</span>
+        </>
       ) : null}
     </>
   );

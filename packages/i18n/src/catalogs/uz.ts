@@ -917,11 +917,15 @@ export const uz = {
     'Havola bir marta ishlatiladi, 7 kundan keyin eskiradi va faqat Telegram ichida ochiladi.',
   'admin.invite.link.submit': 'Taklif havolasini yaratish',
   'admin.invite.link.copyTitle': 'Taklif havolasi',
-  'admin.invite.store': 'Doʻkon',
   'admin.invite.pickStore': 'Doʻkon tanlang',
   'admin.invite.tgIdHint':
     'ID ni bilmaysizmi? Undan mini-ilovani ochishni soʻrang: ekranda uning Telegram ID si chiqadi, uni sizga yuborsin.',
   'admin.invite.clocksIn': 'Davomatda belgilanadi',
+  'admin.invite.existing.title': '{name} allaqachon aʼzo',
+  'admin.invite.existing.titleNoName': 'Bu odam allaqachon aʼzo',
+  'admin.invite.existing.body': '{store} uchun «{role}» roli qoʻshilsinmi?',
+  'admin.invite.existing.bodyOrgWide': 'Butun ish maydoni uchun «{role}» roli qoʻshilsinmi?',
+  'admin.invite.existing.confirm': 'Qoʻshish',
   'admin.invite.staffNeedStoreHint':
     'Xodimlar buyurtma berishlari uchun doʻkonga biriktirilishi kerak.',
   'admin.invite.onlyYourStoresHint':

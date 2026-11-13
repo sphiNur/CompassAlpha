@@ -170,8 +170,8 @@ export function AdminPage() {
   const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
   // D6 (2026-11-13): a manager of one store invites from here; the way
   // was Stores › store › Team › Invite. S2 (2026-11-13): everyone who may
-  // invite into a store; with several, the sheet asks which one, starting
-  // from the store in the top bar.
+  // invite into a store; with several, the form's store checklist starts
+  // on the store in the top bar (UX-23: the hub's own store select is gone).
   const adminStoreIds = useAdminStoreIds();
   const navStoreCtx = useStoreContext();
   const inviteChoice = inviteStoreChoice(
@@ -443,7 +443,6 @@ export function AdminPage() {
           open={inviteOpen}
           onClose={() => setInviteOpen(false)}
           storeIds={inviteChoice.preselect ? [inviteChoice.preselect] : []}
-          storeChoices={inviteChoice.stores}
         />
       ) : null}
     </div>

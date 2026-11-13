@@ -4,14 +4,15 @@
  * PeopleSection so the Admin home can open it for a manager of one store
  * without the Stores › store › Team detour.
  */
-import { useEffect, useState } from 'react';
-import { Field, Select, useToast } from '@compass/ui';
+import { useState } from 'react';
+import { ConfirmSheet, useToast } from '@compass/ui';
+import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { STALE } from '../../../../config/timings';
 import { trpc } from '../../../../lib/trpc';
 import { useAuthStore } from '../../../../stores/authStore';
 import { copyText } from '../../../../lib/clipboard';
 import { useErrToast } from '../../../../hooks/useErrToast';
-import { useI18n } from '../../../../hooks/useI18n';
+import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
 import { getTg } from '../../../../lib/telegram';
 import {
   inviteLink as makeInviteLink,
@@ -20,26 +21,25 @@ import {
 import { useStoreClocking } from '../../../attendance/useStoreClocking';
 import { InviteCopySheet } from '../InviteCopySheet';
 import { type InviteDraft, useActor } from '../shared';
+import { existingMemberPrompt } from './inviteConfirm';
 import { InviteHubSheet } from './InviteHubSheet';
-import type { InviteStore } from './inviteStores';
 import { ManualInviteSheet } from './ManualInviteSheet';
 
 export function InviteFlow({
   open,
   onClose,
   storeIds,
-  storeChoices,
   preferOrgTier = false,
 }: {
   open: boolean;
   onClose: () => void;
-  /** The stores the form starts with (with `storeChoices`: the preselected one). */
-  storeIds: string[];
   /**
-   * S2 (2026-11-13): from the Admin home, the stores the person may invite
-   * into. With several, the hub asks which one first.
+   * The stores the form's checklist starts with: the store in context (the
+   * top bar's on the Admin home), or none when the person has to pick.
+   * UX-23 (2026-11-14): the hub no longer asks for a store of its own; the
+   * form's checklist is the one choice.
    */
-  storeChoices?: readonly InviteStore[];
+  storeIds: string[];
   /** The organisation-level list: an org-tier role is the default. */
   preferOrgTier?: boolean;
 }) {
@@ -48,16 +48,10 @@ export function InviteFlow({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
   const [linkDraft, setLinkDraft] = useState<InviteDraft | null>(null);
   const [linkAction, setLinkAction] = useState<'share' | 'copy'>('share');
-  // S2: the store picked in the hub; each opening starts from the preselected one.
-  const picksStore = (storeChoices?.length ?? 0) > 1;
-  const preselected = storeIds[0] ?? '';
-  const [pickedStoreId, setPickedStoreId] = useState(preselected);
-  useEffect(() => {
-    if (open) setPickedStoreId(preselected);
-  }, [open, preselected]);
   // The inviter's own roles, for the rank rules (useActor).
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {
     enabled: open || !!manualDraft || !!linkDraft,
@@ -70,6 +64,16 @@ export function InviteFlow({
   const invite = trpc.admin.memberInviteByTgId.useMutation({
     onError: errToast('common.errors.actionFailed'),
   });
+  // UX-24: the role and store names the "already a member" question uses
+  // (the form loads the same lists).
+  const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!manualDraft });
+  const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: !!manualDraft });
+  /** UX-24: asked before adding a role to someone already in the workspace. */
+  const [existing, setExisting] = useState<{
+    displayName: string | null;
+    roleSlug: string;
+  } | null>(null);
+  const [checking, setChecking] = useState(false);
   const appConfig = trpc.system.appConfig.useQuery(undefined, {
     staleTime: STALE.long,
   });
@@ -123,33 +127,77 @@ export function InviteFlow({
     tgUserId: '',
     displayName: '',
     roleSlug: '',
-    storeIds: picksStore ? (pickedStoreId ? [pickedStoreId] : []) : storeIds,
+    storeIds,
     clocksIn: false,
   });
+
+  const inviteInput = (draft: InviteDraft, roleSlug: string) => ({
+    tgUserId: draft.tgUserId.trim(),
+    displayName: draft.displayName || undefined,
+    roleSlug,
+    storeIds: draft.storeIds,
+  });
+
+  /** Adds the person (new, or confirmed as already here). */
+  const addByTgId = (roleSlug: string) => {
+    if (!manualDraft) return;
+    const draft = manualDraft;
+    const clockIn = clocking.offered && draft.clocksIn && clockStoreId;
+    invite
+      .mutateAsync(inviteInput(draft, roleSlug))
+      .then(async (data) => {
+        void utils.admin.memberList.invalidate();
+        // A3: the person is a member at once, so clocking is
+        // switched on for them right away (attendance.memberSet).
+        if (clockIn) await clocking.set(data.memberId, true).catch(() => undefined);
+        toast[data.created ? 'success' : 'info'](
+          data.created ? i18n.t('admin.toast.memberAdded') : i18n.t('admin.toast.userExists'),
+        );
+        setManualDraft(null);
+      })
+      .catch(() => undefined)
+      .finally(() => setExisting(null));
+  };
+
+  /**
+   * UX-24 (2026-11-14): someone already in the workspace is asked about
+   * first ("Leo Park is already a member. Add Store staff at Central?");
+   * the invite added the role and stores and said so only afterwards. The
+   * check is the invite's own, without writing (admin.memberInvitePreview),
+   * so a refusal shows here as it would on the invite.
+   */
+  const submitByTgId = (roleSlug: string) => {
+    if (!manualDraft || checking) return;
+    setChecking(true);
+    utils.admin.memberInvitePreview
+      .fetch(inviteInput(manualDraft, roleSlug), { staleTime: 0, gcTime: 0 })
+      .then((preview) => {
+        if (preview.existing) setExisting({ displayName: preview.displayName, roleSlug });
+        else addByTgId(roleSlug);
+      }, errToast('common.errors.actionFailed'))
+      .finally(() => setChecking(false));
+  };
+
+  const existingRole = existing
+    ? (rolesQuery.data ?? []).find((r) => r.slug === existing.roleSlug)
+    : undefined;
+  const prompt = existing
+    ? existingMemberPrompt({
+        displayName: existing.displayName,
+        roleName: existingRole ? roleText.name(existingRole) : existing.roleSlug,
+        orgWide: (existingRole?.rank ?? 0) >= ADMIN_RANK,
+        storeNames: (storesQuery.data ?? [])
+          .filter((st) => manualDraft?.storeIds.includes(st.id))
+          .map((st) => st.name),
+        separator: i18n.t('common.listSeparator'),
+      })
+    : null;
 
   return (
     <>
       <InviteHubSheet
         open={open}
         onClose={onClose}
-        storePicker={
-          picksStore ? (
-            <Field label={i18n.t('admin.invite.store')}>
-              <Select value={pickedStoreId} onChange={(e) => setPickedStoreId(e.target.value)}>
-                {pickedStoreId ? null : (
-                  <option value="" disabled>
-                    {i18n.t('admin.invite.pickStore')}
-                  </option>
-                )}
-                {storeChoices!.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : null
-        }
         onPickManual={() => {
           onClose();
           setManualDraft(freshDraft());
@@ -167,30 +215,20 @@ export function InviteFlow({
         clocksInOffered={clocking.offered}
         draft={manualDraft}
         setDraft={setManualDraft}
-        onSubmit={(roleSlug) => {
-          if (!manualDraft) return;
-          const draft = manualDraft;
-          const clockIn = clocking.offered && draft.clocksIn && clockStoreId;
-          invite
-            .mutateAsync({
-              tgUserId: draft.tgUserId.trim(),
-              displayName: draft.displayName || undefined,
-              roleSlug,
-              storeIds: draft.storeIds,
-            })
-            .then(async (data) => {
-              void utils.admin.memberList.invalidate();
-              // A3: the person is a member at once, so clocking is
-              // switched on for them right away (attendance.memberSet).
-              if (clockIn) await clocking.set(data.memberId, true).catch(() => undefined);
-              toast[data.created ? 'success' : 'info'](
-                data.created ? i18n.t('admin.toast.memberAdded') : i18n.t('admin.toast.userExists'),
-              );
-              setManualDraft(null);
-            })
-            .catch(() => undefined);
-        }}
+        onSubmit={submitByTgId}
+        pending={checking || invite.isPending || clocking.pending}
+      />
+      <ConfirmSheet
+        open={!!prompt}
+        title={prompt ? i18n.t(prompt.title.key, prompt.title.params) : ''}
+        body={prompt ? i18n.t(prompt.body.key, prompt.body.params) : undefined}
+        confirmLabel={i18n.t('admin.invite.existing.confirm')}
+        focusCancel
         pending={invite.isPending || clocking.pending}
+        onConfirm={() => {
+          if (existing) addByTgId(existing.roleSlug);
+        }}
+        onCancel={() => setExisting(null)}
       />
       <ManualInviteSheet
         mode="link"
