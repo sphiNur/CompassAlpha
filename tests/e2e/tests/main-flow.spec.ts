@@ -281,10 +281,8 @@ test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
+  // C1: "All OK" marks the lines at once; Confirm receipt is the check.
   await main().getByRole('button', { name: 'All OK' }).click();
-  await sheet()
-    .getByRole('button', { name: /Mark 2 items OK/ })
-    .click();
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
   await evidence('receiving-checked');

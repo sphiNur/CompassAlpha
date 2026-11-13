@@ -22,7 +22,6 @@ import {
   EmptyState,
   LoadingState,
   OfflineState,
-  Sheet,
   StickyPageBar,
   useToast,
 } from '@compass/ui';
@@ -71,7 +70,6 @@ export function ConfirmPage() {
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const issueForm = useIssueForm();
-  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
   // summary sheet instead of submitting on one tap.
   const [finalConfirmOpen, setFinalConfirmOpen] = useState(false);
@@ -209,7 +207,6 @@ export function ConfirmPage() {
   const bulkMarkOk = trpc.run.markStoreItemsOk.useMutation({
     onSuccess: (data) => {
       void utils.run.get.invalidate();
-      setBulkConfirmOpen(false);
       if (data.marked > 0) {
         haptic('success');
         toast.success(i18n.t('confirm.toast.allMarkedOk', { n: data.marked }));
@@ -223,7 +220,6 @@ export function ConfirmPage() {
         input: vars,
         failedKey: 'common.errors.actionFailed',
         queuedKey: 'confirm.toast.savedOffline',
-        onQueued: () => setBulkConfirmOpen(false),
       }),
   });
 
@@ -291,7 +287,9 @@ export function ConfirmPage() {
   /**
    * Bulk "everything arrived correctly" is one server transaction now.
    * One request, one projection pass, and no half-marked store when the
-   * connection drops mid-loop.
+   * connection drops mid-loop. Simplification C1 (2026-11-13): no confirm
+   * sheet in front of it; it only sets undecided lines, each can still be
+   * changed, and 确认收货 is the step that locks the receipt.
    */
   const markAllOk = () => {
     if (storeConfirmed || bulkMarkOk.isPending) return;
@@ -513,7 +511,7 @@ export function ConfirmPage() {
                             size="sm"
                             variant="pearl"
                             loading={bulkMarkOk.isPending}
-                            onClick={() => setBulkConfirmOpen(true)}
+                            onClick={markAllOk}
                           >
                             {i18n.t('confirm.markAllOk')}
                           </Button>
@@ -600,31 +598,6 @@ export function ConfirmPage() {
           if (!confirmStore.isPending) setFinalConfirmOpen(false);
         }}
       />
-
-      <Sheet
-        open={bulkConfirmOpen}
-        onOpenChange={(open) => {
-          if (!open && bulkMarkOk.isPending) return;
-          setBulkConfirmOpen(open);
-        }}
-        title={i18n.t('confirm.bulk.title', { n: undecided.length })}
-        description={i18n.t('confirm.bulk.body')}
-        footer={
-          <Button
-            block
-            size="lg"
-            loading={bulkMarkOk.isPending}
-            disabled={undecided.length === 0}
-            onClick={markAllOk}
-          >
-            {i18n.t('confirm.bulk.submit', { n: undecided.length })}
-          </Button>
-        }
-      >
-        <div className="py-3 text-old-body-sm text-[var(--c-fg-muted)]">
-          {i18n.t('confirm.bulk.hint', { n: undecided.length })}
-        </div>
-      </Sheet>
 
       <IssueSheet
         form={issueForm}

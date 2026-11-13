@@ -1771,11 +1771,6 @@ export const uz = {
   'confirm.confirmStore': 'Qabulni tasdiqlash',
   'confirm.progress': 'Tekshirildi {done}/{total}',
   'confirm.markAllOk': 'Hammasi yaxshi',
-  'confirm.bulk.title': 'Qolgan {n} ta mahsulot yaxshi deb belgilansinmi?',
-  'confirm.bulk.body':
-    'Faqat hali tekshirilmagan mahsulotlar oʻzgaradi. Bu doʻkon qabulini tasdiqlamaydi.',
-  'confirm.bulk.hint': 'Har bir mahsulot «Yaxshi» deb yoziladi. Keyin alohida oʻzgartirish mumkin.',
-  'confirm.bulk.submit': '{n} ta mahsulotni yaxshi deb belgilash',
   'confirm.confirmStoreBlocked': '{n} ta tekshirilmagan',
   'confirm.confirmingHint': 'Tasdiqlanmoqda…',
   'confirm.toast.markedOk': 'Yaxshi deb belgilandi',

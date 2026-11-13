@@ -1785,13 +1785,6 @@ export const ru = {
   'confirm.confirmStore': 'Подтвердить приёмку',
   'confirm.progress': 'Проверено {done}/{total}',
   'confirm.markAllOk': 'Всё OK',
-  'confirm.bulk.title':
-    'Отметить {n, plural, one {оставшуюся # позицию} few {оставшиеся # позиции} many {оставшиеся # позиций} other {оставшиеся # позиции}} как OK?',
-  'confirm.bulk.body':
-    'Изменяются только ещё не проверенные позиции. Это не подтверждает приёмку магазина.',
-  'confirm.bulk.hint': 'Каждая позиция будет записана как OK. Потом её можно изменить.',
-  'confirm.bulk.submit':
-    'Отметить {n, plural, one {# позицию} few {# позиции} many {# позиций} other {# позиции}} как OK',
   'confirm.confirmStoreBlocked': 'Осталось проверить: {n}',
   'confirm.confirmingHint': 'Подтверждение…',
   'confirm.toast.markedOk': 'Отмечено: OK',
