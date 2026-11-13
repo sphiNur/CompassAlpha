@@ -78,7 +78,8 @@ describe('filterStoreGroups', () => {
     // It describes the whole store; showing it beside three filtered
     // rows would imply it is about them.
     const withNote = [store('a', [line({ id: '1', name: 'Tomato' })], 'buy extra bread')];
-    expect(withNote[0]!.legacyNote).toBe('buy extra bread');
+    // Unfiltered, the note stays (review TEST3-12: this read the fixture).
+    expect(filterStoreGroups(withNote, [])[0]!.legacyNote).toBe('buy extra bread');
     expect(filterStoreGroups(withNote, q('tomato'))[0]!.legacyNote).toBeUndefined();
   });
 

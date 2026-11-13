@@ -29,7 +29,7 @@ import { runningBuildId } from '../lib/build';
 import { formatList } from '../lib/listFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { requestTabChange, type Tab } from '../stores/navStore';
+import { requestTabChange } from '../stores/navStore';
 import { waitingWriteCount } from '../lib/outbox/engine';
 import { isInTelegram } from '../lib/telegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
@@ -38,6 +38,7 @@ import type { PageMenuRegistration } from './PageMenuContext';
 import { StorePickerSection } from './StoreSwitcher';
 import { useCanSeeStorePicker } from '../hooks/useStoreContext';
 import { requestStoreChange } from '../lib/storeContext';
+import { mayLeaveWorkspace } from '../lib/workspaceSwitch';
 import { confirmNative } from '../lib/confirm';
 import { CreateWorkspaceForm } from './CreateWorkspace';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
@@ -52,23 +53,6 @@ interface Props {
    * past the profile and the languages to reach it.
    */
   pageMenu?: PageMenuRegistration | null;
-}
-
-/**
- * DX-SHL-3 (2026-11-01): switching workspace replaces every page, so it
- * asks first and then lets the pages' unsaved-draft guards (daily close)
- * veto it, like a tab or store change does. After the switch the shell
- * lands on the order tab with the new workspace's first store, which is
- * what the guards are asked about. Exported for tests.
- */
-export async function mayLeaveWorkspace(deps: {
-  confirm: () => Promise<boolean>;
-  requestTabChange: (next: Tab) => Promise<boolean>;
-  requestStoreChange: (next: null) => Promise<boolean>;
-}): Promise<boolean> {
-  if (!(await deps.confirm())) return false;
-  if (!(await deps.requestTabChange('order'))) return false;
-  return deps.requestStoreChange(null);
 }
 
 export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {

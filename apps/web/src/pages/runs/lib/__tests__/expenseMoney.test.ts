@@ -49,4 +49,19 @@ describe('expense money (DX-HIS-2)', () => {
       }),
     ).toBe('190.00');
   });
+
+  test('the card and the settlement sheet price an expense alike (review TEST3-11)', () => {
+    // Two exports share the name expenseLine: the card's gives text, null
+    // when the price is hidden; the sheet's gives a number. The card's is
+    // the sheet's, formatted, so the two pages cannot tell different sums.
+    const cases = [
+      { qty: '0.333', unitPrice: '30000' },
+      { qty: '1.005', unitPrice: '0.5' },
+      { qty: '1', unitPrice: '2.01', storeSplits: [{ qty: '0.5' }, { qty: '0.5' }] },
+      { qty: '2', unitPrice: '100', storeSplits: [{ qty: '1', unitPrice: '90' }, { qty: '1' }] },
+    ];
+    for (const expense of cases) {
+      expect(expenseLine(expense)).toBe(settlementExpenseLine(expense).toFixed(2));
+    }
+  });
 });

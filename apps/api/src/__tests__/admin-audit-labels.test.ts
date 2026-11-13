@@ -2,13 +2,15 @@
  * 2026-10-21 FE-08 (F6-02): adminAuditList resolves readable names per
  * row. These cover the pure halves (which ids a row refers to, and how
  * lookups become labels); the SQL lookups run only against a real
- * Postgres and are covered by the PG-gated adminAuditList suites.
+ * Postgres and are covered by the PG-gated adminAuditList suites
+ * (admin-audit-trail.test.ts reads a renamed and a deleted role back).
  */
 import { describe, expect, test } from 'bun:test';
 import {
   auditLabelsAtWrite,
   auditRowRefs,
   buildAuditLabels,
+  deriveScopeStoreId,
   type AuditLookups,
 } from '../services/adminAudit';
 
@@ -200,5 +202,27 @@ describe('buildAuditLabels', () => {
     ).toBe('Race 3');
     expect(auditLabelsAtWrite(null)).toEqual({});
     expect(auditLabelsAtWrite({ labelsAtWrite: 'x' })).toEqual({});
+  });
+});
+
+describe('deriveScopeStoreId — member transfers', () => {
+  // Moved from scoped-run-revision.test.ts (review TEST2-18).
+  const [A, B, C] = ['store-a', 'store-b', 'store-c'];
+
+  test('a transfer is scoped to its destination store', () => {
+    expect(
+      deriveScopeStoreId('member', {
+        memberId: 'm-1',
+        fromStoreId: A,
+        toStoreId: B,
+        mirrorRoles: true,
+      }),
+    ).toBe(B);
+  });
+
+  test('existing keys keep their priority', () => {
+    expect(deriveScopeStoreId('member', { storeId: A, toStoreId: B })).toBe(A);
+    expect(deriveScopeStoreId('member', { targetStoreId: C })).toBe(C);
+    expect(deriveScopeStoreId('role', { name: 'r' })).toBeNull();
   });
 });

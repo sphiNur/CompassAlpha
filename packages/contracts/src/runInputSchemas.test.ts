@@ -13,7 +13,8 @@
  * other three are strict. If someone later "simplifies" these back into
  * one schema, exactly one of these two describes will fail.
  *
- * No Postgres needed — pure zod, runs in the fast CI unit job.
+ * No Postgres needed — pure zod, runs in the fast CI unit job. It lives
+ * with the schemas (it was in apps/api; review TEST2-18).
  */
 import { describe, expect, test } from 'bun:test';
 import {
@@ -22,7 +23,7 @@ import {
   RunCancelInputSchema,
   RunHistoryInputSchema,
   RunReasonOnlyInputSchema,
-} from '@compass/contracts';
+} from './index';
 
 const RUN_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -108,10 +109,18 @@ describe('RunHistoryInputSchema', () => {
 
 describe('DateStringSchema (B11 / BUY-15 / RE-AUTH-3)', () => {
   test('refuses year 0000 and days that do not exist, with a catalog key', () => {
-    for (const bad of ['0000-01-01', '0001-06-01', '1899-12-31', '3000-01-01', '2026-02-29', '2026-1-5']) {
+    for (const bad of [
+      '0000-01-01',
+      '0001-06-01',
+      '1899-12-31',
+      '3000-01-01',
+      '2026-02-29',
+      '2026-1-5',
+    ]) {
       const result = DateStringSchema.safeParse(bad);
       expect(result.success).toBe(false);
-      if (!result.success) expect(result.error.issues[0]?.message).toBe('common.errors.invalidDate');
+      if (!result.success)
+        expect(result.error.issues[0]?.message).toBe('common.errors.invalidDate');
     }
   });
 

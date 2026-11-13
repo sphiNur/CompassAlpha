@@ -4,23 +4,13 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test';
 import { testSession } from '../../__tests__/fixtures/session';
+import { memoryStorage } from '../../__tests__/helpers/storage';
 import { AUTH_STORAGE_KEY, useAuthStore } from '../../stores/authStore';
 import { NAV_STORAGE_KEY } from '../../stores/navStore';
 import { clearLocalSession, SAVED_SESSION_KEYS } from '../localSession';
 
 const g = globalThis as { window?: unknown };
 const realWindow = g.window;
-
-function storage(items: Record<string, string>) {
-  const map = new Map(Object.entries(items));
-  return {
-    map,
-    getItem: (k: string) => map.get(k) ?? null,
-    setItem: (k: string, v: string) => void map.set(k, v),
-    removeItem: (k: string) => void map.delete(k),
-    clear: () => map.clear(),
-  };
-}
 
 afterEach(() => {
   g.window = realWindow;
@@ -29,12 +19,12 @@ afterEach(() => {
 
 describe('clearLocalSession', () => {
   it('removes the saved sign-in and tab, and nothing else', async () => {
-    const local = storage({
+    const local = memoryStorage({
       [AUTH_STORAGE_KEY]: '{}',
       [NAV_STORAGE_KEY]: '{}',
       'compass.theme': 'dark',
     });
-    const session = storage({ 'compass.inviteSettled': 'token' });
+    const session = memoryStorage({ 'compass.inviteSettled': 'token' });
     g.window = { localStorage: local, sessionStorage: session };
     await clearLocalSession();
     expect([...local.map.keys()]).toEqual(['compass.theme']);
@@ -43,8 +33,8 @@ describe('clearLocalSession', () => {
   });
 
   it('signs out in memory first, so the saved sign-in is not written back', async () => {
-    const local = storage({});
-    g.window = { localStorage: local, sessionStorage: storage({}) };
+    const local = memoryStorage({});
+    g.window = { localStorage: local, sessionStorage: memoryStorage({}) };
     useAuthStore.setState({ accessToken: 'a', refreshToken: 'r', session: testSession() });
     // What the store's persistence does on every change.
     const unsubscribe = useAuthStore.subscribe(() => local.setItem(AUTH_STORAGE_KEY, 'saved'));

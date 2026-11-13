@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mayLeaveWorkspace } from '../SettingsSheet';
+import { mayLeaveWorkspace } from '../workspaceSwitch';
 
 /** DX-SHL-3: switching workspace asks, then lets the draft guards veto. */
 describe('mayLeaveWorkspace', () => {

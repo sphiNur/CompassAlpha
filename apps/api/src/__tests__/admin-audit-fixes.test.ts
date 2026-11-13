@@ -20,7 +20,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { callerFor, gateCaller } from './helpers/ctx';
 import { seedMember } from './helpers/fixtures';
 import { tenantSuite } from './helpers/tenants';
-import { codeOf, errorOf } from './helpers/errors';
+import { codeOf, keyOf } from './helpers/errors';
 
 const ORG = '00000000-0000-4000-8000-000000000003';
 
@@ -122,11 +122,6 @@ describe('admin read scope + invite reach (CA-17, CA-19)', () => {
 
 // ---------- PG-gated: limits + platform subscription ----------------------
 
-/** The message of what `run` threw; undefined if it succeeded. */
-async function errorMessage(run: () => Promise<unknown>): Promise<string | undefined> {
-  return (await errorOf(run))?.message;
-}
-
 describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)', () => {
   const { newTenant, track } = tenantSuite('Audit Fix Test Org');
 
@@ -139,7 +134,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
       .values({ orgId, name: 'Paused', code: `P-${Date.now()}`, isActive: false })
       .returning();
     expect(
-      await errorMessage(() =>
+      await keyOf(() =>
         callerFor(session).admin.storeUpdate({ storeId: paused!.id, isActive: true }),
       ),
     ).toBe('subscription.errors.storeLimit');
@@ -159,7 +154,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     for (let i = 0; i < 9; i += 1) await addMember('active');
     const suspended = await addMember('suspended');
     expect(
-      await errorMessage(() =>
+      await keyOf(() =>
         callerFor(session).admin.memberSetStatus({ memberId: suspended, status: 'active' }),
       ),
     ).toBe('subscription.errors.memberLimit');
@@ -211,7 +206,7 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     const base = { orgId, planCode: 'growth', status: 'active' as const };
     for (const bad of ['0000-01-01', '2026-1-5', '2026-02-30', 'tomorrow', '2026-10-31T10:00']) {
       expect(
-        await errorMessage(() =>
+        await keyOf(() =>
           callerFor(session).platform.updateSubscription({ ...base, currentPeriodEnd: bad }),
         ),
       ).toBe('platform.errors.invalidDate');

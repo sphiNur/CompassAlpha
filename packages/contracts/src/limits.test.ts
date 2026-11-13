@@ -37,9 +37,12 @@ import * as barrel from './index';
 
 describe('limits.ts', () => {
   it('imports nothing (no zod)', () => {
+    // Review TEST4-16: read the way a bundler reads it, so an `export …
+    // from`, a dynamic `import()` or a `require` counts too; a regex over
+    // the source saw only `import` at the start of a line. Type-only
+    // imports are left out, as they are from the bundle.
     const src = readFileSync(new URL('./limits.ts', import.meta.url), 'utf8');
-    expect(src).not.toMatch(/^\s*import\s/m);
-    expect(src).not.toMatch(/from\s+'zod'|require\('zod'\)/);
+    expect(new Bun.Transpiler({ loader: 'ts' }).scanImports(src)).toEqual([]);
   });
 
   it('isPurchasePrice agrees with PurchasePriceSchema', () => {

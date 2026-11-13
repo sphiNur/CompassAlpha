@@ -11,9 +11,12 @@
  *   OPS-15 — the manual /__origin takes the same signed message, checked
  *        the same way; no shared key.
  *
- * fetch is stubbed; nothing touches ntfy, Cloudflare or a tunnel.
+ * fetch is stubbed; nothing touches ntfy, Cloudflare or a tunnel. Each
+ * test runs on a stopped clock (review TEST4-18, 2026-11), so a message's
+ * age is exactly what the test signed it with, however slow the machine.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
+import type { Mock } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import worker, {
   pickOrigin,
@@ -25,7 +28,14 @@ const KEY = 'test-signing-key';
 const PUBLIC = 'https://compass-alpha.sphinxr.workers.dev';
 const OLD = 'https://old-dead-tunnel.trycloudflare.com/';
 const NEW = 'https://new-live-tunnel.trycloudflare.com/';
+/** Where the clock stands when each test starts. */
+const START = new Date('2026-11-01T12:00:00Z');
 const now = () => Math.floor(Date.now() / 1000);
+
+/** Moves the clock past the 30 s origin cache; the per-isolate floor stays. */
+function expireOriginCache() {
+  setSystemTime(new Date(Date.now() + 31_000));
+}
 
 function signed(url: string, ts: number, key = KEY) {
   const sig = createHmac('sha256', key).update(`${url}|${ts}`).digest('hex');
@@ -52,22 +62,47 @@ type Call = { url: string; init?: RequestInit };
 const realFetch = globalThis.fetch;
 let calls: Call[] = [];
 let topic = '';
+/** When set, a poll of ntfy fails as a timeout does. */
+let ntfyDown = false;
 let upstream: (url: string) => Response = () => new Response('upstream ok');
+
+/**
+ * What the worker warns about on purpose here: unsigned mode (CA-12) and
+ * an asset it will not keep (OPS-14). These are collected in `warnings`
+ * rather than printed; any other warning still prints.
+ */
+const EXPECTED_WARNINGS = [/^ORIGIN_SIGNING_KEY is not set/, /^not keeping what the origin sent/];
+const realWarn = console.warn;
+let warnings: string[] = [];
+let warn: Mock<typeof console.warn>;
 
 beforeEach(() => {
   resetStateForTests();
+  setSystemTime(START);
   calls = [];
   topic = '';
+  ntfyDown = false;
   upstream = () => new Response('upstream ok');
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
-    if (url.startsWith('https://ntfy.sh/')) return new Response(topic);
+    if (url.startsWith('https://ntfy.sh/')) {
+      if (ntfyDown) throw new Error('timeout');
+      return new Response(topic);
+    }
     calls.push({ url, init });
     return upstream(url);
   }) as typeof fetch;
+  warnings = [];
+  warn = spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    const text = args.map(String).join(' ');
+    if (EXPECTED_WARNINGS.some((re) => re.test(text))) warnings.push(text);
+    else realWarn(...args);
+  });
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
+  setSystemTime();
+  warn.mockRestore();
 });
 
 function env(extra: Record<string, unknown> = {}) {
@@ -209,6 +244,7 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
   test('a message just under the watchdog republish interval plus slack is accepted', async () => {
     const t = now();
     // 6 h 1 min: the oldest a healthy watchdog's latest message can be.
+    // The worker's window is 6 h 30 min.
     const found = await pickOrigin(
       lines(signed(NEW, t - 6 * 3600 - 60)),
       { ORIGIN_SIGNING_KEY: KEY },
@@ -220,6 +256,8 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
   test('unsigned mode keeps the last-posted rule', async () => {
     const found = await pickOrigin(lines(NEW, OLD), {}, 0);
     expect(found).toEqual({ url: OLD, ts: null });
+    // Said once per isolate, not once per message.
+    expect(warnings).toHaveLength(1);
   });
 
   test('unsigned mode persists the origin to KV for a cold isolate', async () => {
@@ -230,12 +268,7 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
     expect(kv.data.get('url')).toBe(NEW);
     // A new isolate whose ntfy poll fails now falls back to the live origin.
     resetStateForTests();
-    const okFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input instanceof Request ? input.url : input);
-      if (url.startsWith('https://ntfy.sh/')) throw new Error('timeout');
-      return okFetch(input, init);
-    }) as typeof fetch;
+    ntfyDown = true;
     await worker.fetch(new Request(`${PUBLIC}/y`), env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv }));
     expect(calls[1]!.url).toBe(`${NEW}y`);
   });
@@ -269,7 +302,7 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
     // KV is eventually consistent: pretend the write is not visible yet.
     kv.data.clear();
     kv.data.set('url', NEW);
-    resetCacheOnly();
+    expireOriginCache();
     topic = ndjson(signed(OLD, t - 30 * 60));
     await worker.fetch(new Request(`${PUBLIC}/y`), signedEnv(kv));
     expect(calls[1]!.url).toBe(`${NEW}y`);
@@ -291,13 +324,8 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
     await worker.fetch(new Request(`${PUBLIC}/x`), signedEnv(kv));
     // The KV write is not visible yet and ntfy now times out.
     kv.data.set('url', OLD);
-    resetCacheOnly();
-    const okFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input instanceof Request ? input.url : input);
-      if (url.startsWith('https://ntfy.sh/')) throw new Error('timeout');
-      return okFetch(input, init);
-    }) as typeof fetch;
+    expireOriginCache();
+    ntfyDown = true;
     await worker.fetch(new Request(`${PUBLIC}/y`), signedEnv(kv));
     expect(calls[1]!.url).toBe(`${NEW}y`);
   });
@@ -438,6 +466,8 @@ describe('big assets in KV (workers.dev has no Cache API)', () => {
     expect(kv.data.size).toBe(0);
     // Each one went to the origin: nothing answered from KV.
     expect(calls.length).toBe(tries.length);
+    // And each refusal was logged.
+    expect(warnings.filter((w) => w.startsWith('not keeping'))).toHaveLength(tries.length);
   });
 
   test('a page kept in KV before the check is not served; the file is fetched again', async () => {
@@ -510,20 +540,6 @@ describe('edge cache for hashed assets', () => {
   });
 });
 
-// Expire only the 30 s origin cache, keeping the per-isolate floor.
-function resetCacheOnly() {
-  const realNow = Date.now;
-  const later = realNow() + 31_000;
-  Date.now = () => later;
-  afterEachRestore.push(() => {
-    Date.now = realNow;
-  });
-}
-const afterEachRestore: Array<() => void> = [];
-afterEach(() => {
-  for (const f of afterEachRestore.splice(0)) f();
-});
-
 describe('OPS-28: no wait for ntfy once an origin is known, and no dead fallback host', () => {
   const host = (call: Call | undefined) => (call ? new URL(call.url).host : null);
 
@@ -538,7 +554,7 @@ describe('OPS-28: no wait for ntfy once an origin is known, and no dead fallback
     expect(pending).toHaveLength(0);
 
     topic = ndjson(NEW);
-    resetCacheOnly();
+    expireOriginCache();
     await worker.fetch(new Request(`${PUBLIC}/b`), e, ctx);
     // Answered from the origin it had; one refresh queued, not one per request.
     expect(host(calls.at(-1))).toBe(new URL(OLD).host);
@@ -555,7 +571,7 @@ describe('OPS-28: no wait for ntfy once an origin is known, and no dead fallback
     topic = ndjson(OLD);
     await worker.fetch(new Request(`${PUBLIC}/a`), e);
     topic = ndjson(NEW);
-    resetCacheOnly();
+    expireOriginCache();
     await worker.fetch(new Request(`${PUBLIC}/b`), e);
     expect(host(calls.at(-1))).toBe(new URL(NEW).host);
   });

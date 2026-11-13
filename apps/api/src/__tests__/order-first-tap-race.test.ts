@@ -12,6 +12,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s, type DB } from '@compass/db';
+import { todayInTz } from '@compass/domain';
 import { decide, emptyState } from '@compass/domain/order';
 import { appRouter } from '../trpc/router';
 import { writeOrderEvents } from '../services/streamWrite';
@@ -20,8 +21,13 @@ import { callerFor } from './helpers/ctx';
 import { seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { codeOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
+
+/** The calls send no date, so the server takes the org's today; where it is
+ *  midday that does not change while the file runs (review TEST1-09). */
+const TZ = middayZone(new Date());
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let fix: {
@@ -40,7 +46,7 @@ beforeAll(async () => {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `race-${suffix}`, name: 'First tap race', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `race-${suffix}`, name: 'First tap race', localeDefault: 'en', timezone: TZ })
     .returning();
   noteOrg(org!.id);
   const orgId = org!.id;
@@ -107,7 +113,7 @@ describe.skipIf(!SHOULD_RUN)('the day\'s first change from two devices (PG-gated
     const { orgId, storeId, racer } = fix!;
     const [device] = await racer.devices();
     // The other device's first change, not committed yet: its draft holds
-    // the one-draft-a-day index. The org's time zone is UTC.
+    // the one-draft-a-day index, for the day the server takes as today.
     const wonId = randomUUID();
     let release!: () => void;
     const released = new Promise<void>((r) => {
@@ -122,7 +128,7 @@ describe.skipIf(!SHOULD_RUN)('the day\'s first change from two devices (PG-gated
         type: 'StartDraft',
         orgId,
         storeId,
-        orderDate: new Date().toISOString().slice(0, 10),
+        orderDate: todayInTz(TZ),
         actor: {
           userId: racer.userId,
           memberId: racer.memberId,

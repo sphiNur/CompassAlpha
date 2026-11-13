@@ -67,6 +67,22 @@ describe('zonedTimeToUtc / nextDate (CONF-16)', () => {
     expect(() => zonedTimeToUtc('2026-03-29', '24:00', 'UTC')).toThrow();
   });
 
+  it('a time the spring change skips, or the autumn change repeats (review TEST4-06)', () => {
+    // 02:30 does not exist in Berlin on 2026-03-29 (02:00 → 03:00): it is
+    // read as 03:30, the hour moved forward.
+    expect(zonedTimeToUtc('2026-03-29', '02:30', 'Europe/Berlin').toISOString()).toBe(
+      '2026-03-29T01:30:00.000Z',
+    );
+    // On 2026-10-25 (03:00 → 02:00) 02:30 comes twice; it is read as the
+    // second time, in winter time, as 03:00 then is.
+    expect(zonedTimeToUtc('2026-10-25', '02:30', 'Europe/Berlin').toISOString()).toBe(
+      '2026-10-25T01:30:00.000Z',
+    );
+    expect(zonedTimeToUtc('2026-10-25', '03:00', 'Europe/Berlin').toISOString()).toBe(
+      '2026-10-25T02:00:00.000Z',
+    );
+  });
+
   it('steps dates across months and years, both ways', () => {
     expect(nextDate('2026-12-31')).toBe('2027-01-01');
     expect(nextDate('2026-03-01', -1)).toBe('2026-02-28');

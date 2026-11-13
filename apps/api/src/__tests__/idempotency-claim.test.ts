@@ -7,6 +7,7 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { getDb, schema as s } from '@compass/db';
@@ -14,7 +15,7 @@ import { idempotencyRequestHash, idempotentMutation, router } from '../trpc/trpc
 import type { SessionContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
-import { testContext } from './helpers/ctx';
+import { testContext, untilWaitingForLock } from './helpers/ctx';
 import { errorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
 
@@ -24,11 +25,30 @@ let session: SessionContext | null = null;
 let runs = 0;
 let failNext = false;
 
+/** A promise with its resolve at hand. */
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * Review TEST1-19 (2026-11): slowWrite used to sleep 150 ms so that a
+ * second request would come while the first ran, if the machine was quick
+ * enough. A test that needs the overlap now holds it here: `entered` hears
+ * that a call has started, and the call goes on once `gate` resolves.
+ */
+let entered: (() => void) | null = null;
+let gate: Promise<void> | null = null;
+
 const testRouter = router({
   slowWrite: idempotentMutation.mutation(async () => {
     runs += 1;
     const n = runs;
-    await new Promise((r) => setTimeout(r, 150));
+    entered?.();
+    if (gate) await gate;
     if (failNext) {
       failNext = false;
       throw new Error('handler failed');
@@ -78,18 +98,59 @@ beforeAll(async () => {
   } as unknown as SessionContext;
 });
 
+// Pure: runs in the unit job too, not only where Postgres is (review
+// TEST1-13).
+describe('idempotencyRequestHash', () => {
+  test('BUY-16: the body hash ignores key order and undefined fields', () => {
+    expect(idempotencyRequestHash({ a: 1, b: [1, { c: 2, d: undefined }] })).toBe(
+      idempotencyRequestHash({ b: [1, { c: 2 }], a: 1 }),
+    );
+    expect(idempotencyRequestHash({ a: 1 })).not.toBe(idempotencyRequestHash({ a: 2 }));
+  });
+});
+
 describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
   test('two concurrent requests with one key run the handler once and share its answer', async () => {
     const key = randomUUID();
     const before = runs;
-    const [a, b] = await Promise.all([caller(key).slowWrite(), caller(key).slowWrite()]);
-    expect(runs - before).toBe(1);
-    expect(a).toEqual(b);
-    // And a later retry gets the cached answer without running again.
-    const c = await caller(key).slowWrite();
-    expect(c).toEqual(a);
-    expect(runs - before).toBe(1);
-  });
+    const started = deferred();
+    const finish = deferred();
+    const letGo = deferred();
+    entered = started.resolve;
+    gate = finish.promise;
+    try {
+      const first = caller(key).slowWrite();
+      // The first holds the key and is inside the handler.
+      await started.promise;
+      // Hold the key's row, so the second request's claim waits on it:
+      // then the second has certainly tried to claim the key while the
+      // first still runs.
+      const rowHeld = deferred();
+      const holder = getDb(undefined, { system: 'maintenance' }).transaction(async (tx) => {
+        await tx.execute(sql`SELECT 1 FROM sync.idempotency_keys WHERE key = ${key} FOR UPDATE`);
+        rowHeld.resolve();
+        await letGo.promise;
+      });
+      await rowHeld.promise;
+      const second = caller(key).slowWrite();
+      await untilWaitingForLock('idempotency_keys');
+      letGo.resolve();
+      await holder;
+      finish.resolve();
+      const [a, b] = await Promise.all([first, second]);
+      expect(runs - before).toBe(1);
+      expect(a).toEqual(b);
+      // And a later retry gets the cached answer without running again.
+      const c = await caller(key).slowWrite();
+      expect(c).toEqual(a);
+      expect(runs - before).toBe(1);
+    } finally {
+      entered = null;
+      gate = null;
+      letGo.resolve();
+      finish.resolve();
+    }
+  }, 15_000);
 
   test('a mutation without input works over HTTP with a key (empty body)', async () => {
     const post = () =>
@@ -127,13 +188,6 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
       message: 'common.errors.idempotencyKeyReused',
     });
     expect(runs).toBe(before);
-  });
-
-  test('BUY-16: the body hash ignores key order and undefined fields', () => {
-    expect(idempotencyRequestHash({ a: 1, b: [1, { c: 2, d: undefined }] })).toBe(
-      idempotencyRequestHash({ b: [1, { c: 2 }], a: 1 }),
-    );
-    expect(idempotencyRequestHash({ a: 1 })).not.toBe(idempotencyRequestHash({ a: 2 }));
   });
 
   // Review COREAPI-31: an empty answer was stored as SQL NULL, which marks

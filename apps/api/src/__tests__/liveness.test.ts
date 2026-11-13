@@ -50,6 +50,20 @@ describe('liveness verdict', () => {
     expect(evaluateLiveness(frame(0), { found: false }, frame(-0.5)).failures).toEqual(['noFace']);
     expect(evaluateLiveness(frame(0), null, frame(-0.5)).result).toBe('unchecked');
   });
+
+  test('every failure is listed, in one order; no face hides the rest', () => {
+    // Review TEST1-20: each test above fails one way only.
+    const v = evaluateLiveness(
+      frame(0.4, { real: 0.1 }),
+      frame(0.05, { who: 1, real: 0.1 }),
+      frame(-0.5, { real: 0.1 }),
+    );
+    expect(v.result).toBe('fail');
+    expect(v.failures).toEqual(['notFacing', 'notTurned', 'otherPerson', 'spoof']);
+    expect(
+      evaluateLiveness(frame(0.4, { real: 0.1 }), { found: false }, frame(0.05)).failures,
+    ).toEqual(['noFace']);
+  });
 });
 
 describe('head turn from landmarks', () => {
@@ -72,7 +86,6 @@ describe('head turn from landmarks', () => {
 });
 
 describe('evaluateActs (blink and open mouth, 2026-11-07)', () => {
-  const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
   const near = (cos: number) =>
     Array.from({ length: 128 }, (_, j) => (j === 0 ? cos : j === 1 ? Math.sqrt(1 - cos * cos) : 0));
   const f = (o: { feature?: number[]; yaw?: number; real?: number } = {}) => ({
@@ -120,5 +133,19 @@ describe('evaluateActs (blink and open mouth, 2026-11-07)', () => {
     ).toEqual(['notFacing']);
     const prints = [act('blink', f({ real: 0.05 })), act('mouth', f({ real: 0.05 }))];
     expect(evaluateActs({ ...front, real: 0.05 }, prints).failures).toEqual(['spoof']);
+  });
+
+  test('several failures: each once, in the order found', () => {
+    // Review TEST1-20. The punch page words "another person" only when
+    // that is the one failure (punchOutcome.ts), so the list matters.
+    const stranger = f({ feature: unit(3), yaw: ACT_LINES.maxYaw + 0.1, real: 0.05 });
+    const v = evaluateActs({ ...front, real: 0.05 }, [
+      act('blink', { found: false }),
+      act('mouth', stranger),
+    ]);
+    expect(v.result).toBe('fail');
+    expect(v.failures).toEqual(['noFace', 'notFacing', 'otherPerson', 'spoof']);
+    const both = [act('blink', f({ feature: unit(3) })), act('mouth', f({ feature: unit(4) }))];
+    expect(evaluateActs(front, both).failures).toEqual(['otherPerson']);
   });
 });

@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { ensureCatalog, lookup, type Locale } from '@compass/i18n';
+import { ensureCatalog, LANGUAGE_NATIVE_NAMES, lookup, type Locale } from '@compass/i18n';
+import { memoryStorage } from '../../__tests__/helpers/storage';
 import { SAVED_SESSION_KEYS } from '../localSession';
 
 const WEB = new URL('../../..', import.meta.url).pathname;
@@ -90,20 +91,8 @@ function runGuard(language = 'en-US', start: Start = {}) {
   const clearTimeout = (id: number) => {
     if (timers[id]) timers[id].cleared = true;
   };
-  const storage = () => {
-    const items = new Map<string, string>();
-    return {
-      items,
-      getItem: (k: string) => items.get(k) ?? null,
-      setItem: (k: string, v: string) => void items.set(k, v),
-      removeItem: (k: string) => void items.delete(k),
-      clear: () => items.clear(),
-    };
-  };
-  const localStorage = storage();
-  const sessionStorage = storage();
-  for (const [k, v] of Object.entries(start.local ?? {})) localStorage.setItem(k, v);
-  for (const [k, v] of Object.entries(start.session ?? {})) sessionStorage.setItem(k, v);
+  const localStorage = memoryStorage(start.local);
+  const sessionStorage = memoryStorage(start.session);
   const location = { hash: start.hash ?? '', reloads: 0, reload: () => void location.reloads++ };
   const clipboard = {
     text: null as string | null,
@@ -165,7 +154,17 @@ function runGuard(language = 'en-US', start: Start = {}) {
   };
 }
 
+/**
+ * The failsafe's delay, as the guard sets it: the one timer it starts on
+ * load (review TEST3-14: the tests wrote 12000 out each time).
+ */
+const FAILSAFE_MS = runGuard().timers[0]!.ms;
+
 describe('boot-guard with a deferred Telegram SDK', () => {
+  it('starts its failsafe at 12 s', () => {
+    expect(FAILSAFE_MS).toBe(12_000);
+  });
+
   it('guesses from navigator first, then takes Telegram’s language once the SDK ran', () => {
     const g = runGuard();
     expect(g.documentElement.lang).toBe('en');
@@ -178,7 +177,7 @@ describe('boot-guard with a deferred Telegram SDK', () => {
 
   it('restarts the 12 s failsafe when the SDK has run, keeping one live timer', () => {
     const g = runGuard();
-    const failsafes = () => g.timers.filter((t) => t.ms === 12000);
+    const failsafes = () => g.timers.filter((t) => t.ms === FAILSAFE_MS);
     expect(failsafes().length).toBe(1);
     g.sdkLoaded('zh');
     expect(failsafes().length).toBe(2);
@@ -190,7 +189,7 @@ describe('boot-guard with a deferred Telegram SDK', () => {
     g.sdkFailed();
     expect(g.documentElement.lang).toBe('en');
     expect(g.nodes['[data-boot-starting]']!.textContent).toBe('Starting up…');
-    expect(g.timers.filter((t) => t.ms === 12000 && !t.cleared).length).toBe(1);
+    expect(g.timers.filter((t) => t.ms === FAILSAFE_MS && !t.cleared).length).toBe(1);
   });
 });
 
@@ -200,7 +199,7 @@ describe('boot-guard buttons (COREWEB1-01)', () => {
   const timedOut = (language?: string) => {
     const g = runGuard(language);
     g.parsed();
-    g.timers.find((t) => t.ms === 12000 && !t.cleared)!.fn();
+    g.timers.find((t) => t.ms === FAILSAFE_MS && !t.cleared)!.fn();
     return g;
   };
 
@@ -275,7 +274,7 @@ describe('boot-guard error screen (COREWEB1-18)', () => {
   it('a start that only timed out has nothing to copy', () => {
     const g = runGuard();
     g.parsed();
-    g.timers.find((t) => t.ms === 12000 && !t.cleared)!.fn();
+    g.timers.find((t) => t.ms === FAILSAFE_MS && !t.cleared)!.fn();
     expect((g.nodes['boot-copy-btn'] as unknown as { hidden: boolean }).hidden).toBe(true);
   });
 
@@ -300,11 +299,21 @@ describe('boot-guard error screen (COREWEB1-18)', () => {
 });
 
 describe('boot timeout text (DX-SHL-17)', () => {
-  it('says what to do, without developer terms or the timer', () => {
-    const lines = [...guard.matchAll(/timeout: '([^']*)'/g)].map((m) => m[1]!);
-    expect(lines.length).toBe(4);
-    for (const text of lines) {
-      expect(text).not.toMatch(/JS|module|модул|modul|12/i);
+  it('says what to do, without developer terms or the timer, in every language', () => {
+    // Review TEST3-14: read off the screen after the failsafe fires, for
+    // each of the app's languages, instead of out of the script's source.
+    const shown = (Object.keys(LANGUAGE_NATIVE_NAMES) as Locale[]).map((locale) => {
+      const g = runGuard(locale);
+      g.parsed();
+      g.timers.find((t) => t.ms === FAILSAFE_MS && !t.cleared)!.fn();
+      return g.nodes['#boot-error [data-msg]']!.textContent;
+    });
+    // Each language its own sentence, none of them English by default.
+    expect(new Set(shown).size).toBe(shown.length);
+    for (const text of shown) {
+      expect(text.length).toBeGreaterThan(0);
+      expect(text).not.toMatch(/JS|module|модул|modul/i);
+      expect(text).not.toMatch(/\d/);
     }
   });
 });

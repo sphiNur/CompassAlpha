@@ -6,6 +6,8 @@ import {
   RUN_CLOCK as clock,
   RUN_NOW as NOW,
   confirmStoreAllOk,
+  confirmStoreItem,
+  deliver,
   planAndPurchase,
   purchaser,
   runActor,
@@ -92,6 +94,36 @@ describe('run.totals', () => {
       // Two expense lines of 1.005 → 1.01 each.
       expensesTotal: '2.02',
     });
+  });
+
+  test('D1: a three-decimal quantity landing on half a cent rounds up, per line', () => {
+    // Review TEST4-06. 1.125 × 0.20 = 0.225 → 0.23 a store; the whole
+    // item, 2.25 × 0.20 = 0.45, is not what is added.
+    const s = planAndPurchase({
+      purchasedQty: '2.25',
+      storeSplits: [
+        { storeId: 'A', qty: '1.125', unitPrice: '0.20' },
+        { storeId: 'B', qty: '1.125', unitPrice: '0.20', paymentMethod: 'transfer' },
+      ],
+    });
+    expect(computeRunTotals(s)).toMatchObject({
+      total: '0.46',
+      totalCash: '0.23',
+      totalTransfer: '0.23',
+    });
+  });
+
+  test('a store receiving less than was bought does not change what the run cost', () => {
+    // Review TEST4-06: the money is what was paid; a short receipt is a
+    // delivery problem, recorded with the store's confirmation.
+    const bought = deliver(planAndPurchase());
+    const short = step(
+      bought,
+      confirmStoreItem({ skuId: 'sku-1', status: 'short', note: 'one bag', receivedQty: '3' }),
+    );
+    expect(short.stores.get('A')!.itemConfirms.get('sku-1')!.receivedQty).toBe('3');
+    expect(computeRunTotals(short)).toEqual(computeRunTotals(bought));
+    expect(computeRunTotals(short).total).toBe('48000.00');
   });
 
   test('RefinalizeRun re-freezes the same items / expenses split', () => {

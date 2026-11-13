@@ -11,6 +11,7 @@
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { nextDate, todayInTz } from '@compass/domain';
 import { appRouter } from '../trpc/router';
 import { countAdminsInOrg } from '../services/adminAuthority';
 import { and, eq, like } from 'drizzle-orm';
@@ -19,8 +20,14 @@ import { callerFor, openConnections } from './helpers/ctx';
 import { seedOwnedOrg, seedRoles, seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
+
+/** The order calls send no date, so the server takes the org's today;
+ *  where it is midday that does not change while the file runs, and
+ *  "tomorrow" below is the server's tomorrow too (review TEST1-09). */
+const TZ = middayZone(new Date());
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
 interface Fixture {
@@ -42,7 +49,7 @@ beforeAll(async () => {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug: `medium-${suffix}`, name: 'Medium guards', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug: `medium-${suffix}`, name: 'Medium guards', localeDefault: 'en', timezone: TZ })
     .returning();
   noteOrg(org!.id);
   const orgId = org!.id;
@@ -101,7 +108,7 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
 
   test('ORD-11: a phone whose clock runs ahead cannot open a draft for tomorrow', async () => {
     const { staff, storeId, skuId } = fix!;
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const tomorrow = nextDate(todayInTz(TZ));
     const err = await errorOf(() => staff.order.adjustItem({ storeId, skuId, qty: '1', date: tomorrow }));
     expect(err?.code).toBe('PRECONDITION_FAILED');
     expect(err?.message).toBe('order.errors.deviceDateAhead');

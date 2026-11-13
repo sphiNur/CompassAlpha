@@ -94,3 +94,26 @@ export async function openConnections(orgId: string, n: number): Promise<void> {
     ),
   );
 }
+
+/**
+ * Resolves once a statement whose text contains `fragment` waits for a lock
+ * in this database (review TEST1-19, 2026-11). A race test holds a row and
+ * waits here, so that it knows the other side has reached that row before
+ * letting go, instead of sleeping and hoping it has. Fails after `ms`.
+ */
+export async function untilWaitingForLock(fragment: string, ms = 5_000): Promise<void> {
+  const db = getDb(undefined, { system: 'maintenance' });
+  const until = Date.now() + ms;
+  for (;;) {
+    const rows = (await db.execute(sql`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND query LIKE ${`%${fragment}%`}
+    `)) as unknown as Array<{ n: number }>;
+    if ((rows[0]?.n ?? 0) > 0) return;
+    if (Date.now() > until) {
+      throw new Error(`no statement on ${fragment} waited for a lock within ${ms} ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}

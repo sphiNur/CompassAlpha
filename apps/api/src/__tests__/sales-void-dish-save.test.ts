@@ -8,9 +8,6 @@
  * or SKIP_PG_TESTS=1).
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { buildSaleReversal, SALE_VOID_REASON, SALE_VOID_SOURCE_TYPE } from '../trpc/routers/sales';
@@ -18,12 +15,10 @@ import { duplicateIngredientSkuIds } from '../trpc/routers/dishes';
 import { SHOULD_RUN } from './helpers/pg';
 import { callerFor } from './helpers/ctx';
 import { seedMember, sessionOf } from './helpers/fixtures';
-import { errorOf } from './helpers/errors';
+import { errorOf, pgErrorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
 
 cleanUpAfterAll();
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------- pure ----------------------------------------------------------
 
@@ -69,19 +64,6 @@ describe('duplicateIngredientSkuIds', () => {
   });
   test('empty for a clean recipe', () => {
     expect(duplicateIngredientSkuIds([{ skuId: 'a' }, { skuId: 'b' }])).toEqual([]);
-  });
-});
-
-describe('migration 0049 is additive', () => {
-  const sql = readFileSync(
-    resolve(HERE, '../../../../packages/db/migrations/0049_sales_void.sql'),
-    'utf8',
-  );
-  test('adds the three void columns and nothing destructive', () => {
-    for (const col of ['voided_at', 'voided_by_member_id', 'void_reason']) {
-      expect(sql).toContain(`"${col}"`);
-    }
-    expect(sql).not.toMatch(/\b(DROP|DELETE|TRUNCATE)\b/i);
   });
 });
 
@@ -175,8 +157,8 @@ async function onHand(storeId: string, skuId: string): Promise<number> {
   return rows.reduce((sum, r) => sum + Number(r.delta), 0);
 }
 
-describe('sales.void', () => {
-  test.skipIf(!SHOULD_RUN)('reverses the consumption and marks the sale voided', async () => {
+describe.skipIf(!SHOULD_RUN)('sales.void', () => {
+  test('reverses the consumption and marks the sale voided', async () => {
     const storeId = await makeStore(`void-ok-${Math.random()}`);
     const caller = await memberCaller(fix!.salesRoleId, storeId);
     const { saleId } = await caller.sales.record({ storeId, dishId: fix!.dishId, qty: '2' });
@@ -198,7 +180,7 @@ describe('sales.void', () => {
     expect(await onHand(storeId, fix!.skuId)).toBeCloseTo(0, 3);
   });
 
-  test.skipIf(!SHOULD_RUN)('a member of another store cannot void', async () => {
+  test('a member of another store cannot void', async () => {
     const storeA = await makeStore(`void-a-${Math.random()}`);
     const storeB = await makeStore(`void-b-${Math.random()}`);
     const callerA = await memberCaller(fix!.salesRoleId, storeA);
@@ -212,7 +194,7 @@ describe('sales.void', () => {
     expect(err?.code).toBe('FORBIDDEN');
   });
 
-  test.skipIf(!SHOULD_RUN)('unknown sale → NOT_FOUND', async () => {
+  test('unknown sale → NOT_FOUND', async () => {
     const storeId = await makeStore(`void-404-${Math.random()}`);
     const caller = await memberCaller(fix!.salesRoleId, storeId);
     const err = await errorOf(() =>
@@ -222,8 +204,31 @@ describe('sales.void', () => {
   });
 });
 
-describe('sales.summary (review CONF-17)', () => {
-  test.skipIf(!SHOULD_RUN)('counts every standing sale of the day, past the list cap', async () => {
+describe.skipIf(!SHOULD_RUN)('migration 0049 on the database', () => {
+  // Review TEST2-18: what the migrated table does, not words in the SQL.
+  test('a sale stands unvoided until voided; a reason needs a void time', async () => {
+    const storeId = await makeStore(`void-0049-${Math.random()}`);
+    const caller = await memberCaller(fix!.salesRoleId, storeId);
+    const { saleId } = await caller.sales.record({ storeId, dishId: fix!.dishId, qty: '1' });
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [row] = await db
+      .select({ at: s.sales.voidedAt, by: s.sales.voidedByMemberId, reason: s.sales.voidReason })
+      .from(s.sales)
+      .where(eq(s.sales.id, saleId));
+    expect(row).toEqual({ at: null, by: null, reason: null });
+    // sales_void_consistency_check: a reason without a time, or a time
+    // with an empty reason, is refused.
+    for (const half of [{ voidReason: 'wrong dish' }, { voidedAt: new Date(), voidReason: '' }]) {
+      const refused = await pgErrorOf(() =>
+        db.update(s.sales).set(half).where(eq(s.sales.id, saleId)),
+      );
+      expect(refused).toMatchObject({ code: '23514', constraint: 'sales_void_consistency_check' });
+    }
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('sales.summary (review CONF-17)', () => {
+  test('counts every standing sale of the day, past the list cap', async () => {
     const db = getDb(undefined, { system: 'maintenance' });
     const storeId = await makeStore(`summary-${Math.random()}`);
     await db
@@ -266,13 +271,13 @@ describe('sales.summary (review CONF-17)', () => {
     });
   });
 
-  test.skipIf(!SHOULD_RUN)('a day without sales is zero', async () => {
+  test('a day without sales is zero', async () => {
     const storeId = await makeStore(`summary-empty-${Math.random()}`);
     const caller = await memberCaller(fix!.salesRoleId, storeId);
     expect(await caller.sales.summary({ storeId })).toEqual({ servings: '0', revenue: null });
   });
 
-  test.skipIf(!SHOULD_RUN)('a member of another store cannot read it', async () => {
+  test('a member of another store cannot read it', async () => {
     const storeA = await makeStore(`summary-a-${Math.random()}`);
     const storeB = await makeStore(`summary-b-${Math.random()}`);
     const callerB = await memberCaller(fix!.salesRoleId, storeB);
@@ -281,8 +286,8 @@ describe('sales.summary (review CONF-17)', () => {
   });
 });
 
-describe('dishes.save', () => {
-  test.skipIf(!SHOULD_RUN)('creates then updates fields and recipe together', async () => {
+describe.skipIf(!SHOULD_RUN)('dishes.save', () => {
+  test('creates then updates fields and recipe together', async () => {
     const caller = await memberCaller(fix!.dishesRoleId, null);
     const created = await caller.dishes.save({
       names: { en: 'Soup' },
@@ -304,7 +309,7 @@ describe('dishes.save', () => {
     ]);
   });
 
-  test.skipIf(!SHOULD_RUN)('duplicate skuIds are rejected and nothing is written', async () => {
+  test('duplicate skuIds are rejected and nothing is written', async () => {
     const caller = await memberCaller(fix!.dishesRoleId, null);
     const err = await errorOf(() =>
       caller.dishes.save({
@@ -323,8 +328,8 @@ describe('dishes.save', () => {
   });
 });
 
-describe('dishes.list ingredientCount (CONF-24)', () => {
-  test.skipIf(!SHOULD_RUN)('counts the recipe rows, with or without sending them', async () => {
+describe.skipIf(!SHOULD_RUN)('dishes.list ingredientCount (CONF-24)', () => {
+  test('counts the recipe rows, with or without sending them', async () => {
     const caller = await memberCaller(fix!.dishesRoleId, null);
     const two = await caller.dishes.save({
       names: { en: 'Two parts' },
@@ -347,8 +352,8 @@ describe('dishes.list ingredientCount (CONF-24)', () => {
   });
 });
 
-describe('DX-DSH-1 an archived product in a recipe', () => {
-  test.skipIf(!SHOULD_RUN)('is refused on save instead of being kept silently', async () => {
+describe.skipIf(!SHOULD_RUN)('DX-DSH-1 an archived product in a recipe', () => {
+  test('is refused on save instead of being kept silently', async () => {
     const caller = await memberCaller(fix!.dishesRoleId, null);
     const db = getDb(undefined, { system: 'maintenance' });
     const [gone] = await db

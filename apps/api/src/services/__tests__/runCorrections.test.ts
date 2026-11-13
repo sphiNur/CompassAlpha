@@ -45,6 +45,25 @@ const delivered: RunCommand[] = [
 ];
 
 describe('runCorrections', () => {
+  test('D3: what a correction of the finished run gives a store beyond what it confirmed', () => {
+    // Store A confirmed its 2 kg; after the run was finished, a correction
+    // made it 3 kg at the same price (review TEST4-20, 2026-11: this was
+    // only checked against a database).
+    const events = stream([
+      ...delivered,
+      confirmStoreItem({ skuId: 'rice', actor }),
+      { type: 'ConfirmStore', storeId: 'A', actor },
+      { type: 'FinishRun', actor },
+      { type: 'ReopenRun', reason: 'one more bag went out', actor },
+      revisePurchase({ skuId: 'rice', unitPrice: '1000', actualQty: '3', reason: 'bag', actor }),
+      { type: 'RefinalizeRun', actor },
+    ]);
+    const added = { kind: 'amendAdded' as const, skuId: 'rice', storeId: 'A', qty: '1' };
+    expect(runCorrections(events, null)).toEqual([added]);
+    expect(runCorrections(events, new Set(['A']))).toEqual([added]);
+    expect(runCorrections(events, new Set(['B']))).toEqual([]);
+  });
+
   test('a price revised before receipt is not a correction', () => {
     const events = stream([
       { type: 'StartPurchase', actor },

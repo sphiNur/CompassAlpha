@@ -95,11 +95,16 @@ describe('collapsedCommit', () => {
 
   it('depends only on the props the row renders, never on edit state', () => {
     // Whatever the component happens to hold locally cannot reach the
-    // payload — that is the whole point of deriving it here.
-    const a = collapsedCommit({ ...base, plannedQty: '10', lastPrice: '70000' });
-    const b = collapsedCommit({ ...base, plannedQty: '10', lastPrice: '70000' });
-    expect(a).toEqual(b);
-    expect(a).toEqual({ qty: '10', price: '70000' });
+    // payload — that is the whole point of deriving it here. After
+    // purchased → revised → undone the props are the reference figures
+    // again while the sheet's state still holds the revision (review
+    // TEST3-12: this compared two calls with the same props).
+    const revised = { qty: '7', price: '999000' };
+    const undone = { ...base, editQty: revised.qty, editPrice: revised.price };
+    expect(collapsedCommit(undone)).toEqual({ qty: '10', price: '70000' });
+    // Nothing carries over from one call to the next.
+    expect(collapsedCommit({ ...base, plannedQty: '7', lastPrice: '999000' })).toEqual(revised);
+    expect(collapsedCommit(base)).toEqual({ qty: '10', price: '70000' });
   });
 
   it('passes decimals through untouched', () => {

@@ -17,6 +17,7 @@ import {
   isRealtimeStale,
   pollWhenOffline,
   setRealtimeLive,
+  shouldDeferInvalidate,
 } from '../useRealtime';
 
 describe('isRealtimeLive', () => {
@@ -85,5 +86,32 @@ describe('afterClose (review COREWEB2-24)', () => {
     for (const code of [WS_CLOSE_EVICTED, 1000, 1001, 1006]) {
       expect(afterClose(code)).toBe('reconnect');
     }
+  });
+});
+
+// DX-ORD-1 (2026-11-01): a realtime refetch must not land among taps the
+// Order page has not sent yet (lib/localWrites.ts reports them).
+describe('shouldDeferInvalidate', () => {
+  it('runs at once when nothing is pending', () => {
+    expect(shouldDeferInvalidate(false, false, 0)).toBe(false);
+  });
+
+  it('waits for running mutations, up to 2.5 s', () => {
+    expect(shouldDeferInvalidate(true, false, 1_000)).toBe(true);
+    // Review TEST3-12: the edge itself, not only a point past it.
+    expect(shouldDeferInvalidate(true, false, 2_499)).toBe(true);
+    expect(shouldDeferInvalidate(true, false, 2_500)).toBe(false);
+  });
+
+  it('waits for unsent local taps even with no mutation running', () => {
+    expect(shouldDeferInvalidate(false, true, 0)).toBe(true);
+    expect(shouldDeferInvalidate(false, true, 5_000)).toBe(true);
+  });
+
+  it('gives up on local writes after 10 s so data cannot freeze', () => {
+    expect(shouldDeferInvalidate(false, true, 9_999)).toBe(true);
+    expect(shouldDeferInvalidate(false, true, 10_000)).toBe(false);
+    // Past 2.5 s a running mutation no longer holds it either.
+    expect(shouldDeferInvalidate(true, true, 10_000)).toBe(false);
   });
 });

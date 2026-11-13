@@ -16,7 +16,9 @@
  * reason; add one only when the flagged text is right as written.
  *
  * Rules
- *   1. Every key carries the same placeholders in all four languages.
+ *   1. Every language has the keys English has, no more, and each key
+ *      carries the same placeholders in all four languages. Plural is the
+ *      only ICU block the formatter reads: no select / selectordinal.
  *   2. Uzbek uses the official Latin letters: ʻ (U+02BB) in oʻ / gʻ and the
  *      tutuq belgisi ʼ (U+02BC) everywhere else — never ' ‘ ’ or `.
  *   3. No developer vocabulary reaches users (role ids, migration commands,
@@ -55,7 +57,6 @@ import { LANGS, type Catalogs, type Lang } from './langs';
 import {
   BANNED_TERMS,
   COPY_BANNED,
-  COPY_BANNED_ALLOW,
   DEV_TERMS,
   DEV_TERMS_ALLOW_PREFIX,
   INVARIANT_AFTER_COUNT,
@@ -68,10 +69,41 @@ import {
   TEXT_VARS,
   VOID_WORD,
   ZH_KEEPS_APART,
-  ZH_PUNCT_ALLOW,
 } from './terms';
 
-// ── 1. Placeholders ─────────────────────────────────────────────────────
+// ── 1. Keys and placeholders ────────────────────────────────────────────
+
+/**
+ * Review TEST4-11 (2026-11): key parity was left to the type checker, and
+ * the placeholder rule below reads only English's keys, so a key missing
+ * in one language without a placeholder showed nowhere in the lint.
+ */
+export function keyParity(cats: Catalogs): string[] {
+  const english = new Set(Object.keys(cats.en));
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    const keys = new Set(Object.keys(cats[lang]));
+    for (const key of english) if (!keys.has(key)) found.push(`${lang} ${key}: missing`);
+    for (const key of keys) if (!english.has(key)) found.push(`${lang} ${key}: not in en`);
+  }
+  return found;
+}
+
+/**
+ * Review TEST4-11: the formatter (../index.ts) and this lint read plural
+ * blocks only. A select or selectordinal block would be shown as written,
+ * and the rules here would read its cases as plain text.
+ */
+export function unsupportedIcu(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    for (const [key, value] of Object.entries(cats[lang])) {
+      const m = value.match(/\{\s*\w+\s*,\s*(selectordinal|select)\s*,/);
+      if (m) found.push(`${lang} ${key}: "${m[1]}" is not supported, only plural`);
+    }
+  }
+  return found;
+}
 
 export function placeholderMismatches(cats: Catalogs): string[] {
   const found: string[] = [];
@@ -206,7 +238,6 @@ export function uzbekPluralAfterCount(cats: Catalogs): string[] {
 export function chinesePunctuation(cats: Catalogs): string[] {
   const found: string[] = [];
   for (const [key, value] of Object.entries(cats.zh)) {
-    if (ZH_PUNCT_ALLOW[key]) continue;
     // A placeholder is filled with arbitrary text, often Chinese, so treat
     // it as a Chinese character for the neighbour test.
     const text = visibleTexts(value)
@@ -320,7 +351,6 @@ export function copyBanned(cats: Catalogs): string[] {
   const found: string[] = [];
   for (const lang of LANGS) {
     for (const [key, value] of Object.entries(cats[lang])) {
-      if (COPY_BANNED_ALLOW[`${lang} ${key}`]) continue;
       const text = visibleTexts(value)
         .join(' ')
         .replace(/\{\w+\}/g, '');
@@ -410,6 +440,14 @@ export function distinctActions(cats: Catalogs): string[] {
     for (const [a, b, where] of MUST_DIFFER) {
       const va = cats[lang][a];
       const vb = cats[lang][b];
+      // Review TEST4-11: a pair whose key was renamed used to be skipped,
+      // so the rule stopped guarding it without a word.
+      for (const [key, value] of [
+        [a, va],
+        [b, vb],
+      ] as const) {
+        if (value === undefined) found.push(`${lang} ${key}: missing (MUST_DIFFER, ${where})`);
+      }
       if (va !== undefined && va === vb) found.push(`${lang} ${a} = ${b} = "${va}" (${where})`);
     }
   }
@@ -432,6 +470,8 @@ export function chineseWordsKeepApart(cats: Catalogs): string[] {
 // ── The gates ───────────────────────────────────────────────────────────
 
 export const RULES: ReadonlyArray<readonly [name: string, rule: (cats: Catalogs) => string[]]> = [
+  ['every language has exactly the keys English has', keyParity],
+  ['no ICU select / selectordinal: the formatter reads plural only', unsupportedIcu],
   ['every language uses the same placeholders as English', placeholderMismatches],
   ['uz: oʻ / gʻ use U+02BB and the tutuq belgisi U+02BC', uzbekApostrophes],
   ['no developer vocabulary in user copy', devTerms],

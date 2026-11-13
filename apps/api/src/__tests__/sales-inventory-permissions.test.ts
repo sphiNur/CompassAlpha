@@ -8,15 +8,13 @@
  * stocktakes. Migration 0048 backfills the built-in role grants so
  * removing the fallback doesn't strand older orgs.
  *
- * The first block is pure (runs everywhere): migration 0048 must grant
- * every built-in role permission defined in seed-data.ts. The rest is
- * PG-gated like store-scoped-admin.test.ts (skipped when DATABASE_URL is
- * unset or SKIP_PG_TESTS=1).
+ * The first block is pure (runs everywhere): what migration 0048 grants
+ * must still be part of seed-data.ts. The rest is PG-gated (skipped when
+ * DATABASE_URL is unset or SKIP_PG_TESTS=1), 0048 itself included: it is
+ * run again on roles set up for it (review TEST2-18; the test used to look
+ * for words in its SQL).
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { SHOULD_RUN } from './helpers/pg';
@@ -25,10 +23,9 @@ import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import { seedMember, sessionOf } from './helpers/fixtures';
 import { errorOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg } from './helpers/cleanup';
+import { rerunMigration } from './helpers/migrations';
 
 cleanUpAfterAll();
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------- migration 0048 is a narrow backfill ---------------------------
 
@@ -42,11 +39,6 @@ const BACKFILL = [
 ] as const;
 
 describe('CA-10 migration 0048 backfills the missing built-in grants only', () => {
-  const sql = readFileSync(
-    resolve(HERE, '../../../../packages/db/migrations/0048_backfill_builtin_role_permissions.sql'),
-    'utf8',
-  );
-
   test('each backfilled grant is still part of the seed definition', () => {
     for (const [slug, key] of BACKFILL) {
       const role = BUILTIN_ROLES.find((r) => r.slug === slug);
@@ -54,18 +46,58 @@ describe('CA-10 migration 0048 backfills the missing built-in grants only', () =
     }
   });
 
-  test('grants exactly the backfill pairs', () => {
-    const pairs = [...sql.matchAll(/\('([a-z_]+)', '([a-z_.]+)'\)/g)]
-      .map((m) => `${m[1]}:${m[2]}`)
-      .filter((p) => BUILTIN_ROLES.some((r) => p.startsWith(`${r.slug}:`)));
-    expect(pairs.sort()).toEqual(BACKFILL.map(([a, b]) => `${a}:${b}`).sort());
-  });
+  test.skipIf(!SHOULD_RUN)(
+    'run on an older org: the three grants, built-in roles only, nothing removed, twice',
+    async () => {
+      const db = getDb(undefined, { system: 'maintenance' });
+      const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+      const role = async (orgId: string, slug: string, isBuiltIn: boolean, keys: string[]) => {
+        const [made] = await db
+          .insert(s.roles)
+          .values({ orgId, slug, name: slug, rank: 20, isBuiltIn })
+          .returning();
+        for (const permissionKey of keys) {
+          await db.insert(s.rolePermissions).values({ roleId: made!.id, permissionKey });
+        }
+        return made!.id;
+      };
+      const org = async (tag: string) => {
+        const [made] = await db
+          .insert(s.organizations)
+          .values({ slug: `ca10-${tag}-${suffix}`, name: 'CA-10 backfill', localeDefault: 'en' })
+          .returning();
+        noteOrg(made!.id);
+        return made!.id;
+      };
+      await db
+        .insert(s.permissions)
+        .values({ key: 'users.manage', description: 'users.manage' })
+        .onConflictDoNothing();
+      // An org from before the grants, whose admin had also taken
+      // everything else but users.manage from its managers, and one whose
+      // "staff" is a role of its own, not the built-in one.
+      const older = await org('old');
+      const manager = await role(older, 'manager', true, ['users.manage']);
+      const staff = await role(older, 'staff', true, []);
+      const customStaff = await role(await org('custom'), 'staff', false, []);
 
-  test('only built-in roles are touched and nothing is removed', () => {
-    expect(sql).toContain('r.is_built_in = true');
-    expect(sql).not.toMatch(/\bDELETE\b/i);
-    expect(sql).toContain('ON CONFLICT DO NOTHING');
-  });
+      await rerunMigration('0048_backfill_builtin_role_permissions.sql');
+      await rerunMigration('0048_backfill_builtin_role_permissions.sql');
+
+      const keysOf = async (roleId: string) =>
+        (
+          await db
+            .select({ key: s.rolePermissions.permissionKey })
+            .from(s.rolePermissions)
+            .where(eq(s.rolePermissions.roleId, roleId))
+        )
+          .map((r) => r.key)
+          .sort();
+      expect(await keysOf(manager)).toEqual(['inventory.adjust', 'sales.record', 'users.manage']);
+      expect(await keysOf(staff)).toEqual(['sales.record']);
+      expect(await keysOf(customStaff)).toEqual([]);
+    },
+  );
 });
 
 // ---------- PG-gated runtime gates ----------------------------------------
@@ -179,8 +211,8 @@ async function memberCaller(
   return callerFor(await sessionOf(fix!.orgId, who), { idempotencyKey });
 }
 
-describe('CA-10 sales.record has no users.manage fallback', () => {
-  test.skipIf(!SHOULD_RUN)('built-in manager records a sale at their store', async () => {
+describe.skipIf(!SHOULD_RUN)('CA-10 sales.record has no users.manage fallback', () => {
+  test('built-in manager records a sale at their store', async () => {
     const storeId = await makeStore(`CA10-sale-ok-${Math.random()}`);
     const caller = await memberCaller(fix!.managerRoleId, storeId);
     const res = await caller.sales.record({ storeId, dishId: fix!.dishId, qty: '2' });
@@ -188,7 +220,7 @@ describe('CA-10 sales.record has no users.manage fallback', () => {
     expect(res.deducted).toEqual([{ skuId: fix!.skuId, qty: '0.500' }]);
   });
 
-  test.skipIf(!SHOULD_RUN)('a store-level deny of sales.record blocks the manager', async () => {
+  test('a store-level deny of sales.record blocks the manager', async () => {
     const storeId = await makeStore(`CA10-sale-deny-${Math.random()}`);
     const caller = await memberCaller(fix!.managerRoleId, storeId, ['sales.record']);
     const err = await errorOf(() =>
@@ -198,7 +230,7 @@ describe('CA-10 sales.record has no users.manage fallback', () => {
     expect(err?.message).toBe('sales.errors.cannotRecord');
   });
 
-  test.skipIf(!SHOULD_RUN)('a custom role with only users.manage cannot record sales', async () => {
+  test('a custom role with only users.manage cannot record sales', async () => {
     const storeId = await makeStore(`CA10-sale-um-${Math.random()}`);
     const caller = await memberCaller(fix!.usersManageOnlyRoleId, storeId);
     const err = await errorOf(() =>
@@ -208,7 +240,7 @@ describe('CA-10 sales.record has no users.manage fallback', () => {
     expect(err?.message).toBe('sales.errors.cannotRecord');
   });
 
-  test.skipIf(!SHOULD_RUN)('sales are rejected for an archived store', async () => {
+  test('sales are rejected for an archived store', async () => {
     const storeId = await makeStore(`CA10-sale-archived-${Math.random()}`);
     const caller = await memberCaller(fix!.managerRoleId, storeId);
     const db = getDb(undefined, { system: 'maintenance' });
@@ -221,8 +253,8 @@ describe('CA-10 sales.record has no users.manage fallback', () => {
   });
 });
 
-describe('CA-10 inventory.adjust has no users.manage fallback', () => {
-  test.skipIf(!SHOULD_RUN)('built-in manager can stocktake their store', async () => {
+describe.skipIf(!SHOULD_RUN)('CA-10 inventory.adjust has no users.manage fallback', () => {
+  test('built-in manager can stocktake their store', async () => {
     const storeId = await makeStore(`CA10-st-ok-${Math.random()}`);
     const caller = await memberCaller(fix!.managerRoleId, storeId);
     const err = await errorOf(() =>
@@ -238,20 +270,17 @@ describe('CA-10 inventory.adjust has no users.manage fallback', () => {
     expect(Number.isNaN(Date.parse(row!.lastMovementAt))).toBe(false);
   });
 
-  test.skipIf(!SHOULD_RUN)(
-    'a store-level deny of inventory.adjust blocks the manager',
-    async () => {
-      const storeId = await makeStore(`CA10-st-deny-${Math.random()}`);
-      const caller = await memberCaller(fix!.managerRoleId, storeId, ['inventory.adjust']);
-      const err = await errorOf(() =>
-        caller.inventory.stocktake({ storeId, skuId: fix!.skuId, target: '3' }),
-      );
-      expect(err?.code).toBe('FORBIDDEN');
-      expect(err?.message).toBe('inventory.errors.cannotAdjust');
-    },
-  );
+  test('a store-level deny of inventory.adjust blocks the manager', async () => {
+    const storeId = await makeStore(`CA10-st-deny-${Math.random()}`);
+    const caller = await memberCaller(fix!.managerRoleId, storeId, ['inventory.adjust']);
+    const err = await errorOf(() =>
+      caller.inventory.stocktake({ storeId, skuId: fix!.skuId, target: '3' }),
+    );
+    expect(err?.code).toBe('FORBIDDEN');
+    expect(err?.message).toBe('inventory.errors.cannotAdjust');
+  });
 
-  test.skipIf(!SHOULD_RUN)('a custom role with only users.manage cannot stocktake', async () => {
+  test('a custom role with only users.manage cannot stocktake', async () => {
     const storeId = await makeStore(`CA10-st-um-${Math.random()}`);
     const caller = await memberCaller(fix!.usersManageOnlyRoleId, storeId);
     const err = await errorOf(() =>
@@ -262,8 +291,8 @@ describe('CA-10 inventory.adjust has no users.manage fallback', () => {
   });
 });
 
-describe('DX-INV-1 / DX-INV-2 stocktake counts', () => {
-  test.skipIf(!SHOULD_RUN)('each bad count is refused with its own reason', async () => {
+describe.skipIf(!SHOULD_RUN)('DX-INV-1 / DX-INV-2 stocktake counts', () => {
+  test('each bad count is refused with its own reason', async () => {
     const storeId = await makeStore(`DX-INV1-${Math.random()}`);
     const caller = await memberCaller(fix!.managerRoleId, storeId);
     const cases: Array<[string, string]> = [
@@ -282,7 +311,7 @@ describe('DX-INV-1 / DX-INV-2 stocktake counts', () => {
     }
   });
 
-  test.skipIf(!SHOULD_RUN)('a retried count with the same key is not posted twice', async () => {
+  test('a retried count with the same key is not posted twice', async () => {
     const storeId = await makeStore(`DX-INV2-${Math.random()}`);
     const key = `dx-inv2-${Date.now()}-${Math.random()}`;
     const counter = await memberCaller(fix!.managerRoleId, storeId, [], key);
@@ -299,8 +328,8 @@ describe('DX-INV-1 / DX-INV-2 stocktake counts', () => {
   });
 });
 
-describe('DX-SAL-1 a sale that drives stock below zero', () => {
-  test.skipIf(!SHOULD_RUN)('is kept, and names the ingredients now below zero', async () => {
+describe.skipIf(!SHOULD_RUN)('DX-SAL-1 a sale that drives stock below zero', () => {
+  test('is kept, and names the ingredients now below zero', async () => {
     const storeId = await makeStore(`DX-SAL1-${Math.random()}`);
     const caller = await memberCaller(fix!.managerRoleId, storeId);
     const res = await caller.sales.record({ storeId, dishId: fix!.dishId, qty: '2' });

@@ -2,6 +2,11 @@
  * The deploy smoke's realtime probe (scripts/lib/realtimeProbe.ts) must
  * pass against a healthy API and FAIL — with a reason that says which
  * side broke — against the setups that used to read as green (N1).
+ *
+ * The healthy API is the API's own /ws handler, imported from apps/api on
+ * purpose: this is where the probe and the server are held to the same
+ * protocol (hello, echo, close 4002), which a stand-in written here would
+ * not do. The failures use stand-ins.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
@@ -158,5 +163,8 @@ describe('realtime probe', () => {
     dead.stop(true);
     const r = await probeRealtime(deadUrl, 3000);
     expect(r.ok).toBe(false);
+    // Neither the upgrade nor a plain GET got an answer.
+    expect(r.detail).toContain('upgrade failed');
+    expect(r.detail).toContain('plain GET /ws failed too');
   });
 });

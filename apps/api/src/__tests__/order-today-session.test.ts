@@ -24,19 +24,26 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
+import { todayInTz } from '@compass/domain';
 import { appRouter } from '../trpc/router';
 import type { RequestContext } from '../trpc/context';
 import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { testContext } from './helpers/ctx';
 import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
+import { middayZone } from './helpers/zone';
 
 cleanUpAfterAll();
 
-/** The date under test: today in the org's zone (UTC). A past date may not
+/** The org's zone: one where this run happens around midday (zone.ts), so
+ *  its date does not change while the file runs (review TEST1-09). The
+ *  date used to be UTC's, read when the file loaded; a run that crossed
+ *  midnight UTC sent yesterday's date to a server already on the next. */
+const TZ = middayZone(new Date());
+/** The date under test: today in the org's zone. A past date may not
  *  lazy-create a draft (CA-25) and since ORD-11 (2026-10-30) neither may a
  *  future one, so each scenario gets its own store instead of its own day. */
-const ORDER_DATE = new Date().toISOString().slice(0, 10);
+const ORDER_DATE = todayInTz(TZ);
 const EXTRAS_DATE = ORDER_DATE;
 const SEQ_DATE = ORDER_DATE;
 
@@ -59,7 +66,7 @@ beforeAll(async () => {
 
   const [org] = await db
     .insert(s.organizations)
-    .values({ slug, name: 'Order visibility test', localeDefault: 'en', timezone: 'UTC' })
+    .values({ slug, name: 'Order visibility test', localeDefault: 'en', timezone: TZ })
     .returning();
   noteOrg(org!.id);
   const [staffUser] = await db
@@ -146,7 +153,7 @@ beforeAll(async () => {
       userId: staffUser!.id,
       memberId: staffMember!.id,
       orgId: org!.id,
-      orgTimezone: 'UTC',
+      orgTimezone: TZ,
       permissions: new Set(['order.draft', 'order.submit']),
       roleSlugs: new Set(['staff']),
     }),
@@ -154,7 +161,7 @@ beforeAll(async () => {
       userId: mgrUser!.id,
       memberId: mgrMember!.id,
       orgId: org!.id,
-      orgTimezone: 'UTC',
+      orgTimezone: TZ,
       permissions: new Set(['order.draft', 'order.submit', 'order.claim', 'order.approve']),
       roleSlugs: new Set(['manager']),
     }),

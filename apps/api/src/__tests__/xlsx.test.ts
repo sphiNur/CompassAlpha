@@ -1,7 +1,12 @@
+/**
+ * The .xlsx writer (services/xlsx.ts, used by the attendance month
+ * export): the zip it stores, read back as an unzip tool reads it, and
+ * the cells and sheet names in its XML. The export's own rows are tested
+ * in attendance-export.test.ts.
+ */
 import { describe, expect, test } from 'bun:test';
 import { crc32 as zlibCrc32 } from 'node:zlib';
 import { buildXlsx, cellText, columnName, crc32, zipStored } from '../services/xlsx';
-import { monthRange } from '../services/attendanceExport';
 
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
@@ -132,21 +137,21 @@ describe('xlsx writer', () => {
     const entries = readStoredZip(
       buildXlsx([
         {
-          name: 'Табель — Oʻrinboy 考勤表',
+          name: 'Табель — Smoke Doʻkon 考勤表',
           header: ['Сотрудник', 'Xodim', '员工'],
-          rows: [['Ғайрат Тошматов', 'Oʻrinboy Gʻaniyev', '张伟']],
+          rows: [['Ғалла Ходими', 'Oʻquvchi Gʻaznachi', '测试员工']],
         },
       ]),
     );
-    expect(entries.get('xl/workbook.xml')).toContain('<sheet name="Табель — Oʻrinboy 考勤表"');
+    expect(entries.get('xl/workbook.xml')).toContain('<sheet name="Табель — Smoke Doʻkon 考勤表"');
     const sheet = entries.get('xl/worksheets/sheet1.xml')!;
     for (const text of [
       'Сотрудник',
       'Xodim',
       '员工',
-      'Ғайрат Тошматов',
-      'Oʻrinboy Gʻaniyev',
-      '张伟',
+      'Ғалла Ходими',
+      'Oʻquvchi Gʻaznachi',
+      '测试员工',
     ]) {
       expect(sheet).toContain(`<t xml:space="preserve">${text}</t>`);
     }
@@ -158,11 +163,5 @@ describe('xlsx writer', () => {
     expect(entries.get('xl/workbook.xml')).toContain(
       '<sheet name="Ежемесячный табель учёта рабоче"',
     );
-  });
-
-  test('month range', () => {
-    expect(monthRange('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' });
-    expect(monthRange('2028-02')).toEqual({ from: '2028-02-01', to: '2028-02-29' });
-    expect(monthRange('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
   });
 });

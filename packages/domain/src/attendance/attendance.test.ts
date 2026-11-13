@@ -51,6 +51,15 @@ describe('local time', () => {
     expect(w.endsAt.getTime() - w.startsAt.getTime()).toBe(8 * 3600_000);
     expect(() => shiftWindow('2026-11-05', '25:00', '04:00', TZ)).toThrow();
   });
+  test('a night shift across a clock change lasts the hours that pass (review TEST4-06)', () => {
+    const hours = (date: string) => {
+      const w = shiftWindow(date, '20:00', '04:00', 'Europe/Berlin');
+      return (w.endsAt.getTime() - w.startsAt.getTime()) / 3600_000;
+    };
+    expect(hours('2026-03-28')).toBe(7); // the clocks go forward that night
+    expect(hours('2026-10-24')).toBe(9); // and back
+    expect(hours('2026-11-05')).toBe(8);
+  });
 });
 
 test('distance: ~111 m per 0.001° latitude', () => {
@@ -64,9 +73,9 @@ const shift = (id: string, date: string, s: string, e: string, memberId = 'm1'):
   date,
   ...shiftWindow(date, s, e, TZ),
 });
-let n = 0;
+/** A punch, named for what it is: ids no longer count the punches made before (TEST4-21). */
 const punch = (kind: 'in' | 'out', date: string, time: string, memberId = 'm1'): PunchInput => ({
-  id: `p${++n}`,
+  id: `${memberId}-${kind}-${date}T${time}`,
   memberId,
   kind,
   at: at(date, time),
@@ -276,6 +285,12 @@ describe('pay', () => {
       10_000,
     );
     expect(q.deductionCents).toBe(111);
+  });
+  test('a deduction of exactly half a cent rounds up (review TEST4-06)', () => {
+    // 27/540 of 100.10 = 5.005 → 5.01; of 100.09 = 5.0045 → 5.00.
+    const late = () => day('09:00', '18:00', [punch('in', D, '09:20'), punch('out', D, '17:53')]);
+    expect(dayPay(late(), 10_010)).toMatchObject({ deductionCents: 501, netCents: 9_509 });
+    expect(dayPay(late(), 10_009)).toMatchObject({ deductionCents: 500, netCents: 9_509 });
   });
   test('absent pays nothing; missing punch waits for the manager; no rate says so', () => {
     expect(dayPay(day('09:00', '18:00', []), 10_000).status).toBe('absent');

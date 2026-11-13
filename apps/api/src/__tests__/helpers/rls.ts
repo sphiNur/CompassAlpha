@@ -30,7 +30,7 @@ async function roleBypassesRls(): Promise<boolean> {
  * superuser or BYPASSRLS role sees through every policy, so with one the
  * suite is skipped, and reported as skipped; it used to "pass" on made-up
  * counts. In CI, which runs the tests as compass_ci_app, such a role is
- * an error.
+ * an error. Review TEST1-14 (2026-11): a local skip says why, once.
  */
 export async function rlsSuiteRuns(file: string): Promise<boolean> {
   if (!SHOULD_RUN) return false;
@@ -39,6 +39,13 @@ export async function rlsSuiteRuns(file: string): Promise<boolean> {
     throw new Error(
       `${file}: the database role is a superuser or has BYPASSRLS, so these tests ` +
         'would prove nothing. CI must run them as compass_ci_app.',
+    );
+  }
+  if (bypassed) {
+    console.warn(
+      `${file}: the database role is a superuser or has BYPASSRLS, so the tests that ` +
+        'need row-level security are skipped. Run as a role without either (as CI does, ' +
+        'compass_ci_app) to include them.',
     );
   }
   return !bypassed;

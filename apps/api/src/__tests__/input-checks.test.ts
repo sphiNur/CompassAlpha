@@ -17,7 +17,7 @@ import { SHOULD_RUN } from './helpers/pg';
 import { freshTgId } from './helpers/telegram';
 import { callerFor } from './helpers/ctx';
 import { seedRoles } from './helpers/fixtures';
-import { codeOf, errorOf } from './helpers/errors';
+import { codeOf, keyOf } from './helpers/errors';
 import { cleanUpAfterAll, noteOrg, noteUser } from './helpers/cleanup';
 
 cleanUpAfterAll();
@@ -25,17 +25,6 @@ cleanUpAfterAll();
 type Caller = ReturnType<typeof appRouter.createCaller>;
 let owner: Caller | null = null;
 let runId = '';
-
-/** The catalog key a refused input came back with (first zod issue). */
-async function keyOf(fn: () => Promise<unknown>): Promise<string | null> {
-  const err = await errorOf(fn);
-  if (!err) return null;
-  try {
-    return (JSON.parse(err.message) as Array<{ message: string }>)[0]?.message ?? err.message;
-  } catch {
-    return err.message;
-  }
-}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -61,6 +50,15 @@ beforeAll(async () => {
   const session = await loadSession(db, u!.id, org!.id, m!.id);
   if (!session) throw new Error('session failed to load');
   owner = callerFor(session);
+});
+
+// Pure: runs in the unit job too, not only where Postgres is (review
+// TEST1-13).
+describe('upload keys (AUTH-24)', () => {
+  test('an upload key takes its extension from the signed content type only', () => {
+    expect(pickExtension('image/png')).toBe('png');
+    expect(pickExtension('image/jpeg')).toBe('jpg');
+  });
 });
 
 describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
@@ -150,11 +148,6 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
     expect(all.rows.length).toBe(1);
     const percent = await owner!.run.history({ dateFrom: '2026-06-01', dateTo: '2026-06-01', search: '%' });
     expect(percent.rows.length).toBe(0);
-  });
-
-  test('an upload key takes its extension from the signed content type only', () => {
-    expect(pickExtension('image/png')).toBe('png');
-    expect(pickExtension('image/jpeg')).toBe('jpg');
   });
 
   test('ADM2-09: dish names follow the product rule; a dish sort order carries its key', async () => {

@@ -23,6 +23,7 @@ import {
   distinctActions,
   englishApostrophes,
   htmlEntities,
+  keyParity,
   mojibakeAndIsoDates,
   placeholderMismatches,
   pluralCategories,
@@ -33,13 +34,14 @@ import {
   russianMasculinePerson,
   russianYo,
   terminology,
+  unsupportedIcu,
   untranslated,
   uzbekApostrophes,
   uzbekPluralAfterCount,
   uzbekResetIsNotRestore,
   voidIsOneWord,
 } from '../lint/rules';
-import { PERMISSION_NAMESPACES } from '../lint/terms';
+import { MUST_DIFFER, PERMISSION_NAMESPACES } from '../lint/terms';
 
 const CATALOGS: Catalogs = { zh, en, ru, uz };
 
@@ -103,6 +105,22 @@ describe('catalog lint rules catch the original findings', () => {
   test('a placeholder renamed in one language', () => {
     const cats = one({ en: '{n} items', zh: '{n} 项', ru: '{count} поз.', uz: '{n} ta' });
     expect(placeholderMismatches(cats)).toEqual(['ru k: {count} vs en {n}']);
+  });
+
+  test('TEST4-11: a key missing in one language, or only in one', () => {
+    const cats = one({});
+    cats.ru = {};
+    cats.uz = { ...cats.uz, extra: 'Ortiqcha' };
+    expect(keyParity(cats)).toEqual(['ru k: missing', 'uz extra: not in en']);
+    expect(keyParity(one({}))).toEqual([]);
+  });
+
+  test('TEST4-11: select and selectordinal blocks, which nothing formats', () => {
+    expect(unsupportedIcu(one({ en: '{who, select, staff {Staff} other {Someone}}' }))).toEqual([
+      'en k: "select" is not supported, only plural',
+    ]);
+    expect(unsupportedIcu(one({ ru: '{n, selectordinal, other {#-й}}' }))).toHaveLength(1);
+    expect(unsupportedIcu(one({ en: '{n, plural, one {# line} other {# lines}}' }))).toEqual([]);
   });
 
   test('Uzbek ASCII and curly apostrophes, and ʻ / ʼ swapped', () => {
@@ -321,13 +339,21 @@ describe('catalog lint rules catch the original findings', () => {
   });
 
   test('DX-COPY-2: a void button that reads like Cancel', () => {
-    const cats: Catalogs = {
-      en: { 'sales.void.confirmBtn': 'Void sale', 'common.cancel': 'Cancel' },
-      zh: { 'sales.void.confirmBtn': '确认作废', 'common.cancel': '取消' },
-      ru: { 'sales.void.confirmBtn': 'Аннулировать', 'common.cancel': 'Отмена' },
-      uz: { 'sales.void.confirmBtn': 'Bekor qilish', 'common.cancel': 'Bekor qilish' },
-    };
+    // Every key the rule watches, each with a value of its own, then the
+    // uz void button given the word for cancel.
+    const watched = [...new Set(MUST_DIFFER.flatMap(([a, b]) => [a, b]))];
+    const own = (lang: Lang) => Object.fromEntries(watched.map((key) => [key, `${lang} ${key}`]));
+    const cats: Catalogs = { en: own('en'), zh: own('zh'), ru: own('ru'), uz: own('uz') };
+    expect(distinctActions(cats)).toEqual([]);
+    cats.uz['sales.void.confirmBtn'] = 'Bekor qilish';
+    cats.uz['common.cancel'] = 'Bekor qilish';
     expect(distinctActions(cats)).toEqual([
+      'uz sales.void.confirmBtn = common.cancel = "Bekor qilish" (void-sale sheet)',
+    ]);
+    // TEST4-11: a watched key that is gone (renamed) is reported, not skipped.
+    delete cats.ru['people.revokeInvite'];
+    expect(distinctActions(cats)).toEqual([
+      'ru people.revokeInvite: missing (MUST_DIFFER, invite row)',
       'uz sales.void.confirmBtn = common.cancel = "Bekor qilish" (void-sale sheet)',
     ]);
   });

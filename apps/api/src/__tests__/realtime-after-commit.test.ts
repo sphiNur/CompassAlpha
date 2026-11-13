@@ -164,6 +164,20 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
     lastSeq,
   });
 
+  /**
+   * Sends a notice of its own through the database and waits for it.
+   * Postgres delivers notices in commit order, so every notice committed
+   * before it has arrived by then (review TEST1-19: these tests used to
+   * wait 200 ms and assume nothing more would come).
+   */
+  async function drained(sink: ReturnType<typeof listen>): Promise<void> {
+    const marker = randomUUID();
+    await withSystemContext(app(), 'worker', (tx) =>
+      notifyRealtime(tx, { type: 'order.changed', orgId, sessionId: marker, lastSeq: 1 }),
+    );
+    await waitFor(() => sink.received.some((m) => m.sessionId === marker));
+  }
+
   test('B9: nothing is sent until the transaction commits', async () => {
     const sink = listen(orgId);
     try {
@@ -272,8 +286,7 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
         releaseClaimIfExpired(tx, 'order', { id: sessionId, orgId }, 30),
       );
       expect(released).toBe(true);
-      await waitFor(() => sink.received.some((m) => m.sessionId === sessionId));
-      await new Promise((r) => setTimeout(r, 200));
+      await drained(sink);
       expect(sink.received.filter((m) => m.sessionId === sessionId)).toEqual([
         { type: 'order.changed', orgId, sessionId, lastSeq: 1 },
       ]);
@@ -301,9 +314,9 @@ describe.skipIf(!SHOULD_RUN)('realtime after commit (PG-gated)', () => {
       await withSystemContext(app(), 'worker', (tx) =>
         notifyRealtime(tx, { type: 'order.changed', orgId, sessionId, lastSeq: 10 }),
       );
-      await waitFor(() => sink.received.length > 0);
-      await new Promise((r) => setTimeout(r, 200));
-      expect(sink.received.map((m) => m.lastSeq)).toEqual([10]);
+      await drained(sink);
+      const ours = sink.received.filter((m) => m.sessionId === sessionId);
+      expect(ours.map((m) => m.lastSeq)).toEqual([10]);
     } finally {
       sink.unsubscribe();
     }

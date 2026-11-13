@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { MATCH_THRESHOLD } from '../index';
-import { faceInGrayZone, identify, spotCheck, SPOT_CHECK_EVERY, type KnownFace } from '../checks';
+import {
+  CHECK_LINES,
+  faceInGrayZone,
+  identify,
+  spotCheck,
+  SPOT_CHECK_EVERY,
+  type KnownFace,
+} from '../checks';
 
 const unit = (i: number) => Array.from({ length: 8 }, (_, j) => (j === i ? 1 : 0));
 /** A vector at cosine `c` with unit(0). */
@@ -64,9 +71,16 @@ describe('identify', () => {
     ).toBe('A');
   });
 
-  test('gray zone around the match line', () => {
-    expect(faceInGrayZone(0.29)).toBe(false);
-    expect(faceInGrayZone(0.36)).toBe(true);
-    expect(faceInGrayZone(0.45)).toBe(false);
+  test('gray zone around the match line: from its lower line, up to its upper', () => {
+    // Read off CHECK_LINES (review TEST4-20, 2026-11): moving a line moves
+    // these edges with it.
+    const [low, high] = CHECK_LINES.faceGray;
+    expect(low).toBeLessThan(MATCH_THRESHOLD);
+    expect(high).toBeGreaterThan(MATCH_THRESHOLD);
+    expect(faceInGrayZone(low - 0.001)).toBe(false);
+    expect(faceInGrayZone(low)).toBe(true);
+    expect(faceInGrayZone(MATCH_THRESHOLD)).toBe(true);
+    expect(faceInGrayZone(high - 0.001)).toBe(true);
+    expect(faceInGrayZone(high)).toBe(false);
   });
 });

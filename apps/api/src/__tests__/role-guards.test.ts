@@ -233,6 +233,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const full = await owner.admin.memberList();
     expect(full.find((m) => m.memberId === both.memberId)?.statusOutOfReach).toBe(false);
   });
+
   test('CMP-ADM-1: the member list gives each role its rank; the manager cannot revoke their own', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
     const who = await seedMember(db, orgId, {
@@ -248,12 +249,14 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const err = await errorOf(() => manager.admin.revokeRole({ bindingId: own.bindingId }));
     expect(err?.message).toBe('auth.errors.cannotRevokeEqualOrHigher');
   });
+
   test('CMP-SHL-1: the session carries the person’s own Telegram id', async () => {
     const { manager, db } = fix!;
     const me = await manager.auth.me();
     const [u] = await db.select().from(s.users).where(eq(s.users.id, me.user.id));
     expect(me.user.tgUserId).toBe(String(u!.tgUserId));
   });
+
   test('ADM-13: a store manager finds their own suspend in the audit log', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
     const person = (name: string, roleId: string) =>
@@ -282,6 +285,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     expect(crashes.length).toBeGreaterThanOrEqual(1);
     expect(crashes.every((r) => r.kind === 'crash')).toBe(true);
   });
+
   test('AUTH-14: switching the primary language to the second one clears the second', async () => {
     const { admin } = fix!;
     await admin.auth.setSecondaryLocale({ secondaryLocale: 'ru' });
@@ -320,6 +324,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       mirrorRoles: true,
     });
   });
+
   test('CLS-25: a dish save based on an older version is refused, not applied', async () => {
     const { owner } = fix!;
     const { dishId } = await owner.dishes.save({
@@ -348,6 +353,7 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     // Without the field the old behaviour (last write wins) is unchanged.
     await owner.dishes.save({ dishId, names: { en: 'No version' }, ingredients: [] });
   });
+
   test('HIS-19: reports.view alone opens finance for its own store; neither key is refused', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
     const tag = `${Date.now()}`.slice(-9);
