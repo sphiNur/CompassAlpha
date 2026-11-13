@@ -1099,7 +1099,6 @@ export const ru = {
   'order.search.noMatches.title': 'Ничего не найдено',
   'order.search.noMatches.description': 'Попробуйте другое слово или сбросьте фильтр.',
   'order.totalQty': 'всего {qty} {unit}',
-  'order.review': 'Проверить заказ ({n})',
   'order.status.draft': 'Черновик',
   'order.status.submitted': 'Отправлено · ждёт проверки',
   'order.status.approved': 'Одобрено',
@@ -1137,8 +1136,10 @@ export const ru = {
   'order.toast.adjustFailed': 'Изменение не сохранилось. Попробуйте ещё раз.',
   'order.toast.syncing': 'Изменения ещё отправляются — нажмите «Отправить заказ» чуть позже.',
   'order.action.submitOrder': 'Отправить заказ',
+  'order.action.submitCount': 'Отправить заказ ({n})',
   'order.action.submitting': 'Отправляем…',
   'order.review.title': 'Проверьте заказ',
+  'order.review.view': 'Посмотреть заказ',
   'order.review.itemsCount':
     '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
   'order.review.empty': 'Пока ничего не выбрано.',

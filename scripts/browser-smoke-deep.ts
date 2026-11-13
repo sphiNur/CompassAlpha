@@ -14,8 +14,8 @@
  *
  * What it asserts:
  *   - Order tab: the stubbed SKUs with their +/− controls; a + tap counts
- *     the item on the main action ("Review order (1)"), whose sheet lists
- *     it and submits it.
+ *     the item on the main action ("Submit order (1)"), which submits it
+ *     in one tap; the optional "View order" sheet lists it.
  *   - Review tab: the submitted session card and the Pending / Approved /
  *     Rejected tabs.
  *   - Run tab: the empty state (no approved sessions are stubbed).
@@ -391,7 +391,7 @@ async function run() {
     }
 
     // Review OPS-39: the count of chosen items rides the main action,
-    // "Review order (N)": the in-page PageMainButton, or Telegram's
+    // "Submit order (N)" (O1): the in-page PageMainButton, or Telegram's
     // MainButton in older builds. (The header pill this used to read is
     // gone; its fallback, any digit in the page, could not fail.)
     const reviewLabel = async () =>
@@ -402,26 +402,26 @@ async function run() {
         const native = w.Telegram?.WebApp?.MainButton;
         if (native?.isVisible && native.text) return native.text;
         const own = [...document.querySelectorAll('button')].filter((b) =>
-          /Review order/.test(b.textContent ?? ''),
+          /Submit order/.test(b.textContent ?? ''),
         );
         return own.at(-1)?.textContent ?? '';
       });
-    const countOf = (label: string) => Number(/Review order\s*\((\d+)\)/.exec(label)?.[1] ?? 0);
+    const countOf = (label: string) => Number(/Submit order\s*\((\d+)\)/.exec(label)?.[1] ?? 0);
     let chosenLabel = await reviewLabel();
     for (let i = 0; i < 10 && countOf(chosenLabel) === 0; i++) {
       await page.waitForTimeout(300);
       chosenLabel = await reviewLabel();
     }
     record(
-      'Order page counts the item after a + tap (Review order (N), N > 0)',
+      'Order page counts the item after a + tap (Submit order (N), N > 0)',
       countOf(chosenLabel) > 0,
-      chosenLabel.replace(/\s+/g, ' ') || 'no Review order action',
+      chosenLabel.replace(/\s+/g, ' ') || 'no Submit order action',
     );
 
     // ---- Approve tab ----
-    // Submission flow:
-    //   1. Main action "Review order (N)" opens the Review sheet.
-    //   2. Main action / sheet footer "Submit order" fires submit.
+    // Submission flow (O1, 2026-11-13):
+    //   1. "View order" (optional) opens the review sheet; it is closed.
+    //   2. Main action "Submit order (N)" fires submit in one tap.
     // The app now renders an in-DOM PageMainButton above the nav, while
     // older builds used Telegram's native MainButton. Smoke supports both.
     const clickMainAction = async (label: string): Promise<boolean> => {
@@ -438,16 +438,19 @@ async function run() {
       await button.click();
       return true;
     };
-    await clickMainAction('Review order');
+    const viewOrder = page.locator('button', { hasText: 'View order' }).last();
+    if ((await viewOrder.count()) > 0) await viewOrder.click();
     await page.waitForTimeout(400);
     const sheetText = await page.evaluate(() => {
       const dlg = document.querySelector('[role="dialog"]');
       return dlg?.textContent ?? '';
     });
-    record('Review sheet opens with selected items', /Apple/.test(sheetText));
+    record('View order sheet opens with selected items', /Apple/.test(sheetText));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
     await clickMainAction('Submit order');
     await page.waitForTimeout(700);
-    record('Order submitted after second MainButton click', mockSession?.status === 'submitted');
+    record('Order submitted after one MainButton click', mockSession?.status === 'submitted');
 
     // Sheet should auto-close onSuccess. If not, the click below won't
     // resolve because the dialog overlay intercepts pointer events.

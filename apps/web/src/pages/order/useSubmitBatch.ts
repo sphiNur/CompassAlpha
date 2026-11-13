@@ -28,6 +28,9 @@ async function hasQueuedOrderWrites(storeId: string): Promise<boolean> {
   }
 }
 
+/** O1: how long the "submitted" toast offers Withdraw. */
+const WITHDRAW_TOAST_MS = 5000;
+
 export function useSubmitBatch({
   storeId,
   canSubmit,
@@ -62,8 +65,8 @@ export function useSubmitBatch({
    *   1. Disable retry — the user, not the client, decides when to
    *      try again. Auto-retries hide the failure and confuse state.
    *   2. Toast on success / failure with concrete copy.
-   *   3. On network-shaped failure, keep the review sheet open so the
-   *      tap target is obvious; on a domain error, close it.
+   *   3. On network-shaped failure, keep the review sheet (when it is
+   *      open) so the tap target is obvious; on a domain error, close it.
    */
   // 2026-10-21 audit CA-26: one stable X-Idempotency-Key per LOGICAL
   // submit of a given session (sent in the trpc context, as RunPage's
@@ -84,7 +87,19 @@ export function useSubmitBatch({
       void utils.order.todayBatches.invalidate();
       onSubmitted(vars.sessionId);
       haptic('success');
-      toast.success(i18n.t('order.toast.submitted'));
+      // O1 (2026-11-13): Submit is one tap now, so the toast offers the
+      // way back at once. The receipt's banner keeps Withdraw after it
+      // goes, until a reviewer picks the batch up.
+      toast.show(i18n.t('order.toast.submitted'), {
+        tone: 'success',
+        ttlMs: WITHDRAW_TOAST_MS,
+        actions: [
+          {
+            label: i18n.t('order.withdraw'),
+            onClick: () => withdraw.mutate({ sessionId: vars.sessionId }),
+          },
+        ],
+      });
     },
     onError: (err) => {
       haptic('error');

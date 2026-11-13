@@ -148,8 +148,9 @@ test('place an order', async () => {
     'Quantity 2 kg — tap to choose',
   );
 
-  await expect(mainButton()).toHaveText('Review order (2)');
-  await mainButton().click();
+  // O1: the main button submits in one tap; the review is an optional look.
+  await expect(mainButton()).toHaveText('Submit order (2)');
+  await main().getByRole('button', { name: 'View order' }).click();
   // 2026-11-05: the review is editable — each line has the list's stepper.
   const reviewLine = (sku: string) => sheet().getByRole('listitem').filter({ hasText: sku }).last();
   await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
@@ -406,7 +407,6 @@ test('the next order shows what it should cost, and how it is usually paid', asy
   await add('Apple', 2);
   await add('Beef', 2);
   await mainButton().click();
-  await sheet().getByRole('button', { name: 'Submit order' }).click();
   await expect(main().getByRole('status')).toContainText('Submitted · awaiting review');
 
   await tab('approve').click();
