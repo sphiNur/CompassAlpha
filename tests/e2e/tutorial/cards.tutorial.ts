@@ -261,11 +261,8 @@ test('purchaser: mark an item unavailable', async () => {
     'na',
     row(page, 'MILK').getByRole('button', { name: t('run.action.markNa'), exact: true }),
   );
+  // A preset reason marks the item at once (#470); there is no second tap.
   await c.tap('pick-reason', choice(sheet(page), t('run.unavailable.preset.soldOut')));
-  await c.tap(
-    'confirm',
-    sheet(page).getByRole('button', { name: t('run.action.markNa'), exact: true }),
-  );
   await expect(sheet(page)).toBeHidden();
   await expect(row(page, 'MILK')).toContainText(t('run.unavailable.preset.soldOut'));
   await expect(row(page, 'MILK').getByRole('textbox')).toHaveCount(0);
