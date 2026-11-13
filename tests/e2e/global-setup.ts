@@ -6,6 +6,10 @@
  * Starting clean is what lets the flow assert exact numbers. It also
  * means every run exercises the real migration chain on an empty
  * database.
+ *
+ * The tutorial screenshots (tutorial/) start the same way and seed their
+ * own workspace instead of the development seed: `pnpmAtRoot`,
+ * `resetDatabase` and `createAppRole` are shared with them.
  */
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -17,7 +21,8 @@ import { ADMIN_TG_ID, APP_ROLE, DATABASE_URL } from './env';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const SCHEMAS = [...APP_SCHEMAS, 'drizzle'];
 
-function pnpm(args: string[]): void {
+/** pnpm at the repository root, against the run's database. */
+export function pnpmAtRoot(args: string[]): void {
   execFileSync('pnpm', args, {
     cwd: ROOT,
     stdio: ['ignore', 'ignore', 'inherit'],
@@ -25,7 +30,8 @@ function pnpm(args: string[]): void {
   });
 }
 
-export default async function globalSetup(): Promise<void> {
+/** Drop every application schema and migrate from nothing. */
+export async function resetDatabase(): Promise<void> {
   const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
   try {
     for (const schema of SCHEMAS) {
@@ -34,9 +40,23 @@ export default async function globalSetup(): Promise<void> {
   } finally {
     await sql.end({ timeout: 5 });
   }
-  pnpm(['--filter', '@compass/db', 'migrate']);
-  pnpm(['--filter', '@compass/db', 'seed']);
-  pnpm([
+  pnpmAtRoot(['--filter', '@compass/db', 'migrate']);
+}
+
+/** The role the api runs as; see APP_DATABASE_URL. */
+export async function createAppRole(): Promise<void> {
+  const owner = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+  try {
+    await owner.unsafe(appRoleSql(APP_ROLE));
+  } finally {
+    await owner.end({ timeout: 5 });
+  }
+}
+
+export default async function globalSetup(): Promise<void> {
+  await resetDatabase();
+  pnpmAtRoot(['--filter', '@compass/db', 'seed']);
+  pnpmAtRoot([
     'compass',
     'user',
     'grant',
@@ -48,12 +68,5 @@ export default async function globalSetup(): Promise<void> {
     // A fresh database has no account for this id; the dev login uses it.
     '--new-user',
   ]);
-
-  // The role the api runs as; see APP_DATABASE_URL.
-  const owner = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
-  try {
-    await owner.unsafe(appRoleSql(APP_ROLE));
-  } finally {
-    await owner.end({ timeout: 5 });
-  }
+  await createAppRole();
 }
