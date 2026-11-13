@@ -339,6 +339,9 @@ apps/api/src/
 │   ├── eventStore.ts           # appendEvents + readStream
 │   ├── orderProjection.ts      # 事件 → read_model.order_*
 │   ├── runProjection.ts        # 事件 → read_model.run_* / run_item_*
+│   ├── runSessionCascade.ts    # 采购单对所带订单的级联：附加、移出、归档，及其推送（RUNAPI-13）
+│   ├── runRead.ts              # run.list / run.get 读的数据（路由只管输入、权限和返回的形状）
+│   ├── runHistory.ts           # run.history / run.historyDetail 的查询
 │   ├── notify.ts               # In-App 通知投递
 │   ├── notifyForEvent.ts       # 事件 → 通知模板路由
 │   ├── refreshTokens.ts        # issueRefresh / consumeRefresh / 家族吊销
@@ -679,6 +682,7 @@ DR-020  2026-05-16  CF Worker Telegram 中转    CN 出境 api.telegram.org 受�
 | ------------------ | ------------------------------------------------------------------------------------ |
 | 业务领域语言       | [packages/domain/src/{order,run}/events.ts](packages/domain/src/order/events.ts)     |
 | 命令处理           | [packages/domain/src/{order,run}/commands.ts](packages/domain/src/order/commands.ts) |
+| 采购单各阶段命令   | [packages/domain/src/run/decide/](packages/domain/src/run/decide)（入口 decideRun）  |
 | 权限矩阵           | [docs/PERMISSION_MATRIX.md](docs/PERMISSION_MATRIX.md)                               |
 | 事件 catalog       | [docs/EVENT_CATALOG.md](docs/EVENT_CATALOG.md)                                       |
 | 运维 / 备份 / 恢复 | [docs/RUNBOOK.md](docs/RUNBOOK.md)                                                   |

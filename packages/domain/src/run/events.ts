@@ -318,7 +318,7 @@ export type RunEvent =
        * "其他物品" flow on the session side (M3.16-C / M3.37). This event
        * always references an existing SKU id.
        *
-       * Guards (enforced in commands.ts):
+       * Guards (enforced in decide/purchasing.ts):
        *   - status ∈ {planned, purchasing}, or amending with run.amend
        *   - actor has run.purchase
        *   - SKU not already in state.items (use RevisePurchase to grow

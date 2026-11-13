@@ -39,7 +39,7 @@ function isHandled(i: ItemStatusLike): boolean {
  * establish, that every item was checked and none were available.
  *
  * Zero stores to confirm IS confirmed, and the server has always agreed:
- * FinishRun in packages/domain/src/run/commands.ts builds the same
+ * FinishRun in packages/domain/src/run/decide/closing.ts builds the same
  * involved-store set and loops over it, so an empty set raises nothing
  * and the command succeeds. The client guard was the only thing that
  * disagreed.

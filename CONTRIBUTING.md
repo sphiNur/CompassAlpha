@@ -59,6 +59,12 @@ enforcement. Throw `validation`, `forbidden`, `conflict`, or
 `preconditionFailed` for invalid inputs (the i18n key in `message`
 becomes the user-facing error).
 
+For the run, each phase (planning, purchasing, delivery, closing,
+amending) declares its commands and decides them in
+`packages/domain/src/run/decide/<phase>.ts`; `decideRun` in
+`run/commands.ts` stays the one entry point and routes each command type
+to its phase.
+
 ### 4. Update the projector
 
 `apps/api/src/services/<aggregate>Projection.ts`. Add a case for the new
