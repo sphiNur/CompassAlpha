@@ -4,7 +4,14 @@
  * and the versions as one card of rows.
  */
 import type { CatalogKey } from '@compass/i18n';
-import { Disclosure, PendingState, QueryErrorBanner, rowGroupClass } from '@compass/ui';
+import {
+  Card,
+  Disclosure,
+  EmptyState,
+  PendingState,
+  QueryErrorBanner,
+  rowGroupClass,
+} from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 
@@ -43,6 +50,15 @@ function RevisionList({ settlementId }: { settlementId: string }) {
   if (history.isPending) return <PendingState query={history} />;
   if (history.isError) {
     return <QueryErrorBanner query={history} title={i18n.t('settlement.errors.load')} />;
+  }
+  // UX-20 (2026-11-14): the server answers [] for a close it no longer
+  // finds (removed meanwhile); the history opened on an empty card.
+  if (history.data.length === 0) {
+    return (
+      <Card>
+        <EmptyState compact title={i18n.t('settlement.history.empty')} />
+      </Card>
+    );
   }
   return (
     <ul className={rowGroupClass} role="list">

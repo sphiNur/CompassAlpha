@@ -12,7 +12,7 @@
  * default (lib/sessionSelection.ts), so orders approved while the screen
  * is open fall into the right default without resetting earlier ticks.
  */
-import { Card, Checkbox, Input, SectionLabel } from '@compass/ui';
+import { Card, Checkbox, EmptyState, Input, SectionLabel } from '@compass/ui';
 import { useDateFormat, useI18n } from '../../../hooks/useI18n';
 import {
   batchNumbers,
@@ -61,6 +61,10 @@ export function SessionPicker({
       <SectionLabel meta={i18n.t('run.select.meta', { n: selected.size, total: sessions.length })}>
         {i18n.t('run.select.title')}
       </SectionLabel>
+      {/* UX-20 (2026-11-14): the join sheet stays open when the orders it
+          listed are taken meanwhile (another purchaser's run); it showed
+          "0 of 0" over nothing and asked to tick one. */}
+      {sessions.length === 0 ? <EmptyState compact title={i18n.t('run.select.empty')} /> : null}
       <ul className="flex flex-col" role="list">
         {groups.map((group) => {
           const allOn = group.sessions.every((s) => isChecked(s.id));
@@ -147,7 +151,7 @@ export function SessionPicker({
           />
         </label>
       ) : null}
-      {selected.size === 0 && noneSelectedHint ? (
+      {selected.size === 0 && noneSelectedHint && sessions.length > 0 ? (
         <div className="px-3 py-2 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('run.select.noneSelected')}
         </div>

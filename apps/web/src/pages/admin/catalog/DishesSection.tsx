@@ -165,8 +165,13 @@ export function DishesSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
+  // UX-21 (2026-11-14): says it worked, as Unarchive on a product,
+  // category, supplier or template does ("Product updated").
   const unarchive = trpc.dishes.unarchive.useMutation({
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate();
+      toast.success(i18n.t('dishes.toast.updated'));
+    },
     onError: errToast('common.errors.actionFailed'),
   });
   // D3 (2026-11-13): archiving no longer asks first; the toast's Undo

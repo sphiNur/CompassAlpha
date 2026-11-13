@@ -1962,6 +1962,7 @@ export const ru = {
   'dishes.field.qtyPlaceholder': 'кол-во на порцию',
   'dishes.field.pickSku': 'Выберите ингредиент…',
   'dishes.toast.archived': 'Блюдо архивировано',
+  'dishes.toast.updated': 'Блюдо обновлено',
   'dishes.errors.cannotManage':
     'Для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.readOnly':
@@ -2157,6 +2158,7 @@ export const ru = {
   'settlement.recent.updatedBy': 'Последнее изменение: {name}',
   'settlement.history.title': 'История изменений',
   'settlement.history.created': 'Первая запись',
+  'settlement.history.empty': 'Нет сохранённых версий',
   'settlement.history.changed': 'Изменено: {fields}',
   'settlement.history.reason': 'Причина: {reason}',
   'settlement.save.new': 'Сохранить закрытие дня',
@@ -2234,6 +2236,7 @@ export const ru = {
   'run.select.olderDate': '{days} дн. назад — по умолчанию не включено',
   'run.select.runDate': 'Дата закупки (учёт)',
   'run.select.noneSelected': 'Отметьте хотя бы один заказ',
+  'run.select.empty': 'Нет ожидающих одобренных заказов',
   'run.attach.sheet.title': 'Добавить заказы в закупку',
   'run.action.attachSelected':
     '{n, plural, one {Добавить {n} заказ} few {Добавить {n} заказа} many {Добавить {n} заказов} other {Добавить {n} заказа}}',
@@ -2456,6 +2459,7 @@ export const ru = {
   'run.history.supplier': 'Поставщик: {name}',
   'run.history.receiptOf': 'Фото чека: {item}',
   'run.history.expensesHeading': 'Расходы',
+  'run.history.noStoreExpenses': 'В этой закупке нет расходов этого магазина',
   'run.history.correctionsHeading': 'Исправления',
   'run.history.receivingIssues':
     'Проблемы при приёмке: {n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
@@ -2675,6 +2679,7 @@ export const ru = {
   'attendance.settings.people': 'Кто отмечается',
   'attendance.settings.peopleHint':
     'После включения у сотрудника появится вкладка «Отметка», и он должен отмечать приход и уход.',
+  'attendance.settings.peopleEmpty': 'В команде этого магазина пока никого нет',
   'attendance.settings.deviceBound': 'Телефон привязан',
   'attendance.settings.deviceNotYet': 'Телефон привяжется при первой отметке',
   'attendance.settings.resetDevice': 'Отвязать телефон',

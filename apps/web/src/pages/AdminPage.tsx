@@ -375,8 +375,10 @@ export function AdminPage() {
               hint={i18n.t('admin.section.storesHint')}
               onClick={() => setSection('stores')}
             />
-            {/* D1 (2026-11-13): one tap to the count mode in a manager's one store. */}
-            <StockCountShortcut />
+            {/* D1 (2026-11-13): one tap to the count mode; UX-12: in the top-bar store. */}
+            <StockCountShortcut
+              topBarStoreId={navStoreCtx.kind === 'specific' ? navStoreCtx.storeId : null}
+            />
             {invites ? (
               <SectionRow
                 icon={<IconShare size={20} />}
