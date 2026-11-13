@@ -11,7 +11,7 @@
  * caller may not see is `null`, so the client draws no badge rather than a
  * misleading 0.
  */
-import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { NavCountsInputSchema } from '@compass/contracts';
 import { schema as s } from '@compass/db';
 import { todayInTz } from '@compass/domain';
@@ -37,7 +37,15 @@ export const navRouter = router({
         run: number | null;
         confirm: number | null;
         settlementDue: boolean | null;
-      } = { approve: null, run: null, confirm: null, settlementDue: null };
+        /** A1 (2026-11-13): face enrollments waiting for this manager. */
+        faceEnrollPending: number | null;
+      } = {
+        approve: null,
+        run: null,
+        confirm: null,
+        settlementDue: null,
+        faceEnrollPending: null,
+      };
 
       // The store in the header, only when the caller is assigned to it.
       let storePerms: ReadonlySet<string> | null = null;
@@ -108,6 +116,38 @@ export const navRouter = router({
             ),
           );
         result.run = row?.n ?? 0;
+      }
+
+      // 考勤 › 待核对: face enrollments a manager has to approve before
+      // the person can clock in, in every store they manage attendance
+      // for (cross-store, like the run count). Their own is left out
+      // unless they may approve it (super_admin, as faceEnrollDecide).
+      if (session.permissions.has('attendance.manage')) {
+        const storeIds = await getActorStoreIdsForPermission(
+          tx,
+          session.memberId,
+          'attendance.manage',
+          session.permissions,
+        );
+        const [row] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(s.attendanceFaceEnrollments)
+          .where(
+            and(
+              eq(s.attendanceFaceEnrollments.orgId, orgId),
+              eq(s.attendanceFaceEnrollments.status, 'pending'),
+              storeIds === null
+                ? undefined
+                : inArray(
+                    s.attendanceFaceEnrollments.storeId,
+                    storeIds.length > 0 ? storeIds : [NO_STORE],
+                  ),
+              session.roleSlugs.has('super_admin')
+                ? undefined
+                : ne(s.attendanceFaceEnrollments.memberId, session.memberId),
+            ),
+          );
+        result.faceEnrollPending = row?.n ?? 0;
       }
 
       if (!input.storeId || !storePerms) return result;

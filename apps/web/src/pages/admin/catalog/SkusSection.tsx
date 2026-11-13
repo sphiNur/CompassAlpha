@@ -32,6 +32,7 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
+  useArchivedToast,
 } from './CatalogParts';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import {
@@ -132,10 +133,13 @@ export function SkusSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
+  const archivedToast = useArchivedToast();
   const remove = trpc.admin.skuDelete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       void utils.admin.skuList.invalidate();
-      toast.info(i18n.t('admin.toast.skuArchived'));
+      archivedToast(i18n.t('admin.toast.skuArchived'), () =>
+        update.mutate({ skuId: vars.skuId, isArchived: false }),
+      );
     },
     onError: errToast('common.errors.actionFailed'),
   });
@@ -259,7 +263,6 @@ export function SkusSection() {
                             sortText: String(sk.sortIndex),
                           })
                         }
-                        confirmArchive={i18n.t('catalog.sku.confirmArchive', { name: primary })}
                         onArchive={() => remove.mutate({ skuId: sk.id })}
                         onUnarchive={() => update.mutate({ skuId: sk.id, isArchived: false })}
                         unarchiving={update.isPending && update.variables?.skuId === sk.id}

@@ -51,4 +51,7 @@ export interface InviteDraft {
   /** At least one store must be picked unless the role is org-tier (rank
    *  ≥ ADMIN_RANK): its holder sees every store through `org.admin`. */
   storeIds: string[];
+  /** A3: switch clocking on for them (an invite by Telegram id into one
+   *  store that uses attendance). */
+  clocksIn: boolean;
 }

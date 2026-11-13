@@ -71,17 +71,11 @@ export const ru = {
   'catalog.category.emptyBody': 'Группируют товары на странице заказа.',
   'catalog.sku.new': 'Новый товар',
   'catalog.sku.edit': 'Изменить товар',
-  'catalog.sku.confirmArchive':
-    'Архивировать товар «{name}»? Его больше не будет при заказе; история сохранится.',
   'catalog.supplier.new': 'Новый поставщик',
   'catalog.supplier.edit': 'Изменить поставщика',
   'catalog.supplier.emptyTitle': 'Нет поставщиков',
   'catalog.supplier.emptyBody': 'Учёт того, у кого вы покупаете на рынке.',
-  'catalog.supplier.confirmArchive':
-    'Архивировать поставщика «{name}»? Его больше нельзя будет выбрать в закупках; история сохранится.',
-  'catalog.category.confirmArchive': 'Архивировать категорию «{name}»?',
   'catalog.category.meta': 'Символьный код {slug} · порядок {sort}',
-  'catalog.category.slugPlaceholder': 'например, dairy',
   'catalog.sku.stepMeta': 'шаг заказа {step}',
   'catalog.supplier.tgPlaceholder': 'имя пользователя (без @)',
   'catalog.readOnlyHint': 'Изменять каталог могут только администраторы рабочего пространства.',
@@ -194,7 +188,6 @@ export const ru = {
   'people.slugRule': 'Строчные латинские буквы, цифры и дефис, например night-shift.',
   'admin.errors.roleSlugInvalid':
     'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
-  'people.slugRequired': 'Обязательное поле.',
   'people.rankInvalid': 'Введите целое число от {min} до {max}.',
   'people.rankTierLocked':
     'Эта роль уже назначена участникам, поэтому её уровень не может пересечь отметку {rank}: если уровень не ниже {rank}, роль действует во всём рабочем пространстве, если ниже — в отдельных магазинах.',
@@ -687,7 +680,6 @@ export const ru = {
   'shell.skip.nav': 'К навигации',
   'approval.offline.needsConnection':
     'Для проверки нужна связь: одобрения и отказы не сохраняются на телефоне.',
-  'workspace.switchConfirm': 'Перейти в {name}? Несохранённые изменения на этой странице пропадут.',
   'workspace.switchConfirmPending':
     'Перейти в {name}? {n, plural, one {# изменение отсюда ещё не отправлено} few {# изменения отсюда ещё не отправлены} many {# изменений отсюда ещё не отправлены} other {# изменения отсюда ещё не отправлены}}, они уйдут, когда вы вернётесь в это рабочее пространство. Несохранённые изменения на этой странице пропадут.',
   'storeSwitcher.switched': 'Выбрано: {store}',
@@ -925,7 +917,7 @@ export const ru = {
   'admin.invite.link.submit': 'Создать ссылку',
   'admin.invite.tgIdHint':
     'Не знаете ID? Попросите человека открыть мини-приложение — там на экране будет его Telegram ID, пусть пришлёт его вам.',
-  'admin.invite.noRoleYet': '— пока без роли (можно назначить позже) —',
+  'admin.invite.clocksIn': 'Отмечается (учёт времени)',
   'admin.invite.staffNeedStoreHint':
     'Сотрудникам нужно быть привязанными к магазину, чтобы оформлять заказы.',
   'admin.invite.onlyYourStoresHint': 'Вы можете приглашать только в магазины, которыми управляете.',
@@ -1218,6 +1210,7 @@ export const ru = {
   'approval.unknownReviewer': 'другой проверяющий',
   'approval.unapprove': 'Отменить одобрение',
   'approval.undo': 'Отменить',
+  'common.undo': 'Отменить',
   'approval.toast.approved': 'Одобрено ✓',
   'approval.toast.rejected': 'Отклонено',
   'approval.toast.released': 'Возвращено в очередь — проверить может любой',
@@ -1864,7 +1857,6 @@ export const ru = {
   'admin.field.assignedStores': 'Назначенные магазины',
   'admin.field.displayNameOverride': 'Отображаемое имя (правка администратора)',
   'admin.field.codePlaceholder': 'Внутренний код, необязательно',
-  'admin.field.roleSlugPlaceholder': 'например, shift-lead',
   'admin.field.memberNamePlaceholder': 'Отображаемое имя',
   'admin.label.counting': 'Подсчёт…',
   'admin.field.sortIndex': 'Порядок',
@@ -1928,8 +1920,6 @@ export const ru = {
   'admin.field.defaultPaymentMethod': 'Оплата по умолч.',
   'admin.sheet.newExpenseTemplate': 'Новый шаблон расхода',
   'admin.sheet.editExpenseTemplate': 'Изменить шаблон',
-  'admin.confirm.archiveExpenseTemplate':
-    'Архивировать шаблон «{label}»? Он больше не будет предлагаться при добавлении расхода на странице закупки или в закрытии дня. Уже записанные расходы не изменятся.',
   'admin.toast.expenseTemplateCreated': 'Шаблон добавлен',
   'admin.toast.expenseTemplateUpdated': 'Шаблон обновлён',
   'admin.toast.expenseTemplateArchived': 'Шаблон в архиве',
@@ -1954,7 +1944,7 @@ export const ru = {
   'dishes.field.unitPrice': 'Цена за порцию',
   'dishes.field.qtyPlaceholder': 'кол-во на порцию',
   'dishes.field.pickSku': 'Выберите ингредиент…',
-  'dishes.confirm.archive': 'Архивировать «{name}»?',
+  'dishes.toast.archived': 'Блюдо архивировано',
   'dishes.errors.cannotManage':
     'Для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.readOnly':
@@ -2542,6 +2532,9 @@ export const ru = {
   'nav.short.attendance': 'Отметка',
   'admin.section.attendance': 'Учёт времени',
   'admin.section.attendanceHint': 'Кто пришёл, график смен, правила отметки',
+  'admin.section.attendanceEnrollHint': 'Лица на одобрение: {n}',
+  'admin.section.invite': 'Пригласить',
+  'admin.section.inviteHint': 'Добавить человека в {store}',
   'permission.attendance.clock': 'Отмечать приход и уход в своих магазинах',
   'permission.attendance.manage': 'Составлять смены, проверять и исправлять учёт времени',
   'permission.group.attendance': 'Учёт времени',
@@ -2585,6 +2578,10 @@ export const ru = {
   'attendance.admin.noStoreTitle': 'Нет магазина для управления',
   'attendance.admin.noStoreBody':
     'Учёт времени ведётся по магазинам; у вас пока нет своих магазинов.',
+  'attendance.admin.otherStoreTitle': 'В этом магазине вы не ведёте учёт времени',
+  'attendance.admin.otherStoreBody': 'Вы ведёте учёт времени в другом магазине. Нажмите на название магазина вверху, чтобы перейти в него.',
+  'attendance.admin.enrollBanner': 'Лица ждут вашего одобрения: {n}. До этого эти люди не могут отмечаться.',
+  'attendance.admin.enrollBannerAction': 'Проверить',
   'attendance.nav.prev': 'Назад',
   'attendance.nav.next': 'Вперёд',
   'attendance.nav.today': 'Сегодня',

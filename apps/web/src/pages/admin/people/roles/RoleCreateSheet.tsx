@@ -15,6 +15,7 @@ import { trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
 import {
+  codeFromName,
   defaultNewRoleRank,
   normaliseSlugInput,
   readRank,
@@ -61,7 +62,6 @@ export function RoleCreateSheet({
   const maxRank = myMaxRank - 1;
   const [rankText, setRankText] = useState(String(defaultRank));
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
-  const [slugTouched, setSlugTouched] = useState(false);
 
   // Reset when sheet re-opens for a fresh create.
   useEffect(() => {
@@ -71,11 +71,18 @@ export function RoleCreateSheet({
       setDescription('');
       setRankText(String(defaultNewRoleRank(myMaxRank, ADMIN_RANK)));
       setPicked(new Set());
-      setSlugTouched(false);
     }
   }, [open, myMaxRank]);
   const rankRead = readRank(rankText, maxRank);
   const slugBad = slug.length > 0 && !slugIsValid(slug);
+  // D2 (2026-11-13): an empty short code is made from the name, unique in
+  // the workspace; the field shows it as its placeholder.
+  const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: open });
+  const autoSlug = useMemo(
+    () => codeFromName([name], new Set((rolesQuery.data ?? []).map((r) => r.slug)), 'role'),
+    [name, rolesQuery.data],
+  );
+  const slugToSend = slug.trim().replace(/^-+|-+$/g, '') || autoSlug;
   // DX-IX-10: ask before Esc / backdrop / Back throws the typing away.
   const createChanged =
     slug !== '' ||
@@ -115,8 +122,7 @@ export function RoleCreateSheet({
     });
   };
 
-  const canSave =
-    slug.trim().length > 0 && slugIsValid(slug) && name.trim().length > 0 && rankRead.ok;
+  const canSave = slugIsValid(slugToSend) && name.trim().length > 0 && rankRead.ok;
 
   return (
     <Sheet
@@ -133,7 +139,7 @@ export function RoleCreateSheet({
           onClick={() => {
             if (!rankRead.ok) return;
             create.mutate({
-              slug: slug.trim().replace(/^-+|-+$/g, ''),
+              slug: slugToSend,
               name: name.trim(),
               description: description.trim() || null,
               rank: rankRead.rank,
@@ -146,34 +152,27 @@ export function RoleCreateSheet({
       }
     >
       <div className="flex flex-col gap-3 py-3">
-        {/* DX-ADM-4: say the rule instead of greying the button out. */}
-        <Field
-          label={i18n.t('admin.field.slug')}
-          required
-          hint={slugBad ? null : i18n.t('people.slugRule')}
-          error={
-            slugBad
-              ? i18n.t(SLUG_MESSAGE.role)
-              : slugTouched && slug === ''
-                ? i18n.t('people.slugRequired')
-                : null
-          }
-        >
-          <Input
-            value={slug}
-            onChange={(e) => setSlug(normaliseSlugInput(e.target.value))}
-            onBlur={() => setSlugTouched(true)}
-            maxLength={64}
-            placeholder={i18n.t('admin.field.roleSlugPlaceholder')}
-            autoFocus
-          />
-        </Field>
         <Field label={i18n.t('admin.field.name')} required>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={100}
             placeholder={i18n.t('people.rolePlaceholderName')}
+            autoFocus
+          />
+        </Field>
+        {/* DX-ADM-4: say the rule instead of greying the button out. D2: below
+            the name, which fills it when it is left empty. */}
+        <Field
+          label={i18n.t('admin.field.slug')}
+          hint={slugBad ? null : i18n.t('people.slugRule')}
+          error={slugBad ? i18n.t(SLUG_MESSAGE.role) : null}
+        >
+          <Input
+            value={slug}
+            onChange={(e) => setSlug(normaliseSlugInput(e.target.value))}
+            maxLength={64}
+            placeholder={autoSlug}
           />
         </Field>
         <Field label={i18n.t('admin.field.description')}>

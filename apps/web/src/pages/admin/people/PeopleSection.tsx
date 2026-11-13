@@ -11,25 +11,18 @@ import {
   ListRow,
   SearchInput,
   SectionLabel,
+  Switch,
   Sheet,
   useToast,
   rowGroupClass,
 } from '@compass/ui';
-import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
-import { copyText } from '../../../lib/clipboard';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
-import { getTg } from '../../../lib/telegram';
-import {
-  inviteLink as makeInviteLink,
-  shareLink as makeShareLink,
-} from '../../../lib/telegramLinks';
 import { confirmThen } from '../../../lib/confirm';
-import { InviteCopySheet } from './InviteCopySheet';
 import {
   canDetachFromStore,
   canGrantTo,
@@ -40,12 +33,12 @@ import {
   canSetStatus,
   type TargetMember,
 } from '../../../lib/authority';
-import { InviteHubSheet } from './invite/InviteHubSheet';
-import { ManualInviteSheet } from './invite/ManualInviteSheet';
+import { InviteFlow } from './invite/InviteFlow';
+import { useStoreClocking } from '../../attendance/useStoreClocking';
 import { GrantRoleSheet } from './members/GrantRoleSheet';
 import { ManageMemberSheet } from './members/ManageMemberSheet';
 import { MemberPermissionsSheet } from './members/MemberPermissionsSheet';
-import { type InviteDraft, targetOf, useActor } from './shared';
+import { targetOf, useActor } from './shared';
 
 /**
  * PeopleSection — directory of org members, inside a store's Team tab:
@@ -118,9 +111,6 @@ export function PeopleSection({
     member: TargetMember;
   } | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
-  const [linkDraft, setLinkDraft] = useState<InviteDraft | null>(null);
-  const [linkAction, setLinkAction] = useState<'share' | 'copy'>('share');
   // M1.11: per-member overflow menu (Permissions / Suspend / Reactivate /
   // Remove-from-store / Remove-from-org). Demotes a 5–6-button action
   // strip — which was wrapping onto two rows on a 390px-wide iPhone — to
@@ -141,6 +131,13 @@ export function PeopleSection({
     revocable: Array<{ bindingId: string; role: string; store: string | null }>;
   } | null>(null);
 
+  // A3 (2026-11-13): someone who joined by link is switched to clocking
+  // in from their ⋯ sheet; a link cannot carry it (the invite has no
+  // place to keep it without a migration).
+  const clocking = useStoreClocking(
+    storeCtx.kind === 'specific' ? storeCtx.storeId : null,
+    memberMenuFor !== null,
+  );
   const setStatus = trpc.admin.memberSetStatus.useMutation({
     onSuccess: () => {
       void utils.admin.memberList.invalidate();
@@ -178,65 +175,6 @@ export function PeopleSection({
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const invite = trpc.admin.memberInviteByTgId.useMutation({
-    onSuccess: (data) => {
-      void utils.admin.memberList.invalidate();
-      toast[data.created ? 'success' : 'info'](
-        data.created ? i18n.t('admin.toast.memberAdded') : i18n.t('admin.toast.userExists'),
-      );
-      setManualDraft(null);
-    },
-    onError: errToast('common.errors.actionFailed'),
-  });
-  const appConfig = trpc.system.appConfig.useQuery(undefined, {
-    staleTime: STALE.long,
-  });
-  const createInvite = trpc.admin.memberInviteCreate.useMutation({
-    onSuccess: () => void utils.admin.memberInviteList.invalidate(),
-    onError: errToast('common.errors.actionFailed'),
-  });
-  // ADM1-15: an invite the clipboard refused, shown to copy by hand. The
-  // server keeps no copy of the token, so it can't be fetched again.
-  const [uncopiedInvite, setUncopiedInvite] = useState<string | null>(null);
-  /**
-   * Creates a link invite, then copies or shares it. ADM1-15 (2026-11-11):
-   * the copy is asked for here, inside the tap, and filled in when the
-   * link arrives; WebKit (Telegram on iOS) refused the write that waited
-   * for the server (lib/clipboard).
-   */
-  const sendLinkInvite = (input: { roleSlug?: string; storeIds: string[] }) => {
-    const NO_BOT = 'people.inviteNoBot';
-    const invite = createInvite.mutateAsync(input).then((data) => {
-      const link = makeInviteLink(appConfig.data?.botUsername, data.token);
-      if (!link) throw new Error(NO_BOT);
-      const message = i18n.t('people.inviteMessage', { org: session?.member.orgName ?? '' });
-      return { link, message, text: `${message}\n${link}` };
-    });
-    const failed = (err: unknown) => {
-      // A refused create was already reported by the mutation's onError.
-      if (err instanceof Error && err.message === NO_BOT) toast.error(i18n.t(NO_BOT));
-    };
-    if (linkAction === 'copy') {
-      const text = invite.then((sent) => sent.text);
-      void copyText(text).then((copied) => {
-        setLinkDraft(null);
-        if (copied) toast.success(i18n.t('admin.toast.linkCopied'));
-        else void text.then(setUncopiedInvite);
-      }, failed);
-      return;
-    }
-    void invite.then(({ link, message }) => {
-      const shareUrl = makeShareLink({ url: link, text: message });
-      const tg = getTg();
-      if (tg) {
-        tg.openTelegramLink(shareUrl);
-      } else if (typeof window !== 'undefined') {
-        window.open(shareUrl, '_blank');
-      }
-      setLinkDraft(null);
-    }, failed);
-  };
-
   // M1.10 (2026-05-08): people directory search by name + tg + role.
   const [searchQuery, setSearchQuery] = useState('');
   const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
@@ -538,6 +476,12 @@ export function PeopleSection({
         }}
       </DataState>
 
+      <InviteFlow
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        storeIds={storeCtx.kind === 'specific' ? [storeCtx.storeId] : []}
+        preferOrgTier={storeCtx.kind === 'org-level'}
+      />
       <GrantRoleSheet actor={actor} target={grantFor} onClose={() => setGrantFor(null)} />
       <ManageMemberSheet actor={actor} target={manageFor} onClose={() => setManageFor(null)} />
       <MemberPermissionsSheet actor={actor} target={permsFor} onClose={() => setPermsFor(null)} />
@@ -603,6 +547,22 @@ export function PeopleSection({
                   ))}
                 </ul>
               </section>
+            ) : null}
+            {clocking.offered &&
+            storeCtx.kind === 'specific' &&
+            memberMenuFor.stores.some((st) => st.id === storeCtx.storeId) ? (
+              <div className="py-1">
+                <Switch
+                  label={i18n.t('admin.invite.clocksIn')}
+                  checked={clocking.clocks(memberMenuFor.memberId)}
+                  disabled={clocking.pending}
+                  onChange={(e) =>
+                    void clocking
+                      .set(memberMenuFor.memberId, e.target.checked)
+                      .catch(() => undefined)
+                  }
+                />
+              </div>
             ) : null}
             {isGlobalAdminPeople &&
             (canSetOverride(actor, memberMenuFor.member, null) ||
@@ -715,60 +675,6 @@ export function PeopleSection({
           </div>
         ) : null}
       </Sheet>
-      <InviteHubSheet
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        onPickManual={() => {
-          setInviteOpen(false);
-          setManualDraft({
-            tgUserId: '',
-            displayName: '',
-            roleSlug: '',
-            storeIds: storeCtx.kind === 'specific' ? [storeCtx.storeId] : [],
-          });
-        }}
-        onPickLink={(action) => {
-          setInviteOpen(false);
-          setLinkAction(action);
-          setLinkDraft({
-            tgUserId: '',
-            displayName: '',
-            roleSlug: '',
-            storeIds: storeCtx.kind === 'specific' ? [storeCtx.storeId] : [],
-          });
-        }}
-      />
-      <ManualInviteSheet
-        mode="tgid"
-        actor={actor}
-        draft={manualDraft}
-        setDraft={setManualDraft}
-        onSubmit={() => {
-          if (!manualDraft) return;
-          invite.mutate({
-            tgUserId: manualDraft.tgUserId.trim(),
-            displayName: manualDraft.displayName || undefined,
-            roleSlug: manualDraft.roleSlug || undefined,
-            storeIds: manualDraft.storeIds,
-          });
-        }}
-        pending={invite.isPending}
-      />
-      <ManualInviteSheet
-        mode="link"
-        actor={actor}
-        draft={linkDraft}
-        setDraft={setLinkDraft}
-        onSubmit={() => {
-          if (!linkDraft) return;
-          sendLinkInvite({
-            roleSlug: linkDraft.roleSlug || undefined,
-            storeIds: linkDraft.storeIds,
-          });
-        }}
-        pending={createInvite.isPending}
-      />
-      <InviteCopySheet text={uncopiedInvite} onClose={() => setUncopiedInvite(null)} />
     </div>
   );
 }

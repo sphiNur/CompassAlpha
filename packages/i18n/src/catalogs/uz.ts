@@ -76,17 +76,11 @@ export const uz = {
   'catalog.category.emptyBody': 'Buyurtma sahifasida mahsulotlarni guruhlaydi.',
   'catalog.sku.new': 'Yangi mahsulot',
   'catalog.sku.edit': 'Mahsulotni tahrirlash',
-  'catalog.sku.confirmArchive':
-    '«{name}» mahsuloti arxivlansinmi? U endi buyurtmada koʻrinmaydi; tarix saqlanadi.',
   'catalog.supplier.new': 'Yangi yetkazib beruvchi',
   'catalog.supplier.edit': 'Yetkazib beruvchini tahrirlash',
   'catalog.supplier.emptyTitle': 'Yetkazib beruvchilar yoʻq',
   'catalog.supplier.emptyBody': 'Bozorda kimdan xarid qilayotganingizni yozib boring.',
-  'catalog.supplier.confirmArchive':
-    '«{name}» yetkazib beruvchisi arxivlansinmi? Uni endi xaridlarda tanlab boʻlmaydi; tarix saqlanadi.',
-  'catalog.category.confirmArchive': '«{name}» kategoriyasi arxivlansinmi?',
   'catalog.category.meta': 'Qisqa kod {slug} · tartib {sort}',
-  'catalog.category.slugPlaceholder': 'masalan, dairy',
   'catalog.sku.stepMeta': 'buyurtma qadami {step}',
   'catalog.supplier.tgPlaceholder': 'foydalanuvchi nomi (@ belgisisiz)',
   'catalog.readOnlyHint': 'Katalogni faqat ish maydoni administratorlari oʻzgartira oladi.',
@@ -202,7 +196,6 @@ export const uz = {
   'people.slugRule': 'Kichik lotin harflari, raqamlar va chiziqcha, masalan night-shift.',
   'admin.errors.roleSlugInvalid':
     'Faqat kichik lotin harflari, raqamlar va chiziqcha (-), masalan night-shift.',
-  'people.slugRequired': 'Majburiy.',
   'people.rankInvalid': '{min} dan {max} gacha butun son kiriting.',
   'people.rankTierLocked':
     'Bu rol aʼzolarga biriktirilgan, shuning uchun darajasi {rank} chegarasidan oʻta olmaydi: {rank} va undan yuqori rol butun ish maydoniga, undan pasti alohida doʻkonlarga tegishli.',
@@ -683,8 +676,6 @@ export const uz = {
   'shell.skip.nav': 'Navigatsiyaga oʻtish',
   'approval.offline.needsConnection':
     'Tekshiruv uchun internet kerak: maʼqullash va rad etish telefonda saqlanmaydi.',
-  'workspace.switchConfirm':
-    '{name} ga oʻtilsinmi? Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
   'workspace.switchConfirmPending':
     '{name} ga oʻtilsinmi? Bu yerdagi {n} ta oʻzgarish hali yuborilmagan, ular shu ish maydoniga qaytganingizda yuboriladi. Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
   'storeSwitcher.switched': '{store} tanlandi',
@@ -924,7 +915,7 @@ export const uz = {
   'admin.invite.link.copyTitle': 'Taklif havolasi',
   'admin.invite.tgIdHint':
     'ID ni bilmaysizmi? Undan mini-ilovani ochishni soʻrang: ekranda uning Telegram ID si chiqadi, uni sizga yuborsin.',
-  'admin.invite.noRoleYet': '— hozircha rolsiz (keyinroq beriladi) —',
+  'admin.invite.clocksIn': 'Davomatda belgilanadi',
   'admin.invite.staffNeedStoreHint':
     'Xodimlar buyurtma berishlari uchun doʻkonga biriktirilishi kerak.',
   'admin.invite.onlyYourStoresHint':
@@ -1215,6 +1206,7 @@ export const uz = {
     '{who} buyurtmani ochdi, lekin hech narsa qilmadi. Uni oʻzingiz tekshirasizmi?',
   'approval.unknownReviewer': 'boshqa tekshiruvchi',
   'approval.undo': 'Ortga qaytarish',
+  'common.undo': 'Ortga qaytarish',
   'approval.unapprove': 'Maʼqullashni qaytarib olish',
   'approval.toast.approved': 'Maʼqullandi ✓',
   'approval.toast.rejected': 'Rad etildi',
@@ -1848,7 +1840,6 @@ export const uz = {
   'admin.field.assignedStores': 'Tayinlangan doʻkonlar',
   'admin.field.displayNameOverride': 'Koʻrinadigan ism (admin)',
   'admin.field.codePlaceholder': 'Ichki kod, ixtiyoriy',
-  'admin.field.roleSlugPlaceholder': 'masalan, shift-lead',
   'admin.field.memberNamePlaceholder': 'Koʻrinadigan ism',
   'admin.label.counting': 'Hisoblanmoqda…',
   'admin.field.sortIndex': 'Tartib',
@@ -1912,8 +1903,6 @@ export const uz = {
   'admin.field.defaultPaymentMethod': 'Standart toʻlov',
   'admin.sheet.newExpenseTemplate': 'Yangi xarajat shabloni',
   'admin.sheet.editExpenseTemplate': 'Shablonni tahrirlash',
-  'admin.confirm.archiveExpenseTemplate':
-    '«{label}» shablonini arxivlaysizmi? Xarid sahifasida yoki kun yakunida xarajat qoʻshishda u endi taklif qilinmaydi. Yozib boʻlingan xarajatlar oʻzgarmaydi.',
   'admin.toast.expenseTemplateCreated': 'Shablon qoʻshildi',
   'admin.toast.expenseTemplateUpdated': 'Shablon yangilandi',
   'admin.toast.expenseTemplateArchived': 'Shablon arxivga olindi',
@@ -1937,7 +1926,7 @@ export const uz = {
   'dishes.field.unitPrice': 'Bir porsiya narxi',
   'dishes.field.qtyPlaceholder': 'porsiyaga miqdor',
   'dishes.field.pickSku': 'Ingredient tanlang…',
-  'dishes.confirm.archive': '{name} arxivlansinmi?',
+  'dishes.toast.archived': 'Taom arxivlandi',
   'dishes.errors.cannotManage': 'Menyuni tahrirlash uchun administrator beradigan ruxsat kerak.',
   'dishes.readOnly':
     'Taom retseptini koʻrishingiz mumkin; menyuni tahrirlash uchun administrator beradigan ruxsat kerak.',
@@ -2521,6 +2510,9 @@ export const uz = {
   'nav.short.attendance': 'Davomat',
   'admin.section.attendance': 'Davomat',
   'admin.section.attendanceHint': 'Kim keldi, smenalar jadvali, belgilash qoidalari',
+  'admin.section.attendanceEnrollHint': 'Tasdiqlanadigan yuzlar: {n}',
+  'admin.section.invite': 'Taklif qilish',
+  'admin.section.inviteHint': '{store} doʻkoniga odam qoʻshish',
   'permission.attendance.clock': 'Oʻz doʻkonlarida kelish va ketishni belgilash',
   'permission.attendance.manage': 'Smenalarni tuzish, davomatni koʻrish va tuzatish',
   'permission.group.attendance': 'Davomat',
@@ -2565,6 +2557,10 @@ export const uz = {
   'attendance.view.settings': 'Sozlamalar',
   'attendance.admin.noStoreTitle': 'Boshqariladigan doʻkon yoʻq',
   'attendance.admin.noStoreBody': 'Davomat doʻkon boʻyicha yuritiladi; sizda hali doʻkon yoʻq.',
+  'attendance.admin.otherStoreTitle': 'Bu doʻkonda davomatni siz yuritmaysiz',
+  'attendance.admin.otherStoreBody': 'Siz boshqa doʻkonda davomatni yuritasiz. Unga oʻtish uchun yuqoridagi doʻkon nomini bosing.',
+  'attendance.admin.enrollBanner': 'Tasdiqlashingizni kutayotgan yuzlar: {n}. Ungacha bu odamlar davomatda belgilana olmaydi.',
+  'attendance.admin.enrollBannerAction': 'Koʻrish',
   'attendance.nav.prev': 'Oldingi',
   'attendance.nav.next': 'Keyingi',
   'attendance.nav.today': 'Bugun',

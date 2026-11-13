@@ -87,17 +87,11 @@ export const en = {
   'catalog.category.emptyBody': 'Used to group products on the order page.',
   'catalog.sku.new': 'New product',
   'catalog.sku.edit': 'Edit product',
-  'catalog.sku.confirmArchive':
-    'Archive product "{name}"? It no longer shows up for ordering; past records are kept.',
   'catalog.supplier.new': 'New supplier',
   'catalog.supplier.edit': 'Edit supplier',
   'catalog.supplier.emptyTitle': 'No suppliers',
   'catalog.supplier.emptyBody': 'Track who you buy from at the market.',
-  'catalog.supplier.confirmArchive':
-    'Archive supplier "{name}"? It can no longer be picked for purchases; past records are kept.',
-  'catalog.category.confirmArchive': 'Archive category "{name}"?',
   'catalog.category.meta': 'Short code {slug} · order {sort}',
-  'catalog.category.slugPlaceholder': 'e.g. dairy',
   'catalog.sku.stepMeta': 'order step {step}',
   'catalog.supplier.tgPlaceholder': 'username (without @)',
   'catalog.readOnlyHint': 'Only workspace admins can change the catalog.',
@@ -223,7 +217,6 @@ export const en = {
   'people.slugRule': 'Lowercase Latin letters, digits and hyphens, e.g. night-shift.',
   'admin.errors.roleSlugInvalid':
     'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
-  'people.slugRequired': 'Required.',
   'people.rankInvalid': 'Enter a whole number from {min} to {max}.',
   'people.rankTierLocked':
     "Members hold this role, so its level can't cross {rank}: at {rank} and above a role covers the whole workspace, below it single stores.",
@@ -730,7 +723,6 @@ export const en = {
   'shell.skip.nav': 'Skip to navigation',
   'approval.offline.needsConnection':
     'Review needs a connection: approvals and rejections are not kept on this phone.',
-  'workspace.switchConfirm': 'Switch to {name}? Anything not saved on this page will be lost.',
   'workspace.switchConfirmPending':
     'Switch to {name}? {n, plural, one {# change made here has} other {# changes made here have}} not been sent yet and will be sent when you come back to this workspace. Anything not saved on this page will be lost.',
   'storeSwitcher.switched': 'Now working in {store}',
@@ -975,7 +967,7 @@ export const en = {
   'admin.invite.link.copyTitle': 'Invite link',
   'admin.invite.tgIdHint':
     "Don't know their ID? Ask them to open the Mini App: it shows their Telegram ID on screen, and they can send it to you.",
-  'admin.invite.noRoleYet': '— no role yet (grant later) —',
+  'admin.invite.clocksIn': 'Clocks in (attendance)',
   'admin.invite.staffNeedStoreHint': 'Staff need an assigned store before they can place orders.',
   'admin.invite.onlyYourStoresHint': 'You can only invite into stores you administer.',
   'admin.invite.adminBypassHint':
@@ -1280,6 +1272,7 @@ export const en = {
   'approval.unknownReviewer': 'another reviewer',
   'approval.unapprove': 'Reverse approval',
   'approval.undo': 'Undo',
+  'common.undo': 'Undo',
   'approval.toast.approved': 'Approved ✓',
   'approval.toast.rejected': 'Rejected',
   'approval.toast.released': 'Put back — others can review it now',
@@ -1950,7 +1943,6 @@ export const en = {
   'admin.field.displayNameOverride': 'Display name (admin override)',
   // 2026-10-30: input placeholders that were hard-coded English (12-工程 F8).
   'admin.field.codePlaceholder': 'Optional internal code',
-  'admin.field.roleSlugPlaceholder': 'e.g. shift-lead',
   'admin.field.memberNamePlaceholder': 'Display name',
   'admin.label.counting': 'Counting…',
   'admin.field.sortIndex': 'Sort order',
@@ -2026,8 +2018,6 @@ export const en = {
   'admin.field.defaultPaymentMethod': 'Default payment',
   'admin.sheet.newExpenseTemplate': 'New expense template',
   'admin.sheet.editExpenseTemplate': 'Edit template',
-  'admin.confirm.archiveExpenseTemplate':
-    'Archive template "{label}"? It will no longer be offered as a shortcut when adding an expense on the purchase page or in the daily close. Expenses already recorded stay as they are.',
   'admin.toast.expenseTemplateCreated': 'Template added',
   'admin.toast.expenseTemplateUpdated': 'Template updated',
   'admin.toast.expenseTemplateArchived': 'Template archived',
@@ -2050,7 +2040,7 @@ export const en = {
   'dishes.field.unitPrice': 'Price per serving',
   'dishes.field.qtyPlaceholder': 'quantity per serving',
   'dishes.field.pickSku': 'Pick ingredient…',
-  'dishes.confirm.archive': 'Archive "{name}"?',
+  'dishes.toast.archived': 'Dish archived',
   'dishes.errors.cannotManage': 'Editing the menu needs a permission an admin can give you.',
   'dishes.readOnly':
     "You can view this dish's recipe; editing the menu needs a permission an admin can give you.",
@@ -2628,6 +2618,9 @@ export const en = {
   'nav.short.attendance': 'Clock',
   'admin.section.attendance': 'Attendance',
   'admin.section.attendanceHint': 'Who came, shift roster, clock-in rules',
+  'admin.section.attendanceEnrollHint': 'Faces to approve: {n}',
+  'admin.section.invite': 'Invite',
+  'admin.section.inviteHint': 'Add someone to {store}',
   'permission.attendance.clock': 'Clock in and out at their stores',
   'permission.attendance.manage': 'Plan shifts, review and correct attendance',
   'permission.group.attendance': 'Attendance',
@@ -2670,6 +2663,10 @@ export const en = {
   'attendance.view.settings': 'Settings',
   'attendance.admin.noStoreTitle': 'No store to manage',
   'attendance.admin.noStoreBody': 'Attendance is managed per store; you manage none yet.',
+  'attendance.admin.otherStoreTitle': 'Not managed at this store',
+  'attendance.admin.otherStoreBody': 'You manage attendance at another store. Tap the store name at the top to switch to it.',
+  'attendance.admin.enrollBanner': "Faces waiting for your approval: {n}. Until then these people can't clock in.",
+  'attendance.admin.enrollBannerAction': 'Check',
   'attendance.nav.prev': 'Previous',
   'attendance.nav.next': 'Next',
   'attendance.nav.today': 'Today',

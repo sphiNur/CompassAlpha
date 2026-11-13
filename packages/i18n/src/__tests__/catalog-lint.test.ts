@@ -61,15 +61,6 @@ describe('catalog lint', () => {
     expect(uzbekApostrophes(one({ uz: LANGUAGE_NATIVE_NAMES.uz }))).toEqual([]);
   });
 
-  test('CMP-CAT-3: archiving an expense template does not promise runs skip it', () => {
-    // Templates are shortcuts in the expense sheet; nothing is attached to
-    // a run automatically, so "future runs will skip it" was not true.
-    expect(en['admin.confirm.archiveExpenseTemplate']).not.toMatch(/future runs/i);
-    expect(zh['admin.confirm.archiveExpenseTemplate']).not.toContain('自动带入');
-    expect(ru['admin.confirm.archiveExpenseTemplate']).not.toContain('пропустят');
-    expect(uz['admin.confirm.archiveExpenseTemplate']).not.toContain('qoldirib ketadi');
-  });
-
   test('"remove" (take out of a list) and "delete" are different words', () => {
     // CMP-COPY-1: ru and uz used to write «Удалить» / «Oʻchirish» for both.
     for (const lang of LANGS) {

@@ -28,6 +28,7 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
+  useArchivedToast,
 } from './CatalogParts';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
@@ -108,10 +109,13 @@ export function ExpenseTemplatesSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
+  const archivedToast = useArchivedToast();
   const remove = trpc.admin.expenseTemplateDelete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       void utils.admin.expenseTemplateList.invalidate();
-      toast.info(i18n.t('admin.toast.expenseTemplateArchived'));
+      archivedToast(i18n.t('admin.toast.expenseTemplateArchived'), () =>
+        update.mutate({ templateId: vars.templateId, isArchived: false }),
+      );
     },
     onError: errToast('common.errors.actionFailed'),
   });
@@ -211,9 +215,6 @@ export function ExpenseTemplatesSection() {
                           opened: templateFields(text, tpl.sortIndex),
                         });
                       }}
-                      confirmArchive={i18n.t('admin.confirm.archiveExpenseTemplate', {
-                        label: tpl.label,
-                      })}
                       onArchive={() => remove.mutate({ templateId: tpl.id })}
                       onUnarchive={() => update.mutate({ templateId: tpl.id, isArchived: false })}
                       unarchiving={update.isPending && update.variables?.templateId === tpl.id}

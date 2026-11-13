@@ -1,10 +1,13 @@
 /**
  * Admin → Attendance (2026-11-05): the manager's sheet, roster and
- * settings for one store. The store is the one picked in the store
- * switcher; on "all stores" the first store this person manages.
+ * settings for one store. A2 (2026-11-13): the store is the top bar's;
+ * the page's own store select repeated it and did not follow it. On "all
+ * stores" the page asks for one (unless this person manages only one),
+ * and on a store they don't manage attendance for it says so.
  */
 import { useMemo, useState } from 'react';
-import { EmptyState, Segmented, Select } from '@compass/ui';
+import { Banner, Button, EmptyState, Segmented } from '@compass/ui';
+import { StoreContextEmpty } from '../../components/NoStoreYet';
 import { useStoreContext } from '../../hooks/useStoreContext';
 import { useI18n } from '../../hooks/useI18n';
 import { useAuthStore } from '../../stores/authStore';
@@ -29,44 +32,62 @@ export function AttendanceAdmin() {
       ),
     [session],
   );
-  const preferred =
-    storeCtx.kind === 'specific' && stores.some((st) => st.id === storeCtx.storeId)
-      ? storeCtx.storeId
-      : (stores[0]?.id ?? null);
-  const [picked, setPicked] = useState<string | null>(null);
-  const storeId = picked && stores.some((st) => st.id === picked) ? picked : preferred;
+  const storeId =
+    storeCtx.kind === 'specific'
+      ? stores.some((st) => st.id === storeCtx.storeId)
+        ? storeCtx.storeId
+        : null
+      : stores.length === 1
+        ? (stores[0]?.id ?? null)
+        : null;
   const [view, setView] = useState<View>('sheet');
   const queue = trpc.attendance.reviewQueue.useQuery(
     { storeId: storeId ?? '' },
     { enabled: !!storeId, refetchInterval: 60_000 },
   );
   const toReview = (queue.data?.punches.length ?? 0) + (queue.data?.enrollments.length ?? 0);
+  // A1 (2026-11-13): a face waiting for approval keeps that person from
+  // clocking in; say so on every view but To check, which lists them.
+  // Their own (not theirs to approve) is left out, as the Admin badge does.
+  const enrollWaiting = (queue.data?.enrollments ?? []).filter((e) => !e.own).length;
 
   if (!storeId) {
+    if (stores.length > 0 && storeCtx.kind === 'all') return <StoreContextEmpty />;
     return (
       <div className="px-4 py-6">
-        <EmptyState
-          title={i18n.t('attendance.admin.noStoreTitle')}
-          description={i18n.t('attendance.admin.noStoreBody')}
-        />
+        {stores.length > 0 ? (
+          <EmptyState
+            title={i18n.t('attendance.admin.otherStoreTitle')}
+            description={i18n.t('attendance.admin.otherStoreBody')}
+          />
+        ) : (
+          <EmptyState
+            title={i18n.t('attendance.admin.noStoreTitle')}
+            description={i18n.t('attendance.admin.noStoreBody')}
+          />
+        )}
       </div>
     );
   }
   return (
     <div className="flex flex-col pb-6">
       <div className="flex flex-col gap-3 px-4 pb-3">
-        {stores.length > 1 ? (
-          <Select
-            value={storeId}
-            onChange={(e) => setPicked(e.target.value)}
-            aria-label={i18n.t('admin.field.stores')}
+        {enrollWaiting > 0 && view !== 'review' ? (
+          <Banner
+            tone="warn"
+            action={
+              <Button
+                size="sm"
+                variant="pearl"
+                className="hit-44"
+                onClick={() => setView('review')}
+              >
+                {i18n.t('attendance.admin.enrollBannerAction')}
+              </Button>
+            }
           >
-            {stores.map((st) => (
-              <option key={st.id} value={st.id}>
-                {st.name}
-              </option>
-            ))}
-          </Select>
+            {i18n.t('attendance.admin.enrollBanner', { n: enrollWaiting })}
+          </Banner>
         ) : null}
         <Segmented<View>
           value={view}

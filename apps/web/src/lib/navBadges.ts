@@ -5,6 +5,10 @@
  * onto the tabs the person can see. A count of 0, or a count the server
  * withheld (null), draws nothing. 日结 is a dot: "not filed today" has no
  * number.
+ *
+ * A1 (2026-11-13): face enrollments waiting for a manager badge Admin,
+ * where Admin › Attendance › To check approves them (managers have no
+ * Attendance tab unless they clock in themselves).
  */
 import type { Tab } from '../stores/navStore';
 
@@ -15,6 +19,8 @@ export interface NavCounts {
   run: number | null;
   confirm: number | null;
   settlementDue: boolean | null;
+  /** Absent from an older server. */
+  faceEnrollPending?: number | null;
 }
 
 export function navBadges(
@@ -30,6 +36,7 @@ export function navBadges(
   put('approve', counts.approve);
   put('run', counts.run);
   put('confirm', counts.confirm);
+  put('admin', counts.faceEnrollPending ?? null);
   if (visible.has('settlement') && counts.settlementDue === true) out.settlement = 'dot';
   return out;
 }

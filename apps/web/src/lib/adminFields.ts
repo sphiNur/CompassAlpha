@@ -78,3 +78,74 @@ export function normaliseSlugInput(text: string): string {
 export function slugIsValid(slug: string): boolean {
   return SLUG_RE.test(slug);
 }
+
+/** Cyrillic letters (Russian and Uzbek) in Latin, for a code made from a name. */
+const CYRILLIC_LETTERS = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюяўқғҳ'; // i18n-exempt: transliteration table
+const LATIN_FOR_CYRILLIC =
+  'a b v g d e yo zh z i y k l m n o p r s t u f kh ts ch sh sch _ y _ e yu ya o q g h'.split(' ');
+const CYRILLIC_TO_LATIN: Record<string, string> = Object.fromEntries(
+  [...CYRILLIC_LETTERS].map((ch, i) => [ch, LATIN_FOR_CYRILLIC[i]!.replace('_', '')]),
+);
+
+/** Longest code made from a name; a hand-typed one may be longer. */
+const CODE_FROM_NAME_MAX = 32;
+
+/**
+ * D2 (2026-11-13): the short code of a category or a role, made from its
+ * name when the field is left empty. The first name that has Latin or
+ * Cyrillic letters gives it ("Night shift" → "night-shift", "Молочные
+ * продукты" → "molochnye-produkty"); a name with neither (Chinese) gives
+ * `fallback`. A code already in `taken` gets a number: "dairy-2".
+ * The field stays editable for those who want their own.
+ */
+export function codeFromName(
+  names: ReadonlyArray<string | null | undefined>,
+  taken: ReadonlySet<string>,
+  fallback: string,
+): string {
+  let base = '';
+  for (const name of names) {
+    if (!name) continue;
+    const latin = [...name.normalize('NFKD').toLowerCase()]
+      .map((ch) => CYRILLIC_TO_LATIN[ch] ?? ch)
+      .join('')
+      .replace(/[̀-ͯʻʼ'’`]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .slice(0, CODE_FROM_NAME_MAX)
+      .replace(/^-+|-+$/g, '');
+    if (/[a-z]/.test(latin)) {
+      base = latin;
+      break;
+    }
+  }
+  if (!base) base = fallback;
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const code = `${base}-${n}`;
+    if (!taken.has(code)) return code;
+  }
+}
+
+/**
+ * D5 (2026-11-13): the role an invite starts with. An invite without a
+ * role left the person on "You can't use Compass yet", so the form always
+ * has one: staff when it may be given, else the lowest store role on
+ * offer, else the lowest role. On the organisation-level list the lowest
+ * organisation role comes first. `roles` are those the inviter may give.
+ */
+export function defaultInviteRole(
+  roles: ReadonlyArray<{ slug: string; rank: number }>,
+  preferOrgTier: boolean,
+  adminRank: number,
+): string {
+  const lowest = (list: ReadonlyArray<{ slug: string; rank: number }>) =>
+    list.reduce<{ slug: string; rank: number } | null>(
+      (best, r) => (best === null || r.rank < best.rank ? r : best),
+      null,
+    )?.slug ?? null;
+  const orgTier = roles.filter((r) => r.rank >= adminRank);
+  const storeTier = roles.filter((r) => r.rank < adminRank);
+  if (preferOrgTier && orgTier.length > 0) return lowest(orgTier)!;
+  if (storeTier.some((r) => r.slug === 'staff')) return 'staff';
+  return lowest(storeTier) ?? lowest(roles) ?? '';
+}

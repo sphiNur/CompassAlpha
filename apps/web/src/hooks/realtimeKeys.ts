@@ -57,8 +57,15 @@ export const CATALOG_CHANGED_KEYS: QueryKey[] = [
  */
 export const PEOPLE_CHANGED_KEYS: QueryKey[] = [['admin']];
 
-/** S4 (2026-11-13): the close's wage picker carries each daily wage. */
-export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [['attendance'], ['settlement', 'wageRoster']];
+/**
+ * A1 (2026-11-13): the Admin badge counts face enrollments to approve.
+ * S4 (2026-11-13): the close's wage picker carries each daily wage.
+ */
+export const ATTENDANCE_CHANGED_KEYS: QueryKey[] = [
+  ['attendance'],
+  ['settlement', 'wageRoster'],
+  ...NAV_KEYS,
+];
 
 /**
  * Review CONF-26: a daily close saved elsewhere. Not `settlement.get`: a

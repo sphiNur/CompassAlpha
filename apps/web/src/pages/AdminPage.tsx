@@ -50,6 +50,7 @@ import {
   Select,
   cn,
   rowGroupClass,
+  IconShare,
 } from '@compass/ui';
 import { TAX_RATE_MESSAGE, taxRateProblem, taxRateToSend } from '@compass/contracts/limits';
 import { trpc } from '../lib/trpc';
@@ -63,7 +64,8 @@ import { useNavStore } from '../stores/navStore';
 import { isInTelegram } from '../lib/telegram';
 import { useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
-import { useIsOrgAdmin } from '../hooks/useAdminAuthority';
+import { useAdminStoreIds, useIsOrgAdmin } from '../hooks/useAdminAuthority';
+import { useStoreContext } from '../hooks/useStoreContext';
 import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
@@ -96,6 +98,7 @@ import { StockCountShortcut } from './admin/stores/inventory/StockCountShortcut'
 import { PermissionsSection } from './admin/people';
 import { PlatformSection } from './admin/platform/PlatformSections';
 import { AttendanceAdmin } from './attendance/AttendanceAdmin';
+import { InviteFlow } from './admin/people/invite/InviteFlow';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -164,6 +167,20 @@ export function AdminPage() {
   const seesCatalog = isOrgAdmin || (session?.permissions.includes('dishes.manage') ?? false);
   // 2026-11-05: attendance sheet, roster and rules for the stores they manage.
   const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
+  // D6 (2026-11-13): a manager of one store invites from here; the way
+  // was Stores › store › Team › Invite.
+  const adminStoreIds = useAdminStoreIds();
+  const inviteStoreId = isAdmin && adminStoreIds.size === 1 ? [...adminStoreIds][0]! : null;
+  const inviteStoreName = session?.stores.find((st) => st.id === inviteStoreId)?.name ?? null;
+  const [inviteOpen, setInviteOpen] = useState(false);
+  // A1 (2026-11-13): the Admin badge's face enrollments, named on the
+  // Attendance row. The bottom nav's query (same input, same cache).
+  const navStoreCtx = useStoreContext();
+  const navCounts = trpc.nav.counts.useQuery(
+    navStoreCtx.kind === 'specific' ? { storeId: navStoreCtx.storeId } : {},
+    { enabled: seesAttendance && navStoreCtx.kind !== 'none', retry: false },
+  );
+  const enrollWaiting = navCounts.data?.faceEnrollPending ?? 0;
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   // CAT-8 / HIS-10 (2026-10-30): the build flag hid only the menu row; a
   // restored navigation state opened the page itself.
@@ -353,6 +370,14 @@ export function AdminPage() {
             />
             {/* D1 (2026-11-13): one tap to the count mode in a manager's one store. */}
             <StockCountShortcut />
+            {inviteStoreId && inviteStoreName ? (
+              <SectionRow
+                icon={<IconShare size={20} />}
+                label={i18n.t('admin.section.invite')}
+                hint={i18n.t('admin.section.inviteHint', { store: inviteStoreName })}
+                onClick={() => setInviteOpen(true)}
+              />
+            ) : null}
             {/* M1.11: Permissions had IconWorkspace, same as Organization above
             — visually ambiguous in the section list. Switched to a new
             shield icon (added to @compass/ui) which reads as "access /
@@ -377,7 +402,11 @@ export function AdminPage() {
               <SectionRow
                 icon={<IconAttendance size={20} />}
                 label={i18n.t('admin.section.attendance')}
-                hint={i18n.t('admin.section.attendanceHint')}
+                hint={
+                  enrollWaiting > 0
+                    ? i18n.t('admin.section.attendanceEnrollHint', { n: enrollWaiting })
+                    : i18n.t('admin.section.attendanceHint')
+                }
                 onClick={() => setSection('attendance')}
               />
             ) : null}
@@ -398,6 +427,13 @@ export function AdminPage() {
           />
         ) : null}
       </ul>
+      {inviteStoreId ? (
+        <InviteFlow
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          storeIds={[inviteStoreId]}
+        />
+      ) : null}
     </div>
   );
 }

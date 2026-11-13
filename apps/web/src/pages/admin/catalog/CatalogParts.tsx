@@ -9,11 +9,20 @@
  * is enough" line.
  */
 import { Fragment, useState, type ReactNode } from 'react';
-import { Badge, Button, CardHeader, CardMeta, CardTitle, Field, Input, Switch } from '@compass/ui';
+import {
+  Badge,
+  Button,
+  CardHeader,
+  CardMeta,
+  CardTitle,
+  Field,
+  Input,
+  Switch,
+  useToast,
+} from '@compass/ui';
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { useI18n } from '../../../hooks/useI18n';
-import { confirmThen } from '../../../lib/confirm';
 import { CATALOG_LOCALES, type CatalogNames } from './catalogNames';
 import { readSortIndex } from './sortIndex';
 
@@ -148,19 +157,35 @@ function OtherLangNames({
   );
 }
 
-/** A row's Edit button, and Archive (asks first) or Unarchive. */
+/**
+ * How long the "archived" toast keeps its Undo button up. D3 (2026-11-13):
+ * archiving no longer asks first; the toast's Undo (and the row's
+ * Unarchive) take it back.
+ */
+export const ARCHIVE_UNDO_MS = 6000;
+
+/** Shows "<thing> archived" with an Undo button that runs `undo`. */
+export function useArchivedToast() {
+  const toast = useToast();
+  const i18n = useI18n();
+  return (message: string, undo: () => void) =>
+    toast.show(message, {
+      tone: 'info',
+      ttlMs: ARCHIVE_UNDO_MS,
+      actions: [{ label: i18n.t('common.undo'), onClick: undo }],
+    });
+}
+
+/** A row's Edit button, and Archive or Unarchive. */
 export function CatalogRowActions({
   archived,
   onEdit,
-  confirmArchive,
   onArchive,
   onUnarchive,
   unarchiving,
 }: {
   archived: boolean;
   onEdit: () => void;
-  /** The question asked before archiving, naming the item. */
-  confirmArchive: string;
   onArchive: () => void;
   onUnarchive: () => void;
   /** This row's Unarchive is on its way. */
@@ -179,11 +204,7 @@ export function CatalogRowActions({
           {i18n.t('common.unarchive')}
         </Button>
       ) : (
-        <Button
-          size="sm"
-          variant="danger-ghost"
-          onClick={() => confirmThen(confirmArchive, onArchive)}
-        >
+        <Button size="sm" variant="danger-ghost" onClick={onArchive}>
           {i18n.t('common.archive')}
         </Button>
       )}
