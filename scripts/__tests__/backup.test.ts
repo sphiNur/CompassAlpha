@@ -10,6 +10,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -32,6 +33,21 @@ afterEach(() => {
 function stub(bin: string, name: string, body: string) {
   writeFileSync(join(bin, name), `#!/bin/bash\n${body}\n`);
   chmodSync(join(bin, name), 0o755);
+}
+
+/**
+ * PATH for a script run: the stubs in `bin`, then this process's PATH
+ * without any directory that holds a real `aws`, which the "no aws CLI"
+ * case needs gone (review TEST4-19, 2026-11; it was `/usr/bin:/bin`,
+ * which assumed where this machine keeps its tools). The database tools
+ * each script calls are stubbed in `bin` for every run, ahead of any real
+ * one.
+ */
+function scriptPath(bin: string): string {
+  const system = (process.env.PATH ?? '')
+    .split(':')
+    .filter((dir) => dir && !existsSync(join(dir, 'aws')));
+  return [bin, ...system].join(':');
 }
 
 function setup(opts: {
@@ -65,7 +81,7 @@ function setup(opts: {
   const r = spawnSync('bash', [SCRIPT], {
     encoding: 'utf8',
     env: {
-      PATH: `${bin}:/usr/bin:/bin`,
+      PATH: scriptPath(bin),
       ENV_FILE: join(home, '.env'),
       BACKUP_DIR: join(home, 'backups'),
     },
@@ -205,7 +221,7 @@ function restore(opts: {
     encoding: 'utf8',
     input: opts.input ?? 'yes\n',
     env: {
-      PATH: `${bin}:/usr/bin:/bin`,
+      PATH: scriptPath(bin),
       ENV_FILE: join(home, '.env'),
       ...(opts.url === undefined ? {} : { RESTORE_DATABASE_URL: opts.url }),
       ...(opts.owner === undefined ? {} : { RESTORE_OWNER: opts.owner }),

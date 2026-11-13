@@ -68,6 +68,16 @@ afterEach(() => {
 function bash(script: string) {
   return spawnSync('bash', ['-c', script], { encoding: 'utf8' });
 }
+/**
+ * Whether `tool` is on PATH (review TEST4-19, 2026-11). The tests that run
+ * it skip without it, and this says so, instead of a minimal image either
+ * failing them or dropping them unseen.
+ */
+function installed(tool: string, skipped: string): boolean {
+  if (bash(`command -v ${tool}`).status === 0) return true;
+  console.warn(`${tool} is not installed: skipping ${skipped}`);
+  return false;
+}
 function put(base: string, rel: string, body: string) {
   mkdirSync(dirname(join(base, rel)), { recursive: true });
   writeFileSync(join(base, rel), body);
@@ -569,6 +579,9 @@ describe('the server toolchain (OPS-21)', () => {
 });
 
 describe('host key verification', () => {
+  const hasSsh = installed('ssh', "the check of the deploy's ssh options");
+  const hasKeygen = installed('ssh-keygen', 'the lookups in the pinned known_hosts');
+
   test('ssh options require a pinned key and never add one', () => {
     const o = sshOptions('/k/key.pem', '/repo/infra/deploy/known_hosts');
     expect(o).toContain('StrictHostKeyChecking=yes');
@@ -576,7 +589,7 @@ describe('host key verification', () => {
     expect(o).not.toContain('StrictHostKeyChecking=no');
   });
 
-  test('ssh resolves those options as written (ssh -G, no connection)', () => {
+  test.skipIf(!hasSsh)('ssh resolves those options as written (ssh -G, no connection)', () => {
     const kh = knownHostsFile(ROOT, {});
     // TEST-NET-3: ssh -G resolves options without connecting anywhere.
     const g = bash(`ssh -G ${sshOptions('/dev/null', kh)} ubuntu@203.0.113.10`);
@@ -604,18 +617,26 @@ describe('host key verification', () => {
       'ssh-rsa',
     ]);
     for (const line of lines) expect(line).toMatch(/^\|1\|[A-Za-z0-9+/=]+\|[A-Za-z0-9+/=]+ /);
-    expect(bash(`ssh-keygen -F compass-pro.com -f "${kh}"`).status).not.toBe(0);
-    // With the address at hand (the deploy's own env), all three are its.
-    const target = process.env.COMPASS_DEPLOY_HOST;
-    if (target) {
-      const found = bash(`ssh-keygen -F ${hostName(target)} -f "${kh}"`);
-      expect(found.stdout.split('\n').filter((l) => l.startsWith('|1|'))).toHaveLength(3);
-    }
+  });
+
+  test.skipIf(!hasKeygen)('a host that is not the server finds no key in the file', () => {
+    const kh = knownHostsFile(ROOT, {});
+    // TEST-NET-3 again: a lookup in the hashed file tells hosts apart.
+    expect(bash(`ssh-keygen -F 203.0.113.10 -f "${kh}"`).status).not.toBe(0);
+  });
+
+  // The server's address is in the deploy's own env, never in the repo.
+  const target = process.env.COMPASS_DEPLOY_HOST;
+  test.skipIf(!hasKeygen || !target)('with COMPASS_DEPLOY_HOST set, all three keys are its', () => {
+    const kh = knownHostsFile(ROOT, {});
+    const found = bash(`ssh-keygen -F ${hostName(target!)} -f "${kh}"`);
+    expect(found.stdout.split('\n').filter((l) => l.startsWith('|1|'))).toHaveLength(3);
   });
 });
 
 describe('a step on the server (OPS-07)', () => {
-  const hasTools = bash('command -v timeout && command -v flock').status === 0;
+  const runs = 'the runs of a step on the server';
+  const hasTools = installed('timeout', runs) && installed('flock', runs);
   /** A lock file in a scratch directory, for one test. */
   function scratchLock() {
     const dir = mkdtempSync(join(tmpdir(), 'remote-step-'));
@@ -688,17 +709,36 @@ describe('a step on the server (OPS-07)', () => {
 });
 
 describe('incremental upload', () => {
-  test('no earlier tarball: an empty stage, and rsync sends everything', () => {
+  /**
+   * The seed script on a scratch stage with no earlier tarball, run with
+   * an rsync on PATH or none. It only looks for rsync, so a stand-in will
+   * do: these run whether or not this machine has rsync (review TEST4-19).
+   */
+  function seed(withRsync: boolean) {
     const base = mkdtempSync(join(tmpdir(), 'ship-'));
     dirs.push(base);
-    const stage = join(base, 'src');
-    const r = bash(stageSeedScript(stage, join(base, 'missing.tar.gz')));
-    if (spawnSync('rsync', ['--version']).status !== 0) {
-      expect(r.status).not.toBe(0);
-      return;
+    const bin = join(base, 'bin');
+    mkdirSync(bin);
+    if (withRsync) {
+      put(bin, 'rsync', '#!/bin/sh\n');
+      chmodSync(join(bin, 'rsync'), 0o755);
     }
+    const path = withRsync ? `${bin}:${process.env.PATH}` : bin;
+    const stage = join(base, 'src');
+    const r = bash(`PATH="${path}"\n${stageSeedScript(stage, join(base, 'missing.tar.gz'))}`);
+    return { r, stage };
+  }
+
+  test('no earlier tarball: an empty stage, and rsync sends everything', () => {
+    const { r, stage } = seed(true);
     expect([r.status, r.stdout.trim()]).toEqual([0, 'empty']);
     expect(existsSync(join(stage, 'CompassAlpha'))).toBe(true);
+  });
+
+  test('no rsync on the server: the seed script fails', () => {
+    const { r, stage } = seed(false);
+    expect(r.status).not.toBe(0);
+    expect(existsSync(stage)).toBe(false);
   });
 });
 
