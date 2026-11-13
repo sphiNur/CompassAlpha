@@ -1499,12 +1499,16 @@ export const ru = {
   'run.action.recallDelivery': 'Отозвать доставку',
   'run.action.undoStartPurchase': 'Назад к плану',
   'run.action.undoStartDelivery': 'Назад к закупке',
-  'run.action.confirmDeliver': 'Отметить доставку',
   'run.action.savePurchase': 'Сохранить',
   'run.action.recordPurchase': 'Записать покупку',
   'run.action.markUnavailable': 'Отметить как «нет»',
   'run.action.markUnavailableDesc': 'Объясните команде, почему не удалось купить.',
   'run.action.unavailableReasonPlaceholder': 'Причина',
+  'run.unavailable.presets': 'Частые причины',
+  'run.unavailable.preset.soldOut': 'Нет в продаже',
+  'run.unavailable.preset.tooExpensive': 'Слишком дорого',
+  'run.unavailable.preset.poorQuality': 'Плохое качество',
+  'run.unavailable.preset.stallClosed': 'Поставщик не работает',
   'run.action.actualQty': 'Фактическое кол-во ({unit})',
   'run.action.actualQtyPlain': 'Фактическое кол-во',
   'run.action.unitPriceUzs': 'Цена за единицу ({currency})',
@@ -1519,6 +1523,7 @@ export const ru = {
   'run.action.addItem.crossStoreHint':
     'Этот товар уже есть в закупке для: {stores}. Если цена для магазина отличается, выберите «Отдельная цена»; объединяйте только для той же партии и цены.',
   'run.action.addItem.defaultCrossStoreReason': 'Дополнительный спрос магазина',
+  'run.action.addItem.defaultReason': 'Добавлено во время закупки',
   'run.action.addItem.pickStore': '— Выберите магазин —',
   'run.action.addItem.totalHint': 'Итого по позиции',
   'run.action.addItem.reasonLabel': 'Почему добавляете?',
@@ -1587,15 +1592,9 @@ export const ru = {
   'run.action.actualQtyAriaLabel': 'фактическое количество',
   'run.action.unitPriceAriaLabel': 'цена за единицу',
   'run.action.savePurchaseAriaLabel': 'Сохранить покупку: {name}',
-  'run.confirm.startPurchase.title': 'Начать закупку?',
-  'run.confirm.startPurchase.body':
-    'Помечает закупку как идущую. Позже можно вернуться к плану (с указанием причины); записанные покупки сохранятся.',
   'run.confirm.startDelivery.title': 'Начать доставку?',
   'run.confirm.startDelivery.body':
     'Все позиции готовы к отгрузке. Пока ни в один магазин не доставлено — можно вернуться к закупке.',
-  'run.confirm.deliver.title': 'Отметить, что доставлено в магазин «{store}»?',
-  'run.confirm.deliver.body':
-    'Можно отозвать доставку, пока магазин не подтвердил приёмку. После подтверждения изменить уже нельзя.',
   'run.confirm.finish.title': 'Завершить закупку?',
   'run.confirm.finish.body':
     'Цены, количества и доставки будут зафиксированы. Исправить потом сможет только суперадмин, открыв закупку заново.',
@@ -1622,15 +1621,6 @@ export const ru = {
     'Возвращает позицию в статус «ожидает». Исходная запись остаётся в журнале. Можно, только если ни в один магазин ещё не доставлено.',
   'run.confirm.undoPurchase.bodyAdded':
     'Позиция добавлена во время закупки; отмена убирает её из закупки. Исходная запись остаётся в журнале. Можно, только если ни в один магазин ещё не доставлено.',
-  'run.confirm.unmarkUnavailable.title': 'Снова сделать доступной?',
-  'run.confirm.unmarkUnavailable.body':
-    'Возвращает позицию в статус «ожидает», чтобы записать покупку. Исходная заметка «нет» остаётся в журнале.',
-  'run.confirm.undoStartPurchase.title': 'Вернуться к плану?',
-  'run.confirm.undoStartPurchase.body':
-    'Возвращает закупку к этапу планирования. Уже записанные покупки сохраняются — они снова отметятся как ✓ при возобновлении.',
-  'run.confirm.undoStartDelivery.title': 'Вернуться к закупке?',
-  'run.confirm.undoStartDelivery.body':
-    'Возвращает закупку к этапу закупки. Возможно, только пока ни в один магазин не доставлено.',
   'run.label.reasonForChange': 'Причина изменения',
   'run.label.itemsTotal': 'Итого по товарам',
   'run.label.reasonPlaceholder': 'например, ошибка при чтении чека',
@@ -1774,9 +1764,6 @@ export const ru = {
   'run.errors.deliveryAlreadyProgressed':
     'Вернуть на предыдущий этап нельзя — магазин уже принял доставку.',
   'run.errors.reviseReasonRequired': 'Опишите, что изменилось.',
-  'run.errors.unmarkReasonRequired': 'Опишите, почему теперь доступно.',
-  'run.errors.recallReasonRequired': 'Опишите причину отзыва.',
-  'run.errors.undoReasonRequired': 'Укажите, почему возвращаете на предыдущий этап.',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Для этого магазина нет позиций',

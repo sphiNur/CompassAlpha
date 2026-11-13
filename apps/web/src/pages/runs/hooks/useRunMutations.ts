@@ -38,8 +38,6 @@ export interface RunMutationEffects {
   paymentSettled: (sent: { skuId: string }) => void;
   /** An item was marked unavailable, or that was queued: close its sheet. */
   unavailableSaved: () => void;
-  /** A delivery was queued offline: close its confirmation. */
-  deliveryQueued: () => void;
 }
 
 export function useRunMutations(on: RunMutationEffects) {
@@ -356,8 +354,9 @@ export function useRunMutations(on: RunMutationEffects) {
         input: vars,
         idempotencyKey: ctx?.idempotencyKey,
         failedKey: 'common.errors.actionFailed',
+        // RE-DLV-1: the store row shows the queued delivery, so a
+        // second tap cannot queue it again.
         queuedKey: 'run.toast.purchaseSavedOffline',
-        onQueued: on.deliveryQueued,
       }),
   });
   const undeliverStore = trpc.run.undeliverStore.useMutation({

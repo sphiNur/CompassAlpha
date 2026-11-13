@@ -256,8 +256,8 @@ test('buy everything, one item in cash and one by transfer', async () => {
 
 test('deliver to the store', async () => {
   await expect(mainButton()).toHaveText('Start delivery');
+  // 2026-11-13: no confirm (Back to purchase undoes it).
   await mainButton().click();
-  await sheet().getByRole('button', { name: 'Start delivery' }).click();
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
   await evidence('run-delivering');
   // The rows that open the price editor and the store rows (R2-DLV-4).
@@ -269,8 +269,8 @@ test('deliver to the store', async () => {
     'deliver button': main().getByRole('button', { name: 'Mark delivered to Central Kitchen' }),
   });
 
+  // 2026-11-13: no confirm (Recall undoes it).
   await main().getByRole('button', { name: 'Mark delivered to Central Kitchen' }).click();
-  await sheet().getByRole('button', { name: 'Mark delivered' }).click();
   await expect(
     main().getByRole('button', { name: /Central Kitchen.*Awaiting confirm/ }),
   ).toBeVisible();

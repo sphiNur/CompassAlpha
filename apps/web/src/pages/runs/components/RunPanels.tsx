@@ -102,6 +102,7 @@ import {
 } from '../lib/previewFilter';
 import { groupStoreBySupplier, tallyPreviewLine } from '../lib/previewGrouping';
 import { buildStorePickList } from '../lib/storePickList';
+import { lastPaymentMethod } from '../lib/lastPayment';
 import { normalizeQuery } from '../../../lib/searchMatch';
 import { useAnnounce } from '../../../hooks/useAnnounce';
 import {
@@ -261,8 +262,10 @@ const ActiveRunPanelBody = memo(function ActiveRunPanelBody({
       unmark: onUnmark,
       openAdvanced: onOpenAdvancedPurchase,
       setPaymentMethod: onSetPaymentMethod,
+      quickPaymentMethod: () => lastPaymentMethod(run.id),
     }),
     [
+      run.id,
       onTogglePriceUnit,
       onSavePurchaseInline,
       onMarkNa,

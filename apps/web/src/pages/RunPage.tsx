@@ -26,7 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cacheOwner } from '../lib/queryPersist';
 import { hintStorage, saveRunHint } from '../lib/runHint';
 import {
@@ -93,10 +93,25 @@ import { orgToday } from '../lib/calendarDate';
 import { newClientId } from '../lib/clientId';
 import { useRunMutations } from './runs/hooks/useRunMutations';
 import { finishSummaryOf } from './runs/lib/finishSummary';
-import { confirmCommandFor, confirmCopyFor, type ConfirmKind } from './runs/lib/confirmCopy';
+import { rememberPaymentMethod } from './runs/lib/lastPayment';
+import {
+  confirmCommandFor,
+  confirmCopyFor,
+  directCommandFor,
+  startDeliveryAsks,
+  type ConfirmKind,
+  type DirectStep,
+} from './runs/lib/confirmCopy';
 import { RunConfirmSummary } from './runs/sheets/RunConfirmSummary';
 import { newAddItemDraft, planAddItemSubmit } from './runs/lib/addItem';
 
+/** R4 (2026-11-13): the mark-unavailable sheet's common reasons. */
+const UNAVAILABLE_PRESETS = [
+  'run.unavailable.preset.soldOut',
+  'run.unavailable.preset.tooExpensive',
+  'run.unavailable.preset.poorQuality',
+  'run.unavailable.preset.stallClosed',
+] as const;
 
 export function RunPage() {
   const i18n = useI18n();
@@ -213,9 +228,6 @@ export function RunPage() {
       setUnavailableFor(null);
       setUnavailableNote('');
     },
-    // RE-DLV-1: close the sheet; the store row shows the queued
-    // delivery, so a second tap cannot queue it again.
-    deliveryQueued: () => setConfirmAction(null),
   });
   const {
     create,
@@ -236,6 +248,23 @@ export function RunPage() {
   // mutation results, which are new objects on every render (so the
   // memos ran every time). useMutation's `mutate` keeps its identity.
   const { mutate: createRun, isPending: creatingRun } = create;
+  const startingPurchase = mutations.startPurchase.isPending;
+  const startingDelivery = mutations.startDelivery.isPending;
+  /**
+   * Simplification (2026-11-13): a step another tap undoes is sent with
+   * no sheet (confirmCopy.ts DirectStep). A second tap while the same
+   * step is on its way is dropped; the sheet's pending lock used to hold
+   * it. Through a ref, so the memos below keep one function.
+   */
+  const sendStepRef = useRef<(step: DirectStep) => void>(() => undefined);
+  sendStepRef.current = (step) => {
+    if (!activeRun) return;
+    const c = directCommandFor(step, activeRun.id);
+    const m = mutations[c.procedure];
+    if (m.isPending && JSON.stringify(m.variables) === JSON.stringify(c.input)) return;
+    sendConfirm(c, () => undefined);
+  };
+  const sendStep = useCallback((step: DirectStep) => sendStepRef.current(step), []);
   const purchase = purchaseItem.mutate;
   const revise = revisePurchase.mutate;
 
@@ -597,6 +626,8 @@ export function RunPage() {
           if (d.isEdit) {
             revise({ ...sent, reason: d.reason });
           } else {
+            // R10: the one-tap ✓ records the method last chosen in the run.
+            rememberPaymentMethod(d.runId, d.paymentMethod);
             purchase(sent);
           }
         },
@@ -719,9 +750,10 @@ export function RunPage() {
       case 'planned':
         return {
           text: i18n.t('run.action.startPurchase'),
-          onClick: () => setConfirmAction('startPurchase'),
+          // 2026-11-13: no confirm, as the first start; Back to plan undoes it.
+          onClick: () => sendStep('startPurchase'),
           visible: true,
-          active: true,
+          active: !startingPurchase,
         };
       case 'purchasing':
         // 2026-05-04 hid this button entirely until every item was
@@ -787,9 +819,14 @@ export function RunPage() {
         }
         return {
           text: i18n.t('run.action.startDelivery'),
-          onClick: () => setConfirmAction('startDelivery'),
+          // 2026-11-13: sent at once (Back to purchase undoes it); the
+          // sheet opens only to warn about other items not handled.
+          onClick: () =>
+            startDeliveryAsks({ sessionExtrasByStore: runDetailQuery.data?.sessionExtrasByStore })
+              ? setConfirmAction('startDelivery')
+              : sendStep('startDelivery'),
           visible: true,
-          active: true,
+          active: !startingDelivery,
         };
       case 'delivering': {
         // U7 (2026-10-31): the bar used to vanish until every store had
@@ -870,6 +907,7 @@ export function RunPage() {
     runDetailQuery.data?.otherStoreSkuIds,
     runDetailQuery.data?.splits,
     runDetailQuery.data?.finishBlockedReason,
+    runDetailQuery.data?.sessionExtrasByStore,
     storeById,
     i18n,
     previewSessionCount,
@@ -878,6 +916,9 @@ export function RunPage() {
     previewToday,
     createRun,
     creatingRun,
+    sendStep,
+    startingPurchase,
+    startingDelivery,
   ]);
 
   // ---- Confirm-sheet wiring --------------------------------------------
@@ -945,7 +986,8 @@ export function RunPage() {
               ? [
                   {
                     label: i18n.t('run.action.undoStartPurchase'),
-                    onClick: () => setConfirmAction('undoStartPurchase'),
+                    // 2026-11-13: no confirm or reason; Start purchase undoes it.
+                    onClick: () => sendStep('undoStartPurchase'),
                   },
                 ]
               : []),
@@ -953,7 +995,8 @@ export function RunPage() {
               ? [
                   {
                     label: i18n.t('run.action.undoStartDelivery'),
-                    onClick: () => setConfirmAction('undoStartDelivery'),
+                    // 2026-11-13: no confirm or reason; Start delivery undoes it.
+                    onClick: () => sendStep('undoStartDelivery'),
                   },
                 ]
               : []),
@@ -1057,7 +1100,14 @@ export function RunPage() {
             <Button
               size="sm"
               className="shrink-0"
-              onClick={() => setAddItemDraft(newAddItemDraft(activeRun.id))}
+              onClick={() =>
+                setAddItemDraft(
+                  // R8 (2026-11-13): a reason the server takes, ready to save.
+                  newAddItemDraft(activeRun.id, {
+                    reason: i18n.t('run.action.addItem.defaultReason'),
+                  }),
+                )
+              }
               title={i18n.t('run.action.addItem.title')}
             >
               {i18n.t('run.action.addItem.button')}
@@ -1390,8 +1440,11 @@ export function RunPage() {
               // matches planned. Splits come from per-store demand.
               // M1.14: paymentMethod comes from the in-row toggle
               // (defaults to 'cash'; user can flip to 'transfer' before
-              // saving for the relatively rare transfer items).
+              // saving for the relatively rare transfer items), or for
+              // the one-tap ✓ the method last chosen in the run (R10).
               withPriceCheck(skuId, [unitPrice], (confirmed) => {
+              // R10 (2026-11-13): the next one-tap ✓ records this method.
+              rememberPaymentMethod(activeRun.id, paymentMethod);
               setInlineSavingSkuId(skuId);
               purchaseItem.mutate({
                 runId: activeRun.id,
@@ -1436,26 +1489,20 @@ export function RunPage() {
                 return;
               }
               setPaymentBusySkuId(item.skuId);
+              rememberPaymentMethod(activeRun.id, next);
               flipPayment.mutate(revision);
             }}
             onUnmark={
               activeRun.status === 'delivering'
                 ? undefined
-                : (skuId, skuName) =>
-                    setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
+                : // 2026-11-13: at once, no reason; N/A undoes it.
+                  (skuId) => sendStep({ kind: 'unmarkUnavailable', skuId })
             }
             onTopUpBuy={(item) => {
               // An unavailable item comes back as pending (with the whole
               // demand) through the existing restore flow.
               if (item.status === 'unavailable') {
-                // NEW-03: the main name, as the row's own entry to this
-                // confirmation gives it (not "Main (Secondary)").
-                const skuName = rowName(
-                  productNameParts,
-                  skuById.get(item.skuId),
-                  i18n.t('common.unknownProduct'),
-                ).primary;
-                setConfirmAction({ kind: 'unmarkUnavailable', skuId: item.skuId, skuName });
+                sendStep({ kind: 'unmarkUnavailable', skuId: item.skuId });
                 return;
               }
               openPurchaseEdit(item);
@@ -1518,9 +1565,8 @@ export function RunPage() {
                 paymentMethod: 'cash',
               });
             }}
-            onDeliverStore={(storeId, storeName) =>
-              setConfirmAction({ kind: 'deliverStore', storeId, storeName })
-            }
+            // 2026-11-13: at once; Recall undoes it until the store confirms.
+            onDeliverStore={(storeId) => sendStep({ kind: 'deliverStore', storeId })}
             onRecallStore={(storeId, storeName) =>
               setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
             }
@@ -1552,7 +1598,13 @@ export function RunPage() {
               setConfirmAction({ kind: 'removeExpense', expenseId, label })
             }
             onOpenExpense={() =>
-              setAddItemDraft(newAddItemDraft(activeRun.id, { mode: 'expense', actualQty: '1' }))
+              setAddItemDraft(
+                newAddItemDraft(activeRun.id, {
+                  mode: 'expense',
+                  actualQty: '1',
+                  reason: i18n.t('run.action.addItem.defaultReason'),
+                }),
+              )
             }
           />
         ) : null}
@@ -1640,6 +1692,8 @@ export function RunPage() {
             withPriceCheck(d.skuId, [d.unitPrice], (confirmed) => save(d, true, confirmed));
             return;
           }
+          // R10: a product bought here sets the one-tap ✓'s method too.
+          if (d.mode === 'sku') rememberPaymentMethod(d.runId, d.paymentMethod);
           // runs/lib/addItem.ts picks the command: a new row, a store joining
           // a row already on the run, a separate cost, or an expense.
           const command = planAddItemSubmit(d, {
@@ -1719,14 +1773,34 @@ export function RunPage() {
           </Button>
         }
       >
-        <div className="py-3">
+        <div className="flex flex-col gap-2 py-3">
+          {/* R4 (2026-11-13): one tap on a common reason fills the field
+              (and a second tap clears it); typing stays possible. */}
+          <ChipBar
+            variant="toggles"
+            ariaLabel={i18n.t('run.unavailable.presets')}
+            className="-mx-4 -my-1.5 px-4 py-1.5"
+          >
+            {UNAVAILABLE_PRESETS.map((key) => {
+              const text = i18n.t(key);
+              const selected = unavailableNote.trim() === text;
+              return (
+                <Chip
+                  key={key}
+                  selected={selected}
+                  onClick={() => setUnavailableNote(selected ? '' : text)}
+                >
+                  {text}
+                </Chip>
+              );
+            })}
+          </ChipBar>
           <Input
             value={unavailableNote}
             onChange={(e) => setUnavailableNote(e.target.value)}
             placeholder={i18n.t('run.action.unavailableReasonPlaceholder')}
             // RUNWEB1-28: a name that stays once something is typed.
             aria-label={i18n.t('run.action.unavailableReasonPlaceholder')}
-            autoFocus
           />
         </div>
       </Sheet>
@@ -1763,9 +1837,9 @@ export function RunPage() {
           - Pending item rows: inline qty + price inputs + "N/A" link
           - Purchased item rows: tap-to-edit (opens PurchaseSheet for full
             form because edit requires reason field)
-          - Unavailable item rows: "Restore" link (direct confirm sheet)
-          - Pending store rows: tap → deliver-confirm sheet
-          - Delivered store rows: tap → recall-confirm sheet
+          - Unavailable item rows: "Restore" link (sent at once since 2026-11-13)
+          - Pending store rows: deliver button (sent at once since 2026-11-13)
+          - Delivered store rows: recall button → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
     </div>
   );

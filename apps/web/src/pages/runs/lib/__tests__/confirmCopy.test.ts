@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { I18n } from '@compass/i18n';
 import type { ActiveRun } from '../../types';
-import { confirmCommandFor, confirmCopyFor, type ConfirmKind } from '../confirmCopy';
+import {
+  confirmCommandFor,
+  confirmCopyFor,
+  directCommandFor,
+  startDeliveryAsks,
+  type ConfirmKind,
+} from '../confirmCopy';
 import { finishSummaryOf } from '../finishSummary';
 
 /** Every text is its key, with its values when it has any. */
@@ -53,7 +59,7 @@ const copy = (kind: ConfirmKind, r: ActiveRun | undefined = run()) =>
 
 describe('confirmCommandFor', () => {
   test('the steps without a reason send the run alone', () => {
-    for (const kind of ['startPurchase', 'startDelivery', 'finish', 'refinalize'] as const) {
+    for (const kind of ['startDelivery', 'finish', 'refinalize'] as const) {
       expect(confirmCommandFor(kind, 'r1', 'ignored')).toEqual({
         procedure: kind,
         input: { runId: 'r1' },
@@ -61,26 +67,20 @@ describe('confirmCommandFor', () => {
     }
   });
 
-  test('the undo steps and cancel send the reason typed', () => {
+  test('cancel and recall send the reason typed, or none', () => {
     expect(confirmCommandFor('cancel', 'r1', 'wrong day')).toEqual({
       procedure: 'cancelRun',
       input: { runId: 'r1', reason: 'wrong day' },
     });
-    expect(confirmCommandFor('undoStartDelivery', 'r1', 'x')).toEqual({
-      procedure: 'undoStartDelivery',
-      input: { runId: 'r1', reason: 'x' },
-    });
-    expect(
-      confirmCommandFor({ kind: 'recallDelivery', storeId: 's', storeName: 'S' }, 'r1', 'late'),
-    ).toEqual({
+    const recall: ConfirmKind = { kind: 'recallDelivery', storeId: 's', storeName: 'S' };
+    expect(confirmCommandFor(recall, 'r1', ' late ')).toEqual({
       procedure: 'undeliverStore',
       input: { runId: 'r1', storeId: 's', reason: 'late' },
     });
-    expect(
-      confirmCommandFor({ kind: 'unmarkUnavailable', skuId: 'k', skuName: 'K' }, 'r1', 'found'),
-    ).toEqual({
-      procedure: 'unmarkUnavailable',
-      input: { runId: 'r1', skuId: 'k', reason: 'found' },
+    expect(confirmCommandFor(recall, 'r1', '').input).toEqual({
+      runId: 'r1',
+      storeId: 's',
+      reason: '',
     });
   });
 
@@ -115,16 +115,49 @@ describe('confirmCommandFor', () => {
     });
   });
 
-  test('delivering to a store names the store', () => {
-    expect(
-      confirmCommandFor({ kind: 'deliverStore', storeId: 's', storeName: 'S' }, 'r1', ''),
-    ).toEqual({ procedure: 'deliverToStore', input: { runId: 'r1', storeId: 's' } });
-  });
-
   test('not buying a top-up names the item (RUNWEB1-29)', () => {
     expect(
       confirmCommandFor({ kind: 'dismissTopUp', skuId: 'k', qty: '2' }, 'r1', 'typed'),
     ).toEqual({ procedure: 'dismissTopUp', input: { runId: 'r1', skuId: 'k' } });
+  });
+});
+
+// Simplification (2026-11-13): the steps another tap undoes are sent at once.
+describe('directCommandFor', () => {
+  test('the run steps send the run alone, with no reason', () => {
+    for (const step of [
+      'startPurchase',
+      'startDelivery',
+      'undoStartPurchase',
+      'undoStartDelivery',
+    ] as const) {
+      expect(directCommandFor(step, 'r1')).toEqual({ procedure: step, input: { runId: 'r1' } });
+    }
+  });
+
+  test('delivering names the store; available again names the item', () => {
+    expect(directCommandFor({ kind: 'deliverStore', storeId: 's' }, 'r1')).toEqual({
+      procedure: 'deliverToStore',
+      input: { runId: 'r1', storeId: 's' },
+    });
+    expect(directCommandFor({ kind: 'unmarkUnavailable', skuId: 'k' }, 'r1')).toEqual({
+      procedure: 'unmarkUnavailable',
+      input: { runId: 'r1', skuId: 'k' },
+    });
+  });
+
+  test('starting delivery asks only when other items are not handled', () => {
+    expect(startDeliveryAsks(undefined)).toBe(false);
+    expect(
+      startDeliveryAsks({
+        sessionExtrasByStore: { A: [{ name: 'Ice', qty: '2', unit: 'kg', status: 'bought' }] },
+      }),
+    ).toBe(false);
+    expect(
+      startDeliveryAsks({
+        sessionExtrasByStore: { A: [{ name: 'Napkins', qty: '1', unit: 'pack' }] },
+      }),
+    ).toBe(true);
   });
 });
 
@@ -134,14 +167,14 @@ describe('confirmCopyFor', () => {
       const c = copy(kind);
       return [c.requireReason, c.reasonOptional ?? false, c.danger, c.irreversible ?? false];
     };
-    expect(flags('startPurchase')).toEqual([false, false, false, false]);
+    expect(flags('startDelivery')).toEqual([false, false, false, false]);
     expect(flags('finish')).toEqual([false, false, false, true]);
     expect(flags('refinalize')).toEqual([false, false, false, true]);
     expect(flags('cancel')).toEqual([false, true, true, false]);
-    expect(flags('undoStartPurchase')).toEqual([true, false, false, false]);
+    // 2026-11-13: the recall's reason is optional.
     expect(flags({ kind: 'recallDelivery', storeId: 's', storeName: 'S' })).toEqual([
-      true,
       false,
+      true,
       true,
       false,
     ]);
@@ -194,22 +227,6 @@ describe('confirmCopyFor', () => {
       'run.confirm.startDelivery.pendingExtras {"n":2,"names":"Napkinscommon.listSeparatorSoap"}',
     );
     expect(copy('startDelivery').body).toBe('run.confirm.startDelivery.body');
-  });
-
-  test('delivering says what the store gets', () => {
-    const body = copy(
-      { kind: 'deliverStore', storeId: 'A', storeName: 'Store A' },
-      run({
-        items: [item('tomato', { purchasedQty: '2' })],
-        splits: [split('tomato', 'A', '2')],
-        perStoreDemand: [{ storeId: 'A', skuId: 'tomato', qty: '2' }],
-      }),
-    ).body;
-    expect(body).toBe(
-      'run.label.itemsCount {"n":1} · ' +
-        'common.labelValue {"label":"run.label.itemsTotal","value":"200 UZS"}\n' +
-        'run.confirm.deliver.body',
-    );
   });
 
   // RUNWEB1-08: the figures are rows, each said once; the text says what locks.

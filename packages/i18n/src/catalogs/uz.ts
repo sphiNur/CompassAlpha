@@ -1488,12 +1488,16 @@ export const uz = {
   'run.action.recallDelivery': 'Yetkazishni qaytarib olish',
   'run.action.undoStartPurchase': 'Rejaga qaytish',
   'run.action.undoStartDelivery': 'Xaridga qaytish',
-  'run.action.confirmDeliver': 'Yetkazildi deb belgilash',
   'run.action.savePurchase': 'Saqlash',
   'run.action.recordPurchase': 'Xaridni yozish',
   'run.action.markUnavailable': 'Yoʻq deb belgilash',
   'run.action.markUnavailableDesc': 'Nima uchun ololmaganingizni jamoaga tushuntiring.',
   'run.action.unavailableReasonPlaceholder': 'Sabab',
+  'run.unavailable.presets': 'Koʻp uchraydigan sabablar',
+  'run.unavailable.preset.soldOut': 'Sotuvda yoʻq',
+  'run.unavailable.preset.tooExpensive': 'Juda qimmat',
+  'run.unavailable.preset.poorQuality': 'Sifati yomon',
+  'run.unavailable.preset.stallClosed': 'Sotuvchi ishlamayapti',
   'run.action.actualQty': 'Haqiqiy miqdor ({unit})',
   'run.action.actualQtyPlain': 'Haqiqiy miqdor',
   'run.action.unitPriceUzs': 'Birlik narxi ({currency})',
@@ -1508,6 +1512,7 @@ export const uz = {
   'run.action.addItem.crossStoreHint':
     'Bu mahsulot {stores} uchun xaridda allaqachon bor. Doʻkon narxi boshqacha boʻlsa, «Alohida narx»ni tanlang; faqat bir xil partiya va narxda mavjudiga qoʻshing.',
   'run.action.addItem.defaultCrossStoreReason': 'Boshqa doʻkonning qoʻshimcha talabi',
+  'run.action.addItem.defaultReason': 'Xarid paytida qoʻshildi',
   'run.action.addItem.pickStore': '— Doʻkon tanlang —',
   'run.action.addItem.totalHint': 'Mahsulot boʻyicha jami',
   'run.action.addItem.reasonLabel': 'Nima uchun qoʻshilyapti?',
@@ -1573,15 +1578,9 @@ export const uz = {
   'run.action.actualQtyAriaLabel': 'haqiqiy miqdor',
   'run.action.unitPriceAriaLabel': 'birlik narxi',
   'run.action.savePurchaseAriaLabel': 'Xaridni saqlash: {name}',
-  'run.confirm.startPurchase.title': 'Xaridni boshlaymizmi?',
-  'run.confirm.startPurchase.body':
-    'Xarid jarayonda deb belgilanadi. Keyin rejaga qaytish mumkin (sabab koʻrsatiladi); yozilgan xaridlar saqlanib qoladi.',
   'run.confirm.startDelivery.title': 'Yetkazishni boshlaymizmi?',
   'run.confirm.startDelivery.body':
     'Hamma mahsulot yetkazishga tayyor boʻladi. Hali bironta doʻkonga olib bormagan boʻlsangiz, xaridga qaytishingiz mumkin.',
-  'run.confirm.deliver.title': '{store} doʻkoniga yetkazilganini belgilaymizmi?',
-  'run.confirm.deliver.body':
-    'Doʻkon qabul qilganini tasdiqlamaguncha qaytarib olishingiz mumkin. Tasdiqdan keyin uzil-kesil.',
   'run.confirm.finish.title': 'Xaridni yakunlaymizmi?',
   'run.confirm.finish.body':
     'Narx, miqdor va yetkazishlar qulflanadi. Keyin tuzatish uchun xaridni faqat superadmin qayta ocha oladi.',
@@ -1607,15 +1606,6 @@ export const uz = {
     'Mahsulotni «kutilmoqda»ga qaytaradi va qayta yozsa boʻladi. Asl yozuv auditda qoladi. Faqat hech bir doʻkon qabul qilmagan boʻlsa.',
   'run.confirm.undoPurchase.bodyAdded':
     'Bu mahsulot xarid paytida qoʻshilgan; ortga qaytarilsa, u xariddan olib tashlanadi. Asl yozuv auditda qoladi. Faqat hech bir doʻkon qabul qilmagan boʻlsa.',
-  'run.confirm.unmarkUnavailable.title': 'Yana mavjud deb belgilaymizmi?',
-  'run.confirm.unmarkUnavailable.body':
-    'Mahsulotni «kutilmoqda»ga qaytaradi va xaridni yozish mumkin boʻladi. Asl «yoʻq» izohi auditda qoladi.',
-  'run.confirm.undoStartPurchase.title': 'Rejaga qaytamizmi?',
-  'run.confirm.undoStartPurchase.body':
-    'Xaridni rejalashtirish bosqichiga qaytaradi. Yozib qoʻyilgan xaridlar saqlanadi — xaridni qayta boshlasangiz ham ✓ boʻlib turaveradi.',
-  'run.confirm.undoStartDelivery.title': 'Xaridga qaytamizmi?',
-  'run.confirm.undoStartDelivery.body':
-    'Xaridni xarid bosqichiga qaytaradi. Faqat hech bir doʻkonga yetkazilmagan boʻlsa.',
   'run.label.reasonForChange': 'Oʻzgarish sababi',
   'run.label.itemsTotal': 'Mahsulotlar jami',
   'run.label.reasonPlaceholder': 'masalan, chekdagi narxni notoʻgʻri oʻqibman',
@@ -1760,9 +1750,6 @@ export const uz = {
   'run.errors.deliveryAlreadyProgressed':
     'Ortga qaytarib boʻlmaydi — bir doʻkon allaqachon qabul qilgan.',
   'run.errors.reviseReasonRequired': 'Nima oʻzgarganini yozing.',
-  'run.errors.unmarkReasonRequired': 'Hozir nima uchun mavjudligini yozing.',
-  'run.errors.recallReasonRequired': 'Qaytarish sababini yozing.',
-  'run.errors.undoReasonRequired': 'Ortga qaytarish sababini yozing.',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': 'Bu doʻkon uchun mahsulot yoʻq',
