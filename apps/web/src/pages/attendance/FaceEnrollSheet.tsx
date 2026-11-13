@@ -214,7 +214,7 @@ export function FaceEnrollSheet({
             ? i18n.t('attendance.live.guide.lookStraight')
             : '';
   const guideLine = useRef<HTMLParagraphElement>(null);
-  useKeepInView(guideLine, capturing ? guideText : null);
+  useKeepInView(guideLine, capturing ? `${guideText} ${cam.ready}` : null);
 
   const hint =
     phase === 'circle'
