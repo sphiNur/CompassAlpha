@@ -44,7 +44,7 @@ export const uz = {
   'common.priceThousands': '{n} ming',
   'qty.decrement': 'Kamaytirish',
   'qty.increment': 'Oshirish',
-  'qty.pickAria': 'Miqdor {value} — tanlash uchun bosing',
+  'qty.pickAria': 'Miqdor {value} — tez tanlash uchun bosing',
   'qty.groupAria': '{item} miqdori',
   'a11y.results.products':
     '{n, plural, =1 {1 ta mahsulot topildi} other {{n} ta mahsulot topildi}}',

@@ -37,7 +37,7 @@ export const ru = {
   'common.priceThousands': '{n} тыс.',
   'qty.decrement': 'Уменьшить',
   'qty.increment': 'Увеличить',
-  'qty.pickAria': 'Количество {value} — нажмите, чтобы выбрать',
+  'qty.pickAria': 'Количество {value} — нажмите для быстрого выбора',
   'qty.groupAria': 'Количество: {item}',
   'a11y.results.products':
     '{n, plural, one {Найден # товар} few {Найдено {n} товара} many {Найдено {n} товаров} other {Найдено {n} товара}}',

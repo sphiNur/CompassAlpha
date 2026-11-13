@@ -56,7 +56,7 @@ export const en = {
   // these frozen in English. Bridged via app/UiLabelsBridge.tsx.
   'qty.decrement': 'Decrease',
   'qty.increment': 'Increase',
-  'qty.pickAria': 'Quantity {value} — tap to choose',
+  'qty.pickAria': 'Quantity {value} — tap for quick amounts',
   'qty.groupAria': '{item} quantity',
   'a11y.results.products': '{n, plural, one {# product found} other {# products found}}',
   'a11y.results.items': '{n, plural, one {# item shown} other {# items shown}}',

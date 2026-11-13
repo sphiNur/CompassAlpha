@@ -123,7 +123,7 @@ test('place an order', async () => {
     }
     await saved;
     await expect(item(sku).getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-      `Quantity ${expected} — tap to choose`,
+      `Quantity ${expected} — tap for quick amounts`,
     );
   };
   await add('Apple', 4, '2 kg');
@@ -145,7 +145,7 @@ test('place an order', async () => {
   await expect(sheet().getByRole('button', { name: /^Set/ })).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-    'Quantity 2 kg — tap to choose',
+    'Quantity 2 kg — tap for quick amounts',
   );
 
   // O1: the main button submits in one tap; the review is an optional look.
@@ -154,19 +154,19 @@ test('place an order', async () => {
   // 2026-11-05: the review is editable — each line has the list's stepper.
   const reviewLine = (sku: string) => sheet().getByRole('listitem').filter({ hasText: sku }).last();
   await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-    'Quantity 2 kg — tap to choose',
+    'Quantity 2 kg — tap for quick amounts',
   );
   const reviewSaved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
   await reviewLine('Apple').getByRole('button', { name: 'Increase' }).click();
   await reviewSaved;
   await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-    'Quantity 2.5 kg — tap to choose',
+    'Quantity 2.5 kg — tap for quick amounts',
   );
   const reviewSaved2 = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
   await reviewLine('Apple').getByRole('button', { name: 'Decrease' }).click();
   await reviewSaved2;
   await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-    'Quantity 2 kg — tap to choose',
+    'Quantity 2 kg — tap for quick amounts',
   );
   await evidence('order-review');
   await sheet().getByRole('button', { name: 'Submit order' }).click();

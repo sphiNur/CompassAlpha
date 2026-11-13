@@ -256,6 +256,8 @@ export function QtyControl({
           ref={valueButtonRef}
           type="button"
           aria-label={labels.quantityPick(`${display}${shownUnit ? ' ' + shownUnit : ''}`)}
+          // UX-10: it opens the quick-pick sheet (a dialog).
+          aria-haspopup="dialog"
           onClick={openQuickPick}
           disabled={disabled}
           className={cn(
@@ -277,8 +279,17 @@ export function QtyControl({
             visible and the row states its unit without the caption M3.55
             removed. Non-zero values are unchanged.
           */}
-          {/* Clipping lives here, not on the button, so hit-44 still taps. */}
-          <span className="flex min-w-0 items-baseline overflow-hidden">
+          {/* Clipping lives here, not on the button, so hit-44 still taps.
+              UX-10 (2026-11-14): the value looked like plain text, so few
+              found the presets behind it. It carries the dotted underline
+              the top bar's settings name uses for "tap me"; py-1 keeps the
+              underline inside the clip. */}
+          <span
+            className={cn(
+              'flex min-w-0 items-baseline overflow-hidden py-1',
+              'underline decoration-dotted decoration-[color:var(--c-fg-subtle)] underline-offset-4',
+            )}
+          >
             <span>{display}</span>
             {shownUnit ? (
               <span className="ml-0.5 text-old-label text-[var(--c-fg-muted)]">{shownUnit}</span>
@@ -494,7 +505,10 @@ function QtyQuickPickSheet({
             })}
         </div>
 
-        {/* Custom input — escape hatch for non-preset quantities. */}
+        {/* Custom input — escape hatch for non-preset quantities. The
+            kit's number Input is the shared decimal field (useDecimalField:
+            a text field with the decimal keypad), and readQtyDraft reads
+            its text with readDecimalText, so "1,5" is 1.5 in ru / uz. */}
         <Field label={labels.custom} error={draftProblem}>
           <Input
             type="number"

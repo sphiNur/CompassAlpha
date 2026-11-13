@@ -126,7 +126,7 @@ export interface UiLabels {
 export const DEFAULT_UI_LABELS: UiLabels = {
   decrement: 'Decrement',
   increment: 'Increment',
-  quantityPick: (v) => `Quantity ${v} — tap to pick`,
+  quantityPick: (v) => `Quantity ${v} — tap for quick amounts`,
   quantityOf: (item) => `${item} quantity`,
   setQuantity: 'Set quantity',
   unitIs: (unit) => `Unit: ${unit}`,

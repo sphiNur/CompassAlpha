@@ -44,6 +44,7 @@ import {
 } from './catalogNames';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { readSortIndex } from './sortIndex';
+import { lastSkuCategory, pickNewSkuCategory, rememberSkuCategory } from './skuCategory';
 
 interface SkuDraft {
   skuId?: string;
@@ -120,7 +121,9 @@ export function SkusSection() {
   );
 
   const create = trpc.admin.skuCreate.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      // UX-18: the next new product starts in this category.
+      rememberSkuCategory(vars.categoryId ?? null);
       void utils.admin.skuList.invalidate();
       toast.success(i18n.t('admin.toast.skuCreated'));
       setDraft(null);
@@ -172,7 +175,7 @@ export function SkusSection() {
         newLabel={canWrite ? i18n.t('catalog.sku.new') : undefined}
         onNew={() =>
           setDraft({
-            categoryId: null,
+            categoryId: pickNewSkuCategory([lastSkuCategory()], categoriesQuery.data),
             code: '',
             names: { ...EMPTY_NAMES },
             unit: 'pcs',
