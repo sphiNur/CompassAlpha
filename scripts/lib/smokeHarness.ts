@@ -413,6 +413,7 @@ export async function stubSignIn(context: BrowserContext): Promise<void> {
     run: null,
     confirm: null,
     settlementDue: null,
+    faceEnrollPending: null,
   });
 }
 

@@ -80,45 +80,12 @@ export function slugIsValid(slug: string): boolean {
 }
 
 /** Cyrillic letters (Russian and Uzbek) in Latin, for a code made from a name. */
-const CYRILLIC_TO_LATIN: Record<string, string> = {
-  а: 'a',
-  б: 'b',
-  в: 'v',
-  г: 'g',
-  д: 'd',
-  е: 'e',
-  ё: 'yo',
-  ж: 'zh',
-  з: 'z',
-  и: 'i',
-  й: 'y',
-  к: 'k',
-  л: 'l',
-  м: 'm',
-  н: 'n',
-  о: 'o',
-  п: 'p',
-  р: 'r',
-  с: 's',
-  т: 't',
-  у: 'u',
-  ф: 'f',
-  х: 'kh',
-  ц: 'ts',
-  ч: 'ch',
-  ш: 'sh',
-  щ: 'sch',
-  ъ: '',
-  ы: 'y',
-  ь: '',
-  э: 'e',
-  ю: 'yu',
-  я: 'ya',
-  ў: 'o',
-  қ: 'q',
-  ғ: 'g',
-  ҳ: 'h',
-};
+const CYRILLIC_LETTERS = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюяўқғҳ'; // i18n-exempt: transliteration table
+const LATIN_FOR_CYRILLIC =
+  'a b v g d e yo zh z i y k l m n o p r s t u f kh ts ch sh sch _ y _ e yu ya o q g h'.split(' ');
+const CYRILLIC_TO_LATIN: Record<string, string> = Object.fromEntries(
+  [...CYRILLIC_LETTERS].map((ch, i) => [ch, LATIN_FOR_CYRILLIC[i]!.replace('_', '')]),
+);
 
 /** Longest code made from a name; a hand-typed one may be longer. */
 const CODE_FROM_NAME_MAX = 32;
