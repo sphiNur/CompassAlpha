@@ -57,7 +57,7 @@ test.beforeAll(async ({ browser }) => {
     '--new-user',
   ]);
 
-  page = await browser.newPage();
+  page = await browser.newPage({ hasTouch: true });
   const login = await page.request.post(`${API_URL}/trpc/auth.telegramLogin`, {
     data: { initData: signInitData(MANAGER_TG_ID) },
   });
@@ -138,17 +138,32 @@ async function plainY(x: number): Promise<number> {
   const y = await page.evaluate((px) => {
     const main = document.querySelector('main')!;
     const box = main.getBoundingClientRect();
-    for (let py = box.top + 40; py < box.bottom - 140; py += 12) {
-      const el = document.elementFromPoint(px, py);
-      if (!el || !main.contains(el)) continue;
-      if (el.closest('[data-no-swipe], input, textarea, select, [contenteditable="true"]'))
-        continue;
-      let sideways = false;
+    const plain = (cx: number, cy: number): boolean => {
+      const el = document.elementFromPoint(cx, cy);
+      if (!el || !main.contains(el)) return false;
+      // Chrome's touch adjustment snaps a touch to a nearby control, so
+      // nothing pressable may sit near the start point either.
+      if (
+        el.closest(
+          '[data-no-swipe], input, textarea, select, button, a, label, [role="search"], [contenteditable="true"]',
+        )
+      )
+        return false;
       for (let a: Element | null = el; a && a !== main; a = a.parentElement) {
         const ox = getComputedStyle(a).overflowX;
-        if ((ox === 'auto' || ox === 'scroll') && a.scrollWidth > a.clientWidth) sideways = true;
+        if ((ox === 'auto' || ox === 'scroll') && a.scrollWidth > a.clientWidth) return false;
       }
-      if (!sideways) return py;
+      return true;
+    };
+    for (let py = Math.round(box.top) + 40; py < box.bottom - 140; py += 12) {
+      const around = [
+        [0, 0],
+        [0, -20],
+        [0, 20],
+        [-20, 0],
+        [20, 0],
+      ];
+      if (around.every(([dx, dy]) => plain(px + dx!, py + dy!))) return py;
     }
     return null;
   }, x);
