@@ -226,6 +226,8 @@ export function QtyControl({
       <div
         role="group"
         aria-label={itemLabel ? labels.quantityOf(itemLabel) : undefined}
+        // A sideways drag here is not a swipe between tabs.
+        data-no-swipe=""
         className={cn('inline-flex items-center gap-2', className)}
       >
         <button

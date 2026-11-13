@@ -40,6 +40,13 @@ export function useShellTab(visible: readonly TabDef[]) {
   }, [tab, scrollMemory]);
   const saveScroll = (e: UIEvent<HTMLElement>) =>
     scrollMemory.save(tabRef.current, e.currentTarget.scrollTop);
+  // A tap on another tab, or a swipe to it (SwipePager.tsx): the same
+  // guards, then the switch. Resolves whether it happened.
+  const changeTab = async (nextTab: Tab): Promise<boolean> => {
+    const allowed = await requestTabChange(nextTab);
+    if (allowed) setPersistedTab(nextTab);
+    return allowed;
+  };
   const selectTab = (nextTab: Tab) => {
     // DX-SHL-10: tapping the tab you are on goes back to its top.
     if (nextTab === tab) {
@@ -52,9 +59,7 @@ export function useShellTab(visible: readonly TabDef[]) {
       mainRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() });
       return;
     }
-    void requestTabChange(nextTab).then((allowed) => {
-      if (allowed) setPersistedTab(nextTab);
-    });
+    void changeTab(nextTab);
   };
   useDeepLinkTab(visibleKeys, setPersistedTab);
   // If the resolved tab differs from what's persisted (permission
@@ -63,5 +68,5 @@ export function useShellTab(visible: readonly TabDef[]) {
   useEffect(() => {
     if (tab !== persistedTab) setPersistedTab(tab);
   }, [tab, persistedTab, setPersistedTab]);
-  return { tab, selectTab, mainRef, saveScroll };
+  return { tab, selectTab, changeTab, mainRef, saveScroll };
 }

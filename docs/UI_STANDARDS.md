@@ -174,6 +174,16 @@ The bottom nav is a capsule floating over the page (owner, 2026-11-14). It
 shows at most five items: with more than five tabs, four of them and a
 "More" item that opens the rest in a sheet (`navLayout.ts`).
 
+A sideways swipe on the page moves to the bar's neighbouring tab, the page
+following the finger (owner, 2026-11-14; `SwipePager.tsx`, decisions in
+`swipeGesture.ts`). Only the bar's tabs, in bar order, with no wrap-around;
+on a tab opened from More, swiping does nothing. The bar stays the primary
+control. A swipe never starts in the 24 px screen edges (Telegram's back
+swipe), on a text field, a control that scrolls sideways, or anything marked
+`data-no-swipe` (the kit's ChipBar, Segmented and QtyControl carry it): a new
+control that is dragged sideways carries it too. With reduced motion the page
+does not follow the finger; a completed swipe switches at once.
+
 ---
 
 ## Enforcement (CI)
