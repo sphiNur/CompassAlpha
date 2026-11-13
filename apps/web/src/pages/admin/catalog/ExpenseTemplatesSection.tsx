@@ -19,7 +19,7 @@ import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
-import { formatMoney, formatQty } from '../../../lib/format';
+import { formatAmountInFull, formatMoney, formatQty } from '../../../lib/format';
 import { useI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
 import {
@@ -305,7 +305,12 @@ export function ExpenseTemplatesSection() {
                 />
               </Field>
               {draft.defaultUnitPrice !== null ? (
-                <Field label={i18n.t('admin.field.defaultUnitPrice')} required>
+                // UX-08: the amount grouped, with its currency, under the field.
+                <Field
+                  label={i18n.t('admin.field.defaultUnitPrice')}
+                  required
+                  hint={formatAmountInFull(draft.defaultUnitPrice, currency)}
+                >
                   <Input
                     // CAT-10: read "1,5" / "20 000" like every number field.
                     type="number"

@@ -32,6 +32,7 @@ import { useI18n } from '../hooks/useI18n';
 import { zoneName } from '../lib/dateFormat';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 import { hasStorePermission } from '../lib/storePermission';
+import { trpc } from '../lib/trpc';
 import { BUSINESS_DATE } from './settlement/draftModel';
 import { AmountField } from './settlement/AmountField';
 import { ExpenseLines } from './settlement/ExpenseLines';
@@ -39,6 +40,7 @@ import { RecentCloses } from './settlement/RecentCloses';
 import { SettlementHistory } from './settlement/SettlementHistory';
 import { SettlementSummary } from './settlement/SettlementSummary';
 import { WageLines } from './settlement/WageLines';
+import { salesBlockLayout } from './settlement/salesBlock';
 import { useSettlementForm } from './settlement/useSettlementForm';
 
 /**
@@ -102,6 +104,16 @@ export function SettlementPage() {
   // page needs in its store, so here the block is the member's only way
   // to record sales.
   const [salesOpen, setSalesOpen] = useState(true);
+  // UX-25 (2026-11-14): with no dish the block is one line, below Revenue.
+  // The sales panel's own query (same input, same cache).
+  const dishesQuery = trpc.dishes.list.useQuery(
+    { includeArchived: true, storeId: currentStoreId ?? '', withIngredients: false },
+    { enabled: canRecordSales && !!currentStoreId },
+  );
+  const salesBlock = salesBlockLayout({
+    canRecordSales,
+    dishCount: dishesQuery.data?.dishes.length,
+  });
 
   const mainButtonText = saving
     ? i18n.t('settlement.save.saving')
@@ -141,6 +153,20 @@ export function SettlementPage() {
       />
     </Field>
   ) : null;
+  // UX-25: no dish yet, so the sales block is this one line. The text is
+  // the sales panel's own, which names where dishes are set up.
+  const noDishesLine = (
+    <Card className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 py-3">
+      <h2 className="text-old-body font-semibold text-[var(--c-fg)]">
+        {i18n.t('sales.list.title')}
+      </h2>
+      <p className="text-old-label text-[var(--c-fg-muted)]">
+        {session.permissions.includes('dishes.manage')
+          ? i18n.t('sales.form.noDishesYet')
+          : i18n.t('sales.form.noDishesAskAdmin')}
+      </p>
+    </Card>
+  );
   // Simplification S1 (2026-11-13): the page follows the top bar's store.
   // Its own store picker repeated that choice; a member with several stores
   // switches in the top bar, which asks about unsaved input the same way
@@ -259,7 +285,7 @@ export function SettlementPage() {
           </Card>
         ) : null}
 
-        {canRecordSales ? (
+        {salesBlock === 'full' ? (
           // 2026-10-21 CA-09: cashiers only get this tab, so sales entry
           // lives here too. Self-contained (own state + mutation, keyed by
           // store so a half-picked dish never carries over); it never
@@ -273,9 +299,12 @@ export function SettlementPage() {
             open={salesOpen}
             onOpenChange={setSalesOpen}
           >
-            <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} />
+            {/* UX-25: the disclosure is the one "Today's sales" heading. */}
+            <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} listTitle={false} />
           </Disclosure>
         ) : null}
+        {/* Without a form there is no Revenue to put first. */}
+        {salesBlock === 'noDishes' && (closeQuery.isError || tooOldForNew) ? noDishesLine : null}
 
         {closeQuery.isError ? (
           // CLS-15 (2026-10-30): a failed LOAD said "could not save".
@@ -364,6 +393,8 @@ export function SettlementPage() {
                   </CardBody>
                 </Card>
               </section>
+
+              {salesBlock === 'noDishes' ? noDishesLine : null}
 
               <section className="flex flex-col gap-2">
                 <SectionLabel as="h2">{i18n.t('settlement.group.costs')}</SectionLabel>

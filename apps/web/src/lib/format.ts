@@ -150,6 +150,21 @@ export function currencyOf(
   return session?.member?.currency ?? 'UZS';
 }
 
+/**
+ * UX-08 (2026-11-14): what a typed full amount reads as, grouped and with
+ * its currency ("830000" → "830,000 UZS"), for the line under the field.
+ * Null while the field is empty or holds something that is not an amount
+ * (text, a 3rd decimal, more digits than decimal(14,2) holds): the field
+ * says what is wrong itself, and a rounded preview would read as accepted.
+ * `value` is the field's normalised reading (useDecimalField), so it has
+ * no separators of its own.
+ */
+export function formatAmountInFull(value: string, currency: string): string | null {
+  const raw = value.trim();
+  if (!/^-?\d{1,12}(\.\d{1,2})?$/.test(raw)) return null;
+  return formatMoney(raw, currency);
+}
+
 /** Money's stored precision, used when no currency is named. */
 const DEFAULT_MONEY_DECIMALS = 2;
 
