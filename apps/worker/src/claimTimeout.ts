@@ -226,7 +226,15 @@ export async function releaseClaimIfExpired(
       lastSeq: newSeq,
     });
   } else {
-    await tx.update(s.marketRunsV).set(released).where(eq(s.marketRunsV.id, claim.id));
+    // Review RUNAPI-12: a released claim changes no item's top-up, so a run
+    // whose top-ups were current stays current (see the api's runProjection).
+    await tx
+      .update(s.marketRunsV)
+      .set({
+        ...released,
+        topUpSeq: sql`CASE WHEN ${s.marketRunsV.topUpSeq} = ${s.marketRunsV.lastSeq} THEN ${newSeq} ELSE ${s.marketRunsV.topUpSeq} END`,
+      })
+      .where(eq(s.marketRunsV.id, claim.id));
     await notifyRealtime(tx, {
       type: 'run.changed',
       orgId: claim.orgId,

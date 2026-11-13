@@ -238,9 +238,12 @@ read_model.*       (投影器维护，可 drop + replay 重建)
   order_items_v           session_id, sku_id, contributor_member_id, qty,
                           note, updated_by_member_id, updated_at
   market_runs_v           id, org_id, run_date, run_index, status,
-                          planned_total, actual_total, last_seq
+                          planned_total, actual_total, last_seq,
+                          top_up_seq (RUNAPI-12: top_up_qty 跟到哪个 seq；
+                          = last_seq 才可信，否则 run.get 回放事件流)
   run_items_v             run_id, sku_id, planned_qty, purchased_qty,
-                          supplier_id, unit_price, status
+                          supplier_id, unit_price, status,
+                          top_up_qty (BUY-5 "还需 X"，NULL = 无)
   run_item_stores_v       run_id, sku_id, store_id, qty,
                           delivered_at, confirmed_at, confirm_note, photo_url
 

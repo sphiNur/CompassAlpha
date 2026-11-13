@@ -4,14 +4,16 @@
  * input, who may read what, and the shape of the answer (store and price
  * redaction). History's detail reads a run's lines and expenses here too.
  */
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
-import { toCents } from '@compass/contracts';
-import { replayRun } from '@compass/domain/run';
-import { readRunEvents } from './runStream';
+import { normalizeQty, toCents } from '@compass/contracts';
+import { loadRunState } from './runStream';
 import { runMoneyLinesSql, uuidListSql } from './runMoney';
 import { inUuids } from './sqlIn';
 import { executeRows } from './sqlRows';
+
+/** A run's columns as run.list answers them: not the top-up bookkeeping (RUNAPI-12). */
+const { topUpSeq: _topUpSeq, ...listedRunColumns } = getTableColumns(s.marketRunsV);
 
 /** Runs not finished or cancelled: run.list keeps them whatever their age (RUNAPI-06). */
 const OPEN_RUN_STATUSES = ['planned', 'purchasing', 'delivering', 'amending'];
@@ -43,12 +45,12 @@ export async function listedRuns(tx: DB, orgId: string, allowedStoreIds: readonl
   const orgRuns = and(eq(s.marketRunsV.orgId, orgId), visibleToReader);
   const newestFirst = [desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex)] as const;
   const open = await tx
-    .select()
+    .select(listedRunColumns)
     .from(s.marketRunsV)
     .where(and(orgRuns, inArray(s.marketRunsV.status, OPEN_RUN_STATUSES)))
     .orderBy(...newestFirst);
   const recent = await tx
-    .select()
+    .select(listedRunColumns)
     .from(s.marketRunsV)
     .where(orgRuns)
     .orderBy(...newestFirst)
@@ -175,7 +177,7 @@ export async function runStoreTotals(
  * re-sort on top of.
  */
 export async function runLines(tx: DB, runId: string) {
-  const items = await tx.query.runItemsV.findMany({
+  const rows = await tx.query.runItemsV.findMany({
     where: (i, { eq: eq2 }) => eq2(i.runId, runId),
     orderBy: (i, { asc }) => asc(i.skuId),
   });
@@ -183,37 +185,68 @@ export async function runLines(tx: DB, runId: string) {
     where: (i, { eq: eq2 }) => eq2(i.runId, runId),
     orderBy: (i, { asc }) => [asc(i.skuId), asc(i.storeId)],
   });
-  return { items, splits };
+  // The top-up column is not part of a line: run.get adds it when it is
+  // current (runTopUpQtys), and history does not show it.
+  const topUpColumn = new Map<string, string | null>();
+  const items = rows.map(({ topUpQty, ...item }) => {
+    topUpColumn.set(item.skuId, topUpQty === null ? null : normalizeQty(topUpQty));
+    return item;
+  });
+  return { items, splits, topUpColumn };
 }
 
 /**
- * What only a run's stream says (a run stream is a few dozen events):
- *   - BUY-5 (2026-10-30): each product's "still need X", demand that
- *     joined after it was decided (no read-model column);
- *   - DX-DLV-13 (2026-11-01): the stores whose delivery was recalled and
- *     not made again, in the order the stream first names them. Their
- *     receiving page said "nothing to receive", as if the goods had never
- *     been on the way.
+ * Each product's BUY-5 "still need X": demand that joined after it was
+ * decided (2026-10-30), as the run reducer's `topUpQty` ("1.5", null when
+ * nothing is outstanding).
+ *
+ * Review RUNAPI-12 (2026-11-13): from `run_items_v.top_up_qty` (runLines'
+ * `topUpColumn`) when the run's `top_up_seq` says the column has followed
+ * every event (= last_seq). Otherwise (a run with attached sessions from
+ * before migration 0073, or one appended to without the projection) the
+ * stream is replayed, as every run.get used to do.
  */
-export async function runStreamFacts(
+export async function runTopUpQtys(
   tx: DB,
-  runId: string,
-): Promise<{ topUpQtyBySku: Map<string, string | null>; recalledStoreIds: string[] }> {
-  const events = await readRunEvents(tx, runId);
-  const state = replayRun(runId, events);
+  run: { id: string; lastSeq: number; topUpSeq: number | null },
+  topUpColumn: ReadonlyMap<string, string | null>,
+): Promise<ReadonlyMap<string, string | null>> {
+  if (run.topUpSeq !== null && run.topUpSeq === run.lastSeq) return topUpColumn;
+  const state = await loadRunState(tx, run.id);
   const topUpQtyBySku = new Map<string, string | null>();
   for (const [skuId, item] of state.items) topUpQtyBySku.set(skuId, item.topUpQty ?? null);
-  const lastDeliveryEvent = new Map<string, string>();
-  for (const e of events) {
-    if (e.type === 'StoreDelivered' || e.type === 'StoreDeliveryUndone') {
-      lastDeliveryEvent.set(e.payload.storeId, e.type);
-    }
-  }
-  const recalledStoreIds: string[] = [];
-  for (const [storeId, type] of lastDeliveryEvent) {
-    if (type === 'StoreDeliveryUndone') recalledStoreIds.push(storeId);
-  }
-  return { topUpQtyBySku, recalledStoreIds };
+  return topUpQtyBySku;
+}
+
+/**
+ * DX-DLV-13 (2026-11-01): the stores whose delivery was recalled and not
+ * made again (their last delivery event undid it), in the order the stream
+ * first names them. Their receiving page said "nothing to receive", as if
+ * the goods had never been on the way.
+ *
+ * Review RUNAPI-12: worked out in SQL over the run's delivery events, one
+ * row per store, instead of reading and replaying the whole stream.
+ */
+export async function runRecalledStoreIds(tx: DB, runId: string): Promise<string[]> {
+  const rows = executeRows<{ store_id: string }>(
+    await tx.execute(sql`
+      SELECT store_id
+      FROM (
+        SELECT
+          payload->>'storeId' AS store_id,
+          min(seq) AS first_seq,
+          (array_agg(type ORDER BY seq DESC))[1] AS last_type
+        FROM domain.events
+        WHERE stream_type = 'run'
+          AND stream_id = ${runId}
+          AND type IN ('StoreDelivered', 'StoreDeliveryUndone')
+        GROUP BY payload->>'storeId'
+      ) deliveries
+      WHERE last_type = 'StoreDeliveryUndone'
+      ORDER BY first_seq
+    `),
+  );
+  return rows.map((row) => row.store_id);
 }
 
 /** A supplier and how to reach it. */

@@ -177,6 +177,13 @@ export const marketRunsV = readModelSchema.table(
     /** Snapshot of last forcibly-released claimer (override / timeout). */
     previousClaimerMemberId: uuid('previous_claimer_member_id'),
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
+    /**
+     * Review RUNAPI-12 (2026-11-13, migration 0073): the seq up to which
+     * this run's `run_items_v.top_up_qty` values are exact. run.get trusts
+     * them only when it equals `lastSeq`; NULL (a run with attached
+     * sessions from before 0073) or behind means replay the stream.
+     */
+    topUpSeq: bigint('top_up_seq', { mode: 'number' }),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => ({
@@ -257,6 +264,13 @@ export const runItemsV = readModelSchema.table(
      * came from RunPlanned or SessionsAttachedToRun.
      */
     addedByPurchaser: boolean('added_by_purchaser').notNull().default(false),
+    /**
+     * BUY-5 "still need X" (review RUNAPI-12, 2026-11-13, migration 0073):
+     * demand that joined after the item was bought or marked unavailable,
+     * kept as the run reducer keeps `topUpQty`. NULL = nothing outstanding.
+     * Exact only while the run's `market_runs_v.top_up_seq` = `last_seq`.
+     */
+    topUpQty: decimal('top_up_qty', { precision: 12, scale: 3 }),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => ({

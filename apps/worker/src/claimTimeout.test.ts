@@ -166,6 +166,8 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     activeRun: randomUUID(),
     deliveringRun: randomUUID(),
     finishedRun: randomUUID(),
+    /** Idle and delivering; its top-ups are behind (RUNAPI-12). */
+    behindRun: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -206,7 +208,7 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       // Idle too, but no longer in review: never a candidate.
       session(ids.approvedOrder, 'approved'),
     ]);
-    const run = (id: string, status: string, runIndex: number) => ({
+    const run = (id: string, status: string, runIndex: number, topUpSeq: number | null = 2) => ({
       id,
       orgId: ids.orgId,
       runDate: '2026-10-22',
@@ -215,12 +217,14 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       claimedByMemberId: ids.claimerMemberId,
       claimedAt: ago(60),
       lastSeq: 2,
+      topUpSeq,
     });
     await db.insert(s.marketRunsV).values([
       run(ids.activeRun, 'purchasing', 0),
       // No event from the claimer since the claim an hour ago.
       run(ids.deliveringRun, 'delivering', 1),
       run(ids.finishedRun, 'finished', 2),
+      run(ids.behindRun, 'delivering', 3, 1),
     ]);
     const event = (
       streamType: 'order' | 'run',
@@ -328,5 +332,27 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
       ),
     );
     expect((queued as unknown as Array<{ n: number }>)[0]!.n).toBe(0);
+  });
+
+  test('RUNAPI-12: a released run claim keeps current top-ups current, and stale ones stale', async () => {
+    for (const id of [ids.deliveringRun, ids.behindRun]) {
+      const released = await withSystemContext(db, 'worker', (tx) =>
+        releaseClaimIfExpired(tx, 'run', { id, orgId: ids.orgId }, 30),
+      );
+      expect(released).toBe(true);
+    }
+    const rows = await withSystemContext(db, 'worker', (tx) =>
+      tx
+        .select({
+          id: s.marketRunsV.id,
+          lastSeq: s.marketRunsV.lastSeq,
+          topUpSeq: s.marketRunsV.topUpSeq,
+        })
+        .from(s.marketRunsV)
+        .where(inArray(s.marketRunsV.id, [ids.deliveringRun, ids.behindRun])),
+    );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get(ids.deliveringRun)).toMatchObject({ lastSeq: 3, topUpSeq: 3 });
+    expect(byId.get(ids.behindRun)).toMatchObject({ lastSeq: 3, topUpSeq: 1 });
   });
 });

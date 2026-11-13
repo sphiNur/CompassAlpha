@@ -19,13 +19,19 @@ const MIGRATIONS = join(
 /**
  * Runs migration `file` (e.g. `0048_backfill_builtin_role_permissions.sql`)
  * statement by statement in one transaction, in the maintenance context,
- * as the migration runner does.
+ * as the migration runner does. `only` keeps the statements it accepts
+ * (comments stripped): the tests' non-owner role may run a backfill but
+ * not the ALTER TABLE before it.
  */
-export async function rerunMigration(file: string): Promise<void> {
+export async function rerunMigration(
+  file: string,
+  only: (statement: string) => boolean = () => true,
+): Promise<void> {
   const text = readFileSync(join(MIGRATIONS, file), 'utf8');
   const statements = text
     .split('--> statement-breakpoint')
-    .filter((statement) => statement.replace(/--.*$/gm, '').trim());
+    .filter((statement) => statement.replace(/--.*$/gm, '').trim())
+    .filter((statement) => only(statement.replace(/--.*$/gm, '').trim()));
   await getDb(undefined, { system: 'maintenance' }).transaction(async (tx) => {
     for (const statement of statements) await tx.execute(sql.raw(statement));
   });

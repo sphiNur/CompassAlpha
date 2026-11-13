@@ -40,7 +40,8 @@ import {
   preferredSuppliers,
   runLines,
   runStoreTotals,
-  runStreamFacts,
+  runRecalledStoreIds,
+  runTopUpQtys,
   sessionStores,
   type RunStoreTotal,
 } from '../../../services/runRead';
@@ -161,7 +162,9 @@ export const readProcedures = {
     .input(SimpleRunCommandSchema.pick({ runId: true }))
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
-        const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+        const loaded = await loadRun(tx, ctx.session!.orgId, input.runId);
+        // RUNAPI-12: the top-up bookkeeping is not part of the answer.
+        const { topUpSeq: _topUpSeq, ...run } = loaded;
 
         // M3.33 (2026-05-18, Wave1 #2): store-scope check. Org-tier
         // bypasses; store-tier actors can only read runs whose sessions
@@ -184,7 +187,7 @@ export const readProcedures = {
         }
 
         // In the read model's key order (2026-07-26, see runLines).
-        const { items: allItems, splits: allSplits } = await runLines(tx, run.id);
+        const { items: allItems, splits: allSplits, topUpColumn } = await runLines(tx, run.id);
         type VisibleRunItem = Omit<(typeof allItems)[number], 'paymentMethod'> & {
           paymentMethod: string | null;
           /** BUY-5: demand that joined after the item was decided. */
@@ -224,15 +227,15 @@ export const readProcedures = {
             ? allItems
             : itemsForStoreReader(allItems, splits, perStoreDemand, hiddenSkuIds);
 
-        // BUY-5 (2026-10-30): "still need X" lives in the domain state only
-        // (no read-model column); DX-DLV-13: the stores whose delivery was
-        // recalled, of those this reader sees.
-        const streamFacts = await runStreamFacts(tx, run.id);
+        // BUY-5 (2026-10-30): "still need X", from the read model when it
+        // is current (review RUNAPI-12); DX-DLV-13: the stores whose
+        // delivery was recalled, of those this reader sees.
+        const topUpQtyBySku = await runTopUpQtys(tx, loaded, topUpColumn);
         items = items.map((it) => ({
           ...it,
-          topUpQty: streamFacts.topUpQtyBySku.get(it.skuId) ?? null,
+          topUpQty: topUpQtyBySku.get(it.skuId) ?? null,
         }));
-        const recalledStoreIds = streamFacts.recalledStoreIds.filter(
+        const recalledStoreIds = (await runRecalledStoreIds(tx, run.id)).filter(
           (storeId) => !allowedStoreSet || allowedStoreSet.has(storeId),
         );
 

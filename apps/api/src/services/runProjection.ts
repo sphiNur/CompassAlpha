@@ -9,7 +9,7 @@ import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts';
 import { DomainError } from '@compass/domain';
-import type { RunEvent, StoreSplitPayload } from '@compass/domain/run';
+import { replayRun, type RunEvent, type StoreSplitPayload } from '@compass/domain/run';
 import { readRunEvents } from './runStream';
 import { runCorrections } from './runCorrections';
 
@@ -18,6 +18,16 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
   // (marking 500 items received wrote the run row 500 times).
   const seqs = new Map<string, number>();
   const bump = (e: RunEvent) => seqs.set(e.streamId, Math.max(seqs.get(e.streamId) ?? 0, e.seq));
+  // Review RUNAPI-12: each stream's first and last seq in this batch, for
+  // market_runs_v.top_up_seq (see advanceTopUpSeq).
+  const spans = new Map<string, { first: number; last: number }>();
+  for (const e of events) {
+    const span = spans.get(e.streamId);
+    spans.set(e.streamId, {
+      first: Math.min(span?.first ?? e.seq, e.seq),
+      last: Math.max(span?.last ?? e.seq, e.seq),
+    });
+  }
   for (const e of events) {
     switch (e.type) {
       case 'RunPlanned': {
@@ -32,6 +42,8 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             purchaserMemberId: e.payload.purchaserMemberId,
             sessionIdsJson: e.payload.sessionIds,
             lastSeq: e.seq,
+            // RUNAPI-12: a new run has no top-up; its items' NULLs are exact.
+            topUpSeq: 0,
           })
           // RUNAPI-04 (2026-11-09): only a replay of this same run is
           // skipped. Without a target, a conflict on the one-live-run or
@@ -436,9 +448,16 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
       // ---- Reversal events (added 2026-05-03) ---------------------------
       case 'PurchaseRevised': {
         // Same projection as ItemPurchased on the items row…
+        // BUY-5 / RE-BUY-2, as the reducer: only what the revision adds
+        // to the bought quantity counts against the top-up, and what is
+        // left of it stays (NULL once nothing is). The SET reads the row
+        // as it was, so purchased_qty here is the quantity before.
+        const revisedQty = milliQty(qtyMilliOrZero(e.payload.actualQty));
+        const topUpLeft = sql`COALESCE(${s.runItemsV.topUpQty}, 0) - GREATEST(${revisedQty}::numeric - COALESCE(${s.runItemsV.purchasedQty}, 0), 0)`;
         await db
           .update(s.runItemsV)
           .set({
+            topUpQty: sql`CASE WHEN ${topUpLeft} > 0 THEN ${topUpLeft} END`,
             purchasedQty: e.payload.actualQty,
             supplierId: e.payload.supplierId,
             unitPrice: e.payload.unitPrice,
@@ -542,6 +561,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .set({
             status: 'pending',
             purchasedQty: null,
+            topUpQty: null,
             supplierId: null,
             unitPrice: null,
             receiptPhotoUrl: null,
@@ -566,6 +586,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .set({
             status: 'pending',
             unavailableNote: null,
+            topUpQty: null,
             updatedAt: new Date(),
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
@@ -573,7 +594,11 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         break;
 
       case 'TopUpDismissed':
-        // BUY-5: domain-state only (see run.get); nothing to project.
+        // BUY-5: the extra demand will not be bought (RUNAPI-12).
+        await db
+          .update(s.runItemsV)
+          .set({ topUpQty: null, updatedAt: new Date() })
+          .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
         bump(e);
         break;
 
@@ -639,6 +664,10 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .where(eq(s.marketRunsV.id, e.streamId));
 
         for (const added of e.payload.addedPlannedItems) {
+          // BUY-5 (RUNAPI-12): demand for an item already bought or marked
+          // unavailable is its top-up, added in whole thousandths as the
+          // reducer adds it. A pending row keeps what it has (NULL).
+          const addedQty = milliQty(qtyMilliOrZero(added.qty));
           await db
             .insert(s.runItemsV)
             .values({
@@ -657,6 +686,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               set: {
                 plannedQty: sql`CASE WHEN ${s.runItemsV.addedByPurchaser} THEN ${added.qty}::numeric ELSE ${s.runItemsV.plannedQty} + ${added.qty}::numeric END`,
                 addedByPurchaser: false,
+                topUpQty: sql`CASE WHEN ${s.runItemsV.status} IN ('purchased', 'unavailable') THEN COALESCE(${s.runItemsV.topUpQty}, 0) + ${addedQty}::numeric ELSE ${s.runItemsV.topUpQty} END`,
                 updatedAt: new Date(),
               },
             });
@@ -687,6 +717,69 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
     }
   }
   for (const [streamId, seq] of seqs) await bumpSeq(db, streamId, seq);
+  for (const [streamId, span] of spans) await advanceTopUpSeq(db, streamId, span);
+}
+
+/**
+ * Review RUNAPI-12 (2026-11-13): `top_up_seq` follows the run's seq while
+ * the items' `top_up_qty` follow the stream: the batch moves it from
+ * just before its first event to its last. A run that was not there
+ * (before migration 0073 with sessions attached, or an event appended
+ * without this projection) is worked out again from its stream, up to
+ * this batch, so it reads from the column from now on.
+ */
+async function advanceTopUpSeq(
+  db: DB,
+  runId: string,
+  span: { first: number; last: number },
+): Promise<void> {
+  const advanced = await db
+    .update(s.marketRunsV)
+    .set({ topUpSeq: span.last })
+    .where(and(eq(s.marketRunsV.id, runId), eq(s.marketRunsV.topUpSeq, span.first - 1)))
+    .returning({ id: s.marketRunsV.id });
+  if (advanced.length > 0) return;
+  const [run] = await db
+    .select({ topUpSeq: s.marketRunsV.topUpSeq })
+    .from(s.marketRunsV)
+    .where(eq(s.marketRunsV.id, runId));
+  if (!run || run.topUpSeq === span.last) return;
+  await rebuildTopUps(db, runId, span.last);
+}
+
+/**
+ * Sets every item's `top_up_qty` of a run from its stream up to `uptoSeq`,
+ * and marks the run current at that seq (RUNAPI-12). Leaves the run as it
+ * is when the stream does not reach `uptoSeq` (events projected without
+ * being appended): the reader keeps replaying it then.
+ */
+export async function rebuildTopUps(db: DB, runId: string, uptoSeq: number): Promise<boolean> {
+  const events = (await readRunEvents(db, runId)).filter((ev) => ev.seq <= uptoSeq);
+  const state = replayRun(runId, events);
+  if (state.seq !== uptoSeq) return false;
+  await db
+    .update(s.runItemsV)
+    .set({ topUpQty: null })
+    .where(and(eq(s.runItemsV.runId, runId), sql`${s.runItemsV.topUpQty} IS NOT NULL`));
+  const topUps = [...state.items.values()].filter(
+    (item) => item.topUpQty !== undefined && item.topUpQty !== null,
+  );
+  if (topUps.length > 0) {
+    const rows = sql.join(
+      topUps.map(
+        (item) => sql`(${item.skuId}::uuid, ${milliQty(qtyMilliOrZero(item.topUpQty))}::numeric)`,
+      ),
+      sql`, `,
+    );
+    await db.execute(sql`
+      UPDATE read_model.run_items_v ri
+      SET top_up_qty = t.qty
+      FROM (VALUES ${rows}) AS t (sku_id, qty)
+      WHERE ri.run_id = ${runId} AND ri.sku_id = t.sku_id
+    `);
+  }
+  await db.update(s.marketRunsV).set({ topUpSeq: uptoSeq }).where(eq(s.marketRunsV.id, runId));
+  return true;
 }
 
 /**
