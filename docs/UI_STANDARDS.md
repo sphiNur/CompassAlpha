@@ -9,7 +9,7 @@
 > colors, spacing, radii). Concord tells you *what* tokens exist; this tells you
 > *what to render and — more importantly — what NOT to render*.
 
-Each rule has a stable ID (`UI-1` … `UI-16`). Reference it in code comments and
+Each rule has a stable ID (`UI-1` … `UI-17`). Reference it in code comments and
 CI guards. When a rule genuinely must be broken, add a one-line
 `// UI-N exception: <reason>` comment above the line — the CI guards honor that
 exact marker (same pattern as the existing `M3.13 typography exception`).
@@ -168,6 +168,11 @@ A control that cannot be used looks the same everywhere: half opacity and a
 not-allowed cursor, from the kit's `disabledClass` (on the element) or
 `disabledLook` (on a label around it). A field someone may not edit must not
 look editable (2026-11-10, review UI-11).
+
+#### UI-17 — Bottom navigation: a floating capsule, at most five items
+The bottom nav is a capsule floating over the page (owner, 2026-11-14). It
+shows at most five items: with more than five tabs, four of them and a
+"More" item that opens the rest in a sheet (`navLayout.ts`).
 
 ---
 

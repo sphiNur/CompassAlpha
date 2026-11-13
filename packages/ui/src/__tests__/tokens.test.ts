@@ -54,6 +54,10 @@ const TEXT_PAIRS: Array<[fg: string, bg: string]> = [
   ['--c-warn-ink', '--c-warn-bg'],
   ['--c-danger-ink', '--c-danger-bg'],
   ['--c-warning-fg', '--c-warn-bg'],
+  // The bottom nav (2026-11-14): the active tab's ink on its pill, and the
+  // other tabs on the capsule where it is solid (reduced transparency).
+  ['--c-action', '--c-nav-active'],
+  ['--c-fg-muted', '--c-nav-surface-solid'],
 ];
 
 describe.each([

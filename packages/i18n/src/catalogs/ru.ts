@@ -114,6 +114,13 @@ export const ru = {
   'admin.store.tabSales': 'Продажи',
   'admin.store.tabSettings': 'Настройки',
   'nav.primaryAriaLabel': 'Основные разделы',
+  // Owner, 2026-11-14: a bottom bar of four tabs + More when a member
+  // sees more than five; More opens the rest in a sheet.
+  'nav.more': 'Ещё',
+  'nav.short.more': 'Ещё',
+  'nav.moreAria': 'Другие разделы',
+  'nav.moreCurrentAria': 'Другие разделы, сейчас: {label}',
+  'nav.badge.inside': '{label}, внутри есть что сделать',
   'admin.store.createHint':
     'Роль по умолчанию и остальные настройки можно задать после создания магазина — откройте его из списка и перейдите на вкладку «Настройки».',
   'admin.store.readOnlyBody':

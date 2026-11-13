@@ -12,6 +12,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { openTab } from './nav';
 import { expectTappable } from './tap-area';
 
 test.describe.configure({ mode: 'serial' });
@@ -88,12 +89,19 @@ test('the app keeps clear of the phone bars Telegram reports', async () => {
       probe.remove();
       return out;
     });
-  const padding = (el: Locator) =>
+  const nav = page.getByTestId('primary-nav');
+  /** How far the floating nav capsule keeps from the left, right and bottom edges. */
+  const navGaps = () =>
+    nav.evaluate((n) => {
+      const r = n.getBoundingClientRect();
+      return `${r.left}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px`;
+    });
+  /** <main>'s side padding: right left. */
+  const sides = (el: Locator) =>
     el.evaluate((n) => {
       const s = getComputedStyle(n);
-      return `${s.paddingTop} ${s.paddingRight} ${s.paddingBottom} ${s.paddingLeft}`;
+      return `${s.paddingRight} ${s.paddingLeft}`;
     });
-  const nav = page.getByTestId('primary-nav');
 
   // Outside Telegram nothing is reported: env() (0 in this browser) and
   // the floors.
@@ -103,14 +111,16 @@ test('the app keeps clear of the phone bars Telegram reports', async () => {
   // bar and, on its side, a cutout.
   await report({ top: '32px', right: '20px', bottom: '48px', left: '30px' });
   expect(await safeArea()).toBe('32px 20px 48px 30px');
-  expect(await padding(nav)).toBe('0px 20px 48px 30px');
-  expect(await padding(main())).toBe('0px 20px 0px 30px');
+  // The capsule (2026-11-14) floats 12px above the bottom bar and keeps
+  // 12px from the sides, or the cutout's width where that is more.
+  expect(await navGaps()).toBe('30px 20px 60px');
+  expect(await sides(main())).toBe('20px 30px');
   await report(null);
-  expect(await padding(nav)).toBe('0px 0px 8px 0px');
+  expect(await navGaps()).toBe('12px 12px 20px');
 });
 
 test('place an order', async () => {
-  await tab('order').click();
+  await openTab(page, 'order');
   // Weighed goods step by half a kilo per tap.
 
   const add = async (sku: string, taps: number, expected: string) => {
@@ -176,7 +186,7 @@ test('place an order', async () => {
 });
 
 test('approve it', async () => {
-  await tab('approve').click();
+  await openTab(page, 'approve');
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
   // V1: no claim step; Approve and Reject are on the card at once.
   await expect(main().getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
@@ -198,7 +208,7 @@ test('approve it', async () => {
 });
 
 test('buy everything, one item in cash and one by transfer', async () => {
-  await tab('run').click();
+  await openTab(page, 'run');
   await expect(main().getByRole('heading', { name: 'Ready to plan' })).toBeVisible();
   await evidence('run-preview');
   await mainButton().click();
@@ -281,7 +291,7 @@ test('deliver to the store', async () => {
 });
 
 test('receive the delivery at the store', async () => {
-  await tab('confirm').click();
+  await openTab(page, 'confirm');
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
   // UX-01: with nothing checked, the main button marks every line OK (the
@@ -299,7 +309,7 @@ test('receive the delivery at the store', async () => {
 });
 
 test('finish the run and find it in history', async () => {
-  await tab('run').click();
+  await openTab(page, 'run');
   await expect(main()).toContainText(/Stores\s*1\/1 confirmed/);
   await mainButton().click();
   // The split by payment method is what the purchaser signs off on.
@@ -312,7 +322,7 @@ test('finish the run and find it in history', async () => {
   await sheet().getByRole('button', { name: 'Finish run' }).click();
   await expect(main().getByRole('heading', { name: 'No approved orders yet' })).toBeVisible();
 
-  await tab('history').click();
+  await openTab(page, 'history');
   await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 run · 114,000 UZS/);
   await expect(
     main().getByRole('button', { name: /Central Kitchen 2 items 114,000/ }),
@@ -336,7 +346,7 @@ test('finish the run and find it in history', async () => {
 });
 
 test('close the day', async () => {
-  await tab('settlement').click();
+  await openTab(page, 'settlement');
   await evidence('daily-close-empty');
   await page.getByRole('textbox', { name: 'Invoiced cash revenue' }).fill('500000');
   await page.getByRole('textbox', { name: 'Online / transfer revenue' }).fill('250000');
@@ -357,7 +367,7 @@ test('a close corrected on another phone reaches the open form', async ({ browse
   // elsewhere, and Refresh keeps what was typed.
   const other = await browser.newPage();
   await other.goto('/');
-  await other.getByTestId('nav-settlement').click();
+  await openTab(other, 'settlement');
   const otherMain = other.getByRole('main');
   const correctOnOther = async (version: number, invoicedCash: string) => {
     await expect(otherMain.getByRole('button', { name: `Version ${version}` })).toBeVisible();
@@ -396,7 +406,7 @@ test('the next order shows what it should cost, and how it is usually paid', asy
   // Prices are remembered for a minute, and a minute ago nothing had
   // been bought. Opening the app again is what a later order amounts to.
   await page.reload();
-  await tab('order').click();
+  await openTab(page, 'order');
   const add = async (sku: string, taps: number) => {
     const saved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
     for (let i = 0; i < taps; i++) {
@@ -409,7 +419,7 @@ test('the next order shows what it should cost, and how it is usually paid', asy
   await mainButton().click();
   await expect(main().getByRole('status')).toContainText('Submitted · awaiting review');
 
-  await tab('approve').click();
+  await openTab(page, 'approve');
   await expect(main().getByTestId('approval-payment-budget')).toHaveText(
     /Cash ~12,000\s*Transfer ~90,000/,
   );
@@ -429,7 +439,7 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
   // thousands would record twelve million.
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
-  await tab('run').click();
+  await openTab(page, 'run');
   await mainButton().click();
   await expect(main()).toContainText('0 bought · 0 n/a · 2 left');
 
@@ -461,7 +471,7 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
 test('a store that cannot be loaded, or is gone, says so', async ({ browser }) => {
   const row = (name: RegExp): Locator => main().getByRole('button', { name });
   // The app reopens on the store that was open when it closed.
-  await tab('admin').click();
+  await openTab(page, 'admin');
   await row(/^Stores/).click();
   await row(/Central Kitchen/).click();
   await main().getByRole('radio', { name: 'Settings' }).click();

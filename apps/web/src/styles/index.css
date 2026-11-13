@@ -59,3 +59,108 @@
      animations are in @compass/ui/tokens.css, next to the components
      that use them. */
 }
+
+/* The bottom nav (owner, 2026-11-14): a capsule floating over the page
+   (BottomNav.tsx; sizes and colours are the --app-nav-* / --c-nav-*
+   tokens). The page scrolls under it; Shell keeps room under the last
+   content (--app-nav-reserve). */
+@layer components {
+  .app-nav {
+    position: absolute;
+    z-index: 20;
+    left: max(var(--app-nav-inset-x), var(--app-safe-left));
+    right: max(var(--app-nav-inset-x), var(--app-safe-right));
+    bottom: calc(var(--app-safe-bottom) + var(--app-nav-float));
+    max-width: 480px;
+    margin-inline: auto;
+    height: var(--app-nav-h);
+    display: flex;
+    padding-inline: 4px;
+    border-radius: var(--r-pill);
+    background: var(--c-nav-surface-solid);
+    box-shadow:
+      var(--shadow-nav),
+      inset 0 0 0 1px var(--c-divider);
+    transition:
+      height var(--t-quick) var(--easing),
+      opacity 120ms ease;
+  }
+  /* Translucent only where the browser blurs what is behind it: without
+     the blur, rows under the capsule would show through its labels. */
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .app-nav {
+      background: var(--c-nav-surface);
+      -webkit-backdrop-filter: saturate(1.6) blur(16px);
+      backdrop-filter: saturate(1.6) blur(16px);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .app-nav {
+      background: var(--c-nav-surface-solid);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  /* Scrolling down: a lower capsule with icons only, each still a 48px
+     tap. Shell sets the attribute; never under reduced motion. */
+  [data-nav-compact] .app-nav {
+    height: var(--app-nav-h-compact);
+  }
+  [data-nav-compact] .app-nav-label {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-nav-compact] .app-nav {
+      height: var(--app-nav-h);
+    }
+    [data-nav-compact] .app-nav-label {
+      display: revert;
+    }
+  }
+
+  /* <main>, the one scroller: room under the last content for the
+     capsule, and for focus moved there by keyboard. With a main button
+     (PageMainButton.tsx sets the attribute) the page ends above that bar,
+     which keeps the room itself. */
+  .app-main {
+    padding-bottom: var(--app-nav-reserve);
+    scroll-padding-bottom: var(--app-nav-reserve);
+  }
+  [data-main-button] .app-main {
+    padding-bottom: 0;
+    scroll-padding-bottom: 0;
+  }
+
+  /* The page fading out where it scrolls under the top bar and the nav.
+     A gradient in the page colour laid over the scroller, not a
+     mask-image on it: the overlay is painted once and composited, while a
+     mask on the scroller is re-applied to the moving layer every frame in
+     Android's WebView, and would fade the very rows the capsule's blur
+     shows through. pointer-events: none, so taps go to the page. */
+  .app-fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    pointer-events: none;
+    transition: opacity var(--t-quick) var(--easing);
+  }
+  .app-fade-top {
+    top: 0;
+    height: var(--app-fade-h);
+    background: linear-gradient(to bottom, var(--c-bg), transparent);
+    opacity: 0;
+  }
+  [data-scrolled] .app-fade-top {
+    opacity: 1;
+  }
+  .app-fade-bottom {
+    bottom: 0;
+    height: calc(var(--app-nav-reserve) + var(--app-fade-h));
+    background: linear-gradient(to top, var(--c-bg) var(--app-safe-bottom), transparent);
+  }
+  [data-scroll-end] .app-fade-bottom,
+  [data-main-button] .app-fade-bottom {
+    opacity: 0;
+  }
+}

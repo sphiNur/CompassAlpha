@@ -29,6 +29,7 @@ import type { ConsoleMessage } from 'playwright';
 import {
   HEADLESS,
   PRIMARY_NAV_SELECTOR,
+  clickNavTab,
   blockRealtime,
   catchUnstubbedTrpc,
   createReport,
@@ -138,8 +139,11 @@ async function run() {
       await page.screenshot({ path: failureShot('smoke-failure-shell.png'), fullPage: true });
     }
 
-    // Walk every tab. Each click must not produce a JS error.
-    const tabs = await page.$$(`${PRIMARY_NAV_SELECTOR} button`);
+    // Walk every tab. Each click must not produce a JS error. More (four
+    // tabs + More when there are more than five, 2026-11-14) is walked
+    // after the bar: each of its rows opens from the More sheet.
+    const TAB_SELECTOR = `${PRIMARY_NAV_SELECTOR} button:not([data-testid="nav-more"])`;
+    const tabs = await page.$$(TAB_SELECTOR);
     record(`BottomNav has tabs (${tabs.length})`, tabs.length >= 1);
     // Helper: count errors that AREN'T expected stub-mode noise.
     const realErrorCount = () =>
@@ -149,7 +153,7 @@ async function run() {
     // Re-query each time: a tab click can re-render the nav (badges), which
     // detaches the handles collected above.
     for (let i = 0; i < tabs.length; i++) {
-      const tab = (await page.$$(`${PRIMARY_NAV_SELECTOR} button`))[i];
+      const tab = (await page.$$(TAB_SELECTOR))[i];
       if (!tab) break;
       const label = (await tab.textContent())?.replace(/\s+/g, ' ').trim() ?? '?';
       const errorsBefore = realErrorCount();
@@ -158,6 +162,26 @@ async function run() {
       const errorsAfter = realErrorCount();
       const newErrors = errorsAfter - errorsBefore;
       record(`tab "${label}" rendered without new JS errors`, newErrors === 0, `+${newErrors}`);
+    }
+    const moreSelector = `${PRIMARY_NAV_SELECTOR} [data-testid="nav-more"]`;
+    if (await page.$(moreSelector)) {
+      await page.click(moreSelector);
+      const moreKeys = await page
+        .locator('[role="dialog"] [data-testid^="nav-"]:not([data-testid^="nav-badge"])')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.slice(4)));
+      record(`More lists the other tabs (${moreKeys.length})`, moreKeys.length >= 1);
+      await page.keyboard.press('Escape');
+      for (const key of moreKeys) {
+        const errorsBefore = realErrorCount();
+        await clickNavTab(page, key);
+        await page.waitForTimeout(400);
+        const newErrors = realErrorCount() - errorsBefore;
+        record(
+          `tab "${key}" (from More) rendered without new JS errors`,
+          newErrors === 0,
+          `+${newErrors}`,
+        );
+      }
     }
 
     // Final aggregate check.

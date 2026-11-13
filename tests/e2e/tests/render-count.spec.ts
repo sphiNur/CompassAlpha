@@ -15,6 +15,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { ADMIN_TG_ID, API_URL } from '../env';
 import { signInitData } from './initData';
+import { openTab } from './nav';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -168,7 +169,7 @@ test('typing in a purchase sheet redraws none of the rows behind it', async () =
 });
 
 test('a realtime push redraws the order list once, without the closed sheets', async ({ request }) => {
-  await page.getByTestId('nav-order').click();
+  await openTab(page, 'order');
   // Today's order is already in the run: start the next one.
   await page.getByRole('button', { name: 'Place another order' }).click();
   const beef = page.getByRole('main').getByRole('listitem').filter({ hasText: 'Beef' }).last();

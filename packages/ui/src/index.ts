@@ -124,6 +124,7 @@ export {
   IconAttendance,
   IconSettlement,
   IconActivity,
+  IconMore,
   IconMaintenance,
   IconChevronRight,
   IconShare,

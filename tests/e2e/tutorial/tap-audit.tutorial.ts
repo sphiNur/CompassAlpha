@@ -35,6 +35,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Locale } from '@compass/i18n';
 import { API_URL } from '../env';
+import { openTab } from '../tests/nav';
 import { mutate, signIn, type Login } from './api';
 import { LOCALES, PEOPLE, STORES, TG_IDS, skuName, type Role } from './demo';
 import { translator, type T } from './i18n';
@@ -127,7 +128,6 @@ async function phone(who: Role): Promise<Page> {
 
 const main = (page: Page): Locator => page.getByRole('main');
 const sheet = (page: Page): Locator => page.getByRole('dialog');
-const tab = (page: Page, name: string): Locator => page.getByTestId(`nav-${name}`);
 const mainButton = (page: Page): Locator => page.getByTestId('page-main-button');
 const row = (page: Page, code: string): Locator =>
   main(page)
@@ -244,9 +244,10 @@ async function goView(page: Page, auth: string, nav: Nav): Promise<boolean> {
   // The tab asked for is the one open (with a nav at all).
   const navTabs = page.locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])');
   if ((await navTabs.count()) > 0) {
-    const current = await page
-      .getByTestId(`nav-${nav.tab}`)
-      .getAttribute('aria-current')
+    // A tab behind More (2026-11-14) is open when More stands for it.
+    const inBar = page.getByTestId('primary-nav').getByTestId(`nav-${nav.tab}`);
+    const current = await ((await inBar.count()) > 0 ? inBar : page.getByTestId('nav-more'))
+      .getAttribute('aria-current', { timeout: 5_000 })
       .catch(() => null);
     if (current !== 'page') {
       console.log(`tap audit: could not open ${viewName(nav)}`);
@@ -406,6 +407,18 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
     const tabs = await page
       .locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.slice(4)));
+    // With more than five tabs, the rest are in the More sheet (2026-11-14).
+    if (tabs.includes('more')) {
+      tabs.splice(tabs.indexOf('more'), 1);
+      await page.getByTestId('nav-more').click();
+      tabs.push(
+        ...(await sheet(page)
+          .locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])')
+          .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.slice(4)))),
+      );
+      await page.keyboard.press('Escape');
+      await sheet(page).waitFor({ state: 'hidden' });
+    }
     const current = await page.evaluate(() => {
       try {
         return JSON.parse(localStorage.getItem('compass.nav.v1') ?? '{}').state?.tab ?? 'order';
@@ -518,7 +531,7 @@ function writeReport(final = false) {
 
 test('a draft order', async () => {
   const page = await phone('staff');
-  await tab(page, 'order').click();
+  await openTab(page, 'order');
   await addToOrder(page, 'BEEF', 2);
   await addToOrder(page, 'TOMATO', 4);
   await addToOrder(page, 'MILK', 2);
@@ -535,7 +548,7 @@ test('the order submitted', async () => {
 
 test('the run being bought', async () => {
   const manager = await phone('manager');
-  await tab(manager, 'approve').click();
+  await openTab(manager, 'approve');
   await reach(
     manager,
     main(manager).getByRole('button', { name: t('approval.approve'), exact: true }),
@@ -547,7 +560,7 @@ test('the run being bought', async () => {
     main(manager).getByRole('button', { name: t('approval.approve'), exact: true }),
   ).toHaveCount(0);
   const page = await phone('purchaser');
-  await tab(page, 'run').click();
+  await openTab(page, 'run');
   await reach(page, mainButton(page).getByText(t('run.action.startPurchase')));
   await mainButton(page).click();
   const save = main(page).getByRole('button', {
