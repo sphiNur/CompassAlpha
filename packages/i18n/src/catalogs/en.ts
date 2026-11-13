@@ -2662,6 +2662,8 @@ export const en = {
   'attendance.view.settings': 'Settings',
   'attendance.admin.noStoreTitle': 'No store to manage',
   'attendance.admin.noStoreBody': 'Attendance is managed per store; you manage none yet.',
+  'attendance.admin.otherStoreTitle': 'Not managed at this store',
+  'attendance.admin.otherStoreBody': 'You manage attendance at another store. Tap the store name at the top to switch to it.',
   'attendance.nav.prev': 'Previous',
   'attendance.nav.next': 'Next',
   'attendance.nav.today': 'Today',

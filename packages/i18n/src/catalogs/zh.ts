@@ -2278,6 +2278,8 @@ export const zh = {
   'attendance.view.settings': '设置',
   'attendance.admin.noStoreTitle': '没有可管理的门店',
   'attendance.admin.noStoreBody': '考勤按门店管理，你目前没有负责的门店。',
+  'attendance.admin.otherStoreTitle': '你不负责这家门店的考勤',
+  'attendance.admin.otherStoreBody': '你负责其他门店的考勤。点顶部的门店名称切换过去。',
   'attendance.nav.prev': '上一个',
   'attendance.nav.next': '下一个',
   'attendance.nav.today': '今天',

@@ -2556,6 +2556,8 @@ export const uz = {
   'attendance.view.settings': 'Sozlamalar',
   'attendance.admin.noStoreTitle': 'Boshqariladigan doʻkon yoʻq',
   'attendance.admin.noStoreBody': 'Davomat doʻkon boʻyicha yuritiladi; sizda hali doʻkon yoʻq.',
+  'attendance.admin.otherStoreTitle': 'Bu doʻkonda davomatni siz yuritmaysiz',
+  'attendance.admin.otherStoreBody': 'Siz boshqa doʻkonda davomatni yuritasiz. Unga oʻtish uchun yuqoridagi doʻkon nomini bosing.',
   'attendance.nav.prev': 'Oldingi',
   'attendance.nav.next': 'Keyingi',
   'attendance.nav.today': 'Bugun',

@@ -2577,6 +2577,8 @@ export const ru = {
   'attendance.admin.noStoreTitle': 'Нет магазина для управления',
   'attendance.admin.noStoreBody':
     'Учёт времени ведётся по магазинам; у вас пока нет своих магазинов.',
+  'attendance.admin.otherStoreTitle': 'В этом магазине вы не ведёте учёт времени',
+  'attendance.admin.otherStoreBody': 'Вы ведёте учёт времени в другом магазине. Нажмите на название магазина вверху, чтобы перейти в него.',
   'attendance.nav.prev': 'Назад',
   'attendance.nav.next': 'Вперёд',
   'attendance.nav.today': 'Сегодня',
