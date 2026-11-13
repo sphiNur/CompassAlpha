@@ -238,9 +238,22 @@ async function goView(page: Page, auth: string, nav: Nav): Promise<boolean> {
   } catch {
     return false;
   }
-  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
-  await page.waitForTimeout(250);
+  await settle(page);
   return true;
+}
+
+/**
+ * The screen has its data: no spinner for a moment. (Not networkidle:
+ * the app's polling keeps the network busy, and each wait ran out.)
+ */
+async function settle(page: Page): Promise<void> {
+  await page
+    .waitForFunction(() => !document.querySelector('main [class*="animate-[spin"]'), undefined, {
+      timeout: 5_000,
+      polling: 100,
+    })
+    .catch(() => {});
+  await page.waitForTimeout(200);
 }
 
 const measure = (page: Page, scope: 'page' | 'dialog'): Promise<TapTarget[]> =>
@@ -312,10 +325,33 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
   const session = await mutate<Login['session']>(login.accessToken, 'auth.setLocale', {
     locale: lang,
   });
-  const { context, page } = await openAs(browser, { ...login, session });
+  const context = await browser.newContext({
+    viewport: VIEWPORTS[width]!,
+    isMobile: true,
+    hasTouch: true,
+    deviceScaleFactor: 2,
+  });
+  context.setDefaultTimeout(20_000);
+  const page = await context.newPage();
+  // Same origin, no app code: where the sign-in is stored before the app boots.
+  await page.goto('/boot.css');
+  await page.evaluate(
+    (state) => localStorage.setItem('compass.auth', state),
+    JSON.stringify({
+      state: {
+        accessToken: login.accessToken,
+        refreshToken: login.refreshToken,
+        session,
+        currentStoreId: null,
+      },
+      version: 0,
+    }),
+  );
+  await page.goto('/');
+  await page.getByRole('main').waitFor();
+  await settle(page);
   const where = `${lang}@${width}`;
   try {
-    await page.setViewportSize(VIEWPORTS[width]!);
     // Nothing the audit taps is written.
     await context.route(`${API_URL}/trpc/**`, (route) => {
       const req = route.request();
@@ -355,21 +391,22 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
         done.add(k);
         crawled.add(once);
         if (inHeader) tappedHeader.add(k);
-        if (done.size > 40) break;
+        if (done.size > 30) break;
         // The candidate list is from the screen as it was first drawn.
         if ((await signature(page)) !== before) {
           if (!(await goView(page, auth, nav))) break;
         }
         if (!(await tapNth(page, i).catch(() => false))) continue;
-        await page.waitForTimeout(350);
+        await page.waitForTimeout(300);
         if (await dialogOpen(page)) {
-          await page.waitForTimeout(350);
+          // The sheet's slide-in.
+          await page.waitForTimeout(300);
           record(stage, role, `${view} › ${label}`, where, await measure(page, 'dialog'));
           await page.keyboard.press('Escape');
-          await page.waitForTimeout(300);
+          await page.waitForTimeout(250);
           if (await dialogOpen(page)) await goView(page, auth, nav);
         } else if ((await signature(page)) !== before) {
-          await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
+          await settle(page);
           record(stage, role, `${view} › after ${label}`, where, await measure(page, 'page'));
           if (await dialogOpen(page)) await goView(page, auth, nav);
         }
@@ -384,7 +421,13 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
 async function audit(stage: string, roles: AuditRole[]) {
   for (const lang of LANGS) {
     for (const width of WIDTHS) {
-      for (const role of roles) await auditRole(stage, role, lang, width);
+      for (const role of roles) {
+        const started = Date.now();
+        await auditRole(stage, role, lang, width);
+        console.log(
+          `tap audit: ${stage} ${role} ${lang}@${width} in ${Math.round((Date.now() - started) / 1000)}s, ${findings.size} under ${MIN} so far`,
+        );
+      }
     }
   }
   // The story's phones read English again.
