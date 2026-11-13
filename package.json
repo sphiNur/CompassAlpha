@@ -16,6 +16,7 @@
     "type-check": "turbo run type-check && tsc -p scripts",
     "test": "bun run scripts/unit-tests.ts",
     "test:e2e": "pnpm --filter @compass/e2e e2e",
+    "tutorial:shots": "bun run tests/e2e/tutorial/run.ts",
     "db:generate": "pnpm --filter @compass/db generate",
     "db:migrate": "pnpm --filter @compass/db migrate",
     "db:studio": "pnpm --filter @compass/db studio",

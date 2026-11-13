@@ -38,6 +38,8 @@ out/
 # test
 playwright-report/
 test-results/
+# tutorial screenshots (bun run tutorial:shots)
+tutorial-out/
 # Failure screenshots of the browser smoke scripts, written under
 # test-results/ since review OPS-40; this catches any written elsewhere.
 smoke-failure*.png

@@ -538,9 +538,15 @@ importers:
 
   tests/e2e:
     devDependencies:
+      '@compass/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@compass/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@compass/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@playwright/test':
         specifier: 1.64.0
         version: 1.64.0
