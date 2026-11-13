@@ -17,7 +17,7 @@ import {
 } from '@compass/ui';
 import { CATALOG_TEXT_MAX, SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
-import { snapStepToCanonical } from './skuStep';
+import { defaultStepForUnit, snapStepToCanonical, stepAfterUnitChange } from './skuStep';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatQty } from '../../../lib/format';
@@ -54,6 +54,8 @@ interface SkuDraft {
   unit: SkuUnit;
   /** M3.14 + 2026-07-30: only the canonical grid — see SkuStepSchema. */
   step: SkuStep;
+  /** S2: the step was picked by hand in this editor; a unit change keeps it. */
+  stepTouched: boolean;
   /** As typed (NEW-07); readSortIndex reads it. */
   sortText: string;
 }
@@ -174,7 +176,8 @@ export function SkusSection() {
             code: '',
             names: { ...EMPTY_NAMES },
             unit: 'pcs',
-            step: '1',
+            step: defaultStepForUnit('pcs'),
+            stepTouched: false,
             sortText: '100',
           })
         }
@@ -260,6 +263,7 @@ export function SkusSection() {
                             // both Selects have a valid initial selection.
                             unit: snapUnitToCanonical(sk.unit),
                             step: snapStepToCanonical(sk.step),
+                            stepTouched: false,
                             sortText: String(sk.sortIndex),
                           })
                         }
@@ -354,7 +358,12 @@ export function SkusSection() {
               <Field label={i18n.t('admin.field.unit')} required>
                 <Select
                   value={draft.unit}
-                  onChange={(e) => setDraft({ ...draft, unit: e.target.value as SkuUnit })}
+                  onChange={(e) => {
+                    // S2 (2026-11-13): the step follows the unit (kg → 0.5)
+                    // until it is picked by hand.
+                    const unit = e.target.value as SkuUnit;
+                    setDraft({ ...draft, unit, step: stepAfterUnitChange(unit, draft) });
+                  }}
                 >
                   {/* R2-COPY-3: the localised unit, not the stored code. */}
                   {SKU_UNITS.map((u) => (
@@ -367,7 +376,9 @@ export function SkusSection() {
               <Field label={i18n.t('admin.field.step')}>
                 <Select
                   value={draft.step}
-                  onChange={(e) => setDraft({ ...draft, step: e.target.value as SkuStep })}
+                  onChange={(e) =>
+                    setDraft({ ...draft, step: e.target.value as SkuStep, stepTouched: true })
+                  }
                 >
                   {/* Review ADM2-43 (2026-11-11): «0,5» in ru / uz, like the list. */}
                   {SKU_STEPS.map((s) => (
