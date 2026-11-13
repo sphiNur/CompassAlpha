@@ -119,6 +119,37 @@ describe('D18: text fields are 44px', () => {
   });
 });
 
+describe('WALK-03: tap areas the pages draw themselves', () => {
+  const tsx = () =>
+    sources(WEB_SRC)
+      .filter((f) => f.endsWith('.tsx'))
+      // Code only: a comment may name an element.
+      .map((f) => [rel(f), readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '')] as const);
+
+  test('a ChipBar that wraps says so with `wrap`, not its own flex-wrap', () => {
+    // Its own flex-wrap kept the scroller's 6 px gap between lines, and
+    // each line's hit-44 area covered the next (Finance chips tapped as 38).
+    const own: string[] = [];
+    for (const [file, src] of tsx()) {
+      for (const m of src.matchAll(/<ChipBar\b[^>]*>/g)) {
+        if (/flex-wrap/.test(m[0])) own.push(`${file}: ${m[0].replace(/\s+/g, ' ')}`);
+      }
+    }
+    expect(own).toEqual([]);
+  });
+
+  test('a <summary> taps as 44', () => {
+    const short: string[] = [];
+    for (const [file, src] of tsx()) {
+      for (const m of src.matchAll(/<summary\b[^>]*>/g)) {
+        if (!/hit-44|min-h-11|min-h-\[var\(--control-h\)\]/.test(m[0]))
+          short.push(`${file}: ${m[0]}`);
+      }
+    }
+    expect(short).toEqual([]);
+  });
+});
+
 describe('purchase row controls', () => {
   test('the row controls are at least 44 wide and grow with their label', () => {
     const src = readFileSync(join(WEB_SRC, 'pages/runs/views/RunViews.tsx'), 'utf8');
