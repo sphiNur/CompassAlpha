@@ -577,10 +577,8 @@ test('the run being delivered', async () => {
     .getByRole('radio', { name: t('run.unavailable.preset.soldOut'), exact: true })
     .or(sheet(page).getByRole('button', { name: t('run.unavailable.preset.soldOut'), exact: true }))
     .first();
+  // A preset reason marks the item at once (#469) and closes the sheet.
   await preset.click();
-  const confirmNa = sheet(page).getByRole('button', { name: t('run.action.markNa'), exact: true });
-  await expect(confirmNa).toBeEnabled();
-  await confirmNa.click();
   await expect(sheet(page)).toBeHidden();
   await expect(mainButton(page)).toHaveText(t('run.action.startDelivery'));
   await mainButton(page).click();
