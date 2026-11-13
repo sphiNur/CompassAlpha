@@ -58,6 +58,10 @@
  *   bun apps/api/scripts/reproject.ts --type=run
  *   bun apps/api/scripts/reproject.ts --type=order
  *
+ *   # Review RUNAPI-12: only fill the runs' top-ups (run_items_v.top_up_qty)
+ *   # where migration 0073 could not, without truncating anything:
+ *   bun apps/api/scripts/reproject.ts --top-ups
+ *
  * Safety:
  *
  *   - The script REFUSES to run if `domain.events` is empty (probably
@@ -75,7 +79,7 @@ import {
   emptyState as emptyOrderState,
   type OrderEvent,
 } from '@compass/domain/order';
-import { projectRun } from '../src/services/runProjection';
+import { projectRun, rebuildTopUps } from '../src/services/runProjection';
 import { projectOrder } from '../src/services/orderProjection';
 
 type StreamType = 'run' | 'order';
@@ -83,14 +87,17 @@ type StreamType = 'run' | 'order';
 interface Options {
   type: StreamType | 'all';
   yes: boolean;
+  topUps: boolean;
 }
 
 function parseArgs(): Options {
   const args = process.argv.slice(2);
   let type: Options['type'] = 'all';
   let yes = false;
+  let topUps = false;
   for (const a of args) {
     if (a === '--yes' || a === '-y') yes = true;
+    else if (a === '--top-ups') topUps = true;
     else if (a === '--type=run') type = 'run';
     else if (a === '--type=order') type = 'order';
     else if (a === '--type=all') type = 'all';
@@ -99,7 +106,7 @@ function parseArgs(): Options {
       process.exit(2);
     }
   }
-  return { type, yes };
+  return { type, yes, topUps };
 }
 
 async function confirm(prompt: string): Promise<boolean> {
@@ -119,6 +126,11 @@ async function main() {
   // open the pool in the system context; under fail-closed RLS a plain
   // handle sees zero rows (reproject would refuse, repair would say "clean").
   const db = getDb(process.env.DATABASE_URL, { system: 'maintenance' });
+  if (opts.topUps) {
+    await fillTopUps(db);
+    await closeDb();
+    return;
+  }
 
   // Sanity check: refuse to run on an empty event log. Catches the
   // "you ran this against the wrong DB" footgun, where TRUNCATE-then-
@@ -225,6 +237,40 @@ async function main() {
     );
   }
   await closeDb();
+}
+
+/**
+ * Review RUNAPI-12: works out `run_items_v.top_up_qty` from the stream for
+ * every run whose `top_up_seq` is behind its `last_seq` (migration 0073
+ * leaves runs with attached sessions so), one run per transaction. Nothing
+ * else is touched, so it may run beside the live app; a run that gains an
+ * event meanwhile is left for its next event to fill.
+ */
+async function fillTopUps(db: DB): Promise<void> {
+  const behind = (await db.execute(sql`
+    SELECT id::text AS id, last_seq::int AS last_seq
+    FROM read_model.market_runs_v
+    WHERE top_up_seq IS DISTINCT FROM last_seq
+    ORDER BY run_date, run_index
+  `)) as unknown as Array<{ id: string; last_seq: number }>;
+  let filled = 0;
+  for (const run of behind) {
+    try {
+      const done = await db.transaction(async (tx) => {
+        const [current] = (await tx.execute(sql`
+          SELECT last_seq::int AS last_seq FROM read_model.market_runs_v
+          WHERE id = ${run.id} FOR UPDATE
+        `)) as unknown as Array<{ last_seq: number }>;
+        if (!current) return false;
+        return rebuildTopUps(tx as unknown as DB, run.id, current.last_seq);
+      });
+      if (done) filled += 1;
+    } catch (err) {
+      // A command on the same run at the same moment: its next event fills it.
+      console.log(`[reproject] top-ups: run ${run.id} skipped (${String(err)})`);
+    }
+  }
+  console.log(`[reproject] top-ups: ${filled} of ${behind.length} runs filled`);
 }
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
