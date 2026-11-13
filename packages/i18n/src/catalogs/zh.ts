@@ -1007,6 +1007,9 @@ export const zh = {
   'order.action.submitting': '提交中…',
   'order.review.title': '复核订单',
   'order.review.view': '查看订单',
+  // UX-02 (2026-11-13): an empty draft offers the last sent order's lines.
+  'order.repeatLast.action': '重复上次订单',
+  'order.repeatLast.hint': '填入上次订单的商品和数量，提交前可以修改。',
   'order.review.itemsCount': '{n} 个商品',
   'order.review.empty': '暂未选择任何商品。',
   'order.review.archived': '已下架',

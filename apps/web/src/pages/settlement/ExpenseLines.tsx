@@ -51,8 +51,8 @@ export function ExpenseLines({
 }) {
   const i18n = useI18n();
   const toast = useToast();
-  // A default price comes back only with prices.view in this store; the
-  // line's amount is typed otherwise.
+  // UX-15 (2026-11-13): the default price comes back to whoever may record
+  // the close, and a tap fills the line's amount from it.
   const templatesQuery = trpc.settlement.expenseTemplates.useQuery({ storeId });
   const templates = templatesQuery.data ?? [];
   // A total-only row was created before this product recorded individual

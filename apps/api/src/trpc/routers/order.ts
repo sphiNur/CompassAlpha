@@ -9,12 +9,13 @@
  */
 import { TRPCError } from '@trpc/server';
 import { logger } from '../../infra/log';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { schema as s, type DB } from '@compass/db';
 import {
   AdjustItemInputSchema,
   ExtrasSuggestionsInputSchema,
+  LastSubmittedInputSchema,
   MarkExtraStatusInputSchema,
   PendingListInputSchema,
   RejectInputSchema,
@@ -743,6 +744,99 @@ export const orderRouter = router({
         };
       });
     }),
+
+  /**
+   * UX-02 (2026-11-13): the lines of the store's most recent sent order
+   * (submitted, approved, in a run or archived after one), for the Order
+   * page's "Repeat last order" on an empty draft. Read-only: the page
+   * copies them through adjustItem, as + taps, and the user edits before
+   * Submit.
+   *
+   * Scoped as todaySession (the store is in the caller's org and they are
+   * assigned to it). Whose orders: the caller's own, or anyone's at the
+   * store for those who approve or claim there, the rule sessionDetail
+   * reads by (ORD-05), so staff never see another member's order here.
+   * Archived products are left out, and an order whose every line is one
+   * is passed over. No order: no lines.
+   */
+  lastSubmitted: authedProcedure.input(LastSubmittedInputSchema).query(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const memberId = ctx.session!.memberId;
+      const store = await tx.query.stores.findFirst({
+        where: (st, { eq: eq2, and: and2 }) =>
+          and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
+      });
+      if (!store) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.storeForbidden' });
+      }
+      await assertActorAssignedToStore(tx, memberId, input.storeId, ctx.session!.permissions);
+      const effective = await effectivePermissionsForStore(
+        tx,
+        memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      );
+      const anyAuthor = effective.has('order.approve') || effective.has('order.claim');
+
+      // An order line still worth copying: a quantity, on a product
+      // that is not archived.
+      const copyable = and(
+        gt(s.orderItemsV.qty, '0'),
+        eq(s.skus.orgId, orgId),
+        eq(s.skus.isArchived, false),
+      );
+      const [last] = await tx
+        .select({
+          id: s.orderSessionsV.id,
+          orderDate: s.orderSessionsV.orderDate,
+          submittedAt: s.orderSessionsV.submittedAt,
+        })
+        .from(s.orderSessionsV)
+        .where(
+          and(
+            eq(s.orderSessionsV.orgId, orgId),
+            eq(s.orderSessionsV.storeId, input.storeId),
+            anyAuthor ? undefined : eq(s.orderSessionsV.initiatedByMemberId, memberId),
+            inArray(s.orderSessionsV.status, ['submitted', 'approved', 'in_run', 'archived']),
+            // A withdrawn batch has none, nor does an emptied draft
+            // archived as such (RE-ORD-5): neither was sent.
+            isNotNull(s.orderSessionsV.submittedAt),
+            exists(
+              tx
+                .select({ one: sql`1` })
+                .from(s.orderItemsV)
+                .innerJoin(s.skus, eq(s.skus.id, s.orderItemsV.skuId))
+                .where(and(eq(s.orderItemsV.sessionId, s.orderSessionsV.id), copyable)),
+            ),
+          ),
+        )
+        .orderBy(desc(s.orderSessionsV.submittedAt))
+        .limit(1);
+      if (!last) return { sessionId: null, orderDate: null, submittedAt: null, lines: [] };
+
+      const rows = await tx
+        .select({ skuId: s.orderItemsV.skuId, qty: s.orderItemsV.qty, unit: s.skus.unit })
+        .from(s.orderItemsV)
+        .innerJoin(s.skus, eq(s.skus.id, s.orderItemsV.skuId))
+        .where(and(eq(s.orderItemsV.sessionId, last.id), copyable))
+        // The catalog's order (DX-ORD-6).
+        .orderBy(asc(s.skus.sortIndex), asc(s.skus.code));
+      // Summed per product (orders from before 0005 may hold several
+      // contributors' rows), exactly, in thousandths (QTY-01).
+      const unitBySku = new Map(rows.map((row) => [row.skuId, row.unit]));
+      return {
+        sessionId: last.id,
+        orderDate: last.orderDate,
+        submittedAt: last.submittedAt?.toISOString() ?? null,
+        lines: [...qtyTotalsBySku(rows).entries()].map(([skuId, milli]) => ({
+          skuId,
+          qty: milliQty(milli),
+          unit: unitBySku.get(skuId)!,
+        })),
+      };
+    });
+  }),
 
   /** All sessions in an approver's queue.
    *

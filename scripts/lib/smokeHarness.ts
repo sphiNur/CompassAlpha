@@ -442,6 +442,13 @@ export async function stubAppReads(context: BrowserContext): Promise<void> {
   await stubTrpc(context, 'catalog.suppliers', []);
   await stubTrpc(context, 'order.todaySession', null);
   await stubTrpc(context, 'order.todayBatches', []);
+  // UX-02: no sent order to repeat.
+  await stubTrpc(context, 'order.lastSubmitted', {
+    sessionId: null,
+    orderDate: null,
+    submittedAt: null,
+    lines: [],
+  });
   // #190: what the store sent for review; null = nothing to show.
   await stubTrpc(context, 'order.submittedVersion', null);
   await stubTrpc(context, 'order.pendingList', []);

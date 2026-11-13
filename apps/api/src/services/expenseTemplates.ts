@@ -3,17 +3,20 @@
  * the admin list and the run sheet's shortcuts. Review ADM2-01
  * (2026-11-12): each read the table itself and handed every reader the
  * default unit price, prices.view or not.
+ *
+ * UX-15 (owner, 2026-11-13): on the daily close a template's default is
+ * a preset amount, not a purchase price, so `settlement.expenseTemplates`
+ * reads the rows unredacted (`readExpenseTemplateRows`) behind its own
+ * settlement.record check. The admin list and the run sheet keep the
+ * prices.view rule below.
  */
 import { and, eq } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
 import { priceStoreIds, pricesVisibleAnywhere } from './priceRedaction';
 
-export async function readExpenseTemplates(
-  tx: DB,
-  session: { orgId: string; memberId: string; permissions: ReadonlySet<string> },
-  includeArchived: boolean,
-) {
-  const rows = await tx
+/** The organisation's templates as stored, default price included. */
+export async function readExpenseTemplateRows(tx: DB, orgId: string, includeArchived: boolean) {
+  return tx
     .select({
       id: s.expenseTemplates.id,
       label: s.expenseTemplates.label,
@@ -27,11 +30,19 @@ export async function readExpenseTemplates(
     .from(s.expenseTemplates)
     .where(
       and(
-        eq(s.expenseTemplates.orgId, session.orgId),
+        eq(s.expenseTemplates.orgId, orgId),
         ...(includeArchived ? [] : [eq(s.expenseTemplates.isArchived, false)]),
       ),
     )
     .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt);
+}
+
+export async function readExpenseTemplates(
+  tx: DB,
+  session: { orgId: string; memberId: string; permissions: ReadonlySet<string> },
+  includeArchived: boolean,
+) {
+  const rows = await readExpenseTemplateRows(tx, session.orgId, includeArchived);
   // A template's price belongs to no store, so it follows the rule for
   // org-wide figures such as dish prices: prices.view somewhere.
   const showPrices = pricesVisibleAnywhere(await priceStoreIds(tx, session));

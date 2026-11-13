@@ -24,7 +24,7 @@ import {
   TelegramLoginInputSchema,
 } from './schemas/auth';
 import { CategoryCreateInputSchema } from './schemas/catalog';
-import { SetSessionExtrasInputSchema } from './schemas/order';
+import { LastSubmittedInputSchema, SetSessionExtrasInputSchema } from './schemas/order';
 import { PurchaseQtySchema } from './schemas/run';
 import {
   SettlementMoneySchema,
@@ -279,6 +279,15 @@ describe('inputs from the routers', () => {
       at: true,
       over: false,
     });
+  });
+
+  it('UX-02: the last sent order is asked for by store id, and nothing else', () => {
+    const storeId = '11111111-1111-4111-8111-111111111111';
+    expect(LastSubmittedInputSchema.safeParse({ storeId }).success).toBe(true);
+    expect(LastSubmittedInputSchema.safeParse({}).success).toBe(false);
+    expect(LastSubmittedInputSchema.safeParse({ storeId: 'store-1' }).success).toBe(false);
+    // Unknown keys are dropped, not passed to the router.
+    expect(LastSubmittedInputSchema.parse({ storeId, memberId: storeId })).toEqual({ storeId });
   });
 
   it('a language is one of the four', () => {

@@ -1194,6 +1194,10 @@ export const en = {
   'order.action.submitting': 'Submitting…',
   'order.review.title': 'Review your order',
   'order.review.view': 'View order',
+  // UX-02 (2026-11-13): an empty draft offers the last sent order's lines.
+  'order.repeatLast.action': 'Repeat last order',
+  'order.repeatLast.hint':
+    'Fills in the products and quantities of your last order. You can change them before you submit.',
   'order.review.itemsCount': '{n, plural, one {# item} other {{n} items}}',
   'order.review.empty': 'Nothing selected yet.',
   'order.review.archived': 'No longer sold',
