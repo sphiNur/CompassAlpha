@@ -826,6 +826,8 @@ export const zh = {
   'admin.invite.link.hint': '链接仅可使用一次，7 天后过期，并且只能在 Telegram 中打开。',
   'admin.invite.link.submit': '创建邀请链接',
   'admin.invite.link.copyTitle': '邀请链接',
+  'admin.invite.store': '门店',
+  'admin.invite.pickStore': '选择门店',
   'admin.invite.tgIdHint':
     '不知道对方的 ID？让对方先打开小程序，屏幕上会显示对方的 Telegram ID，请对方发给你。',
   'admin.invite.clocksIn': '需要打卡（考勤）',
@@ -2242,6 +2244,7 @@ export const zh = {
   'admin.section.attendanceEnrollHint': '待审核人脸：{n}',
   'admin.section.invite': '邀请',
   'admin.section.inviteHint': '添加人员到{store}',
+  'admin.section.inviteHintMany': '添加人员到门店',
   'permission.attendance.clock': '在所属门店上下班打卡',
   'permission.attendance.manage': '排班、查看和更正考勤',
   'permission.group.attendance': '考勤',

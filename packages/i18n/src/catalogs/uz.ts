@@ -913,6 +913,8 @@ export const uz = {
     'Havola bir marta ishlatiladi, 7 kundan keyin eskiradi va faqat Telegram ichida ochiladi.',
   'admin.invite.link.submit': 'Taklif havolasini yaratish',
   'admin.invite.link.copyTitle': 'Taklif havolasi',
+  'admin.invite.store': 'Doʻkon',
+  'admin.invite.pickStore': 'Doʻkon tanlang',
   'admin.invite.tgIdHint':
     'ID ni bilmaysizmi? Undan mini-ilovani ochishni soʻrang: ekranda uning Telegram ID si chiqadi, uni sizga yuborsin.',
   'admin.invite.clocksIn': 'Davomatda belgilanadi',
@@ -2514,6 +2516,7 @@ export const uz = {
   'admin.section.attendanceEnrollHint': 'Tasdiqlanadigan yuzlar: {n}',
   'admin.section.invite': 'Taklif qilish',
   'admin.section.inviteHint': '{store} doʻkoniga odam qoʻshish',
+  'admin.section.inviteHintMany': 'Doʻkonga odam qoʻshish',
   'permission.attendance.clock': 'Oʻz doʻkonlarida kelish va ketishni belgilash',
   'permission.attendance.manage': 'Smenalarni tuzish, davomatni koʻrish va tuzatish',
   'permission.group.attendance': 'Davomat',

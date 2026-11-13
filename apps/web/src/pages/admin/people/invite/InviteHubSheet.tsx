@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   Banner,
   IconShare,
@@ -22,11 +23,14 @@ import { PendingInvitesList } from './PendingInvitesList';
 export function InviteHubSheet({
   open,
   onClose,
+  storePicker,
   onPickManual,
   onPickLink,
 }: {
   open: boolean;
   onClose: () => void;
+  /** S2: which store, asked before the method when there are several. */
+  storePicker?: ReactNode;
   onPickManual: () => void;
   onPickLink: (action: 'share' | 'copy') => void;
 }) {
@@ -50,6 +54,7 @@ export function InviteHubSheet({
           the setting loads) the link rows are not offered, and the
           reason is said once instead of under two greyed-out rows. */}
       <div className="flex flex-col gap-2 py-3">
+        {storePicker}
         {botUsername ? (
           <>
             <ul className={rowGroupClass} role="list">

@@ -18,3 +18,33 @@ export function snapStepToCanonical(step: string): SkuStep {
   if (exact) return exact;
   return n <= 0.5 ? '0.5' : '1';
 }
+
+/**
+ * S2 (2026-11-13): the order step a unit starts with. Weighed and poured
+ * goods (kg, L) go by half; grams and millilitres by a hundred; counted
+ * units by one. Any unit the contracts may add later counts by one.
+ */
+export function defaultStepForUnit(unit: string): SkuStep {
+  switch (unit) {
+    case 'kg':
+    case 'L':
+      return '0.5';
+    case 'g':
+    case 'ml':
+      return '100';
+    default:
+      return '1';
+  }
+}
+
+/**
+ * The step after the unit changes: the unit's own default, unless the
+ * person already chose a step in this editor (`stepTouched`), which is
+ * never overridden.
+ */
+export function stepAfterUnitChange(
+  unit: string,
+  current: { step: SkuStep; stepTouched: boolean },
+): SkuStep {
+  return current.stepTouched ? current.step : defaultStepForUnit(unit);
+}
