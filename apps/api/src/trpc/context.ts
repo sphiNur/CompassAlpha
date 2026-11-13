@@ -1,11 +1,12 @@
 import type { Context as HonoContext } from 'hono';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext, type OrgTransactionOptions } from '@compass/db';
 import { verifyAccess, type AccessClaims } from '../infra/jwt';
 import { logger } from '../infra/log';
 import { env } from '../env';
 import { ulid } from 'ulid';
 import { flatEffectivePermissions } from '../services/storeScope';
+import { bindingIsLive, overrideIsLive } from '../services/liveGrants';
 import { readSessionTenant } from '../services/subscription';
 import { trustedClientIp } from '../services/clientIp';
 
@@ -186,12 +187,7 @@ async function readSession(
     .select({ role: s.roles, binding: s.memberRoleBindings })
     .from(s.memberRoleBindings)
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(
-      and(
-        eq(s.memberRoleBindings.memberId, member.id),
-        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date())),
-      ),
-    );
+    .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()));
 
   const roleIds = bindings.map((b) => b.role.id);
   const perms = roleIds.length
@@ -207,15 +203,7 @@ async function readSession(
       scopeId: s.memberPermissionOverrides.scopeId,
     })
     .from(s.memberPermissionOverrides)
-    .where(
-      and(
-        eq(s.memberPermissionOverrides.memberId, member.id),
-        or(
-          isNull(s.memberPermissionOverrides.expiresAt),
-          gt(s.memberPermissionOverrides.expiresAt, new Date()),
-        ),
-      ),
-    );
+    .where(and(eq(s.memberPermissionOverrides.memberId, member.id), overrideIsLive()));
   const keysByRole = new Map<string, string[]>();
   for (const p of perms)
     keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);

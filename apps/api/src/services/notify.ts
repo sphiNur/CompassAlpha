@@ -23,7 +23,7 @@
  * Channel = 'bot' for now (WebPush lands later). Body is a short Markdown
  * line with a deep link back into the Mini App.
  */
-import { eq, and, inArray, or, isNull, gt } from 'drizzle-orm';
+import { eq, and, inArray, or } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { DB, PermissionKey } from '@compass/db';
 import { schema as s } from '@compass/db';
@@ -32,6 +32,7 @@ import {
   flatEffectivePermissions,
   type ScopedPermission,
 } from './storeScope';
+import { bindingIsLive, overrideIsLive } from './liveGrants';
 import { detectLocale, format, loadCatalog, lookup, type CatalogKey, type Locale } from '@compass/i18n';
 
 export type NotifyChannel = 'bot' | 'webpush' | 'inapp';
@@ -187,7 +188,7 @@ async function permissionCandidates(
           eq(s.members.orgId, orgId),
           eq(s.members.status, 'active'),
           eq(s.rolePermissions.permissionKey, permissionKey),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
           inScope(s.memberRoleBindings, storeId),
         ),
       ),
@@ -201,10 +202,7 @@ async function permissionCandidates(
           eq(s.members.status, 'active'),
           eq(s.memberPermissionOverrides.permissionKey, permissionKey),
           eq(s.memberPermissionOverrides.effect, 'allow'),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
+          overrideIsLive(now),
           inScope(s.memberPermissionOverrides, storeId),
         ),
       ),
@@ -237,7 +235,7 @@ async function keyRows(
         and(
           inArray(s.memberRoleBindings.memberId, memberIds),
           eq(s.rolePermissions.permissionKey, permissionKey),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
         ),
       ),
     db
@@ -252,10 +250,7 @@ async function keyRows(
         and(
           inArray(s.memberPermissionOverrides.memberId, memberIds),
           eq(s.memberPermissionOverrides.permissionKey, permissionKey),
-          or(
-            isNull(s.memberPermissionOverrides.expiresAt),
-            gt(s.memberPermissionOverrides.expiresAt, now),
-          ),
+          overrideIsLive(now),
         ),
       ),
   ]);

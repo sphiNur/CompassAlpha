@@ -9,7 +9,7 @@ import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { milliQty, qtyMilli, qtyMilliOrZero } from '@compass/contracts';
 import { DomainError } from '@compass/domain';
-import type { RunEvent } from '@compass/domain/run';
+import type { RunEvent, StoreSplitPayload } from '@compass/domain/run';
 import { readRunEvents } from './runStream';
 import { runCorrections } from './runCorrections';
 
@@ -93,26 +93,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             ),
           );
         // Persist split rows so delivery+confirm can address each store separately.
-        for (const split of e.payload.storeSplits) {
-          await db
-            .insert(s.runItemStoresV)
-            .values({
-              runId: e.streamId,
-              skuId: e.payload.skuId,
-              storeId: split.storeId,
-              qty: split.qty,
-              unitPrice: split.unitPrice ?? null,
-              paymentMethod: split.paymentMethod ?? null,
-            })
-            .onConflictDoUpdate({
-              target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
-              set: {
-                qty: split.qty,
-                unitPrice: split.unitPrice ?? null,
-                paymentMethod: split.paymentMethod ?? null,
-              },
-            });
-        }
+        await upsertStoreSplits(db, e.streamId, e.payload.skuId, e.payload.storeSplits);
         const run = await runPhaseOf(db, e.streamId);
         await restoreAmendedVerdicts(db, e, run, purchasedStoreIds);
         // Append a price_history row for analytics — runs in same tx so RLS context applies.
@@ -144,26 +125,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             addedByPurchaser: true,
           })
           .onConflictDoNothing();
-        for (const split of e.payload.storeSplits) {
-          await db
-            .insert(s.runItemStoresV)
-            .values({
-              runId: e.streamId,
-              skuId: e.payload.skuId,
-              storeId: split.storeId,
-              qty: split.qty,
-              unitPrice: split.unitPrice ?? null,
-              paymentMethod: split.paymentMethod ?? null,
-            })
-            .onConflictDoUpdate({
-              target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
-              set: {
-                qty: split.qty,
-                unitPrice: split.unitPrice ?? null,
-                paymentMethod: split.paymentMethod ?? null,
-              },
-            });
-        }
+        await upsertStoreSplits(db, e.streamId, e.payload.skuId, e.payload.storeSplits);
         const run = await runPhaseOf(db, e.streamId);
         await restoreAmendedVerdicts(
           db,
@@ -534,26 +496,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               ),
             );
         }
-        for (const split of e.payload.storeSplits) {
-          await db
-            .insert(s.runItemStoresV)
-            .values({
-              runId: e.streamId,
-              skuId: e.payload.skuId,
-              storeId: split.storeId,
-              qty: split.qty,
-              unitPrice: split.unitPrice ?? null,
-              paymentMethod: split.paymentMethod ?? null,
-            })
-            .onConflictDoUpdate({
-              target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
-              set: {
-                qty: split.qty,
-                unitPrice: split.unitPrice ?? null,
-                paymentMethod: split.paymentMethod ?? null,
-              },
-            });
-        }
+        await upsertStoreSplits(db, e.streamId, e.payload.skuId, e.payload.storeSplits);
         await restoreAmendedVerdicts(
           db,
           e,
@@ -738,47 +681,95 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           })
           .where(eq(s.marketRunsV.id, e.streamId));
 
-        for (const removed of e.payload.removedPlannedItems) {
-          const existing = await db
-            .select({
-              plannedQty: s.runItemsV.plannedQty,
-            })
-            .from(s.runItemsV)
-            .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)))
-            .limit(1);
-          // RUNAPI-05: in whole thousandths, as the reducer does.
-          const remaining = qtyMilli(existing[0]?.plannedQty ?? '0') - qtyMilli(removed.qty);
-          if (remaining <= 0n) {
-            await db
-              .delete(s.runItemStoresV)
-              .where(
-                and(
-                  eq(s.runItemStoresV.runId, e.streamId),
-                  eq(s.runItemStoresV.skuId, removed.skuId),
-                ),
-              );
-            await db
-              .delete(s.runItemsV)
-              .where(
-                and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)),
-              );
-          } else {
-            await db
-              .update(s.runItemsV)
-              .set({
-                plannedQty: milliQty(remaining),
-                updatedAt: new Date(),
-              })
-              .where(
-                and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)),
-              );
-          }
-        }
+        await removePlannedItems(db, e.streamId, e.payload.removedPlannedItems);
         break;
       }
     }
   }
   for (const [streamId, seq] of seqs) await bumpSeq(db, streamId, seq);
+}
+
+/**
+ * A purchase's store splits, in one statement (review RUNAPI-21: one
+ * upsert per store). A kept row keeps its delivery and receipt: only the
+ * quantity, price and payment are set. A store named twice keeps its last
+ * split, as the upserts one after the other left it.
+ */
+async function upsertStoreSplits(
+  db: DB,
+  runId: string,
+  skuId: string,
+  splits: readonly StoreSplitPayload[],
+): Promise<void> {
+  const byStore = new Map<string, StoreSplitPayload>();
+  for (const split of splits) byStore.set(split.storeId, split);
+  if (byStore.size === 0) return;
+  await db
+    .insert(s.runItemStoresV)
+    .values(
+      [...byStore.values()].map((split) => ({
+        runId,
+        skuId,
+        storeId: split.storeId,
+        qty: split.qty,
+        unitPrice: split.unitPrice ?? null,
+        paymentMethod: split.paymentMethod ?? null,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
+      set: {
+        qty: sql`excluded.qty`,
+        unitPrice: sql`excluded.unit_price`,
+        paymentMethod: sql`excluded.payment_method`,
+      },
+    });
+}
+
+/**
+ * What an ejected session asked for leaves the plan, in one statement
+ * (review RUNAPI-21: each product was read, then updated or deleted, on
+ * its own). In whole thousandths, as the reducer subtracts (RUNAPI-05): a
+ * product whose plan reaches zero goes, with its store splits (those of a
+ * product with no row go too, as before); the others keep the rest.
+ */
+async function removePlannedItems(
+  db: DB,
+  runId: string,
+  removed: ReadonlyArray<{ skuId: string; qty: string }>,
+): Promise<void> {
+  const milliBySku = new Map<string, bigint>();
+  for (const r of removed) {
+    milliBySku.set(r.skuId, (milliBySku.get(r.skuId) ?? 0n) + qtyMilli(r.qty));
+  }
+  if (milliBySku.size === 0) return;
+  const rows = sql.join(
+    [...milliBySku].map(([skuId, milli]) => sql`(${skuId}::uuid, ${milliQty(milli)}::numeric)`),
+    sql`, `,
+  );
+  await db.execute(sql`
+    WITH removed (sku_id, qty) AS (VALUES ${rows}),
+    dropped_splits AS (
+      DELETE FROM read_model.run_item_stores_v ris
+      USING removed r
+      WHERE ris.run_id = ${runId}
+        AND ris.sku_id = r.sku_id
+        AND NOT EXISTS (
+          SELECT 1 FROM read_model.run_items_v ri
+          WHERE ri.run_id = ${runId} AND ri.sku_id = r.sku_id AND ri.planned_qty - r.qty > 0
+        )
+    ),
+    dropped_items AS (
+      DELETE FROM read_model.run_items_v ri
+      USING removed r
+      WHERE ri.run_id = ${runId} AND ri.sku_id = r.sku_id AND ri.planned_qty - r.qty <= 0
+    )
+    UPDATE read_model.run_items_v ri
+    SET planned_qty = ri.planned_qty - r.qty,
+        updated_at = ${new Date().toISOString()}::timestamptz
+    FROM removed r
+    WHERE ri.run_id = ${runId} AND ri.sku_id = r.sku_id AND ri.planned_qty - r.qty > 0
+  `);
 }
 
 /** Never back: an event later in the batch may have set a higher seq itself. */

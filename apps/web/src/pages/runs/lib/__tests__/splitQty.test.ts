@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 
 import { evenSplitQty, proportionalSplitQty } from '../splitQty';
 
-/** The domain's tolerance in packages/domain/src/run/commands.ts. */
+/** The domain's tolerance in packages/domain/src/run/decide/guards.ts. */
 const TOLERANCE = 1e-6;
 
 const sum = (values: Iterable<string>): number => {

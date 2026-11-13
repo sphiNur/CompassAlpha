@@ -7,10 +7,11 @@
  * sign-in path shares it with.
  */
 import { TRPCError } from '@trpc/server';
-import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { inSystem, schema as s, withOrgContext, type DB } from '@compass/db';
 import type { Session } from '@compass/contracts';
 import { detectLocale } from '@compass/i18n';
+import { bindingIsLive, overrideIsLive } from './liveGrants';
 import { isPlatformAdmin } from './platformAdmin';
 import {
   adminScopeOf,
@@ -113,12 +114,7 @@ async function readSessionPayload(
     })
     .from(s.memberRoleBindings)
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(
-      and(
-        eq(s.memberRoleBindings.memberId, memberId),
-        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date())),
-      ),
-    );
+    .where(and(eq(s.memberRoleBindings.memberId, memberId), bindingIsLive()));
   // `super_admin` is used by a handful of destructive maintenance gates;
   // it is meaningful only from a global role binding.
   const roleSlugs = bindings
@@ -171,12 +167,9 @@ async function readSessionPayload(
     .where(
       and(
         eq(s.memberPermissionOverrides.memberId, memberId),
-        // Either no expiry, or expiry is in the future. Mirrors the SQL
-        // pattern Postgres uses for soft-expiring rows without a sweeper.
-        or(
-          isNull(s.memberPermissionOverrides.expiresAt),
-          gt(s.memberPermissionOverrides.expiresAt, new Date()),
-        ),
+        // Either no expiry, or expiry is in the future (review ADM1-30:
+        // the one predicate in services/liveGrants.ts).
+        overrideIsLive(),
       ),
     );
   // Defensive `o.permissionKey` truthiness check (audit 2026-05-05) —
@@ -276,10 +269,7 @@ async function readSessionPayload(
             eq(s.stores.isActive, true),
             eq(s.memberRoleBindings.memberId, memberId),
             eq(s.memberRoleBindings.scopeType, 'store'),
-            or(
-              isNull(s.memberRoleBindings.expiresAt),
-              gt(s.memberRoleBindings.expiresAt, new Date()),
-            ),
+            bindingIsLive(),
           ),
         ),
     ]);

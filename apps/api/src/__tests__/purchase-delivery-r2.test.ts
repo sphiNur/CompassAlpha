@@ -941,4 +941,47 @@ describe.skipIf(!SHOULD_RUN)('store commands (PG-gated)', () => {
         .where(eq(s.memberPermissionOverrides.id, deny!.id));
     }
   });
+
+  // The recall and the hand-over resolve the store's overrides in their
+  // own transaction too, though the dispatcher needs no assignment there.
+  test('RUNAPI-29: recalling and handing over goods read the store override on dispatch', async () => {
+    const { db, deniedB, storeA, storeB } = fix!;
+    const { runId } = await seedRun('delivered');
+    const [deny] = await db
+      .insert(s.memberPermissionOverrides)
+      .values({
+        memberId: deniedB.memberId,
+        permissionKey: 'delivery.dispatch',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: storeB,
+      })
+      .returning();
+    try {
+      const undeliver = (storeId: string) =>
+        errorOf(() => deniedB.caller.run.undeliverStore({ runId, storeId, reason: 'wrong van' }));
+      const deliver = (storeId: string) =>
+        errorOf(() => deniedB.caller.run.deliverToStore({ runId, storeId }));
+      expect(await undeliver(storeB)).toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'run.errors.cannotDispatch',
+      });
+      expect(await undeliver(storeA)).toBeNull();
+      // Store B already has its goods; the permission is checked first.
+      expect(await deliver(storeB)).toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'run.errors.cannotDispatch',
+      });
+      expect(await deliver(storeA)).toBeNull();
+      const delivered = await db
+        .select({ storeId: s.runItemStoresV.storeId, deliveredAt: s.runItemStoresV.deliveredAt })
+        .from(s.runItemStoresV)
+        .where(eq(s.runItemStoresV.runId, runId));
+      expect(delivered.every((row) => row.deliveredAt !== null)).toBe(true);
+    } finally {
+      await db
+        .delete(s.memberPermissionOverrides)
+        .where(eq(s.memberPermissionOverrides.id, deny!.id));
+    }
+  });
 });

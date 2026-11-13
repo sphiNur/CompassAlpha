@@ -4,9 +4,10 @@
  * COREAPI-10, 2026-11). This lived in the settlement router, and the
  * attendance router imported it from there: one router depending on another.
  */
-import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import { bindingIsLive } from './liveGrants';
 
 /** Deliberately omits rank/permissions: the picker needs only a role label. */
 export type WageRosterRole = { id: string; slug: string; name: string };
@@ -53,7 +54,7 @@ export async function loadWageRoster(
           eq(s.memberRoleBindings.scopeType, 'store'),
           eq(s.memberRoleBindings.scopeId, storeId),
           eq(s.roles.orgId, orgId),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
           ...activeMemberConditions,
         ),
       ),
@@ -88,7 +89,7 @@ export async function loadWageRoster(
               eq(s.memberRoleBindings.scopeId, storeId),
             ),
           ),
-          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          bindingIsLive(now),
         ),
       ),
   ]);

@@ -1,13 +1,13 @@
 /**
  * How a run command runs: the actor, the run-stream transaction that is
- * decided again when it loses a race, the common pipeline (load, check
- * scope, decide, write, notify, publish), and attaching order sessions.
+ * decided again when it loses a race, and the common pipeline (load,
+ * check scope, decide, write, notify, publish). What a run does to its
+ * order sessions is services/runSessionCascade.ts.
  */
 import { TRPCError } from '@trpc/server';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { schema as s, type DB, type PermissionKey } from '@compass/db';
 import type { RunEvent, RunState } from '@compass/domain/run';
-import { decide as decideOrder, type OrderEvent, type OrderState } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { rethrowDomainError } from '../../trpc';
 import type { RequestContext } from '../../context';
@@ -22,8 +22,7 @@ import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
 } from '../../../services/storeScope';
-import { loadOrderState } from '../../../services/orderStream';
-import { writeOrderEvents, writeRunEvents } from '../../../services/streamWrite';
+import { writeRunEvents } from '../../../services/streamWrite';
 import { hub } from '../../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
 import {
@@ -50,51 +49,6 @@ export function actorFromCtx(
     memberId: ctx.session!.memberId,
     permissions: effectivePermissions ?? ctx.session!.permissions,
   };
-}
-
-/** The actor for an order command a run handler sends to one session. */
-export function orderActorFromCtx(
-  ctx: RequestContext,
-  session: OrderState,
-  permissions?: ReadonlySet<string>,
-) {
-  return {
-    ...actorFromCtx(ctx, permissions),
-    isClaimer: session.claimedByMemberId === ctx.session!.memberId,
-  };
-}
-
-/**
- * AttachToRun on each session's order stream (approved → in_run), for
- * run.create and attachSessions: the orders can no longer be edited or
- * unapproved. Returns each session's last seq for its order.changed push.
- */
-export async function attachSessionsToRun(
-  tx: DB,
-  ctx: RequestContext,
-  runId: string,
-  sessionIds: readonly string[],
-): Promise<Array<{ sessionId: string; lastSeq: number }>> {
-  const attached: Array<{ sessionId: string; lastSeq: number }> = [];
-  for (const sessionId of sessionIds) {
-    const session = await loadOrderState(tx, sessionId);
-    // An order unapproved since the read model said `approved` is refused
-    // by the domain: the client's answer, not a server error (RUNAPI-20).
-    let events: OrderEvent[];
-    try {
-      events = decideOrder(session, {
-        type: 'AttachToRun',
-        runId,
-        actor: orderActorFromCtx(ctx, session),
-      });
-    } catch (err) {
-      if (err instanceof DomainError) rethrowDomainError(err);
-      throw err;
-    }
-    await writeOrderEvents(tx, ctx.session!.orgId, sessionId, events);
-    attached.push({ sessionId, lastSeq: events[events.length - 1]?.seq ?? session.seq });
-  }
-  return attached;
 }
 
 /**
