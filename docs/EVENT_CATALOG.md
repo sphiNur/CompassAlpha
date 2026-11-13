@@ -80,7 +80,7 @@ are absent when the store pays the line's.
 | `RunRefinalized` | `{totalActual, totalCash, totalTransfer, itemsTotal?, expensesTotal?, byMemberId}` | 2026-07-06: amending → finished, totals recomputed as in `RunFinished`. `itemsTotal` / `expensesTotal`: absent before 2026-10-21. |
 | `PurchaseRevised` | `{skuId, supplierId \| null, unitPrice, actualQty, receiptPhotoUrl \| null, storeSplits[], reason, paymentMethod?, priceConfirmed?}` | 2026-05-03: replaces the item's recorded purchase. `paymentMethod` / `priceConfirmed`: as in `ItemPurchased`. |
 | `UnavailableUndone` | `{skuId, reason}` | 2026-05-03: an unavailable item back to pending. `reason` is `''` when none was given (optional since 2026-11-13). |
-| `TopUpDismissed` | `{skuId, qty, note}` | 2026-10-30 (BUY-5): the extra demand that arrived after the item was decided will not be bought. |
+| `TopUpDismissed` | `{skuId, qty, note}` | 2026-10-30 (BUY-5): the extra demand that arrived after the item was decided will not be bought. Since 2026-11-13 (RUNAPI-12) the top-up is projected: `run_items_v.top_up_qty`, current while `market_runs_v.top_up_seq` = `last_seq`. |
 | `PurchaseUndone` | `{skuId, reason}` | 2026-05-03: a bought item back to pending. `reason` may be `''` since 2026-05-04. |
 | `StoreDeliveryUndone` | `{storeId, reason}` | 2026-05-03: recalls a delivery the store has not confirmed. `reason` is `''` when none was given (optional since 2026-11-13). |
 | `PurchaseStartUndone` | `{reason}` | 2026-05-03: purchasing → planned. Recorded purchases stay (M3.29). `reason` is `''` when none was given (optional since 2026-11-13). |
