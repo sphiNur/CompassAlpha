@@ -17,13 +17,8 @@ import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { trpc } from '../../../lib/trpc';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { useI18n } from '../../../hooks/useI18n';
-import {
-  CatalogRowActions,
-  CatalogRowHeader,
-  CatalogToolbar,
-  ReadOnlyHint,
-  useArchivedToast,
-} from './CatalogParts';
+import { CatalogRowActions, CatalogRowHeader, CatalogToolbar, ReadOnlyHint } from './CatalogParts';
+import { useUndoToast } from '../../../hooks/useUndoToast';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { changedFields, hasChanges } from './editPatch';
@@ -82,7 +77,7 @@ export function SuppliersSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const archivedToast = useArchivedToast();
+  const archivedToast = useUndoToast();
   const remove = trpc.admin.supplierDelete.useMutation({
     onSuccess: (_data, vars) => {
       void utils.admin.supplierList.invalidate();

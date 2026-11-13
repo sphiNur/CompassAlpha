@@ -26,8 +26,8 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
-  useArchivedToast,
 } from './CatalogParts';
+import { useUndoToast } from '../../../hooks/useUndoToast';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import {
   CATALOG_LOCALES,
@@ -83,7 +83,7 @@ export function CategoriesSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const archivedToast = useArchivedToast();
+  const archivedToast = useUndoToast();
   const remove = trpc.admin.categoryDelete.useMutation({
     onSuccess: (_data, vars) => {
       void utils.admin.categoryList.invalidate();

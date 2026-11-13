@@ -38,6 +38,7 @@ import { currencyOf, formatMoney } from '../../lib/format';
 import { formatList } from '../../lib/listFormat';
 import { useAuthStore } from '../../stores/authStore';
 import { GeoMap } from '../../components/geo/GeoMap';
+import { useUndoToast } from '../../hooks/useUndoToast';
 import { trpc, type RouterOutputs } from '../../lib/trpc';
 import { addDays, mondayOf, orgToday } from '../../lib/calendarDate';
 import { PunchPhotoStrip } from './AttendancePhotos';
@@ -412,8 +413,13 @@ function MemberDaySheet({
     onError: errToast('attendance.errors.saveFailed'),
   });
   const decide = trpc.attendance.overtimeDecide.useMutation({
-    onSuccess: () => {
+    onSuccess: (_r, input) => {
       haptic('success');
+      toast.success(
+        i18n.t(
+          input.approve ? 'attendance.toast.overtimeApproved' : 'attendance.toast.overtimeRejected',
+        ),
+      );
       refresh();
     },
     onError: errToast('attendance.errors.saveFailed'),
@@ -422,6 +428,7 @@ function MemberDaySheet({
   const voidPunch = trpc.attendance.voidPunch.useMutation({
     onSuccess: () => {
       haptic('success');
+      toast.success(i18n.t('attendance.toast.punchVoided'));
       setVoiding(null);
       setVoidReason('');
       refresh();
@@ -841,6 +848,8 @@ function ShiftSheet({
 }) {
   const i18n = useI18n();
   const dates = useDateFormat();
+  const toast = useToast();
+  const deletedToast = useUndoToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [form, setForm] = useState<ShiftDraft | null>(draft);
@@ -849,17 +858,33 @@ function ShiftSheet({
     setSeen(draft);
     setForm(draft);
   }
-  const done = () => {
+  const done = (message: string) => {
     haptic('success');
+    toast.success(message);
     void utils.attendance.sheet.invalidate();
     onClose();
   };
   const save = trpc.attendance.shiftSave.useMutation({
-    onSuccess: done,
+    onSuccess: () => done(i18n.t('attendance.toast.shiftSaved')),
+    onError: errToast('attendance.errors.saveFailed'),
+  });
+  // UX-03: deleting asks nothing first; the toast's Undo saves the shift
+  // again as it was before the sheet opened (the catalog's archive Undo).
+  // Its own mutation, so an Undo does not close a sheet opened since.
+  const restore = trpc.attendance.shiftSave.useMutation({
+    onSuccess: () => {
+      haptic('success');
+      toast.success(i18n.t('attendance.toast.shiftRestored'));
+      void utils.attendance.sheet.invalidate();
+    },
     onError: errToast('attendance.errors.saveFailed'),
   });
   const del = trpc.attendance.shiftDelete.useMutation({
-    onSuccess: done,
+    onSuccess: () => {
+      haptic('success');
+      void utils.attendance.sheet.invalidate();
+      onClose();
+    },
     onError: errToast('attendance.errors.saveFailed'),
   });
   const valid =
@@ -942,7 +967,26 @@ function ShiftSheet({
               variant="danger"
               block
               loading={del.isPending}
-              onClick={() => del.mutate({ storeId, shiftId: form.shiftId! })}
+              onClick={() => {
+                // The shift as saved, not the sheet's unsaved edits.
+                const old = draft!;
+                del.mutate(
+                  { storeId, shiftId: form.shiftId! },
+                  {
+                    onSuccess: () =>
+                      deletedToast(i18n.t('attendance.toast.shiftDeleted'), () =>
+                        restore.mutate({
+                          storeId,
+                          memberId: old.memberId,
+                          date: old.date,
+                          start: old.start,
+                          end: old.end,
+                          note: old.note.trim() || undefined,
+                        }),
+                      ),
+                  },
+                );
+              }}
             >
               {i18n.t('attendance.shift.delete')}
             </Button>

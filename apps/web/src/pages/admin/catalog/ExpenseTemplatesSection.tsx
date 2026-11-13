@@ -28,8 +28,8 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
-  useArchivedToast,
 } from './CatalogParts';
+import { useUndoToast } from '../../../hooks/useUndoToast';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { moneyLine } from '../../../lib/money';
@@ -109,7 +109,7 @@ export function ExpenseTemplatesSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const archivedToast = useArchivedToast();
+  const archivedToast = useUndoToast();
   const remove = trpc.admin.expenseTemplateDelete.useMutation({
     onSuccess: (_data, vars) => {
       void utils.admin.expenseTemplateList.invalidate();

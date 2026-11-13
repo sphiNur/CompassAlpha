@@ -32,8 +32,8 @@ import {
   CatalogToolbar,
   ReadOnlyHint,
   SortIndexField,
-  useArchivedToast,
 } from './CatalogParts';
+import { useUndoToast } from '../../../hooks/useUndoToast';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import {
   EMPTY_NAMES,
@@ -135,7 +135,7 @@ export function SkusSection() {
     },
     onError: errToast('common.errors.actionFailed'),
   });
-  const archivedToast = useArchivedToast();
+  const archivedToast = useUndoToast();
   const remove = trpc.admin.skuDelete.useMutation({
     onSuccess: (_data, vars) => {
       void utils.admin.skuList.invalidate();
