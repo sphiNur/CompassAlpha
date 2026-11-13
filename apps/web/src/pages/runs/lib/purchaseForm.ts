@@ -76,6 +76,12 @@ export function purchaseDraftCheck(d: PurchaseFormDraft): {
   splitMatches: boolean;
   reasonOk: boolean;
   canSubmit: boolean;
+  /**
+   * UX-05 (2026-11-13): what else keeps Save disabled, for the line over
+   * it. A split that does not add up and a missing reason are said on the
+   * button itself, so they are not repeated here.
+   */
+  blockedBy: 'qty' | 'price' | 'storePrice' | null;
 } {
   const { splitTotal, splitMatches } = splitsAddUp(d.splits, d.actualQty);
   const reasonOk = !d.isEdit || d.reason.trim().length > 0;
@@ -86,17 +92,43 @@ export function purchaseDraftCheck(d: PurchaseFormDraft): {
     [...d.splits.entries()]
       .filter(([, qty]) => Number(qty) > 0)
       .every(([storeId]) => isStorablePrice(d.splitPrices.get(storeId) || d.unitPrice));
+  const qtyOk = Number(d.actualQty) > 0;
+  const priceOk = isStorablePrice(d.unitPrice);
   return {
     splitTotal,
     splitMatches,
     reasonOk,
-    canSubmit:
-      Number(d.actualQty) > 0 &&
-      isStorablePrice(d.unitPrice) &&
-      splitMatches &&
-      reasonOk &&
-      splitPricesOk,
+    canSubmit: qtyOk && priceOk && splitMatches && reasonOk && splitPricesOk,
+    blockedBy:
+      !splitMatches || !reasonOk
+        ? null
+        : !qtyOk
+          ? 'qty'
+          : !priceOk
+            ? 'price'
+            : !splitPricesOk
+              ? 'storePrice'
+              : null,
   };
+}
+
+/**
+ * UX-05 (2026-11-13): the first thing the add-item / expense sheet's Save
+ * waits for, in the form's order; null when it may be saved. The sheet's
+ * rule, the one its button is disabled by.
+ */
+export function addItemBlockedBy(
+  d: AddItemFormDraft,
+): 'product' | 'label' | 'store' | 'qty' | 'price' | 'split' | 'reason' | null {
+  if (d.mode === 'sku' ? !d.skuId : d.label.trim().length === 0) {
+    return d.mode === 'sku' ? 'product' : 'label';
+  }
+  if (d.splits.size === 0) return 'store';
+  if (!(Number(d.actualQty) > 0)) return 'qty';
+  if (!isStorablePrice(d.unitPrice)) return 'price';
+  if (!splitsAddUp(d.splits, d.actualQty).splitMatches) return 'split';
+  if (d.reason.trim().length === 0) return 'reason';
+  return null;
 }
 
 /**

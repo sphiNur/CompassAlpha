@@ -123,6 +123,16 @@ export function RoleCreateSheet({
   };
 
   const canSave = slugIsValid(slugToSend) && name.trim().length > 0 && rankRead.ok;
+  // UX-05: what the disabled Create is waiting for, first problem first.
+  const saveHint = !name.trim()
+    ? i18n.t('common.hint.fillIn', { field: i18n.t('admin.field.name') })
+    : slugBad
+      ? i18n.t(SLUG_MESSAGE.role)
+      : !slugIsValid(slugToSend)
+        ? i18n.t('common.hint.fillIn', { field: i18n.t('admin.field.slug') })
+        : !rankRead.ok
+          ? i18n.t('people.rankInvalid', { min: 1, max: maxRank })
+          : '';
 
   return (
     <Sheet
@@ -136,6 +146,7 @@ export function RoleCreateSheet({
           block
           loading={create.isPending}
           disabled={!canSave}
+          disabledHint={saveHint}
           onClick={() => {
             if (!rankRead.ok) return;
             create.mutate({

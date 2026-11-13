@@ -34,6 +34,7 @@ import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import type { SkuLite, StoreLite } from '../types';
 import type { PurchaseDraft } from './drafts';
 import { QtyPriceFields } from './QtyPriceFields';
+import { priceHint, qtyHint } from './saveHint';
 
 interface PurchaseSheetProps {
   draft: PurchaseDraft | null;
@@ -117,9 +118,26 @@ export function PurchaseSheet({
   }, [draft?.actualQty]);
 
   // RUNWEB2-04: the one rule (runs/lib/purchaseForm.ts).
-  const { splitTotal, splitMatches, reasonOk, canSubmit } = draft
+  const { splitTotal, splitMatches, reasonOk, canSubmit, blockedBy } = draft
     ? purchaseDraftCheck(draft)
-    : { splitTotal: 0, splitMatches: false, reasonOk: true, canSubmit: false };
+    : {
+        splitTotal: 0,
+        splitMatches: false,
+        reasonOk: true,
+        canSubmit: false,
+        blockedBy: null,
+      };
+  // UX-05: what else the disabled Save waits for (a split that does not
+  // add up and a missing reason are on the button itself).
+  const saveHint = !draft
+    ? ''
+    : blockedBy === 'qty'
+      ? qtyHint(i18n.t, draft.actualQty)
+      : blockedBy === 'price'
+        ? priceHint(i18n.t, priceInput, currency)
+        : blockedBy === 'storePrice'
+          ? i18n.t('run.errors.priceFormat')
+          : '';
 
   // M3.49 (2026-05-23): the sheet's own footer button is now ALWAYS
   // rendered — the in-page PageMainButton is hidden behind the sheet
@@ -143,6 +161,7 @@ export function PurchaseSheet({
           block
           loading={submitting}
           disabled={!canSubmit}
+          disabledHint={saveHint}
           onClick={() =>
             draft &&
             (canSubmit ? onSubmit(draft) : toast.error(i18n.t('run.errors.splitSumMismatch')))

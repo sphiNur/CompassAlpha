@@ -447,6 +447,23 @@ describe('confirmMainButton (review CONF-07)', () => {
       active: false,
     });
   });
+
+  it('UX-01: nothing checked yet, it marks all OK and opens the summary', () => {
+    expect(confirmMainButton(state({ undecided: 3 }))).toEqual({
+      action: 'markAllAndConfirm',
+      label: { key: 'confirm.allOkConfirm' },
+      visible: true,
+      active: true,
+    });
+    // Waits for an "all OK" already on its way.
+    expect(confirmMainButton(state({ undecided: 3, markingAll: true })).active).toBe(false);
+    expect(confirmMainButton(state({ undecided: 3, storeConfirmed: true })).visible).toBe(false);
+    expect(confirmMainButton(state({ undecided: 3, hasRun: false })).visible).toBe(false);
+    // Once one line has a verdict, it counts what is left, as before.
+    expect(confirmMainButton(state({ undecided: 2 })).action).toBe('openConfirm');
+    // The summary sheet's 确认收货 waits for the marks to land.
+    expect(confirmMainButton(state({ finalOpen: true, markingAll: true })).active).toBe(false);
+  });
 });
 
 describe('the summary before signing (U4, CONF-20)', () => {

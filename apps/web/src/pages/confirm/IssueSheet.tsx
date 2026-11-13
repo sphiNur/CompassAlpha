@@ -86,26 +86,16 @@ export function IssueSheet({
         // M3.49 (2026-05-23): dropped !getTg() — the in-page
         // PageMainButton sits behind any open sheet, so we
         // ALWAYS render the sheet's own footer button now.
-        <div className="flex flex-col gap-2">
-          {saveReason ? (
-            <p
-              id="issue-save-reason"
-              role="status"
-              className="text-center text-old-label text-[var(--c-fg-muted)]"
-            >
-              {saveReason}
-            </p>
-          ) : null}
-          <Button
-            block
-            disabled={!check?.canSave}
-            aria-describedby={saveReason ? 'issue-save-reason' : undefined}
-            loading={saving}
-            onClick={onSave}
-          >
-            {i18n.t('confirm.issue.save')}
-          </Button>
-        </div>
+        // UX-05: the kit's line over the disabled Save says why.
+        <Button
+          block
+          disabled={!check?.canSave}
+          disabledHint={saveReason ?? ''}
+          loading={saving}
+          onClick={onSave}
+        >
+          {i18n.t('confirm.issue.save')}
+        </Button>
       }
     >
       <div className="flex flex-col gap-3 py-3">

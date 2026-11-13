@@ -515,6 +515,8 @@ export function ApprovalPage() {
             block
             variant="danger"
             disabled={!rejectReason.trim()}
+            // UX-05: the reason is what Reject waits for.
+            disabledHint={i18n.t('order.errors.rejectReasonRequired')}
             loading={reject.isPending}
             onClick={() => {
               if (!rejectFor) return;

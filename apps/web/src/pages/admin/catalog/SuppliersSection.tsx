@@ -167,6 +167,8 @@ export function SuppliersSection() {
             block
             loading={create.isPending || update.isPending}
             disabled={!draft?.name.trim()}
+            // UX-05: say why Save waits.
+            disabledHint={i18n.t('common.hint.fillIn', { field: i18n.t('admin.field.name') })}
             onClick={() => {
               if (!draft) return;
               const fields = supplierFields(draft);

@@ -240,6 +240,7 @@ export const uz = {
   'people.transferAction': 'Oʻtkazish',
   'people.transferFrom': 'Qayerdan',
   'people.transferTo': 'Qayerga',
+  'people.transferPickStore': 'Qaysi doʻkonga oʻtkazishni tanlang.',
   'people.transferNoDestTitle': 'Mos doʻkon yoʻq',
   'people.transferNoDestBody':
     'Siz boshqa doʻkonni boshqarmaysiz. Administratordan sizni maqsadli doʻkonga qoʻshishni soʻrang.',
@@ -522,6 +523,9 @@ export const uz = {
   'common.errors.invalidDecimal': 'Koʻpi bilan 3 kasrli son kiriting.',
   'common.errors.invalidPhotoUrl': 'Rasmdan foydalanib boʻlmadi. Qaytadan suratga oling.',
   'common.errors.positiveDecimal': '0 dan katta, koʻpi bilan 3 kasrli son kiriting.',
+  'common.hint.fillIn': '«{field}» maydonini toʻldiring.',
+  'common.hint.choose': '«{field}» ni tanlang.',
+  'common.hint.wholeNumber': '«{field}»: {min} dan {max} gacha butun son kiriting.',
   'common.errors.invalidDate': 'Sana notoʻgʻri. Uni taqvimdan qayta tanlang.',
   'order.errors.tooManyExtras': 'Bitta buyurtmada koʻpi bilan 50 ta boshqa narsa boʻlishi mumkin.',
   'order.errors.invalidExtraName': 'Narsa nomini kiriting (200 belgigacha).',
@@ -1495,6 +1499,7 @@ export const uz = {
   'run.action.markUnavailableDesc': 'Nima uchun ololmaganingizni jamoaga tushuntiring.',
   'run.action.unavailableReasonPlaceholder': 'Sabab',
   'run.unavailable.presetsHint': 'Sababni bosing — darhol «Yoʻq» deb belgilanadi',
+  'run.unavailable.reasonNeeded': 'Yuqoridagi sababni bosing yoki oʻzingiz yozing.',
   'run.unavailable.preset.soldOut': 'Sotuvda yoʻq',
   'run.unavailable.preset.tooExpensive': 'Juda qimmat',
   'run.unavailable.preset.poorQuality': 'Sifati yomon',
@@ -1527,6 +1532,7 @@ export const uz = {
   'run.errors.alreadyInRun': 'Bu mahsulot xaridda allaqachon bor — mavjud mahsulotni tahrirlang.',
   'run.errors.storeNotInRun': 'Bu doʻkon hozirgi xaridda ishtirok etmaydi.',
   'run.errors.addReasonRequired': 'Qoʻshish sababini koʻrsating.',
+  'run.errors.addPickProduct': 'Mahsulotni tanlang.',
   // M3.44 (2026-05-22): katalogdan tashqari xarajatlar
   'run.action.addItem.modeSku': 'Katalogdagi mahsulot',
   'run.action.addItem.modeExpense': 'Katalogdan tashqari',
@@ -1760,6 +1766,7 @@ export const uz = {
   'confirm.progress': 'Tekshirildi {done}/{total}',
   'confirm.markAllOk': 'Hammasi yaxshi',
   'confirm.confirmStoreBlocked': '{n} ta tekshirilmagan',
+  'confirm.allOkConfirm': 'Hammasi yaxshi · Qabulni tasdiqlash',
   'confirm.confirmingHint': 'Tasdiqlanmoqda…',
   'confirm.toast.markedOk': 'Yaxshi deb belgilandi',
   'confirm.toast.allMarkedOk': '{n} ta mahsulot yaxshi deb belgilandi',
@@ -2469,8 +2476,8 @@ export const uz = {
   'inventory.count.save': '{n, plural, =1 {1 ta sanoqni saqlash} other {{n} ta sanoqni saqlash}}',
   'inventory.count.fixRows':
     '{n, plural, =1 {1 ta qatorni tuzating} other {{n} ta qatorni tuzating}}',
-  'inventory.count.confirm':
-    '{counted} ta mahsulot sanaldi, {differ} tasi qoldiqdan farq qiladi. Saqlansinmi?',
+  'inventory.count.saveDiffer':
+    '{n, plural, =1 {1 ta sanoqni saqlash} other {{n} ta sanoqni saqlash}} · {differ} tasi farq qiladi',
   'inventory.count.saved': '{n} ta sanoq saqlandi.',
   'inventory.count.empty': 'Katalogda hali mahsulot yoʻq',
   'sales.toast.recordedNegative': 'Yozildi. {items} qoldigʻi noldan kam boʻldi — sanab chiqing.',
@@ -2624,6 +2631,7 @@ export const uz = {
   'attendance.shift.start': 'Boshlanishi',
   'attendance.shift.end': 'Tugashi',
   'attendance.shift.overnightHint': 'Ertasi kuni tugaydi.',
+  'attendance.shift.sameTimes': 'Boshlanish va tugash vaqti bir xil boʻlmasligi kerak.',
   'attendance.shift.note': 'Izoh',
   'attendance.shift.notePlaceholder': 'masalan, oshxona',
   'attendance.shift.delete': 'Smenani oʻchirish',
@@ -2658,6 +2666,8 @@ export const uz = {
   'attendance.settings.geoSet': 'Doʻkon joyi: {lat}, {lng}',
   'attendance.settings.geoNotSet': 'Doʻkon joyi hali belgilanmagan',
   'attendance.settings.useHere': 'Hozirgi joyimni olish',
+  'attendance.settings.locationNeeded':
+    'Avval doʻkon joyini belgilang: «{action}» tugmasini bosing.',
   'attendance.settings.geoCoarse':
     'Telefon joyni faqat {m} m aniqlikda topdi; deraza yonida qayta urinib koʻring.',
   'attendance.settings.radius': 'Radius (metr)',

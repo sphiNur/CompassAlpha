@@ -93,6 +93,8 @@ export function TransferStoreSheet({
             size="lg"
             loading={transferMut.isPending}
             disabled={!toStoreId}
+            // UX-05: with no store to move to, the banner above says why.
+            disabledHint={destinationStores.length > 0 ? i18n.t('people.transferPickStore') : ''}
             onClick={() =>
               transferMut.mutate({
                 memberId: target.memberId,

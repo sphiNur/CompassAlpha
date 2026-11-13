@@ -422,7 +422,7 @@ export interface ConfirmMainButtonState {
 }
 
 export interface ConfirmMainButton {
-  action: 'saveIssue' | 'submitConfirm' | 'openConfirm';
+  action: 'saveIssue' | 'submitConfirm' | 'openConfirm' | 'markAllAndConfirm';
   label: { key: CatalogKey; vars?: Record<string, number> };
   visible: boolean;
   active: boolean;
@@ -451,7 +451,22 @@ export function confirmMainButton(s: ConfirmMainButtonState): ConfirmMainButton 
       action: 'submitConfirm',
       label: { key: s.confirming ? 'confirm.confirmingHint' : 'confirm.final.submit' },
       visible: true,
-      active: allDecided && !s.storeConfirmed && !s.confirming,
+      // UX-01: the sheet can open while "all OK" is still on its way;
+      // 确认收货 waits for it so the receipt is not signed ahead of it.
+      active: allDecided && !s.storeConfirmed && !s.confirming && !s.markingAll,
+    };
+  }
+  // UX-01 (2026-11-13): nothing checked yet, the common "it all came"
+  // case: one tap marks every line OK (the same write as 全部无误) and
+  // opens the summary sheet, which still asks before 确认收货. Once any
+  // line has a verdict the receiver is checking line by line and the
+  // button counts what is left, as before.
+  if (s.lineCount > 0 && s.undecided === s.lineCount && !s.confirming) {
+    return {
+      action: 'markAllAndConfirm',
+      label: { key: 'confirm.allOkConfirm' },
+      visible: s.hasRun && !s.storeConfirmed,
+      active: !s.markingAll,
     };
   }
   return {

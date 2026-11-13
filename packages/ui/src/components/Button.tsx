@@ -1,4 +1,4 @@
-import { forwardRef, isValidElement, useRef } from 'react';
+import { forwardRef, isValidElement, useId, useRef } from 'react';
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
@@ -89,10 +89,21 @@ export interface ButtonProps
   loading?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
+  /**
+   * UX-05 (2026-11-13): why the button cannot be used yet ("Enter a
+   * name."). Shown as one muted line above the button while it is disabled
+   * (not while it is loading), and tied to it with aria-describedby. A
+   * greyed Save with no reason left people guessing what was missing; the
+   * daily close's main button does the same with `inactiveHint`.
+   *
+   * Passing the prop at all (even as `undefined`) wraps the button in a
+   * column, so the tree keeps its shape when the hint comes and goes.
+   */
+  disabledHint?: string;
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(props, ref) {
+  const {
     className,
     variant,
     size,
@@ -103,10 +114,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     children,
     disabled,
     onClick,
+    disabledHint,
     ...rest
-  },
-  ref,
-) {
+  } = props;
+  const hintId = useId();
   const childIsPlain = typeof children === 'string' || typeof children === 'number';
   const tapGuard = useRef<ReturnType<typeof createTapGuard> | null>(null);
   // DLV-4 / BUY-12 (2026-10-30): `loading` disables the button only after
@@ -127,7 +138,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           }
           onClick(e);
         };
-  return (
+  const hint = buttonHint(disabled, loading, disabledHint);
+  const describedBy =
+    [rest['aria-describedby'], hint ? hintId : undefined].filter(Boolean).join(' ') || undefined;
+  const el = (
     <button
       ref={ref}
       type={rest.type ?? 'button'}
@@ -135,6 +149,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-loading={loading || undefined}
       className={cn(button({ variant, size, block }), className)}
       {...rest}
+      aria-describedby={describedBy}
       onClick={guarded}
     >
       {loading ? <Spinner size={16} /> : leadingIcon}
@@ -144,4 +159,46 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {trailingIcon}
     </button>
   );
+  if (!('disabledHint' in props)) return el;
+  const hintLine = hint ? (
+    // Announced politely when it appears or changes ("Photo uploading…"
+    // giving way to "Describe the problem"), as IssueSheet's own line was.
+    <span
+      id={hintId}
+      data-testid="button-disabled-hint"
+      role="status"
+      aria-live="polite"
+      className={cn('block text-old-label text-[var(--c-fg-muted)]', block && 'text-center')}
+    >
+      {hint}
+    </span>
+  ) : null;
+  // A block button (a sheet footer's) has the line above it, as the page
+  // main button does; an inline one, in a row of buttons, below it, so
+  // the row's buttons stay level.
+  return block ? (
+    <span className="flex w-full flex-col gap-2">
+      {hintLine}
+      {el}
+    </span>
+  ) : (
+    <span className="inline-flex max-w-full flex-col items-start gap-1">
+      {el}
+      {hintLine}
+    </span>
+  );
 });
+
+/**
+ * The hint a Button shows: only while it is disabled and not loading (a
+ * spinner already says why it cannot be tapped), and only when there is
+ * something to say.
+ */
+export function buttonHint(
+  disabled: boolean | undefined,
+  loading: boolean | undefined,
+  disabledHint: string | undefined,
+): string | undefined {
+  if (!disabled || loading) return undefined;
+  return disabledHint?.trim() || undefined;
+}

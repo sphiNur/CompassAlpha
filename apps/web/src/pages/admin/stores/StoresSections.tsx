@@ -275,6 +275,8 @@ export function StoresHomeSection({
             block
             loading={create.isPending}
             disabled={!createDraft?.name.trim()}
+            // UX-05: say why Create waits.
+            disabledHint={i18n.t('common.hint.fillIn', { field: i18n.t('admin.field.name') })}
             onClick={() => {
               if (!createDraft) return;
               create.mutate({
@@ -622,6 +624,14 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
         <Button
           loading={update.isPending}
           disabled={!canAdmin || !dirty || !draft.name.trim()}
+          // UX-05: a real blocker only. An untouched form's grey Save
+          // explains itself, and someone who may not edit sees every field
+          // locked.
+          disabledHint={
+            canAdmin && dirty && !draft.name.trim()
+              ? i18n.t('common.hint.fillIn', { field: i18n.t('admin.field.name') })
+              : ''
+          }
           onClick={async () => {
             const save = () =>
               update.mutate({

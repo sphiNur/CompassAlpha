@@ -220,6 +220,12 @@ export function ConfirmPage() {
         input: vars,
         failedKey: 'common.errors.actionFailed',
         queuedKey: 'confirm.toast.savedOffline',
+        // UX-01: take back the verdicts painted ahead of the answer, and
+        // the summary sheet opened on them.
+        onNotSaved: () => {
+          void utils.run.get.invalidate();
+          setFinalConfirmOpen(false);
+        },
       }),
   });
 
@@ -303,6 +309,29 @@ export function ConfirmPage() {
     });
   };
 
+  /**
+   * UX-01 (2026-11-13): the main button while nothing is checked yet —
+   * "all OK" (the same write as the button above, queued offline the same
+   * way), shown at once so the summary sheet opens on what is being
+   * signed. The sheet still asks before 确认收货.
+   */
+  const markAllOkAndConfirm = () => {
+    if (storeConfirmed || bulkMarkOk.isPending || confirmStore.isPending) return;
+    if (!activeRun || !currentStoreId || undecided.length === 0) return;
+    for (const it of undecided) {
+      paintVerdict({
+        runId: it.runId,
+        skuId: it.skuId,
+        storeId: it.storeId,
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+      });
+    }
+    markAllOk();
+    setFinalConfirmOpen(true);
+  };
+
   /** A chip on a line: 'ok' is sent at once, a problem opens its form. */
   const decide = (
     line: ConfirmLine & ReportedLine,
@@ -364,7 +393,7 @@ export function ConfirmPage() {
   };
   const submitConfirmStore = () => {
     if (!activeRun || !currentStoreId) return;
-    if (storeConfirmed || confirmStore.isPending || !allDecided) return;
+    if (storeConfirmed || confirmStore.isPending || bulkMarkOk.isPending || !allDecided) return;
     confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
   };
   // The open problem form drives its Save; the summary sheet drives
@@ -390,6 +419,7 @@ export function ConfirmPage() {
         haptic('light');
         setFinalConfirmOpen(true);
       },
+      markAllAndConfirm: markAllOkAndConfirm,
     },
   );
   const issueSku = issueForm.draft ? skuById.get(issueForm.draft.skuId) : undefined;
@@ -592,7 +622,8 @@ export function ConfirmPage() {
         // DX-IX-6: confirming locks the receipt; start on Cancel.
         irreversible
         cancelLabel={i18n.t('common.cancel')}
-        pending={confirmStore.isPending}
+        // UX-01: 确认收货 waits for an "all OK" still on its way.
+        pending={confirmStore.isPending || bulkMarkOk.isPending}
         onConfirm={submitConfirmStore}
         onCancel={() => {
           if (!confirmStore.isPending) setFinalConfirmOpen(false);

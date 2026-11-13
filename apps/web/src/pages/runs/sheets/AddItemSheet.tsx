@@ -47,19 +47,15 @@ import { useCurrency } from '../../../hooks/useCurrency';
 import { useDraftChanged } from '../../../hooks/useDraftChanged';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { formatMoney } from '../../../lib/format';
-import {
-  fromDisplayPrice,
-  isStorablePrice,
-  readDisplayPrice,
-  toDisplayPrice,
-} from '../lib/priceMath';
-import { addItemDraftEdits, splitsAddUp } from '../lib/purchaseForm';
+import { fromDisplayPrice, readDisplayPrice, toDisplayPrice } from '../lib/priceMath';
+import { addItemBlockedBy, addItemDraftEdits } from '../lib/purchaseForm';
 import { evenSplitQty } from '../lib/splitQty';
 import type { StoreLite } from '../types';
 import type { AddItemDraft, AddItemSku, ExistingSkuStores, ExpenseTemplate } from './drafts';
 import { ExpenseIdentity } from './ExpenseIdentity';
 import { ExpenseStoreFields } from './ExpenseStoreFields';
 import { QtyPriceFields } from './QtyPriceFields';
+import { priceHint, qtyHint } from './saveHint';
 import { SkuPicker } from './SkuPicker';
 import { SkuStoreFields } from './SkuStoreFields';
 
@@ -175,21 +171,33 @@ export function AddItemSheet({
   // no paper receipt is available was the wrong trade. The photo stays
   // available but optional.
 
-  // The store quantities add up to the quantity, by the server's measure
-  // (lib/purchaseForm.ts). An even split does exactly: evenSplitQty gives
-  // the last store the remainder.
-  const splitMatches = !!draft && splitsAddUp(draft.splits, draft.actualQty).splitMatches;
-
-  const canSubmit = !!(
-    draft &&
-    (draft.mode === 'sku' ? draft.skuId : draft.label.trim().length > 0) &&
-    Number(draft.actualQty) > 0 &&
-    isStorablePrice(draft.unitPrice) &&
-    draft.splits.size > 0 &&
-    splitMatches &&
-    draft.reason.trim().length > 0 &&
-    !submitting
-  );
+  // What Save waits for (lib/purchaseForm.ts), among it the store
+  // quantities adding up to the quantity, by the server's measure. An even
+  // split does exactly: evenSplitQty gives the last store the remainder.
+  const blockedBy = draft ? addItemBlockedBy(draft) : null;
+  const canSubmit = !!draft && blockedBy === null && !submitting;
+  // UX-05: that, in words, on the line over the disabled Save.
+  const saveHint = !draft
+    ? ''
+    : blockedBy === 'product'
+      ? i18n.t('run.errors.addPickProduct')
+      : blockedBy === 'label'
+        ? i18n.t('run.errors.expenseLabelRequired')
+        : blockedBy === 'store'
+          ? i18n.t('admin.invite.pickStore')
+          : blockedBy === 'qty'
+            ? qtyHint(i18n.t, draft.actualQty)
+            : blockedBy === 'price'
+              ? priceHint(i18n.t, priceInput, currency)
+              : blockedBy === 'split'
+                ? i18n.t('run.errors.splitSumMismatch')
+                : blockedBy === 'reason'
+                  ? i18n.t(
+                      draft.mode === 'expense'
+                        ? 'run.errors.expenseReasonRequired'
+                        : 'run.errors.addReasonRequired',
+                    )
+                  : '';
 
   // M3.44: an expense's quantity is split evenly across the stores picked,
   // to three decimals, the last store taking the remainder, so the parts
@@ -250,6 +258,7 @@ export function AddItemSheet({
           block
           loading={submitting}
           disabled={!canSubmit}
+          disabledHint={saveHint}
           onClick={() => draft && canSubmit && onSubmit(draft)}
         >
           {draft?.mode === 'expense'
