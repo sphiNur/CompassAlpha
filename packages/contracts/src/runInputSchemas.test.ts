@@ -9,9 +9,10 @@
  * no-reason cancel died as BAD_REQUEST behind a generic error toast,
  * and no test anywhere covered the boundary.
  *
- * The asymmetry below is the whole point: cancel is permissive, the
- * other three are strict. If someone later "simplifies" these back into
- * one schema, exactly one of these two describes will fail.
+ * The asymmetry below is the whole point: cancel (and, since
+ * 2026-11-13, the step-back undos, recall and "available again") is
+ * permissive, reopen is strict. If someone later "simplifies" these back
+ * into one schema, exactly one of these describes will fail.
  *
  * No Postgres needed — pure zod, runs in the fast CI unit job. It lives
  * with the schemas (it was in apps/api; review TEST2-18).
@@ -22,7 +23,10 @@ import {
   isCalendarDate,
   RunCancelInputSchema,
   RunHistoryInputSchema,
+  RunOptionalReasonInputSchema,
   RunReasonOnlyInputSchema,
+  UndeliverStoreInputSchema,
+  UnmarkUnavailableInputSchema,
 } from './index';
 
 const RUN_ID = '11111111-2222-4333-8444-555555555555';
@@ -57,8 +61,8 @@ describe('RunCancelInputSchema (permissive — reason optional)', () => {
   });
 });
 
-describe('RunReasonOnlyInputSchema (strict — reopen / undoStartPurchase / undoStartDelivery)', () => {
-  // These three re-assert the requirement in the domain layer too, so
+describe('RunReasonOnlyInputSchema (strict — reopen)', () => {
+  // Reopen re-asserts the requirement in the domain layer too, so
   // relaxing this schema would only move the rejection from a clean
   // 400 into a domain throw. It must stay strict.
   test('rejects an empty reason', () => {
@@ -72,6 +76,34 @@ describe('RunReasonOnlyInputSchema (strict — reopen / undoStartPurchase / undo
   test('accepts a real reason', () => {
     const parsed = RunReasonOnlyInputSchema.parse({ runId: RUN_ID, reason: 'wrong day' });
     expect(parsed.reason).toBe('wrong day');
+  });
+});
+
+// Simplification (2026-11-13): back to plan / back to purchase, recall
+// and "available again" no longer ask for a reason. A client that still
+// sends one (the Fine app) keeps working.
+describe('the step-back reasons are optional', () => {
+  const STORE = '11111111-2222-4333-8444-666666666666';
+  test('undoStartPurchase / undoStartDelivery', () => {
+    expect(RunOptionalReasonInputSchema.parse({ runId: RUN_ID }).reason).toBe('');
+    expect(RunOptionalReasonInputSchema.parse({ runId: RUN_ID, reason: ' x ' }).reason).toBe('x');
+    expect(() =>
+      RunOptionalReasonInputSchema.parse({ runId: RUN_ID, reason: 'x'.repeat(501) }),
+    ).toThrow();
+  });
+
+  test('recall', () => {
+    expect(UndeliverStoreInputSchema.parse({ runId: RUN_ID, storeId: STORE }).reason).toBe('');
+    expect(
+      UndeliverStoreInputSchema.parse({ runId: RUN_ID, storeId: STORE, reason: 'wrong van' })
+        .reason,
+    ).toBe('wrong van');
+  });
+
+  test('available again', () => {
+    expect(
+      UnmarkUnavailableInputSchema.parse({ runId: RUN_ID, skuId: STORE, reason: '' }).reason,
+    ).toBe('');
   });
 });
 

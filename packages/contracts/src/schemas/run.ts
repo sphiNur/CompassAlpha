@@ -228,10 +228,11 @@ export const RevisePurchaseInputSchema = PurchaseItemInputSchema.extend({
   reason: z.string().min(1).max(500),
 });
 
+/** Simplification (2026-11-13): the reason is optional (was min(1)); '' when none. */
 export const UnmarkUnavailableInputSchema = z.object({
   runId: UuidSchema,
   skuId: UuidSchema,
-  reason: z.string().min(1).max(500),
+  reason: z.string().trim().max(500).optional().default(''),
 });
 
 /** BUY-5: won't buy the demand that joined after the item was decided. */
@@ -256,22 +257,33 @@ export const UndoPurchaseInputSchema = z.object({
   reason: z.string().max(500).optional().default(''),
 });
 
+/** Simplification (2026-11-13): the reason is optional (was min(1)); '' when none. */
 export const UndeliverStoreInputSchema = z.object({
   runId: UuidSchema,
   storeId: UuidSchema,
-  reason: z.string().min(1).max(500),
+  reason: z.string().trim().max(500).optional().default(''),
 });
 
+/** reopen: a reason is required (the domain checks it again). */
 export const RunReasonOnlyInputSchema = z.object({
   runId: UuidSchema,
   reason: z.string().min(1).max(500),
 });
 
 /**
- * Cancel is the ONE reason-carrying run command whose reason is
- * optional, so it cannot share `RunReasonOnlyInputSchema` (which also
- * backs reopen / undoStartPurchase / undoStartDelivery — all three
- * genuinely require a reason, enforced again in the domain layer).
+ * A run step whose reason may be left out: cancel, and since the
+ * simplification of 2026-11-13 undoStartPurchase / undoStartDelivery
+ * (they took RunReasonOnlyInputSchema). '' when none.
+ */
+export const RunOptionalReasonInputSchema = z.object({
+  runId: UuidSchema,
+  reason: z.string().trim().max(500).optional().default(''),
+});
+
+/**
+ * Cancel's reason is optional, so it cannot share `RunReasonOnlyInputSchema`
+ * (which backs reopen, whose reason is required and enforced again in the
+ * domain layer). It is RunOptionalReasonInputSchema, kept under this name.
  *
  * 2026-07-26: before this existed, cancel was broken end to end. The
  * domain deliberately allows an empty reason (run/decide/closing.ts CancelRun,
@@ -282,10 +294,7 @@ export const RunReasonOnlyInputSchema = z.object({
  * no-reason cancel died as a BAD_REQUEST behind a generic error toast.
  *
  * Relaxing the shared schema was the wrong fix: it would only move the
- * other three procedures' validation from the edge into a domain throw.
+ * reopen's validation from the edge into a domain throw.
  * Mirrors `UndoPurchaseInputSchema`, which already models exactly this.
  */
-export const RunCancelInputSchema = z.object({
-  runId: UuidSchema,
-  reason: z.string().trim().max(500).optional().default(''),
-});
+export const RunCancelInputSchema = RunOptionalReasonInputSchema;

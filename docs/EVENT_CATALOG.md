@@ -79,12 +79,12 @@ are absent when the store pays the line's.
 | `RunDateChanged` | `{runDate, previousRunDate: string \| null, runIndex?, byMemberId}` | 2026-07-30, `run.amend`: the day the run's spend is booked under. `runIndex`: the run's number on the new day; absent before 2026-10-23 = the number was kept. |
 | `RunRefinalized` | `{totalActual, totalCash, totalTransfer, itemsTotal?, expensesTotal?, byMemberId}` | 2026-07-06: amending → finished, totals recomputed as in `RunFinished`. `itemsTotal` / `expensesTotal`: absent before 2026-10-21. |
 | `PurchaseRevised` | `{skuId, supplierId \| null, unitPrice, actualQty, receiptPhotoUrl \| null, storeSplits[], reason, paymentMethod?, priceConfirmed?}` | 2026-05-03: replaces the item's recorded purchase. `paymentMethod` / `priceConfirmed`: as in `ItemPurchased`. |
-| `UnavailableUndone` | `{skuId, reason}` | 2026-05-03: an unavailable item back to pending. |
+| `UnavailableUndone` | `{skuId, reason}` | 2026-05-03: an unavailable item back to pending. `reason` is `''` when none was given (optional since 2026-11-13). |
 | `TopUpDismissed` | `{skuId, qty, note}` | 2026-10-30 (BUY-5): the extra demand that arrived after the item was decided will not be bought. |
 | `PurchaseUndone` | `{skuId, reason}` | 2026-05-03: a bought item back to pending. `reason` may be `''` since 2026-05-04. |
-| `StoreDeliveryUndone` | `{storeId, reason}` | 2026-05-03: recalls a delivery the store has not confirmed. |
-| `PurchaseStartUndone` | `{reason}` | 2026-05-03: purchasing → planned. Recorded purchases stay (M3.29). |
-| `DeliveryStartUndone` | `{reason}` | 2026-05-03: delivering → purchasing, only before any store is delivered. |
+| `StoreDeliveryUndone` | `{storeId, reason}` | 2026-05-03: recalls a delivery the store has not confirmed. `reason` is `''` when none was given (optional since 2026-11-13). |
+| `PurchaseStartUndone` | `{reason}` | 2026-05-03: purchasing → planned. Recorded purchases stay (M3.29). `reason` is `''` when none was given (optional since 2026-11-13). |
+| `DeliveryStartUndone` | `{reason}` | 2026-05-03: delivering → purchasing, only before any store is delivered. `reason` is `''` when none was given (optional since 2026-11-13). |
 | `SessionsAttachedToRun` | `{sessionIds[], addedPlannedItems[{skuId, qty}]}` | M3.31 (2026-05-18), planned or purchasing. Demand for an item already decided becomes its top-up. |
 | `SessionEjectedFromRun` | `{sessionId, removedPlannedItems[{skuId, qty}], reason: string \| null, byMemberId}` | The session's stream gets `EjectedFromRun` in the same transaction. Only pending items may shrink. |
 | `PurchaserItemAdded` | `{skuId, supplierId \| null, unitPrice, actualQty, receiptPhotoUrl \| null, storeSplits[], paymentMethod, reason, byMemberId, priceConfirmed?}` | M3.41 (2026-05-21): a catalog item nobody ordered. `priceConfirmed`: as in `ItemPurchased`. |
