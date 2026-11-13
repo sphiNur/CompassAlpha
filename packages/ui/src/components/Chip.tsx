@@ -120,6 +120,8 @@ export function ChipBar({
         onKeyDown={radio ? roving.onKeyDown : undefined}
         role={radio ? 'radiogroup' : 'group'}
         aria-label={ariaLabel}
+        // A sideways drag here scrolls the chips, never swipes the tab.
+        data-no-swipe=""
         // overscroll-behavior: contain stops horizontal pulls from
         // bouncing the parent page on iOS — without it, a fast horizontal
         // chip-pan can briefly disable the page's vertical scroll.

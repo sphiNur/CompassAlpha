@@ -12,12 +12,14 @@ import { importSettingsSheet } from './pageChunks';
 import { PageErrorBoundary } from './PageErrorBoundary';
 import { BottomNav } from './shell/BottomNav';
 import { LiveAnnouncer } from './shell/LiveAnnouncer';
+import { navLayout } from './shell/navLayout';
 import { OfflineBanner } from './shell/OfflineBanner';
 import { PageMainButton } from './shell/PageMainButton';
 import { PAGES } from './shell/pages';
 import { ReviewLanding } from './shell/ReviewLanding';
 import { useScrollChrome } from './shell/scrollChrome';
 import { SkipLinks } from './shell/SkipLinks';
+import { SwipePager } from './shell/SwipePager';
 import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
 import { TopBar } from './shell/TopBar';
 import { usePagePrefetch } from './shell/usePagePrefetch';
@@ -59,7 +61,17 @@ function ShellInner() {
     storeCtx.kind === 'specific' ? session?.storePermissions?.[storeCtx.storeId] : undefined;
   const visible = shellTabs(session, storePerms);
   usePagePrefetch(session);
-  const { tab, selectTab, mainRef, saveScroll } = useShellTab(visible);
+  const { tab, selectTab, changeTab, mainRef, saveScroll } = useShellTab(visible);
+  // 2026-11-14 (step 2): a swipe moves to the bar's neighbouring tab, in
+  // the order the bar draws them; not to tabs behind More (SwipePager.tsx).
+  const swipeRing = showsNav(visible)
+    ? navLayout(visible, session?.permissions ?? []).bar.map((t) => t.key)
+    : [];
+  const swipeResetKey = [
+    session?.user.id,
+    session?.user.locale,
+    storeCtx.kind === 'specific' ? storeCtx.storeId : storeCtx.kind,
+  ].join('|');
   // 2026-11-14: the fades and the nav capsule's size follow <main>'s scroll.
   const scrollChrome = useScrollChrome(mainRef, tab);
 
@@ -108,7 +120,13 @@ function ShellInner() {
       <LiveAnnouncer />
       {/* 2026-11-14: the page fades where it scrolls under the top bar and
           the nav capsule (.app-fade in styles/index.css). */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <SwipePager
+        ring={swipeRing}
+        tab={tab}
+        mainRef={mainRef}
+        onSwipe={changeTab}
+        resetKey={swipeResetKey}
+      >
         <div aria-hidden className="app-fade app-fade-top" />
         <main
           ref={mainRef}
@@ -134,6 +152,9 @@ function ShellInner() {
           style={{
             WebkitOverflowScrolling: 'touch',
             overscrollBehaviorY: 'contain',
+            // Sideways drags are the pager's (SwipePager.tsx); the browser
+            // keeps vertical scrolling and pinch zoom.
+            touchAction: 'pan-y pinch-zoom',
             // COREWEB1-07: a phone on its side puts the notch and rounded
             // corners over the left and right; pages add their px-4 inside.
             paddingLeft: 'var(--app-safe-left, 0px)',
@@ -183,7 +204,7 @@ function ShellInner() {
           )}
         </main>
         {showsNav(visible) ? <div aria-hidden className="app-fade app-fade-bottom" /> : null}
-      </div>
+      </SwipePager>
 
       {/* M3.49 (2026-05-23): in-page primary action button. Telegram's
           native MainButton lives BELOW the WebView, so it pushed the

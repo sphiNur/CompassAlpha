@@ -108,6 +108,8 @@ export function Segmented<V extends string>({
       onKeyDown={roving.onKeyDown}
       role="radiogroup"
       aria-label={ariaLabel}
+      // A sideways drag here is not a swipe between tabs.
+      data-no-swipe=""
       aria-disabled={disabled || undefined}
       className={cn(
         // V4 (2026-10-30): no overflow-hidden — it clipped the segments'
