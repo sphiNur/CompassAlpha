@@ -1,9 +1,18 @@
-import { Avatar, Badge, Banner, Button, Card, CardHeader, CardMeta, CardTitle } from '@compass/ui';
+import {
+  Avatar,
+  Badge,
+  Banner,
+  Button,
+  Card,
+  CardHeader,
+  CardMeta,
+  CardTitle,
+  useConfirm,
+} from '@compass/ui';
 import type { RouterOutputs } from '../../lib/trpc';
 import type { AuthSession } from '../../stores/authStore';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
 import { useCurrency } from '../../hooks/useCurrency';
-import { confirmThen } from '../../lib/confirm';
 import { formatMoney } from '../../lib/format';
 import { hasStorePermission } from '../../lib/storePermission';
 import { cardRequests, showPaymentSplit } from './cardSummary';
@@ -73,6 +82,7 @@ export function ApprovalCard({
   onToggleItems: () => void;
 }) {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const productName = useProductName();
   const dates = useDateFormat();
   // ORD-21 (2026-11): the card's total names the currency, as the
@@ -258,14 +268,15 @@ export function ApprovalCard({
                   size="sm"
                   variant="pearl"
                   loading={busy.takingOver}
-                  onClick={() =>
-                    confirmThen(
-                      i18n.t('approval.confirmTakeover', {
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: i18n.t('approval.confirmTakeover', {
                         who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
                       }),
-                      onTakeOver,
-                    )
-                  }
+                      confirmLabel: i18n.t('approval.takeOver'),
+                    });
+                    if (ok) onTakeOver();
+                  }}
                 >
                   {i18n.t('approval.takeOver')}
                 </Button>
@@ -363,12 +374,14 @@ export function ApprovalCard({
             disabled={!online}
             // APR-7 (2026-10-30): one tap used to send the order
             // back at once; the prompt was written but unused.
-            onClick={() =>
-              confirmThen(
-                `${i18n.t('approval.confirm.unapprove.title')}\n\n${i18n.t('approval.confirm.unapprove.body')}`,
-                onUnapprove,
-              )
-            }
+            onClick={async () => {
+              const ok = await confirm({
+                title: i18n.t('approval.confirm.unapprove.title'),
+                body: i18n.t('approval.confirm.unapprove.body'),
+                confirmLabel: i18n.t('approval.unapprove'),
+              });
+              if (ok) onUnapprove();
+            }}
           >
             {i18n.t('approval.unapprove')}
           </Button>

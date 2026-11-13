@@ -44,6 +44,7 @@ export const en = {
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',
+  'common.discard': 'Discard',
   'common.archived': 'archived',
   'common.unarchive': 'Unarchive',
   'common.remove': 'Remove',
@@ -614,6 +615,7 @@ export const en = {
   'workspace.title': 'Workspace',
   'workspace.current': 'Current',
   'workspace.switched': 'Workspace switched',
+  'workspace.switchAction': 'Switch',
   'workspace.create.action': 'Create a new workspace',
   'workspace.create.title': 'Create a workspace',
   'workspace.create.body':

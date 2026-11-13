@@ -9,7 +9,7 @@
  * Each step saves a screenshot to the report, so a run is also a record
  * of what every screen looked like.
  */
-import { expect, test, type Dialog, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expectTappable } from './tap-area';
@@ -524,29 +524,19 @@ test('count the whole store on one screen', async () => {
   await page.keyboard.type('2,5');
   await evidence('count-mode-typed');
 
-  // Closing with counts typed asks first; "no" keeps them.
-  const asked = new Promise<string>((resolve) =>
-    page.once('dialog', (dialog) => {
-      resolve(dialog.message());
-      void dialog.dismiss();
-    }),
-  );
+  // Closing with counts typed asks first, in the app's own sheet (UX-07);
+  // "Cancel" keeps them.
   await page.keyboard.press('Escape');
-  expect(await asked).toMatch(/discard/i);
+  const asked = page.getByRole('dialog', { name: /discard/i });
+  await expect(asked).toBeVisible();
+  await asked.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(asked).toBeHidden();
   await expect(apple).toHaveValue('7');
 
   // Rows left empty are not counted. UX-06: the Save button carries the
-  // summary; no dialog asks again.
-  const dialogs: string[] = [];
-  const onDialog = (dialog: Dialog) => {
-    dialogs.push(dialog.message());
-    void dialog.dismiss();
-  };
-  page.on('dialog', onDialog);
+  // summary; no question is asked again (no sheet stays open).
   await count.getByRole('button', { name: 'Save 2 counts · 2 differ', exact: true }).click();
   await expect(count).toBeHidden();
-  page.off('dialog', onDialog);
-  expect(dialogs).toEqual([]);
   await expect(item('Apple')).toContainText(/7\s*kg/);
   await expect(item('Banana')).toContainText(/2\.5\s*kg/);
   await evidence('count-mode-saved');

@@ -98,6 +98,10 @@ export type {
 export { FieldError } from './components/FieldError';
 export { ConfirmSheet } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';
+// UX-07: the in-app yes/no question (useConfirm) and the sheet it opens.
+export { ConfirmProvider } from './components/ConfirmProvider';
+export { useConfirm } from './confirm';
+export type { Confirm, ConfirmRequest } from './confirmQueue';
 export { PhotoCapture } from './components/PhotoCapture';
 export type { PhotoUploader, PresignedUpload, PhotoCaptureProps } from './components/PhotoCapture';
 export { ToastProvider, useToast } from './components/Toast';

@@ -24,6 +24,7 @@ import {
   SectionLabel,
   Sheet,
   useToast,
+  useConfirm,
 } from '@compass/ui';
 import { runningBuildId } from '../lib/build';
 import { formatList } from '../lib/listFormat';
@@ -39,7 +40,6 @@ import { StorePickerSection } from './StoreSwitcher';
 import { useCanSeeStorePicker } from '../hooks/useStoreContext';
 import { requestStoreChange } from '../lib/storeContext';
 import { mayLeaveWorkspace } from '../lib/workspaceSwitch';
-import { confirmNative } from '../lib/confirm';
 import { CreateWorkspaceForm } from './CreateWorkspace';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 import { LanguagePicker, SecondaryLanguagePicker } from './LanguagePicker';
@@ -57,6 +57,7 @@ interface Props {
 
 export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const roleText = useRoleLabels();
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
@@ -193,12 +194,13 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                               // leaving it. D7: nothing else asks.
                               waitingWrites: waitingWriteCount,
                               confirmWaiting: (n) =>
-                                confirmNative(
-                                  i18n.t('workspace.switchConfirmPending', {
+                                confirm({
+                                  title: i18n.t('workspace.switchConfirmPending', {
                                     name: membership.orgName,
                                     n,
                                   }),
-                                ),
+                                  confirmLabel: i18n.t('workspace.switchAction'),
+                                }),
                               requestTabChange,
                               requestStoreChange,
                             }).then((ok) => {

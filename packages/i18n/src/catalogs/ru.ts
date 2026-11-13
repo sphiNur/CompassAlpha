@@ -27,6 +27,7 @@ export const ru = {
   'common.addNoteOptional': '+ Добавить заметку (опционально)',
   'common.clearSearch': 'Сбросить поиск',
   'common.archive': 'Архивировать',
+  'common.discard': 'Не сохранять',
   'common.archived': 'в архиве',
   'common.unarchive': 'Восстановить',
   'common.remove': 'Убрать',
@@ -573,6 +574,7 @@ export const ru = {
   'workspace.title': 'Рабочее пространство',
   'workspace.current': 'Текущее',
   'workspace.switched': 'Рабочее пространство переключено',
+  'workspace.switchAction': 'Переключить',
   'workspace.create.action': 'Создать новое рабочее пространство',
   'workspace.create.title': 'Создать рабочее пространство',
   'workspace.create.body':

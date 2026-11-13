@@ -29,6 +29,7 @@ import {
   rowGroupClass,
   useToast,
   QueryErrorBanner,
+  useConfirm,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { trpc } from '../../../lib/trpc';
@@ -38,7 +39,6 @@ import { useRefreshSession } from '../../../hooks/useRefreshSession';
 import { rolePassesOn } from '../../../lib/authority';
 import { useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
-import { confirmThen } from '../../../lib/confirm';
 import type { StoreFocus, StoreSub } from '../../../stores/navStore';
 import { PeopleSection } from '../people';
 import { StoreInventoryTab } from './inventory/StoreInventoryTab';
@@ -433,6 +433,7 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const confirm = useConfirm();
   const roleText = useRoleLabels();
   const refreshSession = useRefreshSession();
   const adminStoreIds = useAdminStoreIds();
@@ -651,16 +652,17 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
               .fetch({ storeId })
               .catch(() => null);
             const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
-            confirmThen(
-              busy
+            const ok = await confirm({
+              title: busy
                 ? i18n.t('admin.store.confirmPauseBusy', {
                     name: store.name,
                     orders: impact.openOrders,
                     runs: impact.activeRuns,
                   })
                 : i18n.t('admin.store.confirmPause', { name: store.name }),
-              save,
-            );
+              confirmLabel: i18n.t('common.save'),
+            });
+            if (ok) save();
           }}
         >
           {i18n.t('common.save')}
@@ -685,16 +687,18 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
                 .fetch({ storeId })
                 .catch(() => null);
               const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
-              confirmThen(
-                busy
+              const ok = await confirm({
+                title: busy
                   ? i18n.t('admin.store.confirmArchiveBusy', {
                       name: store.name,
                       orders: impact.openOrders,
                       runs: impact.activeRuns,
                     })
                   : i18n.t('admin.store.confirmArchive', { name: store.name }),
-                () => remove.mutate({ storeId }),
-              );
+                confirmLabel: i18n.t('common.archive'),
+                danger: true,
+              });
+              if (ok) remove.mutate({ storeId });
             }}
           >
             {i18n.t('common.archive')}

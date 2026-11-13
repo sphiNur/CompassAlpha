@@ -26,7 +26,6 @@
 import type { I18n } from '@compass/i18n';
 import type { UiLabels } from '@compass/ui';
 import { errorTextKey, errorTextOf } from '../lib/errorText';
-import { confirmNative } from '../lib/confirm';
 
 export function uiLabelsFor(i18n: I18n): UiLabels {
   return {
@@ -102,12 +101,14 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
     get photoUploadFailed() {
       return i18n.t('photo.uploadFailed');
     },
-    // CMP-INV-2: a sheet with unsaved input asks before it closes, with
-    // Telegram's own confirm inside Telegram.
+    // CMP-INV-2: a sheet with unsaved input asks before it closes. UX-07:
+    // in the app's own ConfirmSheet (ConfirmProvider in App.tsx).
     get discardChanges() {
       return i18n.t('catalog.confirm.discardEdits');
     },
-    confirmDiscard: (message) => confirmNative(message),
+    get discard() {
+      return i18n.t('common.discard');
+    },
     // UI-08: these were English in every language.
     get cancel() {
       return i18n.t('common.cancel');

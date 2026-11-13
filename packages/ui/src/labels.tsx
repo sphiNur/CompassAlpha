@@ -104,11 +104,10 @@ export interface UiLabels {
   /** CMP-INV-2: question asked before a sheet with unsaved input closes. */
   discardChanges: string;
   /**
-   * Asks a yes/no question and resolves true on yes. The host can use its
-   * platform's dialog (Telegram's native confirm); the default is the
-   * browser's own.
+   * UX-07: the button that answers it. The question is asked through
+   * useConfirm (the host's ConfirmProvider), no longer a host callback.
    */
-  confirmDiscard: (message: string) => Promise<boolean>;
+  discard: string;
 
   // --- ConfirmSheet ---
   /** UI-08: the cancel button, when the caller passes no `cancelLabel`. */
@@ -152,8 +151,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   uploading: 'Uploading…',
   photoUploadFailed: 'The photo did not upload. Try again.',
   discardChanges: 'Discard your changes?',
-  confirmDiscard: (message) =>
-    Promise.resolve(typeof window === 'undefined' ? true : window.confirm(message)),
+  discard: 'Discard',
   cancel: 'Cancel',
   reason: 'Reason',
   addNote: '+ Add note (optional)',

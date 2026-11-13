@@ -15,6 +15,7 @@ import {
   Sheet,
   useToast,
   rowGroupClass,
+  useConfirm,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -22,7 +23,6 @@ import { useErrToast } from '../../../hooks/useErrToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
-import { confirmThen } from '../../../lib/confirm';
 import {
   canDetachFromStore,
   canGrantTo,
@@ -67,6 +67,7 @@ export function PeopleSection({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const confirm = useConfirm();
   const roleText = useRoleLabels();
   const dateFmt = useDateFormat();
   // M1.9: per-key allow/deny override grid is power-user surface — gate
@@ -524,19 +525,21 @@ export function PeopleSection({
                                     name: memberMenuFor.displayName,
                                   })
                             }
-                            onClick={() => {
+                            onClick={async () => {
                               const name = memberMenuFor.displayName;
                               setMemberMenuFor(null);
-                              confirmThen(
-                                r.store
+                              const ok = await confirm({
+                                title: r.store
                                   ? i18n.t('people.revokeRoleInStoreConfirm', {
                                       role: r.role,
                                       store: r.store,
                                       name,
                                     })
                                   : i18n.t('people.revokeRoleConfirm', { role: r.role, name }),
-                                () => revoke.mutate({ bindingId: r.bindingId }),
-                              );
+                                confirmLabel: i18n.t('people.revokeRole'),
+                                danger: true,
+                              });
+                              if (ok) revoke.mutate({ bindingId: r.bindingId });
                             }}
                           >
                             {i18n.t('people.revokeRole')}
@@ -592,12 +595,15 @@ export function PeopleSection({
               <Button
                 block
                 variant="pearl"
-                onClick={() => {
+                onClick={async () => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  confirmThen(i18n.t('admin.confirm.suspend', { name: target.displayName }), () =>
-                    setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
-                  );
+                  const ok = await confirm({
+                    title: i18n.t('admin.confirm.suspend', { name: target.displayName }),
+                    confirmLabel: i18n.t('admin.action.suspend'),
+                    danger: true,
+                  });
+                  if (ok) setStatus.mutate({ memberId: target.memberId, status: 'suspended' });
                 }}
               >
                 {i18n.t('admin.action.suspend')}
@@ -630,7 +636,7 @@ export function PeopleSection({
               <Button
                 block
                 variant="pearl"
-                onClick={() => {
+                onClick={async () => {
                   if (storeCtx.kind !== 'specific') return;
                   const target = memberMenuFor;
                   const storeName =
@@ -638,17 +644,16 @@ export function PeopleSection({
                       (st) => st.id === storeCtx.storeId,
                     )?.name ?? i18n.t('admin.label.thisStore');
                   setMemberMenuFor(null);
-                  confirmThen(
-                    i18n.t('admin.confirm.removeFromStore', {
+                  const storeId = storeCtx.storeId;
+                  const ok = await confirm({
+                    title: i18n.t('admin.confirm.removeFromStore', {
                       name: target.displayName,
                       store: storeName,
                     }),
-                    () =>
-                      detachFromStore.mutate({
-                        memberId: target.memberId,
-                        storeId: storeCtx.storeId,
-                      }),
-                  );
+                    confirmLabel: i18n.t('admin.action.removeFromStore'),
+                    danger: true,
+                  });
+                  if (ok) detachFromStore.mutate({ memberId: target.memberId, storeId });
                 }}
               >
                 {i18n.t('admin.action.removeFromStore')}
@@ -660,13 +665,15 @@ export function PeopleSection({
               <Button
                 block
                 variant="danger"
-                onClick={() => {
+                onClick={async () => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  confirmThen(
-                    i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
-                    () => remove.mutate({ memberId: target.memberId }),
-                  );
+                  const ok = await confirm({
+                    title: i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
+                    confirmLabel: i18n.t('admin.action.removeFromOrg'),
+                    danger: true,
+                  });
+                  if (ok) remove.mutate({ memberId: target.memberId });
                 }}
               >
                 {i18n.t('admin.action.removeFromOrg')}
