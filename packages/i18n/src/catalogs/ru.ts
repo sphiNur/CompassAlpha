@@ -2145,6 +2145,7 @@ export const ru = {
   'settlement.save.new': 'Сохранить закрытие дня',
   'settlement.save.update': 'Сохранить исправление',
   'settlement.save.saving': 'Сохранение…',
+  'settlement.save.noChanges': 'Изменений пока нет.',
   'settlement.saved': 'Закрытие дня сохранено',
   'settlement.action.refresh': 'Обновить запись',
   'settlement.noEligibleStores.title': 'Нет магазина для закрытия дня',

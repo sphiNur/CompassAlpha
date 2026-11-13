@@ -1899,6 +1899,7 @@ export const zh = {
   'settlement.save.new': '保存日结',
   'settlement.save.update': '保存更正',
   'settlement.save.saving': '保存中…',
+  'settlement.save.noChanges': '还没有改动。',
   'settlement.saved': '日结已保存',
   'settlement.action.refresh': '刷新记录',
   'settlement.noEligibleStores.title': '没有可日结的门店',

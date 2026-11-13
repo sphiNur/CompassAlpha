@@ -2126,6 +2126,7 @@ export const uz = {
   'settlement.save.new': 'Kun yakunini saqlash',
   'settlement.save.update': 'Tuzatishni saqlash',
   'settlement.save.saving': 'Saqlanmoqda…',
+  'settlement.save.noChanges': 'Hali hech narsa oʻzgarmadi.',
   'settlement.saved': 'Kun yakuni saqlandi',
   'settlement.action.refresh': 'Yozuvni yangilash',
   'settlement.noEligibleStores.title': 'Kun yakuni uchun doʻkon mavjud emas',

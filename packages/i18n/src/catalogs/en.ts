@@ -2238,6 +2238,7 @@ export const en = {
   'settlement.save.new': 'Save daily close',
   'settlement.save.update': 'Save correction',
   'settlement.save.saving': 'Saving…',
+  'settlement.save.noChanges': 'Nothing has changed yet.',
   'settlement.saved': 'Daily close saved',
   'settlement.action.refresh': 'Refresh record',
   'settlement.noEligibleStores.title': 'No store available for daily close',

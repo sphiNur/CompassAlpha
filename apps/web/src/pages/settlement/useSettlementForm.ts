@@ -43,10 +43,12 @@ import {
   draftFromRecord,
   editedFields,
   emptyDraft,
+  firstSaveBlocker,
   isAllZeroClose,
   linesEdited,
   newCloseHasInput,
   newerVersionAction,
+  type SaveBlocker,
   settlementSaveInput,
   settlementSummary,
   type CarriedFields,
@@ -57,6 +59,7 @@ import {
   type WageItemDraft,
 } from './draftModel';
 import type { FieldReveal } from './DetailLine';
+import { ITEM_MONEY_PROBLEM_MESSAGE, MONEY_PROBLEM_MESSAGE } from './moneyProblem';
 
 export function useSettlementForm() {
   const i18n = useI18n();
@@ -282,6 +285,22 @@ export function useSettlementForm() {
   // A11Y-2: the save button stays focusable and jumps to the first field
   // to fix instead of being silently disabled.
   const fieldsToFix = countFieldsToFix(draft, wageSelectionRequired, correctionReady);
+  // 2026-11-13: what the bar over the grey save button says. A version
+  // conflict comes first: no edit makes that close savable.
+  const saveHint = canSave
+    ? undefined
+    : versionConflict
+      ? i18n.t('settlement.errors.versionConflict')
+      : saveBlockerText(
+          i18n,
+          firstSaveBlocker({
+            draft,
+            totals,
+            wageSelectionRequired,
+            correctionReady,
+            hasChanges: changes.any,
+          }),
+        );
   const formRef = useRef<HTMLFieldSetElement>(null);
   // DX-VIS-15 (2026-11-01): expense and wage lines are marked red only
   // after their field was left or a save was tried, not as they appear.
@@ -481,6 +500,7 @@ export function useSettlementForm() {
     versionConflict,
     canSave,
     fieldsToFix,
+    saveHint,
     formRef,
     reveal,
     revealFor,
@@ -489,4 +509,44 @@ export function useSettlementForm() {
     save,
     refreshRecord,
   };
+}
+
+/** The sentence for `blocker`; field names as the lines' own errors name them. */
+function saveBlockerText(
+  i18n: ReturnType<typeof useI18n>,
+  blocker: SaveBlocker | null,
+): string | undefined {
+  if (!blocker) return undefined;
+  const lineField = (
+    kind: 'expenses' | 'wages',
+    n: number,
+    part: 'settlement.expenses.amount' | 'settlement.expenses.reason' | 'settlement.wages.amount',
+  ) =>
+    `${i18n.t(kind === 'expenses' ? 'settlement.expenses.itemNumber' : 'settlement.wages.itemNumber', { n })} · ${i18n.t(part)}`;
+  switch (blocker.kind) {
+    case 'money':
+      return i18n.t(MONEY_PROBLEM_MESSAGE[blocker.problem], {
+        field: i18n.t(`settlement.field.${blocker.field}`),
+      });
+    case 'expenseAmount':
+      return i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[blocker.problem], {
+        field: lineField('expenses', blocker.n, 'settlement.expenses.amount'),
+      });
+    case 'expenseReason':
+      return i18n.t('settlement.errors.itemReasonEmpty', {
+        field: lineField('expenses', blocker.n, 'settlement.expenses.reason'),
+      });
+    case 'wageEmployee':
+      return i18n.t('settlement.errors.employeeRequired');
+    case 'wageAmount':
+      return i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[blocker.problem], {
+        field: lineField('wages', blocker.n, 'settlement.wages.amount'),
+      });
+    case 'totalTooLarge':
+      return i18n.t('settlement.errors.totalTooLarge');
+    case 'correctionReason':
+      return i18n.t('settlement.correction.required');
+    case 'noChanges':
+      return i18n.t('settlement.save.noChanges');
+  }
 }
