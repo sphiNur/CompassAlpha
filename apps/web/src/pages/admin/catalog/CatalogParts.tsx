@@ -9,17 +9,7 @@
  * is enough" line.
  */
 import { Fragment, useState, type ReactNode } from 'react';
-import {
-  Badge,
-  Button,
-  CardHeader,
-  CardMeta,
-  CardTitle,
-  Field,
-  Input,
-  Switch,
-  useToast,
-} from '@compass/ui';
+import { Badge, Button, CardHeader, CardMeta, CardTitle, Field, Input, Switch } from '@compass/ui';
 import { CATALOG_TEXT_MAX } from '@compass/contracts/limits';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { useI18n } from '../../../hooks/useI18n';
@@ -155,25 +145,6 @@ function OtherLangNames({
       ))}
     </>
   );
-}
-
-/**
- * How long the "archived" toast keeps its Undo button up. D3 (2026-11-13):
- * archiving no longer asks first; the toast's Undo (and the row's
- * Unarchive) take it back.
- */
-export const ARCHIVE_UNDO_MS = 6000;
-
-/** Shows "<thing> archived" with an Undo button that runs `undo`. */
-export function useArchivedToast() {
-  const toast = useToast();
-  const i18n = useI18n();
-  return (message: string, undo: () => void) =>
-    toast.show(message, {
-      tone: 'info',
-      ttlMs: ARCHIVE_UNDO_MS,
-      actions: [{ label: i18n.t('common.undo'), onClick: undo }],
-    });
 }
 
 /** A row's Edit button, and Archive or Unarchive. */

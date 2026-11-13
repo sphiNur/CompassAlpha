@@ -25,7 +25,8 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../hooks/useErrToast';
 import { formatMoney } from '../../../lib/format';
 import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
-import { CatalogNameFields, CatalogToolbar, useArchivedToast } from './CatalogParts';
+import { CatalogNameFields, CatalogToolbar } from './CatalogParts';
+import { useUndoToast } from '../../../hooks/useUndoToast';
 import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
 import { checkDishDraft, type DishIngredientDraft } from './dishDraft';
 import { haptic } from '../../../lib/telegram';
@@ -168,7 +169,7 @@ export function DishesSection() {
   });
   // D3 (2026-11-13): archiving no longer asks first; the toast's Undo
   // and the row's Unarchive take it back.
-  const archivedToast = useArchivedToast();
+  const archivedToast = useUndoToast();
   const archive = trpc.dishes.archive.useMutation({
     onSuccess: (_data, vars) => {
       invalidate();

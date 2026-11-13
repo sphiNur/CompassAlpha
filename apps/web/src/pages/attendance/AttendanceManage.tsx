@@ -38,7 +38,7 @@ import { currencyOf, formatMoney } from '../../lib/format';
 import { formatList } from '../../lib/listFormat';
 import { useAuthStore } from '../../stores/authStore';
 import { GeoMap } from '../../components/geo/GeoMap';
-import { useArchivedToast } from '../admin/catalog/CatalogParts';
+import { useUndoToast } from '../../hooks/useUndoToast';
 import { trpc, type RouterOutputs } from '../../lib/trpc';
 import { addDays, mondayOf, orgToday } from '../../lib/calendarDate';
 import { PunchPhotoStrip } from './AttendancePhotos';
@@ -849,7 +849,7 @@ function ShiftSheet({
   const i18n = useI18n();
   const dates = useDateFormat();
   const toast = useToast();
-  const deletedToast = useArchivedToast();
+  const deletedToast = useUndoToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [form, setForm] = useState<ShiftDraft | null>(draft);
