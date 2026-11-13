@@ -186,7 +186,10 @@ integration is mandatory for any path that crosses a transaction boundary
 New test files use `test` (some older ones use `it`, bun's other name for
 it; keep a file to one of the two). Name a test for the behaviour it
 shows, and keep the review or ticket number (`DX-CAT-4`) in a comment or
-the describe, where a reader can still find it.
+the describe, where a reader can still find it. Put a test file where its
+package keeps the others: beside the module in `packages/domain`,
+`packages/contracts` and `apps/worker`, in a `__tests__` folder everywhere
+else.
 
 The directories CI and the deploy test are listed once, in
 `scripts/lib/testTargets.ts`. A test file outside them, or a PG-gated one
