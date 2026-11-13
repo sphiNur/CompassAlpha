@@ -1457,6 +1457,11 @@ export const PurchaseRow = memo(function PurchaseRow({
       return;
     }
     const savedPrice = fromDisplayPrice(displayPrice, priceInThousands);
+    // The collapsed row has no payment control, so it must not carry a
+    // method this component happens to be holding: the one-tap ✓ records
+    // the method last chosen in this run, or cash (R10, 2026-11-13); the
+    // purchased row's toggle corrects it.
+    const method = source === 'collapsed' ? actions.quickPaymentMethod() : paymentMethod;
     editorCommitted.current = true;
     logPurchaseEntry({
       source,
@@ -1465,7 +1470,7 @@ export const PurchaseRow = memo(function PurchaseRow({
       qtyChanged: Number(actualQty) !== Number(item.plannedQty),
       hadLastPrice: lastPrice !== null,
       inThousands: priceInThousands,
-      method: source === 'collapsed' ? 'cash' : paymentMethod,
+      method,
       multiStore: isMultiStoreRun,
     });
     actions.save({
@@ -1473,11 +1478,7 @@ export const PurchaseRow = memo(function PurchaseRow({
       actualQty,
       // M3.36: convert display → raw UZS at the network boundary.
       unitPrice: savedPrice,
-      // The collapsed row has no payment control, so it must not carry
-      // a method this component happens to be holding — 'cash' is the
-      // documented default for a one-tap buy, and the purchased row's
-      // toggle is how a transfer gets recorded.
-      paymentMethod: source === 'collapsed' ? 'cash' : paymentMethod,
+      paymentMethod: method,
       storeSplits: splits,
     });
     // DX-IX-4 (2026-11-01): the editor closes once the line is bought;

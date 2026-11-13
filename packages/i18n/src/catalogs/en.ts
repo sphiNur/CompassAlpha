@@ -1564,12 +1564,16 @@ export const en = {
   'run.action.recallDelivery': 'Recall delivery',
   'run.action.undoStartPurchase': 'Back to plan',
   'run.action.undoStartDelivery': 'Back to purchase',
-  'run.action.confirmDeliver': 'Mark delivered',
   'run.action.savePurchase': 'Save',
   'run.action.recordPurchase': 'Record purchase',
   'run.action.markUnavailable': 'Mark unavailable',
   'run.action.markUnavailableDesc': "Tell the team why this couldn't be bought.",
   'run.action.unavailableReasonPlaceholder': 'Reason',
+  'run.unavailable.presets': 'Common reasons',
+  'run.unavailable.preset.soldOut': 'Sold out',
+  'run.unavailable.preset.tooExpensive': 'Too expensive',
+  'run.unavailable.preset.poorQuality': 'Poor quality',
+  'run.unavailable.preset.stallClosed': 'Stall closed',
   'run.action.actualQty': 'Actual quantity ({unit})',
   'run.action.actualQtyPlain': 'Actual quantity',
   'run.action.unitPriceUzs': 'Unit price ({currency})',
@@ -1584,6 +1588,7 @@ export const en = {
   'run.action.addItem.crossStoreHint':
     'This item is already in the run for {stores}. Choose Separate price for a different store price; add to the existing item only when it is the same batch and unit price.',
   'run.action.addItem.defaultCrossStoreReason': 'Additional store demand',
+  'run.action.addItem.defaultReason': 'Added during the run',
   'run.action.addItem.pickStore': '— Pick a store —',
   'run.action.addItem.totalHint': 'Item total',
   'run.action.addItem.reasonLabel': 'Why was this added?',
@@ -1654,15 +1659,9 @@ export const en = {
   'run.action.actualQtyAriaLabel': 'actual quantity',
   'run.action.unitPriceAriaLabel': 'unit price',
   'run.action.savePurchaseAriaLabel': 'Save purchase: {name}',
-  'run.confirm.startPurchase.title': 'Start purchasing?',
-  'run.confirm.startPurchase.body':
-    'Marks this run as in progress. You can still go back to planning later (with a reason); purchases already recorded are kept.',
   'run.confirm.startDelivery.title': 'Start delivery?',
   'run.confirm.startDelivery.body':
     'Marks all items as ready to ship. You can still come back to purchase if no store has been delivered yet.',
-  'run.confirm.deliver.title': 'Mark {store} delivered?',
-  'run.confirm.deliver.body':
-    'You can recall this delivery until the store confirms receipt. After they confirm, this is final.',
   'run.confirm.finish.title': 'Finish this run?',
   'run.confirm.finish.body':
     'Prices, quantities and deliveries are locked. Only a super admin can reopen it for a correction.',
@@ -1691,15 +1690,6 @@ export const en = {
     'Reverts this product back to pending so it can be re-recorded. The original purchase record stays in the audit log. Allowed only if no store has received delivery yet.',
   'run.confirm.undoPurchase.bodyAdded':
     'This item was added during purchasing; undoing removes the row from the run. The original purchase record stays in the audit log. Allowed only if no store has received delivery yet.',
-  'run.confirm.unmarkUnavailable.title': 'Mark available again?',
-  'run.confirm.unmarkUnavailable.body':
-    'Puts this item back to pending so you can record a purchase. The original "unavailable" note stays in the audit log.',
-  'run.confirm.undoStartPurchase.title': 'Go back to plan?',
-  'run.confirm.undoStartPurchase.body':
-    'Switches this run back to the planning step. Purchases you have already recorded are kept — they stay marked ✓ when you start purchasing again.',
-  'run.confirm.undoStartDelivery.title': 'Go back to purchasing?',
-  'run.confirm.undoStartDelivery.body':
-    'Reverts this run to the purchasing step. Only works before any store has been delivered to.',
   'run.label.reasonForChange': 'Reason for change',
   'run.label.itemsTotal': 'Goods total',
   'run.label.reasonPlaceholder': 'e.g. price misread on the receipt',
@@ -1844,9 +1834,6 @@ export const en = {
   'run.errors.notPurchasing': 'Run is not in the purchasing phase.',
   'run.errors.deliveryAlreadyProgressed': 'Cannot undo — a store has already received delivery.',
   'run.errors.reviseReasonRequired': 'Please describe what changed.',
-  'run.errors.unmarkReasonRequired': 'Please describe why this is available now.',
-  'run.errors.recallReasonRequired': 'Please describe why you are recalling this.',
-  'run.errors.undoReasonRequired': 'Please describe why you are reverting.',
 
   // ── 12. Confirm page (delivery acceptance) ──────────────────────
   'confirm.empty.noItems': 'No items for this store',

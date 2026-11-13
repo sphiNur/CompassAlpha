@@ -255,6 +255,12 @@ export interface RunRowActions {
    * price overrides. The caller routes this through `revisePurchase`.
    */
   setPaymentMethod: (item: RunItem, next: PaymentMethod) => void;
+  /**
+   * The method the one-tap ✓ records: the one the purchaser last chose
+   * in this run, or cash (R10, 2026-11-13; runs/lib/lastPayment.ts). Read
+   * at the tap.
+   */
+  quickPaymentMethod: () => PaymentMethod;
 }
 
 /** An "other item"'s outcome (M3.37); a row without one is pending. */

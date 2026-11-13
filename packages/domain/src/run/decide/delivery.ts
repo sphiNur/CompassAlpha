@@ -39,8 +39,9 @@ export type DeliveryCommand =
       actor: ActorCtx;
     }
   | { type: 'ConfirmStore'; storeId: string; actor: ActorCtx }
-  | { type: 'UndeliverStore'; storeId: string; reason: string; actor: ActorCtx }
-  | { type: 'UndoStartDelivery'; reason: string; actor: ActorCtx };
+  /** Simplification 2026-11-13: both reasons are optional (were required). */
+  | { type: 'UndeliverStore'; storeId: string; reason?: string; actor: ActorCtx }
+  | { type: 'UndoStartDelivery'; reason?: string; actor: ActorCtx };
 
 export function decideDelivery(
   state: RunState,
@@ -280,8 +281,8 @@ export function decideDelivery(
       if (store.confirmedAt) {
         throw preconditionFailed('run.errors.alreadyConfirmed');
       }
-      const reason = command.reason.trim();
-      if (!reason) throw validation('run.errors.recallReasonRequired');
+      // Simplification (2026-11-13): the reason is optional; '' when none.
+      const reason = (command.reason ?? '').trim();
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [
         {
@@ -306,8 +307,8 @@ export function decideDelivery(
           throw preconditionFailed('run.errors.deliveryAlreadyProgressed');
         }
       }
-      const reason = command.reason.trim();
-      if (!reason) throw validation('run.errors.undoReasonRequired');
+      // Simplification (2026-11-13): the reason is optional; '' when none.
+      const reason = (command.reason ?? '').trim();
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [{ ...baseFor(1), type: 'DeliveryStartUndone', payload: { reason } }];
     }

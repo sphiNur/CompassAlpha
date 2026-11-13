@@ -580,8 +580,8 @@ describe('run.reversals', () => {
     ).toThrow('run.errors.cannotReviseAfterDelivery');
   });
 
-  test('all reversal commands require a non-empty reason', () => {
-    let s = planAndPurchase();
+  test('a revision still needs a reason', () => {
+    const s = planAndPurchase();
     expect(() =>
       decideRun(
         s,
@@ -589,10 +589,45 @@ describe('run.reversals', () => {
         clock,
       ),
     ).toThrow('run.errors.reviseReasonRequired');
+  });
 
-    s = deliver(s);
-    expect(() =>
-      decideRun(s, { type: 'UndeliverStore', storeId: 'A', reason: '', actor: purchaser() }, clock),
-    ).toThrow('run.errors.recallReasonRequired');
+  // Simplification (2026-11-13): back to plan, back to purchase, recall
+  // and "available again" take no reason; one sent is still kept.
+  test('the step-back reversals take an empty or absent reason', () => {
+    let s = emptyRunState('run-1');
+    s = step(s, planRun({ plannedItems: [{ skuId: 'sku-1', qty: '4' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
+    s = step(s, { type: 'MarkUnavailable', skuId: 'sku-1', note: 'sold out', actor: purchaser() });
+    const unmark = decideRun(
+      s,
+      { type: 'UnmarkUnavailable', skuId: 'sku-1', actor: purchaser() },
+      clock,
+    );
+    expect(unmark[0]).toMatchObject({ type: 'UnavailableUndone', payload: { reason: '' } });
+    const back = decideRun(
+      s,
+      { type: 'UndoStartPurchase', reason: '  ', actor: purchaser() },
+      clock,
+    );
+    expect(back[0]).toMatchObject({ type: 'PurchaseStartUndone', payload: { reason: '' } });
+
+    let d = planAndPurchase();
+    d = step(d, { type: 'StartDelivery', actor: purchaser() });
+    const undo = decideRun(d, { type: 'UndoStartDelivery', actor: purchaser() }, clock);
+    expect(undo[0]).toMatchObject({ type: 'DeliveryStartUndone', payload: { reason: '' } });
+
+    d = deliver(planAndPurchase());
+    const recall = decideRun(
+      d,
+      { type: 'UndeliverStore', storeId: 'A', reason: '', actor: purchaser() },
+      clock,
+    );
+    expect(recall[0]).toMatchObject({ type: 'StoreDeliveryUndone', payload: { reason: '' } });
+    const kept = decideRun(
+      d,
+      { type: 'UndeliverStore', storeId: 'A', reason: ' wrong store ', actor: purchaser() },
+      clock,
+    );
+    expect(kept[0]).toMatchObject({ payload: { reason: 'wrong store' } });
   });
 });

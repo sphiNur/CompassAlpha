@@ -64,12 +64,13 @@ export type PurchasingCommand =
       priceConfirmed?: boolean;
       actor: ActorCtx;
     }
-  | { type: 'UnmarkUnavailable'; skuId: string; reason: string; actor: ActorCtx }
+  /** Simplification 2026-11-13: the reason is optional (was required). */
+  | { type: 'UnmarkUnavailable'; skuId: string; reason?: string; actor: ActorCtx }
   /** BUY-5: the purchaser decides not to buy the extra demand that
    *  arrived after this item was already bought or marked unavailable. */
   | { type: 'DismissTopUp'; skuId: string; note?: string; actor: ActorCtx }
   | { type: 'UndoPurchase'; skuId: string; reason?: string; actor: ActorCtx }
-  | { type: 'UndoStartPurchase'; reason: string; actor: ActorCtx }
+  | { type: 'UndoStartPurchase'; reason?: string; actor: ActorCtx }
   | {
       /**
        * M3.41 (2026-05-21): purchaser adds a SKU mid-run that was NOT in
@@ -606,8 +607,9 @@ export function decidePurchasing(
         throw preconditionFailed('run.errors.notUnavailable', { status: item.status });
       }
       assertListOpen(state);
-      const reason = command.reason.trim();
-      if (!reason) throw validation('run.errors.unmarkReasonRequired');
+      // Simplification (2026-11-13): the reason is optional; marking the
+      // item unavailable again undoes this. An empty one is recorded as ''.
+      const reason = (command.reason ?? '').trim();
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [
         { ...baseFor(1), type: 'UnavailableUndone', payload: { skuId: command.skuId, reason } },
@@ -630,8 +632,9 @@ export function decidePurchasing(
       // touch `status` + `started_at` (state.ts:260, runProjection.ts:377);
       // item-level purchase data already round-trips cleanly. Lifting
       // the gate exposes that already-correct behavior.
-      const reason = command.reason.trim();
-      if (!reason) throw validation('run.errors.undoReasonRequired');
+      // Simplification (2026-11-13): the reason is optional; Start
+      // purchase undoes this. An empty one is recorded as ''.
+      const reason = (command.reason ?? '').trim();
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [{ ...baseFor(1), type: 'PurchaseStartUndone', payload: { reason } }];
     }

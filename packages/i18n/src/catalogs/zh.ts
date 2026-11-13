@@ -1320,12 +1320,16 @@ export const zh = {
   'run.action.recallDelivery': '撤回配送',
   'run.action.undoStartPurchase': '回到计划阶段',
   'run.action.undoStartDelivery': '回到采购阶段',
-  'run.action.confirmDeliver': '标记已送达',
   'run.action.savePurchase': '保存',
   'run.action.recordPurchase': '记采购',
   'run.action.markUnavailable': '标为缺货',
   'run.action.markUnavailableDesc': '请说明无法购买的原因。',
   'run.action.unavailableReasonPlaceholder': '原因',
+  'run.unavailable.presets': '常见原因',
+  'run.unavailable.preset.soldOut': '卖完了',
+  'run.unavailable.preset.tooExpensive': '太贵',
+  'run.unavailable.preset.poorQuality': '质量不好',
+  'run.unavailable.preset.stallClosed': '摊位没开',
   'run.action.actualQty': '实际数量（{unit}）',
   'run.action.actualQtyPlain': '实际数量',
   'run.action.unitPriceUzs': '单价（{currency}）',
@@ -1340,6 +1344,7 @@ export const zh = {
   'run.action.addItem.crossStoreHint':
     '该商品已在本次采购中（{stores}）。如果是不同门店价格，请选「独立成本」；只有同一批次同一单价时才合并到原来那一项。',
   'run.action.addItem.defaultCrossStoreReason': '其他店追加需求',
+  'run.action.addItem.defaultReason': '采购中追加',
   'run.action.addItem.pickStore': '——选择门店——',
   'run.action.addItem.totalHint': '小计',
   'run.action.addItem.reasonLabel': '为什么要加这一项？',
@@ -1401,14 +1406,9 @@ export const zh = {
   'run.action.actualQtyAriaLabel': '实际数量',
   'run.action.unitPriceAriaLabel': '单价',
   'run.action.savePurchaseAriaLabel': '保存采购：{name}',
-  'run.confirm.startPurchase.title': '开始采购？',
-  'run.confirm.startPurchase.body':
-    '把本次采购单标记为进行中。之后仍可回到计划阶段（需填写原因），已记录的购买不会丢失。',
   'run.confirm.startDelivery.title': '开始配送？',
   'run.confirm.startDelivery.body':
     '把所有商品标记为可配送。如果还没向任何门店送货，可以再回到采购阶段。',
-  'run.confirm.deliver.title': '{store} 已送达？',
-  'run.confirm.deliver.body': '在门店确认收货之前，你都还可以撤回这次配送。门店一旦确认就锁定了。',
   'run.confirm.finish.title': '结束这次采购？',
   'run.confirm.finish.body':
     '结束后，价格、数量和配送都会锁定。之后要更正，只能由超级管理员重新打开。',
@@ -1433,15 +1433,6 @@ export const zh = {
     '把该商品退回到待采购，可以重新录入。原采购记录保留在审计日志。只有当没有门店收到货时才允许。',
   'run.confirm.undoPurchase.bodyAdded':
     '这是采购时临时新增的商品，撤销后整行从采购单里移除。原采购记录保留在审计日志。只有当没有门店收到货时才允许。',
-  'run.confirm.unmarkUnavailable.title': '改回可购买？',
-  'run.confirm.unmarkUnavailable.body':
-    '把该商品恢复为待采购，这样可以再次记录采购。原「缺货」备注会保留在审计日志。',
-  'run.confirm.undoStartPurchase.title': '回到计划阶段？',
-  'run.confirm.undoStartPurchase.body':
-    '把采购单退回到计划阶段。已记录的购买不会丢失——再次开始采购时仍标记为 ✓。',
-  'run.confirm.undoStartDelivery.title': '回到采购阶段？',
-  'run.confirm.undoStartDelivery.body':
-    '把采购单退回到采购阶段。只有在尚未向任何门店送货前才可以。',
   'run.label.reasonForChange': '修改原因',
   'run.label.itemsTotal': '商品合计',
   'run.label.reasonPlaceholder': '例如：收据上的单价看错了',
@@ -1557,9 +1548,6 @@ export const zh = {
   'run.errors.notPurchasing': '采购单不在采购阶段。',
   'run.errors.deliveryAlreadyProgressed': '已有门店收到货，无法回退。',
   'run.errors.reviseReasonRequired': '请说明改了什么。',
-  'run.errors.unmarkReasonRequired': '请说明现在为何能买到。',
-  'run.errors.recallReasonRequired': '请说明撤回原因。',
-  'run.errors.undoReasonRequired': '请说明回退原因。',
 
   // ── 12. Confirm page ───────────────────────────────────────────
   'confirm.empty.noItems': '本店没有商品',

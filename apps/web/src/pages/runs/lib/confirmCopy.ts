@@ -8,7 +8,7 @@
  * returns. Pure; tests in __tests__/confirmCopy.test.ts.
  */
 import type { I18n } from '@compass/i18n';
-import { formatMoney, formatQty } from '../../../lib/format';
+import { formatQty } from '../../../lib/format';
 import type { ActiveRun } from '../types';
 import {
   finishConfirmSummary,
@@ -17,22 +17,24 @@ import {
 } from './confirmSummary';
 import type { FinishSummary } from './finishSummary';
 import { pendingExtrasOf } from './runProgress';
-import { buildStorePickList } from './storePickList';
 
-/** A pending reason-prompt confirm. The keys here are the ONLY transitions
- *  that need a confirmation; trivial actions (Buy, mark N/A) keep their
- *  existing inline sheets. */
+/**
+ * A pending confirm. The keys here are the ONLY transitions that need a
+ * confirmation; trivial actions (Buy, mark N/A) keep their existing
+ * inline sheets.
+ *
+ * Simplification (2026-11-13, owner approved): a step another tap undoes
+ * is sent at once (DirectStep, below). Start delivery asks only when
+ * other items the stores asked for are still not handled (DX-BUY-5).
+ */
 export type ConfirmKind =
-  | 'startPurchase'
   | 'startDelivery'
   | 'finish'
   | 'refinalize'
   | 'cancel'
-  | 'undoStartPurchase'
-  | 'undoStartDelivery'
-  | { kind: 'deliverStore'; storeId: string; storeName: string }
+  // Kept: a recall tells the store, and clears the lines it already
+  // checked; delivering again does not bring those back.
   | { kind: 'recallDelivery'; storeId: string; storeName: string }
-  | { kind: 'unmarkUnavailable'; skuId: string; skuName: string }
   | { kind: 'undoPurchase'; skuId: string; skuName: string; added: boolean }
   | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string }
   // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
@@ -40,7 +42,29 @@ export type ConfirmKind =
   | { kind: 'removeExpense'; expenseId: string; label: string }
   // BUY-5: not buying what a newly joined order added. Review RUNWEB1-29:
   // was the browser's / Telegram's own confirm, unlike every other step.
+  // Kept (2026-11-13): nothing brings a dismissed top-up back.
   | { kind: 'dismissTopUp'; skuId: string; qty: string };
+
+/**
+ * The steps sent with no sheet and no reason (2026-11-13). Each is undone
+ * by one more tap: Start purchase by Back to plan and the other way
+ * round, Start delivery by Back to purchase and the other way round,
+ * Delivered by Recall, Mark available again by N/A.
+ */
+export type DirectStep =
+  | 'startPurchase'
+  | 'startDelivery'
+  | 'undoStartPurchase'
+  | 'undoStartDelivery'
+  | { kind: 'deliverStore'; storeId: string }
+  | { kind: 'unmarkUnavailable'; skuId: string };
+
+/** Start delivery asks first only to warn about other items still not handled. */
+export function startDeliveryAsks(
+  run: Pick<ActiveRun, 'sessionExtrasByStore'> | undefined,
+): boolean {
+  return pendingExtrasOf(run?.sessionExtrasByStore).length > 0;
+}
 
 /** What the run's confirm sheet asks (ConfirmSheet in @compass/ui). */
 export interface ConfirmCopy {
@@ -69,22 +93,16 @@ export interface ConfirmCopyContext {
 }
 
 export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): ConfirmCopy {
-  const { i18n, run, currency } = ctx;
+  const { i18n, run } = ctx;
   if (typeof kind === 'string') {
     switch (kind) {
-      case 'startPurchase':
-        return {
-          title: i18n.t('run.confirm.startPurchase.title'),
-          body: i18n.t('run.confirm.startPurchase.body'),
-          confirmLabel: i18n.t('run.action.startPurchase'),
-          danger: false,
-          requireReason: false,
-        };
       case 'startDelivery': {
         // DX-BUY-5 (2026-11-01): 「其他物品」 the stores asked for and the
         // purchaser has not handled do not count in "N left", and went
         // out of sight once delivery started. Say so here — a warning
-        // only; whether to block is an owner decision (#8).
+        // only; whether to block is an owner decision (#8). Since
+        // 2026-11-13 this is the only reason the sheet opens
+        // (startDeliveryAsks); otherwise the step is sent at once.
         const pendingExtras = pendingExtrasOf(run?.sessionExtrasByStore);
         const extrasLine =
           pendingExtras.length > 0
@@ -148,78 +166,19 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
           reasonOptional: true,
           reasonPlaceholder: i18n.t('run.cancel.reasonPlaceholder'),
         };
-      case 'undoStartPurchase':
-        return {
-          title: i18n.t('run.confirm.undoStartPurchase.title'),
-          body: i18n.t('run.confirm.undoStartPurchase.body'),
-          confirmLabel: i18n.t('run.action.undoStartPurchase'),
-          danger: false,
-          requireReason: true,
-        };
-      case 'undoStartDelivery':
-        return {
-          title: i18n.t('run.confirm.undoStartDelivery.title'),
-          body: i18n.t('run.confirm.undoStartDelivery.body'),
-          confirmLabel: i18n.t('run.action.undoStartDelivery'),
-          danger: false,
-          requireReason: true,
-        };
     }
   } else {
     switch (kind.kind) {
-      case 'deliverStore': {
-        // 2026-10-21 FE-03 (F3-01): say what is being handed over — the
-        // store's line count (and goods total when every line is
-        // priced), plus how many ordered SKUs were unavailable.
-        const pick = run
-          ? buildStorePickList({
-              storeId: kind.storeId,
-              items: run.items,
-              splits: run.splits,
-              demand: run.perStoreDemand,
-            })
-          : null;
-        const pickSummary = pick
-          ? [
-              i18n.t('run.label.itemsCount', { n: pick.lines.length }),
-              ...(pick.total !== null && pick.total > 0
-                ? // DLV-18 (2026-10-30): goods only; the store's share of
-                  // expenses is added on the final bill.
-                  [
-                    i18n.t('common.labelValue', {
-                      label: i18n.t('run.label.itemsTotal'),
-                      value: formatMoney(pick.total, currency),
-                    }),
-                  ]
-                : []),
-              ...(pick.unavailable.length > 0
-                ? [i18n.t('run.filter.unavailable', { n: pick.unavailable.length })]
-                : []),
-            ].join(' · ') + '\n'
-          : '';
-        return {
-          title: i18n.t('run.confirm.deliver.title', { store: kind.storeName }),
-          body: pickSummary + i18n.t('run.confirm.deliver.body'),
-          confirmLabel: i18n.t('run.action.confirmDeliver'),
-          danger: false,
-          requireReason: false,
-        };
-      }
       case 'recallDelivery':
         return {
           title: i18n.t('run.confirm.recall.title', { store: kind.storeName }),
           body: i18n.t('run.confirm.recall.body'),
           confirmLabel: i18n.t('run.action.recallDelivery'),
           danger: true,
-          requireReason: true,
-        };
-      case 'unmarkUnavailable':
-        return {
-          title: i18n.t('run.confirm.unmarkUnavailable.title'),
-          body: i18n.t('run.confirm.unmarkUnavailable.body'),
-          confirmLabel: i18n.t('run.action.unmarkUnavailable'),
-          danger: false,
-          requireReason: true,
+          // 2026-11-13: the reason is optional, behind its link.
+          requireReason: false,
+          reasonOptional: true,
+          reasonPlaceholder: i18n.t('run.eject.reasonPlaceholder'),
         };
       case 'undoPurchase':
         // No reason field — undo is just "open this row back up for
@@ -269,22 +228,18 @@ export function confirmCopyFor(kind: ConfirmKind, ctx: ConfirmCopyContext): Conf
   }
 }
 
-/** A confirmation's command, named as the page's mutations are (useRunMutations). */
+/** A step's command, named as the page's mutations are (useRunMutations). */
 export type ConfirmCommand =
   | {
       procedure: 'startPurchase' | 'startDelivery' | 'finish' | 'refinalize';
       input: { runId: string };
     }
-  | {
-      procedure: 'cancelRun' | 'undoStartPurchase' | 'undoStartDelivery';
-      input: { runId: string; reason: string };
-    }
+  | { procedure: 'cancelRun'; input: { runId: string; reason: string } }
+  | { procedure: 'undoStartPurchase' | 'undoStartDelivery'; input: { runId: string } }
   | { procedure: 'deliverToStore'; input: { runId: string; storeId: string } }
   | { procedure: 'undeliverStore'; input: { runId: string; storeId: string; reason: string } }
-  | {
-      procedure: 'unmarkUnavailable' | 'undoPurchase';
-      input: { runId: string; skuId: string; reason: string };
-    }
+  | { procedure: 'unmarkUnavailable'; input: { runId: string; skuId: string } }
+  | { procedure: 'undoPurchase'; input: { runId: string; skuId: string; reason: string } }
   | {
       procedure: 'ejectSession';
       input: { runId: string; sessionId: string; reason: string | undefined };
@@ -300,25 +255,20 @@ export function confirmCommandFor(
 ): ConfirmCommand {
   if (typeof kind === 'string') {
     switch (kind) {
-      case 'startPurchase':
       case 'startDelivery':
       case 'finish':
       case 'refinalize':
         return { procedure: kind, input: { runId } };
       case 'cancel':
         return { procedure: 'cancelRun', input: { runId, reason } };
-      case 'undoStartPurchase':
-      case 'undoStartDelivery':
-        return { procedure: kind, input: { runId, reason } };
     }
   } else {
     switch (kind.kind) {
-      case 'deliverStore':
-        return { procedure: 'deliverToStore', input: { runId, storeId: kind.storeId } };
       case 'recallDelivery':
-        return { procedure: 'undeliverStore', input: { runId, storeId: kind.storeId, reason } };
-      case 'unmarkUnavailable':
-        return { procedure: 'unmarkUnavailable', input: { runId, skuId: kind.skuId, reason } };
+        return {
+          procedure: 'undeliverStore',
+          input: { runId, storeId: kind.storeId, reason: reason.trim() },
+        };
       case 'undoPurchase':
         return { procedure: 'undoPurchase', input: { runId, skuId: kind.skuId, reason: '' } };
       case 'ejectSession':
@@ -334,5 +284,16 @@ export function confirmCommandFor(
       case 'dismissTopUp':
         return { procedure: 'dismissTopUp', input: { runId, skuId: kind.skuId } };
     }
+  }
+}
+
+/** A direct step's command: no reason (the server takes none, 2026-11-13). */
+export function directCommandFor(step: DirectStep, runId: string): ConfirmCommand {
+  if (typeof step === 'string') return { procedure: step, input: { runId } };
+  switch (step.kind) {
+    case 'deliverStore':
+      return { procedure: 'deliverToStore', input: { runId, storeId: step.storeId } };
+    case 'unmarkUnavailable':
+      return { procedure: 'unmarkUnavailable', input: { runId, skuId: step.skuId } };
   }
 }

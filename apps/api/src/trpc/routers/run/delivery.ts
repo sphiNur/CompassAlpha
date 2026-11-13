@@ -7,7 +7,7 @@ import {
   ConfirmStoreItemInputSchema,
   DispatchInputSchema,
   MarkStoreItemsOkInputSchema,
-  RunReasonOnlyInputSchema,
+  RunOptionalReasonInputSchema,
   SimpleRunCommandSchema,
   UndeliverStoreInputSchema,
 } from '@compass/contracts';
@@ -26,7 +26,7 @@ export const deliveryProcedures = {
 
   /** Roll the run back to `purchasing` (only if no store delivered yet). */
   undoStartDelivery: authedProcedure
-    .input(RunReasonOnlyInputSchema)
+    .input(RunOptionalReasonInputSchema)
     .mutation(async ({ ctx, input }) =>
       runSimpleCommand(
         ctx,

@@ -10,8 +10,9 @@
  *      mirrors that constraint).
  *   3. Enter qty + price (price input respects the K-thousands toggle
  *      from page level). Live total hint below.
- *   4. Type a reason (required — audit log answers "why was this
- *      added beyond the original order?").
+ *   4. A reason (required — audit log answers "why was this added
+ *      beyond the original order?"). R8 (2026-11-13): the sheet opens
+ *      with a default one filled in, so saving needs no typing.
  *   5. Save → server emits PurchaserItemAdded → row appears in the
  *      run with the "+" badge.
  *

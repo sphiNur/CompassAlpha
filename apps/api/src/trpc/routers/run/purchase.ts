@@ -12,7 +12,7 @@ import {
   PurchaseItemInputSchema,
   RemoveRunExpenseInputSchema,
   RevisePurchaseInputSchema,
-  RunReasonOnlyInputSchema,
+  RunOptionalReasonInputSchema,
   SimpleRunCommandSchema,
   UndoPurchaseInputSchema,
   UnmarkUnavailableInputSchema,
@@ -98,7 +98,7 @@ export const purchaseProcedures = {
 
   /** Roll the run back to `planned` (only if no item touched yet). */
   undoStartPurchase: authedProcedure
-    .input(RunReasonOnlyInputSchema)
+    .input(RunOptionalReasonInputSchema)
     .mutation(async ({ ctx, input }) =>
       runSimpleCommand(ctx, input.runId, (state) =>
         decideRun(state, {
