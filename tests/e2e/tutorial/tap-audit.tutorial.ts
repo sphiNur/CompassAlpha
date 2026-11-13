@@ -378,7 +378,7 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
     for (const nav of views) {
       const view = viewName(nav);
       if (!(await goView(page, auth, nav))) continue;
-      record(stage, role, view, where, await measure(page, 'page'));
+      record(stage, role, view, where, await measure(page, 'page').catch(() => []));
       if (!crawl) continue;
       const done = new Set<string>();
       const before = await signature(page);
@@ -393,22 +393,27 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
         if (inHeader) tappedHeader.add(k);
         if (done.size > 30) break;
         // The candidate list is from the screen as it was first drawn.
-        if ((await signature(page)) !== before) {
-          if (!(await goView(page, auth, nav))) break;
-        }
-        if (!(await tapNth(page, i).catch(() => false))) continue;
-        await page.waitForTimeout(300);
-        if (await dialogOpen(page)) {
-          // The sheet's slide-in.
+        try {
+          if ((await signature(page)) !== before) {
+            if (!(await goView(page, auth, nav))) break;
+          }
+          if (!(await tapNth(page, i).catch(() => false))) continue;
           await page.waitForTimeout(300);
-          record(stage, role, `${view} › ${label}`, where, await measure(page, 'dialog'));
-          await page.keyboard.press('Escape');
-          await page.waitForTimeout(250);
-          if (await dialogOpen(page)) await goView(page, auth, nav);
-        } else if ((await signature(page)) !== before) {
-          await settle(page);
-          record(stage, role, `${view} › after ${label}`, where, await measure(page, 'page'));
-          if (await dialogOpen(page)) await goView(page, auth, nav);
+          if (await dialogOpen(page)) {
+            // The sheet's slide-in.
+            await page.waitForTimeout(300);
+            record(stage, role, `${view} › ${label}`, where, await measure(page, 'dialog'));
+            await page.keyboard.press('Escape');
+            await page.waitForTimeout(250);
+            if (await dialogOpen(page)) await goView(page, auth, nav);
+          } else if ((await signature(page)) !== before) {
+            await settle(page);
+            record(stage, role, `${view} › after ${label}`, where, await measure(page, 'page'));
+            if (await dialogOpen(page)) await goView(page, auth, nav);
+          }
+        } catch {
+          // The tap reloaded or left the page (a language, a sign-out).
+          if (!(await goView(page, auth, nav).catch(() => false))) break;
         }
       }
     }
