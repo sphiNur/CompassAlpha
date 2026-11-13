@@ -647,11 +647,17 @@ async function run() {
     }
 
     // ---- Confirm tab ----
-    const confirmsBeforeTabChange = await page.evaluate(() => {
-      const w = window as unknown as { __compassConfirmCount?: number };
-      return w.__compassConfirmCount ?? 0;
-    });
+    // UX-07: leaving with unsaved settlement input asks in the app's own
+    // sheet (no longer Telegram's popup); "Discard" lets the tab change.
     await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Receive")`);
+    const leaveAsked = page.getByRole('dialog', { name: /daily-close changes/ });
+    const leavePrompted = await leaveAsked
+      .waitFor({ state: 'visible', timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (leavePrompted) {
+      await leaveAsked.getByRole('button', { name: 'Discard', exact: true }).click();
+    }
     await page
       .waitForFunction(
         () =>
@@ -663,14 +669,7 @@ async function run() {
         /* record() below captures the rendered text */
       });
     const confirmText = await page.evaluate(() => document.body.innerText);
-    const confirmsAfterTabChange = await page.evaluate(() => {
-      const w = window as unknown as { __compassConfirmCount?: number };
-      return w.__compassConfirmCount ?? 0;
-    });
-    record(
-      'Unsaved settlement prompts before changing tabs',
-      confirmsAfterTabChange > confirmsBeforeTabChange,
-    );
+    record('Unsaved settlement prompts before changing tabs', leavePrompted);
     record(
       'ConfirmPage shows nothing-to-confirm empty state',
       /Nothing to receive/.test(confirmText) || /No active delivery/.test(confirmText),

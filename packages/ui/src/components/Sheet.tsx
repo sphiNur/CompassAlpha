@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
+import { useConfirm } from '../confirm';
 import { useUiLabels } from '../labels';
 import { useSheetFocus } from '../sheetFocus';
 
@@ -349,6 +350,7 @@ function OpenedSheet({
   // element the browser found first.
   const descriptionId = useId();
   const labels = useUiLabels();
+  const confirm = useConfirm();
   const asking = useRef(false);
   const hasChangesRef = useRef(hasChanges);
   hasChangesRef.current = hasChanges;
@@ -363,11 +365,13 @@ function OpenedSheet({
       guardedClose(
         hasChangesRef.current,
         () => onOpenChangeRef.current(false),
-        () => labels.confirmDiscard(labels.discardChanges),
+        // UX-07: the in-app ConfirmSheet (the host's ConfirmProvider), no
+        // longer Telegram's native popup.
+        () => confirm({ title: labels.discardChanges, confirmLabel: labels.discard, danger: true }),
         asking,
       );
     },
-    [labels],
+    [confirm, labels],
   );
 
   // Deferred-focus implementation: when `deferAutoFocusMs` is set, we

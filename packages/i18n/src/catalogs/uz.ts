@@ -34,6 +34,7 @@ export const uz = {
   'common.addNoteOptional': '+ Izoh qoʻshish (ixtiyoriy)',
   'common.clearSearch': 'Qidiruvni tozalash',
   'common.archive': 'Arxivlash',
+  'common.discard': 'Saqlamaslik',
   'common.archived': 'arxivlangan',
   'common.unarchive': 'Arxivdan chiqarish',
   'common.remove': 'Olib tashlash',
@@ -570,6 +571,7 @@ export const uz = {
   'workspace.title': 'Ish maydoni',
   'workspace.current': 'Joriy',
   'workspace.switched': 'Ish maydoni almashtirildi',
+  'workspace.switchAction': 'Almashtirish',
   'workspace.create.action': 'Yangi ish maydoni yaratish',
   'workspace.create.title': 'Ish maydoni yaratish',
   'workspace.create.body':

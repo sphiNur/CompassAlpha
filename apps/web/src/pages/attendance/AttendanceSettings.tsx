@@ -25,6 +25,7 @@ import {
   Switch,
   rowGroupClass,
   useToast,
+  useConfirm,
 } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../lib/telegram';
@@ -35,7 +36,6 @@ import { GeoMap } from '../../components/geo/GeoMap';
 import { trpc, type RouterOutputs } from '../../lib/trpc';
 import { addDays, orgToday } from '../../lib/calendarDate';
 import { useAuthStore } from '../../stores/authStore';
-import { nativeConfirm } from '../admin/shared';
 import { EnrollPhotos } from './AttendancePhotos';
 import { ITEM_MONEY_PROBLEM_MESSAGE } from '../settlement/moneyProblem';
 
@@ -52,6 +52,7 @@ export function AttendanceSettings({ storeId }: { storeId: string }) {
 
 function PeopleBlock({ storeId }: { storeId: string }) {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
@@ -127,12 +128,14 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                       loading={
                         resetDevice.isPending && resetDevice.variables?.memberId === m.memberId
                       }
-                      onClick={() =>
-                        nativeConfirm(
-                          i18n.t('attendance.settings.resetDeviceConfirm', { name: m.name }),
-                          () => resetDevice.mutate({ storeId, memberId: m.memberId }),
-                        )
-                      }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: i18n.t('attendance.settings.resetDeviceConfirm', { name: m.name }),
+                          confirmLabel: i18n.t('attendance.settings.resetDevice'),
+                          danger: true,
+                        });
+                        if (ok) resetDevice.mutate({ storeId, memberId: m.memberId });
+                      }}
                     >
                       {i18n.t('attendance.settings.resetDevice')}
                     </Button>
@@ -177,6 +180,7 @@ function FaceEnrollLine({
   status: 'approved' | 'pending' | 'rejected' | 'none';
 }) {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
@@ -214,11 +218,14 @@ function FaceEnrollLine({
               variant="ghost"
               size="sm"
               loading={reset.isPending}
-              onClick={() =>
-                nativeConfirm(i18n.t('attendance.enroll.resetConfirm', { name }), () =>
-                  reset.mutate({ storeId, memberId }),
-                )
-              }
+              onClick={async () => {
+                const ok = await confirm({
+                  title: i18n.t('attendance.enroll.resetConfirm', { name }),
+                  confirmLabel: i18n.t('attendance.enroll.reset'),
+                  danger: true,
+                });
+                if (ok) reset.mutate({ storeId, memberId });
+              }}
             >
               {i18n.t('attendance.enroll.reset')}
             </Button>

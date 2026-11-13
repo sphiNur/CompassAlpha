@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, onlineManager, useQueryClient } from '@tanstack/react-query';
-import { ThemeProvider, ToastProvider } from '@compass/ui';
+import { ConfirmProvider, ThemeProvider, ToastProvider } from '@compass/ui';
 import { initLogger, getLogger } from '@compass/telemetry';
 import { CLIENT_LOG_BATCH_MAX, CLIENT_LOG_BATCH_MAX_BYTES } from '@compass/contracts/limits';
 import { trpc, buildTrpcClient, sendClientLogs } from '../lib/trpc';
@@ -210,19 +210,23 @@ export function App() {
           being frozen English. Sits outside AuthGate so the auth and
           onboarding screens get it too. */}
       <UiLabelsBridge>
-        <ToastProvider>
-          <trpc.Provider client={trpcClient} queryClient={queryClient}>
-            <QueryClientProvider client={queryClient}>
-              <QueryConsumers>
-                <AuthGate>
-                  <CacheRestoreGate>
-                    <Shell />
-                  </CacheRestoreGate>
-                </AuthGate>
-              </QueryConsumers>
-            </QueryClientProvider>
-          </trpc.Provider>
-        </ToastProvider>
+        {/* UX-07: every "are you sure?" opens one in-app ConfirmSheet
+            (useConfirm), not Telegram's native popup. */}
+        <ConfirmProvider>
+          <ToastProvider>
+            <trpc.Provider client={trpcClient} queryClient={queryClient}>
+              <QueryClientProvider client={queryClient}>
+                <QueryConsumers>
+                  <AuthGate>
+                    <CacheRestoreGate>
+                      <Shell />
+                    </CacheRestoreGate>
+                  </AuthGate>
+                </QueryConsumers>
+              </QueryClientProvider>
+            </trpc.Provider>
+          </ToastProvider>
+        </ConfirmProvider>
       </UiLabelsBridge>
     </ThemeProvider>
   );

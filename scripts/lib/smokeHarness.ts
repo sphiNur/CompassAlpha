@@ -202,8 +202,8 @@ export const fakeTokens = {
  * <head>. `MainButton.setText` throws on empty text like the real one (the
  * WebAppBottomButtonParamInvalid regression). `__compassMainButtonClick()`
  * and `__compassBackButtonClick()` tap the buttons through the handlers the
- * app registered, as Telegram would; every `showConfirm` is confirmed and
- * counted in `__compassConfirmCount`.
+ * app registered, as Telegram would. The app asks its questions in its own
+ * ConfirmSheet (UX-07); `showConfirm` stays because the real SDK has it.
  */
 function telegramSdkScript(): string {
   const initData = 'user=' + encodeURIComponent(JSON.stringify(fakeUser)) + '&hash=stub';
@@ -243,7 +243,6 @@ function telegramSdkScript(): string {
         backHandlers.forEach(function(h){ try { h(); } catch (e) {} });
         return true;
       };
-      window.__compassConfirmCount = 0;
       window.Telegram = {
         WebApp: {
           initData: ${JSON.stringify(initData)},
@@ -257,7 +256,6 @@ function telegramSdkScript(): string {
           HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
           showAlert: noop,
           showConfirm: function(_message, callback) {
-            window.__compassConfirmCount += 1;
             if (typeof callback === 'function') callback(true);
           },
           openTelegramLink: noop, openLink: noop,

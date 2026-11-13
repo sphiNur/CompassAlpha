@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { useToast } from '@compass/ui';
+import { useToast, useConfirm } from '@compass/ui';
 import { BACKDATE_LIMIT_DAYS, isoDateDaysBefore } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useStoreContext } from '../../hooks/useStoreContext';
@@ -14,7 +14,6 @@ import { haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 import { useLeaveGuards } from '../../hooks/useLeaveGuards';
 import { useStableCallbacks } from '../../hooks/useStableCallbacks';
-import { confirmNative, confirmThen } from '../../lib/confirm';
 import { conflictKind } from '../../lib/conflict';
 import { showFieldError, withTouched } from '../../lib/fieldErrors';
 import { useErrToast } from '../../hooks/useErrToast';
@@ -63,6 +62,7 @@ import { ITEM_MONEY_PROBLEM_MESSAGE, MONEY_PROBLEM_MESSAGE } from './moneyProble
 
 export function useSettlementForm() {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
@@ -234,10 +234,15 @@ export function useSettlementForm() {
     forgetStoredDraft();
     setDraft(baseDraft.current);
   };
+  // UX-07: the in-app ConfirmSheet, as every other question.
+  const askDiscard = () =>
+    confirm({
+      title: i18n.t('settlement.confirm.discard'),
+      confirmLabel: i18n.t('common.discard'),
+      danger: true,
+    });
   const confirmDiscardChanges = (onConfirm: () => void) => {
-    const asked = hasUnsavedChanges
-      ? confirmNative(i18n.t('settlement.confirm.discard'))
-      : Promise.resolve(true);
+    const asked = hasUnsavedChanges ? askDiscard() : Promise.resolve(true);
     void asked.then((confirmed) => {
       if (confirmed) forgetStoredDraft();
       if (confirmed) onConfirm();
@@ -253,7 +258,7 @@ export function useSettlementForm() {
     // CONF-13: "discard" drops the stored draft too, as the page's own
     // date picker does; it used to come back as "restored".
     confirmLeave: () =>
-      confirmNative(i18n.t('settlement.confirm.discard')).then((ok) => {
+      askDiscard().then((ok) => {
         if (ok && storedDraftKey) forgetDraft(draftStorage(), storedDraftKey);
         return ok;
       }),
@@ -412,7 +417,12 @@ export function useSettlementForm() {
   const save = () => {
     if (!currentStoreId || !canSave || saveMutation.isPending) return;
     if (!existing && isAllZeroClose(draft)) {
-      confirmThen(i18n.t('settlement.confirm.allZero'), submitSave);
+      void confirm({
+        title: i18n.t('settlement.confirm.allZero'),
+        confirmLabel: i18n.t('common.save'),
+      }).then((ok) => {
+        if (ok) submitSave();
+      });
       return;
     }
     submitSave();
@@ -433,7 +443,11 @@ export function useSettlementForm() {
         fields: editedFields(draft, baseDraft.current),
       };
       if (linesEdited(draft, baseDraft.current)) {
-        void confirmNative(i18n.t('settlement.conflict.linesLost')).then((ok) => {
+        void confirm({
+          title: i18n.t('settlement.conflict.linesLost'),
+          confirmLabel: i18n.t('settlement.action.refresh'),
+          danger: true,
+        }).then((ok) => {
           if (ok) reload();
           else carryOver.current = null;
         });

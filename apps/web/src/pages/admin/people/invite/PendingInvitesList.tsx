@@ -5,12 +5,12 @@ import {
   SectionLabel,
   useToast,
   rowGroupClass,
+  useConfirm,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
 import { formatList } from '../../../../lib/listFormat';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useDateFormat, useI18n, useRoleLabels } from '../../../../hooks/useI18n';
-import { confirmThen } from '../../../../lib/confirm';
 
 /**
  * 2026-10-21 CA-19: pending invite links (not accepted / revoked /
@@ -20,6 +20,7 @@ import { confirmThen } from '../../../../lib/confirm';
  */
 export function PendingInvitesList({ enabled }: { enabled: boolean }) {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const roleText = useRoleLabels();
   const dateFmt = useDateFormat();
   const toast = useToast();
@@ -92,11 +93,14 @@ export function PendingInvitesList({ enabled }: { enabled: boolean }) {
                   size="sm"
                   variant="danger"
                   disabled={revoke.isPending}
-                  onClick={() =>
-                    confirmThen(i18n.t('people.confirmRevokeInvite'), () =>
-                      revoke.mutate({ inviteId: inv.id }),
-                    )
-                  }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: i18n.t('people.confirmRevokeInvite'),
+                      confirmLabel: i18n.t('people.revokeInvite'),
+                      danger: true,
+                    });
+                    if (ok) revoke.mutate({ inviteId: inv.id });
+                  }}
                 >
                   {i18n.t('people.revokeInvite')}
                 </Button>

@@ -5,7 +5,16 @@
  * movements sheet.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Button, Field, Input, Select, Sheet, readDecimalText, useToast } from '@compass/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Select,
+  Sheet,
+  readDecimalText,
+  useToast,
+  useConfirm,
+} from '@compass/ui';
 import {
   INVENTORY_NOTE_MAX,
   STOCKTAKE_COUNT_MESSAGE,
@@ -15,7 +24,6 @@ import { newIdempotencyKey, trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { formatQty } from '../../../../lib/format';
 import { useI18n, useProductName, useUnitLabel } from '../../../../hooks/useI18n';
-import { confirmThen } from '../../../../lib/confirm';
 import {
   inventoryDraftChanged,
   stockAfterWastage,
@@ -60,6 +68,7 @@ export function InventoryActionSheet({
   onHand: (skuId: string) => string;
 }) {
   const i18n = useI18n();
+  const confirm = useConfirm();
   const unitLabel = useUnitLabel();
   const toast = useToast();
   const errToast = useErrToast();
@@ -212,10 +221,14 @@ export function InventoryActionSheet({
                     readDecimalText,
                   );
                   if (after !== null && Number(after) < 0) {
-                    confirmThen(
-                      i18n.t('inventory.confirm.wastageNegative', { after: formatQty(after) }),
-                      save,
-                    );
+                    void confirm({
+                      title: i18n.t('inventory.confirm.wastageNegative', {
+                        after: formatQty(after),
+                      }),
+                      confirmLabel: i18n.t('common.save'),
+                    }).then((ok) => {
+                      if (ok) save();
+                    });
                   } else {
                     save();
                   }

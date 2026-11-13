@@ -10,12 +10,12 @@ import {
   SectionLabel,
   Sheet,
   useToast,
+  useConfirm,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n, useRoleLabels } from '../../../../hooks/useI18n';
-import { confirmThen } from '../../../../lib/confirm';
 import { readRank, roleRankRange } from '../../../../lib/adminFields';
 import { canPutKeyInRole, type PassOn } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
@@ -77,6 +77,7 @@ export function RolePermissionsSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const confirm = useConfirm();
   const roleText = useRoleLabels();
   const detail = trpc.admin.roleDetail.useQuery(
     { roleSlug: roleSlug ?? '' },
@@ -228,11 +229,15 @@ export function RolePermissionsSheet({
                   variant="danger"
                   loading={remove.isPending}
                   disabled={held}
-                  onClick={() => {
-                    confirmThen(
-                      i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
-                      () => remove.mutate({ roleId: detail.data!.id }),
-                    );
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: i18n.t('people.confirmDeleteRole', {
+                        name: roleText.name(detail.data!),
+                      }),
+                      confirmLabel: i18n.t('people.deleteRole'),
+                      danger: true,
+                    });
+                    if (ok) remove.mutate({ roleId: detail.data!.id });
                   }}
                 >
                   {i18n.t('people.deleteRole')}

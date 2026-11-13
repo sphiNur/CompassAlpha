@@ -8,12 +8,12 @@ import {
   QueryErrorBanner,
   Sheet,
   useToast,
+  useConfirm,
 } from '@compass/ui';
 import { trpc } from '../../../../lib/trpc';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAdminStoreIds, useIsOrgAdmin } from '../../../../hooks/useAdminAuthority';
-import { confirmThen } from '../../../../lib/confirm';
 import {
   canDetachFromStore,
   canRename,
@@ -49,6 +49,7 @@ export function ManageMemberSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const confirm = useConfirm();
   const open = !!target;
   const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: open });
   const assignmentsQuery = trpc.admin.memberStoreAssignments.useQuery(
@@ -186,13 +187,16 @@ export function ManageMemberSheet({
                   if (checked) {
                     assignMut.mutate({ memberId: target.memberId, storeId: st.id });
                   } else {
-                    confirmThen(
-                      i18n.t('admin.confirm.removeFromStore', {
+                    void confirm({
+                      title: i18n.t('admin.confirm.removeFromStore', {
                         name: target.displayName,
                         store: st.name,
                       }),
-                      () => detachMut.mutate({ memberId: target.memberId, storeId: st.id }),
-                    );
+                      confirmLabel: i18n.t('admin.action.removeFromStore'),
+                      danger: true,
+                    }).then((ok) => {
+                      if (ok) detachMut.mutate({ memberId: target.memberId, storeId: st.id });
+                    });
                   }
                 }}
                 trailing={(st) =>
