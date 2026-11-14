@@ -169,7 +169,12 @@
    * sets --app-nav-h and --app-nav-float to 0 when there is no nav, so
    * --app-nav-reserve (the room the page keeps under its last content)
    * is then the phone's bottom bar alone. */
-  --app-nav-h: 60px;
+  /* Review MWA-10 (modern-web-guidance: respect-os-text-scale): "Text-
+   * containing components … MUST be able to grow". 60px at the default
+   * 16px root; with larger phone text the capsule grows with its labels
+   * (46px of icon and air plus a 0.875rem label line), and the room the
+   * page keeps under it (--app-nav-reserve) with it. */
+  --app-nav-h: max(60px, calc(46px + 0.875rem));
   --app-nav-h-compact: 48px;
   --app-nav-float: 12px;
   --app-nav-inset-x: 12px;

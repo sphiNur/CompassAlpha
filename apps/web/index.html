@@ -21,6 +21,13 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
+    <!--
+      Review MWA-09 (modern-web-guidance: respect-os-text-scale): opt into
+      the phone's text size (Android Chrome WebView 146+; others ignore
+      it). The type scale is in rem, so text follows it; pinch zoom stays
+      locked above. Never set a font-size on html or :root.
+    -->
+    <meta name="text-scale" content="scale" />
     <!-- Adaptive theme-color for light + dark schemes. The previous
          fixed #ffffff caused a white notch strip in dark mode. -->
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />

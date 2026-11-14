@@ -139,8 +139,11 @@ export function PageMainButton() {
                   }
           }
           aria-busy={busy || undefined}
+          // Review MWA-10 (modern-web-guidance: respect-os-text-scale): 48px
+          // is a minimum, so the bar grows with larger phone text (its
+          // height is measured and published above) instead of clipping.
           className={
-            'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
+            'flex min-h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
             (interactable
               ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
               : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
