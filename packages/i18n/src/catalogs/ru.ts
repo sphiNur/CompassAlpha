@@ -519,6 +519,8 @@ export const ru = {
   'boot.resetAndReload': 'Выйти и перезагрузить',
   'common.noData': 'Нет данных',
   'common.clear': 'Очистить',
+  'dock.search.open': 'Поиск',
+  'dock.search.close': 'Закрыть поиск',
   'common.optional': 'Необязательно',
   'common.labelValue': '{label}: {value}',
   'common.amountWithCurrency': '{amount} {currency}',

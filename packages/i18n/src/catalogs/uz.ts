@@ -513,6 +513,8 @@ export const uz = {
   'boot.resetAndReload': 'Sessiyani tozalab qayta yuklash',
   'common.noData': 'Maʼlumot yoʻq',
   'common.clear': 'Tozalash',
+  'dock.search.open': 'Qidirish',
+  'dock.search.close': 'Qidiruvni yopish',
   'common.optional': 'Ixtiyoriy',
   'common.labelValue': '{label}: {value}',
   'common.amountWithCurrency': '{amount} {currency}',

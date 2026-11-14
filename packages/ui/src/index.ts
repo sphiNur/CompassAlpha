@@ -135,6 +135,8 @@ export {
   IconSend,
   IconTruck,
   IconSettings,
+  IconSearch,
+  IconFilter,
 } from './components/NavIcon';
 export { ThemeProvider, useTheme } from './theme';
 // DEFAULT_UI_LABELS: for a host's test that its labels cover every key.

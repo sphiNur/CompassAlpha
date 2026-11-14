@@ -6,7 +6,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { announce } from '../../lib/announce';
 import { usePageMainButtonState, type PageMainButtonIcon } from '../../hooks/usePageMainButton';
 import { mainButtonInsetOf, publishMainButtonInset } from '../../lib/mainButtonInset';
-import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
+import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from '../../lib/navBadgeLook';
 
 /**
  * In-DOM page primary action button (M3.49, 2026-05-23). Reads from the

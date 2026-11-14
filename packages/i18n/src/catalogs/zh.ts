@@ -477,6 +477,8 @@ export const zh = {
   'boot.resetAndReload': '清除登录状态并重新加载',
   'common.noData': '暂无数据',
   'common.clear': '清除',
+  'dock.search.open': '搜索',
+  'dock.search.close': '关闭搜索',
   'common.optional': '可选',
   'common.labelValue': '{label}：{value}',
   'common.amountWithCurrency': '{amount} {currency}',

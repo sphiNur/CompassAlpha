@@ -22,7 +22,6 @@ import {
   EmptyState,
   Field,
   Input,
-  Segmented,
   Sheet,
   StickyPageBar,
   focusAfter,
@@ -34,6 +33,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../lib/telegram';
 import { leaveListItem } from '../lib/motion';
+import { DockFilter } from '../components/dock/DockFilter';
 import { useOnline } from '../hooks/useOnline';
 import { useErrToast } from '../hooks/useErrToast';
 import { useStableCallbacks } from '../hooks/useStableCallbacks';
@@ -118,6 +118,13 @@ export function ApprovalPage() {
   // pendingList accepts an optional status filter; we drive the tab
   // off it. 'pending' on the FE means 'submitted' on the server (the
   // actual enum value); the other tabs map 1:1.
+  // UI overhaul D: the waiting count on the dock's filter, from the nav's
+  // own counts (one request, shared with the bottom nav's badge).
+  const navCounts = trpc.nav.counts.useQuery(
+    storeCtx.kind === 'specific' ? { storeId: storeCtx.storeId } : {},
+    { enabled: storeCtx.kind !== 'none', retry: false },
+  );
+  const waitingCount = navCounts.data?.approve ?? null;
   const pendingQuery = trpc.order.pendingList.useQuery(
     {
       status: tab === 'pending' ? 'submitted' : tab,
@@ -401,17 +408,27 @@ export function ApprovalPage() {
         {/* Review ORD-22 (2026-11): the kit's Segmented, as every other
             page switches its views (UI-16); this was the one <Tabs> in
             the app. One Tab stop, arrow keys between the states. */}
-        <Segmented<ApprovalTab>
+        {/* UI overhaul D (2026-11-15, owner): the switch is a dock button
+            on the nav's row with the waiting count (DockFilter); the page
+            names the view it shows. */}
+        <DockFilter<ApprovalTab>
+          label={i18n.t('approval.tabsAriaLabel')}
           value={tab}
           onChange={setTab}
-          ariaLabel={i18n.t('approval.tabsAriaLabel')}
-          controls={showsList ? listPanelId : undefined}
+          badge={waitingCount ?? undefined}
           options={[
-            { value: 'pending', label: i18n.t(TAB_LABEL_KEYS.pending) },
+            {
+              value: 'pending',
+              label: i18n.t(TAB_LABEL_KEYS.pending),
+              count: waitingCount ?? undefined,
+            },
             { value: 'approved', label: i18n.t(TAB_LABEL_KEYS.approved) },
             { value: 'rejected', label: i18n.t(TAB_LABEL_KEYS.rejected) },
           ]}
         />
+        <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]" aria-live="polite">
+          {i18n.t(TAB_LABEL_KEYS[tab])}
+        </h2>
       </StickyPageBar>
 
       {!showsList ? (

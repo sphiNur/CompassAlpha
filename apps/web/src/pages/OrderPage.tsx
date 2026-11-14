@@ -7,11 +7,11 @@ import {
   cn,
   DataState,
   EmptyState,
-  SearchInput,
   SectionLabel,
   Sheet,
   StickyPageBar,
 } from '@compass/ui';
+import { DockSearch } from '../components/dock/DockSearch';
 import { useQueryClient } from '@tanstack/react-query';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -411,16 +411,14 @@ export function OrderPage() {
             width of nothing beside it. It rides the search row now:
             one less row on a 375-px screen, and "field + trailing
             action" is a shape people already read. */}
-        <div className="flex items-center gap-2">
-          <SearchInput
-            className="flex-1"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onClear={() => setSearchQuery('')}
-            placeholder={i18n.t('order.search.placeholder')}
-            clearAriaLabel={i18n.t('common.clear')}
-            aria-label={i18n.t('order.search.placeholder')}
-          />
+        {/* UI overhaul C (2026-11-15, owner): the search is a dock button
+            on the nav's row (DockSearch); the batch count keeps this row. */}
+        <DockSearch
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder={i18n.t('order.search.placeholder')}
+        />
+        <div className="flex items-center justify-end gap-2 empty:hidden">
           {/* Batch count stays visible while drafting too — otherwise
               "再报一批" drops you into an empty catalog identical to a
               first-of-the-day order, with nothing saying the earlier

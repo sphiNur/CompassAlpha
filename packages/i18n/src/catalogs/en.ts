@@ -549,6 +549,8 @@ export const en = {
   'boot.resetAndReload': 'Reset session and reload',
   'common.noData': 'No data',
   'common.clear': 'Clear',
+  'dock.search.open': 'Search',
+  'dock.search.close': 'Close search',
   'common.optional': 'Optional',
   // 2026-10-30: "Label: value" built in code put a half-width colon into
   // Chinese (支付方式: 现金). The punctuation belongs to the language.
