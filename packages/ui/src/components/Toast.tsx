@@ -44,7 +44,8 @@ export interface ToastContextValue {
     opts?: {
       tone?: ToastTone;
       title?: ReactNode;
-      /** 0 keeps the toast up until it is tapped or dismissed. */
+      /** 0 keeps the toast up until it is tapped or dismissed. An error
+       *  (tone 'danger') defaults to 0 (V6, MWB-05). */
       ttlMs?: number;
       /** Runs when the toast is tapped, before it is dismissed.
        *  Ignored when `actions` is given. */
@@ -180,6 +181,49 @@ export function toastSpokenParts(
   return parts;
 }
 
+/**
+ * Review MWB-05 (V6, modern-web-guidance: persistent-toast-notifications):
+ * "Prefer persistent toast notifications that remain present until they
+ * are dismissed, except for frequent, low importance events". An error
+ * ("not saved, try again") went after 4 s, before people had read it; it
+ * now stays until it is closed. Success and info keep the default time.
+ * A caller's own `ttlMs` wins. Exported for tests.
+ */
+export function toastTtl(tone: ToastTone, ttlMs: number | undefined, defaultTtlMs: number): number {
+  if (ttlMs !== undefined) return ttlMs;
+  return tone === 'danger' ? 0 : defaultTtlMs;
+}
+
+/**
+ * Review MWB-05 / MWB-07 (V6): "DO provide an explicit "Close" button".
+ * A toast that stays carries a ✕, unless one of its own buttons already
+ * only closes it ("Later", "Got it"). Exported for tests.
+ */
+export function toastHasClose(t: {
+  ttlMs?: number;
+  actions?: { onClick?: () => void }[];
+}): boolean {
+  if (t.ttlMs !== 0) return false;
+  return !t.actions?.some((a) => !a.onClick);
+}
+
+/**
+ * Review MWB-07 (V6): how long a toast's hidden copy stays in its live
+ * region. It is there to be announced; left in place for the toast's whole
+ * life, a screen reader reading the page met each toast twice (the copy,
+ * then the toast). Announcements are taken when the text is added, so the
+ * copy goes once that has happened and the toast on screen is read once.
+ */
+export const TOAST_SPOKEN_MS = 1500;
+
+/** The toasts whose hidden copy is still in its live region. Exported for tests. */
+export function toastsToSpeak<T extends { id: string }>(
+  toasts: T[],
+  spoken: ReadonlySet<string>,
+): T[] {
+  return toasts.filter((t) => !spoken.has(t.id));
+}
+
 let counter = 0;
 const nextId = () => `toast-${++counter}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -204,6 +248,9 @@ export function ToastProvider({
   // A11Y-6: when each timed toast is due, and the time left on paused ones.
   const dueRef = useRef(new Map<string, number>());
   const pausedRef = useRef(new Map<string, number>());
+  // MWB-07 (V6): toasts whose hidden copy has been said and taken out.
+  const [spoken, setSpoken] = useState<ReadonlySet<string>>(() => new Set());
+  const spokenTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const stackRef = useRef<HTMLDivElement | null>(null);
   // U11: px from the viewport bottom while a sheet is open; null = the
   // usual place above the main button.
@@ -257,7 +304,16 @@ export function ToastProvider({
     dueRef.current.delete(id);
     pausedRef.current.delete(id);
     focusBeforeRef.current.delete(id);
+    const spokenTimer = spokenTimersRef.current.get(id);
+    if (spokenTimer) clearTimeout(spokenTimer);
+    spokenTimersRef.current.delete(id);
     setToasts((prev) => prev.filter((x) => x.id !== id));
+    setSpoken((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
   // Review MWB-04: a toast closed from the keyboard (Undo, a tap on it)
@@ -332,7 +388,8 @@ export function ToastProvider({
         tone: opts.tone ?? 'info',
         title: opts.title,
         message,
-        ttlMs: opts.ttlMs ?? defaultTtlMs,
+        // MWB-05 (V6): an error stays until it is closed.
+        ttlMs: toastTtl(opts.tone ?? 'info', opts.ttlMs, defaultTtlMs),
         onClick: opts.onClick,
         actions: opts.actions?.length ? opts.actions : undefined,
       };
@@ -355,7 +412,25 @@ export function ToastProvider({
                 return !stale;
               })
             : prev;
-        const next = [...kept, config];
+        // V6: errors stay now, so the same failure tapped three times
+        // would stack three copies; the newest one replaces the older.
+        const same = (t: ToastConfig) =>
+          config.tone === 'danger' &&
+          t.tone === 'danger' &&
+          typeof config.message === 'string' &&
+          t.message === config.message &&
+          t.title === config.title &&
+          !t.actions &&
+          !config.actions;
+        for (const t of kept.filter(same)) {
+          const timer = timersRef.current.get(t.id);
+          if (timer) clearTimeout(timer);
+          timersRef.current.delete(t.id);
+          dueRef.current.delete(t.id);
+          pausedRef.current.delete(t.id);
+          focusBeforeRef.current.delete(t.id);
+        }
+        const next = [...kept.filter((t) => !same(t)), config];
         // Over the limit, the oldest timed toast goes first: one that was
         // asked to stay must not be pushed out by passing notices.
         while (next.length > limit) {
@@ -366,16 +441,37 @@ export function ToastProvider({
       });
       const ttl = config.ttlMs;
       if (ttl && ttl > 0) schedule(id, ttl);
+      // MWB-07 (V6): the hidden copy goes once it has been said.
+      spokenTimersRef.current.set(
+        id,
+        setTimeout(() => {
+          spokenTimersRef.current.delete(id);
+          setSpoken((prev) => new Set(prev).add(id));
+        }, TOAST_SPOKEN_MS),
+      );
       return id;
     },
     [defaultTtlMs, limit, schedule],
   );
 
+  // V6: a toast dropped without dismiss (over the limit, cleared by a
+  // success, replaced by its repeat) leaves the said-set too.
+  useEffect(() => {
+    setSpoken((prev) => {
+      const ids = new Set(toasts.map((t) => t.id));
+      const kept = [...prev].filter((id) => ids.has(id));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [toasts]);
+
   useEffect(() => {
     const map = timersRef.current;
+    const spokenMap = spokenTimersRef.current;
     return () => {
       for (const [, h] of map) clearTimeout(h);
       map.clear();
+      for (const [, h] of spokenMap) clearTimeout(h);
+      spokenMap.clear();
     };
   }, []);
 
@@ -390,8 +486,32 @@ export function ToastProvider({
     [show, dismiss],
   );
 
+  // Review MWB-05 / MWB-07 (V6): the ✕ of a toast that stays.
+  const closeButton = (t: ToastConfig) => (
+    <button
+      type="button"
+      data-toast-close=""
+      aria-label={labels.closeNotification}
+      onClick={(e) => {
+        const toastEl = e.currentTarget.closest<HTMLElement>('[data-toast]');
+        if (toastEl) dismissFromToast(t.id, toastEl);
+        else dismiss(t.id);
+      }}
+      // hit-44: 32 px to look at, 44 to tap, as the toast's other buttons.
+      className="press hit-44 -mr-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full opacity-70"
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+        <path
+          d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+  );
   const renderToast = (t: ToastConfig) =>
-    t.actions ? (
+    t.actions || toastHasClose(t) ? (
       <div
         key={t.id}
         data-toast=""
@@ -406,7 +526,9 @@ export function ToastProvider({
           }
         }}
         className={cn(
-          'flex min-w-[200px] max-w-[92vw] items-center gap-3 rounded-[var(--r-card)] px-4 py-2.5 text-left',
+          'flex min-w-[200px] max-w-[92vw] items-center gap-3 px-4 py-2.5 text-left',
+          // A toast with buttons is a card; one with only its ✕ keeps the pill.
+          t.actions ? 'rounded-[var(--r-card)]' : 'min-h-11 rounded-[var(--r-pill)]',
           TONE[t.tone],
         )}
         style={{ pointerEvents: 'auto' }}
@@ -418,7 +540,7 @@ export function ToastProvider({
           {t.message ? <div className="text-old-body-sm leading-snug">{t.message}</div> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {t.actions.map((a, i) => (
+          {(t.actions ?? []).map((a, i) => (
             <button
               key={i}
               type="button"
@@ -440,6 +562,7 @@ export function ToastProvider({
               {a.label}
             </button>
           ))}
+          {toastHasClose(t) ? closeButton(t) : null}
         </div>
       </div>
     ) : (
@@ -527,14 +650,16 @@ export function ToastProvider({
           is read without its button labels ("Archived Undo"). sr-only
           takes them out of the stack's layout, so the toasts below sit
           as before; the buttons stay where they were and work as before.
+          V6: each copy leaves its region once said (TOAST_SPOKEN_MS), so
+          a screen reader reading the page meets the toast once.
         */}
         <div aria-live="assertive" className="sr-only">
-          {urgent.map((t) => (
+          {toastsToSpeak(urgent, spoken).map((t) => (
             <span key={t.id}>{spokenParts(t)}</span>
           ))}
         </div>
         <div aria-live="polite" className="sr-only">
-          {calm.map((t) => (
+          {toastsToSpeak(calm, spoken).map((t) => (
             <span key={t.id}>{spokenParts(t)}</span>
           ))}
         </div>

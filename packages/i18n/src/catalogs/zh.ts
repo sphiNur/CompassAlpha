@@ -32,6 +32,8 @@ export const zh = {
   // Review MWA-07 (V5)
   'common.requiredMark': '（必填）',
   'common.enterReason': '请填写原因。',
+  // Review MWB-05 / MWB-07 (V6)
+  'common.closeNotification': '关闭通知',
   'common.archive': '归档',
   'common.discard': '放弃更改',
   'common.archived': '已归档',

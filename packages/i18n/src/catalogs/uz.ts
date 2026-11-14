@@ -39,6 +39,8 @@ export const uz = {
   // Review MWA-07 (V5)
   'common.requiredMark': '(majburiy)',
   'common.enterReason': 'Sababni yozing.',
+  // Review MWB-05 / MWB-07 (V6)
+  'common.closeNotification': 'Bildirishnomani yopish',
   'common.archive': 'Arxivlash',
   'common.discard': 'Saqlamaslik',
   'common.archived': 'arxivlangan',
