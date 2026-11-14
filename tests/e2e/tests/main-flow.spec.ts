@@ -161,7 +161,7 @@ test('place an order', async () => {
   );
 
   // O1: the main button submits in one tap; the review is an optional look.
-  await expect(mainButton()).toHaveText('Submit order (2)');
+  await expect(mainButton()).toHaveAccessibleName('Submit order (2)');
   await main().getByRole('button', { name: 'View order' }).click();
   // 2026-11-05: the review is editable — each line has the list's stepper.
   const reviewLine = (sku: string) => sheet().getByRole('listitem').filter({ hasText: sku }).last();
@@ -270,7 +270,7 @@ test('buy everything, one item in cash and one by transfer', async () => {
 });
 
 test('deliver to the store', async () => {
-  await expect(mainButton()).toHaveText('Start delivery');
+  await expect(mainButton()).toHaveAccessibleName('Start delivery');
   // 2026-11-13: no confirm (Back to purchase undoes it).
   await mainButton().click();
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
@@ -299,7 +299,7 @@ test('receive the delivery at the store', async () => {
   // UX-01: with nothing checked, the main button marks every line OK (the
   // same write as the "All OK" button above the list) and opens the
   // summary; Confirm receipt there is the check.
-  await expect(mainButton()).toHaveText('All OK · Confirm receipt');
+  await expect(mainButton()).toHaveAccessibleName('All OK · Confirm receipt');
   await mainButton().click();
   // U4: the irreversible confirmation goes through a summary sheet; while it
   // is open the page behind it is hidden from the tree, so the summary is
@@ -353,7 +353,7 @@ test('close the day', async () => {
   await page.getByRole('textbox', { name: 'Invoiced cash revenue' }).fill('500000');
   await page.getByRole('textbox', { name: 'Online / transfer revenue' }).fill('250000');
   await expect(main()).toContainText(/Total recorded revenue\s*750,000 UZS/);
-  await expect(mainButton()).toHaveText('Save daily close');
+  await expect(mainButton()).toHaveAccessibleName('Save daily close');
   await mainButton().click();
 
   await expect(

@@ -117,8 +117,7 @@ function ShellInner() {
     <div
       ref={scrollChrome.rootRef}
       // relative: the nav capsule floats over the page (BottomNav.tsx).
-      // app-shell: the dock's compact rules read its data-nav-compact.
-      className="app-shell relative flex min-h-0 flex-col bg-[var(--c-bg)]"
+      className="relative flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
       <SkipLinks hasNav={showsNav(visible)} />
@@ -223,7 +222,7 @@ function ShellInner() {
           explicitly requested the bottom nav stay anchored at all times.
           Driven by the same usePageMainButton hook every page already
           uses. 2026-11-14 (owner): the nav capsule and the button float
-          in one dock, on one row where it fits (.app-dock in
+          in one dock, on one row, the button a circle (.app-dock in
           styles/index.css); the nav comes first for Tab. Outside the
           pager, so a swipe never starts on either. */}
       <div className="app-dock" data-nav={showsNav(visible) ? '' : undefined}>

@@ -21,8 +21,18 @@ export function useConfirmMainButton(
 ): void {
   const i18n = useI18n();
   const button = confirmMainButton(state);
-  usePageMainButton(i18n.t(button.label.key, button.label.vars), actions[button.action], {
+  const text = i18n.t(button.label.key, button.label.vars);
+  // 2026-11-14 (owner): a circle with a check on the nav's row, its text
+  // the accessible name. While lines are still to check it waits: their
+  // count is its badge, and the hint over the row says it in words; so
+  // does it while a problem's photo is still uploading.
+  const blocked = button.label.key === 'confirm.confirmStoreBlocked';
+  const waits = blocked || button.label.key === 'photo.uploading';
+  usePageMainButton(text, actions[button.action], {
     visible: button.visible,
     active: button.active,
+    icon: 'check',
+    badge: blocked ? button.label.vars?.n : undefined,
+    inactiveHint: waits ? text : undefined,
   });
 }

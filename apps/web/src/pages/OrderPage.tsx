@@ -261,6 +261,10 @@ export function OrderPage() {
       // a batch the user was not looking at. No main button there.
       visible: canSubmit && selectedCount > 0 && !sessionBlocked && !viewingOtherBatch,
       active: selectedCount > 0 && !submit.isPending && !sessionBlocked,
+      // 2026-11-14 (owner): a circle on the nav's row; the count of
+      // chosen items is its badge, the text its name.
+      icon: 'send',
+      badge: selectedCount,
     },
   );
 

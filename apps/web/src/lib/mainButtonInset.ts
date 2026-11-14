@@ -28,18 +28,18 @@ export function publishMainButtonInset(
 
 /**
  * How far the dock's button part reaches above the top of the nav (px):
- * nothing when the two share a row (or the hint over it, when shown);
- * the button and the gap when it is stacked above the capsule. Without
- * the nav, the whole dock (button and its gap to the bottom).
+ * nothing beside the capsule on its row, or the hint over the row when
+ * shown. Without the nav, all of it down to the dock's foot (the button,
+ * its gap to the bottom, and the hint when shown).
  */
 export function mainButtonInsetOf(m: {
   /** The nav capsule's top, or null when there is no nav. */
   navTop: number | null;
-  /** The top of the button's column, or of the hint over it. */
+  /** The top of the button's capsule, or of the hint over it. */
   contentTop: number;
-  /** The dock's own height. */
-  dockHeight: number;
+  /** The bottom of the dock. */
+  dockBottom: number;
 }): number {
-  if (m.navTop === null) return Math.max(0, m.dockHeight);
+  if (m.navTop === null) return Math.max(0, m.dockBottom - m.contentTop);
   return Math.max(0, m.navTop - m.contentTop);
 }

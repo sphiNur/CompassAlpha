@@ -12,7 +12,8 @@ import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
  *
  * Now: usePageMainButton writes to a module-level store, and the Shell
  * renders <PageMainButton /> (app/shell/PageMainButton.tsx) in-DOM, in
- * the dock with the nav (since 2026-11-14 on the nav's row). Telegram's native MainButton stays
+ * the dock with the nav (since 2026-11-14 a circle on the nav's row, its
+ * text the accessible name). Telegram's native MainButton stays
  * permanently hidden (PageMainButton calls tg.MainButton.hide()). The
  * nav is now the last flex child in the Shell, so it owns the bottom
  * edge regardless of whether a primary action is showing.
@@ -28,8 +29,22 @@ import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
  * Review COREWEB2-14 (2026-11-11): moved out of hooks/useTelegram.ts. The
  * button has had nothing to do with Telegram since M3.49.
  */
+/**
+ * The icon of the main button's circle (owner, 2026-11-14): what the
+ * action does, drawn from the kit's nav icon set (PageMainButton.tsx).
+ */
+export type PageMainButtonIcon = 'check' | 'send' | 'cart' | 'truck';
+
 interface PageMainButtonState {
+  /** The action's words: the button's accessible name and title. */
   text: string;
+  /** Default 'check'. */
+  icon: PageMainButtonIcon;
+  /**
+   * A count the action carries ("Submit order (3)"), shown on the circle
+   * as a corner badge like the nav's. The text still says it in full.
+   */
+  badge?: number;
   onClick: () => void;
   visible: boolean;
   active: boolean;
@@ -88,6 +103,8 @@ export function usePageMainButton(
     active?: boolean;
     onInactiveClick?: () => void;
     inactiveHint?: string;
+    icon?: PageMainButtonIcon;
+    badge?: number;
   },
 ): void {
   // Keep the click callback in a ref so re-renders don't republish
@@ -105,8 +122,15 @@ export function usePageMainButton(
   const wantVisible = opts?.visible !== false && !!safeText;
   const wantActive = opts?.active !== false;
   const inactiveHint = opts?.inactiveHint?.trim() || undefined;
+  const icon = opts?.icon ?? 'check';
+  const badge =
+    typeof opts?.badge === 'number' && Number.isFinite(opts.badge) && opts.badge > 0
+      ? Math.floor(opts.badge)
+      : undefined;
   const stateRef = useRef<PageMainButtonState>({
     text: safeText,
+    icon,
+    badge,
     onClick: () => onClickRef.current(),
     visible: wantVisible,
     active: wantActive,
@@ -114,6 +138,8 @@ export function usePageMainButton(
   stateRef.current = {
     ...stateRef.current,
     text: safeText,
+    icon,
+    badge,
     visible: wantVisible,
     active: wantActive,
     onInactiveClick: inactiveClick,
@@ -134,10 +160,12 @@ export function usePageMainButton(
     handleRef.current?.update({
       ...stateRef.current,
       text: safeText,
+      icon,
+      badge,
       visible: wantVisible,
       active: wantActive,
       onInactiveClick: inactiveClick,
       inactiveHint,
     });
-  }, [safeText, wantVisible, wantActive, inactiveClick, inactiveHint]);
+  }, [safeText, icon, badge, wantVisible, wantActive, inactiveClick, inactiveHint]);
 }

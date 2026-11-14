@@ -123,8 +123,8 @@ async function showToasts(page: Page, show: boolean): Promise<void> {
  * What a person reads on the control. A field: its label. Anything else:
  * the first line of its text, leaving out what is not seen (screen-reader
  * text, a tab's badge), so a row's hint or a "1" badge is not part of it.
- * An icon-only button keeps its icon (+, ✓); one without text, its
- * accessible name.
+ * An icon-only button keeps its icon (+, ✓); one without text (or only a
+ * count badge), its accessible name.
  */
 async function visibleLabel(target: Locator): Promise<string> {
   return target.evaluate((el) => {
@@ -158,8 +158,10 @@ async function visibleLabel(target: Locator): Promise<string> {
     let text = h.innerText ?? '';
     for (const hidden of h.querySelectorAll<HTMLElement>('[aria-hidden="true"], .sr-only')) {
       const t = hidden.innerText?.trim();
-      // Keep an icon that is the button's only text (+, ✓).
-      if (t && text.trim() !== t) text = text.replace(t, '');
+      // Keep an icon that is the button's only text (+, ✓), not a count
+      // badge: the page main button is an icon circle with a badge, its
+      // words its accessible name (2026-11-14), read by byName below.
+      if (t && (text.trim() !== t || /^\d+\+?$/.test(t))) text = text.replace(t, '');
     }
     const first = text
       .split('\n')
