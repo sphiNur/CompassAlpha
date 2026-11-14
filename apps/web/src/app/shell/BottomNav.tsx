@@ -9,10 +9,12 @@
  * Owner, 2026-11-14: a capsule floating over the page with at most five
  * items, four tabs + More when there are more (navLayout.ts). Its look is
  * `.app-nav` in styles/index.css. On a page with a main button it shares
- * a row with it (Shell.tsx's dock), icon over word as everywhere.
+ * a row with it (Shell.tsx's dock), icon over word as everywhere. In a
+ * browser More is always there and ends with Settings (no top bar,
+ * 2026-11-15).
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { IconMore, Sheet } from '@compass/ui';
+import { IconMore, IconSettings, Sheet } from '@compass/ui';
 import { useNavigationBlocked } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
 import { pollWhenOffline, useRealtimeLive } from '../../hooks/useRealtime';
@@ -31,14 +33,20 @@ interface BottomNavProps {
   onSelect: (tab: Tab) => void;
   /** The member's permissions over all their stores: which tabs go in the bar. */
   permissions: readonly string[];
+  /**
+   * Owner, 2026-11-15: there is no top bar. Inside Telegram settings open
+   * from Telegram's ⋯ menu; in a browser, from a row in More, which is
+   * then always in the bar. Given only in a browser.
+   */
+  onOpenSettings?: () => void;
 }
 
-export function BottomNav({ tabs, tab, onSelect, permissions }: BottomNavProps) {
+export function BottomNav({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavProps) {
   // 2026-11-05 (owner): without the bar, --app-nav-h goes to 0 so the main
   // button, toasts and empty states sit on the bottom edge instead of
   // above a gap. 2026-11-14: and the capsule's float gap with it, so the
   // room <main> keeps (--app-nav-reserve) is the home-indicator strip.
-  const show = showsNav(tabs);
+  const show = showsNav(tabs, !!onOpenSettings);
   useEffect(() => {
     const root = document.documentElement.style;
     const clear = () => {
@@ -53,7 +61,15 @@ export function BottomNav({ tabs, tab, onSelect, permissions }: BottomNavProps) 
     return clear;
   }, [show]);
   if (!show) return null;
-  return <TabBar tabs={tabs} tab={tab} onSelect={onSelect} permissions={permissions} />;
+  return (
+    <TabBar
+      tabs={tabs}
+      tab={tab}
+      onSelect={onSelect}
+      permissions={permissions}
+      onOpenSettings={onOpenSettings}
+    />
+  );
 }
 
 /**
@@ -97,13 +113,14 @@ function useNavBadges(tabs: readonly TabDef[]) {
  * user still has spatial context of where the nav is. Mirrors the
  * existing disabled-button look used everywhere else in the app.
  */
-function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
+function TabBar({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavProps) {
   const i18n = useI18n();
   // F3 (2026-10-30): only writes that swap the session lock the nav now;
   // see useNavigationBlocked.
   const busy = useNavigationBlocked();
   const badges = useNavBadges(tabs);
-  const { bar, more } = navLayout(tabs, permissions);
+  const { bar, more } = navLayout(tabs, permissions, !!onOpenSettings);
+  const hasMore = more.length > 0 || !!onOpenSettings;
   const [moreOpen, setMoreOpen] = useState(false);
   // The open tab lives in More: the More item stands for it.
   const current = more.find((t) => t.key === tab);
@@ -154,7 +171,7 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
             />
           );
         })}
-        {more.length > 0 ? (
+        {hasMore ? (
           <NavItem
             testId="nav-more"
             active={!!current}
@@ -169,7 +186,7 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
           />
         ) : null}
       </nav>
-      {more.length > 0 ? (
+      {hasMore ? (
         <Sheet open={moreOpen} onOpenChange={setMoreOpen} title={i18n.t('nav.more')}>
           <ul className="flex flex-col pb-2" data-testid="more-nav-sheet">
             {more.map((t) => {
@@ -213,6 +230,23 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
                 </li>
               );
             })}
+            {onOpenSettings ? (
+              <li>
+                <button
+                  type="button"
+                  data-testid="open-settings"
+                  aria-haspopup="dialog"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    onOpenSettings();
+                  }}
+                  className="press flex min-h-12 w-full items-center gap-3 rounded-[var(--r-capsule)] px-3 text-left text-old-h3 text-[var(--c-fg)]"
+                >
+                  <IconSettings size={22} />
+                  <span className="min-w-0 flex-1 truncate">{i18n.t('settings.title')}</span>
+                </button>
+              </li>
+            ) : null}
           </ul>
         </Sheet>
       ) : null}

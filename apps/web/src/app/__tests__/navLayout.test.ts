@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { BUILTIN_ROLES } from '@compass/db/seed-data';
 import type { Tab } from '../../stores/navStore';
 import { MAX_BAR_ITEMS, navLayout } from '../shell/navLayout';
-import { visibleTabsFor } from '../shell/tabs';
+import { showsNav, visibleTabsFor } from '../shell/tabs';
 
 /** A built-in role's permissions, plus any switched on per member. */
 function perms(slug: string, extra: readonly string[] = []): string[] {
@@ -83,5 +83,21 @@ describe('the bottom bar holds at most five items (owner, 2026-11-14)', () => {
     );
     const { bar } = navLayout(all, ['org.admin']);
     expect(bar.map((t) => t.key)).toEqual(['approve', 'run', 'settlement', 'admin']);
+  });
+});
+
+describe('in a browser More is always an item and holds Settings (owner, 2026-11-15)', () => {
+  test('up to four tabs stay in the bar beside More; five go four + More', () => {
+    const four = keys('order', 'approve', 'confirm', 'settlement');
+    expect(navLayout(four, [], true)).toEqual({ bar: four, more: [] });
+    const five = keys('order', 'approve', 'confirm', 'settlement', 'history');
+    const { bar, more } = navLayout(five, [], true);
+    expect(bar).toHaveLength(MAX_BAR_ITEMS - 1);
+    expect(more).toHaveLength(1);
+  });
+  test('one tab and More make a bar in a browser, not in Telegram', () => {
+    const one = [{ key: 'settlement' as const }] as unknown as Parameters<typeof showsNav>[0];
+    expect(showsNav(one, true)).toBe(true);
+    expect(showsNav(one, false)).toBe(false);
   });
 });
