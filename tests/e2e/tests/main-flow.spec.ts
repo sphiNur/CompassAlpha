@@ -359,7 +359,8 @@ test('close the day', async () => {
   await expect(
     main().getByRole('button', { name: /Version 1 · Updated by E2E Admin/ }),
   ).toBeVisible();
-  await expect(main().getByRole('status').first()).toContainText('Editing an existing daily close');
+  // Owner, 2026-11-15: saved, not "editing", until something is changed.
+  await expect(main().getByRole('status').first()).toContainText('Daily close saved');
   await evidence('daily-close-saved');
 });
 
