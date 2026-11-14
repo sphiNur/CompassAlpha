@@ -11,3 +11,11 @@ export function scrollBehavior(
 ): ScrollBehavior {
   return matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 }
+
+/** The system's "reduce motion" setting, for scripted motion (view transitions). */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  );
+}

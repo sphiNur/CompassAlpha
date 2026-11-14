@@ -584,3 +584,38 @@
     --c-fg-subtle: var(--c-fg-muted);
   }
 }
+
+/* UI overhaul B (2026-11-15): a spinner waits 300 ms and fades in, so a
+ * load that finishes sooner shows nothing instead of a flash. Opacity
+ * only, so it stays under reduced motion. */
+.loading-delay {
+  animation: fadeIn var(--t-fade) var(--easing) 300ms both;
+}
+
+/* UI overhaul B: a toast rises into place; a Disclosure's content and the
+ * main button settle in (modern-web-guidance: animate-element-entry-exit,
+ * @starting-style). Opacity always; the movement only without reduced
+ * motion. */
+[data-toast],
+[data-disclosure-content] {
+  transition:
+    opacity var(--t-fade) var(--easing),
+    translate var(--t-base) var(--easing),
+    transform var(--t-snap) var(--easing);
+}
+@starting-style {
+  [data-toast],
+  [data-disclosure-content] {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    [data-toast] {
+      translate: 0 12px;
+    }
+    [data-disclosure-content] {
+      translate: 0 -6px;
+    }
+  }
+}

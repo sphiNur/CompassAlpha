@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useUiLabels } from '../labels';
 import { cn } from '../cn';
+import { hapticImpact, hapticSelection } from '../haptics';
 import { Sheet } from './Sheet';
 import { Button } from './Button';
 import { QTY_DECIMALS, isMultipleOfStep, readQtyDraft } from '../qtyDraft';
@@ -179,6 +180,7 @@ export function QtyControl({
       return;
     }
     if (disabled) return;
+    hapticImpact('light');
     adjust(direction);
   };
 
@@ -483,7 +485,10 @@ function QtyQuickPickSheet({
                 <button
                   key={p}
                   type="button"
-                  onClick={() => onPick(p)}
+                  onClick={() => {
+                    hapticSelection();
+                    onPick(p);
+                  }}
                   // A11Y-4 (2026-10-31): the current value was marked by
                   // colour alone; aria-pressed says it, the ✓ shows it, and
                   // hit-44 brings the 26 px chip to a 44 px tap area.

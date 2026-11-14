@@ -1,5 +1,6 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { hapticSelection } from '../haptics';
 import { disabledLook } from './disabled';
 
 /**
@@ -26,7 +27,7 @@ export interface SwitchProps
 }
 
 export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
-  { className, label, hint, disabled, id, ...rest },
+  { className, label, hint, disabled, id, onChange, ...rest },
   ref,
 ) {
   const reactId = useId();
@@ -69,6 +70,11 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
       className="peer sr-only"
       aria-describedby={hintId}
       {...rest}
+      // UI overhaul B (2026-11-15): a selection tick in Telegram.
+      onChange={(e) => {
+        hapticSelection();
+        onChange?.(e);
+      }}
     />
   );
 

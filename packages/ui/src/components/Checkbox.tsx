@@ -1,5 +1,6 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { hapticSelection } from '../haptics';
 import { disabledLook } from './disabled';
 
 /**
@@ -32,7 +33,7 @@ export interface CheckboxProps
 }
 
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Checkbox(
-  { className, label, hint, invalid, disabled, id, ...rest },
+  { className, label, hint, invalid, disabled, id, onChange, ...rest },
   ref,
 ) {
   const reactId = useId();
@@ -87,6 +88,11 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
       aria-invalid={invalid || undefined}
       aria-describedby={hintId}
       {...rest}
+      // UI overhaul B (2026-11-15): a selection tick in Telegram.
+      onChange={(e) => {
+        hapticSelection();
+        onChange?.(e);
+      }}
     />
   );
 

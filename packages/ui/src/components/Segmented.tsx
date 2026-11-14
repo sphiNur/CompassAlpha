@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../cn';
+import { hapticSelection } from '../haptics';
 import { useRovingRadio } from '../rovingRadio';
 
 /**
@@ -143,7 +144,10 @@ export function Segmented<V extends string>({
             disabled={opt.disabled}
             aria-disabled={disabled || undefined}
             onClick={() => {
-              if (!blocked && !active) onChange(opt.value);
+              if (!blocked && !active) {
+                hapticSelection();
+                onChange(opt.value);
+              }
             }}
             className={cn(
               'hit-44 inline-flex items-center justify-center font-medium tabular-nums',

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { haptic } from '../../lib/telegram';
 import { IconCheck, IconRun, IconSend, IconTruck, Spinner, useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
@@ -177,6 +178,8 @@ export function PageMainButton() {
                   }
                 : () => {
                     pressedAt.current = Date.now();
+                    // UI overhaul B (2026-11-15): the page's main action.
+                    haptic('medium');
                     guardTap(state.onClick, state.text)?.();
                   }
           }

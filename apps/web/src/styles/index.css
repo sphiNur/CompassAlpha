@@ -344,3 +344,64 @@
     opacity: 0;
   }
 }
+
+/* UI overhaul B (2026-11-15): a tap on a tab slides the page in from the
+ * tab's side of the bar (modern-web-guidance: directional-navigation-
+ * transitions). Only <main> is named, and only while a tab transition
+ * runs (data-vt, lib/viewTransition.ts); the rest of the screen (the
+ * dock) cross-fades as the root. Reduced motion never starts one. */
+html[data-vt='tab'] .app-main {
+  view-transition-name: app-page;
+}
+@keyframes vt-page-out {
+  to {
+    opacity: 0;
+    translate: var(--vt-shift-out, 0) 0;
+  }
+}
+@keyframes vt-page-in {
+  from {
+    opacity: 0;
+    translate: var(--vt-shift-in, 0) 0;
+  }
+}
+html:active-view-transition-type(forward) {
+  --vt-shift-in: 28px;
+  --vt-shift-out: -28px;
+}
+html:active-view-transition-type(backward) {
+  --vt-shift-in: -28px;
+  --vt-shift-out: 28px;
+}
+::view-transition-group(root),
+::view-transition-group(app-page) {
+  animation-duration: var(--t-base);
+  animation-timing-function: var(--easing);
+}
+::view-transition-old(app-page) {
+  animation: vt-page-out var(--t-quick) var(--easing) both;
+}
+::view-transition-new(app-page) {
+  animation: vt-page-in var(--t-base) var(--easing) both;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--t-quick);
+}
+
+/* UI overhaul B: the main button grows into the dock when a page gives
+ * it one, instead of popping in. */
+@media (prefers-reduced-motion: no-preference) {
+  .app-main-btn {
+    transition:
+      transform var(--t-snap) var(--easing),
+      scale var(--t-base) var(--easing),
+      opacity var(--t-fade) var(--easing);
+  }
+  @starting-style {
+    .app-main-btn {
+      scale: 0.6;
+      opacity: 0;
+    }
+  }
+}

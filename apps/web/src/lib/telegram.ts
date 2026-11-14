@@ -71,12 +71,21 @@ export function isInTelegram(): boolean {
  *   - 'success' for confirmation toasts.
  *   - 'error' for failure toasts.
  */
-export type HapticIntent = 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error';
+export type HapticIntent =
+  | 'light'
+  | 'medium'
+  | 'heavy'
+  | 'selection'
+  | 'success'
+  | 'warning'
+  | 'error';
 export function haptic(intent: HapticIntent = 'light'): void {
   const tg = getTg();
   if (!tg?.HapticFeedback) return;
   try {
-    if (intent === 'success' || intent === 'warning' || intent === 'error') {
+    if (intent === 'selection') {
+      tg.HapticFeedback.selectionChanged?.();
+    } else if (intent === 'success' || intent === 'warning' || intent === 'error') {
       tg.HapticFeedback.notificationOccurred(intent);
     } else {
       tg.HapticFeedback.impactOccurred(intent);

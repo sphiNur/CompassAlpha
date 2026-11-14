@@ -1,5 +1,6 @@
 import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { hapticSelection } from '../haptics';
 import { useUiLabels } from '../labels';
 import { rowGroupClass, surfaceClass } from './Card';
 import { FieldError } from './FieldError';
@@ -462,7 +463,11 @@ export function PickerRow({
     <button
       type="button"
       disabled={disabled}
-      onClick={onClick}
+      onClick={() => {
+        // UI overhaul B (2026-11-15): a new choice ticks in Telegram.
+        if (!selected) hapticSelection();
+        onClick?.();
+      }}
       role="radio"
       aria-checked={!!selected}
       tabIndex={selected ? 0 : -1}
