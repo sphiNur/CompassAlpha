@@ -41,15 +41,20 @@ export const NAV_STORAGE_KEY = 'compass.nav.v1';
  * accept exactly these.
  *
  * 2026-10-21: 'sales' is the staff-only sales entry tab (SalesPage.tsx).
+ *
+ * Owner, 2026-11-14: in the order of the day's work. A store orders, the
+ * manager approves, the purchaser buys, the store receives, then closes
+ * the day (settlement, or sales for staff). History, clock-in (personal,
+ * owner chose last) and admin come after the flow.
  */
 export const TAB_KEYS = [
   'order',
   'approve',
   'run',
-  'history',
+  'confirm',
   'settlement',
   'sales',
-  'confirm',
+  'history',
   'attendance',
   'admin',
 ] as const;

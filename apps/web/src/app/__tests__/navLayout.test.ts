@@ -34,9 +34,20 @@ describe('the bottom bar holds at most five items (owner, 2026-11-14)', () => {
 
   test("store manager: the store's daily work; history and admin in More", () => {
     expect(layoutFor(perms('manager'))).toEqual({
-      bar: ['order', 'approve', 'settlement', 'confirm'],
+      bar: ['order', 'approve', 'confirm', 'settlement'],
       more: ['history', 'admin'],
     });
+  });
+
+  test("in the order of the day's work (owner, 2026-11-14)", () => {
+    // Order, receive, then sales; clock-in after the store's flow.
+    expect(layoutFor(perms('staff', ['attendance.clock'])).bar).toEqual([
+      'order',
+      'confirm',
+      'sales',
+      'attendance',
+    ]);
+    expect(layoutFor(perms('purchaser')).bar).toEqual(['run', 'history']);
   });
 
   test('roles with five tabs or fewer keep them all, in the canonical order', () => {

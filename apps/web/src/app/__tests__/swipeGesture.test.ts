@@ -29,11 +29,11 @@ const lastTab = { prev: 'settlement', next: null } as const;
 const none = { prev: null, next: null } as const;
 
 describe('ringNeighbours', () => {
-  const ring = ['order', 'approve', 'settlement', 'confirm'];
+  const ring = ['order', 'approve', 'confirm', 'settlement'];
   test('the tabs either side, no wrap-around', () => {
     expect(ringNeighbours(ring, 'order')).toEqual({ prev: null, next: 'approve' });
-    expect(ringNeighbours(ring, 'approve')).toEqual({ prev: 'order', next: 'settlement' });
-    expect(ringNeighbours(ring, 'confirm')).toEqual({ prev: 'settlement', next: null });
+    expect(ringNeighbours(ring, 'approve')).toEqual({ prev: 'order', next: 'confirm' });
+    expect(ringNeighbours(ring, 'settlement')).toEqual({ prev: 'confirm', next: null });
   });
   test('a tab opened from More has none', () => {
     expect(ringNeighbours(ring, 'history')).toEqual(none);
@@ -46,7 +46,7 @@ describe('ringNeighbours', () => {
     const manager = BUILTIN_ROLES.find((r) => r.slug === 'manager')!.permissions;
     const { bar } = navLayout(visibleTabsFor(manager, undefined, false), manager);
     const ring = bar.map((t) => t.key);
-    expect(ring).toEqual(['order', 'approve', 'settlement', 'confirm']);
+    expect(ring).toEqual(['order', 'approve', 'confirm', 'settlement']);
     expect(ringNeighbours(ring, 'order').next).toBe('approve');
     expect(ringNeighbours(ring, 'admin')).toEqual(none);
   });

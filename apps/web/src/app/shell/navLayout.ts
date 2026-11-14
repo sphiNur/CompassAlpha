@@ -32,8 +32,8 @@ const ORG_PRIORITY: readonly Tab[] = [
 const STORE_PRIORITY: readonly Tab[] = [
   'order',
   'approve',
-  'settlement',
   'confirm',
+  'settlement',
   'sales',
   'attendance',
   'history',
