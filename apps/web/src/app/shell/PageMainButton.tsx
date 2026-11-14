@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconCheck, IconRun, IconSend, IconTruck, Spinner, useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
@@ -13,8 +13,9 @@ import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
  * when no page has registered an action. When a page sets one, the
  * button floats in the shell's dock (Shell.tsx) with the nav capsule:
  * since 2026-11-14 (owner) on the capsule's row, a circle with the
- * action's icon in a capsule of its own (`.app-dock` in
- * styles/index.css).
+ * action's icon (`.app-dock` in styles/index.css). 2026-11-15 (owner): no
+ * grey ring round it, and why it is inactive shows when it is tapped,
+ * for a few seconds, not all the time.
  *
  * Telegram's native MainButton is kept permanently hidden (effect
  * below) so the two don't compete for the bottom-of-screen slot.
@@ -68,7 +69,26 @@ export function PageMainButton() {
   const shown = Boolean(state?.visible);
   const interactable = !!state && state.active && !busy;
   const hint = state && !interactable && !busy ? state.inactiveHint : undefined;
-  const hasHint = !!hint;
+  // Owner, 2026-11-15: the reason shows when the inactive button is
+  // tapped, for HINT_MS, not all the time. Screen readers get it as the
+  // button's description throughout.
+  const [hintOpen, setHintOpen] = useState(false);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!hint) setHintOpen(false);
+  }, [hint]);
+  useEffect(
+    () => () => {
+      if (hintTimer.current) clearTimeout(hintTimer.current);
+    },
+    [],
+  );
+  const showHint = () => {
+    setHintOpen(true);
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    hintTimer.current = setTimeout(() => setHintOpen(false), HINT_MS);
+  };
+  const hasHint = !!hint && hintOpen;
   // 2026-11-14: `data-main-button` on <html> tells the shell's CSS
   // (styles/index.css) to show the capsule beside the button with icons
   // only.
@@ -112,7 +132,7 @@ export function PageMainButton() {
   if (!state || !state.visible) return null;
   // A11Y-2: an inactive button whose page can say why stays in the Tab
   // order (aria-disabled) and points at the problem when used.
-  const explains = !interactable && !busy && !!state.onInactiveClick;
+  const explains = !interactable && !busy && (!!state.onInactiveClick || !!hint);
   const Icon = MAIN_BUTTON_ICONS[state.icon] ?? IconCheck;
   // 2026-11-14 (owner): the button floats in the dock with the nav
   // capsule (Shell.tsx), after it in the Tab order, on the capsule's row:
@@ -123,9 +143,14 @@ export function PageMainButton() {
   return (
     <div ref={colRef} className="app-dock-action">
       {hint ? (
+        <span id="page-main-button-hint" className="sr-only">
+          {hint}
+        </span>
+      ) : null}
+      {hasHint ? (
         <p
           ref={hintRef}
-          id="page-main-button-hint"
+          aria-hidden
           data-testid="page-main-button-hint"
           className="app-dock-hint text-center text-old-label text-[var(--c-fg-muted)]"
         >
@@ -146,7 +171,10 @@ export function PageMainButton() {
             busy
               ? undefined
               : explains
-                ? state.onInactiveClick
+                ? () => {
+                    if (hint) showHint();
+                    state.onInactiveClick?.();
+                  }
                 : () => {
                     pressedAt.current = Date.now();
                     guardTap(state.onClick, state.text)?.();
@@ -177,6 +205,9 @@ export function PageMainButton() {
     </div>
   );
 }
+
+/** How long a tap on the inactive button shows why (owner, 2026-11-15). */
+export const HINT_MS = 3000;
 
 /** The circle's icon per action (usePageMainButton's `icon`). */
 const MAIN_BUTTON_ICONS: Record<PageMainButtonIcon, typeof IconCheck> = {

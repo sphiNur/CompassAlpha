@@ -129,19 +129,16 @@
     flex: none;
     margin-inline-start: auto;
   }
-  /* The circle's capsule: exactly the nav capsule's surface (see
-     .app-nav::before and the blur below), round, 4px around the circle. */
+  /* The circle's box: 4px around it, so the circle sits level with the
+     nav capsule. No surface of its own (owner, 2026-11-15: no grey ring
+     round the button); the circle carries the nav's shadow. */
   .app-main-capsule {
     display: flex;
     padding: 4px;
-    border-radius: var(--r-pill);
-    background: var(--c-nav-surface-solid);
-    box-shadow:
-      var(--shadow-nav),
-      inset 0 0 0 1px var(--c-divider);
   }
   /* The circle: at least the 44px tap (it is 52px), growing with the text. */
   .app-main-btn {
+    box-shadow: var(--shadow-nav);
     width: var(--app-main-btn-d);
     height: var(--app-main-btn-d);
     min-width: 44px;
@@ -149,7 +146,8 @@
     flex: none;
   }
   /* Why the button is inactive, on the capsule's surface (it floats over
-     the page too), over the whole row. */
+     the page too), over the whole row. Shown for a few seconds when the
+     inactive button is tapped (owner, 2026-11-15), not all the time. */
   .app-dock-hint {
     position: absolute;
     left: 0;
@@ -203,7 +201,6 @@
      the blur, rows under the capsule would show through its labels. */
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .app-nav::before,
-    .app-main-capsule,
     .app-dock-hint {
       background: var(--c-nav-surface);
       -webkit-backdrop-filter: saturate(1.6) blur(16px);
@@ -212,7 +209,6 @@
   }
   @media (prefers-reduced-transparency: reduce) {
     .app-nav::before,
-    .app-main-capsule,
     .app-dock-hint {
       background: var(--c-nav-surface-solid);
       -webkit-backdrop-filter: none;

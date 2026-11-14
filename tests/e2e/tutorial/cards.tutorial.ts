@@ -404,7 +404,7 @@ test('cashier: daily close', async () => {
   await expect(sheet(page)).toBeHidden();
   await dump(page, 'cashier-after-wage');
   await c.tap('save', mainButton(page));
-  await reach(page, main(page).getByText(t('settlement.editing.title')));
+  await reach(page, main(page).getByText(t('settlement.saved'), { exact: true }));
   await c.shot('saved', null);
 });
 

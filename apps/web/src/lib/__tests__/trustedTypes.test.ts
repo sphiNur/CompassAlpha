@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { allowedScriptUrl } from '../trustedTypes';
+import { allowedHtml, allowedScriptUrl } from '../trustedTypes';
 
 const ORIGIN = 'https://app.example';
 
@@ -26,5 +26,17 @@ describe('allowedScriptUrl (review MWD-13)', () => {
   test('dev lets any same-origin URL through, still no other origin', () => {
     expect(allowedScriptUrl('/src/main.tsx', ORIGIN, true)).toBe(`${ORIGIN}/src/main.tsx`);
     expect(allowedScriptUrl('https://evil.example/x.js', ORIGIN, true)).toBeNull();
+  });
+});
+
+describe('allowedHtml (2026-11-15: the attendance map)', () => {
+  test("lets through only Leaflet's SVG check", () => {
+    expect(allowedHtml('<svg/>')).toBe('<svg/>');
+  });
+  test('refuses any other HTML, the empty string included', () => {
+    expect(allowedHtml('')).toBeNull();
+    expect(allowedHtml('<svg/><img src=x onerror=alert(1)>')).toBeNull();
+    expect(allowedHtml('<span aria-hidden="true">+</span>')).toBeNull();
+    expect(allowedHtml('<b>Ali</b>')).toBeNull();
   });
 });

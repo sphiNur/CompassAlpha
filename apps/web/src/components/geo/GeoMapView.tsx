@@ -5,6 +5,13 @@
  * and people about to clock look at it, which their tile policy allows,
  * with the attribution shown). Loaded only where a map is on screen; see
  * GeoMap.tsx.
+ *
+ * 2026-11-15: no HTML strings reach Leaflet. Under the enforced Trusted
+ * Types policy (lib/trustedTypes.ts) every `innerHTML` with a string is
+ * blocked, and Leaflet writes one for the zoom buttons, the attribution,
+ * a div icon and a string tooltip. So the zoom buttons and attribution are
+ * built from elements here, the pins get an element, and a tooltip is its
+ * label as text (a person's name is no longer read as HTML either).
  */
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
@@ -38,11 +45,62 @@ export interface GeoMapViewProps {
 }
 
 const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>'; // i18n-exempt: the tile licence's required attribution
+const OSM_COPYRIGHT = 'https://www.openstreetmap.org/copyright';
 
+/** A div icon whose content is an element, so Leaflet writes no HTML. */
 const pinIcon = (cls: string) =>
-  L.divIcon({ className: `geo-pin ${cls}`, iconSize: [18, 18], iconAnchor: [9, 9] });
+  L.divIcon({
+    className: `geo-pin ${cls}`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    html: document.createElement('span'),
+  });
+
+/** A tooltip's content as text, never HTML. */
+function textNode(text: string): HTMLElement {
+  const span = document.createElement('span');
+  span.textContent = text;
+  return span;
+}
+
+/** Leaflet's zoom control with its buttons' text set as text. */
+const TextZoom = L.Control.Zoom.extend({
+  _createButton(
+    this: L.Control.Zoom & { _refocusOnMap: () => void },
+    text: string,
+    title: string,
+    className: string,
+    container: HTMLElement,
+    fn: () => void,
+  ): HTMLAnchorElement {
+    const link = L.DomUtil.create('a', className, container);
+    link.textContent = text;
+    link.href = '#';
+    link.title = title;
+    link.setAttribute('role', 'button');
+    link.setAttribute('aria-label', title);
+    L.DomEvent.disableClickPropagation(link);
+    L.DomEvent.on(link, 'click', L.DomEvent.stop);
+    L.DomEvent.on(link, 'click', fn, this);
+    L.DomEvent.on(link, 'click', this._refocusOnMap, this);
+    return link;
+  },
+}) as unknown as new (options: L.Control.ZoomOptions) => L.Control.Zoom;
+
+/** The tiles' required attribution ("© OpenStreetMap"), built from elements. */
+const OsmAttribution = L.Control.extend({
+  onAdd(): HTMLElement {
+    const box = L.DomUtil.create('div', 'leaflet-control-attribution');
+    const link = document.createElement('a');
+    link.href = OSM_COPYRIGHT;
+    link.target = '_blank';
+    link.rel = 'noreferrer';
+    link.textContent = 'OpenStreetMap'; // i18n-exempt: the tile licence's required attribution
+    box.append('© ', link);
+    L.DomEvent.disableClickPropagation(box);
+    return box;
+  },
+}) as unknown as new (options: L.ControlOptions) => L.Control;
 
 export default function GeoMapView({
   area,
@@ -60,14 +118,16 @@ export default function GeoMapView({
   useEffect(() => {
     if (!box.current) return;
     const m = L.map(box.current, {
-      zoomControl: true,
-      attributionControl: true,
+      // Leaflet's own controls write HTML strings; ours below do not.
+      zoomControl: false,
+      attributionControl: false,
       // The page scrolls with one finger; the map pans with one too, but
       // zooms only with two or the buttons.
       scrollWheelZoom: false,
     });
-    m.attributionControl.setPrefix(false);
-    L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(m);
+    new TextZoom({ position: 'topleft', zoomInText: '+', zoomOutText: '−' }).addTo(m);
+    new OsmAttribution({ position: 'bottomright' }).addTo(m);
+    L.tileLayer(TILES, { maxZoom: 19 }).addTo(m);
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     // The sheet or card may still be animating to its size.
@@ -120,7 +180,7 @@ export default function GeoMapView({
         icon: pinIcon(`geo-dot geo-${p.tone}`),
         keyboard: false,
       }).addTo(g);
-      if (p.label) dot.bindTooltip(p.label);
+      if (p.label) dot.bindTooltip(textNode(p.label));
       bounds.push(L.latLngBounds([p.lat, p.lng], [p.lat, p.lng]));
     }
     if (bounds.length === 0) return;
