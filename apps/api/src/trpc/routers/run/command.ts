@@ -17,7 +17,7 @@ import {
   pgConstraintName,
   withStreamConflictRetry,
 } from '../../../services/pgErrors';
-import { loadRunState } from '../../../services/runStream';
+import { loadRunState } from '@compass/streams';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,

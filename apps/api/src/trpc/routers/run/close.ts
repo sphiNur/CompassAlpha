@@ -10,7 +10,7 @@ import {
 import { decideRun, type RunEvent } from '@compass/domain/run';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError } from '../../trpc';
-import { loadRunState } from '../../../services/runStream';
+import { loadRunState } from '@compass/streams';
 import { writeRunEvents } from '../../../services/streamWrite';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
 import {

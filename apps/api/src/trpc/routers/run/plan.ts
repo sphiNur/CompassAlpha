@@ -19,7 +19,7 @@ import { applyRun, decideRun, emptyRunState, sumDemand, type RunEvent } from '@c
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError } from '../../trpc';
 import { isUniqueViolation } from '../../../services/pgErrors';
-import { loadRunState } from '../../../services/runStream';
+import { loadRunState } from '@compass/streams';
 import { writeRunEvents } from '../../../services/streamWrite';
 import { dispatchRunEventNotifications } from '../../../services/notifyForEvent';
 import {

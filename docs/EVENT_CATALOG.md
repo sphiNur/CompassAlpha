@@ -1,8 +1,8 @@
 # Event Catalog
 
 > Every event the system writes to `domain.events`. Its readers are the
-> reducers in `packages/domain`, the projectors in
-> `apps/api/src/services/*Projection.ts`, the worker, and the Fine app,
+> reducers in `packages/domain`, the projectors in `packages/streams` and
+> `apps/api/src/services/runProjection.ts`, the worker, and the Fine app,
 > which reads the same database. `packages/domain/src/eventCatalog.test.ts`
 > fails when an event type is missing here or listed here but gone.
 
@@ -99,7 +99,8 @@ are absent when the store pays the line's.
 2. Extend the union and `apply()` in `state.ts`.
 3. Add a `decide()` branch in `commands.ts` that throws `validation`,
    `forbidden`, `conflict`, or `preconditionFailed` for invalid inputs.
-4. Add a projector branch in `apps/api/src/services/<stream>Projection.ts`.
+4. Add a projector branch: `packages/streams/src/orderProjection.ts` for an
+   order event, `apps/api/src/services/runProjection.ts` for a run event.
 5. Add a row to this catalog and the type to `eventCatalog.test.ts`.
 6. Add unit tests for the new decision branches in `<stream>.test.ts`.
 7. Bump no schema; events are JSON in `domain.events.payload` so the column

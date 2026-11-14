@@ -27,17 +27,9 @@
  *   FRONTEND_URL          optional; https base for the messages' buttons
  *   CLAIM_TIMEOUT_MINUTES, CLAIM_TIMEOUT_SCAN_MINUTES  see the claim sweep
  */
-import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { Bot, GrammyError, HttpError } from 'grammy';
-import {
-  getDb,
-  schema as s,
-  closeDb,
-  inSystem,
-  notifyRealtime,
-  withSystemContext,
-} from '@compass/db';
+import { getDb, schema as s, closeDb, inSystem, withSystemContext } from '@compass/db';
 import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
 import {
@@ -47,12 +39,11 @@ import {
   outboxPayloadProblem,
   type OutboxPayload,
 } from './outbox';
-import { orphanRepairFor } from './orphanRepair';
+import { repairOrphanedSession } from './orphanRepair';
 import { deleteInBatches, RETENTION_RULES, retentionDeleteSql } from './retention';
 import {
   claimLastActiveAt,
   type DbTimestamp,
-  nextSeq,
   releaseClaimIfExpired,
   staleClaimCandidatesSql,
 } from './claimTimeout';
@@ -456,7 +447,6 @@ if (CLAIM_TIMEOUT_MINUTES > 0) {
 type StaleClaimCandidate = {
   id: string;
   org_id: string;
-  last_seq: number | string; // bigint: a string from raw tx.execute
   claimed_by_member_id: string;
   claimed_at: DbTimestamp;
   last_claimer_event_at: DbTimestamp | null;
@@ -470,10 +460,12 @@ function idleMinutes(row: StaleClaimCandidate): number {
 /**
  * Find sessions whose claim has sat idle past CLAIM_TIMEOUT_MINUTES (since
  * the later of the claim and the claimer's newest event on the order) and
- * release them by appending a `ClaimReleased{reason:'timeout'}` event +
- * updating the read model. Each release runs in its own tx with FOR UPDATE
- * so a concurrent approve/reject/manual-release races cleanly: only one
- * winner inserts seq=N+1; the other tx sees an updated last_seq and skips.
+ * release them: the domain decides a `ClaimReleased{reason:'timeout'}`
+ * event, which is appended and projected (claimTimeout.ts). Each release
+ * runs in its own tx with FOR UPDATE so a concurrent approve/reject/
+ * manual-release races cleanly: only one append of the next seq commits;
+ * the other fails on the stream's unique seq, or finds the claim gone and
+ * skips.
  *
  * No human actor → event payload has `byMemberId: null`. The audit log
  * groups these with override releases under "interventions" (M3.21).
@@ -566,9 +558,8 @@ async function releaseStaleRunClaims(): Promise<number> {
  * Idempotent. For a cancelled run emits `EjectedFromRun{reason:'repair'}`
  * (session back to approved); for a finished run emits
  * `Archived{reason:'repair'}` (session archived, as run.finish does —
- * 2026-10-21 audit CA-45, see orphanRepair.ts). byMemberId is null since
- * there's no human actor (mirrors the timeout-release pattern in
- * releaseStaleClaims).
+ * 2026-10-21 audit CA-45). The domain decides which (orphanRepair.ts);
+ * the event has no actor, like the timeout release in releaseStaleClaims.
  */
 async function repairOrphanedSessions(): Promise<number> {
   // Cheap candidate scan — joins sessions to their run row and filters
@@ -578,7 +569,6 @@ async function repairOrphanedSessions(): Promise<number> {
     SELECT
       sess.id AS session_id,
       sess.org_id,
-      sess.last_seq,
       sess.run_id
     FROM read_model.order_sessions_v sess
     JOIN read_model.market_runs_v run
@@ -591,7 +581,6 @@ async function repairOrphanedSessions(): Promise<number> {
   )) as unknown as Array<{
     session_id: string;
     org_id: string;
-    last_seq: number | string; // bigint: a string from raw tx.execute
     run_id: string;
   }>;
   if (candidates.length === 0) return 0;
@@ -599,65 +588,11 @@ async function repairOrphanedSessions(): Promise<number> {
   let repaired = 0;
   for (const row of candidates) {
     try {
-      const ok = await withSystemContext(db, 'worker', async (tx) => {
-        // Re-check under row lock — another tx may have ejected this
-        // session between our SELECT and now (e.g. a follow-up manual
-        // cancel run cascade ran).
-        const fresh = (await tx.execute(sql`
-          SELECT sess.last_seq, sess.status, sess.run_id, run.status AS run_status
-          FROM read_model.order_sessions_v sess
-          LEFT JOIN read_model.market_runs_v run ON run.id = sess.run_id
-          WHERE sess.id = ${row.session_id}
-          FOR UPDATE OF sess
-        `)) as unknown as Array<{
-          last_seq: number | string; // bigint: a string from raw tx.execute
-          status: string;
-          run_id: string | null;
-          run_status: string | null;
-        }>;
-        const cur = fresh[0];
-        if (!cur || cur.status !== 'in_run' || !cur.run_id || !cur.run_status) return false;
-        const repair = orphanRepairFor(cur.run_status, cur.run_id);
-        if (!repair) return false;
-
-        const newSeq = nextSeq(cur.last_seq);
-        const occurredAt = new Date();
-        // Append the repair event directly. Skipping decideOrder()
-        // here is intentional — the domain layer would re-validate
-        // a permission set that doesn't exist in the worker context
-        // (no actor). The projector below mirrors the apply() +
-        // EjectedFromRun / Archived branches of orderProjection.ts.
-        await tx.insert(s.events).values({
-          id: randomUUID(),
-          orgId: row.org_id,
-          streamType: 'order',
-          streamId: row.session_id,
-          seq: newSeq,
-          type: repair.eventType,
-          payload: repair.payload,
-          actorId: null,
-          occurredAt,
-          correlationId: null,
-          causationId: null,
-          idempotencyKey: null,
-        });
-        await tx
-          .update(s.orderSessionsV)
-          .set({
-            ...repair.projection,
-            lastSeq: newSeq,
-            updatedAt: occurredAt,
-          })
-          .where(eq(s.orderSessionsV.id, row.session_id));
-        // Open pages refresh once this commits (B14).
-        await notifyRealtime(tx, {
-          type: 'order.changed',
-          orgId: row.org_id,
-          sessionId: row.session_id,
-          lastSeq: newSeq,
-        });
-        return repair.eventType;
-      });
+      // Re-checked under a row lock: another tx may have ejected this
+      // session since the scan (e.g. a manual cancel cascade).
+      const ok = await withSystemContext(db, 'worker', (tx) =>
+        repairOrphanedSession(tx, { id: row.session_id, orgId: row.org_id }),
+      );
       if (ok) {
         repaired++;
         console.log(
@@ -697,7 +632,8 @@ async function cleanupIdempotencyKeys(): Promise<number> {
  * 2026-10-21 audit F-14: expired refresh tokens were never deleted. Done
  * here, hourly and in batches (COREAPI-22), with a 7-day grace that keeps
  * the rows long enough for replay detection on a just-expired family to
- * still find them.
+ * still find them. The API's unwired copy of this purge is gone (review
+ * COREAPI-11).
  */
 const REFRESH_TOKEN_PURGE_GRACE_DAYS = 7;
 async function purgeExpiredRefreshTokens(): Promise<number> {

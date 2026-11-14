@@ -21,7 +21,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s } from '@compass/db';
 import { normalizeQty } from '@compass/contracts';
 import { replayRun, type RunCommand } from '@compass/domain/run';
-import { readRunEvents } from '../services/runStream';
+import { readRunEvents } from '@compass/streams';
 import { loadSession } from '../trpc/context';
 import { appRouter } from '../trpc/router';
 import { SHOULD_RUN } from './helpers/pg';

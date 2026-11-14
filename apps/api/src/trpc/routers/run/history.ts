@@ -8,7 +8,7 @@ import { RunHistoryInputSchema, SimpleRunCommandSchema } from '@compass/contract
 import { getActorStoreIdsForPermission } from '../../../services/storeScope';
 import { authedProcedure } from '../../trpc';
 import { runCorrections } from '../../../services/runCorrections';
-import { readRunEvents } from '../../../services/runStream';
+import { readRunEvents } from '@compass/streams';
 import {
   expensesForReader,
   itemsForStoreReader,

@@ -9,9 +9,17 @@
  * newest event on that stream (`domain.events.actor_id` is the acting
  * user, so it is matched to the claiming member through `auth.members`).
  */
-import { randomUUID } from 'node:crypto';
 import { eq, sql, type SQL } from 'drizzle-orm';
 import { notifyRealtime, schema as s, type DB } from '@compass/db';
+import { decideSystem } from '@compass/domain/order';
+import { decideRunSystem } from '@compass/domain/run';
+import {
+  appendEvents,
+  loadOrderState,
+  loadRunState,
+  projectRunClaim,
+  writeOrderEvents,
+} from '@compass/streams';
 
 /**
  * A timestamp as raw `tx.execute` returns it. Drizzle's postgres-js
@@ -91,9 +99,9 @@ export function staleClaimCandidatesSql(
 ): SQL {
   const { table, statusFilter } = CLAIM_TABLES[stream];
   return sql`
-    SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at, last_claimer_event_at
+    SELECT id, org_id, claimed_by_member_id, claimed_at, last_claimer_event_at
     FROM (
-      SELECT c.id, c.org_id, c.last_seq, c.claimed_by_member_id, c.claimed_at,
+      SELECT c.id, c.org_id, c.claimed_by_member_id, c.claimed_at,
         ${lastClaimerEventAtSql(stream)} AS last_claimer_event_at
       FROM ${table} c
       WHERE ${statusFilter}
@@ -116,7 +124,7 @@ export function staleClaimCandidatesSql(
 export function claimRowForUpdateSql(stream: ClaimStream, id: string): SQL {
   const { table } = CLAIM_TABLES[stream];
   return sql`
-    SELECT c.last_seq, c.claimed_by_member_id, c.claimed_at, c.status,
+    SELECT c.claimed_by_member_id, c.claimed_at, c.status,
       ${lastClaimerEventAtSql(stream)} AS last_claimer_event_at
     FROM ${table} c
     WHERE c.id = ${id}
@@ -124,24 +132,7 @@ export function claimRowForUpdateSql(stream: ClaimStream, id: string): SQL {
   `;
 }
 
-/**
- * The seq of the event appended after `lastSeq`.
- *
- * RE-APR-1 (2026-10-30): `last_seq` is a bigint column, and raw
- * `tx.execute` returns it as a STRING, so `cur.last_seq + 1` built
- * "17" + 1 = "171". Every timeout release (and orphan repair) wrote an
- * event with a jumped seq, after which the stream refused all writes.
- */
-export function nextSeq(lastSeq: number | string | bigint): number {
-  const n = Number(lastSeq);
-  if (!Number.isSafeInteger(n) || n < 0) {
-    throw new Error(`invalid last_seq: ${String(lastSeq)}`);
-  }
-  return n + 1;
-}
-
 type LockedClaimRow = {
-  last_seq: number | string; // bigint: a string from raw tx.execute
   claimed_by_member_id: string | null;
   claimed_at: DbTimestamp | null;
   status: string;
@@ -159,13 +150,15 @@ const CLAIMABLE_STATUSES: Record<ClaimStream, readonly string[]> = {
  * rejected or released it between the candidate scan and now; then this
  * does nothing and returns false.
  *
- * Appends `ClaimReleased` / `RunClaimReleased` with `reason: 'timeout'`
- * and no actor, mirrors the projector on the read model (the timed-out
- * claimer becomes previous_claimer_member_id, so the next reviewer's
- * banner shows "X → Y"), and announces the change to open pages
- * (APR-12/B14). The worker has no realtime hub of its own: the
- * announcement is a Postgres NOTIFY, sent on commit, after the row lock
- * is gone, and not at all if the transaction rolls back.
+ * The domain decides the release (`ReleaseIdleClaim`: `ClaimReleased` /
+ * `RunClaimReleased` with `reason: 'timeout'` and no actor) from the
+ * stream, and the projector the API uses writes it to the read model (the
+ * timed-out claimer becomes previous_claimer_member_id, so the next
+ * reviewer's banner shows "X → Y"; review ORD-07: both were copies here).
+ * The change is announced to open pages (APR-12/B14). The worker has no
+ * realtime hub of its own: the announcement is a Postgres NOTIFY, sent on
+ * commit, after the row lock is gone, and not at all if the transaction
+ * rolls back.
  */
 export async function releaseClaimIfExpired(
   tx: DB,
@@ -191,55 +184,42 @@ export async function releaseClaimIfExpired(
   ) {
     return false;
   }
-  const newSeq = nextSeq(cur.last_seq);
-  const occurredAt = new Date();
-  // (stream_id, seq) is unique, so a racing append makes this insert
+  // (stream_id, seq) is unique, so a racing append makes the append
   // fail; the caller lets the tx roll back and moves on.
-  await tx.insert(s.events).values({
-    id: randomUUID(),
-    orgId: claim.orgId,
-    streamType: stream,
-    streamId: claim.id,
-    seq: newSeq,
-    type: stream === 'order' ? 'ClaimReleased' : 'RunClaimReleased',
-    payload: { byMemberId: null, reason: 'timeout' },
-    actorId: null,
-    occurredAt,
-    correlationId: null,
-    causationId: null,
-    idempotencyKey: null,
-  });
-  const released = {
-    claimedByMemberId: null,
-    claimedAt: null,
-    previousClaimerMemberId: cur.claimed_by_member_id,
-    lastSeq: newSeq,
-    updatedAt: occurredAt,
-  };
   if (stream === 'order') {
-    await tx.update(s.orderSessionsV).set(released).where(eq(s.orderSessionsV.id, claim.id));
-    await notifyClaimTimedOut(tx, claim, cur.claimed_by_member_id, newSeq);
+    const events = decideSystem(await loadOrderState(tx, claim.id), { type: 'ReleaseIdleClaim' });
+    const released = events.at(-1);
+    if (!released) return false;
+    await writeOrderEvents(tx, claim.orgId, claim.id, events);
+    await notifyClaimTimedOut(tx, claim, cur.claimed_by_member_id, released.seq);
     await notifyRealtime(tx, {
       type: 'order.changed',
       orgId: claim.orgId,
       sessionId: claim.id,
-      lastSeq: newSeq,
+      lastSeq: released.seq,
     });
   } else {
+    const events = decideRunSystem(await loadRunState(tx, claim.id), {
+      type: 'ReleaseIdleClaim',
+    });
+    const released = events.at(-1);
+    if (!released) return false;
+    await appendEvents(tx, { streamType: 'run', streamId: claim.id, orgId: claim.orgId, events });
     // Review RUNAPI-12: a released claim changes no item's top-up, so a run
     // whose top-ups were current stays current (see the api's runProjection).
+    // Before the projection, which moves last_seq.
     await tx
       .update(s.marketRunsV)
       .set({
-        ...released,
-        topUpSeq: sql`CASE WHEN ${s.marketRunsV.topUpSeq} = ${s.marketRunsV.lastSeq} THEN ${newSeq} ELSE ${s.marketRunsV.topUpSeq} END`,
+        topUpSeq: sql`CASE WHEN ${s.marketRunsV.topUpSeq} = ${s.marketRunsV.lastSeq} THEN ${released.seq} ELSE ${s.marketRunsV.topUpSeq} END`,
       })
       .where(eq(s.marketRunsV.id, claim.id));
+    for (const event of events) await projectRunClaim(tx, event);
     await notifyRealtime(tx, {
       type: 'run.changed',
       orgId: claim.orgId,
       runId: claim.id,
-      lastSeq: newSeq,
+      lastSeq: released.seq,
     });
   }
   return true;

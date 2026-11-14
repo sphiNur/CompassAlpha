@@ -9,6 +9,8 @@
  * one key built at run time, attendance's `fail()`, is checked by tsc
  * instead: its `key` is typed from the catalog. Only en is read: the other
  * catalogs must have every en key, or the type-check fails.
+ * 2026-11-12 (ORD-07): packages/streams too, where the order projector
+ * (and its ConcurrentDraftError) moved.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -22,6 +24,7 @@ const SCANNED = [
   'apps/worker/src',
   'packages/domain/src',
   'packages/contracts/src',
+  'packages/streams/src',
 ];
 
 function sources(dir: string): string[] {

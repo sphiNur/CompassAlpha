@@ -7,7 +7,7 @@
 import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
 import { normalizeQty, toCents } from '@compass/contracts';
-import { loadRunState } from './runStream';
+import { loadRunState } from '@compass/streams';
 import { runMoneyLinesSql, uuidListSql } from './runMoney';
 import { inUuids } from './sqlIn';
 import { executeRows } from './sqlRows';
