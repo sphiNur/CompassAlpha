@@ -1,5 +1,5 @@
 /**
- * The store picker and the store chip.
+ * The store picker (in the settings sheet).
  *
  * History
  *   2026-05-05  First version. Added a global pill button rendered in
@@ -45,12 +45,11 @@
  *               in lib/storeContext.ts: pages and hooks imported them from
  *               this component file.
  */
-import { useState } from 'react';
-import { cn, SectionLabel, PickerGroup, PickerRow, Sheet, useToast } from '@compass/ui';
+import { SectionLabel, PickerGroup, PickerRow, useToast } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
 import type { StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
-import { NO_STORES, useCanSeeStorePicker, useStoreContext } from '../hooks/useStoreContext';
+import { useCanSeeStorePicker } from '../hooks/useStoreContext';
 import { requestStoreChange } from '../lib/storeContext';
 
 /**
@@ -133,93 +132,5 @@ export function StorePickerSection({
         ))}
       </PickerGroup>
     </section>
-  );
-}
-
-/**
- * The current-store pill for a page's sticky bar.
- *
- * Renders for every actor — knowing which store you're acting on is
- * context, not a privilege. Tappable only when the actor may switch
- * (`org.admin`, or ≥2 assigned stores — CA-22); otherwise it's a plain label with no affordance, so
- * nobody taps something that can't respond.
- *
- * Returns null when there is no store context to state at all (`kind:
- * 'none'` — the actor has no assignments; those pages already render a
- * dedicated empty state that explains it).
- */
-export function StoreChip({ className }: { className?: string } = {}) {
-  const i18n = useI18n();
-  const ctx = useStoreContext();
-  const canSwitch = useCanSeeStorePicker();
-  const stores = useAuthStore((s) => s.session?.stores ?? NO_STORES);
-  const [open, setOpen] = useState(false);
-
-  if (ctx.kind === 'none') return null;
-
-  const label =
-    ctx.kind === 'all'
-      ? i18n.t('storeSwitcher.allOrgStores')
-      : (stores.find((st) => st.id === ctx.storeId)?.name.trim() ??
-        i18n.t('storeSwitcher.pickStore'));
-
-  /**
-   * Styled as a TITLE, not a control.
-   *
-   * 2026-07-30, from Telegram screenshots: as a pale `--c-surface-2`
-   * pill at `text-old-label` (11px) this sat between Telegram's Close and
-   * ⋯ — solid dark pills roughly twice its height, white glyphs, high
-   * contrast — and read as a stray app widget dropped into the title
-   * bar rather than the screen's title. It is also the single most
-   * load-bearing piece of context on the page ("which store am I
-   * ordering for") rendered at the smallest type size in the frame.
-   *
-   * Telegram's own rule is the one to follow: the buttons flanking the
-   * bar are pills, the bot title between them is plain text. So: no
-   * fill, no ring, `text-old-body` semibold at full `--c-fg`. The ▾ stays
-   * for actors who can switch — it is the only remaining hint that the
-   * title is tappable, so it carries that weight alone now.
-   *
-   * `min-w-0 truncate` + `shrink` so a long store name truncates
-   * instead of pushing into either chrome button.
-   */
-  // V4: hit-44 — the title is 18 px tall; it taps as 44.
-  const shell = 'hit-44 inline-flex min-w-0 shrink items-center gap-1 text-old-body font-semibold';
-
-  if (!canSwitch) {
-    return (
-      <span className={cn(shell, className)}>
-        <span className="truncate text-[var(--c-fg)]">{label}</span>
-      </span>
-    );
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        // Review COREWEB1-25 (2026-11-11): the name is the reason the chip
-        // is there; "change store" alone hid it from a screen reader, and
-        // a label must contain the visible text (WCAG 2.5.3).
-        aria-label={i18n.t('storeSwitcher.aria', { name: label })}
-        className={cn(shell, 'press active:opacity-60', className)}
-      >
-        <span className="truncate text-[var(--c-fg)]">{label}</span>
-        <span aria-hidden className="shrink-0 text-[var(--c-fg-muted)]">
-          ▾
-        </span>
-      </button>
-      <Sheet
-        open={open}
-        onOpenChange={setOpen}
-        title={i18n.t('storeSwitcher.title')}
-        description={i18n.t('storeSwitcher.subtitle')}
-      >
-        <div className="py-2">
-          <StorePickerSection showLabel={false} onClose={() => setOpen(false)} />
-        </div>
-      </Sheet>
-    </>
   );
 }

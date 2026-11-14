@@ -60,8 +60,10 @@ export interface NavLayout<T> {
 export function navLayout<T extends { key: Tab }>(
   tabs: readonly T[],
   permissions: readonly string[],
+  /** More is always an item (a browser, where it also holds Settings). */
+  alwaysMore = false,
 ): NavLayout<T> {
-  if (tabs.length <= MAX_BAR_ITEMS) return { bar: [...tabs], more: [] };
+  if (tabs.length <= MAX_BAR_ITEMS - (alwaysMore ? 1 : 0)) return { bar: [...tabs], more: [] };
   const orgWide = ORG_WIDE_PERMISSIONS.some((p) => permissions.includes(p));
   const priority = orgWide ? ORG_PRIORITY : STORE_PRIORITY;
   const rank = (key: Tab) => priority.indexOf(key);

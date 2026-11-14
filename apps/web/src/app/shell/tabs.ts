@@ -184,8 +184,10 @@ export function shellTabs(
  * switches nowhere and takes 64 px of the screen. With one page or none,
  * there is no bottom nav.
  */
-export function showsNav(tabs: readonly TabDef[]): boolean {
-  return tabs.length > 1;
+export function showsNav(tabs: readonly TabDef[], withMore = false): boolean {
+  // 2026-11-15 (owner): in a browser More always holds Settings, so one
+  // tab and More make a bar too (withMore).
+  return tabs.length + (withMore ? 1 : 0) > 1;
 }
 
 /**

@@ -22,6 +22,7 @@ import { SkipLinks } from './shell/SkipLinks';
 import { SwipePager } from './shell/SwipePager';
 import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
 import { TopBar } from './shell/TopBar';
+import { isInTelegram } from '../lib/telegram';
 import { usePagePrefetch } from './shell/usePagePrefetch';
 import { useShellTab } from './shell/useShellTab';
 
@@ -64,8 +65,12 @@ function ShellInner() {
   const { tab, selectTab, changeTab, mainRef, saveScroll } = useShellTab(visible);
   // 2026-11-14 (step 2): a swipe moves to the bar's neighbouring tab, in
   // the order the bar draws them; not to tabs behind More (SwipePager.tsx).
-  const swipeRing = showsNav(visible)
-    ? navLayout(visible, session?.permissions ?? []).bar.map((t) => t.key)
+  // Owner, 2026-11-15: no top bar. In a browser (no Telegram ⋯ menu)
+  // settings open from More, which is then always in the bar.
+  const browserSettings = !isInTelegram();
+  const hasNav = showsNav(visible, browserSettings);
+  const swipeRing = hasNav
+    ? navLayout(visible, session?.permissions ?? [], browserSettings).bar.map((t) => t.key)
     : [];
   const swipeResetKey = [
     session?.user.id,
@@ -120,13 +125,13 @@ function ShellInner() {
       className="relative flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
-      <SkipLinks hasNav={showsNav(visible)} />
+      <SkipLinks hasNav={hasNav} />
       {settingsLoaded ? (
         <Suspense fallback={null}>
           <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
         </Suspense>
       ) : null}
-      <TopBar onOpenSettings={openSettings} />
+      <TopBar />
       <LiveAnnouncer />
       {/* 2026-11-14: the page fades where it scrolls under the top bar and
           the nav capsule (.app-fade in styles/index.css). */}
@@ -213,7 +218,7 @@ function ShellInner() {
             />
           )}
         </main>
-        {showsNav(visible) ? <div aria-hidden className="app-fade app-fade-bottom" /> : null}
+        {hasNav ? <div aria-hidden className="app-fade app-fade-bottom" /> : null}
       </SwipePager>
 
       {/* M3.49 (2026-05-23): in-page primary action button. Telegram's
@@ -225,13 +230,14 @@ function ShellInner() {
           in one dock, on one row, the button a circle (.app-dock in
           styles/index.css); the nav comes first for Tab. Outside the
           pager, so a swipe never starts on either. */}
-      <div className="app-dock" data-nav={showsNav(visible) ? '' : undefined}>
+      <div className="app-dock" data-nav={hasNav ? '' : undefined}>
         <div className="app-dock-row">
           <BottomNav
             tabs={visible}
             tab={tab}
             onSelect={selectTab}
             permissions={session?.permissions ?? []}
+            onOpenSettings={browserSettings ? openSettings : undefined}
           />
           <PageMainButton />
         </div>

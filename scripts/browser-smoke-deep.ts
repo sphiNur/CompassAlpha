@@ -496,9 +496,12 @@ async function run() {
     await clickNavTab(page, 'approve');
     await waitForText(page, [/Pending/, /Approved/, /Rejected/]);
     const approveText = await page.evaluate(() => document.body.innerText);
+    // 2026-11-15: no top bar, so no store chip saying "Smoke Store"; the
+    // card is its submitter and its Approve button.
+    const approveButtons = await page.getByRole('button', { name: 'Approve', exact: true }).count();
     record(
       'ApprovalPage shows the submitted session card',
-      /Smoke Store/.test(approveText) && /Smoke/.test(approveText),
+      approveButtons > 0 && /Smoke/.test(approveText),
       approveText.split('\n').slice(0, 5).join(' / '),
     );
     const missingTabs = ['Pending', 'Approved', 'Rejected'].filter((t) => !approveText.includes(t));

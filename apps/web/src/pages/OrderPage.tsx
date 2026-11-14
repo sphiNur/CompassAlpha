@@ -396,18 +396,15 @@ export function OrderPage() {
           </Button>
         ) : null}
         {/* 2026-07-30 (flow review): the store you are ordering for was
-            stated NOWHERE on this page. See the StoreChip docblock —
+            stated NOWHERE on this page. See StoreSwitcher.tsx's history —
             with the picker two taps deep in Telegram's overflow and the
             selection persisted, an owner could spend a day ordering into
             the wrong store with no cue at all.
 
             Later the same day: the chip moved OUT of here and into
-            Shell's top strip, centered in the slot Telegram leaves
-            between its Close and ⋯ buttons. It is page-independent
-            context, so one instance in the shell beats a copy in each
-            page's sticky bar — and Run / Admin, which never had one,
-            get it for free. What stays here is the batch count, which
-            IS page state.
+            Shell's top strip; on 2026-11-15 (owner) the top strip lost
+            it too, and the store is switched in settings. What stays
+            here is the batch count, which IS page state.
 
             Losing the chip left the batch count alone on a row of its
             own, `ml-auto` pinning it to the right edge with a hand's
