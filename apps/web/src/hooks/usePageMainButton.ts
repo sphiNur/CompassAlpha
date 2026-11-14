@@ -11,8 +11,8 @@ import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
  * screen bottom at ALL times — non-negotiable.
  *
  * Now: usePageMainButton writes to a module-level store, and the Shell
- * renders <PageMainButton /> (app/shell/PageMainButton.tsx) as an
- * in-DOM sticky bar ABOVE the nav. Telegram's native MainButton stays
+ * renders <PageMainButton /> (app/shell/PageMainButton.tsx) in-DOM, in
+ * the dock with the nav (since 2026-11-14 on the nav's row). Telegram's native MainButton stays
  * permanently hidden (PageMainButton calls tg.MainButton.hide()). The
  * nav is now the last flex child in the Shell, so it owns the bottom
  * edge regardless of whether a primary action is showing.

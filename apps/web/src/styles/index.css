@@ -76,16 +76,77 @@
 /* The bottom nav (owner, 2026-11-14): a capsule floating over the page
    (BottomNav.tsx; sizes and colours are the --app-nav-* / --c-nav-*
    tokens). The page scrolls under it; Shell keeps room under the last
-   content (--app-nav-reserve). */
+   content (--app-nav-reserve, plus --app-main-btn-h for what the page's
+   main button adds above it). */
 @layer components {
-  .app-nav {
+  /* The dock (owner, 2026-11-14, "main button on the nav's row"): the
+     capsule and the page's main button (PageMainButton.tsx) float in one
+     box at the foot of the screen. With a main button and room for both
+     (the container query below) they share one row: the capsule shows
+     icons only on the left, the button is a pill of the same height on
+     the right, 8px between them and from the screen's sides. Too narrow
+     for that (under 21rem: a 320px phone, or a large text size), or where
+     container queries are missing, the button sits above the capsule.
+     pointer-events: only the controls take taps, not the gap between. */
+  .app-dock {
     position: absolute;
     z-index: 20;
-    left: max(var(--app-nav-inset-x), var(--app-safe-left));
-    right: max(var(--app-nav-inset-x), var(--app-safe-right));
+    left: max(var(--app-dock-inset-x), var(--app-safe-left));
+    right: max(var(--app-dock-inset-x), var(--app-safe-right));
     bottom: calc(var(--app-safe-bottom) + var(--app-nav-float));
     max-width: 480px;
     margin-inline: auto;
+    pointer-events: none;
+    container: app-dock / inline-size;
+    --app-dock-inset-x: var(--app-nav-inset-x);
+    --app-dock-gap: 8px;
+    /* An icon-only tab: the 44px tap of WALK-03, growing with the text. */
+    --app-nav-icon-w: 2.75rem;
+  }
+  /* The row has 8px at both ends, as between the capsule and the button. */
+  [data-main-button] .app-dock[data-nav] {
+    --app-dock-inset-x: var(--app-dock-gap);
+  }
+  /* A main button without the nav (one tab or none): off the home strip.
+     Inside the dock, so its height (published as --app-main-btn-h)
+     includes it. */
+  .app-dock:not([data-nav]) {
+    padding-bottom: var(--app-dock-gap);
+  }
+  .app-dock-row {
+    display: flex;
+    /* Stacked: the nav comes first for Tab, the button shows above it. */
+    flex-direction: column-reverse;
+    gap: var(--app-dock-gap);
+  }
+  .app-dock-row > * {
+    pointer-events: auto;
+  }
+  .app-dock-action {
+    position: relative;
+    min-width: 0;
+  }
+  /* The button floats like the capsule: the capsule's shadow. */
+  .app-main-btn {
+    box-shadow: var(--shadow-nav);
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+  /* Why the button is inactive, on the capsule's surface (it floats over
+     the page too). */
+  .app-dock-hint {
+    border-radius: var(--r-card);
+    padding: 6px 12px;
+    background: var(--c-nav-surface-solid);
+    box-shadow:
+      var(--shadow-nav),
+      inset 0 0 0 1px var(--c-divider);
+  }
+  .app-nav {
+    position: relative;
+    z-index: 0;
+    flex: 1 1 auto;
+    min-width: 0;
     height: var(--app-nav-h);
     display: flex;
     padding-inline: 4px;
@@ -97,6 +158,10 @@
        active tab's pill 40 of 52). Scales, so the shrink is transforms only. */
     --app-nav-compact-scale: 0.8;
     --app-nav-compact-pill-scale: 0.77;
+  }
+  .app-nav-item {
+    /* Its place in the bar (BottomNav.tsx), for the compact row's slide. */
+    --app-nav-i: 0;
   }
   /* Review MWC-14 (V10, modern-web-guidance: shrinking-header-on-scroll):
      "animate only performant CSS properties … such as transform and
@@ -120,14 +185,16 @@
   /* Translucent only where the browser blurs what is behind it: without
      the blur, rows under the capsule would show through its labels. */
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    .app-nav::before {
+    .app-nav::before,
+    .app-dock-hint {
       background: var(--c-nav-surface);
       -webkit-backdrop-filter: saturate(1.6) blur(16px);
       backdrop-filter: saturate(1.6) blur(16px);
     }
   }
   @media (prefers-reduced-transparency: reduce) {
-    .app-nav::before {
+    .app-nav::before,
+    .app-dock-hint {
       background: var(--c-nav-surface-solid);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
@@ -170,8 +237,7 @@
      side, or the keyboard up) the page's sticky bar already scrolls away
      (STICKY_BAR_SHORT_VIEWPORT); scrolling down there now takes the
      capsule away too, and scrolling up brings it back. Not on a page with
-     a main button: the room under that bar stays, so it would only leave
-     a gap. */
+     a main button: the button stays, and the capsule beside it. */
   @media (max-height: 500px) and (prefers-reduced-motion: no-preference) {
     html:not([data-main-button]) [data-nav-compact] .app-nav {
       transform: translateY(calc(100% + var(--app-nav-float) + var(--app-safe-bottom)));
@@ -183,13 +249,111 @@
     }
   }
 
+  /* The capsule and the main button on one row (see .app-dock). 21rem is
+     336px at the default text size: a 360px phone. There, with five tabs,
+     the button is 108px wide, 138 on a 390px phone and 178 on a 430px
+     one; its label takes up to two lines in a slightly smaller type
+     (13px), hyphenated where the browser knows the language. Pages
+     without a main button keep the full capsule with labels. */
+  @container app-dock (min-width: 21rem) {
+    [data-main-button] .app-dock[data-nav] .app-dock-row {
+      flex-direction: row;
+      align-items: flex-end;
+    }
+    [data-main-button] .app-dock[data-nav] .app-nav {
+      flex: none;
+    }
+    [data-main-button] .app-dock[data-nav] .app-nav-item {
+      flex: none;
+      width: var(--app-nav-icon-w);
+      min-width: 0;
+    }
+    /* Icons only: each tab keeps its name (aria-label, BottomNav.tsx). */
+    [data-main-button] .app-dock[data-nav] .app-nav-label {
+      display: none;
+    }
+    [data-main-button] .app-dock[data-nav] .app-dock-action {
+      flex: 1 1 0;
+    }
+    [data-main-button] .app-dock[data-nav] .app-main-btn {
+      min-height: var(--app-nav-h);
+      padding-inline: 0.625rem;
+      font-size: 0.8125rem;
+      line-height: 1.25;
+    }
+    /* The hint over the whole row, not squeezed into the button's width. */
+    [data-main-button] .app-dock[data-nav] .app-dock-hint {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + var(--app-dock-gap));
+      width: 100cqw;
+      margin: 0;
+    }
+    /* Scrolling down: the capsule keeps the open tab only, and the button
+       takes the room (the box changes at once; nothing animates a width).
+       The capsule keeps the button's height, so its compact scales are
+       off here. With keyboard focus in the nav, every tab stays. */
+    [data-main-button]
+      [data-nav-compact]
+      .app-dock[data-nav]
+      .app-nav:not(:focus-within)
+      .app-nav-item:not([aria-current]) {
+      display: none;
+    }
+    [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav::before,
+    [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-active,
+    [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-icon {
+      transform: none;
+    }
+  }
+  /* The row's motion: the open tab slides to the front of the compact
+     capsule and the label fades in at its new width, and again at its
+     old width coming back. Transforms and opacity only, and none under
+     reduced motion (where the capsule never compacts anyway). */
+  @media (prefers-reduced-motion: no-preference) {
+    @container app-dock (min-width: 21rem) {
+      [data-main-button]
+        .app-shell[data-nav-compact]
+        .app-dock[data-nav]
+        .app-nav-item[aria-current] {
+        animation: app-nav-to-front var(--t-quick) var(--easing);
+      }
+      [data-main-button] .app-shell[data-nav-compact] .app-dock[data-nav] .app-main-btn-label {
+        animation: app-dock-in-a var(--t-quick) var(--easing);
+      }
+      [data-main-button]
+        .app-shell:not([data-nav-compact])
+        .app-dock[data-nav]
+        .app-main-btn-label {
+        animation: app-dock-in-b var(--t-quick) var(--easing);
+      }
+    }
+  }
+  @keyframes app-nav-to-front {
+    from {
+      transform: translateX(calc(var(--app-nav-i) * var(--app-nav-icon-w)));
+    }
+  }
+  /* Two names for one fade, so that each change of state starts it again. */
+  @keyframes app-dock-in-a {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes app-dock-in-b {
+    from {
+      opacity: 0;
+    }
+  }
+
   /* <main>, the one scroller: room under the last content for the
-     capsule, and for focus moved there by keyboard. With a main button
-     (PageMainButton.tsx sets the attribute) the page ends above that bar,
-     which keeps the room itself. */
+     capsule, and for focus moved there by keyboard. With a main button,
+     also for what it adds above the capsule's top (--app-main-btn-h:
+     nothing when the two share a row, the button and the gap when it
+     sits above; PageMainButton.tsx publishes it). */
   .app-main {
-    padding-bottom: var(--app-nav-reserve);
-    scroll-padding-bottom: var(--app-nav-reserve);
+    padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));
+    scroll-padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));
     /* Review MWC-06: focus and find stop below the page's sticky bar
        (StickyPageBar publishes its height); not where the bar scrolls
        away with the page (STICKY_BAR_SHORT_VIEWPORT). */
@@ -203,10 +367,6 @@
     .app-main {
       scroll-padding-top: 0;
     }
-  }
-  [data-main-button] .app-main {
-    padding-bottom: 0;
-    scroll-padding-bottom: 0;
   }
 
   /* The page fading out where it scrolls under the top bar and the nav.
@@ -245,11 +405,10 @@
   }
   .app-fade-bottom {
     bottom: 0;
-    height: calc(var(--app-nav-reserve) + var(--app-fade-h));
+    height: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px) + var(--app-fade-h));
     background: linear-gradient(to top, var(--c-bg) var(--app-safe-bottom), transparent);
   }
-  [data-scroll-end] .app-fade-bottom,
-  [data-main-button] .app-fade-bottom {
+  [data-scroll-end] .app-fade-bottom {
     opacity: 0;
   }
 }
