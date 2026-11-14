@@ -119,3 +119,15 @@ key there; once this Worker is deployed, delete the old secret with
 
 The server's `FRONTEND_URL` must remain the workers.dev URL so invite
 fallbacks, notifications and CORS all point at the stable entry.
+
+### Security headers on the page (review MWD-18, 2026-11-14)
+
+nginx serves `index.html` and `/assets` itself, so they never pass the
+api's security headers (`apps/api/src/http/securityHeaders.ts`): before
+this, the page had no Content-Security-Policy at all. The Worker now adds
+the api's headers (the enforced CSP, the report-only CSP with Trusted
+Types, Reporting-Endpoints, nosniff, Referrer-Policy, Permissions-Policy,
+HSTS, and COOP on pages) to every page and script answer that has no CSP
+of its own. `apps/api/src/__tests__/page-security-worker.test.ts` fails
+if the Worker's strings and the api's drift apart. A change to the policy
+needs both a release and a `wrangler deploy`.

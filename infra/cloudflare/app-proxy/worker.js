@@ -287,156 +287,243 @@ async function refreshOrigin(env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const incoming = new URL(request.url);
+    const response = await proxy(request, env, ctx);
+    return withPageSecurity(response, new URL(request.url).host);
+  },
+};
 
-    // Vite's hashed /assets/* never change under one URL. Keep them at the
-    // edge (2026-11-06): through the quick tunnel the liveness tracker's
-    // 13.5 MB of WebAssembly took ~40 s per person, so the camera never
-    // got it in time. The Cache API does nothing on a workers.dev host,
-    // so the big files (the tracker and its model) are kept in KV; the
-    // rest goes through the Cache API, which works once on a custom domain.
-    const big = bigAssetKey(request, incoming);
-    if (big) {
-      const hit = await kvAsset(env, big);
-      if (hit) return hit;
+/**
+ * Review MWD-12 / MWD-13 / MWD-18 (modern-web-guidance: security,
+ * trusted-types): the security headers on the page and its scripts.
+ *
+ * The api sets them on everything it answers
+ * (apps/api/src/http/securityHeaders.ts), but nginx serves index.html and
+ * /assets itself, so the page reached browsers with no CSP at all: the
+ * report-only policy never ran and no report could come. The Worker adds
+ * the api's headers to every page (text/html) and script
+ * (javascript: a Web Worker or the service worker takes its CSP from its
+ * own script's response) that arrives without a CSP. An api answer keeps
+ * its own. scripts/__tests__/appProxyWorker.test.ts checks these strings
+ * against the api's, so the two cannot drift apart.
+ */
+const SCRIPT_SRC = "script-src 'self' 'wasm-unsafe-eval' https://telegram.org";
+const BEFORE_CONNECT = [
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+];
+const AFTER_CONNECT = [
+  "frame-ancestors 'self' https://web.telegram.org https://t.me",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+];
+
+/** The headers the api would send on a page served from `host`. */
+export function pageSecurityHeaders(host) {
+  const plain = /^[a-z0-9.-]+(?::\d{1,5})?$/.test(host) ? host : null;
+  const connect = ["'self'"];
+  if (plain) connect.push(`wss://${plain}`);
+  connect.push('https://telegram.org');
+  return {
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'strict-origin-when-cross-origin',
+    'permissions-policy': 'camera=(self), microphone=(), geolocation=(self), payment=(), usb=()',
+    'content-security-policy': [
+      "default-src 'self'",
+      SCRIPT_SRC,
+      ...BEFORE_CONNECT,
+      "connect-src 'self' wss: https:",
+      ...AFTER_CONNECT,
+    ].join('; '),
+    'content-security-policy-report-only': [
+      "default-src 'self'",
+      `${SCRIPT_SRC} 'report-sample'`,
+      ...BEFORE_CONNECT,
+      `connect-src ${connect.join(' ')}`,
+      ...AFTER_CONNECT,
+      "require-trusted-types-for 'script'",
+      'trusted-types default goog#html',
+      'report-uri /csp-report',
+      'report-to csp',
+    ].join('; '),
+    'reporting-endpoints': 'csp="/csp-report"',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+  };
+}
+
+/** `response` with the page headers added when it is a page or a script without a CSP. */
+export function withPageSecurity(response, host) {
+  if (response.status === 101 || response.webSocket) return response;
+  const type = (response.headers.get('content-type') ?? '').toLowerCase();
+  const page = type.startsWith('text/html');
+  const script = type.includes('javascript');
+  if ((!page && !script) || response.headers.has('content-security-policy')) return response;
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(pageSecurityHeaders(host))) {
+    if (!headers.has(name)) headers.set(name, value);
+  }
+  // MWD-19: on the pages only, as the api does.
+  if (page && !headers.has('cross-origin-opener-policy')) {
+    headers.set('cross-origin-opener-policy', 'same-origin-allow-popups');
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+const proxy = async (request, env, ctx) => {
+  const incoming = new URL(request.url);
+
+  // Vite's hashed /assets/* never change under one URL. Keep them at the
+  // edge (2026-11-06): through the quick tunnel the liveness tracker's
+  // 13.5 MB of WebAssembly took ~40 s per person, so the camera never
+  // got it in time. The Cache API does nothing on a workers.dev host,
+  // so the big files (the tracker and its model) are kept in KV; the
+  // rest goes through the Cache API, which works once on a custom domain.
+  const big = bigAssetKey(request, incoming);
+  if (big) {
+    const hit = await kvAsset(env, big);
+    if (hit) return hit;
+  }
+  const edgeCache = assetCache(request, incoming);
+  if (edgeCache) {
+    const hit = await edgeCache.cache.match(edgeCache.key);
+    if (hit) return hit;
+  }
+
+  // Manual fallback for when ntfy is down (scripts/refresh-app-proxy-
+  // origin.sh). Review OPS-15 (2026-11-10): it takes one origin message
+  // signed on the server (`compass-origin-watch --print-signed`) and
+  // checks it like a topic message: signature, age window, and newer
+  // than any origin accepted before. It used to take a shared key in a
+  // header, and the script sent the server's signing key itself.
+  if (incoming.pathname === '/__origin') {
+    if (request.method !== 'POST') return json({ ok: false, error: 'use POST' }, 405);
+    if (!env.ORIGIN_SIGNING_KEY) {
+      return json({ ok: false, error: 'ORIGIN_SIGNING_KEY is not configured' }, 503);
     }
-    const edgeCache = assetCache(request, incoming);
-    if (edgeCache) {
-      const hit = await edgeCache.cache.match(edgeCache.key);
-      if (hit) return hit;
-    }
-
-    // Manual fallback for when ntfy is down (scripts/refresh-app-proxy-
-    // origin.sh). Review OPS-15 (2026-11-10): it takes one origin message
-    // signed on the server (`compass-origin-watch --print-signed`) and
-    // checks it like a topic message: signature, age window, and newer
-    // than any origin accepted before. It used to take a shared key in a
-    // header, and the script sent the server's signing key itself.
-    if (incoming.pathname === '/__origin') {
-      if (request.method !== 'POST') return json({ ok: false, error: 'use POST' }, 405);
-      if (!env.ORIGIN_SIGNING_KEY) {
-        return json({ ok: false, error: 'ORIGIN_SIGNING_KEY is not configured' }, 503);
-      }
-      const message = await request.text();
-      let found = null;
-      if (message.length <= 512) {
-        try {
-          found = await originFromMessage(message, env);
-        } catch {
-          found = null; // not a URL
-        }
-      }
-      if (!found) return json({ ok: false, error: 'not a valid signed origin message' }, 400);
-      if (found.ts < (await signedFloor(env))) {
-        return json({ ok: false, error: 'an origin signed later is already in use' }, 409);
-      }
-      await acceptSigned(env, found);
-      lastAccepted = found.url;
-      originCache = { url: found.url, readAt: Date.now() };
-      return json({ ok: true, url: found.url });
-    }
-
-    const originUrl = await currentOrigin(env, ctx);
-    if (!originUrl) {
-      // Nothing published yet and nothing in KV: say so instead of
-      // failing on a host that does not exist.
-      return json({ ok: false, error: 'the app server has not announced its address yet' }, 503);
-    }
-    const origin = new URL(originUrl);
-    const target = proxyTarget(incoming, origin);
-    if (!target) return json({ ok: false, error: 'bad request path' }, 400);
-
-    const headers = new Headers(request.headers);
-    // AUTH-6 (2026-10-30): the origin cannot tell clients apart — on the
-    // tunnel hop `cf-connecting-ip` names this Worker, and
-    // `x-forwarded-for` is whatever the client wrote. Here Cloudflare's
-    // `cf-connecting-ip` is the real client. Pass it on with the shared
-    // secret so the API's rate limiter can trust it; never pass on a
-    // client's own copy of either header.
-    headers.delete('x-compass-client-ip');
-    headers.delete('x-compass-proxy-key');
-    if (env.CLIENT_IP_PROXY_KEY) {
-      const clientIp = request.headers.get('cf-connecting-ip');
-      if (clientIp) headers.set('x-compass-client-ip', clientIp);
-      headers.set('x-compass-proxy-key', env.CLIENT_IP_PROXY_KEY);
-    }
-    headers.set('x-forwarded-host', incoming.host);
-    headers.set('x-forwarded-proto', 'https');
-    // Avoid forwarding the Workers hostname as the origin Host header.
-    headers.set('host', origin.host);
-
-    const init = {
-      method: request.method,
-      headers,
-      redirect: 'manual',
-    };
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      init.body = request.body;
-    }
-
-    const response = await fetch(target, init);
-    const responseHeaders = new Headers(response.headers);
-
-    // Nginx may answer /health with a trailing-slash redirect. Keep
-    // every redirect on the public HTTPS hostname instead of leaking
-    // the private HTTP origin to the browser.
-    const location = responseHeaders.get('location');
-    if (location) {
+    const message = await request.text();
+    let found = null;
+    if (message.length <= 512) {
       try {
-        const resolved = new URL(location, origin);
-        if (resolved.host === origin.host) {
-          resolved.protocol = 'https:';
-          resolved.host = incoming.host;
-          responseHeaders.set('location', resolved.toString());
-        }
+        found = await originFromMessage(message, env);
       } catch {
-        // Leave an opaque Location header untouched.
+        found = null; // not a URL
       }
     }
-
-    // A 101 (WebSocket upgrade) cannot be rebuilt with `new Response` —
-    // the constructor only takes 200–599 and throws, so realtime never
-    // connected through this proxy. Hand the upgrade back untouched.
-    if (response.status === 101 || response.webSocket) return response;
-
-    const immutable =
-      response.status === 200 && /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '');
-    // A big asset is read whole and stored before it is answered: work
-    // left to waitUntil is cut off 30 s after the response starts, and the
-    // tunnel needs ~40 s for the tracker (it never reached KV that way).
-    // Only the first download of a release waits for this.
-    if (big && immutable && env.COMPASS_ORIGIN) {
-      const bytes = await response.arrayBuffer();
-      const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
-      const fits = bytes.byteLength <= KV_MAX_BYTES;
-      if (fits && !looksLikeAsset(incoming.pathname, type, bytes)) {
-        console.warn('not keeping what the origin sent for', big, type);
-      } else if (fits) {
-        try {
-          await env.COMPASS_ORIGIN.put(big, bytes, { metadata: { type } });
-        } catch (error) {
-          console.warn('could not keep the asset in KV', big, error);
-        }
-      }
-      return new Response(bytes, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-      });
+    if (!found) return json({ ok: false, error: 'not a valid signed origin message' }, 400);
+    if (found.ts < (await signedFloor(env))) {
+      return json({ ok: false, error: 'an origin signed later is already in use' }, 409);
     }
+    await acceptSigned(env, found);
+    lastAccepted = found.url;
+    originCache = { url: found.url, readAt: Date.now() };
+    return json({ ok: true, url: found.url });
+  }
 
-    const out = new Response(response.body, {
+  const originUrl = await currentOrigin(env, ctx);
+  if (!originUrl) {
+    // Nothing published yet and nothing in KV: say so instead of
+    // failing on a host that does not exist.
+    return json({ ok: false, error: 'the app server has not announced its address yet' }, 503);
+  }
+  const origin = new URL(originUrl);
+  const target = proxyTarget(incoming, origin);
+  if (!target) return json({ ok: false, error: 'bad request path' }, 400);
+
+  const headers = new Headers(request.headers);
+  // AUTH-6 (2026-10-30): the origin cannot tell clients apart — on the
+  // tunnel hop `cf-connecting-ip` names this Worker, and
+  // `x-forwarded-for` is whatever the client wrote. Here Cloudflare's
+  // `cf-connecting-ip` is the real client. Pass it on with the shared
+  // secret so the API's rate limiter can trust it; never pass on a
+  // client's own copy of either header.
+  headers.delete('x-compass-client-ip');
+  headers.delete('x-compass-proxy-key');
+  if (env.CLIENT_IP_PROXY_KEY) {
+    const clientIp = request.headers.get('cf-connecting-ip');
+    if (clientIp) headers.set('x-compass-client-ip', clientIp);
+    headers.set('x-compass-proxy-key', env.CLIENT_IP_PROXY_KEY);
+  }
+  headers.set('x-forwarded-host', incoming.host);
+  headers.set('x-forwarded-proto', 'https');
+  // Avoid forwarding the Workers hostname as the origin Host header.
+  headers.set('host', origin.host);
+
+  const init = {
+    method: request.method,
+    headers,
+    redirect: 'manual',
+  };
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+  }
+
+  const response = await fetch(target, init);
+  const responseHeaders = new Headers(response.headers);
+
+  // Nginx may answer /health with a trailing-slash redirect. Keep
+  // every redirect on the public HTTPS hostname instead of leaking
+  // the private HTTP origin to the browser.
+  const location = responseHeaders.get('location');
+  if (location) {
+    try {
+      const resolved = new URL(location, origin);
+      if (resolved.host === origin.host) {
+        resolved.protocol = 'https:';
+        resolved.host = incoming.host;
+        responseHeaders.set('location', resolved.toString());
+      }
+    } catch {
+      // Leave an opaque Location header untouched.
+    }
+  }
+
+  // A 101 (WebSocket upgrade) cannot be rebuilt with `new Response` —
+  // the constructor only takes 200–599 and throws, so realtime never
+  // connected through this proxy. Hand the upgrade back untouched.
+  if (response.status === 101 || response.webSocket) return response;
+
+  const immutable =
+    response.status === 200 && /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '');
+  // A big asset is read whole and stored before it is answered: work
+  // left to waitUntil is cut off 30 s after the response starts, and the
+  // tunnel needs ~40 s for the tracker (it never reached KV that way).
+  // Only the first download of a release waits for this.
+  if (big && immutable && env.COMPASS_ORIGIN) {
+    const bytes = await response.arrayBuffer();
+    const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
+    const fits = bytes.byteLength <= KV_MAX_BYTES;
+    if (fits && !looksLikeAsset(incoming.pathname, type, bytes)) {
+      console.warn('not keeping what the origin sent for', big, type);
+    } else if (fits) {
+      try {
+        await env.COMPASS_ORIGIN.put(big, bytes, { metadata: { type } });
+      } catch (error) {
+        console.warn('could not keep the asset in KV', big, error);
+      }
+    }
+    return new Response(bytes, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
     });
-    if (edgeCache && immutable && !isPageOrError(responseHeaders.get('content-type'))) {
-      const put = edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {});
-      if (ctx?.waitUntil) ctx.waitUntil(put);
-      else await put;
-    }
-    return out;
-  },
+  }
+
+  const out = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders,
+  });
+  if (edgeCache && immutable && !isPageOrError(responseHeaders.get('content-type'))) {
+    const put = edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(put);
+    else await put;
+  }
+  return out;
 };
 
 /** KV's value limit is 25 MiB. */
