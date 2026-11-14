@@ -8,6 +8,7 @@ import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
 import { checkClientRate } from '../../services/rateLimit';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
+import { redactLogText, redactLogValue } from '../../services/redactLog';
 import { env } from '../../env';
 
 /**
@@ -58,6 +59,16 @@ export function journalLevel(level: LogLevel, signedIn: boolean): LogLevel {
 function clamp(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
   return value.length > max ? value.slice(0, max) : value;
+}
+
+/**
+ * Review MWD-15 (modern-web-guidance: privacy): a free-form client text,
+ * clamped, with tokens, Telegram launch data, e-mails and phone numbers
+ * masked (redactLog.ts), before it is stored or mirrored to the journal.
+ */
+export function maskedText(value: unknown, max: number): string | null {
+  const text = clamp(value, max);
+  return text === null ? null : clamp(redactLogText(text), max);
 }
 
 /**
@@ -193,11 +204,12 @@ export const systemRouter = router({
         sessionId,
         level,
         kind,
-        action: clamp(raw.action, 64),
-        target: clamp(raw.target, 200),
-        data: capLogData(raw.data),
-        errorMsg: typeof raw.errorMsg === 'string' ? raw.errorMsg.slice(0, 4000) : null,
-        errorStack: typeof raw.errorStack === 'string' ? raw.errorStack.slice(0, 8000) : null,
+        // Review MWD-15: masked before the row is stored and mirrored.
+        action: maskedText(raw.action, 64),
+        target: maskedText(raw.target, 200),
+        data: redactLogValue(capLogData(raw.data)),
+        errorMsg: maskedText(raw.errorMsg, 4000),
+        errorStack: maskedText(raw.errorStack, 8000),
         platform: clamp(raw.platform, 32),
         appVersion: clamp(raw.appVersion, 32),
         traceId: clamp(raw.traceId, 64),

@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import { assertProductionLogin, releaseChannelOf } from '../env';
 import { readinessHandler } from '../http/health';
-import { journalLevel } from '../trpc/routers/system';
+import { journalLevel, maskedText } from '../trpc/routers/system';
 
 function readyApp(pingDb: () => Promise<unknown>, logged: unknown[]) {
   const app = new Hono();
@@ -55,6 +55,15 @@ describe('client log lines in the journal (COREAPI-21)', () => {
     expect(journalLevel('warn', false)).toBe('info');
     expect(journalLevel('info', false)).toBe('info');
     expect(journalLevel('debug', false)).toBe('debug');
+  });
+});
+
+describe('client log text is masked before it is kept (MWD-15)', () => {
+  test('clamped, then masked, and never longer than its column', () => {
+    expect(maskedText('mail a@b.example now', 200)).toBe('mail [email] now');
+    expect(maskedText(42, 200)).toBeNull();
+    expect(maskedText('Bearer abcdefgh12345678', 10)!.length).toBeLessThanOrEqual(10);
+    expect(maskedText('', 10)).toBe('');
   });
 });
 
