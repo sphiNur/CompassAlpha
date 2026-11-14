@@ -111,7 +111,12 @@ export function SectionLabel({
         className,
       )}
     >
-      <span className="max-w-full truncate">{children}</span>
+      {/* Review MWC-09 (modern-web-guidance: form-factor-adaptation): "DO
+          NOT truncate headings with text-overflow: ellipsis". A long ru /
+          uz title wraps to two balanced lines; a short one is unchanged. */}
+      <span className="min-w-0 max-w-full break-words line-clamp-2 [text-wrap:balance]">
+        {children}
+      </span>
       {meta ? (
         <span className="min-w-0 break-words text-old-label font-normal tabular-nums text-[var(--c-fg-muted)]">
           {meta}

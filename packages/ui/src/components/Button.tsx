@@ -14,13 +14,16 @@ const button = cva(
     // V4 (2026-10-30): hit-44 gives sm (32 px) a 44 px tap area without
     // changing how it looks; md (44) and lg (52) are already that tall.
     // That needs the button NOT to clip its overflow (a clipped ::after
-    // takes no taps); the label span below truncates itself instead.
+    // takes no taps); the label span below clamps itself instead.
     'press hit-44 inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-medium select-none',
     // Review UI-31 (2026-11-12): transform is in the list, at .press's
     // own --t-snap / --easing. Without it this utility (later in the
     // stylesheet) replaced .press's transition, so the press shrink
     // jumped instead of easing in.
-    'whitespace-nowrap outline-none transition-[background,color,box-shadow,transform]',
+    // Review MWC-08 (modern-web-guidance: single-line-overflow, typography):
+    // no whitespace-nowrap. A long label (ru / uz) wraps to two balanced
+    // lines in the label span below instead of ending in "…".
+    'text-center outline-none transition-[background,color,box-shadow,transform]',
     'duration-[var(--t-snap)] ease-[var(--easing)]',
     'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
     'focus-visible:ring-offset-[var(--c-ring-offset)]',
@@ -70,11 +73,15 @@ const button = cva(
         //   - lg: h-13 (52, was 56) + text-old-h3 (14, was text-old-h2 / 15) —
         //     sheet-footer commits + page-bottom CTAs. Big enough to
         //     anchor the action without towering over the 64 px nav.
-        sm: 'h-8 px-3 text-old-label',
-        md: 'h-[var(--control-h)] px-5 text-old-h3',
-        // h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
+        //   Review MWC-08 (modern-web-guidance: typography): "DON'T set a
+        //   fixed height on elements that contain text, such as buttons".
+        //   The heights are minimums: a one-line label renders exactly
+        //   as before; a two-line one (or larger phone text) grows it.
+        sm: 'min-h-8 px-3 py-0.5 text-old-label',
+        md: 'min-h-[var(--control-h)] px-5 py-1 text-old-h3',
+        // min-h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
         // exactly the middle.
-        lg: 'h-[52px] px-7 text-old-h3',
+        lg: 'min-h-[52px] px-7 py-1 text-old-h3',
       },
       block: {
         true: 'w-full',
@@ -236,7 +243,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       }}
     >
       {loading ? <Spinner size={16} /> : leadingIcon}
-      <span className={childIsPlain || !isValidElement(children) ? 'min-w-0 truncate' : 'min-w-0'}>
+      {/* MWC-08: at most two lines, balanced, then "…"; a short label is one line. */}
+      <span
+        className={
+          childIsPlain || !isValidElement(children)
+            ? 'min-w-0 break-words line-clamp-2 [text-wrap:balance]'
+            : 'min-w-0'
+        }
+      >
         {children}
       </span>
       {trailingIcon}

@@ -159,7 +159,9 @@ empty is `EmptyState` (15 px title); errors are `DataState`'s error or a danger
 `Banner` with retry.
 
 #### UI-16 — Controls come from the kit
-Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page; the page's
+Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page, as
+minimum heights: a long label wraps to two lines and the button grows,
+review MWC-08; the page's
 main action is the in-page main button, `usePageMainButton` — the Telegram
 main button stays hidden since M3.49). Switching between views is
 `Segmented`; filtering a list by category is `ChipBar`. No hand-rolled pill

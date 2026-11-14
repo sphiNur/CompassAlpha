@@ -103,13 +103,22 @@ export function ListRow({
   noChevron,
   className,
 }: ListRowProps) {
+  // Review MWC-16 (modern-web-guidance: single-line-overflow): "Give the
+  // full text another route". A row that opens a detail view keeps its
+  // one line; a read-only row has no other route, so its text wraps to
+  // two lines instead of ending in "…".
+  const clip = onClick ? 'truncate' : 'break-words line-clamp-2';
   const inner = (
     <>
       {icon ? <span className="shrink-0 text-[var(--c-action)]">{icon}</span> : null}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-old-h3 font-semibold text-[var(--c-fg)]">{label}</span>
+        <span className={cn('block text-old-h3 font-semibold text-[var(--c-fg)]', clip)}>
+          {label}
+        </span>
         {hint ? (
-          <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">{hint}</span>
+          <span className={cn('mt-0.5 block text-old-label text-[var(--c-fg-muted)]', clip)}>
+            {hint}
+          </span>
         ) : null}
       </span>
       {badge ? <span className="shrink-0">{badge}</span> : null}
@@ -158,7 +167,11 @@ export function DetailRow({ label, value, className }: DetailRowProps) {
   return (
     <div className={cn('flex min-w-0 items-baseline justify-between gap-3', className)}>
       <span className="min-w-0 text-old-body-sm text-[var(--c-fg-muted)]">{label}</span>
-      <span className="min-w-0 truncate text-right text-old-body text-[var(--c-fg)]">{value}</span>
+      {/* Review MWC-16 (modern-web-guidance: single-line-overflow): a long
+          value (a ru / uz address) wraps to two lines, not "…". */}
+      <span className="min-w-0 break-words line-clamp-2 text-right text-old-body text-[var(--c-fg)]">
+        {value}
+      </span>
     </div>
   );
 }

@@ -234,7 +234,8 @@ describe('D18: text fields are 44px', () => {
         compact: false,
       });
     }
-    expect(read('Button.tsx')).toContain("md: 'h-[var(--control-h)]");
+    // Review MWC-08: a minimum, so a two-line label grows the button.
+    expect(read('Button.tsx')).toContain("md: 'min-h-[var(--control-h)]");
     expect(read('Textarea.tsx')).toContain('min-h-11');
   });
 });
