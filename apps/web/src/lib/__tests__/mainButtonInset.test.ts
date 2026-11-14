@@ -38,17 +38,16 @@ describe('publishMainButtonInset', () => {
 
 describe('mainButtonInsetOf (2026-11-14: the button on the nav row)', () => {
   test('on the row it adds nothing above the nav', () => {
-    expect(mainButtonInsetOf({ navTop: 700, contentTop: 700, dockHeight: 60 })).toBe(0);
+    expect(mainButtonInsetOf({ navTop: 700, contentTop: 700, dockBottom: 760 })).toBe(0);
   });
 
-  test('a hint over the row, or a button stacked above the capsule, is what reaches above', () => {
+  test('a hint over the row is what reaches above', () => {
     // The hint: 30px and the 8px gap over the row.
-    expect(mainButtonInsetOf({ navTop: 700, contentTop: 662, dockHeight: 98 })).toBe(38);
-    // Stacked (a narrow phone): the 48px button and the gap.
-    expect(mainButtonInsetOf({ navTop: 700, contentTop: 644, dockHeight: 116 })).toBe(56);
+    expect(mainButtonInsetOf({ navTop: 700, contentTop: 662, dockBottom: 760 })).toBe(38);
   });
 
-  test('without the nav, the whole dock', () => {
-    expect(mainButtonInsetOf({ navTop: null, contentTop: 0, dockHeight: 56 })).toBe(56);
+  test('without the nav, from the top of the button (or its hint) to the dock foot', () => {
+    expect(mainButtonInsetOf({ navTop: null, contentTop: 704, dockBottom: 772 })).toBe(68);
+    expect(mainButtonInsetOf({ navTop: null, contentTop: 666, dockBottom: 772 })).toBe(106);
   });
 });

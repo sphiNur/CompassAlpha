@@ -193,12 +193,17 @@ does not follow the finger; a completed swipe switches at once.
 On a page with a main button, the button and the capsule share one row
 (owner, 2026-11-14; the dock in `Shell.tsx`, `.app-dock` in
 `styles/index.css`): the capsule shows icons only on the left, each tab still
-named and badged; the button is a pill of the capsule's height on the right,
-its label at most two lines; 8 px between them and at the ends. Scrolling
-down leaves only the open tab in the capsule and the button takes the room;
-scrolling up brings the tabs back. Where the row has under 21rem (a 320 px
-phone, a large text size) the button sits above the capsule. The page keeps
-room for one row, not two. Pages without a main button keep the full capsule.
+named and badged; the button is a circle on the right, the size of the open
+tab's pill, in a small capsule with the nav capsule's glass, so the two read
+as a pair. It is filled with the action colour and a white icon of what it
+does (`usePageMainButton`'s `icon`: send, cart, truck, check; check by
+default), grey while it waits, the kit spinner while busy. It shows no words:
+its text is its accessible name and title, a count it carries is a corner
+badge like the nav's (`badge`), and why it waits is said in the hint over the
+row (`inactiveHint`). 8 px between them and at the ends. Scrolling down
+changes neither. The row fits a 320 px phone and large text sizes (the tabs
+narrow to their 44 px tap), so it never stacks. The page keeps room for one
+row, not two. Pages without a main button keep the full capsule.
 
 ---
 

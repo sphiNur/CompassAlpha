@@ -81,12 +81,12 @@
 @layer components {
   /* The dock (owner, 2026-11-14, "main button on the nav's row"): the
      capsule and the page's main button (PageMainButton.tsx) float in one
-     box at the foot of the screen. With a main button and room for both
-     (the container query below) they share one row: the capsule shows
-     icons only on the left, the button is a pill of the same height on
-     the right, 8px between them and from the screen's sides. Too narrow
-     for that (under 21rem: a 320px phone, or a large text size), or where
-     container queries are missing, the button sits above the capsule.
+     box at the foot of the screen, on one row: the capsule on the left
+     with icons only, the button on the right as a circle the size of the
+     open tab's pill, in a capsule of its own with the nav's glass, so the
+     two read as a pair. 8px from the screen's sides. The circle leaves
+     room for the capsule on a 320px phone and at large text sizes (the
+     tabs narrow to their 44px tap first), so the row never stacks.
      pointer-events: only the controls take taps, not the gap between. */
   .app-dock {
     position: absolute;
@@ -97,44 +97,67 @@
     max-width: 480px;
     margin-inline: auto;
     pointer-events: none;
-    container: app-dock / inline-size;
     --app-dock-inset-x: var(--app-nav-inset-x);
     --app-dock-gap: 8px;
     /* An icon-only tab: the 44px tap of WALK-03, growing with the text. */
     --app-nav-icon-w: 2.75rem;
+    /* The main button's circle: the open tab's pill height (BottomNav's
+       inset-y-1 in a full --app-nav-h capsule: 52px at the default text
+       size, growing with it). Spelled out from --app-nav-h's value, which
+       the shell sets to 0 when there is no nav. Its capsule's 4px padding
+       makes it the nav capsule's height. */
+    --app-main-btn-d: calc(max(60px, calc(46px + 0.875rem)) - 8px);
   }
   /* The row has 8px at both ends, as between the capsule and the button. */
   [data-main-button] .app-dock[data-nav] {
     --app-dock-inset-x: var(--app-dock-gap);
   }
   /* A main button without the nav (one tab or none): off the home strip.
-     Inside the dock, so its height (published as --app-main-btn-h)
-     includes it. */
+     Inside the dock, so what it adds (--app-main-btn-h) includes it. */
   .app-dock:not([data-nav]) {
     padding-bottom: var(--app-dock-gap);
   }
   .app-dock-row {
+    position: relative;
     display: flex;
-    /* Stacked: the nav comes first for Tab, the button shows above it. */
-    flex-direction: column-reverse;
+    align-items: flex-end;
+    justify-content: space-between;
     gap: var(--app-dock-gap);
   }
   .app-dock-row > * {
     pointer-events: auto;
   }
   .app-dock-action {
-    position: relative;
-    min-width: 0;
+    flex: none;
+    margin-inline-start: auto;
   }
-  /* The button floats like the capsule: the capsule's shadow. */
+  /* The circle's capsule: exactly the nav capsule's surface (see
+     .app-nav::before and the blur below), round, 4px around the circle. */
+  .app-main-capsule {
+    display: flex;
+    padding: 4px;
+    border-radius: var(--r-pill);
+    background: var(--c-nav-surface-solid);
+    box-shadow:
+      var(--shadow-nav),
+      inset 0 0 0 1px var(--c-divider);
+  }
+  /* The circle: at least the 44px tap (it is 52px), growing with the text. */
   .app-main-btn {
-    box-shadow: var(--shadow-nav);
-    -webkit-hyphens: auto;
-    hyphens: auto;
+    width: var(--app-main-btn-d);
+    height: var(--app-main-btn-d);
+    min-width: 44px;
+    min-height: 44px;
+    flex: none;
   }
   /* Why the button is inactive, on the capsule's surface (it floats over
-     the page too). */
+     the page too), over the whole row. */
   .app-dock-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + var(--app-dock-gap));
+    margin: 0;
     border-radius: var(--r-card);
     padding: 6px 12px;
     background: var(--c-nav-surface-solid);
@@ -159,10 +182,6 @@
     --app-nav-compact-scale: 0.8;
     --app-nav-compact-pill-scale: 0.77;
   }
-  .app-nav-item {
-    /* Its place in the bar (BottomNav.tsx), for the compact row's slide. */
-    --app-nav-i: 0;
-  }
   /* Review MWC-14 (V10, modern-web-guidance: shrinking-header-on-scroll):
      "animate only performant CSS properties … such as transform and
      opacity". The capsule's surface is its ::before, which scales to the
@@ -186,6 +205,7 @@
      the blur, rows under the capsule would show through its labels. */
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .app-nav::before,
+    .app-main-capsule,
     .app-dock-hint {
       background: var(--c-nav-surface);
       -webkit-backdrop-filter: saturate(1.6) blur(16px);
@@ -194,6 +214,7 @@
   }
   @media (prefers-reduced-transparency: reduce) {
     .app-nav::before,
+    .app-main-capsule,
     .app-dock-hint {
       background: var(--c-nav-surface-solid);
       -webkit-backdrop-filter: none;
@@ -249,108 +270,34 @@
     }
   }
 
-  /* The capsule and the main button on one row (see .app-dock). 21rem is
-     336px at the default text size: a 360px phone. There, with five tabs,
-     the button is 108px wide, 138 on a 390px phone and 178 on a 430px
-     one; its label takes up to two lines in a slightly smaller type
-     (13px), hyphenated where the browser knows the language. Pages
-     without a main button keep the full capsule with labels. */
-  @container app-dock (min-width: 21rem) {
-    [data-main-button] .app-dock[data-nav] .app-dock-row {
-      flex-direction: row;
-      align-items: flex-end;
-    }
-    [data-main-button] .app-dock[data-nav] .app-nav {
-      flex: none;
-    }
-    [data-main-button] .app-dock[data-nav] .app-nav-item {
-      flex: none;
-      width: var(--app-nav-icon-w);
-      min-width: 0;
-    }
-    /* Icons only: each tab keeps its name (aria-label, BottomNav.tsx). */
-    [data-main-button] .app-dock[data-nav] .app-nav-label {
-      display: none;
-    }
-    [data-main-button] .app-dock[data-nav] .app-dock-action {
-      flex: 1 1 0;
-    }
-    [data-main-button] .app-dock[data-nav] .app-main-btn {
-      min-height: var(--app-nav-h);
-      padding-inline: 0.625rem;
-      font-size: 0.8125rem;
-      line-height: 1.25;
-    }
-    /* The hint over the whole row, not squeezed into the button's width. */
-    [data-main-button] .app-dock[data-nav] .app-dock-hint {
-      position: absolute;
-      right: 0;
-      bottom: calc(100% + var(--app-dock-gap));
-      width: 100cqw;
-      margin: 0;
-    }
-    /* Scrolling down: the capsule keeps the open tab only, and the button
-       takes the room (the box changes at once; nothing animates a width).
-       The capsule keeps the button's height, so its compact scales are
-       off here. With keyboard focus in the nav, every tab stays. */
-    [data-main-button]
-      [data-nav-compact]
-      .app-dock[data-nav]
-      .app-nav:not(:focus-within)
-      .app-nav-item:not([aria-current]) {
-      display: none;
-    }
-    [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav::before,
-    [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-active,
-    [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-icon {
-      transform: none;
-    }
+  /* The capsule beside the main button (see .app-dock): icons only, each
+     tab keeping its name (aria-label, BottomNav.tsx). The tabs are their
+     44px tap wide, and narrow towards it only where the row is short of
+     room (large text). Pages without a main button keep the full capsule
+     with labels. */
+  [data-main-button] .app-dock[data-nav] .app-nav {
+    flex: 0 1 auto;
   }
-  /* The row's motion: the open tab slides to the front of the compact
-     capsule and the label fades in at its new width, and again at its
-     old width coming back. Transforms and opacity only, and none under
-     reduced motion (where the capsule never compacts anyway). */
-  @media (prefers-reduced-motion: no-preference) {
-    @container app-dock (min-width: 21rem) {
-      [data-main-button]
-        .app-shell[data-nav-compact]
-        .app-dock[data-nav]
-        .app-nav-item[aria-current] {
-        animation: app-nav-to-front var(--t-quick) var(--easing);
-      }
-      [data-main-button] .app-shell[data-nav-compact] .app-dock[data-nav] .app-main-btn-label {
-        animation: app-dock-in-a var(--t-quick) var(--easing);
-      }
-      [data-main-button]
-        .app-shell:not([data-nav-compact])
-        .app-dock[data-nav]
-        .app-main-btn-label {
-        animation: app-dock-in-b var(--t-quick) var(--easing);
-      }
-    }
+  [data-main-button] .app-dock[data-nav] .app-nav-item {
+    flex: 0 1 var(--app-nav-icon-w);
+    min-width: 44px;
   }
-  @keyframes app-nav-to-front {
-    from {
-      transform: translateX(calc(var(--app-nav-i) * var(--app-nav-icon-w)));
-    }
+  [data-main-button] .app-dock[data-nav] .app-nav-label {
+    display: none;
   }
-  /* Two names for one fade, so that each change of state starts it again. */
-  @keyframes app-dock-in-a {
-    from {
-      opacity: 0;
-    }
-  }
-  @keyframes app-dock-in-b {
-    from {
-      opacity: 0;
-    }
+  /* Scrolling down does not shrink this capsule: it keeps the height of
+     the button's capsule beside it. */
+  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav::before,
+  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-active,
+  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-icon {
+    transform: none;
   }
 
   /* <main>, the one scroller: room under the last content for the
      capsule, and for focus moved there by keyboard. With a main button,
      also for what it adds above the capsule's top (--app-main-btn-h:
-     nothing when the two share a row, the button and the gap when it
-     sits above; PageMainButton.tsx publishes it). */
+     nothing beside it on the row, the hint over the row when shown;
+     PageMainButton.tsx publishes it). */
   .app-main {
     padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));
     scroll-padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));

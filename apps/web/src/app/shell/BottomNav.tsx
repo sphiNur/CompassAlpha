@@ -11,7 +11,7 @@
  * `.app-nav` in styles/index.css. On a page with a main button it shares
  * a row with it (Shell.tsx's dock): icons only, each still named.
  */
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { IconMore, Sheet } from '@compass/ui';
 import { useNavigationBlocked } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
@@ -21,6 +21,7 @@ import { navBadges, type NavBadge } from '../../lib/navBadges';
 import { trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
 import type { Tab } from '../../stores/navStore';
+import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
 import { navLayout } from './navLayout';
 import { showsNav, type TabDef } from './tabs';
 
@@ -132,13 +133,12 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
         aria-label={i18n.t('nav.primaryAriaLabel')}
         aria-busy={busy || undefined}
       >
-        {bar.map((t, index) => {
+        {bar.map((t) => {
           const label = i18n.t(t.labelKey);
           const short = i18n.t(t.shortKey);
           return (
             <NavItem
               key={t.key}
-              index={index}
               testId={`nav-${t.key}`}
               active={tab === t.key}
               Icon={t.Icon}
@@ -157,7 +157,6 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
         })}
         {more.length > 0 ? (
           <NavItem
-            index={bar.length}
             testId="nav-more"
             active={!!current}
             Icon={current?.Icon ?? IconMore}
@@ -223,8 +222,6 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
 }
 
 interface NavItemProps {
-  /** Its place in the bar: the compact row slides it from there (index.css). */
-  index: number;
   testId: string;
   active: boolean;
   Icon: TabDef['Icon'];
@@ -245,7 +242,6 @@ interface NavItemProps {
  * (D17) and truncates only past that.
  */
 function NavItem({
-  index,
   testId,
   active,
   Icon,
@@ -267,7 +263,6 @@ function NavItem({
       aria-expanded={ariaHasPopup ? ariaExpanded : undefined}
       onClick={onClick}
       disabled={disabled}
-      style={{ '--app-nav-i': index } as CSSProperties}
       className={
         'app-nav-item press relative flex min-w-[min(2.75rem,20%)] flex-auto flex-col items-center justify-center gap-0.5 px-0.5 ' +
         (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
@@ -311,10 +306,10 @@ function NavBadgeMark({ tabKey, badge }: { tabKey: string; badge: NavBadge | und
       className={
         badge === 'dot'
           ? 'absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)]'
-          : 'absolute -right-2.5 -top-1.5 min-w-[1.125rem] rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)] px-1 text-center text-[0.625rem] font-semibold leading-[0.875rem] text-[var(--c-danger-fg)] tabular-nums'
+          : `absolute -right-2.5 -top-1.5 ${NAV_BADGE_COUNT_CLASS}`
       }
     >
-      {badge === 'dot' ? null : badge > 99 ? '99+' : badge}
+      {badge === 'dot' ? null : navBadgeCountText(badge)}
     </span>
   );
 }

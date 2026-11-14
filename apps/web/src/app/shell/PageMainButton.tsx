@@ -1,18 +1,19 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { Spinner, useTapGuard } from '@compass/ui';
+import { IconCheck, IconRun, IconSend, IconTruck, Spinner, useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
 import { announce } from '../../lib/announce';
-import { usePageMainButtonState } from '../../hooks/usePageMainButton';
+import { usePageMainButtonState, type PageMainButtonIcon } from '../../hooks/usePageMainButton';
 import { mainButtonInsetOf, publishMainButtonInset } from '../../lib/mainButtonInset';
+import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
 
 /**
  * In-DOM page primary action button (M3.49, 2026-05-23). Reads from the
  * module-level store written by usePageMainButton(). Renders nothing
  * when no page has registered an action. When a page sets one, the
  * button floats in the shell's dock (Shell.tsx) with the nav capsule:
- * since 2026-11-14 (owner) on the capsule's row, as a pill on its right,
- * or above it where the row is too narrow (`.app-dock` in
+ * since 2026-11-14 (owner) on the capsule's row, a circle with the
+ * action's icon in a capsule of its own (`.app-dock` in
  * styles/index.css).
  *
  * Telegram's native MainButton is kept permanently hidden (effect
@@ -35,8 +36,7 @@ export function PageMainButton() {
   // flight the button stays focusable (aria-disabled, the click dropped)
   // instead of `disabled`, which threw focus off it, and "Please wait…"
   // is said through the app's polite region when this button's press
-  // started it. aria-busy alone is barely read. No spinner (the look
-  // stays).
+  // started it. aria-busy alone is barely read.
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pressedAt = useRef(0);
   const wasBusy = useRef(busy);
@@ -61,8 +61,8 @@ export function PageMainButton() {
   // 2026-10-21 FE-05: publish what the button adds above the nav as
   // --app-main-btn-h, so the toast stack (anchored above the nav) and the
   // room <main> keeps under its last content clear it. 2026-11-14: on the
-  // nav's row that is nothing, or the hint over the row; stacked above the
-  // capsule, the button and the gap (mainButtonInsetOf).
+  // nav's row that is nothing, or the hint over the row; without the nav,
+  // the dock from the button's (or the hint's) top (mainButtonInsetOf).
   const colRef = useRef<HTMLDivElement>(null);
   const hintRef = useRef<HTMLParagraphElement>(null);
   const shown = Boolean(state?.visible);
@@ -70,8 +70,8 @@ export function PageMainButton() {
   const hint = state && !interactable && !busy ? state.inactiveHint : undefined;
   const hasHint = !!hint;
   // 2026-11-14: `data-main-button` on <html> tells the shell's CSS
-  // (styles/index.css) to put the button on the nav's row, with the
-  // capsule showing icons only.
+  // (styles/index.css) to show the capsule beside the button with icons
+  // only.
   useLayoutEffect(() => {
     const col = colRef.current;
     const html = typeof document !== 'undefined' ? document.documentElement : null;
@@ -93,7 +93,7 @@ export function PageMainButton() {
         mainButtonInsetOf({
           navTop: nav ? nav.getBoundingClientRect().top : null,
           contentTop: top,
-          dockHeight: dock ? dock.offsetHeight : col.offsetHeight,
+          dockBottom: (dock ?? col).getBoundingClientRect().bottom,
         }),
       );
     };
@@ -113,11 +113,13 @@ export function PageMainButton() {
   // A11Y-2: an inactive button whose page can say why stays in the Tab
   // order (aria-disabled) and points at the problem when used.
   const explains = !interactable && !busy && !!state.onInactiveClick;
+  const Icon = MAIN_BUTTON_ICONS[state.icon] ?? IconCheck;
   // 2026-11-14 (owner): the button floats in the dock with the nav
-  // capsule (Shell.tsx), after it in the Tab order: on the capsule's row
-  // on the right, the capsule's height, or above it where the row is too
-  // narrow. Swipes between tabs never start here: the dock is outside the
-  // pager (SwipePager.tsx).
+  // capsule (Shell.tsx), after it in the Tab order, on the capsule's row:
+  // a circle the size of the open tab's pill, in a capsule of the nav's
+  // glass. No words on it; they are its accessible name and its title. A
+  // count rides it as a corner badge, as on the tabs. Swipes between tabs
+  // never start here: the dock is outside the pager (SwipePager.tsx).
   return (
     <div ref={colRef} className="app-dock-action">
       {hint ? (
@@ -125,56 +127,64 @@ export function PageMainButton() {
           ref={hintRef}
           id="page-main-button-hint"
           data-testid="page-main-button-hint"
-          className="app-dock-hint mb-2 text-center text-old-label text-[var(--c-fg-muted)]"
+          className="app-dock-hint text-center text-old-label text-[var(--c-fg-muted)]"
         >
           {hint}
         </p>
       ) : null}
-      <button
-        ref={buttonRef}
-        type="button"
-        data-testid="page-main-button"
-        disabled={(!interactable && !explains && !busy) || undefined}
-        aria-disabled={explains || busy || undefined}
-        aria-describedby={hint ? 'page-main-button-hint' : undefined}
-        onClick={
-          busy
-            ? undefined
-            : explains
-              ? state.onInactiveClick
-              : () => {
-                  pressedAt.current = Date.now();
-                  guardTap(state.onClick, state.text)?.();
-                }
-        }
-        aria-busy={busy || undefined}
-        // Review MWA-10 (modern-web-guidance: respect-os-text-scale): 48px
-        // is a minimum, so the bar grows with larger phone text (its
-        // height is measured and published above) instead of clipping.
-        className={
-          'app-main-btn flex min-h-12 w-full min-w-0 items-center justify-center gap-2 rounded-[var(--r-pill)] px-4 py-1.5 text-center text-old-h3 font-semibold ' +
-          (interactable
-            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
-            : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-        }
-      >
-        {/* Review MWC-08 (modern-web-guidance: single-line-overflow): a
-              long action ("Отправить на проверку…") wraps to two balanced
-              lines instead of being cut; the bar grows (min-h-12). */}
-        {/* Review MWB-10 (V5, modern-web-guidance: progress): a busy main
-              button shows the kit spinner beside its label, as a busy kit
-              Button does; the button's width is the layout's, so nothing
-              moves. */}
-        {busy ? <Spinner size={16} className="shrink-0" /> : null}
-        {/* 2026-11-14: on the nav's row the label is 13px, hyphenated,
-              still at most two lines (index.css). */}
-        <span className="app-main-btn-label min-w-0 break-words line-clamp-2 [text-wrap:balance]">
-          {state.text}
-        </span>
-      </button>
+      <div className="app-main-capsule">
+        <button
+          ref={buttonRef}
+          type="button"
+          data-testid="page-main-button"
+          aria-label={state.text}
+          title={state.text}
+          disabled={(!interactable && !explains && !busy) || undefined}
+          aria-disabled={explains || busy || undefined}
+          aria-describedby={hint ? 'page-main-button-hint' : undefined}
+          onClick={
+            busy
+              ? undefined
+              : explains
+                ? state.onInactiveClick
+                : () => {
+                    pressedAt.current = Date.now();
+                    guardTap(state.onClick, state.text)?.();
+                  }
+          }
+          aria-busy={busy || undefined}
+          className={
+            'app-main-btn press relative flex items-center justify-center rounded-full ' +
+            (interactable
+              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
+              : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+          }
+        >
+          {/* Review MWB-10 (V5, modern-web-guidance: progress): a busy main
+                button shows the kit spinner, here in the icon's place. */}
+          {busy ? <Spinner size={22} /> : <Icon size={24} />}
+          {state.badge ? (
+            <span
+              aria-hidden
+              data-testid="page-main-button-badge"
+              className={`absolute -right-1 -top-1 ${NAV_BADGE_COUNT_CLASS}`}
+            >
+              {navBadgeCountText(state.badge)}
+            </span>
+          ) : null}
+        </button>
+      </div>
     </div>
   );
 }
+
+/** The circle's icon per action (usePageMainButton's `icon`). */
+const MAIN_BUTTON_ICONS: Record<PageMainButtonIcon, typeof IconCheck> = {
+  check: IconCheck,
+  send: IconSend,
+  cart: IconRun,
+  truck: IconTruck,
+};
 
 /**
  * Review MWB-10: whether the write that just started is said: the main
