@@ -48,12 +48,6 @@ import {
 } from '../lib/errorText';
 import { useI18n } from './useI18n';
 
-/**
- * How long the stale-version toast keeps its Refresh button up: the
- * sentence is long, and 4 s left little time to reach the button.
- */
-export const STALE_TOAST_MS = 8000;
-
 export interface ErrToastOptions {
   /**
    * The write sends the same idempotency key when repeated with the same
@@ -93,7 +87,8 @@ export function useErrToast(): (
     // persisted cache (lib/queryPersist.ts) keeps working offline.
     toast.show(text, {
       tone: 'danger',
-      ttlMs: STALE_TOAST_MS,
+      // Review MWB-05 (V6): an error stays until it is closed (its ✕ or
+      // Refresh); it went after 8 s.
       actions: [
         {
           label: i18n.t('common.refresh'),

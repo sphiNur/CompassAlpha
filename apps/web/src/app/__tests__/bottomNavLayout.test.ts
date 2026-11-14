@@ -37,3 +37,28 @@ describe('WALK-03: the bottom nav taps as 44', () => {
     expect(navSrc).toMatch(/press flex min-h-12 w-full/);
   });
 });
+
+describe('Review MWC-14 (V10): the capsule shrinks with transforms only', () => {
+  const rule = (selector: string) => {
+    const at = appCss.indexOf(`${selector} {`);
+    return at < 0 ? '' : appCss.slice(at, appCss.indexOf('}', at));
+  };
+
+  test('its height is not animated, and stays put when compact', () => {
+    expect(rule('  .app-nav')).not.toMatch(/transition:[^;]*\bheight\b/);
+    expect(appCss).not.toMatch(/\[data-nav-compact\] \.app-nav \{\s*height/);
+  });
+
+  test('the compact scales are the 48-of-60 capsule and the 40-of-52 pill', () => {
+    const scale = (name: string) =>
+      Number(new RegExp(`${name}: ([\\d.]+);`).exec(appCss)?.[1] ?? 'NaN');
+    expect(scale('--app-nav-compact-scale')).toBeCloseTo(
+      px('--app-nav-h-compact') / px('--app-nav-h'),
+      2,
+    );
+    expect(scale('--app-nav-compact-pill-scale')).toBeCloseTo(
+      (px('--app-nav-h-compact') - 8) / (px('--app-nav-h') - 8),
+      2,
+    );
+  });
+});

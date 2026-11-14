@@ -54,6 +54,20 @@
     outline: 2px solid var(--c-ring);
     outline-offset: 2px;
   }
+  /* Review MWC-10 (V9, modern-web-guidance: improve-text-layout-and-legibility):
+     "Apply `text-wrap: balance` to short headings (h1, h2, h3) and
+     `text-wrap: pretty` to body text (p, li)", never to `*`. Element
+     selectors, so a class that keeps a line whole (truncate,
+     whitespace-nowrap) still wins. Ignored where unsupported. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p,
+  li {
+    text-wrap: pretty;
+  }
   /* Review UI-15 (2026-11-10): `.scrollbar-hide` and the sheet
      animations are in @compass/ui/tokens.css, next to the components
      that use them. */
@@ -76,44 +90,96 @@
     display: flex;
     padding-inline: 4px;
     border-radius: var(--r-pill);
+    transition:
+      opacity 120ms ease,
+      transform var(--t-quick) var(--easing);
+    /* Review MWC-14 (V10): the compact capsule's sizes (48 of 60 px; the
+       active tab's pill 40 of 52). Scales, so the shrink is transforms only. */
+    --app-nav-compact-scale: 0.8;
+    --app-nav-compact-pill-scale: 0.77;
+  }
+  /* Review MWC-14 (V10, modern-web-guidance: shrinking-header-on-scroll):
+     "animate only performant CSS properties … such as transform and
+     opacity". The capsule's surface is its ::before, which scales to the
+     compact height from the bottom edge; the box keeps its height, so
+     nothing is laid out again while it shrinks. Same look as the height
+     animation it replaces. */
+  .app-nav::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
     background: var(--c-nav-surface-solid);
     box-shadow:
       var(--shadow-nav),
       inset 0 0 0 1px var(--c-divider);
-    transition:
-      height var(--t-quick) var(--easing),
-      opacity 120ms ease;
+    transform-origin: 50% 100%;
+    transition: transform var(--t-quick) var(--easing);
   }
   /* Translucent only where the browser blurs what is behind it: without
      the blur, rows under the capsule would show through its labels. */
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    .app-nav {
+    .app-nav::before {
       background: var(--c-nav-surface);
       -webkit-backdrop-filter: saturate(1.6) blur(16px);
       backdrop-filter: saturate(1.6) blur(16px);
     }
   }
   @media (prefers-reduced-transparency: reduce) {
-    .app-nav {
+    .app-nav::before {
       background: var(--c-nav-surface-solid);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
   }
+  .app-nav-active,
+  .app-nav-icon,
+  .app-nav-label {
+    transition:
+      transform var(--t-quick) var(--easing),
+      opacity var(--t-quick) var(--easing);
+  }
+  .app-nav-active {
+    transform-origin: 50% 100%;
+  }
   /* Scrolling down: a lower capsule with icons only, each still a 48px
-     tap. Shell sets the attribute; never under reduced motion. */
-  [data-nav-compact] .app-nav {
-    height: var(--app-nav-h-compact);
-  }
-  [data-nav-compact] .app-nav-label {
-    display: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    [data-nav-compact] .app-nav {
-      height: var(--app-nav-h);
+     tap. Shell sets the attribute; never under reduced motion (Shell does
+     not set it then, and the rules below are off too). */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-nav-compact] .app-nav::before {
+      transform: scaleY(var(--app-nav-compact-scale));
+    }
+    [data-nav-compact] .app-nav-active {
+      transform: scaleY(var(--app-nav-compact-pill-scale));
+    }
+    /* The icon moves down to the middle of the compact capsule: half the
+       height it loses plus half the label line (gap-0.5 + the label's
+       line, text-old-label at leading-tight) it no longer sits above. */
+    [data-nav-compact] .app-nav-icon {
+      transform: translateY(
+        calc((var(--app-nav-h) - var(--app-nav-h-compact)) / 2 + (0.125rem + 0.6875rem * 1.25) / 2)
+      );
     }
     [data-nav-compact] .app-nav-label {
-      display: revert;
+      opacity: 0;
+    }
+  }
+  /* Review MWC-15 (V10, modern-web-guidance: content-first-noise-reduction):
+     "don't stack several sticky bars". On a short screen (a phone on its
+     side, or the keyboard up) the page's sticky bar already scrolls away
+     (STICKY_BAR_SHORT_VIEWPORT); scrolling down there now takes the
+     capsule away too, and scrolling up brings it back. Not on a page with
+     a main button: the room under that bar stays, so it would only leave
+     a gap. */
+  @media (max-height: 500px) and (prefers-reduced-motion: no-preference) {
+    html:not([data-main-button]) [data-nav-compact] .app-nav {
+      transform: translateY(calc(100% + var(--app-nav-float) + var(--app-safe-bottom)));
+      opacity: 0;
+      pointer-events: none;
+    }
+    html:not([data-main-button]) [data-nav-compact] .app-fade-bottom {
+      opacity: 0;
     }
   }
 
@@ -160,13 +226,22 @@
     transition: opacity var(--t-fade) var(--easing);
   }
   .app-fade-top {
-    top: 0;
+    /* Review MWC-07 (V10, modern-web-guidance: soft-edge-content-fade):
+       under the page's sticky bar (StickyPageBar publishes its height),
+       where rows scroll in, not over the bar, whose top edge it washed. */
+    top: var(--app-sticky-bar-h, 0px);
     height: var(--app-fade-h);
     background: linear-gradient(to bottom, var(--c-bg), transparent);
     opacity: 0;
   }
   [data-scrolled] .app-fade-top {
     opacity: 1;
+  }
+  /* MWC-07: on a short screen the bar scrolls away, so the fade is at the top. */
+  @media (max-height: 500px) {
+    .app-fade-top {
+      top: 0;
+    }
   }
   .app-fade-bottom {
     bottom: 0;

@@ -359,6 +359,16 @@ export function FieldGroup({ label, hint, error, children, className }: FieldGro
 }
 
 /**
+ * Review MWA-07 (V5): what follows a required label: " (required)", or
+ * "（必填）" with no space before a full-width bracket. Exported for tests.
+ */
+export function requiredMarkText(mark: string): string {
+  const said = mark.trim();
+  if (!said) return '';
+  return /^[\u3000-\u303f\uff00-\uffef]/.test(said) ? said : ` ${said}`;
+}
+
+/**
  * Field label — the one definition of a form-field label (sentence
  * case, `text-old-label font-semibold text-fg-muted`): Field, FieldGroup
  * and PhotoCapture draw theirs with it. A section heading is
@@ -378,14 +388,21 @@ export function FieldLabel({
   children: ReactNode;
   id?: string;
   htmlFor?: string;
-  /** Draws the "*". The control says it is required (aria-required). */
+  /** Draws "(required)". The control says it is required (aria-required). */
   required?: boolean;
 }) {
+  const labels = useUiLabels();
   const look = cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className);
+  // Review MWA-07 (V5, modern-web-guidance: forms): "indicate clearly
+  // which fields are required … visually in the label". A word, not a
+  // "*" (owner, 2026-11-14). aria-hidden: the control's aria-required
+  // says it, so the field's name stays as it was.
   const text = required ? (
     <>
       {children}
-      <span aria-hidden> *</span>
+      <span aria-hidden className="font-normal">
+        {requiredMarkText(labels.requiredMark)}
+      </span>
     </>
   ) : (
     children

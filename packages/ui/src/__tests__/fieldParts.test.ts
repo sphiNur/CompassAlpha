@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { FieldError } from '../components/FieldError';
 import { Input } from '../components/Input';
 import { PickerButton } from '../components/PickerButton';
-import { Field, FieldGroup, FieldLabel } from '../components/Rows';
+import { Field, FieldGroup, FieldLabel, requiredMarkText } from '../components/Rows';
 import { Select } from '../components/Select';
 import { Textarea } from '../components/Textarea';
 
@@ -73,9 +73,11 @@ describe('Field wiring', () => {
     expect(attr(html, 'input', 'aria-describedby')).toBe(idOf(html, 'Optional'));
   });
 
-  test('required draws a "*" a screen reader skips and marks the control', () => {
+  // Review MWA-07 (V5): "(required)" instead of "*", still skipped by a
+  // screen reader (the control's `required` says it).
+  test('required draws "(required)" a screen reader skips and marks the control', () => {
     const html = render({ required: true });
-    expect(html).toContain('Name<span aria-hidden="true"> *</span>');
+    expect(html).toContain('Name<span aria-hidden="true" class="font-normal"> (required)</span>');
     // Review MWA-15: the native `required` (it implies aria-required), and
     // aria-invalid "false" until an error shows (WebKit reads an empty
     // required field as invalid otherwise).
@@ -110,7 +112,7 @@ describe('Field wiring', () => {
   test('the label names the control by its id and holds only its text', () => {
     const html = render({ required: true });
     const label = /<label[^>]*>(.*?)<\/label>/.exec(html);
-    expect(label?.[1]).toBe('Name<span aria-hidden="true"> *</span>');
+    expect(label?.[1]).toBe('Name<span aria-hidden="true" class="font-normal"> (required)</span>');
     const controlId = attr(html, 'input', 'id');
     expect(controlId).toBeTruthy();
     expect(attr(html, 'label', 'for')).toBe(controlId);
@@ -161,5 +163,25 @@ describe('Field wiring', () => {
     expect(attr(html, 'div', 'aria-describedby')).toBe(
       `${idOf(html, 'Where they work')} ${idOf(html, 'Pick at least one')}`,
     );
+  });
+});
+
+describe('Review MWA-07 (V5): the required mark', () => {
+  test('a space before a bracket, none before a full-width one', () => {
+    expect(requiredMarkText('(required)')).toBe(' (required)');
+    expect(requiredMarkText('（必填）')).toBe('（必填）');
+    expect(requiredMarkText('  ')).toBe('');
+  });
+});
+
+describe('Review MWA-16 (V11): a textarea grows with its text', () => {
+  test('it carries the grow class and its resting rows; a caller style adds to it', () => {
+    const html = renderToStaticMarkup(
+      createElement(Textarea, { rows: 2, style: { color: 'red' } }),
+    );
+    expect(html).toContain('textarea-grow');
+    expect(html).toContain('rows="2"');
+    expect(html).toContain('--textarea-rows:2');
+    expect(html).toContain('color:red');
   });
 });

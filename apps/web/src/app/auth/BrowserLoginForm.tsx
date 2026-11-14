@@ -19,6 +19,7 @@ export function BrowserLoginForm({
   const i18n = useI18n();
   const [tgUserId, setTgUserId] = useState(initialDevBrowserTgUserId);
   const [accessCode, setAccessCode] = useState('');
+  const [showCode, setShowCode] = useState(false);
   return (
     <form
       className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline"
@@ -56,21 +57,57 @@ export function BrowserLoginForm({
         />
       </Field>
       <Field label={i18n.t('dev.browserLogin.accessCode')}>
-        <Input
-          type="password"
-          name="accessCode"
-          required
-          enterKeyHint="go"
-          autoComplete="current-password"
-          value={accessCode}
-          onChange={(e) => setAccessCode(e.target.value)}
-          autoFocus={!!tgUserId}
-          placeholder={i18n.t('dev.browserLogin.accessCodePlaceholder')}
-        />
+        {/* Review MWA-13 (V11, modern-web-guidance: autofill-sign-in-form,
+            forms): "provide an accessible toggle <button type="button">
+            with aria-pressed allowing users to unmask password input". */}
+        <div className="relative">
+          <Input
+            type={showCode ? 'text' : 'password'}
+            name="accessCode"
+            required
+            enterKeyHint="go"
+            autoComplete="current-password"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={accessCode}
+            onChange={(e) => setAccessCode(e.target.value)}
+            autoFocus={!!tgUserId}
+            placeholder={i18n.t('dev.browserLogin.accessCodePlaceholder')}
+            className="pr-12"
+          />
+          <button
+            type="button"
+            aria-pressed={showCode}
+            aria-label={i18n.t('dev.browserLogin.showCode')}
+            onClick={() => setShowCode((v) => !v)}
+            className="press absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-[var(--r-pill)] text-[var(--c-fg-muted)]"
+          >
+            <EyeIcon open={showCode} />
+          </button>
+        </div>
       </Field>
       <Button block type="submit" loading={pending} disabled={!tgUserId.trim() || !accessCode}>
         {i18n.t('dev.browserLogin.submit')}
       </Button>
     </form>
+  );
+}
+
+/** MWA-13: an eye, struck through while the code is hidden. */
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M1.75 10S4.75 4.25 10 4.25 18.25 10 18.25 10 15.25 15.75 10 15.75 1.75 10 1.75 10Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      {open ? null : (
+        <path d="M3 17 17 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      )}
+    </svg>
   );
 }

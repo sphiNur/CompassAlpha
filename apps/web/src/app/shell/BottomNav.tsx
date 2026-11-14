@@ -268,10 +268,12 @@ function NavItem({
       {active ? (
         <span
           aria-hidden
-          className="absolute inset-x-0.5 inset-y-1 rounded-[var(--r-pill)] bg-[var(--c-nav-active)]"
+          // app-nav-active / -icon / -label: the compact capsule's
+          // transforms (index.css, review MWC-14).
+          className="app-nav-active absolute inset-x-0.5 inset-y-1 rounded-[var(--r-pill)] bg-[var(--c-nav-active)]"
         />
       ) : null}
-      <span className="relative inline-flex">
+      <span className="app-nav-icon relative inline-flex">
         <Icon size={22} />
         {badge}
       </span>

@@ -36,6 +36,11 @@ export const uz = {
   'common.busy': 'Iltimos, kuting…',
   'common.notifications': 'Bildirishnomalar',
   'common.actionsAvailable': 'Amallar mavjud',
+  // Review MWA-07 (V5)
+  'common.requiredMark': '(majburiy)',
+  'common.enterReason': 'Sababni yozing.',
+  // Review MWB-05 / MWB-07 (V6)
+  'common.closeNotification': 'Bildirishnomani yopish',
   'common.archive': 'Arxivlash',
   'common.discard': 'Saqlamaslik',
   'common.archived': 'arxivlangan',
@@ -771,6 +776,7 @@ export const uz = {
   'dev.browserLogin.tgIdPlaceholder': 'masalan, {example}',
   'dev.browserLogin.accessCode': 'Kirish kodi',
   'dev.browserLogin.accessCodePlaceholder': 'Administrator beradi',
+  'dev.browserLogin.showCode': 'Kodni koʻrsatish',
   'dev.browserLogin.submit': 'Test muhitiga kirish',
   'dev.diag.queryFailed': 'Kirish usullarini oʻqib boʻlmadi: {error}',
   'dev.diag.waiting': 'Server kirish usullarini qaytarishini kutmoqdamiz.',
@@ -1601,6 +1607,8 @@ export const uz = {
   'run.action.allocateAcrossStores': 'Doʻkonlar boʻyicha taqsimlash',
   'run.action.actualQtyAriaLabel': 'haqiqiy miqdor',
   'run.action.unitPriceAriaLabel': 'birlik narxi',
+  'run.action.qtyLabelShort': 'Miqdor',
+  'run.action.priceLabelShort': 'Narx',
   'run.action.savePurchaseAriaLabel': 'Xaridni saqlash: {name}',
   'run.confirm.startDelivery.title': 'Yetkazishni boshlaymizmi?',
   'run.confirm.startDelivery.body':
@@ -2656,6 +2664,7 @@ export const uz = {
   'attendance.shift.note': 'Izoh',
   'attendance.shift.notePlaceholder': 'masalan, oshxona',
   'attendance.shift.delete': 'Smenani oʻchirish',
+  'attendance.shift.deleteConfirm': 'Bu smenani oʻchirasizmi?',
   'attendance.toast.punchReviewed': 'Belgi tekshirildi',
   'attendance.toast.punchVoided': 'Belgi yaroqsiz qilindi',
   'attendance.toast.enrollApproved': 'Yuz tasdiqlandi',

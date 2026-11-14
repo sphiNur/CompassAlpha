@@ -46,6 +46,11 @@ export const en = {
   'common.busy': 'Please wait…',
   'common.notifications': 'Notifications',
   'common.actionsAvailable': 'Actions available',
+  // Review MWA-07 (V5): beside a required field's label, and why a confirm waits.
+  'common.requiredMark': '(required)',
+  'common.enterReason': 'Enter a reason.',
+  // Review MWB-05 / MWB-07 (V6): the close button of an error toast.
+  'common.closeNotification': 'Close notification',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',
@@ -819,6 +824,8 @@ export const en = {
   'dev.browserLogin.tgIdPlaceholder': 'e.g. {example}',
   'dev.browserLogin.accessCode': 'Access code',
   'dev.browserLogin.accessCodePlaceholder': 'Given by an admin',
+  // Review MWA-13 (V11): the access code's show toggle (aria-pressed says whether it shows).
+  'dev.browserLogin.showCode': 'Show code',
   'dev.browserLogin.submit': 'Enter the test environment',
   'dev.diag.queryFailed': 'Could not read the sign-in modes: {error}',
   'dev.diag.waiting': 'Waiting for the server to return the sign-in modes.',
@@ -1683,6 +1690,9 @@ export const en = {
   'run.action.allocateAcrossStores': 'Allocate across stores',
   'run.action.actualQtyAriaLabel': 'actual quantity',
   'run.action.unitPriceAriaLabel': 'unit price',
+  // Review MWA-20 (V11): the visible labels over the run row's two fields.
+  'run.action.qtyLabelShort': 'Quantity',
+  'run.action.priceLabelShort': 'Price',
   'run.action.savePurchaseAriaLabel': 'Save purchase: {name}',
   'run.confirm.startDelivery.title': 'Start delivery?',
   'run.confirm.startDelivery.body':
@@ -2769,6 +2779,8 @@ export const en = {
   'attendance.shift.note': 'Note',
   'attendance.shift.notePlaceholder': 'e.g. kitchen',
   'attendance.shift.delete': 'Delete shift',
+  // Review MWB-06 (V7): deleting a shift asks first; the Undo stays.
+  'attendance.shift.deleteConfirm': 'Delete this shift?',
   'attendance.toast.punchReviewed': 'Punch checked',
   'attendance.toast.punchVoided': 'Punch voided',
   'attendance.toast.enrollApproved': 'Face approved',

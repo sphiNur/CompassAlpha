@@ -3,6 +3,7 @@ import {
   Button,
   cn,
   FieldError,
+  FieldLabel,
   Input,
   isCommitEnter,
   SectionLabel,
@@ -312,6 +313,7 @@ function ExtraRowEditor({
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
   const errorId = useId();
+  const nameId = useId();
   const [focusing, setFocusing] = useState(false);
   // Suggestions query — fetches up to 20 distinct names this store
   // has used in the last 30 days. Enabled only while the name input
@@ -327,8 +329,9 @@ function ExtraRowEditor({
     <div className={cn(surfaceClass, 'p-2', invalid && 'ring-1 ring-[var(--c-danger)]')}>
       {/* Walkthrough F1 (2026-11-05): name, qty, unit and remove shared one
           line, leaving the name a sliver (and less in Russian). The name
-          now has its own line; qty and unit sit under it. */}
-      <div className="flex items-center gap-2">
+          now has its own line; qty and unit sit under it. V11: items-end,
+          so the remove button stays level with the field under its label. */}
+      <div className="flex items-end gap-2">
         <div
           className="relative min-w-0 flex-1"
           // Focus moving to a suggestion (Tab) stays "in" the name field;
@@ -341,11 +344,16 @@ function ExtraRowEditor({
           }}
         >
           {/* DX-ORD-8 (2026-11-01): the placeholder was the only name, and
-              it is gone once something is typed. */}
+              it is gone once something is typed. Review MWA-20 (V11,
+              modern-web-guidance: forms): "Placeholders are not persistent
+              labels" — a small visible label names the field now, so it
+              stays when text is typed; the name is unchanged ("Item name"). */}
+          <FieldLabel htmlFor={nameId} className="mb-1">
+            {i18n.t('order.extras.namePlaceholder')}
+          </FieldLabel>
           <Input
+            id={nameId}
             value={row.name}
-            placeholder={i18n.t('order.extras.namePlaceholder')}
-            aria-label={i18n.t('order.extras.namePlaceholder')}
             maxLength={200}
             onChange={(e) => onChange({ name: e.target.value })}
             onFocus={() => setFocusing(true)}
@@ -393,7 +401,10 @@ function ExtraRowEditor({
             </ul>
           ) : null}
         </div>
-        <RemoveExtraButton label={i18n.t('order.extras.remove')} onClick={onRemove} />
+        {/* V11: centred on the field, not on the field and its label. */}
+        <div className="flex h-[var(--control-h)] shrink-0 items-center">
+          <RemoveExtraButton label={i18n.t('order.extras.remove')} onClick={onRemove} />
+        </div>
       </div>
       <div className="mt-2 flex items-center gap-2">
         <Input

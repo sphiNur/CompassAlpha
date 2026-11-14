@@ -92,6 +92,19 @@ const button = cva(
   },
 );
 
+/**
+ * Review MWB-10 (V5): the spinner of a busy button with no icon, sitting
+ * in the button's start padding. The negative margins take back exactly
+ * what the spinner and the button's 8 px gap add (size + 8), so the width
+ * does not change: sm (12 px padding) a 10 px ring 1 px from the edge,
+ * md (20 px) a 14 px ring 3 px in, lg (28 px) 14 px, 6 px in.
+ */
+export const SPINNER_FIT = {
+  sm: { size: 10, className: '-ml-[11px] -mr-[7px]' },
+  md: { size: 14, className: '-ml-[17px] -mr-[5px]' },
+  lg: { size: 14, className: '-ml-[22px]' },
+} as const;
+
 /** A second tap on a write button within this window is a double tap. */
 export const REPEAT_TAP_MS = 700;
 
@@ -208,6 +221,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       target.scrollIntoView?.({ block: 'nearest' });
     }, 0);
   };
+  // Review MWB-10 (V5, modern-web-guidance: progress): a busy button shows
+  // a small spinner beside its label without getting wider. A block button
+  // is as wide as its row anyway, and one with an icon swaps the icon for
+  // the spinner; any other button draws it in its own start padding.
+  const inlineSpinner = !!block || !!leadingIcon;
   const describedBy =
     [rest['aria-describedby'], hint ? hintId : undefined].filter(Boolean).join(' ') || undefined;
   const el = (
@@ -242,7 +260,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         guarded?.(e);
       }}
     >
-      {loading ? <Spinner size={16} /> : leadingIcon}
+      {loading ? (
+        <Spinner
+          size={inlineSpinner ? 16 : SPINNER_FIT[size ?? 'md'].size}
+          className={cn('shrink-0', !inlineSpinner && SPINNER_FIT[size ?? 'md'].className)}
+        />
+      ) : (
+        leadingIcon
+      )}
       {/* MWC-08: at most two lines, balanced, then "…"; a short label is one line. */}
       <span
         className={

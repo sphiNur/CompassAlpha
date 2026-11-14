@@ -46,12 +46,15 @@ export function SectionHeader({ title, subtitle, back, className }: SectionHeade
       <div className="px-4 pb-2 pt-3">
         <h1
           tabIndex={-1}
-          className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)] outline-none"
+          // Review MWC-10 (V9): balanced lines; the subtitle avoids a lone last word.
+          className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)] outline-none [text-wrap:balance]"
         >
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">{subtitle}</p>
+          <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]">
+            {subtitle}
+          </p>
         ) : null}
       </div>
     </div>

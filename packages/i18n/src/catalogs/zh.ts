@@ -29,6 +29,11 @@ export const zh = {
   'common.busy': '请稍候…',
   'common.notifications': '通知',
   'common.actionsAvailable': '有可用操作',
+  // Review MWA-07 (V5)
+  'common.requiredMark': '（必填）',
+  'common.enterReason': '请填写原因。',
+  // Review MWB-05 / MWB-07 (V6)
+  'common.closeNotification': '关闭通知',
   'common.archive': '归档',
   'common.discard': '放弃更改',
   'common.archived': '已归档',
@@ -704,6 +709,7 @@ export const zh = {
   'dev.browserLogin.tgIdPlaceholder': '例如：{example}',
   'dev.browserLogin.accessCode': '访问码',
   'dev.browserLogin.accessCodePlaceholder': '由管理员提供',
+  'dev.browserLogin.showCode': '显示访问码',
   'dev.browserLogin.submit': '进入测试环境',
   'dev.diag.queryFailed': '无法读取登录方式：{error}',
   'dev.diag.waiting': '正在等待服务器返回登录方式。',
@@ -1428,6 +1434,8 @@ export const zh = {
   'run.action.allocateAcrossStores': '按门店分配',
   'run.action.actualQtyAriaLabel': '实际数量',
   'run.action.unitPriceAriaLabel': '单价',
+  'run.action.qtyLabelShort': '数量',
+  'run.action.priceLabelShort': '单价',
   'run.action.savePurchaseAriaLabel': '保存采购：{name}',
   'run.confirm.startDelivery.title': '开始配送？',
   'run.confirm.startDelivery.body':
@@ -2374,6 +2382,7 @@ export const zh = {
   'attendance.shift.note': '备注',
   'attendance.shift.notePlaceholder': '例如：后厨',
   'attendance.shift.delete': '删除班次',
+  'attendance.shift.deleteConfirm': '删除这个班次？',
   'attendance.toast.punchReviewed': '打卡已核对',
   'attendance.toast.punchVoided': '打卡已作废',
   'attendance.toast.enrollApproved': '人脸已审核通过',

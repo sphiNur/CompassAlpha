@@ -398,6 +398,84 @@
   scrollbar-width: none;
 }
 
+/* Review MWA-16 (V11, modern-web-guidance:
+   form-fields-automatically-fit-contents): the kit Textarea grows with its
+   text, from its `rows` (the resting height, as before) up to ten lines,
+   then scrolls; the width stays the field's (w-full), as the guide asks.
+   Only where field-sizing exists: elsewhere `rows` keeps the fixed height.
+   1rem is the field's py-2; never under the 44 px field (min-h-11). */
+@supports (field-sizing: content) {
+  textarea.textarea-grow {
+    field-sizing: content;
+    min-block-size: max(2.75rem, calc(var(--textarea-rows, 3) * 1lh + 1rem));
+    max-block-size: calc(10lh + 1rem);
+  }
+}
+
+/* Review MWC-05 / MWB-17 (V8, modern-web-guidance:
+   scrollability-affordance-hints): the ChipBar hides its scrollbar, so an
+   end with chips beyond it fades softly; an end with nothing beyond does
+   not. Where scroll-driven animations exist the fades follow the scroll
+   (and are off when the chips fit); elsewhere ChipBar marks the ends
+   (data-more-start / data-more-end). One mask, no element (UI-10). */
+@property --chip-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --chip-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.chip-scroll-fade {
+  --chip-fade-size: 1.5rem;
+  /* A chosen or focused chip stops clear of the fade. */
+  scroll-padding-inline: var(--chip-fade-size);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--chip-fade-start, 0px),
+    #000 calc(100% - var(--chip-fade-end, 0px)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--chip-fade-start, 0px),
+    #000 calc(100% - var(--chip-fade-end, 0px)),
+    transparent
+  );
+}
+.chip-scroll-fade[data-more-start] {
+  --chip-fade-start: var(--chip-fade-size);
+}
+.chip-scroll-fade[data-more-end] {
+  --chip-fade-end: var(--chip-fade-size);
+}
+@supports (animation-timeline: scroll()) {
+  .chip-scroll-fade {
+    animation:
+      chip-fade-start linear both,
+      chip-fade-end linear both;
+    animation-timeline: scroll(self inline);
+    /* Each fade grows over the first or last fade-width of scrolling. */
+    animation-range:
+      0 var(--chip-fade-size),
+      calc(100% - var(--chip-fade-size)) 100%;
+  }
+}
+@keyframes chip-fade-start {
+  to {
+    --chip-fade-start: var(--chip-fade-size);
+  }
+}
+@keyframes chip-fade-end {
+  from {
+    --chip-fade-end: var(--chip-fade-size);
+  }
+}
+
 /* Sheet: the panel slides, the backdrop fades. */
 @keyframes slideUp {
   from {

@@ -7,7 +7,15 @@ import { nextLeftState, revealsOnKey, shownError } from '../useLeftField';
 import { SearchInput } from '../components/SearchInput';
 import { Segmented } from '../components/Segmented';
 import { SPINNER_CLASS, Spinner } from '../components/Spinner';
-import { ToastProvider, toastFocusTarget, toastSpokenParts } from '../components/Toast';
+import {
+  TOAST_SPOKEN_MS,
+  ToastProvider,
+  toastFocusTarget,
+  toastHasClose,
+  toastSpokenParts,
+  toastsToSpeak,
+  toastTtl,
+} from '../components/Toast';
 
 /**
  * The Modern Web Guidance audit (2026-11): form errors, announcements,
@@ -102,6 +110,33 @@ describe('MWB-03 / MWB-07: the toast stack', () => {
       'Actions available',
     );
     expect(withUndo).toEqual(['Archived', 'Actions available']);
+  });
+});
+
+describe('MWB-05 / MWB-07 (V6): an error stays until it is closed, and is read once', () => {
+  test('an error stays; success and info keep the default time; a caller wins', () => {
+    expect(toastTtl('danger', undefined, 4000)).toBe(0);
+    expect(toastTtl('success', undefined, 4000)).toBe(4000);
+    expect(toastTtl('info', undefined, 4000)).toBe(4000);
+    expect(toastTtl('warn', undefined, 4000)).toBe(4000);
+    expect(toastTtl('danger', 6000, 4000)).toBe(6000);
+    expect(toastTtl('success', 0, 4000)).toBe(0);
+  });
+
+  test('a toast that stays has a ✕, unless a button of its own only closes it', () => {
+    expect(toastHasClose({ ttlMs: 0 })).toBe(true);
+    expect(toastHasClose({ ttlMs: 0, actions: [{ onClick: () => {} }] })).toBe(true);
+    // "Later" / "Got it": already a close.
+    expect(toastHasClose({ ttlMs: 0, actions: [{ onClick: () => {} }, {}] })).toBe(false);
+    expect(toastHasClose({ ttlMs: 4000 })).toBe(false);
+  });
+
+  test('the hidden copy leaves its live region once said', () => {
+    const toasts = [{ id: 'a' }, { id: 'b' }];
+    expect(toastsToSpeak(toasts, new Set())).toEqual(toasts);
+    expect(toastsToSpeak(toasts, new Set(['a']))).toEqual([{ id: 'b' }]);
+    expect(TOAST_SPOKEN_MS).toBeGreaterThan(0);
+    expect(TOAST_SPOKEN_MS).toBeLessThan(4000);
   });
 });
 

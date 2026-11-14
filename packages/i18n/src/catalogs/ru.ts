@@ -29,6 +29,11 @@ export const ru = {
   'common.busy': 'Подождите…',
   'common.notifications': 'Уведомления',
   'common.actionsAvailable': 'Доступны действия',
+  // Review MWA-07 (V5)
+  'common.requiredMark': '(обязательно)',
+  'common.enterReason': 'Укажите причину.',
+  // Review MWB-05 / MWB-07 (V6)
+  'common.closeNotification': 'Закрыть уведомление',
   'common.archive': 'Архивировать',
   'common.discard': 'Не сохранять',
   'common.archived': 'в архиве',
@@ -773,6 +778,7 @@ export const ru = {
   'dev.browserLogin.tgIdPlaceholder': 'например, {example}',
   'dev.browserLogin.accessCode': 'Код доступа',
   'dev.browserLogin.accessCodePlaceholder': 'Выдаёт администратор',
+  'dev.browserLogin.showCode': 'Показать код',
   'dev.browserLogin.submit': 'Войти в тестовую среду',
   'dev.diag.queryFailed': 'Не удалось получить способы входа: {error}',
   'dev.diag.waiting': 'Ждём от сервера способы входа.',
@@ -1616,6 +1622,8 @@ export const ru = {
   'run.action.allocateAcrossStores': 'Распределить по магазинам',
   'run.action.actualQtyAriaLabel': 'фактическое количество',
   'run.action.unitPriceAriaLabel': 'цена за единицу',
+  'run.action.qtyLabelShort': 'Количество',
+  'run.action.priceLabelShort': 'Цена',
   'run.action.savePurchaseAriaLabel': 'Сохранить покупку: {name}',
   'run.confirm.startDelivery.title': 'Начать доставку?',
   'run.confirm.startDelivery.body':
@@ -2676,6 +2684,7 @@ export const ru = {
   'attendance.shift.note': 'Заметка',
   'attendance.shift.notePlaceholder': 'например, кухня',
   'attendance.shift.delete': 'Удалить смену',
+  'attendance.shift.deleteConfirm': 'Удалить эту смену?',
   'attendance.toast.punchReviewed': 'Отметка проверена',
   'attendance.toast.punchVoided': 'Отметка аннулирована',
   'attendance.toast.enrollApproved': 'Лицо одобрено',

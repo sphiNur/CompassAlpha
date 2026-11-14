@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Button, buttonHint, hintChanged, saysBusy } from '../components/Button';
+import { Button, buttonHint, hintChanged, saysBusy, SPINNER_FIT } from '../components/Button';
 import { createRevealScope, firstMissingControl } from '../revealScope';
 import type { MissingCandidate } from '../revealScope';
 
@@ -160,5 +160,19 @@ describe('reveal scope', () => {
     expect(firstMissingControl(root({ invalid: [], required: [node({}, { value: 'x' })] }))).toBe(
       null,
     );
+  });
+});
+
+describe('Review MWB-10 (V5): a busy button keeps its width', () => {
+  test("the start-padding spinner's margins take back its size and the 8 px gap", () => {
+    const pad = { sm: 12, md: 20, lg: 28 } as const;
+    for (const key of ['sm', 'md', 'lg'] as const) {
+      const fit = SPINNER_FIT[key];
+      const px = (name: 'ml' | 'mr') =>
+        Number(new RegExp(`-${name}-\\[(\\d+)px\\]`).exec(fit.className)?.[1] ?? 0);
+      expect(fit.size + 8 - px('ml') - px('mr')).toBe(0);
+      // It starts inside the button, before the label.
+      expect(pad[key] - px('ml')).toBeGreaterThan(0);
+    }
   });
 });

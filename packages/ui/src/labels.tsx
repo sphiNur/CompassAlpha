@@ -133,6 +133,16 @@ export interface UiLabels {
   notifications: string;
   /** Said after a toast's text when it carries buttons (Undo, Reload). */
   actionsAvailable: string;
+
+  // --- Required fields (Review MWA-07, V5) ---
+  /** Drawn after a required field's label: "(required)". */
+  requiredMark: string;
+  /** Why ConfirmSheet's confirm waits for its required reason. */
+  enterReason: string;
+
+  // --- Toast (Review MWB-05 / MWB-07, V6) ---
+  /** Name of the ✕ on a toast that stays until it is closed (an error). */
+  closeNotification: string;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
@@ -173,6 +183,9 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   busy: 'Please wait…',
   notifications: 'Notifications',
   actionsAvailable: 'Actions available',
+  requiredMark: '(required)',
+  enterReason: 'Enter a reason.',
+  closeNotification: 'Close notification',
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

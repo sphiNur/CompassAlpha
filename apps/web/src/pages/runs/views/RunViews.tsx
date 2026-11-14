@@ -71,6 +71,10 @@ import type { PaymentMethod } from '@compass/contracts';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 import { RUN_PAGE } from '../../../config/timings';
 
+/** Review MWA-20 (V11): the run row's small field labels (FieldLabel's look, one line). */
+const RUN_FIELD_LABEL =
+  'mb-0.5 block truncate text-old-label font-semibold text-[var(--c-fg-muted)]';
+
 /**
  * RE-COPY-2 (2026-10-31): a price in thousands with the catalog's suffix
  * ("98千" / "98 тыс." / "98 ming"), not a Latin K in every language.
@@ -1529,6 +1533,9 @@ export const PurchaseRow = memo(function PurchaseRow({
   const priceLeft = useLeftField();
   const priceShown = priceProblem && priceLeft.left;
   const priceErrorId = useId();
+  // Review MWA-20 (V11): the two fields' visible labels point at them.
+  const qtyFieldId = useId();
+  const priceFieldId = useId();
   // R2-ENG-2: the server caps one line (qty × price) at 1e12.
   const lineTooLarge =
     totalHint !== null && rawPrice !== null && !lineWithinCap(qty.trim(), rawPrice);
@@ -1947,58 +1954,77 @@ export const PurchaseRow = memo(function PurchaseRow({
             fit: from 360px every language stays on one line. gap-y-3
             keeps a finger's margin between the price field and ✓. */}
         <div className="mt-3 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-3">
-          <div className="flex min-w-0 grow basis-[10rem] items-center gap-1.5">
+          {/* Review MWA-20 (V11, modern-web-guidance: accessibility, forms):
+              "Don't use placeholders as primary labels". Each field has a
+              small muted label above it; the names stay as they were (the
+              price's carries the unit in force). The × sits level with the
+              fields. */}
+          <div className="flex min-w-0 grow basis-[10rem] items-end gap-1.5">
             {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
               (qty from planned, price from the last observed market
               price), so a tap that appends instead of replacing is the
               common failure — hence select-on-focus. Enter chains
               qty → price → save so a changed price is three actions
               (tap, type, Enter) instead of tap-type-reach-for-✓. */}
-            <Input
-              type="number"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              onFocus={(e) => e.currentTarget.select()}
-              formatError="none"
-              enterKeyHint="next"
-              onKeyDown={(e) => {
-                if (!isCommitEnter(e)) return;
-                e.preventDefault();
-                priceRef.current?.focus();
-              }}
-              aria-label={i18n.t('run.action.actualQtyAriaLabel')}
-              // A dense row: the narrow field keeps room for five digits.
-              className="w-[4.5rem] shrink-0 px-3"
-            />
-            <span className="shrink-0 text-old-body text-[var(--c-fg-muted)]">×</span>
-            <Input
-              type="number"
-              ref={priceRef}
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              onFocus={(e) => e.currentTarget.select()}
-              // The row has no room for a message; line 3 says it.
-              formatError="none"
-              invalid={priceShown}
-              aria-describedby={priceShown ? priceErrorId : undefined}
-              onBlur={priceLeft.onBlur}
-              enterKeyHint="done"
-              onKeyDown={(e) => {
-                if (!isCommitEnter(e)) return;
-                e.preventDefault();
-                priceLeft.reveal();
-                if (canSave) handleSave('editor');
-              }}
-              placeholder={i18n.t('run.action.unitPriceAriaLabel')}
-              // DX-IX-7: the name carries the unit in force, as the sheet's
-              // label does ("单价（千 UZS）").
-              aria-label={
-                priceInThousands
-                  ? i18n.t('run.action.unitPriceUzsThousands', { currency })
-                  : i18n.t('run.action.unitPriceUzs', { currency })
-              }
-              className="min-w-[4.25rem] flex-1"
-            />
+            <div className="flex shrink-0 flex-col">
+              <label htmlFor={qtyFieldId} className={RUN_FIELD_LABEL}>
+                {i18n.t('run.action.qtyLabelShort')}
+              </label>
+              <Input
+                id={qtyFieldId}
+                type="number"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                formatError="none"
+                enterKeyHint="next"
+                onKeyDown={(e) => {
+                  if (!isCommitEnter(e)) return;
+                  e.preventDefault();
+                  priceRef.current?.focus();
+                }}
+                aria-label={i18n.t('run.action.actualQtyAriaLabel')}
+                // A dense row: the narrow field keeps room for five digits.
+                className="w-[4.5rem] shrink-0 px-3"
+              />
+            </div>
+            <span className="flex h-[var(--control-h)] shrink-0 items-center text-old-body text-[var(--c-fg-muted)]">
+              ×
+            </span>
+            <div className="flex min-w-[4.25rem] flex-1 flex-col">
+              <label htmlFor={priceFieldId} className={RUN_FIELD_LABEL}>
+                {i18n.t('run.action.priceLabelShort')}
+              </label>
+              <Input
+                id={priceFieldId}
+                type="number"
+                ref={priceRef}
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                // The row has no room for a message; line 3 says it.
+                formatError="none"
+                invalid={priceShown}
+                aria-describedby={priceShown ? priceErrorId : undefined}
+                onBlur={priceLeft.onBlur}
+                enterKeyHint="done"
+                onKeyDown={(e) => {
+                  if (!isCommitEnter(e)) return;
+                  e.preventDefault();
+                  priceLeft.reveal();
+                  if (canSave) handleSave('editor');
+                }}
+                placeholder={i18n.t('run.action.unitPriceAriaLabel')}
+                // DX-IX-7: the name carries the unit in force, as the sheet's
+                // label does ("单价（千 UZS）").
+                aria-label={
+                  priceInThousands
+                    ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                    : i18n.t('run.action.unitPriceUzs', { currency })
+                }
+                className="w-full"
+              />
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {/* The unit used to sit here as a small dotted suffix that was
