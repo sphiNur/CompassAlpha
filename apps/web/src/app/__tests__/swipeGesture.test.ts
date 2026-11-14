@@ -7,14 +7,17 @@ import {
   FLING_PX_PER_MS,
   inEdgeZone,
   isTextEntry,
+  lockScrollY,
   mayStart,
   releaseVerdict,
   ringNeighbours,
   rubberBand,
+  type ScrollLock,
   settleMs,
   startVerdict,
   SWIPE_EDGE_PX,
   SWIPE_SLOP_PX,
+  unlockScrollY,
   velocityOf,
 } from '../shell/swipeGesture';
 import { visibleTabsFor } from '../shell/tabs';
@@ -177,4 +180,28 @@ test('settleMs: the further to go, the longer, within bounds', () => {
   expect(settleMs(W, W)).toBe(300);
   expect(settleMs(-2 * W, W)).toBe(300);
   expect(settleMs(W / 2, W)).toBeGreaterThan(settleMs(W / 4, W));
+});
+
+describe('the scroll lock during a drag (MWB-13)', () => {
+  test('locks once, keeps the inline value and puts it back', () => {
+    const style = { overflowY: 'scroll' };
+    const lock: ScrollLock = { saved: null };
+    lockScrollY(style, lock);
+    expect(style.overflowY).toBe('hidden');
+    lockScrollY(style, lock);
+    expect(lock.saved).toBe('scroll');
+    unlockScrollY(style, lock);
+    expect(style.overflowY).toBe('scroll');
+    expect(lock.saved).toBeNull();
+  });
+  test('an empty inline value comes back empty; unlocking twice changes nothing', () => {
+    const style = { overflowY: '' };
+    const lock: ScrollLock = { saved: null };
+    lockScrollY(style, lock);
+    unlockScrollY(style, lock);
+    expect(style.overflowY).toBe('');
+    style.overflowY = 'auto';
+    unlockScrollY(style, lock);
+    expect(style.overflowY).toBe('auto');
+  });
 });

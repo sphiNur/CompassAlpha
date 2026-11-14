@@ -195,3 +195,27 @@ export function settleMs(remaining: number, width: number): number {
   const share = Math.min(1, Math.abs(remaining) / width);
   return Math.round(140 + 160 * share);
 }
+
+/**
+ * Review MWB-13 (modern-web-guidance: swipe-to-reveal): a horizontal drag
+ * stops the scroller's vertical scroll with `overflow-y: hidden` for the
+ * rest of the gesture, instead of a non-passive `touchmove` that calls
+ * preventDefault (which made every scroll start wait for the main thread).
+ * The scroller's own inline value is kept and put back afterwards.
+ */
+export interface ScrollLock {
+  /** The inline overflow-y before the lock, or null while unlocked. */
+  saved: string | null;
+}
+
+export function lockScrollY(style: { overflowY: string }, lock: ScrollLock): void {
+  if (lock.saved !== null) return;
+  lock.saved = style.overflowY;
+  style.overflowY = 'hidden';
+}
+
+export function unlockScrollY(style: { overflowY: string }, lock: ScrollLock): void {
+  if (lock.saved === null) return;
+  style.overflowY = lock.saved;
+  lock.saved = null;
+}

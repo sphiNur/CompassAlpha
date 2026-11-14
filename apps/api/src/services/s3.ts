@@ -78,6 +78,22 @@ export function isS3Configured(): boolean {
   return Boolean(bucket && accessKey && secretKey);
 }
 
+/**
+ * Review MWD-12 (modern-web-guidance: security): the origin the browser
+ * PUTs photos to (the presigned URL's), for the report-only CSP's
+ * connect-src; null when uploads are not configured.
+ */
+export function uploadOrigin(): string | null {
+  if (!isS3Configured()) return null;
+  const cfg = readS3Env();
+  try {
+    const { host, protocol } = resolveEndpoint(cfg.bucket!, cfg.endpoint, cfg.region);
+    return `${protocol}//${host}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Build a SigV4 presigned PUT URL. Pure function, no network calls. */
 export function presignPut(input: PresignPutInput): PresignedPut {
   if (!isS3Configured()) throw new S3NotConfiguredError();

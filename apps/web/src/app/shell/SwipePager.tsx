@@ -39,13 +39,16 @@ import { preloadPage } from '../pageChunks';
 import {
   dragOffset,
   isTextEntry,
+  lockScrollY,
   mayStart,
   releaseVerdict,
   ringNeighbours,
   settleMs,
   startVerdict,
+  unlockScrollY,
   velocityOf,
   type Sample,
+  type ScrollLock,
   type TargetTraits,
 } from './swipeGesture';
 
@@ -183,6 +186,9 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
     frame: 0,
     suppressClickUntil: 0,
   });
+  // Review MWB-13 (modern-web-guidance: swipe-to-reveal): <main>'s inline
+  // overflow-y while a drag holds its vertical scroll.
+  const scrollLock = useRef<ScrollLock>({ saved: null });
 
   const clearStyles = useCallback(() => {
     const main = mainRef.current;
@@ -190,6 +196,7 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
       main.style.transform = '';
       main.style.transition = '';
       main.style.willChange = '';
+      unlockScrollY(main.style, scrollLock.current);
     }
   }, [mainRef]);
 
@@ -250,6 +257,7 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
     const springBack = () => {
       if (g.still) {
         g.phase = 'idle';
+        clearStyles();
         return;
       }
       const offset = dragOffset(g.dx, g.width, neighbours());
@@ -272,7 +280,10 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
       if (g.still) {
         // Reduced motion: the page never moved; switch at once.
         void latest.current.onSwipe(target).then((allowed) => {
-          if (!allowed && g.phase === 'settle') g.phase = 'idle';
+          if (!allowed && g.phase === 'settle') {
+            g.phase = 'idle';
+            clearStyles();
+          }
         });
         return;
       }
@@ -327,6 +338,11 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
           /* the pointer is already gone */
         }
         const main = mainRef.current;
+        // Review MWB-13 (modern-web-guidance: swipe-to-reveal): from here
+        // the gesture is sideways, so <main> stops scrolling vertically
+        // until the drag's styles are cleared (release, cancel, unmount).
+        // Reduced motion too: the page does not move, but must not scroll.
+        if (main) lockScrollY(main.style, scrollLock.current);
         if (main && !g.still) main.style.willChange = 'transform';
       }
       if (g.phase !== 'drag') return;
@@ -374,10 +390,6 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
       }
     };
 
-    // While the page follows the finger nothing else may scroll.
-    const onTouchMove = (e: TouchEvent) => {
-      if (g.phase === 'drag' && e.cancelable) e.preventDefault();
-    };
     // A drag that ends over a button is not a tap on it.
     const onClick = (e: MouseEvent) => {
       if (e.timeStamp < g.suppressClickUntil) {
@@ -390,15 +402,14 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
     root.addEventListener('pointermove', onMove);
     root.addEventListener('pointerup', onUp);
     root.addEventListener('pointercancel', onCancel);
-    root.addEventListener('touchmove', onTouchMove, { passive: false });
     root.addEventListener('click', onClick, true);
     return () => {
       cancelAnimationFrame(g.frame);
+      clearStyles();
       root.removeEventListener('pointerdown', onDown);
       root.removeEventListener('pointermove', onMove);
       root.removeEventListener('pointerup', onUp);
       root.removeEventListener('pointercancel', onCancel);
-      root.removeEventListener('touchmove', onTouchMove);
       root.removeEventListener('click', onClick, true);
     };
   }, [mainRef, place, clearStyles]);
@@ -426,7 +437,8 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
             transform: `translate3d(${preview === 'next' ? '100%' : '-100%'},0,0)`,
           }}
         >
-          {hasSnapshot ? <div data-swipe-snapshot="" /> : <LoadingState />}
+          {/* Review MWB-09: a hidden picture, so it says nothing. */}
+          {hasSnapshot ? <div data-swipe-snapshot="" /> : <LoadingState announce={false} />}
         </div>
       ) : null}
     </div>

@@ -2,16 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { EmptyState } from '../components/EmptyState';
-import { LoadingState } from '../components/LoadingState';
+import { LOADING_REPEAT_MS, LoadingState, shouldSayLoading } from '../components/LoadingState';
 import { isWaitingOffline, OfflineState, PendingState } from '../components/OfflineState';
 
 /** Review UI-13: one loading, empty and offline state, said to a screen reader. */
 const textOf = (html: string) => html.replace(/<[^>]+>/g, '');
 
 describe('LoadingState', () => {
-  test('the block is a status that says "Loading…" to a screen reader only', () => {
+  // Review MWB-09: no region that mounts holding its text; the announcer says it.
+  test('the block shows "Loading…" to a screen reader only, in no live region', () => {
     const html = renderToStaticMarkup(createElement(LoadingState));
-    expect(html).toMatch(/^<div role="status" class="[^"]*py-12/);
+    expect(html).toMatch(/^<div class="[^"]*py-12/);
+    expect(html).not.toContain('role=');
     expect(html).toContain('<svg');
     expect(html).toContain('<span class="sr-only">Loading…</span>');
   });
@@ -20,7 +22,7 @@ describe('LoadingState', () => {
     const html = renderToStaticMarkup(
       createElement(LoadingState, { variant: 'compact', label: 'Loading roles…' }),
     );
-    expect(html).toMatch(/^<div role="status" class="[^"]*py-6/);
+    expect(html).toMatch(/^<div class="[^"]*py-6/);
     expect(textOf(html)).toBe('Loading roles…');
   });
 
@@ -28,9 +30,17 @@ describe('LoadingState', () => {
     const html = renderToStaticMarkup(
       createElement(LoadingState, { variant: 'inline', label: 'Counting…' }),
     );
-    expect(html).toMatch(/^<div role="status" class="[^"]*flex items-center gap-2/);
+    expect(html).toMatch(/^<div class="[^"]*flex items-center gap-2/);
     expect(html).not.toContain('sr-only');
     expect(textOf(html)).toBe('Counting…');
+  });
+  test('MWB-09: states that appear together say their words once', () => {
+    expect(shouldSayLoading(null, 'Loading…', 1000)).toBe(true);
+    const last = { text: 'Loading…', at: 1000 };
+    expect(shouldSayLoading(last, 'Loading…', 1000 + LOADING_REPEAT_MS - 1)).toBe(false);
+    expect(shouldSayLoading(last, 'Loading roles…', 1001)).toBe(true);
+    expect(shouldSayLoading(last, 'Loading…', 1000 + LOADING_REPEAT_MS)).toBe(true);
+    expect(shouldSayLoading(null, '', 0)).toBe(false);
   });
 });
 
@@ -72,6 +82,6 @@ describe('offline with nothing saved', () => {
     const loading = renderToStaticMarkup(
       createElement(PendingState, { query: { data: undefined, fetchStatus: 'fetching' } }),
     );
-    expect(loading).toMatch(/^<div role="status"/);
+    expect(textOf(loading)).toBe('Loading…');
   });
 });
