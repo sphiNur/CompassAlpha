@@ -179,8 +179,9 @@ export function ManageMemberSheet({
                 isDisabled={(st) => storeBusy || !storeEditable(st.id)}
                 // C2: stores you don't administer are visible (so you see
                 // the full picture) but cannot be ticked; the server would
-                // refuse anyway.
-                titleOf={(st) =>
+                // refuse anyway. Review MWC-12: the reason is a muted line
+                // under the row, not a tooltip a phone never shows.
+                reasonOf={(st) =>
                   adminStoreIds.has(st.id) ? undefined : i18n.t('people.notYourStore')
                 }
                 onChange={(st, checked) => {

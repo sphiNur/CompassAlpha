@@ -21,12 +21,11 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* M3.30 (2026-05-18): pair with the viewport meta to fully lock
-       scale on iOS — without these, system-level "larger text" and
-       double-tap-to-zoom can still re-scale the page even though
-       pinch-zoom is disabled at the viewport layer. */
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
+    /* Review MWA-09 (modern-web-guidance: respect-os-text-scale): no
+       text-size-adjust lock any more (M3.30 set it to 100% to stop the
+       phone's "larger text"); the phone's text size applies, and the
+       type scale is in rem. Pinch zoom stays off (index.html viewport);
+       touch-action: manipulation still stops double-tap zoom. */
     touch-action: manipulation;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;

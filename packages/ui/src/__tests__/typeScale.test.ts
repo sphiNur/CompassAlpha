@@ -25,6 +25,25 @@ describe('type scale (UI-15)', () => {
     }
   });
 
+  // Review MWA-10 / MWC-11 (modern-web-guidance: respect-os-text-scale):
+  // rem, so the phone's text size reaches them; the same px at a 16px root.
+  test('every size is in rem and keeps its px size at the default root', () => {
+    const px: Record<string, number> = {
+      'old-display': 24,
+      'old-h1': 19,
+      'old-h2': 15,
+      'old-h3': 14,
+      'old-body': 13,
+      'old-body-sm': 12,
+      'old-label': 11,
+      'old-meta': 10,
+      'old-tiny': 9,
+    };
+    for (const [name, [size]] of Object.entries(FONT_SIZE_SCALE)) {
+      expect({ name, size }).toEqual({ name, size: `${px[name]! / 16}rem` });
+    }
+  });
+
   test('tokens.css has no second copy of the sizes to keep in sync', () => {
     expect(css).not.toMatch(/--text-[a-z-]+:/);
   });

@@ -7,19 +7,23 @@ import { createTapGuard } from '../useTapGuard';
 import { disabledClass } from './disabled';
 import { useUiAnnounce } from '../announce';
 import { useUiLabels } from '../labels';
+import { firstMissingControl, useRevealScope } from '../revealScope';
 
 const button = cva(
   [
     // V4 (2026-10-30): hit-44 gives sm (32 px) a 44 px tap area without
     // changing how it looks; md (44) and lg (52) are already that tall.
     // That needs the button NOT to clip its overflow (a clipped ::after
-    // takes no taps); the label span below truncates itself instead.
+    // takes no taps); the label span below clamps itself instead.
     'press hit-44 inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-medium select-none',
     // Review UI-31 (2026-11-12): transform is in the list, at .press's
     // own --t-snap / --easing. Without it this utility (later in the
     // stylesheet) replaced .press's transition, so the press shrink
     // jumped instead of easing in.
-    'whitespace-nowrap outline-none transition-[background,color,box-shadow,transform]',
+    // Review MWC-08 (modern-web-guidance: single-line-overflow, typography):
+    // no whitespace-nowrap. A long label (ru / uz) wraps to two balanced
+    // lines in the label span below instead of ending in "…".
+    'text-center outline-none transition-[background,color,box-shadow,transform]',
     'duration-[var(--t-snap)] ease-[var(--easing)]',
     'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
     'focus-visible:ring-offset-[var(--c-ring-offset)]',
@@ -29,6 +33,10 @@ const button = cva(
     // aria-disabled, not disabled, so focus stays on it; it looks as a
     // disabled one did.
     'data-[loading]:cursor-not-allowed data-[loading]:opacity-50 data-[loading]:pointer-events-none',
+    // Review MWA-05 (modern-web-guidance: accessibility): a button waiting
+    // for its form (disabledHint) is aria-disabled, not disabled, so it can
+    // be reached and tapped; it looks as a disabled one did.
+    'data-[blocked]:cursor-not-allowed data-[blocked]:opacity-50',
   ],
   {
     variants: {
@@ -65,11 +73,15 @@ const button = cva(
         //   - lg: h-13 (52, was 56) + text-old-h3 (14, was text-old-h2 / 15) —
         //     sheet-footer commits + page-bottom CTAs. Big enough to
         //     anchor the action without towering over the 64 px nav.
-        sm: 'h-8 px-3 text-old-label',
-        md: 'h-[var(--control-h)] px-5 text-old-h3',
-        // h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
+        //   Review MWC-08 (modern-web-guidance: typography): "DON'T set a
+        //   fixed height on elements that contain text, such as buttons".
+        //   The heights are minimums: a one-line label renders exactly
+        //   as before; a two-line one (or larger phone text) grows it.
+        sm: 'min-h-8 px-3 py-0.5 text-old-label',
+        md: 'min-h-[var(--control-h)] px-5 py-1 text-old-h3',
+        // min-h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
         // exactly the middle.
-        lg: 'h-[52px] px-7 text-old-h3',
+        lg: 'min-h-[52px] px-7 py-1 text-old-h3',
       },
       block: {
         true: 'w-full',
@@ -104,6 +116,13 @@ export interface ButtonProps
    *
    * Passing the prop at all (even as `undefined`) wraps the button in a
    * column, so the tree keeps its shape when the hint comes and goes.
+   *
+   * Review MWA-05 (modern-web-guidance: accessibility, forms): while the
+   * hint shows, the button is aria-disabled instead of disabled. It keeps
+   * the grey look and runs nothing, but it can be focused and tapped: a
+   * tap shows the form's errors (useLeftField's reveal, through the
+   * sheet's or page's reveal scope), moves to the first missing field and
+   * says the hint. Disabled with no hint, it stays natively disabled.
    */
   disabledHint?: string;
 }
@@ -172,6 +191,23 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
   const hint = buttonHint(disabled, loading, disabledHint);
   useHintChange(hint);
+  // MWA-05: waiting for the form — reachable, and a tap says what is missing.
+  const blocked = !!hint;
+  const scope = useRevealScope();
+  const revealMissing = () => {
+    scope.revealAll();
+    if (hint) announce(hint);
+    const self = ownRef.current;
+    // After the reveal has rendered: the errors mark their fields invalid.
+    setTimeout(() => {
+      if (!self?.isConnected) return;
+      const root = self.closest('[role="dialog"], form, main') ?? self.ownerDocument.body;
+      const target = firstMissingControl(root);
+      if (!(target instanceof HTMLElement)) return;
+      target.focus();
+      target.scrollIntoView?.({ block: 'nearest' });
+    }, 0);
+  };
   const describedBy =
     [rest['aria-describedby'], hint ? hintId : undefined].filter(Boolean).join(' ') || undefined;
   const el = (
@@ -180,15 +216,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={rest.type ?? 'button'}
       // MWB-10: while loading the button keeps focus (aria-disabled); the
       // click guard below drops presses, a form's Enter included.
-      disabled={(disabled && !loading) || undefined}
+      disabled={(disabled && !loading && !blocked) || undefined}
       data-loading={loading || undefined}
-      className={cn(button({ variant, size, block }), className)}
+      data-blocked={blocked || undefined}
+      className={cn(
+        button({ variant, size, block }),
+        // MWA-05: no hover colour on a waiting button (a tap leaves :hover set).
+        blocked && (variant ?? 'primary') === 'primary' && 'hover:bg-[var(--c-action)]',
+        className,
+      )}
       {...rest}
-      aria-disabled={loading || rest['aria-disabled'] || undefined}
+      aria-disabled={loading || blocked || rest['aria-disabled'] || undefined}
       aria-describedby={describedBy}
       onClick={(e: MouseEvent<HTMLButtonElement>) => {
         if (loading) {
           e.preventDefault(); // no second submit of the form either
+          return;
+        }
+        if (blocked) {
+          e.preventDefault(); // a waiting form is not submitted
+          revealMissing();
           return;
         }
         pressedAt.current = Date.now();
@@ -196,7 +243,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       }}
     >
       {loading ? <Spinner size={16} /> : leadingIcon}
-      <span className={childIsPlain || !isValidElement(children) ? 'min-w-0 truncate' : 'min-w-0'}>
+      {/* MWC-08: at most two lines, balanced, then "…"; a short label is one line. */}
+      <span
+        className={
+          childIsPlain || !isValidElement(children)
+            ? 'min-w-0 break-words line-clamp-2 [text-wrap:balance]'
+            : 'min-w-0'
+        }
+      >
         {children}
       </span>
       {trailingIcon}

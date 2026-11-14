@@ -71,12 +71,14 @@ html {
     transform: rotate(360deg);
   }
 }
+/* Review MWC-11 (modern-web-guidance: typography): font sizes in rem (the
+   same px at the default 16px root), so the phone's text size reaches them. */
 .boot-title {
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 600;
 }
 .boot-subtitle {
-  font-size: 13px;
+  font-size: 0.8125rem;
   opacity: 0.55;
 }
 #boot-error {
@@ -88,7 +90,7 @@ html {
      3:1 on the dark one; these are at least 5.2:1 on either, on the tint. */
   color: #c4000f;
   border-radius: 14px;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.5;
   text-align: left;
   word-break: break-word;
@@ -120,7 +122,7 @@ html {
   background: #0066cc;
   color: white;
   border: 0;
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 500;
   cursor: pointer;
 }

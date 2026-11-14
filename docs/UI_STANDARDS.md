@@ -159,7 +159,9 @@ empty is `EmptyState` (15 px title); errors are `DataState`'s error or a danger
 `Banner` with retry.
 
 #### UI-16 — Controls come from the kit
-Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page; the page's
+Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page, as
+minimum heights: a long label wraps to two lines and the button grows,
+review MWC-08; the page's
 main action is the in-page main button, `usePageMainButton` — the Telegram
 main button stays hidden since M3.49). Switching between views is
 `Segmented`; filtering a list by category is `ChipBar`. No hand-rolled pill
@@ -168,6 +170,10 @@ A control that cannot be used looks the same everywhere: half opacity and a
 not-allowed cursor, from the kit's `disabledClass` (on the element) or
 `disabledLook` (on a label around it). A field someone may not edit must not
 look editable (2026-11-10, review UI-11).
+A Save that waits for its form and says why (`disabledHint`, UX-05) keeps
+that look but is `aria-disabled`, not `disabled`: it can be reached and
+tapped, and a tap shows the form's errors, moves to the first missing field
+and says the hint; nothing is sent (2026-11-14, review MWA-05).
 
 #### UI-17 — Bottom navigation: a floating capsule, at most five items
 The bottom nav is a capsule floating over the page (owner, 2026-11-14). It

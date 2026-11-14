@@ -109,9 +109,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           }}
         >
           {/* Review COREWEB1-23 (2026-11-11): no 64 px ⚠ over a title that
-              says the same (UI-1). */}
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{t('boot.crashTitle')}</h1>
-          <p style={{ fontSize: 14, opacity: 0.7, margin: 0, maxWidth: 320 }}>
+              says the same (UI-1). Review MWC-11 (modern-web-guidance:
+              typography): sizes in rem, the same px at the default root. */}
+          <h1 style={{ fontSize: '1.375rem', fontWeight: 600, margin: 0 }}>
+            {t('boot.crashTitle')}
+          </h1>
+          <p style={{ fontSize: '0.875rem', opacity: 0.7, margin: 0, maxWidth: 320 }}>
             {t('boot.crashBody')}
           </p>
           <button
@@ -130,7 +133,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               background: 'transparent',
               color: 'var(--c-action, #0066cc)',
               border: 0,
-              fontSize: 14,
+              fontSize: '0.875rem',
               cursor: 'pointer',
             }}
           >
@@ -149,7 +152,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               background: 'var(--c-action, #0066cc)',
               color: 'var(--c-action-fg, white)',
               border: 0,
-              fontSize: 15,
+              fontSize: '0.9375rem',
               fontWeight: 500,
               cursor: 'pointer',
             }}
@@ -168,7 +171,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               color: 'var(--c-fg-muted, #6e6e73)',
               // The kit's hairline: a black one vanished on the dark theme.
               border: '1px solid var(--c-divider, rgba(0,0,0,0.12))',
-              fontSize: 14,
+              fontSize: '0.875rem',
               cursor: 'pointer',
             }}
           >

@@ -287,7 +287,11 @@ function NavItem({
   );
 }
 
-/** A count, or a dot for "not done today" / "something inside waits". */
+/**
+ * A count, or a dot for "not done today" / "something inside waits".
+ * Review MWC-11 (modern-web-guidance: typography): the count is sized in
+ * rem (10 px at the default root), so it follows the phone's text size.
+ */
 function NavBadgeMark({ tabKey, badge }: { tabKey: string; badge: NavBadge | undefined }) {
   if (badge === undefined) return null;
   return (
@@ -297,7 +301,7 @@ function NavBadgeMark({ tabKey, badge }: { tabKey: string; badge: NavBadge | und
       className={
         badge === 'dot'
           ? 'absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)]'
-          : 'absolute -right-2.5 -top-1.5 min-w-[18px] rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)] px-1 text-center text-[10px] font-semibold leading-[14px] text-[var(--c-danger-fg)] tabular-nums'
+          : 'absolute -right-2.5 -top-1.5 min-w-[1.125rem] rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)] px-1 text-center text-[0.625rem] font-semibold leading-[0.875rem] text-[var(--c-danger-fg)] tabular-nums'
       }
     >
       {badge === 'dot' ? null : badge > 99 ? '99+' : badge}

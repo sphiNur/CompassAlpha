@@ -58,22 +58,28 @@
  * tokens.css, whose --text-* copies of these sizes had no reader.)
  *
  * Sizes (the names are registered with tailwind-merge in src/cn.ts, and
- * a test checks that):
+ * a test checks that), in px at the default 16 px root:
  *   display 24 · h1 19 · h2 15 · h3 14 · body 13 · body-sm 12 ·
  *   label 11 · meta 10 (deprecated) · tiny 9
+ *
+ * Review MWA-10 / MWC-11 (modern-web-guidance: respect-os-text-scale,
+ * typography): "Define font sizes using relative units (`rem` or `em`)
+ * rather than fixed pixels". Written in rem (px / 16), so they look the
+ * same at the default root and follow the phone's text size where the
+ * WebView applies it. Line heights stay unitless.
  */
 export const FONT_SIZE_SCALE = {
   // Headings — bake weight + tracking (the whole semantic).
-  'old-display': ['24px', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '600' }],
-  'old-h1': ['19px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '600' }],
-  'old-h2': ['15px', { lineHeight: '1.25', fontWeight: '600' }],
+  'old-display': ['1.5rem', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '600' }],
+  'old-h1': ['1.1875rem', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '600' }],
+  'old-h2': ['0.9375rem', { lineHeight: '1.25', fontWeight: '600' }],
   // Body and below — size + line-height only. Caller decides weight.
-  'old-h3': ['14px', { lineHeight: '1.3' }],
-  'old-body': ['13px', { lineHeight: '1.4' }],
-  'old-body-sm': ['12px', { lineHeight: '1.4' }],
-  'old-label': ['11px', { lineHeight: '1.3' }],
-  'old-meta': ['10px', { lineHeight: '1.3' }],
-  'old-tiny': ['9px', { lineHeight: '1.3' }],
+  'old-h3': ['0.875rem', { lineHeight: '1.3' }],
+  'old-body': ['0.8125rem', { lineHeight: '1.4' }],
+  'old-body-sm': ['0.75rem', { lineHeight: '1.4' }],
+  'old-label': ['0.6875rem', { lineHeight: '1.3' }],
+  'old-meta': ['0.625rem', { lineHeight: '1.3' }],
+  'old-tiny': ['0.5625rem', { lineHeight: '1.3' }],
 };
 
 /** @type {Partial<import('tailwindcss').Config>} */
