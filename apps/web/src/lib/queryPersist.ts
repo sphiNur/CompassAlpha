@@ -289,11 +289,21 @@ export function startQueryPersistence(
       save();
     }
   };
+  // Review MWD-09 (modern-web-guidance: batch-analytics-events): hidden
+  // is the end-of-session signal; Telegram's WebViews often freeze or end
+  // a backgrounded Mini App without a `pagehide`. Both call onHide, which
+  // saves only while a save is waiting, so the two never save twice.
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') onHide();
+  };
   const hasWindow = typeof window !== 'undefined';
+  const hasDocument = typeof document !== 'undefined';
   if (hasWindow) window.addEventListener('pagehide', onHide);
+  if (hasDocument) document.addEventListener('visibilitychange', onVisibility);
   return () => {
     unsubscribe();
     if (hasWindow) window.removeEventListener('pagehide', onHide);
+    if (hasDocument) document.removeEventListener('visibilitychange', onVisibility);
     if (timer !== null) clearTimeout(timer);
   };
 }

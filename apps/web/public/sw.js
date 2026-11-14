@@ -109,9 +109,15 @@ self.__compassSwCacheable = cacheable; // for the unit test only
 
 function noop() {}
 
-/** Fetch `url` and keep the answer when it passes `cacheable`. */
+/**
+ * Fetch `url` and keep the answer when it passes `cacheable`.
+ *
+ * Review MWD-03 (modern-web-guidance: deprioritize-background-fetches):
+ * these are background copies (install precache, the files a page
+ * reports), so they go at low priority behind the page's own requests.
+ */
 function fetchInto(cache, url, kind, init) {
-  return fetch(url, init).then(function (res) {
+  return fetch(url, Object.assign({ priority: 'low' }, init)).then(function (res) {
     return cacheable(res, kind) ? cache.put(url, res) : undefined;
   });
 }

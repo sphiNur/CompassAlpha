@@ -8,7 +8,7 @@
  * photos with the person they know and approves, or sends them back
  * with a reason. Nobody approves their own.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -192,6 +192,31 @@ export function AttendanceReview({ storeId }: { storeId: string }) {
 }
 
 /** One waiting face enrollment: its photos (and the one in use), approve or send back. */
+/**
+ * Whether the element has come within `margin` of the screen, once (then
+ * it stays true). True at once where IntersectionObserver is missing.
+ */
+function useNearScreen<T extends Element>(margin = '200px') {
+  const ref = useRef<T | null>(null);
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const el = ref.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setNear(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: margin },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near, margin]);
+  return [ref, near] as const;
+}
+
 function EnrollItem({
   storeId,
   enrollment,
@@ -213,10 +238,15 @@ function EnrollItem({
   const utils = trpc.useUtils();
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
-  const photos = trpc.attendance.faceEnrollment.useQuery({
-    storeId,
-    memberId: enrollment.memberId,
-  });
+  // Review MWD-22 (modern-web-guidance: performance, images): every
+  // waiting enrolment's photos (two sets of up to 10, as base64 in the
+  // JSON) loaded at once. A row now asks for them as it nears the screen;
+  // `loading="lazy"` cannot help with photos inside the JSON.
+  const [rowRef, near] = useNearScreen<HTMLLIElement>();
+  const photos = trpc.attendance.faceEnrollment.useQuery(
+    { storeId, memberId: enrollment.memberId },
+    { enabled: near },
+  );
   const decide = trpc.attendance.faceEnrollDecide.useMutation({
     onSuccess: (_r, input) => {
       haptic('success');
@@ -234,7 +264,7 @@ function EnrollItem({
   const waiting = photos.data?.find((x) => x.id === enrollment.id);
   const inUse = photos.data?.find((x) => x.status === 'approved');
   return (
-    <li className="flex flex-col gap-2 px-4 py-3">
+    <li ref={rowRef} className="flex flex-col gap-2 px-4 py-3">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-old-body font-semibold text-[var(--c-fg)]">{enrollment.name}</span>
         <span className="tabular-nums text-old-label text-[var(--c-fg-muted)]">

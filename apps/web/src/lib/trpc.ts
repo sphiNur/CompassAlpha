@@ -2,7 +2,7 @@ import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
 import { IDEMPOTENT_ROUTES } from '@compass/contracts/idempotency';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
-import { BatchRefused, getLogger, type LogEvent } from '@compass/telemetry';
+import { BatchRefused, getLogger, type LogEvent, type TransportOptions } from '@compass/telemetry';
 import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -26,7 +26,10 @@ export const API_URL = (import.meta.env.VITE_API_URL || '') as string;
  * Ship client log events to `system.log`. Plain fetch on purpose: this
  * must not go through authFetch, whose refresh-and-retry path logs.
  */
-export async function sendClientLogs(events: LogEvent[]): Promise<void> {
+export async function sendClientLogs(
+  events: LogEvent[],
+  options: TransportOptions = {},
+): Promise<void> {
   const token = useAuthStore.getState().accessToken;
   const res = await fetch(`${API_URL}/trpc/system.log`, {
     method: 'POST',
@@ -35,7 +38,12 @@ export async function sendClientLogs(events: LogEvent[]): Promise<void> {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ events }),
-    keepalive: true,
+    // Review MWD-01 (modern-web-guidance: batch-analytics-events): keepalive
+    // only for the send on hide, so the 5 s flush does not use the quota.
+    keepalive: options.keepalive === true,
+    // Review MWD-03 (modern-web-guidance: deprioritize-background-fetches):
+    // telemetry must not compete with the page's own requests.
+    priority: 'low',
   });
   // The endpoint is public and treats a stale token as anonymous, so a
   // non-2xx is about the batch or the server. COREAPI-04: a batch the

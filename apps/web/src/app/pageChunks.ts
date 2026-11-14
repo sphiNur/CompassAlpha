@@ -74,10 +74,13 @@ export const importSettingsSheet = () =>
   import('../components/SettingsSheet').then((m) => ({ default: m.SettingsSheet }));
 
 /** Start downloading the settings sheet; its own import handles a failure. */
-export function preloadSettingsSheet(): void {
-  importSettingsSheet().catch(() => {
-    /* offline or a removed chunk: the sheet's own import handles it */
-  });
+export function preloadSettingsSheet(): Promise<void> {
+  return importSettingsSheet().then(
+    () => undefined,
+    () => {
+      /* offline or a removed chunk: the sheet's own import handles it */
+    },
+  );
 }
 
 /**

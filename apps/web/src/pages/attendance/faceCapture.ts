@@ -4,7 +4,7 @@
  * when the head is where the prompt asks, never by a button, and never
  * picked from the gallery.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   grabFrame,
   isCameraError,
@@ -22,6 +22,27 @@ import {
 import { steadyCounter, type Guide } from './faceGuide';
 
 export type CameraProblem = 'unsupported' | 'denied' | 'unavailable';
+
+function onVisibility(change: () => void): () => void {
+  document.addEventListener('visibilitychange', change);
+  return () => document.removeEventListener('visibilitychange', change);
+}
+
+/**
+ * Whether the page is visible. Review MWD-06 (modern-web-guidance:
+ * efficient-background-processing): the tracker loops below run only while
+ * it is, so a minimised Mini App or a background tab does not keep running
+ * face inference every 50 and 120 ms. The camera stream itself stays open:
+ * the guide does not ask to stop it, and reopening it on return would show
+ * the permission prompt again in some WebViews.
+ */
+export function usePageVisible(): boolean {
+  return useSyncExternalStore(
+    onVisibility,
+    () => document.visibilityState !== 'hidden',
+    () => true,
+  );
+}
 
 /** The camera facing `facing` while it is set; one camera at a time. */
 export function useCamera(facing: Facing | null) {
@@ -127,8 +148,10 @@ export function useAutoCapture({
   heldRef.current = onHeld;
   const guideRef = useRef(onGuide);
   guideRef.current = onGuide;
+  const visible = usePageVisible();
   useEffect(() => {
-    if (!active || !video || !tracker) return;
+    // Hidden (MWD-06): no readings; the hold starts again on return.
+    if (!active || !visible || !video || !tracker) return;
     const started = performance.now();
     const steady = steadyCounter();
     const timer = setInterval(() => {
@@ -140,7 +163,7 @@ export function useAutoCapture({
       }
     }, 120);
     return () => clearInterval(timer);
-  }, [active, video, tracker, key]);
+  }, [active, visible, video, tracker, key]);
 }
 
 /**
@@ -164,12 +187,14 @@ export function useFrameLoop({
 }) {
   const readRef = useRef(onReading);
   readRef.current = onReading;
+  const visible = usePageVisible();
   useEffect(() => {
-    if (!active || !video || !tracker) return;
+    // Hidden (MWD-06): no readings until the page is visible again.
+    if (!active || !visible || !video || !tracker) return;
     const timer = setInterval(() => {
       // `true` from the callback: this step is over.
       if (readRef.current(tracker.read(video), performance.now()) === true) clearInterval(timer);
     }, 50);
     return () => clearInterval(timer);
-  }, [active, video, tracker, key]);
+  }, [active, visible, video, tracker, key]);
 }

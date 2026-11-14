@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -178,7 +178,11 @@ export function PeopleSection({
   });
   // M1.10 (2026-05-08): people directory search by name + tg + role.
   const [searchQuery, setSearchQuery] = useState('');
-  const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
+  // Review MWD-08 (modern-web-guidance: performance, INP): the field
+  // updates at once; the filtered list follows the deferred query, as on
+  // the order page (useCatalogFilter.ts). It filters once, below.
+  const deferredQuery = useDeferredValue(searchQuery);
+  const tokens = useMemo(() => normalizeQuery(deferredQuery), [deferredQuery]);
 
   return (
     <div className="px-4 py-3">
@@ -424,7 +428,7 @@ export function PeopleSection({
           // in this store yet". It now says nothing matched, with a way back.
           const noMatch = (
             <EmptyState
-              title={i18n.t('people.searchNoMatch', { q: searchQuery.trim() })}
+              title={i18n.t('people.searchNoMatch', { q: deferredQuery.trim() })}
               action={
                 <Button variant="pearl" onClick={() => setSearchQuery('')}>
                   {i18n.t('people.clearSearch')}
