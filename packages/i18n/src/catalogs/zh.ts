@@ -29,6 +29,9 @@ export const zh = {
   'common.busy': '请稍候…',
   'common.notifications': '通知',
   'common.actionsAvailable': '有可用操作',
+  // Review MWA-07 (V5)
+  'common.requiredMark': '（必填）',
+  'common.enterReason': '请填写原因。',
   'common.archive': '归档',
   'common.discard': '放弃更改',
   'common.archived': '已归档',

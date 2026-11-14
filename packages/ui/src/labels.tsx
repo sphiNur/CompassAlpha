@@ -133,6 +133,12 @@ export interface UiLabels {
   notifications: string;
   /** Said after a toast's text when it carries buttons (Undo, Reload). */
   actionsAvailable: string;
+
+  // --- Required fields (Review MWA-07, V5) ---
+  /** Drawn after a required field's label: "(required)". */
+  requiredMark: string;
+  /** Why ConfirmSheet's confirm waits for its required reason. */
+  enterReason: string;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
@@ -173,6 +179,8 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   busy: 'Please wait…',
   notifications: 'Notifications',
   actionsAvailable: 'Actions available',
+  requiredMark: '(required)',
+  enterReason: 'Enter a reason.',
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

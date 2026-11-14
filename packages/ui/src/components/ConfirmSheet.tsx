@@ -106,8 +106,8 @@ export function confirmReasonPolicy(o: {
     showToggle: optional && !o.expanded,
     autoFocus: required,
     // Review MWA-07 (modern-web-guidance: forms): a required reason says
-    // so to a screen reader. No visible "*" (owner: the look stays); the
-    // disabled confirm already waits for it.
+    // so, to a screen reader and (V5, owner 2026-11-14) in its label:
+    // "Reason (required)".
     required,
   };
 }
@@ -181,6 +181,9 @@ export function ConfirmSheet({
             variant={danger ? 'danger' : undefined}
             loading={pending}
             disabled={!reasonOk || pending}
+            // Review MWA-07 (V5): the waiting confirm says why and stays
+            // reachable; a tap moves to the empty reason (MWA-05).
+            disabledHint={requireReason ? labels.enterReason : undefined}
             onClick={guardTap(onConfirm, String(confirmLabel ?? ''))}
           >
             {confirmLabel}
@@ -207,14 +210,14 @@ export function ConfirmSheet({
           </p>
         ) : null}
         {field.showField ? (
-          <Field label={reasonLabel ?? labels.reason}>
+          <Field label={reasonLabel ?? labels.reason} required={field.required}>
             <Input
               value={reason}
               onChange={(e) => onReasonChange?.(e.target.value)}
               placeholder={reasonPlaceholder}
               autoFocus={field.autoFocus}
-              // MWA-07 / MWA-15: native `required` (no form here, so no
-              // browser bubble); Field's own `required` would draw the "*".
+              // MWA-07 / MWA-15 / V5: native `required` (no form here, so no
+              // browser bubble); Field's `required` draws "(required)".
               required={field.required || undefined}
             />
           </Field>

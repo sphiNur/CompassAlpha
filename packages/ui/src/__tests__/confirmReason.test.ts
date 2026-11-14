@@ -54,16 +54,18 @@ describe('confirmReasonPolicy', () => {
     });
   });
 
-  test('Review MWA-07: a required reason is marked required, with no "*" in its label', () => {
+  test('Review MWA-07 (V5): a required reason is marked required, "(required)" in its label', () => {
     const html = renderToStaticMarkup(
       createElement(Field, {
         label: 'Reason',
+        required: true,
         children: createElement(Input, { required: true, value: '', onChange: () => {} }),
       }),
     );
     expect(html).toMatch(/<input[^>]*required=""/);
     expect(html).toContain('aria-invalid="false"');
     expect(html).not.toContain('*');
+    expect(html).toContain('<span aria-hidden="true" class="font-normal"> (required)</span>');
   });
 
   test('an opened optional note brings Cancel, as the sheet asks it to', () => {

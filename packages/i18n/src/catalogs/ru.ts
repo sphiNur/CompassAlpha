@@ -29,6 +29,9 @@ export const ru = {
   'common.busy': 'Подождите…',
   'common.notifications': 'Уведомления',
   'common.actionsAvailable': 'Доступны действия',
+  // Review MWA-07 (V5)
+  'common.requiredMark': '(обязательно)',
+  'common.enterReason': 'Укажите причину.',
   'common.archive': 'Архивировать',
   'common.discard': 'Не сохранять',
   'common.archived': 'в архиве',

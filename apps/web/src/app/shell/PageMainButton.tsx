@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { useTapGuard } from '@compass/ui';
+import { Spinner, useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
 import { announce } from '../../lib/announce';
@@ -143,7 +143,7 @@ export function PageMainButton() {
           // is a minimum, so the bar grows with larger phone text (its
           // height is measured and published above) instead of clipping.
           className={
-            'flex min-h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 py-1.5 text-center text-old-h3 font-semibold ' +
+            'flex min-h-12 w-full min-w-0 items-center justify-center gap-2 rounded-[var(--r-pill)] px-4 py-1.5 text-center text-old-h3 font-semibold ' +
             (interactable
               ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
               : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -152,6 +152,10 @@ export function PageMainButton() {
           {/* Review MWC-08 (modern-web-guidance: single-line-overflow): a
               long action ("Отправить на проверку…") wraps to two balanced
               lines instead of being cut; the bar grows (min-h-12). */}
+          {/* Review MWB-10 (V5, modern-web-guidance: progress): a busy main
+              button shows the kit spinner beside its label, as a busy kit
+              Button does; the button is full width, so nothing moves. */}
+          {busy ? <Spinner size={16} className="shrink-0" /> : null}
           <span className="min-w-0 break-words line-clamp-2 [text-wrap:balance]">{state.text}</span>
         </button>
       </div>

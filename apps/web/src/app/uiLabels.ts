@@ -138,5 +138,12 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
     get actionsAvailable() {
       return i18n.t('common.actionsAvailable');
     },
+    // Review MWA-07 (V5): a required field's "(required)", and ConfirmSheet's hint.
+    get requiredMark() {
+      return i18n.t('common.requiredMark');
+    },
+    get enterReason() {
+      return i18n.t('common.enterReason');
+    },
   };
 }

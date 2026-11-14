@@ -36,6 +36,9 @@ export const uz = {
   'common.busy': 'Iltimos, kuting…',
   'common.notifications': 'Bildirishnomalar',
   'common.actionsAvailable': 'Amallar mavjud',
+  // Review MWA-07 (V5)
+  'common.requiredMark': '(majburiy)',
+  'common.enterReason': 'Sababni yozing.',
   'common.archive': 'Arxivlash',
   'common.discard': 'Saqlamaslik',
   'common.archived': 'arxivlangan',

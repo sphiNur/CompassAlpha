@@ -46,6 +46,9 @@ export const en = {
   'common.busy': 'Please wait…',
   'common.notifications': 'Notifications',
   'common.actionsAvailable': 'Actions available',
+  // Review MWA-07 (V5): beside a required field's label, and why a confirm waits.
+  'common.requiredMark': '(required)',
+  'common.enterReason': 'Enter a reason.',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',
