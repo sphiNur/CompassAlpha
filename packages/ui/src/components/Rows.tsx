@@ -259,7 +259,9 @@ export function Field({ label, hint, error, required = false, children, classNam
     () => ({
       id: controlId,
       labelId,
-      describedBy: joinIds(hasMessage && errorId, hasHint && hintId),
+      // Review MWA-14 (modern-web-guidance: accessibility): the hint is
+      // read before the error ("after any hint"); nothing moves on screen.
+      describedBy: joinIds(hasHint && hintId, hasMessage && errorId),
       invalid: hasError,
       required,
       reportFormatError,
@@ -323,7 +325,8 @@ export function FieldGroup({ label, hint, error, children, className }: FieldGro
     <div
       role="group"
       aria-labelledby={titleId}
-      aria-describedby={joinIds(hasError && errorId, hasHint && hintId)}
+      // Review MWA-14 (modern-web-guidance: accessibility): hint, then error.
+      aria-describedby={joinIds(hasHint && hintId, hasError && errorId)}
       className={cn('block', className)}
     >
       <FieldLabel id={titleId}>{label}</FieldLabel>

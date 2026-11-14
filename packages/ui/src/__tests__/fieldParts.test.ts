@@ -52,7 +52,7 @@ describe('Field wiring', () => {
   const idOf = (html: string, text: string) =>
     new RegExp(`id="([^"]+)"[^>]*>(?:<svg[^>]*>.*?</svg>)?(?:<span>)?${text}`).exec(html)?.[1];
 
-  test('the error and the hint sit outside the <label> and describe the control', () => {
+  test('the error and the hint sit outside the <label> and describe the control, hint first', () => {
     const html = render({ error: 'Too long', hint: 'At most 40 letters' });
     const label = /<label[^>]*>.*?<\/label>/.exec(html)?.[0] ?? '';
     expect(label).not.toContain('Too long');
@@ -61,7 +61,7 @@ describe('Field wiring', () => {
     const hintId = idOf(html, 'At most 40 letters');
     expect(errorId).toBeDefined();
     expect(hintId).toBeDefined();
-    expect(attr(html, 'input', 'aria-describedby')).toBe(`${errorId} ${hintId}`);
+    expect(attr(html, 'input', 'aria-describedby')).toBe(`${hintId} ${errorId}`);
     expect(attr(html, 'input', 'aria-invalid')).toBe('true');
     expect(attr(html, 'input', 'class')?.split(' ')).toContain('ring-[var(--c-danger)]');
   });
@@ -149,7 +149,7 @@ describe('Field wiring', () => {
     expect(attr(alone, 'button', 'id')).toBeUndefined();
   });
 
-  test('a group is described by its error and hint', () => {
+  test('a group is described by its hint, then its error (MWA-14)', () => {
     const html = renderToStaticMarkup(
       createElement(FieldGroup, {
         label: 'Stores',
@@ -159,7 +159,7 @@ describe('Field wiring', () => {
       }),
     );
     expect(attr(html, 'div', 'aria-describedby')).toBe(
-      `${idOf(html, 'Pick at least one')} ${idOf(html, 'Where they work')}`,
+      `${idOf(html, 'Where they work')} ${idOf(html, 'Pick at least one')}`,
     );
   });
 });
