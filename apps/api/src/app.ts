@@ -11,10 +11,13 @@ import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
 import { attendanceMonthExport } from './http/attendanceExport';
+import { CSP_REPORT_PATH, cspReportHandler } from './http/cspReport';
 import { INTERNAL_BODY, NOT_FOUND_BODY } from './http/errorBodies';
 import { readinessHandler } from './http/health';
 import { allowedCorsOrigin, securityHeaders } from './http/securityHeaders';
 import { serveWebApp } from './http/webApp';
+import { trustedClientIp } from './services/clientIp';
+import { uploadOrigin } from './services/s3';
 
 /**
  * Read the web build's id (emitted by vite.config.ts → buildShaPlugin)
@@ -47,7 +50,16 @@ export function createApp() {
   const app = new Hono();
 
   // Security headers on every response (http/securityHeaders.ts).
-  app.use('*', securityHeaders({ production: env.NODE_ENV === 'production' }));
+  // Review MWD-12: the photo bucket is the one other origin the page
+  // connects to (the report-only policy's connect-src).
+  const bucket = uploadOrigin();
+  app.use(
+    '*',
+    securityHeaders({
+      production: env.NODE_ENV === 'production',
+      connectOrigins: bucket ? [bucket] : [],
+    }),
+  );
 
   app.use(
     '*',
@@ -90,6 +102,17 @@ export function createApp() {
       apiStartedAt: STARTED_AT,
       // Kept for back-compat with the earlier /version client.
       startedAt: STARTED_AT,
+    }),
+  );
+
+  // Reviews MWD-12 / MWD-13 (modern-web-guidance: security,
+  // trusted-types): what the report-only CSP would have blocked
+  // (http/cspReport.ts). Logged, masked, never stored.
+  app.post(
+    CSP_REPORT_PATH,
+    cspReportHandler({
+      clientIp: (c) => trustedClientIp((name) => c.req.header(name), env.CLIENT_IP_PROXY_KEY),
+      log: (violations) => logger.info({ csp: violations }, 'csp_report'),
     }),
   );
 

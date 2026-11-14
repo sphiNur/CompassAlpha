@@ -3,6 +3,81 @@
  * app.ts so a test can check them without the database or the env.
  */
 import type { MiddlewareHandler } from 'hono';
+import { CSP_REPORT_PATH } from './cspReport';
+
+/** The directives both policies share (see the enforced one below). */
+const SCRIPT_SRC = "script-src 'self' 'wasm-unsafe-eval' https://telegram.org";
+const BEFORE_CONNECT = [
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+];
+const AFTER_CONNECT = [
+  "frame-ancestors 'self' https://web.telegram.org https://t.me",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+];
+
+/** The Reporting API endpoint name the report-only policy reports to. */
+export const CSP_REPORT_GROUP = 'csp';
+
+/** A Host header that is a plain host[:port], or null. */
+function plainHost(value: string | undefined): string | null {
+  const host = value?.trim().toLowerCase();
+  return host && /^[a-z0-9.-]+(?::\d{1,5})?$/.test(host) ? host : null;
+}
+
+/**
+ * Reviews MWD-12 / MWD-13 (modern-web-guidance: security, trusted-types):
+ * the stricter policy, sent as `Content-Security-Policy-Report-Only`
+ * beside the enforced one. It blocks nothing; a browser reports what it
+ * would have blocked to POST /csp-report (cspReport.ts), so the policy
+ * can be promoted once the reports are quiet. What it adds:
+ *
+ *   - connect-src  'self', the page's own host over wss (the realtime
+ *                  socket; older WebKit does not match ws to 'self'),
+ *                  the photo bucket's origin (the presigned PUT, from
+ *                  S3_ENDPOINT / S3_BUCKET) and Telegram, instead of any
+ *                  https: or wss: host. In production the web calls the
+ *                  api on its own origin (VITE_API_URL and VITE_WS_URL
+ *                  are empty), through the Worker.
+ *   - script-src   'report-sample', so a report shows what ran.
+ *   - require-trusted-types-for 'script' with `trusted-types 'none'`: the
+ *                  app has no HTML sinks of its own. The face tracker
+ *                  (MediaPipe) is the known exception: it creates a
+ *                  pass-through policy named `goog#html` and loads its
+ *                  wasm loader with a `<script src>` set from a string;
+ *                  both will show in the reports, and need a narrow
+ *                  policy before this is ever enforced (owner decision).
+ *   - report-uri and report-to (Reporting-Endpoints), both to
+ *                  /csp-report.
+ */
+export function reportOnlyCsp({
+  connectOrigins,
+  host,
+}: {
+  /** Origins the page really connects to besides its own (the bucket). */
+  connectOrigins: readonly string[];
+  /** The page's own host, from the request; null when unusable. */
+  host: string | null;
+}): string {
+  const connect = ["'self'"];
+  if (host) connect.push(`wss://${host}`);
+  for (const origin of connectOrigins) if (!connect.includes(origin)) connect.push(origin);
+  connect.push('https://telegram.org');
+  return [
+    "default-src 'self'",
+    `${SCRIPT_SRC} 'report-sample'`,
+    ...BEFORE_CONNECT,
+    `connect-src ${connect.join(' ')}`,
+    ...AFTER_CONNECT,
+    "require-trusted-types-for 'script'",
+    "trusted-types 'none'",
+    `report-uri ${CSP_REPORT_PATH}`,
+    `report-to ${CSP_REPORT_GROUP}`,
+  ].join('; ');
+}
 
 /**
  * Security headers (added 2026-05-05 — pre-launch hardening).
@@ -48,7 +123,14 @@ import type { MiddlewareHandler } from 'hono';
  *
  *   Content-Security-Policy: see below (M1.20).
  */
-export function securityHeaders({ production }: { production: boolean }): MiddlewareHandler {
+export function securityHeaders({
+  production,
+  connectOrigins = [],
+}: {
+  production: boolean;
+  /** MWD-12: origins the page connects to besides its own (report-only policy). */
+  connectOrigins?: readonly string[];
+}): MiddlewareHandler {
   return async (c, next) => {
     // try/finally so headers also land on error responses (a thrown
     // route ends up in `app.onError` which still serializes the
@@ -118,17 +200,23 @@ export function securityHeaders({ production }: { production: boolean }): Middle
           // 'wasm-unsafe-eval': the liveness face tracker (MediaPipe,
           // WebAssembly from our own /assets) compiles in the page
           // (2026-11-06). It allows WebAssembly only, not eval().
-          "script-src 'self' 'wasm-unsafe-eval' https://telegram.org",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: blob: https:",
-          "font-src 'self' data:",
+          SCRIPT_SRC,
+          ...BEFORE_CONNECT,
           "connect-src 'self' wss: https:",
-          "frame-ancestors 'self' https://web.telegram.org https://t.me",
-          "base-uri 'self'",
-          "form-action 'self'",
-          "object-src 'none'",
+          ...AFTER_CONNECT,
         ].join('; '),
       );
+      // Reviews MWD-12 / MWD-13 (modern-web-guidance: security,
+      // trusted-types): the stricter policy, report-only, beside the
+      // enforced one (reportOnlyCsp above). It never blocks a request.
+      c.header(
+        'Content-Security-Policy-Report-Only',
+        reportOnlyCsp({
+          connectOrigins,
+          host: plainHost(c.req.header('x-forwarded-host') ?? c.req.header('host')),
+        }),
+      );
+      c.header('Reporting-Endpoints', `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`);
       if (production) {
         c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
       }
