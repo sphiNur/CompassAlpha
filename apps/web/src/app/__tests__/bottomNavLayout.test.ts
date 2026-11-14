@@ -87,7 +87,9 @@ describe('the main button on the nav row', () => {
 
   test('beside the button the capsule fills the row with the usual tabs', () => {
     // Owner, 2026-11-14: icon over word, no narrower icon-only tabs.
-    expect(appCss).not.toMatch(/\[data-main-button\] \.app-dock\[data-nav\] \.app-nav(-item|-label)? \{/);
+    expect(appCss).not.toMatch(
+      /\[data-main-button\] \.app-dock\[data-nav\] \.app-nav(-item|-label)? \{/,
+    );
     expect(appCss).not.toContain('--app-nav-icon-w');
     expect(rule('  .app-nav')).toMatch(/flex: 1 1 auto;/);
     expect(navSrc).toMatch(/min-w-\[min\(2\.75rem,20%\)\] flex-auto/);
