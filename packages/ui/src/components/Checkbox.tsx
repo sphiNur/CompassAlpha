@@ -53,7 +53,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
         // UI-10 (review 2026-11): unchecked, the edge is the 3:1 field
         // border (the hairline measured 1.2–1.4:1); checked, the filled
         // box needs no edge.
-        'bg-[var(--c-surface-2)] ring-field transition-colors',
+        'bg-[var(--c-surface-2)] ring-field transition-colors duration-[var(--t-quick)]',
         'peer-checked:bg-[var(--c-action)] peer-checked:[box-shadow:none]',
         'peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--c-ring)] peer-focus-visible:ring-offset-2',
         'peer-focus-visible:ring-offset-[var(--c-ring-offset)]',
@@ -64,7 +64,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
     >
       <svg
         viewBox="0 0 16 16"
-        className="h-3 w-3 text-[var(--c-action-fg)] opacity-0 transition-opacity"
+        className="h-3 w-3 text-[var(--c-action-fg)] opacity-0 transition-opacity duration-[var(--t-quick)]"
       >
         <path
           d="M3.5 8.5l3 3 6-6"

@@ -33,6 +33,7 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../lib/telegram';
+import { leaveListItem } from '../lib/motion';
 import { useOnline } from '../hooks/useOnline';
 import { useErrToast } from '../hooks/useErrToast';
 import { useStableCallbacks } from '../hooks/useStableCallbacks';
@@ -44,6 +45,14 @@ import { ApprovalCard, type ApprovalCardBusy, type ApprovalTab } from './approva
 
 /** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
 const NEXT_CARD = '[data-approval-list] > li h2';
+
+/** UI overhaul B part 2: a decided card slides out of the list (gap-2 = 8px). */
+function leaveCard(sessionId: string): Promise<void> {
+  return leaveListItem(
+    document.querySelector(`[data-approval-list] > li[data-approval-id="${CSS.escape(sessionId)}"]`),
+    8,
+  );
+}
 
 /**
  * Each tab's name, for the tab and for its empty state. Review ADM2-16 /
@@ -171,8 +180,11 @@ export function ApprovalPage() {
   const approve = trpc.order.approve.useMutation({
     onSuccess: (data, vars) => {
       // DX-IX-4 (2026-11-01): the approved card (and its button) leaves the
-      // list; focus moves to the next card's title, not to <body>.
-      void utils.order.pendingList.invalidate().then(() => focusAfter(NEXT_CARD));
+      // list; focus moves to the next card's title, not to <body>. UI
+      // overhaul B part 2 (2026-11-15): it slides out and folds first.
+      void leaveCard(vars.sessionId)
+        .then(() => utils.order.pendingList.invalidate())
+        .then(() => focusAfter(NEXT_CARD));
       haptic('success');
       // D12 (U1, 2026-10-31): the card's 通过 stays one tap, with five
       // seconds to take it back. The undo is the normal unapprove, sent
@@ -202,8 +214,10 @@ export function ApprovalPage() {
     },
   });
   const reject = trpc.order.reject.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate().then(() => focusAfter(NEXT_CARD));
+    onSuccess: (_data, vars) => {
+      void leaveCard(vars.sessionId)
+        .then(() => utils.order.pendingList.invalidate())
+        .then(() => focusAfter(NEXT_CARD));
       setRejectFor(null);
       setRejectReason('');
       haptic('warning');

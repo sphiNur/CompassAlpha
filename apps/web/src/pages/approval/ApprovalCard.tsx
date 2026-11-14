@@ -94,7 +94,7 @@ export function ApprovalCard({
   const requests = cardRequests(row.notes, row.extrasJson);
   const canApproveRow = approvable(row.itemCount, requests.extras);
   return (
-    <Card as="li">
+    <Card as="li" data-approval-id={row.id}>
       {/* A11Y-1 (2026-10-31): the amounts move under the name when
         the card is too narrow (200% zoom) instead of running
         off its edge. */}

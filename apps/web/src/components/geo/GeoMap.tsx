@@ -13,7 +13,7 @@ const View = resilientLazy(() => import('./GeoMapView'));
 export function GeoMap(props: GeoMapViewProps) {
   const box = props.className ?? 'h-56 w-full overflow-hidden rounded-[var(--r-utility)]';
   return (
-    <Suspense fallback={<div className={`${box} animate-pulse bg-[var(--c-surface-2)]`} />}>
+    <Suspense fallback={<div className={`${box} animate-pulse motion-reduce:animate-none bg-[var(--c-surface-2)]`} />}>
       <View {...props} />
     </Suspense>
   );

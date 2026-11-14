@@ -475,7 +475,7 @@ export function PickerRow({
         // UI overhaul A2 (2026-11-15): a flat row of the group's one
         // surface, not a white tile inside a grey panel. The choice is the
         // action-coloured name and ✓, as a settings list marks it.
-        'flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors active:bg-[var(--c-surface-2)]',
+        'flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-[var(--t-snap)] active:bg-[var(--c-surface-2)]',
         selected ? 'text-[var(--c-action)]' : 'text-[var(--c-fg)]',
         disabled && 'opacity-60 pointer-events-none',
         className,
