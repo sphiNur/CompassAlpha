@@ -205,7 +205,8 @@ export function ConfirmSheet({
       <div className="flex flex-col gap-3 py-3">
         {banner}
         {body ? (
-          <p className="whitespace-pre-line text-old-body leading-snug text-[var(--c-fg-muted)]">
+          // Review MWC-10 (V9): no one-word last line.
+          <p className="whitespace-pre-line text-old-body leading-snug text-[var(--c-fg-muted)] [text-wrap:pretty]">
             {body}
           </p>
         ) : null}

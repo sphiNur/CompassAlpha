@@ -67,7 +67,12 @@ export function CardTitle({
   as?: 'h2' | 'h3';
 }) {
   return (
-    <As className={cn('text-old-h2 font-semibold text-[var(--c-fg)]', className)}>{children}</As>
+    // Review MWC-10 (V9): a two-line card title breaks into even lines.
+    <As
+      className={cn('text-old-h2 font-semibold text-[var(--c-fg)] [text-wrap:balance]', className)}
+    >
+      {children}
+    </As>
   );
 }
 

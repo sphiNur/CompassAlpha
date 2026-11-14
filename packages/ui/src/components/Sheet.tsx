@@ -493,13 +493,15 @@ function OpenedSheet({
               <Dialog.Title
                 ref={titleRef}
                 tabIndex={focusTitleOnOpen ? -1 : undefined}
-                className="mt-3 text-center text-old-h2 font-semibold outline-none"
+                // Review MWC-10 (V9): a centred ru / uz title left one word
+                // on its last line; balanced, its lines are even.
+                className="mt-3 text-center text-old-h2 font-semibold outline-none [text-wrap:balance]"
               >
                 {title}
               </Dialog.Title>
             ) : null}
             {description ? (
-              <Dialog.Description id={descriptionId} className="mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)]">
+              <Dialog.Description id={descriptionId} className="mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]">
                 {description}
               </Dialog.Description>
             ) : null}

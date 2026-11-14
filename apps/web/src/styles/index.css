@@ -54,6 +54,20 @@
     outline: 2px solid var(--c-ring);
     outline-offset: 2px;
   }
+  /* Review MWC-10 (V9, modern-web-guidance: improve-text-layout-and-legibility):
+     "Apply `text-wrap: balance` to short headings (h1, h2, h3) and
+     `text-wrap: pretty` to body text (p, li)", never to `*`. Element
+     selectors, so a class that keeps a line whole (truncate,
+     whitespace-nowrap) still wins. Ignored where unsupported. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p,
+  li {
+    text-wrap: pretty;
+  }
   /* Review UI-15 (2026-11-10): `.scrollbar-hide` and the sheet
      animations are in @compass/ui/tokens.css, next to the components
      that use them. */

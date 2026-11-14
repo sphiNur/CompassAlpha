@@ -29,7 +29,10 @@ export function EmptyState({ title, description, action, className, compact }: E
           {title}
         </p>
         {description ? (
-          <p className="max-w-sm text-old-body-sm text-[var(--c-fg-muted)]">{description}</p>
+          // Review MWC-10 (V9): no one-word last line.
+          <p className="max-w-sm text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]">
+            {description}
+          </p>
         ) : null}
         {action ? <div>{action}</div> : null}
       </div>
@@ -44,9 +47,12 @@ export function EmptyState({ title, description, action, className, compact }: E
     >
       {/* h2 (A11Y-10, 2026-10-31): an empty state is the page's content
           under its <h1>; as h3 it skipped a heading level. */}
-      <h2 className="text-old-h2 font-semibold text-[var(--c-fg)]">{title}</h2>
+      {/* Review MWC-10 (V9): balanced title, no one-word last line below. */}
+      <h2 className="text-old-h2 font-semibold text-[var(--c-fg)] [text-wrap:balance]">{title}</h2>
       {description ? (
-        <p className="max-w-sm text-old-body text-[var(--c-fg-muted)]">{description}</p>
+        <p className="max-w-sm text-old-body text-[var(--c-fg-muted)] [text-wrap:pretty]">
+          {description}
+        </p>
       ) : null}
       {action ? <div className="mt-1">{action}</div> : null}
     </div>

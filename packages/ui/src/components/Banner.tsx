@@ -40,7 +40,10 @@ export function Banner({ className, tone = 'info', title, action, children, ...r
           or store name) wrapped instead of pushing the action off the edge. */}
       <div className="min-w-0 flex-1 break-words">
         {title ? <div className="text-old-h3 font-semibold">{title}</div> : null}
-        {children ? <div className="text-old-body-sm opacity-90">{children}</div> : null}
+        {/* Review MWC-10 (V9): pretty, not balance: a banner has a visible box. */}
+        {children ? (
+          <div className="text-old-body-sm opacity-90 [text-wrap:pretty]">{children}</div>
+        ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>
