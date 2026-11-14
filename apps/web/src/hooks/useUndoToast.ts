@@ -3,7 +3,8 @@
  * be taken back (archive in the catalog, delete a shift in attendance).
  *
  * D3 (2026-11-13): archiving no longer asks first; the toast's Undo takes it
- * back. UX-03 (2026-11-13): deleting a shift does the same.
+ * back. UX-03 (2026-11-13): deleting a shift does the same; since review
+ * MWB-06 (V7, 2026-11-14) it asks first, and the Undo is a shortcut.
  */
 import { useToast } from '@compass/ui';
 import { useI18n } from './useI18n';

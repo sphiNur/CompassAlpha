@@ -21,6 +21,7 @@ import {
   cn,
   rowGroupClass,
   rowListClass,
+  useConfirm,
   useToast,
 } from '@compass/ui';
 import { locationVerdict } from '@compass/contracts/limits';
@@ -856,6 +857,7 @@ function ShiftSheet({
   const dates = useDateFormat();
   const toast = useToast();
   const deletedToast = useUndoToast();
+  const confirm = useConfirm();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const [form, setForm] = useState<ShiftDraft | null>(draft);
@@ -874,8 +876,9 @@ function ShiftSheet({
     onSuccess: () => done(i18n.t('attendance.toast.shiftSaved')),
     onError: errToast('attendance.errors.saveFailed'),
   });
-  // UX-03: deleting asks nothing first; the toast's Undo saves the shift
-  // again as it was before the sheet opened (the catalog's archive Undo).
+  // UX-03: the toast's Undo saves the shift again as it was before the
+  // sheet opened (the catalog's archive Undo). Review MWB-06 (V7): deleting
+  // asks first now; the Undo stays as a shortcut, not the only way back.
   // Its own mutation, so an Undo does not close a sheet opened since.
   const restore = trpc.attendance.shiftSave.useMutation({
     onSuccess: () => {
@@ -986,11 +989,23 @@ function ShiftSheet({
               variant="danger"
               block
               loading={del.isPending}
-              onClick={() => {
+              onClick={async () => {
                 // The shift as saved, not the sheet's unsaved edits.
                 const old = draft!;
+                const shiftId = form.shiftId!;
+                // Review MWB-06 (V7, modern-web-guidance:
+                // persistent-toast-notifications): "DON'T include controls in
+                // toast notifications that perform actions not already
+                // permanently available". A missed 6 s Undo lost the shift
+                // and its note; the kit's red confirm comes first.
+                const ok = await confirm({
+                  title: i18n.t('attendance.shift.deleteConfirm'),
+                  confirmLabel: i18n.t('attendance.shift.delete'),
+                  danger: true,
+                });
+                if (!ok) return;
                 del.mutate(
-                  { storeId, shiftId: form.shiftId! },
+                  { storeId, shiftId },
                   {
                     onSuccess: () =>
                       deletedToast(i18n.t('attendance.toast.shiftDeleted'), () =>

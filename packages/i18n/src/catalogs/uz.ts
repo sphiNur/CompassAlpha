@@ -2661,6 +2661,7 @@ export const uz = {
   'attendance.shift.note': 'Izoh',
   'attendance.shift.notePlaceholder': 'masalan, oshxona',
   'attendance.shift.delete': 'Smenani oʻchirish',
+  'attendance.shift.deleteConfirm': 'Bu smenani oʻchirasizmi?',
   'attendance.toast.punchReviewed': 'Belgi tekshirildi',
   'attendance.toast.punchVoided': 'Belgi yaroqsiz qilindi',
   'attendance.toast.enrollApproved': 'Yuz tasdiqlandi',

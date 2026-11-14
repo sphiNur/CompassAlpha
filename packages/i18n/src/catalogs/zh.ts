@@ -2379,6 +2379,7 @@ export const zh = {
   'attendance.shift.note': '备注',
   'attendance.shift.notePlaceholder': '例如：后厨',
   'attendance.shift.delete': '删除班次',
+  'attendance.shift.deleteConfirm': '删除这个班次？',
   'attendance.toast.punchReviewed': '打卡已核对',
   'attendance.toast.punchVoided': '打卡已作废',
   'attendance.toast.enrollApproved': '人脸已审核通过',

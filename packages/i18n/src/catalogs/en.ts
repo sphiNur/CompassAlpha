@@ -2774,6 +2774,8 @@ export const en = {
   'attendance.shift.note': 'Note',
   'attendance.shift.notePlaceholder': 'e.g. kitchen',
   'attendance.shift.delete': 'Delete shift',
+  // Review MWB-06 (V7): deleting a shift asks first; the Undo stays.
+  'attendance.shift.deleteConfirm': 'Delete this shift?',
   'attendance.toast.punchReviewed': 'Punch checked',
   'attendance.toast.punchVoided': 'Punch voided',
   'attendance.toast.enrollApproved': 'Face approved',

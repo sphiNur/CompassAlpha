@@ -2681,6 +2681,7 @@ export const ru = {
   'attendance.shift.note': 'Заметка',
   'attendance.shift.notePlaceholder': 'например, кухня',
   'attendance.shift.delete': 'Удалить смену',
+  'attendance.shift.deleteConfirm': 'Удалить эту смену?',
   'attendance.toast.punchReviewed': 'Отметка проверена',
   'attendance.toast.punchVoided': 'Отметка аннулирована',
   'attendance.toast.enrollApproved': 'Лицо одобрено',
