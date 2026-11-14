@@ -10,7 +10,7 @@
  *     renders the shared components/sales/StoreSalesPanel (CA-09)
  *   - StoreCloneRolesSheet clone-roles wizard (internal)
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -367,6 +367,7 @@ export function StoreDetailScreen({
   const i18n = useI18n();
   const isOrgLevel = focus.kind === 'org-level';
   const effectiveSub: StoreSub = isOrgLevel ? 'team' : sub;
+  const subPanelId = useId();
   return (
     <div className="flex flex-col">
       {!isOrgLevel ? (
@@ -385,27 +386,34 @@ export function StoreDetailScreen({
             ]}
             onChange={onSubChange}
             ariaLabel={i18n.t('admin.store.sectionAria')}
+            // Review MWB-16 (modern-web-guidance: tabs): the segments point
+            // at the view they swap.
+            controls={subPanelId}
           />
         </div>
       ) : null}
-      {effectiveSub === 'team' ? (
-        <PeopleSection
-          lockMode={
-            isOrgLevel
-              ? { kind: 'org-level' }
-              : { kind: 'store', storeId: focus.storeId }
-          }
-        />
-      ) : null}
-      {effectiveSub === 'inventory' && focus.kind === 'store' ? (
-        <StoreInventoryTab storeId={focus.storeId} storeName={focus.storeName} />
-      ) : null}
-      {effectiveSub === 'sales' && focus.kind === 'store' ? (
-        <StoreSalesPanel storeId={focus.storeId} className="px-4 py-3" />
-      ) : null}
-      {effectiveSub === 'settings' && focus.kind === 'store' ? (
-        <StoreSettingsTab storeId={focus.storeId} onLeave={onLeave} />
-      ) : null}
+      {/* MWB-16: the view the segments swap; a flex column like its
+          parent, so nothing moves. */}
+      <div id={subPanelId} className="flex flex-col">
+        {effectiveSub === 'team' ? (
+          <PeopleSection
+            lockMode={
+              isOrgLevel
+                ? { kind: 'org-level' }
+                : { kind: 'store', storeId: focus.storeId }
+            }
+          />
+        ) : null}
+        {effectiveSub === 'inventory' && focus.kind === 'store' ? (
+          <StoreInventoryTab storeId={focus.storeId} storeName={focus.storeName} />
+        ) : null}
+        {effectiveSub === 'sales' && focus.kind === 'store' ? (
+          <StoreSalesPanel storeId={focus.storeId} className="px-4 py-3" />
+        ) : null}
+        {effectiveSub === 'settings' && focus.kind === 'store' ? (
+          <StoreSettingsTab storeId={focus.storeId} onLeave={onLeave} />
+        ) : null}
+      </div>
     </div>
   );
 }

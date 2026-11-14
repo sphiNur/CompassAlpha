@@ -41,6 +41,11 @@ export const en = {
   'common.reason': 'Reason',
   'common.addNoteOptional': '+ Add note (optional)',
   'common.clearSearch': 'Clear search',
+  // Review MWB-10 / MWB-03 / MWB-07 (modern-web-guidance): said by the kit's
+  // busy buttons, and the toast stack's region name and its action suffix.
+  'common.busy': 'Please wait…',
+  'common.notifications': 'Notifications',
+  'common.actionsAvailable': 'Actions available',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',

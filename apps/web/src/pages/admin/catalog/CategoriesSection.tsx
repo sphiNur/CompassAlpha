@@ -12,6 +12,7 @@ import {
   Field,
   Input,
   Sheet,
+  useLeftField,
   useToast,
   rowGroupClass,
 } from '@compass/ui';
@@ -114,6 +115,10 @@ export function CategoriesSection() {
       )
     : '';
   const slugToSend = slugTyped || autoSlug;
+  // Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+  // the slug's error waits until the field is left, not mid-typing; a new
+  // editor session starts over (the key is null between them).
+  const slugLeft = useLeftField(draft ? (draft.categoryId ?? 'new') : null);
 
   return (
     <div className="px-4 py-3">
@@ -221,10 +226,15 @@ export function CategoriesSection() {
                 which fill it when it is left empty. */}
             <Field
               label={i18n.t('admin.field.slug')}
-              error={draft.slug && !slugIsValid(draft.slug) ? i18n.t(SLUG_MESSAGE.category) : null}
+              error={
+                slugLeft.left && draft.slug && !slugIsValid(draft.slug)
+                  ? i18n.t(SLUG_MESSAGE.category)
+                  : null
+              }
             >
               <Input
                 value={draft.slug}
+                {...slugLeft.inputProps}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
                 maxLength={CATALOG_TEXT_MAX.categorySlug}
                 placeholder={autoSlug}

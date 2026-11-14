@@ -284,7 +284,12 @@ export function Field({ label, hint, error, required = false, children, classNam
       <FieldControlContext.Provider value={control}>
         <div className="mt-1">{children}</div>
       </FieldControlContext.Provider>
-      {hasMessage ? <FieldError id={errorId}>{message}</FieldError> : null}
+      {/* Review MWA-03: said with the field's name (FieldError). */}
+      {hasMessage ? (
+        <FieldError id={errorId} labelledBy={labelId}>
+          {message}
+        </FieldError>
+      ) : null}
       {hasHint ? (
         <span id={hintId} className="mt-1 block text-old-label text-[var(--c-fg-muted)]">
           {hint}
@@ -323,7 +328,11 @@ export function FieldGroup({ label, hint, error, children, className }: FieldGro
     >
       <FieldLabel id={titleId}>{label}</FieldLabel>
       <div className="mt-1">{children}</div>
-      {hasError ? <FieldError id={errorId}>{error}</FieldError> : null}
+      {hasError ? (
+        <FieldError id={errorId} labelledBy={titleId}>
+          {error}
+        </FieldError>
+      ) : null}
       {hasHint ? (
         <span id={hintId} className="mt-1 block text-old-label text-[var(--c-fg-muted)]">
           {hint}

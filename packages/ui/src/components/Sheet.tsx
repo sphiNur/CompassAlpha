@@ -436,8 +436,10 @@ function OpenedSheet({
         <Dialog.Overlay
           className={cn(
             'fixed inset-0 z-50 bg-[var(--c-scrim)]',
-            'data-[state=open]:animate-[fadeIn_var(--t-quick)_var(--easing)]',
-            'data-[state=closed]:animate-[fadeOut_var(--t-quick)_var(--easing)]',
+            // Review MWB-12: an opacity change, timed by --t-fade, which
+            // reduced motion keeps (tokens.css); the panel fades there too.
+            'data-[state=open]:animate-[fadeIn_var(--t-fade)_var(--easing)]',
+            'data-[state=closed]:animate-[fadeOut_var(--t-fade)_var(--easing)]',
           )}
         />
         <Dialog.Content

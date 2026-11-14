@@ -137,3 +137,9 @@ export { UiLabelsProvider, useUiLabels, DEFAULT_UI_LABELS } from './labels';
 export type { UiLabels } from './labels';
 export { useTapGuard } from './useTapGuard';
 export { isCommitEnter } from './enterKey';
+// Review MWA-03 / MWA-06 / MWB-10: the host's polite announcer, given once
+// at its root; the kit's field errors and busy buttons speak through it.
+export { UiAnnouncerProvider, useUiAnnounce, useAnnounceShown } from './announce';
+export type { UiAnnounce } from './announce';
+// Review MWA-04: an error waits until its field has been left.
+export { useLeftField } from './useLeftField';

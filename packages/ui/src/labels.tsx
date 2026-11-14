@@ -120,6 +120,19 @@ export interface UiLabels {
   // --- SearchInput ---
   /** UI-08: name of the clear button, when the caller passes no `clearAriaLabel`. */
   clearSearch: string;
+
+  // --- Announcements (Review MWA-03 / MWB-10 / MWB-03 / MWB-07) ---
+  /**
+   * What is said when a field's error appears: the field's name, then
+   * the error ("Code: use a-z, 0-9 and -").
+   */
+  fieldError: (label: string, message: string) => string;
+  /** Said when a button the person pressed starts its request. */
+  busy: string;
+  /** Name of the toast stack's region. */
+  notifications: string;
+  /** Said after a toast's text when it carries buttons (Undo, Reload). */
+  actionsAvailable: string;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
@@ -156,6 +169,10 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   reason: 'Reason',
   addNote: '+ Add note (optional)',
   clearSearch: 'Clear search',
+  fieldError: (label, message) => (label ? `${label}: ${message}` : message),
+  busy: 'Please wait…',
+  notifications: 'Notifications',
+  actionsAvailable: 'Actions available',
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

@@ -46,6 +46,7 @@ import {
   SectionRow,
   Sheet,
   Switch,
+  useLeftField,
   useToast,
   Select,
   cn,
@@ -706,7 +707,11 @@ function WorkspaceSection() {
   // says what is wrong instead of a failed save. Nothing typed: Save waits.
   const taxToSend = taxRateToSend(draftTax);
   const taxProblem = taxRateProblem(taxToSend);
-  const taxError = draftTax.trim() === '' ? null : taxProblem;
+  // Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+  // the rate's error shows once the field is left, not on each keystroke
+  // ("1" then "12" then "12,"); each opening of the sheet starts over.
+  const taxLeft = useLeftField(financeSheetOpen);
+  const taxError = draftTax.trim() === '' || !taxLeft.left ? null : taxProblem;
   // Review ADM1-21 (2026-11-12): the draft starts from the saved settings
   // when the sheet opens, and only then. It was reset whenever the session
   // changed while the sheet was open, and the session refreshes on every
@@ -857,6 +862,7 @@ function WorkspaceSection() {
               type="number"
               formatError="none"
               value={draftTax}
+              {...taxLeft.inputProps}
               onChange={(e) => setDraftTax(e.target.value)}
               placeholder="0"
             />

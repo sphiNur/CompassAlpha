@@ -98,13 +98,17 @@ export function confirmReasonPolicy(o: {
   requireReason?: boolean;
   reasonOptional?: boolean;
   expanded: boolean;
-}): { showField: boolean; showToggle: boolean; autoFocus: boolean } {
+}): { showField: boolean; showToggle: boolean; autoFocus: boolean; required: boolean } {
   const required = !!o.requireReason;
   const optional = !required && !!o.reasonOptional;
   return {
     showField: required || (optional && o.expanded),
     showToggle: optional && !o.expanded,
     autoFocus: required,
+    // Review MWA-07 (modern-web-guidance: forms): a required reason says
+    // so to a screen reader. No visible "*" (owner: the look stays); the
+    // disabled confirm already waits for it.
+    required,
   };
 }
 
@@ -209,6 +213,9 @@ export function ConfirmSheet({
               onChange={(e) => onReasonChange?.(e.target.value)}
               placeholder={reasonPlaceholder}
               autoFocus={field.autoFocus}
+              // MWA-07 / MWA-15: native `required` (no form here, so no
+              // browser bubble); Field's own `required` would draw the "*".
+              required={field.required || undefined}
             />
           </Field>
         ) : null}

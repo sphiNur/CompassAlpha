@@ -36,9 +36,19 @@ export function BrowserLoginForm({
         </p>
       </div>
       <Field label={i18n.t('dev.browserLogin.tgId')}>
+        {/* Review MWA-12 (modern-web-guidance: autofill-sign-in-form): a
+            stable name, required, and no autocorrect, capitals or spell
+            check on an identifier, so a password manager fills and saves
+            the pair. Submit still waits for both (unchanged). */}
         <Input
+          name="tgUserId"
+          required
           inputMode="numeric"
           autoComplete="username"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="next"
           value={tgUserId}
           onChange={(e) => setTgUserId(e.target.value)}
           autoFocus={!tgUserId}
@@ -48,6 +58,9 @@ export function BrowserLoginForm({
       <Field label={i18n.t('dev.browserLogin.accessCode')}>
         <Input
           type="password"
+          name="accessCode"
+          required
+          enterKeyHint="go"
           autoComplete="current-password"
           value={accessCode}
           onChange={(e) => setAccessCode(e.target.value)}

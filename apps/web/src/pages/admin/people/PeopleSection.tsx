@@ -192,6 +192,9 @@ export function PeopleSection({
           onChange={(e) => setSearchQuery(e.target.value)}
           onClear={() => setSearchQuery('')}
           placeholder={i18n.t('admin.search.peoplePlaceholder')}
+          // Review MWA-19 (modern-web-guidance: accessibility): a name that
+          // stays once typing hides the placeholder, as the other searches.
+          aria-label={i18n.t('admin.search.peoplePlaceholder')}
           clearAriaLabel={i18n.t('common.clear')}
           className="flex-1"
         />

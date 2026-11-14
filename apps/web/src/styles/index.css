@@ -156,7 +156,9 @@
     right: 0;
     z-index: 2;
     pointer-events: none;
-    transition: opacity var(--t-quick) var(--easing);
+    /* Review MWB-12 (modern-web-guidance: motion): opacity, not movement,
+       so it keeps its fade under reduced motion (--t-fade). */
+    transition: opacity var(--t-fade) var(--easing);
   }
   .app-fade-top {
     top: 0;

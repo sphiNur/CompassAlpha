@@ -122,5 +122,21 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
     get clearSearch() {
       return i18n.t('common.clearSearch');
     },
+    // Review MWA-03 (modern-web-guidance: accessible-error-announcement):
+    // an error is said with its field's name, in the language's own
+    // "label: value" form (zh uses a full-width colon).
+    fieldError: (label, message) =>
+      label ? i18n.t('common.labelValue', { label, value: message }) : message,
+    // Review MWB-10 / MWB-03 / MWB-07 (modern-web-guidance: progress,
+    // persistent-toast-notifications).
+    get busy() {
+      return i18n.t('common.busy');
+    },
+    get notifications() {
+      return i18n.t('common.notifications');
+    },
+    get actionsAvailable() {
+      return i18n.t('common.actionsAvailable');
+    },
   };
 }

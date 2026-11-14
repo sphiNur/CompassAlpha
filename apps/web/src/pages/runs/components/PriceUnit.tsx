@@ -12,6 +12,7 @@
  *                      to the field — nobody has to multiply in their
  *                      head to see that "30000" became thirty million.
  */
+import { useAnnounceShown } from '@compass/ui';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatMoney } from '../../../lib/format';
 import { readDisplayPrice } from '../lib/priceMath';
@@ -63,19 +64,36 @@ export function PriceInFull({
   priceInThousands,
   currency,
   unit,
+  errorId,
+  errorShown = true,
 }: {
   typed: string;
   priceInThousands: boolean;
   currency: string;
   unit?: string;
+  /** Id of the error line, for the price field's aria-describedby. */
+  errorId?: string;
+  /**
+   * Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+   * the price field has been left (or Enter pressed), so its error may
+   * show. Until then a figure that cannot be read shows nothing.
+   */
+  errorShown?: boolean;
 }) {
   const i18n = useI18n();
+  const raw = typed.trim() ? readDisplayPrice(typed, priceInThousands) : null;
+  const error =
+    typed.trim() && raw === null && errorShown ? i18n.t('run.errors.priceFormat') : null;
+  // Review MWA-03 (modern-web-guidance: accessible-error-announcement): a
+  // plain line, not a role="alert" that arrives with its text; said once
+  // through the app's polite region.
+  useAnnounceShown(error);
   if (!typed.trim()) return null;
-  const raw = readDisplayPrice(typed, priceInThousands);
   if (raw === null) {
+    if (!error) return null;
     return (
-      <span role="alert" data-testid="price-format-error" className="text-[var(--c-danger)]">
-        {i18n.t('run.errors.priceFormat')}
+      <span id={errorId} data-testid="price-format-error" className="text-[var(--c-danger)]">
+        {error}
       </span>
     );
   }

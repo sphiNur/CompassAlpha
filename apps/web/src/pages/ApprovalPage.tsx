@@ -11,7 +11,7 @@
  * (approval/ApprovalCard.tsx); the page keeps the writes and what
  * follows them.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutationState } from '@tanstack/react-query';
 import { getMutationKey } from '@trpc/react-query';
 import {
@@ -74,6 +74,8 @@ export function ApprovalPage() {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const [tab, setTab] = useState<ApprovalTab>('pending');
+  // Review MWB-16 (modern-web-guidance: tabs): the list the segments swap.
+  const listPanelId = useId();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -364,6 +366,8 @@ export function ApprovalPage() {
   });
 
   if (!session) return null;
+  // A member with no store sees no list (nothing for the segments to point at).
+  const showsList = myStores.length > 0 || session.permissions.includes('users.manage');
 
   // M1.11 cleanup (2026-05-08): subtitle dropped — the status switch
   // immediately below + the empty-state Card (when count===0) +
@@ -387,6 +391,7 @@ export function ApprovalPage() {
           value={tab}
           onChange={setTab}
           ariaLabel={i18n.t('approval.tabsAriaLabel')}
+          controls={showsList ? listPanelId : undefined}
           options={[
             { value: 'pending', label: i18n.t(TAB_LABEL_KEYS.pending) },
             { value: 'approved', label: i18n.t(TAB_LABEL_KEYS.approved) },
@@ -395,8 +400,7 @@ export function ApprovalPage() {
         />
       </StickyPageBar>
 
-      {myStores.length === 0 &&
-      !session.permissions.includes('users.manage') ? (
+      {!showsList ? (
         // Manager dragged of all stores mid-shift, or never assigned.
         // Don't even fire the query — they'd just see an empty queue
         // with no explanation.
@@ -407,7 +411,7 @@ export function ApprovalPage() {
           />
         </div>
       ) : (
-      <div className="px-4 pt-3">
+      <div id={listPanelId} className="px-4 pt-3">
       <DataState
         query={pendingQuery}
         emptyWhen={(d) => d.length === 0}

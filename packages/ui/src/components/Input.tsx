@@ -5,7 +5,7 @@ import { useUiLabels } from '../labels';
 import { useDecimalField } from '../useDecimalField';
 import { disabledClass } from './disabled';
 import { FieldError } from './FieldError';
-import { joinIds, useFieldControl } from './fieldControl';
+import { fieldRequired, joinIds, useFieldControl } from './fieldControl';
 
 type FieldAttributes = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>;
 
@@ -80,6 +80,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   // UI-02: a Field around the input shows its error and ties it here.
   const field = useFieldControl();
   const marked = !!invalid || formatInvalid || !!field?.invalid;
+  const required = fieldRequired(field, props.required);
   const formatLine = formatInvalid && formatError === 'inline';
   const controlId = useId();
   const formatErrorId = useId();
@@ -125,8 +126,15 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       {...rest}
       // After the spread: what the caller passed adds to the field's own.
       id={props.id ?? field?.id}
-      aria-invalid={marked || props['aria-invalid'] || undefined}
-      aria-required={field?.required || props['aria-required'] || undefined}
+      // Review MWA-15 (modern-web-guidance: required-field-feedback): the
+      // native `required` (it implies aria-required). The kit validates in
+      // JS, so a <form> around a required field must be noValidate; none
+      // is today (the two forms, sign-in and onboarding, mark no field).
+      // aria-invalid is "false" until an error shows: Safari and Firefox
+      // expose an empty required field as invalid from the start.
+      required={required}
+      aria-invalid={marked || props['aria-invalid'] || (required ? false : undefined)}
+      aria-required={required ? undefined : props['aria-required']}
       aria-describedby={joinIds(
         field?.describedBy,
         props['aria-describedby'],

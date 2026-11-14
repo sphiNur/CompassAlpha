@@ -29,6 +29,8 @@ import {
   isCommitEnter,
   NameCell,
   SectionLabel,
+  useAnnounceShown,
+  useLeftField,
 } from '@compass/ui';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
@@ -1521,9 +1523,18 @@ export const PurchaseRow = memo(function PurchaseRow({
   // is said under the field (PriceInFull), before the 5× check or a
   // round trip, and ✓ stays off.
   const priceProblem = price.trim() !== '' && rawPrice === null;
+  // Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+  // the red ring and the "cannot be read" line wait until the price field
+  // is left or Enter is pressed; ✓ stays off either way.
+  const priceLeft = useLeftField();
+  const priceShown = priceProblem && priceLeft.left;
+  const priceErrorId = useId();
   // R2-ENG-2: the server caps one line (qty × price) at 1e12.
   const lineTooLarge =
     totalHint !== null && rawPrice !== null && !lineWithinCap(qty.trim(), rawPrice);
+  // Review MWA-03 (modern-web-guidance: accessible-error-announcement): the
+  // line below is plain text now, said once through the polite region.
+  useAnnounceShown(lineTooLarge ? i18n.t('run.errors.lineTooLarge') : null);
 
   // DX-BUY-3 (2026-11-01): when the quantity differs from the plan on a
   // row several stores asked for, say how it will be split before ✓ —
@@ -1968,11 +1979,14 @@ export const PurchaseRow = memo(function PurchaseRow({
               onFocus={(e) => e.currentTarget.select()}
               // The row has no room for a message; line 3 says it.
               formatError="none"
-              invalid={priceProblem}
+              invalid={priceShown}
+              aria-describedby={priceShown ? priceErrorId : undefined}
+              onBlur={priceLeft.onBlur}
               enterKeyHint="done"
               onKeyDown={(e) => {
                 if (!isCommitEnter(e)) return;
                 e.preventDefault();
+                priceLeft.reveal();
                 if (canSave) handleSave('editor');
               }}
               placeholder={i18n.t('run.action.unitPriceAriaLabel')}
@@ -2086,11 +2100,11 @@ export const PurchaseRow = memo(function PurchaseRow({
               priceInThousands={priceInThousands}
               currency={currency}
               unit={unit}
+              errorId={priceErrorId}
+              errorShown={priceLeft.left}
             />
             {lineTooLarge ? (
-              <span role="alert" className="text-[var(--c-danger)]">
-                {i18n.t('run.errors.lineTooLarge')}
-              </span>
+              <span className="text-[var(--c-danger)]">{i18n.t('run.errors.lineTooLarge')}</span>
             ) : totalHint !== null ? (
               <span>
                 ={' '}

@@ -203,6 +203,9 @@ export function SkusSection() {
           onChange={(e) => setSearchQuery(e.target.value)}
           onClear={() => setSearchQuery('')}
           placeholder={i18n.t('admin.search.skusPlaceholder')}
+          // Review MWA-19 (modern-web-guidance: accessibility): a name that
+          // stays once typing hides the placeholder, as the other searches.
+          aria-label={i18n.t('admin.search.skusPlaceholder')}
           clearAriaLabel={i18n.t('common.clear')}
         />
       </div>

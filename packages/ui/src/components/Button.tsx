@@ -1,10 +1,12 @@
-import { forwardRef, isValidElement, useId, useRef } from 'react';
+import { forwardRef, isValidElement, useCallback, useEffect, useId, useRef } from 'react';
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
 import { Spinner } from './Spinner';
 import { createTapGuard } from '../useTapGuard';
 import { disabledClass } from './disabled';
+import { useUiAnnounce } from '../announce';
+import { useUiLabels } from '../labels';
 
 const button = cva(
   [
@@ -23,6 +25,10 @@ const button = cva(
     'focus-visible:ring-offset-[var(--c-ring-offset)]',
     disabledClass,
     'disabled:pointer-events-none',
+    // Review MWB-10 (modern-web-guidance: progress): a loading button is
+    // aria-disabled, not disabled, so focus stays on it; it looks as a
+    // disabled one did.
+    'data-[loading]:cursor-not-allowed data-[loading]:opacity-50 data-[loading]:pointer-events-none',
   ],
   {
     variants: {
@@ -138,19 +144,56 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           }
           onClick(e);
         };
+  // Review MWB-10 (modern-web-guidance: progress): "aria-busy has
+  // inconsistent screen reader support". When the person's own press
+  // starts the request, "Please wait…" is said through the host's polite
+  // region. Only then: a button whose loading follows a request started
+  // elsewhere says nothing.
+  const announce = useUiAnnounce();
+  const labels = useUiLabels();
+  const pressedAt = useRef(0);
+  const ownRef = useRef<HTMLButtonElement | null>(null);
+  const wasLoading = useRef(!!loading);
+  useEffect(() => {
+    const started = !!loading && !wasLoading.current;
+    wasLoading.current = !!loading;
+    if (!started) return;
+    const el = ownRef.current;
+    const focused = !!el && typeof document !== 'undefined' && document.activeElement === el;
+    if (saysBusy(focused, pressedAt.current, Date.now())) announce(labels.busy);
+  }, [loading, announce, labels]);
+  const setRef = useCallback(
+    (el: HTMLButtonElement | null) => {
+      ownRef.current = el;
+      if (typeof ref === 'function') ref(el);
+      else if (ref) ref.current = el;
+    },
+    [ref],
+  );
   const hint = buttonHint(disabled, loading, disabledHint);
+  useHintChange(hint);
   const describedBy =
     [rest['aria-describedby'], hint ? hintId : undefined].filter(Boolean).join(' ') || undefined;
   const el = (
     <button
-      ref={ref}
+      ref={setRef}
       type={rest.type ?? 'button'}
-      disabled={disabled || loading}
+      // MWB-10: while loading the button keeps focus (aria-disabled); the
+      // click guard below drops presses, a form's Enter included.
+      disabled={(disabled && !loading) || undefined}
       data-loading={loading || undefined}
       className={cn(button({ variant, size, block }), className)}
       {...rest}
+      aria-disabled={loading || rest['aria-disabled'] || undefined}
       aria-describedby={describedBy}
-      onClick={guarded}
+      onClick={(e: MouseEvent<HTMLButtonElement>) => {
+        if (loading) {
+          e.preventDefault(); // no second submit of the form either
+          return;
+        }
+        pressedAt.current = Date.now();
+        guarded?.(e);
+      }}
     >
       {loading ? <Spinner size={16} /> : leadingIcon}
       <span className={childIsPlain || !isValidElement(children) ? 'min-w-0 truncate' : 'min-w-0'}>
@@ -161,13 +204,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
   if (!('disabledHint' in props)) return el;
   const hintLine = hint ? (
-    // Announced politely when it appears or changes ("Photo uploading…"
-    // giving way to "Describe the problem"), as IssueSheet's own line was.
+    // Review MWA-06 (modern-web-guidance: accessible-error-announcement):
+    // a plain line tied by aria-describedby. It was its own role="status"
+    // region, mounted already holding its text, which is often not read.
+    // A change of reason ("Photo uploading…" giving way to "Describe the
+    // problem") is said through the host's region (useHintChange).
     <span
       id={hintId}
       data-testid="button-disabled-hint"
-      role="status"
-      aria-live="polite"
       className={cn('block text-old-label text-[var(--c-fg-muted)]', block && 'text-center')}
     >
       {hint}
@@ -201,4 +245,33 @@ export function buttonHint(
 ): string | undefined {
   if (!disabled || loading) return undefined;
   return disabledHint?.trim() || undefined;
+}
+
+/**
+ * Review MWB-10: whether a request that just started is said: the button
+ * has focus, or was pressed in the last second (a tap on a phone does not
+ * always focus a button).
+ */
+export function saysBusy(focused: boolean, pressedAt: number, now: number): boolean {
+  return focused || (pressedAt > 0 && now - pressedAt <= 1000);
+}
+
+/**
+ * Review MWA-06: whether a hint is said: only when one reason gives way
+ * to another. The first one is read with the button when it is reached
+ * (aria-describedby); saying it as it appears was noise when a sheet
+ * opened with Save waiting.
+ */
+export function hintChanged(prev: string | undefined, next: string | undefined): boolean {
+  return !!prev && !!next && prev !== next;
+}
+
+function useHintChange(hint: string | undefined): void {
+  const announce = useUiAnnounce();
+  const prev = useRef(hint);
+  useEffect(() => {
+    const before = prev.current;
+    prev.current = hint;
+    if (hint && hintChanged(before, hint)) announce(hint);
+  }, [hint, announce]);
 }
