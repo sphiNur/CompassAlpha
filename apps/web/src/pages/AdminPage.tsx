@@ -25,6 +25,7 @@
  * Self-protection rules are server-side; the FE just gives the UI.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { enterLevel } from '../lib/motion';
 import {
   Banner,
   Button,
@@ -593,6 +594,9 @@ function useDrillDownFocus(levelKey: string) {
     pending.current = null;
     const root = rootRef.current;
     if (!root || !direction) return;
+    // UI overhaul B part 2 (2026-11-15): in from the right going deeper,
+    // from the left coming back.
+    enterLevel(root, direction);
     if (direction === 'enter') {
       if (lastClick.current?.level === from) entryRow.current.set(from, lastClick.current.text);
       root.querySelector<HTMLElement>('h1')?.focus({ preventScroll: false });
