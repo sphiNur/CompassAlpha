@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { allowedCorsOrigin, reportOnlyCsp, securityHeaders } from '../http/securityHeaders';
+import { allowedCorsOrigin, securityHeaders, strictCsp } from '../http/securityHeaders';
 
 function app(production: boolean, connectOrigins: string[] = []) {
   const a = new Hono();
@@ -46,7 +46,7 @@ describe('security headers', () => {
   });
 });
 
-describe('the report-only policy (MWD-12, MWD-13)', () => {
+describe('the strict policy, enforced (MWD-12, MWD-13)', () => {
   const directives = (policy: string | null) =>
     new Map(
       (policy ?? '').split('; ').map((d) => {
@@ -55,26 +55,24 @@ describe('the report-only policy (MWD-12, MWD-13)', () => {
       }),
     );
 
-  test('sent beside the enforced policy, which is unchanged', async () => {
+  test('is the enforced policy; no report-only one is left', async () => {
     const res = await app(true, ['https://bucket.s3.amazonaws.com']).request('/', {
       headers: { host: 'compass.example' },
     });
-    const enforced = directives(res.headers.get('content-security-policy'));
-    expect(enforced.get('connect-src')).toBe("'self' wss: https:");
-    expect(enforced.get('script-src')).toBe("'self' 'wasm-unsafe-eval' https://telegram.org");
-    expect(enforced.has('require-trusted-types-for')).toBe(false);
-    expect(enforced.has('report-to')).toBe(false);
-
-    const ro = directives(res.headers.get('content-security-policy-report-only'));
-    expect(ro.get('connect-src')).toBe(
+    expect(res.headers.get('content-security-policy-report-only')).toBeNull();
+    const csp = directives(res.headers.get('content-security-policy'));
+    expect(csp.get('connect-src')).toBe(
       "'self' wss://compass.example https://bucket.s3.amazonaws.com https://telegram.org",
     );
-    expect(ro.get('require-trusted-types-for')).toBe("'script'");
-    expect(ro.get('trusted-types')).toBe('default goog#html');
-    expect(ro.get('script-src')).toContain("'report-sample'");
-    expect(ro.get('frame-ancestors')).toBe(enforced.get('frame-ancestors'));
-    expect(ro.get('report-uri')).toBe('/csp-report');
-    expect(ro.get('report-to')).toBe('csp');
+    expect(csp.get('script-src')).toBe(
+      "'self' 'wasm-unsafe-eval' https://telegram.org 'report-sample'",
+    );
+    expect(csp.get('require-trusted-types-for')).toBe("'script'");
+    expect(csp.get('trusted-types')).toBe('default goog#html');
+    expect(csp.get('frame-ancestors')).toBe("'self' https://web.telegram.org https://t.me");
+    expect(csp.get('object-src')).toBe("'none'");
+    expect(csp.get('report-uri')).toBe('/csp-report');
+    expect(csp.get('report-to')).toBe('csp');
     expect(res.headers.get('reporting-endpoints')).toBe('csp="/csp-report"');
   });
 
@@ -82,16 +80,16 @@ describe('the report-only policy (MWD-12, MWD-13)', () => {
     const fwd = await app(true).request('/json', {
       headers: { host: 'origin.internal:8080', 'x-forwarded-host': 'compass.example' },
     });
-    expect(fwd.headers.get('content-security-policy-report-only')).toContain(
+    expect(fwd.headers.get('content-security-policy')).toContain(
       "connect-src 'self' wss://compass.example https://telegram.org;",
     );
-    expect(reportOnlyCsp({ connectOrigins: [], host: null })).toContain(
+    expect(strictCsp({ connectOrigins: [], host: null })).toContain(
       "connect-src 'self' https://telegram.org;",
     );
     const odd = await app(true).request('/json', {
       headers: { host: 'evil.example; script-src *' },
     });
-    expect(odd.headers.get('content-security-policy-report-only')).toContain(
+    expect(odd.headers.get('content-security-policy')).toContain(
       "connect-src 'self' https://telegram.org;",
     );
   });
@@ -99,7 +97,7 @@ describe('the report-only policy (MWD-12, MWD-13)', () => {
   test('on error responses too', async () => {
     const res = await app(true).request('/boom');
     expect(res.status).toBe(500);
-    expect(res.headers.get('content-security-policy-report-only')).toContain('report-uri');
+    expect(res.headers.get('content-security-policy')).toContain('report-uri');
   });
 });
 

@@ -30,10 +30,10 @@ function plainHost(value: string | undefined): string | null {
 
 /**
  * Reviews MWD-12 / MWD-13 (modern-web-guidance: security, trusted-types):
- * the stricter policy, sent as `Content-Security-Policy-Report-Only`
- * beside the enforced one. It blocks nothing; a browser reports what it
- * would have blocked to POST /csp-report (cspReport.ts), so the policy
- * can be promoted once the reports are quiet. What it adds:
+ * the policy sent as `Content-Security-Policy`. It ran report-only first
+ * (2026-11-14) beside a looser enforced one; once the reports were clean
+ * it replaced it. A browser still reports what it blocks to POST
+ * /csp-report (cspReport.ts). What it adds:
  *
  *   - connect-src  'self', the page's own host over wss (the realtime
  *                  socket; older WebKit does not match ws to 'self'),
@@ -56,7 +56,7 @@ function plainHost(value: string | undefined): string | null {
  *   - report-uri and report-to (Reporting-Endpoints), both to
  *                  /csp-report.
  */
-export function reportOnlyCsp({
+export function strictCsp({
   connectOrigins,
   host,
 }: {
@@ -174,11 +174,12 @@ export function securityHeaders({
        *                                    to S3 (https), camera
        *                                    capture (blob), inline
        *                                    SVG icons (data)
-       *   - connect-src 'self' wss: https:
-       *                                    tRPC + WebSocket. Allow
-       *                                    https/wss broadly because
-       *                                    the Cloudflare tunnel URL
-       *                                    rotates during dev.
+       *   - connect-src 'self' wss://<host> <bucket> https://telegram.org
+       *                                    tRPC + WebSocket on the
+       *                                    page's own host (MWD-12;
+       *                                    was any https:/wss: host)
+       *   - require-trusted-types-for 'script', trusted-types default
+       *     goog#html                     (MWD-13; strictCsp above)
        *   - frame-ancestors 'self' https://web.telegram.org https://t.me
        *                                    only Telegram can embed
        *                                    the Mini App
@@ -190,37 +191,15 @@ export function securityHeaders({
        *
        * `frame-ancestors` is the only framing rule sent (MWD-16, above).
        */
+      // Reviews MWD-12 / MWD-13 (modern-web-guidance: security,
+      // trusted-types): the strict policy (strictCsp above), enforced
+      // after it ran report-only with clean reports. Blocked items still
+      // report to /csp-report. The Telegram SDK (MWD-11, owner decision
+      // 2026-11-14) stays the one external script; 'wasm-unsafe-eval' is
+      // the face tracker's WebAssembly, not eval().
       c.header(
         'Content-Security-Policy',
-        [
-          "default-src 'self'",
-          // M3.18 (launch hardening): allow the Telegram WebApp SDK
-          // (https://telegram.org/js/telegram-web-app.js) loaded from
-          // index.html. The SDK is the only external script we run.
-          // Review MWD-11 (modern-web-guidance: security), owner
-          // decision 2026-11-14: kept on telegram.org rather than
-          // self-hosted, so Telegram's fixes reach the app without a
-          // release. The exception is the one host, over https, never a
-          // wildcard; Telegram does not version the file, so it cannot
-          // carry an integrity hash.
-          // Inline scripts and inline event handlers were eliminated
-          // in the same milestone (boot guard externalized to
-          // /boot-guard.js) so we DO NOT need 'unsafe-inline'.
-          // 'wasm-unsafe-eval': the liveness face tracker (MediaPipe,
-          // WebAssembly from our own /assets) compiles in the page
-          // (2026-11-06). It allows WebAssembly only, not eval().
-          SCRIPT_SRC,
-          ...BEFORE_CONNECT,
-          "connect-src 'self' wss: https:",
-          ...AFTER_CONNECT,
-        ].join('; '),
-      );
-      // Reviews MWD-12 / MWD-13 (modern-web-guidance: security,
-      // trusted-types): the stricter policy, report-only, beside the
-      // enforced one (reportOnlyCsp above). It never blocks a request.
-      c.header(
-        'Content-Security-Policy-Report-Only',
-        reportOnlyCsp({
+        strictCsp({
           connectOrigins,
           host: plainHost(c.req.header('x-forwarded-host') ?? c.req.header('host')),
         }),

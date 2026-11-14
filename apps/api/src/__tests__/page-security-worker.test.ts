@@ -32,9 +32,10 @@ describe('page security headers (review MWD-18)', () => {
       new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } }),
       HOST,
     );
-    expect(page.headers.get('content-security-policy-report-only')).toContain(
+    expect(page.headers.get('content-security-policy')).toContain(
       "require-trusted-types-for 'script'",
     );
+    expect(page.headers.get('content-security-policy-report-only')).toBeNull();
     expect(page.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
 
     const script = withPageSecurity(
@@ -60,7 +61,7 @@ describe('page security headers (review MWD-18)', () => {
   });
 
   test('a bad Host gives no wss source', () => {
-    expect(pageSecurityHeaders('evil host;')['content-security-policy-report-only']).toContain(
+    expect(pageSecurityHeaders('evil host;')['content-security-policy']).toContain(
       "connect-src 'self' https://telegram.org;",
     );
   });
