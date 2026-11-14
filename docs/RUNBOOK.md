@@ -12,7 +12,8 @@ Telegram
     compass-origin-watch publishes to (infra/tunnel); KV keeps the
     newest one
   → cloudflared quick tunnel (compass-app-tunnel.service)
-  → nginx on :80 (its config is not in the repo yet: review OPS-23)
+  → nginx on :80 (infra/nginx/compass-app.conf; it forwards /trpc/,
+    /ws, /health/, /csp-report and /files/ to the api, review OPS-23)
   → api on :3000 (compass-api.service): tRPC, /ws, the web bundle
 worker (compass-worker.service): the outbox; bot messages go out
   through the tg-relay Worker (infra/cloudflare/tg-relay/)
