@@ -35,3 +35,14 @@ export function joinIds(...ids: (string | false | null | undefined)[]): string |
   const joined = ids.filter(Boolean).join(' ');
   return joined === '' ? undefined : joined;
 }
+
+/**
+ * Review MWA-15: whether a control is required — its Field says so, or
+ * the caller set `required` itself. Undefined when not, so no attribute.
+ */
+export function fieldRequired(
+  field: Pick<FieldControl, 'required'> | null,
+  own: boolean | undefined,
+): true | undefined {
+  return field?.required || own ? true : undefined;
+}

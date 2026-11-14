@@ -87,6 +87,12 @@ export function StockCountSheet({
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [saving, setSaving] = useState(false);
+  // Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+  // a row's error shows once its field is left (or Enter moves on), not on
+  // each keystroke; then it follows the value and goes once it is valid.
+  const [leftRows, setLeftRows] = useState<ReadonlySet<string>>(() => new Set());
+  const leaveRow = (skuId: string) =>
+    setLeftRows((prev) => (prev.has(skuId) ? prev : new Set(prev).add(skuId)));
   const listRef = useRef<HTMLDivElement>(null);
 
   // A closed sheet starts empty next time (closing with counts typed asks
@@ -95,6 +101,7 @@ export function StockCountSheet({
     if (!open) {
       setDraft({});
       setSearch('');
+      setLeftRows(new Set());
     }
   }, [open]);
 
@@ -257,7 +264,7 @@ export function StockCountSheet({
                 <ul className={rowGroupClass} role="list">
                   {group.skus.map((p) => {
                     const parts = rowName(productNameParts, p, i18n.t('common.unknownProduct'));
-                    const problem = rowProblem(draft, p.id);
+                    const problem = leftRows.has(p.id) ? rowProblem(draft, p.id) : null;
                     const negative = p.onHand.startsWith('-');
                     const errorId = `count-error-${p.id}`;
                     return (
@@ -299,11 +306,17 @@ export function StockCountSheet({
                               const value = e.target.value;
                               setDraft((d) => ({ ...d, [p.id]: value }));
                             }}
+                            onBlur={() => leaveRow(p.id)}
                             onKeyDown={onFieldKey}
                           />
                         </div>
                         {problem ? (
-                          <FieldError id={errorId} className="text-right">
+                          <FieldError
+                            id={errorId}
+                            className="text-right"
+                            // MWA-03: said after the row's name.
+                            label={i18n.t('inventory.count.fieldAria', { name: parts.primary })}
+                          >
                             {i18n.t(STOCKTAKE_COUNT_MESSAGE[problem])}
                           </FieldError>
                         ) : null}

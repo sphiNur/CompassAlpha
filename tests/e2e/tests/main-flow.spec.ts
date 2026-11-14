@@ -151,7 +151,9 @@ test('place an order', async () => {
   await expect(sheet().getByRole('button', { name: 'Set 1,000 kg' })).toBeEnabled();
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('0.0004');
-  await expect(sheet().getByRole('alert')).toHaveText('At most 3 decimals');
+  // Review MWA-03: a field error is a plain line now (not role="alert"),
+  // tied to the field with aria-describedby.
+  await expect(custom).toHaveAccessibleDescription(/At most 3 decimals/);
   await expect(sheet().getByRole('button', { name: /^Set/ })).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
@@ -388,7 +390,11 @@ test('a close corrected on another phone reaches the open form', async ({ browse
   await expect(field('Online / transfer revenue')).toHaveValue('260000');
   await evidence('daily-close-changed-elsewhere');
   await main().getByRole('button', { name: 'Refresh record' }).click();
-  await expect(page.getByText(/kept the amounts and note you changed/)).toBeVisible();
+  // Review MWB-07: a toast's text is also in a hidden copy in the live
+  // region; this is the toast on screen.
+  await expect(
+    page.locator('[data-toast]').getByText(/kept the amounts and note you changed/),
+  ).toBeVisible();
   await expect(main().getByRole('button', { name: /Version 3 · / })).toBeVisible();
   await expect(field('Invoiced cash revenue')).toHaveValue('650000');
   await expect(field('Online / transfer revenue')).toHaveValue('260000');

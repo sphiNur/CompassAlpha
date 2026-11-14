@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
+import { useI18n } from '../../hooks/useI18n';
+import { announce } from '../../lib/announce';
 import { usePageMainButtonState } from '../../hooks/usePageMainButton';
 import { publishMainButtonInset } from '../../lib/mainButtonInset';
 
@@ -26,6 +28,25 @@ export function PageMainButton() {
   const busy = useAppMutating();
   // DLV-4 / BUY-12: a double tap fired twice before `busy` disabled it.
   const guardTap = useTapGuard();
+  const i18n = useI18n();
+  // Review MWB-10 (modern-web-guidance: progress): while a write is in
+  // flight the button stays focusable (aria-disabled, the click dropped)
+  // instead of `disabled`, which threw focus off it, and "Please wait…"
+  // is said through the app's polite region when this button's press
+  // started it. aria-busy alone is barely read. No spinner (the look
+  // stays).
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const pressedAt = useRef(0);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    const started = busy && !wasBusy.current;
+    wasBusy.current = busy;
+    if (!started) return;
+    const focused = !!buttonRef.current && document.activeElement === buttonRef.current;
+    if (mainButtonSaysBusy(focused, pressedAt.current, Date.now())) {
+      announce(i18n.t('common.busy'));
+    }
+  }, [busy, i18n]);
   // Permanently hide Telegram's native MainButton — we render our
   // own in-DOM equivalent above the bottom nav. The hide() call is
   // idempotent on the SDK side.
@@ -101,12 +122,22 @@ export function PageMainButton() {
           </p>
         ) : null}
         <button
+          ref={buttonRef}
           type="button"
           data-testid="page-main-button"
-          disabled={!interactable && !explains}
-          aria-disabled={explains || undefined}
+          disabled={(!interactable && !explains && !busy) || undefined}
+          aria-disabled={explains || busy || undefined}
           aria-describedby={hint ? 'page-main-button-hint' : undefined}
-          onClick={explains ? state.onInactiveClick : guardTap(state.onClick, state.text)}
+          onClick={
+            busy
+              ? undefined
+              : explains
+                ? state.onInactiveClick
+                : () => {
+                    pressedAt.current = Date.now();
+                    guardTap(state.onClick, state.text)?.();
+                  }
+          }
           aria-busy={busy || undefined}
           className={
             'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
@@ -120,4 +151,13 @@ export function PageMainButton() {
       </div>
     </div>
   );
+}
+
+/**
+ * Review MWB-10: whether the write that just started is said: the main
+ * button has focus, or was pressed in the last second (a tap on a phone
+ * does not always focus it). A write from elsewhere says nothing here.
+ */
+export function mainButtonSaysBusy(focused: boolean, pressedAt: number, now: number): boolean {
+  return focused || (pressedAt > 0 && now - pressedAt <= 1000);
 }

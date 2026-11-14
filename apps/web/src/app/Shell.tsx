@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState } from 'react';
-import { Banner, Button, EmptyState } from '@compass/ui';
+import { Banner, Button, EmptyState, focusAfter } from '@compass/ui';
 import { PageMenuProvider, usePageMenuRegistration } from '../components/PageMenuContext';
 import { resilientLazy } from '../components/resilientLazy';
 import { useI18n } from '../hooks/useI18n';
@@ -72,6 +72,16 @@ function ShellInner() {
     session?.user.locale,
     storeCtx.kind === 'specific' ? storeCtx.storeId : storeCtx.kind,
   ].join('|');
+  // Review MWB-14 (modern-web-guidance: stack-drill-down): "make sure focus
+  // ends up inside the active view after every active-view change". A tap
+  // keeps focus on the nav button; a swipe unmounts the page that held it,
+  // and focus fell to <body>. It goes to <main> then (focusAfter acts only
+  // if focus was lost; <main> draws no ring).
+  const swipeTab = async (next: Parameters<typeof changeTab>[0]) => {
+    const allowed = await changeTab(next);
+    if (allowed) focusAfter('#main-content');
+    return allowed;
+  };
   // 2026-11-14: the fades and the nav capsule's size follow <main>'s scroll.
   const scrollChrome = useScrollChrome(mainRef, tab);
 
@@ -124,7 +134,7 @@ function ShellInner() {
         ring={swipeRing}
         tab={tab}
         mainRef={mainRef}
-        onSwipe={changeTab}
+        onSwipe={swipeTab}
         resetKey={swipeResetKey}
       >
         <div aria-hidden className="app-fade app-fade-top" />

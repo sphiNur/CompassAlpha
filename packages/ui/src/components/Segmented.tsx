@@ -87,6 +87,12 @@ export interface SegmentedProps<V extends string> {
    * so arrows only move focus and Space / Enter chooses.
    */
   followFocus?: boolean;
+  /**
+   * Review MWB-16 (modern-web-guidance: tabs): the id of the view this
+   * control swaps, when it switches views. Each option then points at it
+   * (aria-controls). Form toggles leave it out.
+   */
+  controls?: string;
 }
 
 export function Segmented<V extends string>({
@@ -99,6 +105,7 @@ export function Segmented<V extends string>({
   className,
   disabled,
   followFocus = true,
+  controls,
 }: SegmentedProps<V>) {
   const isSm = size === 'sm';
   const roving = useRovingRadio<HTMLDivElement>({ followFocus: followFocus && !disabled });
@@ -131,6 +138,7 @@ export function Segmented<V extends string>({
             type="button"
             role="radio"
             aria-checked={active}
+            aria-controls={controls}
             tabIndex={active ? 0 : -1}
             disabled={opt.disabled}
             aria-disabled={disabled || undefined}

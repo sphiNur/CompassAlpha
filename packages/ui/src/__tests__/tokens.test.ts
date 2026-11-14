@@ -283,6 +283,33 @@ describe('DX-VIS-4: reduced motion reaches the transition tokens', () => {
   });
 });
 
+describe('Review MWB-12: reduced motion keeps fades, drops movement', () => {
+  test('--t-fade is not zeroed under reduce, and equals --t-quick without it', () => {
+    const themes: Array<Record<string, string>> = [
+      {},
+      { 'data-theme': 'native' },
+      { 'data-theme': 'apple' },
+    ];
+    for (const attrs of themes) {
+      expect(computedOnRoot('--t-fade', attrs, { reducedMotion: true })).toBe('180ms');
+    }
+    expect(computedOnRoot('--t-fade', { 'data-theme': 'native' }, { reducedMotion: false })).toBe(
+      computedOnRoot('--t-quick', { 'data-theme': 'native' }, { reducedMotion: false }),
+    );
+  });
+  test('under reduce a sheet fades in and out instead of sliding', () => {
+    const rules = parseRules(css).filter((r) => r.media?.includes('reduce'));
+    const open = rules.find((r) =>
+      r.selectors.includes(":root [data-sheet-content][data-state='open']"),
+    );
+    const closed = rules.find((r) =>
+      r.selectors.includes(":root [data-sheet-content][data-state='closed']"),
+    );
+    expect(open?.decls.animation).toBe('fadeIn var(--t-fade) var(--easing)');
+    expect(closed?.decls.animation).toBe('fadeOut var(--t-fade) var(--easing)');
+  });
+});
+
 describe('DX-VIS-14: dark elevation order', () => {
   test('surface-elevated is lighter than surface-2 in the dark theme', () => {
     expect(luminance(color(dark, '--c-surface-elevated'))).toBeGreaterThan(

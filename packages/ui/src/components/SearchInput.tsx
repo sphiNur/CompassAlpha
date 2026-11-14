@@ -59,6 +59,14 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         type="search"
         value={value}
         onChange={onChange}
+        // Review MWA-18 (modern-web-guidance: forms): a query is not prose.
+        // Autocorrect rewrote Russian and Uzbek product names and SKU codes;
+        // the keyboard's Enter says "search". A caller may override any of
+        // these through `rest`.
+        enterKeyHint="search"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
         // D18 (2026-10-31): 44 px like every text field (was 36, from
         // M3.15, which traded the touch minimum for one more list row).
         // Text stays text-old-body-sm (12 px).

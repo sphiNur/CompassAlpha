@@ -9,6 +9,8 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { cn } from '../cn';
+import { useUiLabels } from '../labels';
+import { FOCUS_FALLBACK_SELECTOR } from '../sheetFocus';
 import { TOP_CHROME, useSheetCount } from './Sheet';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
@@ -139,6 +141,45 @@ function topChromePx(): number {
   return height;
 }
 
+/**
+ * Review MWB-04 (modern-web-guidance: persistent-toast-notifications):
+ * "move focus to the next remaining toast in the stack, or—if no toasts
+ * remain—return focus to the user's prior focus location". Where focus
+ * goes when the toast holding it goes: the next toast's first button,
+ * else where focus was before the toast came (still on the page and not
+ * hidden), else the page fallback (the shell's <main>). Exported for
+ * tests; the elements are plain objects there.
+ */
+export function toastFocusTarget<T extends { isConnected: boolean; closest?(s: string): unknown }>(
+  nextToastButton: T | null,
+  before: T | null,
+  fallback: T | null,
+): T | null {
+  if (nextToastButton) return nextToastButton;
+  if (before && before.isConnected && !before.closest?.('[aria-hidden="true"],[inert]')) {
+    return before;
+  }
+  return fallback;
+}
+
+/**
+ * Review MWB-07 (modern-web-guidance: persistent-toast-notifications):
+ * "only the toast's visible text is announced … and not the names of any
+ * controls. If actions are available … append "Actions available"". Each
+ * toast is read from a hidden copy of its title and message in the live
+ * region; the toast you see, buttons and all, sits outside it.
+ */
+export function toastSpokenParts(
+  t: { title?: ReactNode; message: ReactNode; actions?: unknown[] },
+  actionsAvailable: string,
+): ReactNode[] {
+  const parts: ReactNode[] = [];
+  if (t.title) parts.push(t.title);
+  if (t.message) parts.push(t.message);
+  if (t.actions?.length) parts.push(actionsAvailable);
+  return parts;
+}
+
 let counter = 0;
 const nextId = () => `toast-${++counter}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -155,7 +196,10 @@ export function ToastProvider({
   defaultTtlMs = 4000,
   limit = 4,
 }: ToastProviderProps) {
+  const labels = useUiLabels();
   const [toasts, setToasts] = useState<ToastConfig[]>([]);
+  // MWB-04: where focus was when each toast came, to go back to.
+  const focusBeforeRef = useRef(new Map<string, HTMLElement | null>());
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   // A11Y-6: when each timed toast is due, and the time left on paused ones.
   const dueRef = useRef(new Map<string, number>());
@@ -212,8 +256,34 @@ export function ToastProvider({
     }
     dueRef.current.delete(id);
     pausedRef.current.delete(id);
+    focusBeforeRef.current.delete(id);
     setToasts((prev) => prev.filter((x) => x.id !== id));
   }, []);
+
+  // Review MWB-04: a toast closed from the keyboard (Undo, a tap on it)
+  // took the focused button away and focus fell to <body>. Called before
+  // the toast goes, with focus still on it.
+  const dismissFromToast = useCallback(
+    (id: string, from: HTMLElement) => {
+      const stack = stackRef.current;
+      const active = typeof document !== 'undefined' ? document.activeElement : null;
+      const before = focusBeforeRef.current.get(id) ?? null;
+      dismiss(id);
+      if (!stack || !active || !from.contains(active)) return;
+      const next =
+        [...stack.querySelectorAll<HTMLElement>('[data-toast]')]
+          .filter((el) => el !== from)
+          .map((el) => (el.matches('button') ? el : el.querySelector<HTMLElement>('button')))
+          .find((el): el is HTMLElement => !!el) ?? null;
+      const target = toastFocusTarget(
+        next,
+        before && !stack.contains(before) ? before : null,
+        document.querySelector<HTMLElement>(FOCUS_FALLBACK_SELECTOR),
+      );
+      target?.focus({ preventScroll: true });
+    },
+    [dismiss],
+  );
 
   const schedule = useCallback(
     (id: string, ms: number) => {
@@ -253,6 +323,10 @@ export function ToastProvider({
   const show = useCallback<ToastContextValue['show']>(
     (message, opts = {}) => {
       const id = nextId();
+      if (typeof document !== 'undefined') {
+        const active = document.activeElement as HTMLElement | null;
+        focusBeforeRef.current.set(id, active && active !== document.body ? active : null);
+      }
       const config: ToastConfig = {
         id,
         tone: opts.tone ?? 'info',
@@ -276,6 +350,7 @@ export function ToastProvider({
                   timersRef.current.delete(t.id);
                   dueRef.current.delete(t.id);
                   pausedRef.current.delete(t.id);
+                  focusBeforeRef.current.delete(t.id);
                 }
                 return !stale;
               })
@@ -319,6 +394,7 @@ export function ToastProvider({
     t.actions ? (
       <div
         key={t.id}
+        data-toast=""
         onPointerEnter={() => pause(t.id)}
         onPointerLeave={(e) => resume(t.id, e.currentTarget)}
         onFocus={() => pause(t.id)}
@@ -346,9 +422,11 @@ export function ToastProvider({
             <button
               key={i}
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                const toastEl = e.currentTarget.closest<HTMLElement>('[data-toast]');
                 a.onClick?.();
-                dismiss(t.id);
+                if (toastEl) dismissFromToast(t.id, toastEl);
+                else dismiss(t.id);
               }}
               className={cn(
                 // hit-44 (R2-VIS-2): 32px to look at, 44 to tap; the
@@ -368,9 +446,11 @@ export function ToastProvider({
       <button
         key={t.id}
         type="button"
-        onClick={() => {
+        data-toast=""
+        onClick={(e) => {
+          const toastEl = e.currentTarget;
           t.onClick?.();
-          dismiss(t.id);
+          dismissFromToast(t.id, toastEl);
         }}
         className={cn(
           // min-h-11 (R2-VIS-2): a one-line toast was 37px tall.
@@ -385,6 +465,13 @@ export function ToastProvider({
         <div className="text-old-body-sm leading-snug">{t.message}</div>
       </button>
     );
+  // Each part is its own line, so a screen reader pauses between them.
+  const spokenParts = (t: ToastConfig) =>
+    toastSpokenParts(t, labels.actionsAvailable).map((part, i) => (
+      <span key={i} className="block">
+        {part}
+      </span>
+    ));
   const urgent = toasts.filter((t) => toastLiveness(t.tone) === 'assertive');
   const calm = toasts.filter((t) => toastLiveness(t.tone) === 'polite');
 
@@ -394,6 +481,11 @@ export function ToastProvider({
       <div
         ref={stackRef}
         data-toast-stack=""
+        // Review MWB-03 (modern-web-guidance: persistent-toast-notifications):
+        // "make the container a region, with an accessible name", so a
+        // screen reader can jump to it and reach an Undo.
+        role="region"
+        aria-label={labels.notifications}
         style={{
           // BOTTOM-anchored: Telegram's top chrome (Close + ⋯ + ⋄)
           // overlays ~60-80 px and isn't reported via env(safe-area-inset-top),
@@ -429,11 +521,25 @@ export function ToastProvider({
           just added. Errors sit nearest the bottom, the rest above them,
           each group in the order shown.
         */}
-        <div aria-live="assertive" style={TOAST_REGION_STYLE}>
-          {urgent.map(renderToast)}
+        {/*
+          Review MWB-07: the two regions hold a hidden copy of each toast's
+          text (and "Actions available" when it has buttons), so a toast
+          is read without its button labels ("Archived Undo"). sr-only
+          takes them out of the stack's layout, so the toasts below sit
+          as before; the buttons stay where they were and work as before.
+        */}
+        <div aria-live="assertive" className="sr-only">
+          {urgent.map((t) => (
+            <span key={t.id}>{spokenParts(t)}</span>
+          ))}
         </div>
+        <div aria-live="polite" className="sr-only">
+          {calm.map((t) => (
+            <span key={t.id}>{spokenParts(t)}</span>
+          ))}
+        </div>
+        <div style={TOAST_REGION_STYLE}>{urgent.map(renderToast)}</div>
         <div
-          aria-live="polite"
           style={{
             ...TOAST_REGION_STYLE,
             marginBottom: urgent.length > 0 && calm.length > 0 ? 8 : 0,

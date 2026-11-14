@@ -34,4 +34,19 @@ describe("the design system's own copy", () => {
       ['uz', 'Bekor qilish', 'Sabab', 'Qidiruvni tozalash'],
     ]);
   });
+
+  // Review MWA-03 / MWB-03 / MWB-07 / MWB-10 (modern-web-guidance).
+  test('what the kit announces follows the interface language', () => {
+    const said = LOCALES.map((locale) => {
+      const labels = uiLabelsFor(createI18n(locale));
+      return [locale, labels.fieldError('Code', 'x'), labels.busy, labels.notifications];
+    });
+    expect(said).toEqual([
+      ['en', 'Code: x', 'Please wait…', 'Notifications'],
+      ['zh', 'Code：x', '请稍候…', '通知'],
+      ['ru', 'Code: x', 'Подождите…', 'Уведомления'],
+      ['uz', 'Code: x', 'Iltimos, kuting…', 'Bildirishnomalar'],
+    ]);
+    expect(uiLabelsFor(createI18n('en')).fieldError('', 'x')).toBe('x');
+  });
 });

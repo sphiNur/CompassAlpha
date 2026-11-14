@@ -7,6 +7,7 @@ import {
   QueryErrorBanner,
   SectionLabel,
   Sheet,
+  useLeftField,
   useToast,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
@@ -75,6 +76,11 @@ export function RoleCreateSheet({
   }, [open, myMaxRank]);
   const rankRead = readRank(rankText, maxRank);
   const slugBad = slug.length > 0 && !slugIsValid(slug);
+  // Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+  // the field shows the error once it is left, not mid-typing; each open
+  // starts over. The disabled Create's hint still names it at once.
+  const slugLeft = useLeftField(open);
+  const slugShown = slugBad && slugLeft.left;
   // D2 (2026-11-13): an empty short code is made from the name, unique in
   // the workspace; the field shows it as its placeholder.
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: open });
@@ -176,11 +182,12 @@ export function RoleCreateSheet({
             the name, which fills it when it is left empty. */}
         <Field
           label={i18n.t('admin.field.slug')}
-          hint={slugBad ? null : i18n.t('people.slugRule')}
-          error={slugBad ? i18n.t(SLUG_MESSAGE.role) : null}
+          hint={slugShown ? null : i18n.t('people.slugRule')}
+          error={slugShown ? i18n.t(SLUG_MESSAGE.role) : null}
         >
           <Input
             value={slug}
+            {...slugLeft.inputProps}
             onChange={(e) => setSlug(normaliseSlugInput(e.target.value))}
             maxLength={64}
             placeholder={autoSlug}

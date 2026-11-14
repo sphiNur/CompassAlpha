@@ -19,13 +19,13 @@ describe('FieldLabel / FieldError', () => {
     );
   });
 
-  test('an error is an alert in the danger colour, and its text is the message alone', () => {
+  // Review MWA-03: no longer its own role="alert" region; the host's
+  // polite region says it (useUiAnnounce).
+  test('an error is a plain line in the danger colour, and its text is the message alone', () => {
     const html = renderToStaticMarkup(
       createElement(FieldError, { id: 'qty-error', children: 'Enter a quantity' }),
     );
-    expect(html).toMatch(
-      /^<span id="qty-error" role="alert" class="[^"]*text-\[var\(--c-danger\)\]/,
-    );
+    expect(html).toMatch(/^<span id="qty-error" class="[^"]*text-\[var\(--c-danger\)\]/);
     expect(html).toContain('<svg aria-hidden="true"');
     // The sign is drawn, so a screen reader or a test reads the message only.
     expect(html.replace(/<[^>]+>/g, '')).toBe('Enter a quantity');
@@ -35,7 +35,7 @@ describe('FieldLabel / FieldError', () => {
     const html = renderToStaticMarkup(
       createElement(FieldError, { className: 'mt-0', children: 'x' }),
     );
-    const spanClass = /^<span role="alert" class="([^"]*)"/.exec(html)?.[1] ?? '';
+    const spanClass = /^<span class="([^"]*)"/.exec(html)?.[1] ?? '';
     expect(spanClass.split(' ')).toContain('mt-0');
     expect(spanClass.split(' ')).not.toContain('mt-1');
   });
@@ -76,8 +76,14 @@ describe('Field wiring', () => {
   test('required draws a "*" a screen reader skips and marks the control', () => {
     const html = render({ required: true });
     expect(html).toContain('Name<span aria-hidden="true"> *</span>');
-    expect(attr(html, 'input', 'aria-required')).toBe('true');
-    expect(attr(render({}), 'input', 'aria-required')).toBeUndefined();
+    // Review MWA-15: the native `required` (it implies aria-required), and
+    // aria-invalid "false" until an error shows (WebKit reads an empty
+    // required field as invalid otherwise).
+    expect(attr(html, 'input', 'required')).toBe('');
+    expect(attr(html, 'input', 'aria-required')).toBeUndefined();
+    expect(attr(html, 'input', 'aria-invalid')).toBe('false');
+    expect(attr(render({}), 'input', 'required')).toBeUndefined();
+    expect(attr(render({}), 'input', 'aria-invalid')).toBeUndefined();
   });
 
   test("a caller's own description adds to the field's", () => {
@@ -91,7 +97,7 @@ describe('Field wiring', () => {
   test('a select and a textarea read the field too', () => {
     const select = render({ error: 'Pick one', required: true }, createElement(Select, {}));
     expect(attr(select, 'select', 'aria-invalid')).toBe('true');
-    expect(attr(select, 'select', 'aria-required')).toBe('true');
+    expect(attr(select, 'select', 'required')).toBe('');
     expect(attr(select, 'select', 'aria-describedby')).toBe(idOf(select, 'Pick one'));
     const area = render({ error: 'Write why' }, createElement(Textarea, {}));
     expect(attr(area, 'textarea', 'aria-invalid')).toBe('true');

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { confirmCancelPolicy, confirmReasonPolicy } from '../components/ConfirmSheet';
+import { Input } from '../components/Input';
+import { Field } from '../components/Rows';
 
 /**
  * RUNWEB2-05: the run page's confirm sheet (cancel a run with an optional
@@ -11,6 +15,7 @@ describe('confirmReasonPolicy', () => {
       showField: false,
       showToggle: false,
       autoFocus: false,
+      required: false,
     });
   });
 
@@ -19,6 +24,7 @@ describe('confirmReasonPolicy', () => {
       showField: true,
       showToggle: false,
       autoFocus: true,
+      required: true,
     });
   });
 
@@ -27,11 +33,13 @@ describe('confirmReasonPolicy', () => {
       showField: false,
       showToggle: true,
       autoFocus: false,
+      required: false,
     });
     expect(confirmReasonPolicy({ reasonOptional: true, expanded: true })).toEqual({
       showField: true,
       showToggle: false,
       autoFocus: false,
+      required: false,
     });
   });
 
@@ -42,7 +50,20 @@ describe('confirmReasonPolicy', () => {
       showField: true,
       showToggle: false,
       autoFocus: true,
+      required: true,
     });
+  });
+
+  test('Review MWA-07: a required reason is marked required, with no "*" in its label', () => {
+    const html = renderToStaticMarkup(
+      createElement(Field, {
+        label: 'Reason',
+        children: createElement(Input, { required: true, value: '', onChange: () => {} }),
+      }),
+    );
+    expect(html).toMatch(/<input[^>]*required=""/);
+    expect(html).toContain('aria-invalid="false"');
+    expect(html).not.toContain('*');
   });
 
   test('an opened optional note brings Cancel, as the sheet asks it to', () => {

@@ -5,7 +5,7 @@
  * stores" the page asks for one (unless this person manages only one),
  * and on a store they don't manage attendance for it says so.
  */
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Banner, Button, EmptyState, Segmented } from '@compass/ui';
 import { StoreContextEmpty } from '../../components/NoStoreYet';
 import { useStoreContext } from '../../hooks/useStoreContext';
@@ -21,6 +21,7 @@ type View = 'sheet' | 'review' | 'roster' | 'settings';
 
 export function AttendanceAdmin() {
   const i18n = useI18n();
+  const viewPanelId = useId();
   const session = useAuthStore((s) => s.session);
   const storeCtx = useStoreContext();
   const stores = useMemo(
@@ -93,6 +94,7 @@ export function AttendanceAdmin() {
           value={view}
           onChange={setView}
           ariaLabel={i18n.t('admin.section.attendance')}
+          controls={viewPanelId}
           options={[
             { value: 'sheet', label: i18n.t('attendance.view.sheet') },
             {
@@ -115,15 +117,19 @@ export function AttendanceAdmin() {
           ]}
         />
       </div>
-      {view === 'sheet' ? (
-        <>
-          <AttendanceSheet key={storeId} storeId={storeId} />
-          <AttendanceExport key={`export-${storeId}`} storeId={storeId} />
-        </>
-      ) : null}
-      {view === 'review' ? <AttendanceReview key={storeId} storeId={storeId} /> : null}
-      {view === 'roster' ? <AttendanceRoster key={storeId} storeId={storeId} /> : null}
-      {view === 'settings' ? <AttendanceSettings key={storeId} storeId={storeId} /> : null}
+      {/* Review MWB-16 (modern-web-guidance: tabs): the segments point at the view they swap.
+          A flex column like its parent, so nothing moves. */}
+      <div id={viewPanelId} className="flex flex-col">
+        {view === 'sheet' ? (
+          <>
+            <AttendanceSheet key={storeId} storeId={storeId} />
+            <AttendanceExport key={`export-${storeId}`} storeId={storeId} />
+          </>
+        ) : null}
+        {view === 'review' ? <AttendanceReview key={storeId} storeId={storeId} /> : null}
+        {view === 'roster' ? <AttendanceRoster key={storeId} storeId={storeId} /> : null}
+        {view === 'settings' ? <AttendanceSettings key={storeId} storeId={storeId} /> : null}
+      </div>
     </div>
   );
 }

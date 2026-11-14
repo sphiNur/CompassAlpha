@@ -1,7 +1,7 @@
 import { forwardRef, type SelectHTMLAttributes } from 'react';
 import { cn } from '../cn';
 import { disabledClass } from './disabled';
-import { joinIds, useFieldControl } from './fieldControl';
+import { fieldRequired, joinIds, useFieldControl } from './fieldControl';
 
 /**
  * Select — native dropdown with Concord styling.
@@ -34,6 +34,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   // UI-02: a Field around the select shows its error and ties it here.
   const field = useFieldControl();
   const marked = !!invalid || !!field?.invalid;
+  const required = fieldRequired(field, rest.required);
   return (
     <span className="relative inline-flex w-full">
       <select
@@ -52,8 +53,15 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         {...rest}
         // After the spread: what the caller passed adds to the field's own.
         id={rest.id ?? field?.id}
-        aria-invalid={marked || rest['aria-invalid'] || undefined}
-        aria-required={field?.required || rest['aria-required'] || undefined}
+        // Review MWA-15 (modern-web-guidance: required-field-feedback): the
+        // native `required` (it implies aria-required). The kit validates in
+        // JS, so a <form> around a required field must be noValidate; none
+        // is today (the two forms, sign-in and onboarding, mark no field).
+        // aria-invalid is "false" until an error shows: Safari and Firefox
+        // expose an empty required field as invalid from the start.
+        required={required}
+        aria-invalid={marked || rest['aria-invalid'] || (required ? false : undefined)}
+        aria-required={required ? undefined : rest['aria-required']}
         aria-describedby={joinIds(field?.describedBy, rest['aria-describedby'])}
       >
         {placeholder !== undefined ? (

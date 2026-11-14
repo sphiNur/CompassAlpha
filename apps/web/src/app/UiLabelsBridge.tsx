@@ -15,7 +15,8 @@
  */
 import { useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { setDecimalLocale, UiLabelsProvider } from '@compass/ui';
+import { setDecimalLocale, UiAnnouncerProvider, UiLabelsProvider } from '@compass/ui';
+import { announce } from '../lib/announce';
 import { useI18n } from '../hooks/useI18n';
 import { uiLabelsFor } from './uiLabels';
 
@@ -31,5 +32,15 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
   // fields are getters: staleness of the object identity no longer implies
   // staleness of the strings.
   const labels = useMemo(() => uiLabelsFor(i18n), [i18n]);
-  return <UiLabelsProvider labels={labels}>{children}</UiLabelsProvider>;
+  // Review MWA-03 / MWA-06 / MWB-10 (modern-web-guidance:
+  // accessible-error-announcement): the kit speaks through the app's one
+  // polite region (lib/announce.ts, Shell's LiveAnnouncer). Given here, at
+  // the root, not in Shell: ConfirmProvider and ToastProvider render
+  // outside Shell's tree. Outside Shell there is no region, so nothing is
+  // said there (the sign-in screens), as before.
+  return (
+    <UiAnnouncerProvider announce={announce}>
+      <UiLabelsProvider labels={labels}>{children}</UiLabelsProvider>
+    </UiAnnouncerProvider>
+  );
 }

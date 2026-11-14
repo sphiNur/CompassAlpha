@@ -112,7 +112,10 @@ export function ManualInviteSheet({
   useEffect(() => {
     if (!open) setTgTouched(false);
   }, [open]);
-  const tgShown = tgProblem === 'notDigits' || (tgTouched && tgProblem === 'length');
+  // Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
+  // "not digits" waited for nothing and showed mid-typing; both errors now
+  // wait until the field is left, as the length one did.
+  const tgShown = tgTouched && tgProblem !== null;
   const tgIdValid = draft ? draft.tgUserId.trim() !== '' && tgProblem === null : false;
   // Org-tier roles bypass the store check at the server side, so we
   // shouldn't force the admin to pick a store for them. Review ADM1-19:

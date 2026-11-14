@@ -145,6 +145,11 @@
   --t-snap: 100ms;
   --t-quick: 180ms;
   --t-base: 240ms;
+  /* Review MWB-12 (modern-web-guidance: motion): opacity-only changes (a
+   * scrim, the page fades, a sheet under reduced motion). Not zeroed under
+   * reduced motion below: "reduced motion" means no movement, not no
+   * change. The same 180 ms as --t-quick, so nothing looks different. */
+  --t-fade: 180ms;
   --easing: cubic-bezier(0.2, 0.7, 0.2, 1);
 
   /* Bottom nav (owner, 2026-11-14): a capsule over the page, floating
@@ -304,6 +309,20 @@
     --t-snap: 0ms;
     --t-quick: 0ms;
     --t-base: 0ms;
+  }
+}
+
+/* Review MWB-12 (modern-web-guidance: motion, animate-to-from-top-layer):
+ * with the durations above at 0 the sheet jumped in and out. It fades
+ * instead, without sliding ("users who prefer reduced motion get a short
+ * fade"). :root raises the selector over the Tailwind slide classes on
+ * the panel, which are generated later. */
+@media (prefers-reduced-motion: reduce) {
+  :root [data-sheet-content][data-state='open'] {
+    animation: fadeIn var(--t-fade) var(--easing);
+  }
+  :root [data-sheet-content][data-state='closed'] {
+    animation: fadeOut var(--t-fade) var(--easing);
   }
 }
 

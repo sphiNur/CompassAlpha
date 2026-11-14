@@ -7,10 +7,12 @@
  * The price field shows what was typed (`priceText`); the sheet keeps the
  * price itself in its draft, in whole currency units (M3.36).
  */
-import { Field, Input } from '@compass/ui';
+import { useId } from 'react';
+import { Field, Input, useLeftField } from '@compass/ui';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { useI18n } from '../../../hooks/useI18n';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
+import { readDisplayPrice } from '../lib/priceMath';
 
 export function QtyPriceFields({
   qtyUnit,
@@ -40,6 +42,15 @@ export function QtyPriceFields({
 }) {
   const i18n = useI18n();
   const currency = useCurrency();
+  // Review MWA-04 / MWA-03 (modern-web-guidance:
+  // validate-input-after-interaction): the price's "cannot be read" line
+  // waits until the field is left, and the field points at it.
+  const priceLeft = useLeftField();
+  const priceErrorId = useId();
+  const priceBad =
+    priceLeft.left &&
+    priceText.trim() !== '' &&
+    readDisplayPrice(priceText, priceInThousands) === null;
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -72,6 +83,10 @@ export function QtyPriceFields({
             inputMode="decimal"
             value={priceText}
             onChange={(e) => onPriceText(e.target.value)}
+            {...priceLeft.inputProps}
+            // No red ring here (the look stays); the line below says it.
+            aria-invalid={priceBad || undefined}
+            aria-describedby={priceBad ? priceErrorId : undefined}
           />
         </Field>
       </div>
@@ -89,6 +104,8 @@ export function QtyPriceFields({
             priceInThousands={priceInThousands}
             currency={currency}
             unit={priceUnit}
+            errorId={priceErrorId}
+            errorShown={priceLeft.left}
           />
         </span>
       </div>
