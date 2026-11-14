@@ -144,6 +144,8 @@ declare global {
     HapticFeedback: {
       impactOccurred(style: 'light' | 'medium' | 'heavy'): void;
       notificationOccurred(type: 'error' | 'success' | 'warning'): void;
+      /** Bot API 6.1; absent on older clients. */
+      selectionChanged?(): void;
     };
     onEvent?(name: string, cb: () => void): void;
     offEvent?(name: string, cb: () => void): void;

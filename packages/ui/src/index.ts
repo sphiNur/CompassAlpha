@@ -1,4 +1,5 @@
 export { cn } from './cn';
+export { hapticImpact, hapticSelection } from './haptics';
 export { Button } from './components/Button';
 export type { ButtonProps } from './components/Button';
 export {

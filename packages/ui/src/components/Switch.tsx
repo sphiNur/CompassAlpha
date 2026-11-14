@@ -1,5 +1,6 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { hapticSelection } from '../haptics';
 import { disabledLook } from './disabled';
 
 /**
@@ -26,7 +27,7 @@ export interface SwitchProps
 }
 
 export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
-  { className, label, hint, disabled, id, ...rest },
+  { className, label, hint, disabled, id, onChange, ...rest },
   ref,
 ) {
   const reactId = useId();
@@ -45,7 +46,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
     <span
       aria-hidden
       className={cn(
-        'relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors',
+        'relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors duration-[var(--t-quick)] ease-[var(--easing)]',
         'bg-[var(--c-surface-2)] ring-field',
         'peer-checked:bg-[var(--c-action)] peer-checked:[box-shadow:none]',
         'peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--c-ring)] peer-focus-visible:ring-offset-2',
@@ -55,7 +56,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
         'peer-checked:[&>span]:translate-x-3 peer-checked:[&>span]:bg-[var(--c-action-fg)]',
       )}
     >
-      <span className="absolute left-0.5 h-4 w-4 rounded-full bg-[var(--c-field-border)] shadow-sm transition-[transform,background-color]" />
+      <span className="absolute left-0.5 h-4 w-4 rounded-full bg-[var(--c-field-border)] shadow-sm transition-[transform,background-color] duration-[var(--t-quick)] ease-[var(--easing)]" />
     </span>
   );
 
@@ -69,6 +70,11 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
       className="peer sr-only"
       aria-describedby={hintId}
       {...rest}
+      // UI overhaul B (2026-11-15): a selection tick in Telegram.
+      onChange={(e) => {
+        hapticSelection();
+        onChange?.(e);
+      }}
     />
   );
 

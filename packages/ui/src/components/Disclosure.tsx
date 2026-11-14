@@ -50,7 +50,11 @@ export function Disclosure({ title, children, open, onOpenChange, className }: D
           <IconChevronRight size={18} />
         </span>
       </button>
-      {shown ? <div id={contentId}>{children}</div> : null}
+      {shown ? (
+        <div id={contentId} data-disclosure-content="">
+          {children}
+        </div>
+      ) : null}
     </section>
   );
 }

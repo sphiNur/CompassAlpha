@@ -95,7 +95,9 @@ export function LoadingState({
   return (
     <div
       className={cn(
-        'flex items-center justify-center text-[var(--c-fg-muted)]',
+        // UI overhaul B (2026-11-15): fades in after 300 ms, so a quick
+        // load shows no spinner flash.
+        'loading-delay flex items-center justify-center text-[var(--c-fg-muted)]',
         compact ? 'py-6' : 'py-12',
         className,
       )}

@@ -8,7 +8,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { milliQty, qtyTotalsBySku } from '@compass/contracts/quantity';
 import { trpc } from '../../lib/trpc';
-import { haptic } from '../../lib/telegram';
 import { staysQueued } from '../../lib/outbox/policy';
 import { orgToday } from '../../lib/calendarDate';
 import { registerLocalWrites } from '../../lib/localWrites';
@@ -296,8 +295,7 @@ export function useAdjustQueue({
       const queryKey = { storeId };
       const nowIso = new Date().toISOString();
 
-      // Light haptic on every tap. Cheap, frequent, matches iOS feel.
-      haptic('light');
+      // The tap's haptic is QtyControl's own (UI overhaul B, 2026-11-15).
 
       // DX-ORD-1: a read already on its way carries the server's value from
       // before this tap; cancelling it (state reverts first) keeps it from

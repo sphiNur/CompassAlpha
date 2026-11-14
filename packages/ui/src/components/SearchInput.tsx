@@ -91,7 +91,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           onClick={onClear}
           className={cn(
             // hit-44 (UI-30): 32 px wide to look at, 44 to tap.
-            'hit-44 absolute inset-y-0 right-1 flex w-8 items-center justify-center',
+            'press hit-44 absolute inset-y-0 right-1 flex w-8 items-center justify-center',
             'text-[var(--c-fg-muted)] hover:text-[var(--c-fg)]',
             'focus-visible:outline-none focus-visible:rounded-full',
             'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]',

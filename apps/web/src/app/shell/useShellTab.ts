@@ -5,6 +5,9 @@
  * Review COREWEB1-10 (2026-11-12): out of Shell.tsx.
  */
 import { useEffect, useLayoutEffect, useRef, type UIEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { haptic } from '../../lib/telegram';
+import { withViewTransition } from '../../lib/viewTransition';
 import { scrollBehavior } from '../../lib/reducedMotion';
 import { createTabScrollMemory, restoreScroll } from '../../lib/tabScroll';
 import { requestTabChange, resolveVisibleTab, useNavStore, type Tab } from '../../stores/navStore';
@@ -59,7 +62,16 @@ export function useShellTab(visible: readonly TabDef[]) {
       mainRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() });
       return;
     }
-    void changeTab(nextTab);
+    // UI overhaul B (2026-11-15): a tap moves to the tab with a short
+    // slide from its side of the bar and a selection tick. A swipe has
+    // its own motion (SwipePager.tsx) and goes through changeTab alone.
+    void requestTabChange(nextTab).then((allowed) => {
+      if (!allowed) return;
+      haptic('selection');
+      const direction =
+        visibleKeys.indexOf(nextTab) > visibleKeys.indexOf(tab) ? 'forward' : 'backward';
+      withViewTransition(() => flushSync(() => setPersistedTab(nextTab)), 'tab', [direction]);
+    });
   };
   useDeepLinkTab(visibleKeys, setPersistedTab);
   // If the resolved tab differs from what's persisted (permission

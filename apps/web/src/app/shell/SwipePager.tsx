@@ -24,7 +24,7 @@
  *
  * Touch and pen only: a mouse drag on a desktop selects text.
  */
-import { LoadingState } from '@compass/ui';
+import { hapticSelection, LoadingState } from '@compass/ui';
 import {
   useCallback,
   useEffect,
@@ -277,6 +277,8 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
       const target = neighbours()[side];
       if (!target) return springBack();
       g.phase = 'settle';
+      // UI overhaul B (2026-11-15): the switch ticks, as a tap on a tab does.
+      hapticSelection();
       if (g.still) {
         // Reduced motion: the page never moved; switch at once.
         void latest.current.onSwipe(target).then((allowed) => {
