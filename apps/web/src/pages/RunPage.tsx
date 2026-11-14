@@ -40,9 +40,9 @@ import {
   QueryErrorBanner,
   EmptyState,
   Input,
-  LoadingState,
   Sheet,
   useTapGuard,
+  SkeletonList,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -1352,8 +1352,9 @@ export function RunPage() {
           <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : runListState === 'loading' ? (
           // P-2 (2026-10-31): not "nothing to plan" while it loads.
-          // UI-15 (RUNWEB1-27): the kit's spinner, as every other load.
-          <LoadingState />
+          // UI-15 (RUNWEB1-27): the kit's placeholder, as every list load
+          // (UI overhaul B: a skeleton, 2026-11-15).
+          <SkeletonList variant="cards" count={3} />
         ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
