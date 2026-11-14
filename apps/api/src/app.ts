@@ -52,7 +52,7 @@ export function createApp() {
 
   // Security headers on every response (http/securityHeaders.ts).
   // Review MWD-12: the photo bucket is the one other origin the page
-  // connects to (the report-only policy's connect-src).
+  // connects to (the CSP's connect-src).
   const bucket = uploadOrigin();
   app.use(
     '*',
@@ -111,7 +111,7 @@ export function createApp() {
   );
 
   // Reviews MWD-12 / MWD-13 (modern-web-guidance: security,
-  // trusted-types): what the report-only CSP would have blocked
+  // trusted-types): what the CSP blocked
   // (http/cspReport.ts). Logged, masked, never stored.
   app.post(
     CSP_REPORT_PATH,
