@@ -43,13 +43,16 @@ function plainHost(value: string | undefined): string | null {
  *                  api on its own origin (VITE_API_URL and VITE_WS_URL
  *                  are empty), through the Worker.
  *   - script-src   'report-sample', so a report shows what ran.
- *   - require-trusted-types-for 'script' with `trusted-types 'none'`: the
- *                  app has no HTML sinks of its own. The face tracker
- *                  (MediaPipe) is the known exception: it creates a
- *                  pass-through policy named `goog#html` and loads its
- *                  wasm loader with a `<script src>` set from a string;
- *                  both will show in the reports, and need a narrow
- *                  policy before this is ever enforced (owner decision).
+ *   - require-trusted-types-for 'script' with two policy names. The app
+ *                  has no HTML sinks of its own; its script URLs (the
+ *                  service worker, workers, the face tracker's wasm
+ *                  loader, which MediaPipe sets on a `<script src>` from a
+ *                  string) pass the web's `default` policy
+ *                  (apps/web/src/lib/trustedTypes.ts: same-origin /assets
+ *                  and /sw.js only). `goog#html` is the pass-through policy
+ *                  MediaPipe creates for itself; allowing the name keeps
+ *                  its createPolicy from throwing once this is enforced.
+ *                  Any other policy name is refused.
  *   - report-uri and report-to (Reporting-Endpoints), both to
  *                  /csp-report.
  */
@@ -73,7 +76,7 @@ export function reportOnlyCsp({
     `connect-src ${connect.join(' ')}`,
     ...AFTER_CONNECT,
     "require-trusted-types-for 'script'",
-    "trusted-types 'none'",
+    'trusted-types default goog#html',
     `report-uri ${CSP_REPORT_PATH}`,
     `report-to ${CSP_REPORT_GROUP}`,
   ].join('; ');
@@ -194,6 +197,12 @@ export function securityHeaders({
           // M3.18 (launch hardening): allow the Telegram WebApp SDK
           // (https://telegram.org/js/telegram-web-app.js) loaded from
           // index.html. The SDK is the only external script we run.
+          // Review MWD-11 (modern-web-guidance: security), owner
+          // decision 2026-11-14: kept on telegram.org rather than
+          // self-hosted, so Telegram's fixes reach the app without a
+          // release. The exception is the one host, over https, never a
+          // wildcard; Telegram does not version the file, so it cannot
+          // carry an integrity hash.
           // Inline scripts and inline event handlers were eliminated
           // in the same milestone (boot guard externalized to
           // /boot-guard.js) so we DO NOT need 'unsafe-inline'.

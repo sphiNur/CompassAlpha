@@ -70,7 +70,7 @@ describe('the report-only policy (MWD-12, MWD-13)', () => {
       "'self' wss://compass.example https://bucket.s3.amazonaws.com https://telegram.org",
     );
     expect(ro.get('require-trusted-types-for')).toBe("'script'");
-    expect(ro.get('trusted-types')).toBe("'none'");
+    expect(ro.get('trusted-types')).toBe('default goog#html');
     expect(ro.get('script-src')).toContain("'report-sample'");
     expect(ro.get('frame-ancestors')).toBe(enforced.get('frame-ancestors'));
     expect(ro.get('report-uri')).toBe('/csp-report');
