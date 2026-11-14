@@ -600,6 +600,7 @@ run.Finished             → In-App + Bot (所有相关 store)
 
 - Telegram initData HMAC-SHA256 验证（`createHmac('sha256', 'WebAppData').update(botToken)` 派生 secret），timestamp ±600s 时钟漂移容忍。
 - access token 15min，refresh token 30d，**家族 + jti + 重放检测**（pre-M1.9 jti-less token 走 grandfather 一次性宽限）。
+- Web 端不再把 token 存进 localStorage（review MWD-14）：access token 只在内存；refresh token 由 API 写成 HttpOnly cookie（生产 `__Secure-compass_rt; Secure; SameSite=None; Partitioned; Path=/trpc/auth.refresh`，开发 `compass_rt; SameSite=Lax`，`apps/api/src/http/refreshCookie.ts`），`auth.refresh` 在 body 没带 token 且请求带 `X-Compass-Refresh: cookie` 时读它。Fine 的契约不变：JSON 仍返回 `tokens.refreshToken`，body 里的 token 优先。Web 续期顺序见 `apps/web/src/lib/trpc.ts` `refreshAccessToken`：旧版存下的 token（迁移一次）→ cookie → 内存里的 token → Telegram initData 静默登录 → 都被拒才登出。
 
 ### 7.2 鉴权（授权）
 

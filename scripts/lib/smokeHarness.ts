@@ -420,6 +420,10 @@ export async function stubSignIn(context: BrowserContext): Promise<void> {
     },
   });
   await stubTrpc(context, 'auth.telegramLogin', { tokens: fakeTokens, session: fakeSession });
+  // Review MWD-14: the app keeps its tokens in memory, so a reload (or a
+  // second visit in one context) renews the session from the refresh
+  // cookie before its first call.
+  await stubTrpc(context, 'auth.refresh', { tokens: fakeTokens, session: fakeSession });
   await stubTrpc(context, 'auth.me', fakeSession);
   // nav.counts (#177): the bottom-nav badges. S2 (2026-11-13): no order
   // waiting for review, so the walks start on Order, not on Review.

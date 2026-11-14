@@ -13,9 +13,7 @@ import { useTranslateError } from '../../hooks/useErrToast';
  */
 export function OnboardingScreen() {
   const session = useAuthStore((s) => s.session);
-  const setSession = useAuthStore((s) => s.setSession);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const patchSession = useAuthStore((s) => s.patchSession);
   const i18n = useI18n();
   const initial =
     session?.user.displayName && !session.user.displayName.startsWith('tg:')
@@ -28,9 +26,9 @@ export function OnboardingScreen() {
   const complete = trpc.auth.completeOnboarding.useMutation({
     onSuccess(updatedSession) {
       haptic('success');
-      if (accessToken && refreshToken) {
-        setSession({ accessToken, refreshToken, session: updatedSession });
-      }
+      // Review MWD-14: the tokens stay as they are (the refresh token may
+      // only be in the cookie); only the session changes.
+      if (useAuthStore.getState().session) patchSession(updatedSession);
     },
     onError(err) {
       haptic('error');

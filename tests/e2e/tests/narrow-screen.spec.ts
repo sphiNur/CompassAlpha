@@ -15,6 +15,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { API_URL } from '../env';
 import { openTab } from './nav';
+import { watchAccessToken } from './accessToken';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -30,13 +31,15 @@ const row = (name: string): Locator => main().locator('li').filter({ hasText: na
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
+  // Review MWD-14: the app keeps its token in memory; read it off the
+  // sign-in answer.
+  const signedInToken = watchAccessToken(page);
   // A development build signs the admin straight in, as in the story.
   await page.goto('/');
   await openTab(page, 'run');
   await expect(main()).toContainText(/\d+ bought/);
-  accessToken = await page.evaluate(
-    () => JSON.parse(localStorage.getItem('compass.auth')!).state.accessToken as string,
-  );
+  await expect.poll(signedInToken).not.toBeNull();
+  accessToken = signedInToken()!;
 });
 
 test.afterAll(async () => {

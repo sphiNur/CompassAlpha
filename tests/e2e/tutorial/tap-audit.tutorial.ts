@@ -372,19 +372,17 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
   context.setDefaultTimeout(20_000);
   const page = await context.newPage();
   // Same origin, no app code: where the sign-in is stored before the app boots.
+  // Review MWD-14: the shape an older build saved, which the app still
+  // reads. The access token only: the app would move a refresh token to
+  // its cookie at start, spending the one auditLogin keeps for the next
+  // pass. The app no longer writes the token back, so every reload below
+  // seeds this again (goView).
+  const auth = JSON.stringify({
+    state: { accessToken: login.accessToken, session, currentStoreId: null },
+    version: 0,
+  });
   await page.goto('/boot.css');
-  await page.evaluate(
-    (state) => localStorage.setItem('compass.auth', state),
-    JSON.stringify({
-      state: {
-        accessToken: login.accessToken,
-        refreshToken: login.refreshToken,
-        session,
-        currentStoreId: null,
-      },
-      version: 0,
-    }),
-  );
+  await page.evaluate((state) => localStorage.setItem('compass.auth', state), auth);
   await page.goto('/');
   await page.getByRole('main').waitFor();
   await settle(page);
@@ -403,7 +401,6 @@ async function auditRole(stage: string, role: AuditRole, lang: Locale, width: st
       'dialog',
       (d) => void (d.type() === 'beforeunload' ? d.accept() : d.dismiss()).catch(() => {}),
     );
-    const auth = await page.evaluate(() => localStorage.getItem('compass.auth')!);
     const tabs = await page
       .locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.slice(4)));
