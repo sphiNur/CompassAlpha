@@ -425,6 +425,9 @@ describe('big assets in KV (workers.dev has no Cache API)', () => {
     const second = await worker.fetch(new Request(`${PUBLIC}/assets/vision-1.wasm`), e);
     expect(await bytesOf(second)).toEqual(WASM);
     expect(second.headers.get('content-type')).toBe('application/wasm');
+    // Review MWD-18: the copy from KV keeps the origin's nosniff, and is ours only.
+    expect(second.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(second.headers.get('cross-origin-resource-policy')).toBe('same-origin');
     expect(calls.length).toBe(1);
     expect([...kv.data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
     // Small assets and pages do not go to KV.
