@@ -104,8 +104,11 @@ describe.each([
  */
 const HOST_VARS = ['--app-main-btn-h', '--app-chrome-reserve'];
 
-/** Set by a component on its own element while it runs: a pulled sheet (UI-25). */
-const RUNTIME_VARS = ['--sheet-drag'];
+/**
+ * Set by a component on its own element while it runs: a pulled sheet
+ * (UI-25), a Textarea's resting rows (MWA-16, V11).
+ */
+const RUNTIME_VARS = ['--sheet-drag', '--textarea-rows'];
 
 /** The package's own sources: not its tests or their helpers in src/testing. */
 const componentFiles = () =>

@@ -824,6 +824,8 @@ export const en = {
   'dev.browserLogin.tgIdPlaceholder': 'e.g. {example}',
   'dev.browserLogin.accessCode': 'Access code',
   'dev.browserLogin.accessCodePlaceholder': 'Given by an admin',
+  // Review MWA-13 (V11): the access code's show toggle (aria-pressed says whether it shows).
+  'dev.browserLogin.showCode': 'Show code',
   'dev.browserLogin.submit': 'Enter the test environment',
   'dev.diag.queryFailed': 'Could not read the sign-in modes: {error}',
   'dev.diag.waiting': 'Waiting for the server to return the sign-in modes.',
@@ -1688,6 +1690,9 @@ export const en = {
   'run.action.allocateAcrossStores': 'Allocate across stores',
   'run.action.actualQtyAriaLabel': 'actual quantity',
   'run.action.unitPriceAriaLabel': 'unit price',
+  // Review MWA-20 (V11): the visible labels over the run row's two fields.
+  'run.action.qtyLabelShort': 'Quantity',
+  'run.action.priceLabelShort': 'Price',
   'run.action.savePurchaseAriaLabel': 'Save purchase: {name}',
   'run.confirm.startDelivery.title': 'Start delivery?',
   'run.confirm.startDelivery.body':

@@ -398,6 +398,20 @@
   scrollbar-width: none;
 }
 
+/* Review MWA-16 (V11, modern-web-guidance:
+   form-fields-automatically-fit-contents): the kit Textarea grows with its
+   text, from its `rows` (the resting height, as before) up to ten lines,
+   then scrolls; the width stays the field's (w-full), as the guide asks.
+   Only where field-sizing exists: elsewhere `rows` keeps the fixed height.
+   1rem is the field's py-2; never under the 44 px field (min-h-11). */
+@supports (field-sizing: content) {
+  textarea.textarea-grow {
+    field-sizing: content;
+    min-block-size: max(2.75rem, calc(var(--textarea-rows, 3) * 1lh + 1rem));
+    max-block-size: calc(10lh + 1rem);
+  }
+}
+
 /* Review MWC-05 / MWB-17 (V8, modern-web-guidance:
    scrollability-affordance-hints): the ChipBar hides its scrollbar, so an
    end with chips beyond it fades softly; an end with nothing beyond does

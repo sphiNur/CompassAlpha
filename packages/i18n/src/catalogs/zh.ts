@@ -709,6 +709,7 @@ export const zh = {
   'dev.browserLogin.tgIdPlaceholder': '例如：{example}',
   'dev.browserLogin.accessCode': '访问码',
   'dev.browserLogin.accessCodePlaceholder': '由管理员提供',
+  'dev.browserLogin.showCode': '显示访问码',
   'dev.browserLogin.submit': '进入测试环境',
   'dev.diag.queryFailed': '无法读取登录方式：{error}',
   'dev.diag.waiting': '正在等待服务器返回登录方式。',
@@ -1433,6 +1434,8 @@ export const zh = {
   'run.action.allocateAcrossStores': '按门店分配',
   'run.action.actualQtyAriaLabel': '实际数量',
   'run.action.unitPriceAriaLabel': '单价',
+  'run.action.qtyLabelShort': '数量',
+  'run.action.priceLabelShort': '单价',
   'run.action.savePurchaseAriaLabel': '保存采购：{name}',
   'run.confirm.startDelivery.title': '开始配送？',
   'run.confirm.startDelivery.body':

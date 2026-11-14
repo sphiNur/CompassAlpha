@@ -173,3 +173,15 @@ describe('Review MWA-07 (V5): the required mark', () => {
     expect(requiredMarkText('  ')).toBe('');
   });
 });
+
+describe('Review MWA-16 (V11): a textarea grows with its text', () => {
+  test('it carries the grow class and its resting rows; a caller style adds to it', () => {
+    const html = renderToStaticMarkup(
+      createElement(Textarea, { rows: 2, style: { color: 'red' } }),
+    );
+    expect(html).toContain('textarea-grow');
+    expect(html).toContain('rows="2"');
+    expect(html).toContain('--textarea-rows:2');
+    expect(html).toContain('color:red');
+  });
+});

@@ -776,6 +776,7 @@ export const uz = {
   'dev.browserLogin.tgIdPlaceholder': 'masalan, {example}',
   'dev.browserLogin.accessCode': 'Kirish kodi',
   'dev.browserLogin.accessCodePlaceholder': 'Administrator beradi',
+  'dev.browserLogin.showCode': 'Kodni koʻrsatish',
   'dev.browserLogin.submit': 'Test muhitiga kirish',
   'dev.diag.queryFailed': 'Kirish usullarini oʻqib boʻlmadi: {error}',
   'dev.diag.waiting': 'Server kirish usullarini qaytarishini kutmoqdamiz.',
@@ -1606,6 +1607,8 @@ export const uz = {
   'run.action.allocateAcrossStores': 'Doʻkonlar boʻyicha taqsimlash',
   'run.action.actualQtyAriaLabel': 'haqiqiy miqdor',
   'run.action.unitPriceAriaLabel': 'birlik narxi',
+  'run.action.qtyLabelShort': 'Miqdor',
+  'run.action.priceLabelShort': 'Narx',
   'run.action.savePurchaseAriaLabel': 'Xaridni saqlash: {name}',
   'run.confirm.startDelivery.title': 'Yetkazishni boshlaymizmi?',
   'run.confirm.startDelivery.body':

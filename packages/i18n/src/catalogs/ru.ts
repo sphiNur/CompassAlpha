@@ -778,6 +778,7 @@ export const ru = {
   'dev.browserLogin.tgIdPlaceholder': 'например, {example}',
   'dev.browserLogin.accessCode': 'Код доступа',
   'dev.browserLogin.accessCodePlaceholder': 'Выдаёт администратор',
+  'dev.browserLogin.showCode': 'Показать код',
   'dev.browserLogin.submit': 'Войти в тестовую среду',
   'dev.diag.queryFailed': 'Не удалось получить способы входа: {error}',
   'dev.diag.waiting': 'Ждём от сервера способы входа.',
@@ -1621,6 +1622,8 @@ export const ru = {
   'run.action.allocateAcrossStores': 'Распределить по магазинам',
   'run.action.actualQtyAriaLabel': 'фактическое количество',
   'run.action.unitPriceAriaLabel': 'цена за единицу',
+  'run.action.qtyLabelShort': 'Количество',
+  'run.action.priceLabelShort': 'Цена',
   'run.action.savePurchaseAriaLabel': 'Сохранить покупку: {name}',
   'run.confirm.startDelivery.title': 'Начать доставку?',
   'run.confirm.startDelivery.body':
