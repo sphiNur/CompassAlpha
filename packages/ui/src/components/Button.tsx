@@ -7,6 +7,7 @@ import { createTapGuard } from '../useTapGuard';
 import { disabledClass } from './disabled';
 import { useUiAnnounce } from '../announce';
 import { useUiLabels } from '../labels';
+import { firstMissingControl, useRevealScope } from '../revealScope';
 
 const button = cva(
   [
@@ -29,6 +30,10 @@ const button = cva(
     // aria-disabled, not disabled, so focus stays on it; it looks as a
     // disabled one did.
     'data-[loading]:cursor-not-allowed data-[loading]:opacity-50 data-[loading]:pointer-events-none',
+    // Review MWA-05 (modern-web-guidance: accessibility): a button waiting
+    // for its form (disabledHint) is aria-disabled, not disabled, so it can
+    // be reached and tapped; it looks as a disabled one did.
+    'data-[blocked]:cursor-not-allowed data-[blocked]:opacity-50',
   ],
   {
     variants: {
@@ -104,6 +109,13 @@ export interface ButtonProps
    *
    * Passing the prop at all (even as `undefined`) wraps the button in a
    * column, so the tree keeps its shape when the hint comes and goes.
+   *
+   * Review MWA-05 (modern-web-guidance: accessibility, forms): while the
+   * hint shows, the button is aria-disabled instead of disabled. It keeps
+   * the grey look and runs nothing, but it can be focused and tapped: a
+   * tap shows the form's errors (useLeftField's reveal, through the
+   * sheet's or page's reveal scope), moves to the first missing field and
+   * says the hint. Disabled with no hint, it stays natively disabled.
    */
   disabledHint?: string;
 }
@@ -172,6 +184,23 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
   const hint = buttonHint(disabled, loading, disabledHint);
   useHintChange(hint);
+  // MWA-05: waiting for the form — reachable, and a tap says what is missing.
+  const blocked = !!hint;
+  const scope = useRevealScope();
+  const revealMissing = () => {
+    scope.revealAll();
+    if (hint) announce(hint);
+    const self = ownRef.current;
+    // After the reveal has rendered: the errors mark their fields invalid.
+    setTimeout(() => {
+      if (!self?.isConnected) return;
+      const root = self.closest('[role="dialog"], form, main') ?? self.ownerDocument.body;
+      const target = firstMissingControl(root);
+      if (!(target instanceof HTMLElement)) return;
+      target.focus();
+      target.scrollIntoView?.({ block: 'nearest' });
+    }, 0);
+  };
   const describedBy =
     [rest['aria-describedby'], hint ? hintId : undefined].filter(Boolean).join(' ') || undefined;
   const el = (
@@ -180,15 +209,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={rest.type ?? 'button'}
       // MWB-10: while loading the button keeps focus (aria-disabled); the
       // click guard below drops presses, a form's Enter included.
-      disabled={(disabled && !loading) || undefined}
+      disabled={(disabled && !loading && !blocked) || undefined}
       data-loading={loading || undefined}
-      className={cn(button({ variant, size, block }), className)}
+      data-blocked={blocked || undefined}
+      className={cn(
+        button({ variant, size, block }),
+        // MWA-05: no hover colour on a waiting button (a tap leaves :hover set).
+        blocked && (variant ?? 'primary') === 'primary' && 'hover:bg-[var(--c-action)]',
+        className,
+      )}
       {...rest}
-      aria-disabled={loading || rest['aria-disabled'] || undefined}
+      aria-disabled={loading || blocked || rest['aria-disabled'] || undefined}
       aria-describedby={describedBy}
       onClick={(e: MouseEvent<HTMLButtonElement>) => {
         if (loading) {
           e.preventDefault(); // no second submit of the form either
+          return;
+        }
+        if (blocked) {
+          e.preventDefault(); // a waiting form is not submitted
+          revealMissing();
           return;
         }
         pressedAt.current = Date.now();

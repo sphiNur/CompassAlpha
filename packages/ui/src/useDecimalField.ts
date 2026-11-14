@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FocusEvent, InputHTMLAttributes } from 'react';
 import { readDecimalText } from './decimalText';
+import { useRevealScope } from './revealScope';
 
 type InputProps = InputHTMLAttributes<HTMLInputElement>;
 
@@ -31,6 +32,10 @@ export function useDecimalField({
 } {
   const [raw, setRaw] = useState<string | null>(null);
   const [left, setLeft] = useState(false);
+  // Review MWA-05 (modern-web-guidance: forms): a tap on a Save that waits
+  // for the form shows a number that cannot be read, as leaving does.
+  const scope = useRevealScope();
+  useEffect(() => scope.add(() => setLeft(true)), [scope]);
   // What we last handed to the parent. While the parent's value is still
   // that, the typed text is shown; any other value came from outside
   // (a reset, a preset chip) and wins.

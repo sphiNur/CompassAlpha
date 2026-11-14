@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { useRevealScope } from './revealScope';
 
 /**
  * Review MWA-04 (modern-web-guidance: validate-input-after-interaction):
@@ -18,6 +19,11 @@ import type { KeyboardEvent } from 'react';
  *
  * `resetKey`: when it changes (a sheet opened again, another row being
  * edited) the field counts as not left yet.
+ *
+ * Review MWA-05 (modern-web-guidance: forms): a tap on a Save that waits
+ * for the form (Button `disabledHint`) reveals this field too, through
+ * the nearest reveal scope (revealScope.tsx); pages need not call
+ * `reveal` from their Save.
  */
 export function useLeftField(resetKey?: unknown): {
   left: boolean;
@@ -34,6 +40,8 @@ export function useLeftField(resetKey?: unknown): {
   const current = nextLeftState(state, resetKey);
   if (current !== state) setState(current);
   const mark = useCallback(() => setState({ key: resetKey, left: true }), [resetKey]);
+  const scope = useRevealScope();
+  useEffect(() => scope.add(mark), [scope, mark]);
   const onKeyDown = useCallback(
     (e: KeyboardEvent<HTMLElement>) => {
       if (revealsOnKey(e.key, e.nativeEvent.isComposing)) mark();

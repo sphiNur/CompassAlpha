@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Button, buttonHint, hintChanged, saysBusy } from '../components/Button';
+import { createRevealScope, firstMissingControl } from '../revealScope';
+import type { MissingCandidate } from '../revealScope';
 
 /**
  * UX-05: a disabled Save says what is missing, in a muted line the button
@@ -49,6 +51,24 @@ describe('Button disabledHint', () => {
       expect(html).not.toContain('aria-describedby');
       expect(html.startsWith('<span')).toBe(true);
     }
+  });
+
+  // Review MWA-05 (modern-web-guidance: accessibility): reachable while it waits.
+  test('a button with a hint is aria-disabled, not disabled, and looks the same', () => {
+    const html = render({ block: true, disabled: true, disabledHint: 'Enter a name.' });
+    expect(html).not.toMatch(/<button[^>]* disabled=""/);
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('data-blocked="true"');
+    expect(html).toContain('data-[blocked]:opacity-50');
+  });
+
+  test('disabled with no hint (or loading) stays natively disabled / loading', () => {
+    expect(render({ disabled: true, disabledHint: '' })).toMatch(/<button[^>]* disabled=""/);
+    expect(render({ disabled: true, disabledHint: '' })).not.toContain('data-blocked');
+    expect(render({ disabled: true, loading: true, disabledHint: 'x' })).not.toContain(
+      'data-blocked',
+    );
+    expect(render({ disabled: false, disabledHint: 'x' })).not.toContain('aria-disabled');
   });
 
   test('without the prop the button is not wrapped', () => {
@@ -99,5 +119,46 @@ describe('Button loading', () => {
     expect(saysBusy(false, 4500, 5000)).toBe(true);
     expect(saysBusy(false, 3000, 5000)).toBe(false);
     expect(saysBusy(false, 0, 5000)).toBe(false);
+  });
+});
+
+/** Review MWA-05: a tap on a waiting Save reveals its scope's fields. */
+describe('reveal scope', () => {
+  test('reveals every field added, none removed', () => {
+    const scope = createRevealScope();
+    const seen: string[] = [];
+    scope.add(() => seen.push('a'));
+    const removeB = scope.add(() => seen.push('b'));
+    removeB();
+    scope.revealAll();
+    expect(seen).toEqual(['a']);
+  });
+
+  const node = (attrs: Record<string, string>, extra: Partial<MissingCandidate> = {}) => ({
+    getAttribute: (name: string) => attrs[name] ?? null,
+    ...extra,
+  });
+  const root = (byQuery: { invalid: MissingCandidate[]; required: MissingCandidate[] }) => ({
+    querySelectorAll: (sel: string) =>
+      sel === '[aria-invalid="true"]' ? byQuery.invalid : byQuery.required,
+  });
+
+  test('the first field showing an error wins', () => {
+    const bad = node({ 'aria-invalid': 'true' });
+    const empty = node({ 'aria-required': 'true' }, { value: '' });
+    expect(firstMissingControl(root({ invalid: [bad], required: [empty] }))).toBe(bad);
+  });
+
+  test('else the first empty required field, skipping filled and disabled ones', () => {
+    const filled = node({}, { value: 'Ann' });
+    const off = node({}, { value: '', disabled: true });
+    const empty = node({}, { value: '  ' });
+    expect(firstMissingControl(root({ invalid: [], required: [filled, off, empty] }))).toBe(empty);
+  });
+
+  test('nothing to move to: null (the hint alone says why)', () => {
+    expect(firstMissingControl(root({ invalid: [], required: [node({}, { value: 'x' })] }))).toBe(
+      null,
+    );
   });
 });

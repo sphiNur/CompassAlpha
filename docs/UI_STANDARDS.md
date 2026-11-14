@@ -168,6 +168,10 @@ A control that cannot be used looks the same everywhere: half opacity and a
 not-allowed cursor, from the kit's `disabledClass` (on the element) or
 `disabledLook` (on a label around it). A field someone may not edit must not
 look editable (2026-11-10, review UI-11).
+A Save that waits for its form and says why (`disabledHint`, UX-05) keeps
+that look but is `aria-disabled`, not `disabled`: it can be reached and
+tapped, and a tap shows the form's errors, moves to the first missing field
+and says the hint; nothing is sent (2026-11-14, review MWA-05).
 
 #### UI-17 — Bottom navigation: a floating capsule, at most five items
 The bottom nav is a capsule floating over the page (owner, 2026-11-14). It

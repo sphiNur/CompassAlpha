@@ -143,3 +143,6 @@ export { UiAnnouncerProvider, useUiAnnounce, useAnnounceShown } from './announce
 export type { UiAnnounce } from './announce';
 // Review MWA-04: an error waits until its field has been left.
 export { useLeftField } from './useLeftField';
+// Review MWA-05: a Save that waits for its form reveals its scope's fields
+// (a Sheet has one of its own).
+export { RevealScopeProvider, useRevealScope } from './revealScope';

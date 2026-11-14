@@ -339,6 +339,12 @@
     transform: none;
   }
 }
+/* Review MWA-05 (modern-web-guidance: accessibility): a Button waiting for
+   its form is aria-disabled and can be tapped; it does not shrink, as a
+   disabled one never did. */
+.press[aria-disabled='true']:active {
+  transform: none;
+}
 
 /* 1px hairline used by cards (avoids 0.5px sub-pixel issues on @1x) */
 .ring-hairline {

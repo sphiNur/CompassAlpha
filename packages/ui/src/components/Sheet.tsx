@@ -14,6 +14,7 @@ import { pushTelegramBackHandler } from '../telegramBackStack';
 import { useConfirm } from '../confirm';
 import { useUiLabels } from '../labels';
 import { useSheetFocus } from '../sheetFocus';
+import { RevealScopeProvider } from '../revealScope';
 
 /**
  * Shared "how many sheets are currently open?" counter (M1.5,
@@ -332,7 +333,13 @@ function isToastTarget(target: EventTarget | null): boolean {
 
 export function Sheet(props: SheetProps) {
   const mounted = useOpenedOnce(props.open);
-  return mounted ? <OpenedSheet {...props} /> : null;
+  // Review MWA-05 (modern-web-guidance: forms): a blocked Save in this
+  // sheet reveals this sheet's fields, not the page's under it.
+  return mounted ? (
+    <RevealScopeProvider>
+      <OpenedSheet {...props} />
+    </RevealScopeProvider>
+  ) : null;
 }
 
 function OpenedSheet({
