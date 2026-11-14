@@ -102,8 +102,9 @@ export function PunchCamera({
       mouth: next.mouth,
     });
   };
-  const shoot = () => {
-    const b64 = cam.grab();
+  // The frame the tracker read (review MWD-05: from its worker, one frame behind the video).
+  const shoot = (frame: HTMLVideoElement | ImageBitmap) => {
+    const b64 = cam.grab(undefined, frame);
     if (b64) keep(b64);
   };
 
@@ -114,14 +115,14 @@ export function PunchCamera({
     video: cam.video,
     tracker: track.tracker,
     key: step,
-    onReading: (r, now) => {
+    onReading: (r, now, frame) => {
       if (step !== 'blink' && step !== 'mouth') return true;
       if (watcher.current?.step !== step) watcher.current = { step, w: createActWatcher(step) };
       const w = watcher.current.w;
       const out = w.step(r, now);
       setGuide(out.guide);
       if (out.grab) {
-        const b64 = cam.grab();
+        const b64 = cam.grab(undefined, frame);
         if (b64) {
           w.took();
           frames.current[step] = b64;
