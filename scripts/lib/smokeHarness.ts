@@ -50,6 +50,13 @@ export const PRIMARY_NAV_SELECTOR =
  * not in the bar is opened from the More sheet.
  */
 export async function clickNavTab(page: Page, key: string): Promise<void> {
+  // 2026-11-14: scrolled down on a page with a main button, the capsule
+  // keeps the open tab only; back at the top every tab shows again.
+  await page.evaluate(() => {
+    if (document.querySelector('[data-nav-compact]')) {
+      document.getElementById('main-content')?.scrollTo({ top: 0 });
+    }
+  });
   const inBar = page.locator(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-${key}"]`);
   if ((await inBar.count()) > 0) {
     await inBar.click();

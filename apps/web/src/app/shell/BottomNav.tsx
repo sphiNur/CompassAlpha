@@ -8,9 +8,10 @@
  *
  * Owner, 2026-11-14: a capsule floating over the page with at most five
  * items, four tabs + More when there are more (navLayout.ts). Its look is
- * `.app-nav` in styles/index.css.
+ * `.app-nav` in styles/index.css. On a page with a main button it shares
+ * a row with it (Shell.tsx's dock): icons only, each still named.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { IconMore, Sheet } from '@compass/ui';
 import { useNavigationBlocked } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
@@ -131,20 +132,22 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
         aria-label={i18n.t('nav.primaryAriaLabel')}
         aria-busy={busy || undefined}
       >
-        {bar.map((t) => {
+        {bar.map((t, index) => {
           const label = i18n.t(t.labelKey);
           const short = i18n.t(t.shortKey);
           return (
             <NavItem
               key={t.key}
+              index={index}
               testId={`nav-${t.key}`}
               active={tab === t.key}
               Icon={t.Icon}
               short={short}
               // The short nav word is an abbreviation in ru / uz; screen
               // readers announce the section's full name. Review MWC-03: always
-              // named, since the compact capsule hides the word (display:none)
-              // and the icon is aria-hidden.
+              // named, since the compact capsule hides the word, and so does
+              // the row shared with a main button (display: none), and the
+              // icon is aria-hidden.
               ariaLabel={badgeText(t) ?? label}
               badge={<NavBadgeMark tabKey={t.key} badge={badges[t.key]} />}
               disabled={busy}
@@ -154,6 +157,7 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
         })}
         {more.length > 0 ? (
           <NavItem
+            index={bar.length}
             testId="nav-more"
             active={!!current}
             Icon={current?.Icon ?? IconMore}
@@ -219,6 +223,8 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
 }
 
 interface NavItemProps {
+  /** Its place in the bar: the compact row slides it from there (index.css). */
+  index: number;
   testId: string;
   active: boolean;
   Icon: TabDef['Icon'];
@@ -239,6 +245,7 @@ interface NavItemProps {
  * (D17) and truncates only past that.
  */
 function NavItem({
+  index,
   testId,
   active,
   Icon,
@@ -260,8 +267,9 @@ function NavItem({
       aria-expanded={ariaHasPopup ? ariaExpanded : undefined}
       onClick={onClick}
       disabled={disabled}
+      style={{ '--app-nav-i': index } as CSSProperties}
       className={
-        'press relative flex min-w-[min(2.75rem,20%)] flex-auto flex-col items-center justify-center gap-0.5 px-0.5 ' +
+        'app-nav-item press relative flex min-w-[min(2.75rem,20%)] flex-auto flex-col items-center justify-center gap-0.5 px-0.5 ' +
         (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
       }
     >

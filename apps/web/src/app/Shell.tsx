@@ -117,7 +117,8 @@ function ShellInner() {
     <div
       ref={scrollChrome.rootRef}
       // relative: the nav capsule floats over the page (BottomNav.tsx).
-      className="relative flex min-h-0 flex-col bg-[var(--c-bg)]"
+      // app-shell: the dock's compact rules read its data-nav-compact.
+      className="app-shell relative flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
       <SkipLinks hasNav={showsNav(visible)} />
@@ -218,22 +219,24 @@ function ShellInner() {
 
       {/* M3.49 (2026-05-23): in-page primary action button. Telegram's
           native MainButton lives BELOW the WebView, so it pushed the
-          bottom nav up whenever a page set a primary action. The
-          user explicitly requested the bottom nav stay anchored at
-          all times. This in-DOM button sits ABOVE the nav, so when
-          it appears/disappears the NAV doesn't move — only the
-          page-content area shrinks/grows. Driven by the same
-          usePageMainButton hook every page already uses. 2026-11-14:
-          the floating capsule sits over this bar's foot, under the
-          button. */}
-      <PageMainButton />
-
-      <BottomNav
-        tabs={visible}
-        tab={tab}
-        onSelect={selectTab}
-        permissions={session?.permissions ?? []}
-      />
+          bottom nav up whenever a page set a primary action. The user
+          explicitly requested the bottom nav stay anchored at all times.
+          Driven by the same usePageMainButton hook every page already
+          uses. 2026-11-14 (owner): the nav capsule and the button float
+          in one dock, on one row where it fits (.app-dock in
+          styles/index.css); the nav comes first for Tab. Outside the
+          pager, so a swipe never starts on either. */}
+      <div className="app-dock" data-nav={showsNav(visible) ? '' : undefined}>
+        <div className="app-dock-row">
+          <BottomNav
+            tabs={visible}
+            tab={tab}
+            onSelect={selectTab}
+            permissions={session?.permissions ?? []}
+          />
+          <PageMainButton />
+        </div>
+      </div>
       <ReviewLanding visibleKeys={visible.map((t) => t.key)} currentTab={tab} />
     </div>
   );
