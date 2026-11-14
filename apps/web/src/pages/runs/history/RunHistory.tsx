@@ -27,7 +27,7 @@
  */
 import { addMoney } from '@compass/contracts/money';
 import { useState, type ReactNode } from 'react';
-import { Button, Card, EmptyState, LoadingState, OfflineState, SectionLabel } from '@compass/ui';
+import { Button, Card, EmptyState, OfflineState, SectionLabel, SkeletonList } from '@compass/ui';
 import { formatMoney } from '../../../lib/format';
 import { useI18n } from '../../../hooks/useI18n';
 import { useCurrency } from '../../../hooks/useCurrency';
@@ -166,7 +166,7 @@ export function RunHistoryPage({
         {waitingOffline ? (
           <OfflineState />
         ) : loading ? (
-          <LoadingState />
+          <SkeletonList variant="cards" count={3} />
         ) : failed ? null : runs.length === 0 ? (
           // R2-HIS-2 (2026-10-31): a failed load shows its error banner
           // above; "no runs match — clear all" under it blamed the filters.

@@ -27,6 +27,7 @@ import {
   StickyPageBar,
   focusAfter,
   useToast,
+  SkeletonList,
 } from '@compass/ui';
 import type { CatalogKey } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
@@ -428,6 +429,7 @@ export function ApprovalPage() {
       <div id={listPanelId} className="px-4 pt-3">
       <DataState
         query={pendingQuery}
+        loading={<SkeletonList variant="cards" count={3} />}
         emptyWhen={(d) => d.length === 0}
         empty={
           // APR-14 (2026-10-30): the approved / rejected tabs said "inbox

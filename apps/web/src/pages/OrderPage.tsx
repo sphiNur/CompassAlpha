@@ -11,6 +11,7 @@ import {
   SectionLabel,
   Sheet,
   StickyPageBar,
+  SkeletonList,
 } from '@compass/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { trpc } from '../lib/trpc';
@@ -505,6 +506,7 @@ export function OrderPage() {
           not "tap + next to a product" when there is none to tap. */}
       <DataState
         query={skusQuery}
+        loading={<SkeletonList count={6} />}
         emptyWhen={() => skus.length === 0}
         empty={
           <EmptyState

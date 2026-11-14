@@ -20,10 +20,10 @@ import {
   ConfirmSheet,
   DataState,
   EmptyState,
-  LoadingState,
   OfflineState,
   StickyPageBar,
   useToast,
+  SkeletonList,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -489,7 +489,7 @@ export function ConfirmPage() {
           </ChipBar>
         ) : null}
         {runsView.kind === 'loading' ? (
-          <LoadingState />
+          <SkeletonList count={5} />
         ) : runsView.kind === 'offline' ? (
           <OfflineState />
         ) : runsView.kind === 'error' ? null : !activeRun ? (
