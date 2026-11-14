@@ -403,3 +403,76 @@
     opacity: 0;
   }
 }
+
+/*
+ * Review MWC-04, MWA-17, MWB-11, MWB-15 (modern-web-guidance: color,
+ * checkbox, progress, tabs): Forced Colors Mode (Windows contrast themes,
+ * which Telegram Desktop's WebView2 follows) drops box-shadows and forces
+ * backgrounds, and the kit draws edges, state and focus with exactly
+ * those: field and card edges, the checkbox box, the switch, a selected
+ * chip or segment, the nav's current item and progress fills all
+ * vanished. Here each gets an outline or a system colour. Nothing changes
+ * outside forced colors.
+ */
+@media (forced-colors: active) {
+  .ring-hairline,
+  .ring-field,
+  .shadow-sheet {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  /* The checkbox box and the switch track sit right after their
+     visually hidden native input (Checkbox.tsx, Switch.tsx). */
+  input[type='checkbox'] + span[aria-hidden] {
+    forced-color-adjust: none;
+    background: Canvas;
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  input[type='checkbox']:checked + span[aria-hidden] {
+    background: Highlight;
+  }
+  input[type='checkbox']:checked + span[aria-hidden] svg {
+    color: HighlightText;
+  }
+  input[type='checkbox']:focus-visible + span[aria-hidden] {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  input[role='switch'] + span[aria-hidden] > span {
+    background: ButtonText;
+  }
+  input[role='switch']:checked + span[aria-hidden] > span {
+    background: HighlightText;
+  }
+  /* A selected chip, segment or option row, the nav's current item. */
+  [role='radio'][aria-checked='true'],
+  [aria-pressed='true'],
+  [aria-current='page'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  [role='progressbar'] {
+    outline: 1px solid CanvasText;
+  }
+  [role='progressbar'] > * {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+}
+
+/*
+ * Review MWC-18 (modern-web-guidance: color): iOS Increase Contrast and
+ * other "more contrast" settings get the 3:1 field edge for hairlines and
+ * the muted ink for the subtle one. Default contrast is unchanged.
+ */
+@media (prefers-contrast: more) {
+  :root[data-theme] {
+    --c-divider: var(--c-field-border);
+    --c-fg-subtle: var(--c-fg-muted);
+  }
+}

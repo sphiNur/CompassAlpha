@@ -17,6 +17,9 @@ export function resolvedColorScheme(theme: Theme, colorScheme: 'light' | 'dark')
   return colorScheme;
 }
 
+/** The browser bar colour per scheme, as index.html starts them. */
+const THEME_COLOR = { light: '#ffffff', dark: '#1c1c1e' } as const;
+
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = 'compass.theme';
@@ -126,6 +129,13 @@ export function ThemeProvider({
     document
       .querySelector('meta[name="color-scheme"]')
       ?.setAttribute('content', resolvedColorScheme(theme, colorScheme));
+    // Review MWC-17 (modern-web-guidance: dark-mode): the browser bar
+    // outside Telegram follows the page's scheme, not the phone's. Both
+    // tags (one per media query in index.html) name the shown scheme.
+    const barColor = THEME_COLOR[resolvedColorScheme(theme, colorScheme)];
+    document
+      .querySelectorAll('meta[name="theme-color"]')
+      .forEach((meta) => meta.setAttribute('content', barColor));
     onChange?.(theme);
   }, [theme, colorScheme, onChange]);
 
