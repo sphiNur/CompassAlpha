@@ -205,3 +205,48 @@ describe('saving only what changed (P-4)', () => {
     stop();
   });
 });
+
+// Review MWD-09 (modern-web-guidance: batch-analytics-events): the waiting
+// save also goes when the page is hidden, not only on `pagehide`, and
+// only once when both come.
+describe('saving when the page is hidden', () => {
+  it('saves the waiting change on hidden, once, and not again on pagehide', async () => {
+    const g = globalThis as { window?: unknown; document?: unknown };
+    const win = new EventTarget();
+    const doc = Object.assign(new EventTarget(), {
+      visibilityState: 'visible',
+      querySelector: () => null,
+    });
+    g.window = win;
+    g.document = doc;
+    try {
+      let writes = 0;
+      const counting: CacheStorage = {
+        ...kv,
+        set: async (k, v) => {
+          writes++;
+          await kv.set(k, v);
+        },
+      };
+      const qc = new QueryClient();
+      // An hour's delay: only the hide can save in this test.
+      const stop = startQueryPersistence(qc, () => 'u1:o1', counting, 3_600_000);
+      qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 1 }] });
+      await tick();
+      expect(writes).toBe(0);
+      doc.dispatchEvent(new Event('visibilitychange')); // still visible
+      expect(writes).toBe(0);
+      doc.visibilityState = 'hidden';
+      doc.dispatchEvent(new Event('visibilitychange'));
+      await tick();
+      expect(writes).toBe(1);
+      win.dispatchEvent(new Event('pagehide'));
+      await tick();
+      expect(writes).toBe(1);
+      stop();
+    } finally {
+      delete g.window;
+      delete g.document;
+    }
+  });
+});

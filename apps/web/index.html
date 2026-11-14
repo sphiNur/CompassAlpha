@@ -44,8 +44,11 @@
          telegram.org before parsing the page and showing the splash.
          Deferred scripts run in document order before the module script
          below, so main.tsx still finds window.Telegram; boot-guard.js
-         re-reads the Telegram language on this script's load event. -->
-    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+         re-reads the Telegram language on this script's load event.
+         Review MWD-21 (modern-web-guidance: optimize-script-priority):
+         main.tsx waits for it, so it asks for high priority; deferred
+         scripts otherwise load at low priority in Chromium. -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer fetchpriority="high"></script>
     <!-- Boot guard: locale detection + error capture + 12s failsafe
          + Reload / Reset button wiring. External per CSP. -->
     <script src="/boot-guard.js"></script>

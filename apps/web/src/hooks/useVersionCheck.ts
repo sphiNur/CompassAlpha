@@ -42,8 +42,12 @@ export function useVersionCheck(): void {
     const versions = versionCheck({
       running,
       async serverBuild() {
-        // Bypass any browser cache.
-        const res = await fetch('/health/version?t=' + Date.now(), { cache: 'no-store' });
+        // Bypass any browser cache. Review MWD-03 (modern-web-guidance:
+        // deprioritize-background-fetches): a background poll, at low priority.
+        const res = await fetch('/health/version?t=' + Date.now(), {
+          cache: 'no-store',
+          priority: 'low',
+        });
         if (!res.ok) return null;
         return ((await res.json()) as { commit?: string }).commit ?? null;
       },

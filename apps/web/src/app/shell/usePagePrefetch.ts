@@ -7,6 +7,7 @@
 import { useEffect } from 'react';
 import type { AuthSession } from '../../stores/authStore';
 import { preloadPage, preloadSettingsSheet } from '../pageChunks';
+import { browserIdleHost, prefetchInTurn } from './idlePrefetch';
 
 export function usePagePrefetch(session: AuthSession | null): void {
   // Warm the AdminPage chunk in the background once we know the user
@@ -20,7 +21,7 @@ export function usePagePrefetch(session: AuthSession | null): void {
   // ~400-1000ms of spinner on slow networks, which (a) feels like a
   // stutter on Telegram WebApp, and (b) is enough to make the deep
   // smoke's 400ms post-click waitForTimeout race the chunk download.
-  // We use requestIdleCallback when available so we don't compete with
+  // We wait until the browser is idle so we don't compete with
   // first-paint work on the entry route.
   const canAdmin = !!session?.permissions.includes('users.manage') || !!session?.isPlatformAdmin;
   // M3.11: same warmup pattern for RunPage. Trigger when the user
@@ -38,19 +39,18 @@ export function usePagePrefetch(session: AuthSession | null): void {
   const signedIn = session !== null;
   useEffect(() => {
     if (!signedIn) return;
-    type IdleCB = (cb: () => void) => number;
-    const ric = (window as { requestIdleCallback?: IdleCB }).requestIdleCallback;
-    const kick = () => {
-      // Fire the prefetches that apply. Each failure is dropped here —
-      // the page's own import retries when the user actually taps in.
-      if (canAdmin) preloadPage('admin');
-      if (canRun) preloadPage('run');
-      if (canApprove) preloadPage('approve');
-      if (canConfirm) preloadPage('confirm');
-      if (canOrder) preloadPage('order');
-      preloadSettingsSheet();
-    };
-    if (ric) ric(kick);
-    else setTimeout(kick, 0);
+    // Review MWD-04 (modern-web-guidance: schedule-tasks-by-priority): one
+    // chunk at a time, once idle; without requestIdleCallback (iOS), a few
+    // seconds after `load` instead of at once (idlePrefetch.ts). Each
+    // failure is dropped here: the page's own import retries when the user
+    // actually taps in.
+    const tasks: Array<() => Promise<unknown>> = [];
+    if (canAdmin) tasks.push(() => preloadPage('admin'));
+    if (canRun) tasks.push(() => preloadPage('run'));
+    if (canApprove) tasks.push(() => preloadPage('approve'));
+    if (canConfirm) tasks.push(() => preloadPage('confirm'));
+    if (canOrder) tasks.push(() => preloadPage('order'));
+    tasks.push(preloadSettingsSheet);
+    return prefetchInTurn(browserIdleHost(), tasks);
   }, [signedIn, canAdmin, canRun, canApprove, canConfirm, canOrder]);
 }

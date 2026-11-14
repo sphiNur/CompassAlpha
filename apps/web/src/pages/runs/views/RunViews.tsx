@@ -1085,6 +1085,14 @@ const ROW_MONEY =
  * space between adjacent commit targets (today's row: 13px). Density is
  * not what this redesign buys — see the note on the PurchaseRow doc. */
 const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
+/**
+ * Review MWD-07 (modern-web-guidance: defer-rendering-heavy-content): the
+ * purchase list mounts a row per item of the run; the browser skips layout
+ * and paint for the rows off screen, as on the order page (SkuRow.tsx).
+ * "auto 52px" (a one-line row, ROW_SHELL's min height) is the estimate
+ * until a row has been laid out once; then the browser keeps the real one.
+ */
+const ROW_DEFER = '[content-visibility:auto] [contain-intrinsic-size:auto_52px]';
 
 /* A row's product name is the kit's NameCell (UI-4, RUNWEB1-09): up to
  * two lines, then an ellipsis (WALK-02), hyphenated where the page
@@ -1695,7 +1703,7 @@ export const PurchaseRow = memo(function PurchaseRow({
   // rows that also serve other stores, but cannot change them.
   if (servesOtherStores) {
     return (
-      <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
+      <li className={`border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0 ${ROW_DEFER}`}>
         <div className="flex items-baseline gap-2">
           <NameCell as="span" className="flex-1" {...name} />
           <span className="shrink-0 text-old-body-sm tabular-nums text-[var(--c-fg-muted)]">
@@ -1723,7 +1731,10 @@ export const PurchaseRow = memo(function PurchaseRow({
       // different view components (flat / per-store / per-vendor /
       // per-category) and threading a ref through all of them to support
       // one scroll-into-view would cost far more than it's worth.
-      <li data-run-item-pending className="border-b border-[var(--c-divider)] last:border-b-0">
+      <li
+        data-run-item-pending
+        className={`border-b border-[var(--c-divider)] last:border-b-0 ${ROW_DEFER}`}
+      >
         <div className={ROW_SHELL}>
           <button
             type="button"
@@ -1834,7 +1845,7 @@ export const PurchaseRow = memo(function PurchaseRow({
 
   if (item.status === 'pending') {
     return (
-      <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
+      <li className={`border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0 ${ROW_DEFER}`}>
         {/* Line 1: name + meta (planned · last price) + N/A.
             One row instead of two — meta sits on the same baseline as the
             title in muted 12px so it's scannable but not distracting. */}
@@ -2124,7 +2135,7 @@ export const PurchaseRow = memo(function PurchaseRow({
 
   if (item.status === 'purchased') {
     return (
-      <li className="border-b border-[var(--c-divider)] last:border-b-0">
+      <li className={`border-b border-[var(--c-divider)] last:border-b-0 ${ROW_DEFER}`}>
         <div className={ROW_SHELL}>
           <button
             type="button"
@@ -2250,7 +2261,7 @@ export const PurchaseRow = memo(function PurchaseRow({
 
   // unavailable
   return (
-    <li className="border-b border-[var(--c-divider)] last:border-b-0">
+    <li className={`border-b border-[var(--c-divider)] last:border-b-0 ${ROW_DEFER}`}>
       <div className={ROW_SHELL}>
         {/* A dropped row has nothing to open, so this is a <div>:
             identical geometry, no false affordance, and no way to

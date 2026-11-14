@@ -17,7 +17,10 @@ const guard = readFileSync(`${WEB}public/boot-guard.js`, 'utf8');
 
 describe('index.html script order', () => {
   it('defers the Telegram SDK and keeps it before boot-guard and the app', () => {
-    const tg = html.indexOf('<script src="https://telegram.org/js/telegram-web-app.js" defer>');
+    // Review MWD-21: and at high priority, as main.tsx waits for it.
+    const tg = html.indexOf(
+      '<script src="https://telegram.org/js/telegram-web-app.js" defer fetchpriority="high">',
+    );
     const bootGuard = html.indexOf('<script src="/boot-guard.js">');
     const app = html.indexOf('<script type="module"');
     expect(tg).toBeGreaterThan(-1);

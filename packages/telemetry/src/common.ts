@@ -16,7 +16,17 @@ export interface LogEvent {
   clientTs: number;
 }
 
-export type Transport = (events: LogEvent[]) => Promise<void>;
+export interface TransportOptions {
+  /**
+   * Review MWD-01 (modern-web-guidance: batch-analytics-events): set only
+   * for the send while the page is going away. A keepalive body counts
+   * against the browser's ~64 KiB per-origin quota until it is answered,
+   * so the regular flush does not use it.
+   */
+  keepalive?: boolean;
+}
+
+export type Transport = (events: LogEvent[], options?: TransportOptions) => Promise<void>;
 
 /**
  * Thrown by a transport when the server refused the batch itself (a 4xx
@@ -37,6 +47,9 @@ const encoder = new TextEncoder();
 const jsonBytes = (value: unknown): number => encoder.encode(JSON.stringify(value)).length;
 /** `{"events":[` + `]}` around the events. */
 const BATCH_OVERHEAD_BYTES = 13;
+
+/** The request body of one batch, in bytes (`{"events":[...]}`). */
+export const batchBytes = (events: readonly LogEvent[]): number => jsonBytes({ events });
 
 /**
  * An event that would not fit in a batch on its own, cut to what the

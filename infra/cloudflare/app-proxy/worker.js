@@ -494,6 +494,11 @@ async function kvAsset(env, key) {
       headers: {
         'content-type': metadata?.type ?? 'application/octet-stream',
         'cache-control': 'public, max-age=31536000, immutable',
+        // Review MWD-18 (modern-web-guidance: security): the origin sends
+        // nosniff on these files (apps/api/src/http/securityHeaders.ts);
+        // the copy from KV did not. Only our own page loads them.
+        'x-content-type-options': 'nosniff',
+        'cross-origin-resource-policy': 'same-origin',
       },
     });
   } catch {

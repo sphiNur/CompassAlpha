@@ -261,7 +261,14 @@ export function StockCountSheet({
                     const negative = p.onHand.startsWith('-');
                     const errorId = `count-error-${p.id}`;
                     return (
-                      <li key={p.id} className="px-4 py-2">
+                      // Review MWD-07 (modern-web-guidance:
+                      // defer-rendering-heavy-content): a field per product;
+                      // rows off screen skip layout and paint, as on the
+                      // order page (SkuRow.tsx). 60px: a row with its field.
+                      <li
+                        key={p.id}
+                        className="px-4 py-2 [content-visibility:auto] [contain-intrinsic-size:auto_60px]"
+                      >
                         <div className="flex items-center gap-3">
                           <div className="min-w-0 flex-1">
                             <NameCell {...parts} />

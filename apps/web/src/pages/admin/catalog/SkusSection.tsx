@@ -2,7 +2,7 @@
  * Admin → Catalog → Products: search, import, the list and its editor.
  * Review ADM2-11 (2026-11-11): one file per catalog section.
  */
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import {
   Button,
   DataState,
@@ -101,17 +101,21 @@ export function SkusSection() {
   const [importOpen, setImportOpen] = useState(false);
   // M1.10 (2026-05-08): cross-language SKU search.
   const [searchQuery, setSearchQuery] = useState('');
-  const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
-  // A11Y-12 (2026-10-31): read the number of matches out once typing
-  // settles. Same filter as the list below.
-  const matchCount = useMemo(
+  // Review MWD-08 (modern-web-guidance: performance, INP): the field
+  // updates at once; the filter and the list follow the deferred query,
+  // as on the order page (useCatalogFilter.ts), and run once, not twice.
+  const deferredQuery = useDeferredValue(searchQuery);
+  const tokens = useMemo(() => normalizeQuery(deferredQuery), [deferredQuery]);
+  const filteredSkus = useMemo(
     () =>
       tokens && skusQuery.data
         ? skusQuery.data.filter((sk) => matchesNameLike({ names: sk.names, code: sk.code }, tokens))
-            .length
         : null,
     [tokens, skusQuery.data],
   );
+  // A11Y-12 (2026-10-31): read the number of matches out once typing
+  // settles: the length of the list below.
+  const matchCount = filteredSkus ? filteredSkus.length : null;
   useAnnounce(
     matchCount === null
       ? null
@@ -214,9 +218,7 @@ export function SkusSection() {
         }
       >
         {(rows) => {
-          const filtered = tokens
-            ? rows.filter((sk) => matchesNameLike({ names: sk.names, code: sk.code }, tokens))
-            : rows;
+          const filtered = filteredSkus ?? rows;
           return (
             <ul className={rowGroupClass} role="list">
               {filtered.length === 0 && tokens ? (
@@ -237,7 +239,14 @@ export function SkusSection() {
                 const named = hasAnyName(names);
                 const primary = named ? name.primary : sk.code || i18n.t('common.unknownProduct');
                 return (
-                  <li key={sk.id}>
+                  // Review MWD-07 (modern-web-guidance:
+                  // defer-rendering-heavy-content): the whole catalog is
+                  // mounted; rows off screen skip layout and paint, as on
+                  // the order page (SkuRow.tsx). 120px: header and actions.
+                  <li
+                    key={sk.id}
+                    className="[content-visibility:auto] [contain-intrinsic-size:auto_120px]"
+                  >
                     <CatalogRowHeader
                       title={primary}
                       titleLang={named ? name.primaryLang : undefined}

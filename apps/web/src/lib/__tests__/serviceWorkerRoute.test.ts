@@ -156,8 +156,10 @@ describe('sw.js shell precache and origin-down fallback', () => {
     listeners.install!({ waitUntil: (p: Promise<unknown>) => (done = p) });
     await done;
     expect([...stored.keys()].sort()).toEqual(['/assets/index-abc.js', '/index.html', SDK]);
-    // As index.html asks for it (no `crossorigin`).
-    expect(asked.find(([req]) => req === SDK)![1]).toEqual({ mode: 'no-cors' });
+    // As index.html asks for it (no `crossorigin`), and as a background
+    // copy at low priority (review MWD-03), as are the entry files.
+    expect(asked.find(([req]) => req === SDK)![1]).toEqual({ mode: 'no-cors', priority: 'low' });
+    expect(asked.find(([req]) => req === '/assets/index-abc.js')![1]).toEqual({ priority: 'low' });
   });
 
   it('a page load answered 502/503/504 gets the cached shell', async () => {
