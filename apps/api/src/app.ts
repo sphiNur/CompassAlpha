@@ -11,6 +11,7 @@ import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
 import { createContext } from './trpc/context';
 import { attendanceMonthExport } from './http/attendanceExport';
+import { clearSiteDataOnSignOut } from './http/clearSiteData';
 import { CSP_REPORT_PATH, cspReportHandler } from './http/cspReport';
 import { INTERNAL_BODY, NOT_FOUND_BODY } from './http/errorBodies';
 import { readinessHandler } from './http/health';
@@ -121,6 +122,9 @@ export function createApp() {
 
   // @hono/trpc-server's createContext typing is `Record<string, unknown>` —
   // narrower than our shaped RequestContext. Cast at the boundary.
+  // Review MWD-20: sign-out also clears the browser's HTTP cache
+  // (http/clearSiteData.ts). Registered before tRPC so it wraps it.
+  app.use('/trpc/*', clearSiteDataOnSignOut());
   app.use(
     '/trpc/*',
     trpcServer({

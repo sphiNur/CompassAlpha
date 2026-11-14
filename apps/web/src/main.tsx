@@ -7,6 +7,11 @@ import './styles/index.css';
 import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from './lib/reload';
 import { startLocale } from './lib/startLocale';
 import { preloadPage, savedTab } from './app/pageChunks';
+import { installTrustedTypesPolicy } from './lib/trustedTypes';
+
+// Review MWD-13 (modern-web-guidance: trusted-types): the default policy
+// before any script URL is set (the service worker below, the face tracker).
+installTrustedTypesPolicy();
 
 // F10 (2026-10-30): after a deploy, a client that stayed open asks for
 // lazy page chunks that no longer exist; the import failed into the root
