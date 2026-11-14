@@ -110,24 +110,19 @@ describe('the main button on the nav row', () => {
     );
   });
 
-  test("the circle's capsule has the nav capsule's glass", () => {
-    const nav = rule('  .app-nav::before');
+  test('no grey ring round the circle; it carries the nav shadow (owner, 2026-11-15)', () => {
     const capsule = rule('  .app-main-capsule');
-    for (const part of [
-      'background: var(--c-nav-surface-solid);',
-      'var(--shadow-nav),\n      inset 0 0 0 1px var(--c-divider);',
-    ]) {
-      expect(nav).toContain(part);
-      expect(capsule).toContain(part);
-    }
-    expect(rule('  .app-main-capsule')).toMatch(/border-radius: var\(--r-pill\);/);
-    // The blur, and solid under reduced transparency, as the nav.
-    expect(appCss).toMatch(
-      /\.app-nav::before,\s*\.app-main-capsule,\s*\.app-dock-hint \{\s*background: var\(--c-nav-surface\);\s*-webkit-backdrop-filter/,
-    );
-    expect(appCss).toMatch(
-      /\.app-nav::before,\s*\.app-main-capsule,\s*\.app-dock-hint \{\s*background: var\(--c-nav-surface-solid\);\s*-webkit-backdrop-filter: none/,
-    );
+    expect(capsule).toMatch(/padding: 4px;/);
+    expect(capsule).not.toMatch(/background|box-shadow|border/);
+    expect(appCss).not.toMatch(/\.app-main-capsule,/);
+    expect(rule('  .app-main-btn')).toMatch(/box-shadow: var\(--shadow-nav\);/);
+  });
+
+  test('why it is inactive shows on a tap, for a few seconds, and is always its description', () => {
+    expect(buttonSrc).toMatch(/const hasHint = !!hint && hintOpen;/);
+    expect(buttonSrc).toMatch(/setTimeout\(\(\) => setHintOpen\(false\), HINT_MS\)/);
+    expect(buttonSrc).toMatch(/<span id="page-main-button-hint" className="sr-only">/);
+    expect(buttonSrc).toMatch(/aria-describedby=\{hint \? 'page-main-button-hint' : undefined\}/);
   });
 
   test('the row fits a 320 px phone with five tabs, so it never stacks', () => {

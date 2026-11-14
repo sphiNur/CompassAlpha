@@ -354,10 +354,16 @@ export function SettlementPage() {
             {i18n.t('settlement.draftRestored.body')}
           </Banner>
         ) : null}
-        {existing ? (
+        {/* Owner, 2026-11-15: right after a save the day has a close, and
+            the page said "editing an existing close" though nothing was
+            being changed. Saved until something changes; editing (with the
+            reason it needs) once it does. */}
+        {existing && needsCorrectionReason ? (
           <Banner tone="info" title={i18n.t('settlement.editing.title')}>
             {i18n.t('settlement.editing.body')}
           </Banner>
+        ) : existing ? (
+          <Banner tone="success" title={i18n.t('settlement.saved')} />
         ) : null}
         {existing && existing.version > 1 ? (
           <SettlementHistory key={existing.id} settlementId={existing.id} />

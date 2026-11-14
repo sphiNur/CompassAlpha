@@ -1,11 +1,10 @@
 /**
  * Review MWD-13 (modern-web-guidance: trusted-types): the app's one
- * Trusted Types policy, the `default` policy, ready for when the CSP's
- * `require-trusted-types-for 'script'` is enforced (it is report-only
- * today, http/securityHeaders.ts on the api).
+ * Trusted Types policy, the `default` policy, for the CSP's enforced
+ * `require-trusted-types-for 'script'` (http/securityHeaders.ts on the api).
  *
- * The app writes no HTML and runs no strings as code, so the policy only
- * has `createScriptURL`. That covers the script-URL sinks a plain string
+ * The app writes no HTML and runs no strings as code. The policy has
+ * `createScriptURL`, which covers the script-URL sinks a plain string
  * reaches: the service worker (`/sw.js`), Web Workers, and the face
  * tracker's wasm loader, which MediaPipe puts in a `<script src>` (or
  * `importScripts` inside a worker). A URL is passed through only when it
@@ -13,6 +12,12 @@
  * `/assets/`. Anything else returns null, which the browser blocks and
  * reports. In dev (the Vite server) every same-origin URL passes, since
  * modules load from /src and /node_modules there.
+ *
+ * And `createHTML` for one constant (2026-11-15): Leaflet (the attendance
+ * map) checks for SVG support at load with `div.innerHTML = '<svg/>'`,
+ * which the enforced policy blocked, so the map never loaded. That exact
+ * string passes; any other HTML string returns null and is blocked. The
+ * map's own code passes elements, not HTML (components/geo/GeoMapView.tsx).
  *
  * Works in a window and in a worker (`globalThis`), so the face worker
  * installs it too.
@@ -32,10 +37,24 @@ export function allowedScriptUrl(input: string, origin: string, dev: boolean): s
   return null;
 }
 
+/** HTML strings a library writes that the policy lets through: constants only. */
+const ALLOWED_HTML: ReadonlySet<string> = new Set([
+  // Leaflet's SVG support check (leaflet/src/core/Browser.js).
+  '<svg/>',
+]);
+
+/** The HTML strings the policy lets through, as a pure rule for tests. */
+export function allowedHtml(input: string): string | null {
+  return ALLOWED_HTML.has(input) ? input : null;
+}
+
 interface TrustedTypePolicyFactoryLike {
   createPolicy(
     name: string,
-    rules: { createScriptURL?: (input: string) => string | null },
+    rules: {
+      createScriptURL?: (input: string) => string | null;
+      createHTML?: (input: string) => string | null;
+    },
   ): unknown;
   defaultPolicy?: unknown;
 }
@@ -53,6 +72,7 @@ export function installTrustedTypesPolicy(): void {
   try {
     factory.createPolicy('default', {
       createScriptURL: (input) => allowedScriptUrl(input, origin, dev),
+      createHTML: allowedHtml,
     });
   } catch {
     /* the CSP refused the name: the reports show it, nothing breaks */
