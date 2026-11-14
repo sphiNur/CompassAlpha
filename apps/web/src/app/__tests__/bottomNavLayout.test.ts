@@ -65,8 +65,8 @@ describe('Review MWC-14 (V10): the capsule shrinks with transforms only', () => 
 
 /**
  * Owner, 2026-11-14: on a page with a main button, the button and the
- * capsule share one row (the dock, Shell.tsx / index.css): icons only on
- * the left, the button on the right as a circle in a capsule of the nav's
+ * capsule share one row (the dock, Shell.tsx / index.css): the capsule
+ * with icons and words on the left, the button on the right as a circle in a capsule of the nav's
  * glass, 8px between and at the ends.
  */
 describe('the main button on the nav row', () => {
@@ -85,11 +85,14 @@ describe('the main button on the nav row', () => {
     return at < 0 ? '' : appCss.slice(at, appCss.indexOf('}', at));
   };
 
-  test('an icon-only tab still taps as 44 px', () => {
-    expect(remPx('--app-nav-icon-w')).toBeGreaterThanOrEqual(44);
-    expect(rule('  [data-main-button] .app-dock[data-nav] .app-nav-item')).toMatch(
-      /min-width: 44px;/,
+  test('beside the button the capsule fills the row with the usual tabs', () => {
+    // Owner, 2026-11-14: icon over word, no narrower icon-only tabs.
+    expect(appCss).not.toMatch(
+      /\[data-main-button\] \.app-dock\[data-nav\] \.app-nav(-item|-label)? \{/,
     );
+    expect(appCss).not.toContain('--app-nav-icon-w');
+    expect(rule('  .app-nav')).toMatch(/flex: 1 1 auto;/);
+    expect(navSrc).toMatch(/min-w-\[min\(2\.75rem,20%\)\] flex-auto/);
   });
 
   test("the circle is the open tab's pill height, its capsule the nav's height", () => {
@@ -148,10 +151,10 @@ describe('the main button on the nav row', () => {
     expect(navSrc).toMatch(/\$\{NAV_BADGE_COUNT_CLASS\}/);
   });
 
-  test('icons only: the labels go, every tab keeps its name', () => {
-    expect(rule('  [data-main-button] .app-dock[data-nav] .app-nav-label')).toMatch(
-      /display: none;/,
-    );
+  test('the words stay beside the button, scrolling too; every tab keeps its name', () => {
+    expect(
+      rule('  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-label'),
+    ).toMatch(/opacity: 1;/);
     // Each NavItem is given an aria-label (the full name, with its badge).
     expect(navSrc).toMatch(/aria-label=\{ariaLabel\}/);
     expect(navSrc).not.toMatch(/ariaLabel=\{undefined\}/);

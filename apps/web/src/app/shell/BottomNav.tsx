@@ -9,7 +9,7 @@
  * Owner, 2026-11-14: a capsule floating over the page with at most five
  * items, four tabs + More when there are more (navLayout.ts). Its look is
  * `.app-nav` in styles/index.css. On a page with a main button it shares
- * a row with it (Shell.tsx's dock): icons only, each still named.
+ * a row with it (Shell.tsx's dock), icon over word as everywhere.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { IconMore, Sheet } from '@compass/ui';
@@ -145,8 +145,7 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
               short={short}
               // The short nav word is an abbreviation in ru / uz; screen
               // readers announce the section's full name. Review MWC-03: always
-              // named, since the compact capsule hides the word, and so does
-              // the row shared with a main button (display: none), and the
+              // named, since the compact capsule hides the word and the
               // icon is aria-hidden.
               ariaLabel={badgeText(t) ?? label}
               badge={<NavBadgeMark tabKey={t.key} badge={badges[t.key]} />}
