@@ -16,7 +16,7 @@ import {
   telegramUserOf,
   touchTelegramUser,
 } from './identity';
-import { issueLoginResult } from './loginResult';
+import { issueLoginResult, withRefreshCookie } from './loginResult';
 
 function ensureDevMockAdminAccess(db: DB, memberId: string, orgId: string): Promise<void> {
   return withOrgContext(db, orgId, (tx) => grantDevMockAdmin(tx, memberId, orgId));
@@ -136,13 +136,16 @@ export const telegramProcedures = {
 
       // M1.9 (2026-05-07): refresh tokens are tracked in auth.refresh_tokens
       // with rotation lineage + replay detection.
-      return issueLoginResult(
-        ctx.db,
-        user.id,
-        ensuredMember.id,
-        ensuredMember.orgId,
-        ctx.ip,
-        ctx.userAgent,
+      return withRefreshCookie(
+        ctx,
+        await issueLoginResult(
+          ctx.db,
+          user.id,
+          ensuredMember.id,
+          ensuredMember.orgId,
+          ctx.ip,
+          ctx.userAgent,
+        ),
       );
     }),
 };

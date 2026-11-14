@@ -30,14 +30,18 @@ import {
 import { SHOULD_RUN as SHOULD_RUN_PG } from './helpers/pg';
 import { signInitData, freshTgId } from './helpers/telegram';
 import { errorOf } from './helpers/errors';
+import { testHono } from './helpers/ctx';
+import {
+  REFRESH_COOKIE_HEADER,
+  REFRESH_COOKIE_HEADER_VALUE,
+  refreshCookieName,
+} from '../http/refreshCookie';
 
 const SHOULD_RUN = SHOULD_RUN_PG && !!env.TELEGRAM_BOT_TOKEN;
 
 /** A caller built by the server's own createContext from these headers. */
 async function callerWith(headers: Record<string, string> = {}) {
-  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
-  const hono = { req: { header: (name: string) => lower[name.toLowerCase()] } };
-  const ctx = await createContext(null, hono as RequestContext['hono']);
+  const ctx = await createContext(null, testHono(headers) as unknown as RequestContext['hono']);
   return appRouter.createCaller(ctx);
 }
 
@@ -188,6 +192,72 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
       .setExpirationTime('30d')
       .sign(new TextEncoder().encode(env.JWT_REFRESH_SECRET));
     await expect(refresh(legacy)).rejects.toThrow('auth.errors.invalidRefresh');
+  });
+
+  // Review MWD-14 (modern-web-guidance: privacy): the refresh cookie.
+  /** The value of the refresh cookie a response set, '' when it cleared it. */
+  const cookieIn = (setCookies: string[]): string | undefined => {
+    const line = setCookies.find((c) => c.startsWith(`${refreshCookieName(false)}=`));
+    return line === undefined ? undefined : decodeURIComponent(line.split(';')[0]!.split('=')[1]!);
+  };
+  const withCookie = (token: string) => ({
+    cookie: `${refreshCookieName(false)}=${encodeURIComponent(token)}`,
+    [REFRESH_COOKIE_HEADER]: REFRESH_COOKIE_HEADER_VALUE,
+  });
+  async function call(headers: Record<string, string> = {}) {
+    const hono = testHono(headers);
+    const ctx = await createContext(null, hono as unknown as RequestContext['hono']);
+    return { caller: appRouter.createCaller(ctx), hono };
+  }
+
+  test('MWD-14: a sign-in sets the refresh cookie and still returns the token', async () => {
+    _resetRateBuckets();
+    const { caller, hono } = await call();
+    const { tokens } = await caller.auth.telegramLogin({ initData: signInitData(tgUserId) });
+    expect(tokens.refreshToken.split('.')).toHaveLength(3);
+    expect(cookieIn(hono.setCookies)).toBe(tokens.refreshToken);
+    expect(hono.setCookies[0]).toContain('HttpOnly');
+    expect(hono.setCookies[0]).toContain('Path=/trpc/auth.refresh');
+  });
+
+  test('MWD-14: refresh by cookie rotates like the body and sets the successor', async () => {
+    _resetRateBuckets();
+    const { tokens } = await login();
+    const { caller, hono } = await call(withCookie(tokens.refreshToken));
+    const next = await caller.auth.refresh({});
+    expect(next.session.user.id).toBe(userId);
+    expect(next.tokens.refreshToken).not.toBe(tokens.refreshToken);
+    expect(cookieIn(hono.setCookies)).toBe(next.tokens.refreshToken);
+    // Same chain: the old token is now spent (inside the grace window it
+    // gets the same successor, AUTH-12).
+    const again = await refresh(tokens.refreshToken);
+    expect(again.tokens.refreshToken).toBe(next.tokens.refreshToken);
+  });
+
+  test('MWD-14: the cookie is read only with the header, and the body wins', async () => {
+    _resetRateBuckets();
+    const { tokens } = await login();
+    const noHeader = await call({ cookie: withCookie(tokens.refreshToken).cookie });
+    await expect(noHeader.caller.auth.refresh({})).rejects.toThrow('auth.errors.invalidRefresh');
+    await expect((await call()).caller.auth.refresh({})).rejects.toThrow(
+      'auth.errors.invalidRefresh',
+    );
+    // A bad cookie next to a good body token: the body is used.
+    const both = await call(withCookie('not-a-refresh-token-at-all-really'));
+    const next = await both.caller.auth.refresh({ refreshToken: tokens.refreshToken });
+    expect(next.session.user.id).toBe(userId);
+    expect(cookieIn(both.hono.setCookies)).toBe(next.tokens.refreshToken);
+  });
+
+  test('MWD-14: sign-out clears the cookie and the token behind it', async () => {
+    _resetRateBuckets();
+    const { tokens } = await login();
+    const out = await call(bearer(tokens.accessToken));
+    await out.caller.auth.signOut();
+    expect(cookieIn(out.hono.setCookies)).toBe('');
+    expect(out.hono.setCookies[0]).toContain('Max-Age=0');
+    const after = await call(withCookie(tokens.refreshToken));
+    await expect(after.caller.auth.refresh({})).rejects.toThrow();
   });
 
   test('AUTH-11: switching organisation ends the refresh chain being left', async () => {

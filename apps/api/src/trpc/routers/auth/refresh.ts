@@ -16,9 +16,11 @@ import {
   RefreshNotFoundError,
 } from '../../../services/refreshTokens';
 import { buildSessionPayload } from '../../../services/sessionPayload';
+import { env } from '../../../env';
+import { readRefreshCookie } from '../../../http/refreshCookie';
 import { enforceRate } from './limits';
 import { pickActiveMember } from './identity';
-import { loginResultFor } from './loginResult';
+import { loginResultFor, withRefreshCookie } from './loginResult';
 
 export const refreshProcedures = {
   /**
@@ -50,8 +52,18 @@ export const refreshProcedures = {
       org: string | null;
       mid: string | null;
     };
+    // Review MWD-14 (modern-web-guidance: privacy): the token in the body
+    // (the Fine app, and the web app's own fallbacks) wins; otherwise the
+    // HttpOnly cookie the sign-in set, read only when the request asks for
+    // it (http/refreshCookie.ts). Rotation and replay detection below are
+    // the same whichever carried it.
+    const refreshToken =
+      input.refreshToken ?? readRefreshCookie(ctx.hono, env.NODE_ENV === 'production');
+    if (!refreshToken) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidRefresh' });
+    }
     try {
-      claims = await verifyRefresh(input.refreshToken);
+      claims = await verifyRefresh(refreshToken);
     } catch {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidRefresh' });
     }
@@ -140,6 +152,6 @@ export const refreshProcedures = {
     await inSystem(ctx.db, 'auth', (tx) =>
       tx.update(s.users).set({ lastOrgId: member.orgId }).where(eq(s.users.id, user.id)),
     );
-    return loginResultFor(user.id, member.id, session, issued);
+    return withRefreshCookie(ctx, await loginResultFor(user.id, member.id, session, issued));
   }),
 };

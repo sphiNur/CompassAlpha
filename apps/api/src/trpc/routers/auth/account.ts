@@ -11,6 +11,8 @@ import {
   SetSecondaryLocaleInputSchema,
 } from '@compass/contracts';
 import { authedProcedure } from '../../trpc';
+import { env } from '../../../env';
+import { clearRefreshCookie } from '../../../http/refreshCookie';
 import { revokeAllForUser } from '../../../services/refreshTokens';
 import { buildSessionPayload } from '../../../services/sessionPayload';
 
@@ -151,6 +153,9 @@ export const accountProcedures = {
    */
   signOut: authedProcedure.mutation(async ({ ctx }) => {
     const revoked = await revokeAllForUser(ctx.db, ctx.session.userId);
+    // Review MWD-14 (modern-web-guidance: privacy): this device's refresh
+    // cookie goes too (it was revoked above with the rest).
+    clearRefreshCookie(ctx.hono, env.NODE_ENV === 'production');
     return { ok: true, revoked };
   }),
 };
