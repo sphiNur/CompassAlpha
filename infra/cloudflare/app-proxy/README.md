@@ -125,8 +125,8 @@ fallbacks, notifications and CORS all point at the stable entry.
 nginx serves `index.html` and `/assets` itself, so they never pass the
 api's security headers (`apps/api/src/http/securityHeaders.ts`): before
 this, the page had no Content-Security-Policy at all. The Worker now adds
-the api's headers (the strict CSP with Trusted Types, enforced since it
-ran report-only with clean reports; Reporting-Endpoints, nosniff,
+the api's headers (the strict CSP with Trusted Types, enforced since
+2026-11-15 after a report-only period; Reporting-Endpoints, nosniff,
 Referrer-Policy, Permissions-Policy, HSTS, and COOP on pages) to every page and script answer that has no CSP
 of its own. `apps/api/src/__tests__/page-security-worker.test.ts` fails
 if the Worker's strings and the api's drift apart. A change to the policy

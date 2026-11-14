@@ -31,9 +31,12 @@ function plainHost(value: string | undefined): string | null {
 /**
  * Reviews MWD-12 / MWD-13 (modern-web-guidance: security, trusted-types):
  * the policy sent as `Content-Security-Policy`. It ran report-only first
- * (2026-11-14) beside a looser enforced one; once the reports were clean
- * it replaced it. A browser still reports what it blocks to POST
- * /csp-report (cspReport.ts). What it adds:
+ * (2026-11-14) beside a looser enforced one, and replaced it on
+ * 2026-11-15 (owner decision): no report from the production deep smokes
+ * in Chrome, before many real-device reports (nginx dropped /csp-report
+ * until that day). A browser still reports what it blocks to POST
+ * /csp-report (cspReport.ts), so check that log for iOS and Telegram
+ * clients. What it adds:
  *
  *   - connect-src  'self', the page's own host over wss (the realtime
  *                  socket; older WebKit does not match ws to 'self'),
@@ -193,7 +196,7 @@ export function securityHeaders({
        */
       // Reviews MWD-12 / MWD-13 (modern-web-guidance: security,
       // trusted-types): the strict policy (strictCsp above), enforced
-      // after it ran report-only with clean reports. Blocked items still
+      // since 2026-11-15 (owner decision, see strictCsp). Blocked items still
       // report to /csp-report. The Telegram SDK (MWD-11, owner decision
       // 2026-11-14) stays the one external script; 'wasm-unsafe-eval' is
       // the face tracker's WebAssembly, not eval().
