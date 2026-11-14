@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
 import { useRovingRadio } from '../rovingRadio';
@@ -103,6 +103,123 @@ export interface ChipBarProps {
   wrap?: boolean;
 }
 
+/**
+ * Review MWC-05 / MWB-17 (V8, modern-web-guidance: scrollability-affordance-hints,
+ * tabs): which ends of a sideways chip strip have chips beyond them. The
+ * strip hides its scrollbar, so a soft fade at such an end is the cue that
+ * it scrolls. Exported for tests.
+ */
+export function chipScrollEdges(r: {
+  scrollLeft: number;
+  clientWidth: number;
+  scrollWidth: number;
+}): { start: boolean; end: boolean } {
+  // 1 px slack: sub-pixel widths leave a strip a fraction short of its end.
+  return {
+    start: r.scrollLeft > 1,
+    end: r.scrollLeft + r.clientWidth < r.scrollWidth - 1,
+  };
+}
+
+/**
+ * Review MWB-17 (V8): where the strip scrolls so the chosen chip is in
+ * view, as `scrollIntoView({ block: 'nearest', inline: 'nearest' })` would
+ * inside the strip: not at all when it is already in view (`pad` from
+ * each edge, clear of the fade), else just far enough. Null: stay.
+ * Done by hand because scrollIntoView also scrolls the page up or down to
+ * the strip (`container: 'nearest'` is not in the WebViews yet), and a
+ * strip lower on the page must not move the page when it mounts.
+ * Exported for tests.
+ */
+export function nearestChipScroll(r: {
+  chipStart: number;
+  chipEnd: number;
+  scrollLeft: number;
+  clientWidth: number;
+  pad: number;
+}): number | null {
+  const viewStart = r.scrollLeft + r.pad;
+  const viewEnd = r.scrollLeft + r.clientWidth - r.pad;
+  if (r.chipStart >= viewStart && r.chipEnd <= viewEnd) return null;
+  // Wider than the view: its start wins.
+  if (r.chipStart < viewStart || r.chipEnd - r.chipStart > viewEnd - viewStart) {
+    return Math.max(0, r.chipStart - r.pad);
+  }
+  return r.chipEnd - r.clientWidth + r.pad;
+}
+
+/** The fade's reach, as in tokens.css (`.chip-scroll-fade`, 1.5rem). */
+const FADE_REM = 1.5;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+/**
+ * V8: the strip's edge fades, and the chosen chip kept in view. The fades
+ * follow the scroll in CSS where scroll-driven animations exist; elsewhere
+ * (iOS before 26, older Android WebViews) this marks the ends itself.
+ */
+function useChipScroller(enabled: boolean) {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const chosenRef = useRef<Element | null>(null);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    const el = elRef.current;
+    if (!enabled || !el) return;
+    const css = typeof CSS !== 'undefined' ? CSS : undefined;
+    if (css?.supports?.('animation-timeline: scroll()')) return;
+    const mark = () => {
+      const edges = chipScrollEdges(el);
+      el.toggleAttribute('data-more-start', edges.start);
+      el.toggleAttribute('data-more-end', edges.end);
+    };
+    mark();
+    el.addEventListener('scroll', mark, { passive: true });
+    const resize = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(mark) : null;
+    resize?.observe(el);
+    // Chips come and go (categories load): the strip's width changes.
+    const mutate = typeof MutationObserver !== 'undefined' ? new MutationObserver(mark) : null;
+    mutate?.observe(el, { childList: true });
+    return () => {
+      el.removeEventListener('scroll', mark);
+      resize?.disconnect();
+      mutate?.disconnect();
+    };
+  }, [enabled]);
+
+  // No dependency list: the chosen chip may change on any render.
+  useLayoutEffect(() => {
+    const el = elRef.current;
+    if (!enabled || !el) return;
+    const chosen = el.querySelector('[aria-checked="true"], [aria-pressed="true"]');
+    const first = !mountedRef.current;
+    mountedRef.current = true;
+    if (chosen === chosenRef.current) return;
+    chosenRef.current = chosen;
+    if (!(chosen instanceof HTMLElement)) return;
+    const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const left = nearestChipScroll({
+      chipStart: chosen.offsetLeft,
+      chipEnd: chosen.offsetLeft + chosen.offsetWidth,
+      scrollLeft: el.scrollLeft,
+      clientWidth: el.clientWidth,
+      pad: FADE_REM * rootPx,
+    });
+    if (left === null) return;
+    // At mount at once; on a change smoothly, unless motion is reduced.
+    el.scrollTo?.({ left, behavior: first || prefersReducedMotion() ? 'auto' : 'smooth' });
+  });
+
+  return useCallback((el: HTMLDivElement | null) => {
+    elRef.current = el;
+  }, []);
+}
+
 export function ChipBar({
   children,
   className,
@@ -113,10 +230,19 @@ export function ChipBar({
 }: ChipBarProps) {
   const roving = useRovingRadio<HTMLDivElement>({ followFocus });
   const radio = variant === 'radio';
+  const scrollerRef = useChipScroller(!wrap);
+  const rovingRef = roving.ref;
+  const setRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollerRef(el);
+      (rovingRef as { current: HTMLDivElement | null }).current = radio ? el : null;
+    },
+    [scrollerRef, rovingRef, radio],
+  );
   return (
     <ChipVariantContext.Provider value={variant}>
       <div
-        ref={radio ? roving.ref : undefined}
+        ref={setRef}
         onKeyDown={radio ? roving.onKeyDown : undefined}
         role={radio ? 'radiogroup' : 'group'}
         aria-label={ariaLabel}
@@ -131,7 +257,8 @@ export function ChipBar({
         className={cn(
           wrap
             ? 'flex flex-wrap gap-x-1.5 gap-y-3'
-            : 'flex gap-1.5 overflow-x-auto px-[var(--app-inline-x)] py-1.5 scrollbar-hide',
+            : // V8 (MWC-05): chip-scroll-fade fades an end with chips beyond it.
+              'chip-scroll-fade flex gap-1.5 overflow-x-auto px-[var(--app-inline-x)] py-1.5 scrollbar-hide',
           className,
         )}
       >
