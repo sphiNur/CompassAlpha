@@ -437,7 +437,8 @@ export function SwipePager({ ring, tab, mainRef, onSwipe, resetKey, children }: 
             transform: `translate3d(${preview === 'next' ? '100%' : '-100%'},0,0)`,
           }}
         >
-          {hasSnapshot ? <div data-swipe-snapshot="" /> : <LoadingState />}
+          {/* Review MWB-09: a hidden picture, so it says nothing. */}
+          {hasSnapshot ? <div data-swipe-snapshot="" /> : <LoadingState announce={false} />}
         </div>
       ) : null}
     </div>
