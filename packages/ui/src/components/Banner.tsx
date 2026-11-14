@@ -14,7 +14,7 @@ export function bannerRole(tone: NonNullable<BannerProps['tone']>): 'alert' | 's
 }
 
 const TONE: Record<NonNullable<BannerProps['tone']>, string> = {
-  info: 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
+  info: 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
   // V7: status tints and inks are tokens so they follow the dark theme.
   success: 'bg-[var(--c-success-bg)] text-[var(--c-success-ink)]',
   warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)]',
@@ -29,11 +29,10 @@ export function Banner({ className, tone = 'info', title, action, children, ...r
       // arrives with its text (a polite status often is not). Every
       // other tone stays a status; a caller's `role` wins.
       role={bannerRole(tone)}
-      // M3.16 (2026-05-16): py-3 → py-2.5. Most banners (the "How
-      // permissions work" explainer on Roles, the "已通过·等待采购"
-      // success on Order, etc.) sit above content lists and were
-      // eating ~7% of viewport on a 5.5" device.
-      className={cn('flex items-start gap-3 rounded-[var(--r-card)] px-4 py-2.5', TONE[tone], className)}
+      // UI overhaul A2 (2026-11-15): every tone is a tint with no
+      // outline (info had a hairline: a box drawn on a box), and the
+      // padding is the card's 16/12, on the 4-step scale.
+      className={cn('flex items-start gap-3 rounded-[var(--r-card)] px-4 py-3', TONE[tone], className)}
       {...rest}
     >
       {/* 2026-11-05: min-w-0 + break-words — a long word (a ru/uz product

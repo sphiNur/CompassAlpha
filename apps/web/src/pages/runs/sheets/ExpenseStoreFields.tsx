@@ -20,7 +20,7 @@ export function ExpenseStoreFields({
   const i18n = useI18n();
   return (
     <div>
-      <div className="mb-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+      <div className="mb-3">
         <FieldLabel className="mb-1">{i18n.t('run.action.addExpense.scopeTitle')}</FieldLabel>
         {/* DX-VIS-7 (2026-11-01): Segmented (selection announced). */}
         <Segmented

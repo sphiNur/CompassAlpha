@@ -408,9 +408,14 @@ export function SettlementPage() {
                 <SectionLabel as="h2">{i18n.t('settlement.group.costs')}</SectionLabel>
                 <Card>
                   <CardBody className="flex flex-col gap-5">
-                    <Banner tone="info" title={i18n.t('settlement.costs.autoTotalTitle')}>
-                      {i18n.t('settlement.costs.autoTotalHint')}
-                    </Banner>
+                    {/* UI overhaul A2 (2026-11-15): a note in the card, not a
+                        grey box inside it. */}
+                    <div className="text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]">
+                      <p className="font-semibold text-[var(--c-fg)]">
+                        {i18n.t('settlement.costs.autoTotalTitle')}
+                      </p>
+                      <p>{i18n.t('settlement.costs.autoTotalHint')}</p>
+                    </div>
 
                     <ExpenseLines
                       lines={draft.operatingExpenseItems}
@@ -455,12 +460,13 @@ export function SettlementPage() {
                       {...revealFor('priorPurchaseAdjustment')}
                       onChange={(value) => edit.money('priorPurchaseAdjustment', value)}
                     />
-                    <Banner tone="info" title={i18n.t('settlement.purchaseAdjustment.positive')}>
-                      {i18n.t('settlement.purchaseAdjustment.help')}
-                      <span className="mt-1 block">
-                        {i18n.t('settlement.purchaseAdjustment.negative')}
-                      </span>
-                    </Banner>
+                    <div className="text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]">
+                      <p className="font-semibold text-[var(--c-fg)]">
+                        {i18n.t('settlement.purchaseAdjustment.positive')}
+                      </p>
+                      <p>{i18n.t('settlement.purchaseAdjustment.help')}</p>
+                      <p className="mt-1">{i18n.t('settlement.purchaseAdjustment.negative')}</p>
+                    </div>
                   </CardBody>
                 </Card>
               </section>

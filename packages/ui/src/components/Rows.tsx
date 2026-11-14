@@ -1,7 +1,7 @@
 import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { useUiLabels } from '../labels';
-import { surfaceClass } from './Card';
+import { rowGroupClass, surfaceClass } from './Card';
 import { FieldError } from './FieldError';
 import { FieldControlContext, joinIds, type FieldControl } from './fieldControl';
 import { IconChevronRight } from './NavIcon';
@@ -467,10 +467,11 @@ export function PickerRow({
       aria-checked={!!selected}
       tabIndex={selected ? 0 : -1}
       className={cn(
-        'flex w-full items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left',
-        selected
-          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-          : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80',
+        // UI overhaul A2 (2026-11-15): a flat row of the group's one
+        // surface, not a white tile inside a grey panel. The choice is the
+        // action-coloured name and ✓, as a settings list marks it.
+        'flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors active:bg-[var(--c-surface-2)]',
+        selected ? 'text-[var(--c-action)]' : 'text-[var(--c-fg)]',
         disabled && 'opacity-60 pointer-events-none',
         className,
       )}
@@ -483,9 +484,7 @@ export function PickerRow({
           <span
             className={cn(
               'mt-0.5 block truncate text-old-label',
-              // Full-strength ink on the selected fill: at opacity-80 the hint
-              // measured 3.92:1 on --c-action (axe, 2026-10-31).
-              selected ? undefined : 'text-[var(--c-fg-muted)]',
+              'text-[var(--c-fg-muted)]',
             )}
           >
             {hint}
@@ -493,7 +492,7 @@ export function PickerRow({
         ) : null}
       </span>
       {selected ? (
-        <span aria-hidden className="shrink-0">
+        <span aria-hidden className="shrink-0 text-old-body font-semibold">
           ✓
         </span>
       ) : null}
@@ -502,9 +501,10 @@ export function PickerRow({
 }
 
 /**
- * The container of a set of {@link PickerRow}s: the `bg-surface-2 p-2
- * ring-hairline` panel every picker used, now also the radiogroup that
- * names the choice and moves between rows with the arrow keys.
+ * The container of a set of {@link PickerRow}s: one row group (a surface
+ * with hairline dividers, {@link rowGroupClass}), also the radiogroup that
+ * names the choice and moves between rows with the arrow keys. UI overhaul
+ * A2 (2026-11-15): was a grey panel of white tiles, a box in a box.
  */
 export interface PickerGroupProps {
   /** What is being chosen, e.g. "Language"; the group's accessible name. */
@@ -522,7 +522,7 @@ export function PickerGroup({ label, children, className }: PickerGroupProps) {
       role="radiogroup"
       aria-label={label}
       className={cn(
-        'flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline',
+        rowGroupClass,
         className,
       )}
     >
