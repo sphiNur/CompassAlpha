@@ -209,6 +209,25 @@
    * that copied them here, to be kept in sync by hand, had no reader. */
 }
 
+/*
+ * Review MWC-01 (modern-web-guidance: dark-mode): the scheme the page
+ * shows, for what the browser draws itself (date and select pickers, the
+ * caret, scrollbars, autofill). It followed the phone: on a dark Telegram
+ * over a light phone the pickers came up light. Before ThemeProvider (and
+ * public/boot-guard.js) set the attributes, both, as the meta tag says.
+ */
+:root {
+  color-scheme: light dark;
+}
+:root[data-theme='apple'],
+:root[data-theme='native'][data-color-scheme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'],
+:root[data-theme='native'][data-color-scheme='dark'] {
+  color-scheme: dark;
+}
+
 :root[data-theme='dark'],
 :root[data-theme='native'][data-color-scheme='dark'] {
   --c-bg: oklch(15% 0.01 240);

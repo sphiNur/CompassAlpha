@@ -325,6 +325,11 @@ export function useOpenedOnce(open: boolean): boolean {
   return open || opened;
 }
 
+/** A tap that landed on the toast layer (Toast.tsx), not outside a sheet. */
+function isToastTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-toast-stack]') !== null;
+}
+
 export function Sheet(props: SheetProps) {
   const mounted = useOpenedOnce(props.open);
   return mounted ? <OpenedSheet {...props} /> : null;
@@ -455,6 +460,13 @@ function OpenedSheet({
           tabIndex={-1}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
+          // Review MWB-02 (modern-web-guidance: light-dismiss-a-dialog): a
+          // tap on a toast (its Undo, its close) is not a tap outside the
+          // sheet. Toasts sit above every layer; Radix counted the tap as
+          // outside and closed the sheet, or asked to discard its changes.
+          onInteractOutside={(event) => {
+            if (isToastTarget(event.target)) event.preventDefault();
+          }}
         >
           {/* The header (handle and title) pulls the sheet down (UI-25);
               touch-none keeps the pull from panning the page. */}

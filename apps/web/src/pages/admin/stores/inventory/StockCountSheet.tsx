@@ -19,17 +19,18 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import {
   Button,
+  cn,
   EmptyState,
   FieldError,
   Input,
+  isCommitEnter,
   LoadingState,
   NameCell,
   QueryErrorBanner,
+  rowGroupClass,
   SearchInput,
   SectionLabel,
   Sheet,
-  cn,
-  rowGroupClass,
   useToast,
 } from '@compass/ui';
 import { STOCKTAKE_BATCH_MAX, STOCKTAKE_COUNT_MESSAGE } from '@compass/contracts/limits';
@@ -179,7 +180,7 @@ export function StockCountSheet({
   // The keyboard's next / enter key moves to the next row's field; on the
   // last row it closes the keyboard.
   const onFieldKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return;
+    if (!isCommitEnter(event)) return;
     event.preventDefault();
     const fields = [
       ...(listRef.current?.querySelectorAll<HTMLInputElement>('input[data-count-field]') ?? []),

@@ -142,8 +142,10 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
               Icon={t.Icon}
               short={short}
               // The short nav word is an abbreviation in ru / uz; screen
-              // readers announce the section's full name.
-              ariaLabel={badgeText(t) ?? (short === label ? undefined : label)}
+              // readers announce the section's full name. Review MWC-03: always
+              // named, since the compact capsule hides the word (display:none)
+              // and the icon is aria-hidden.
+              ariaLabel={badgeText(t) ?? label}
               badge={<NavBadgeMark tabKey={t.key} badge={badges[t.key]} />}
               disabled={busy}
               onClick={() => onSelect(t.key)}

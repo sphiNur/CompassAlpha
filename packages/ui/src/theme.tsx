@@ -10,6 +10,13 @@ interface ThemeContextValue {
   colorScheme: 'light' | 'dark';
 }
 
+/** The scheme a theme shows: apple is light only, dark always dark, native as told. */
+export function resolvedColorScheme(theme: Theme, colorScheme: 'light' | 'dark'): 'light' | 'dark' {
+  if (theme === 'apple') return 'light';
+  if (theme === 'dark') return 'dark';
+  return colorScheme;
+}
+
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = 'compass.theme';
@@ -114,6 +121,11 @@ export function ThemeProvider({
     if (typeof document === 'undefined') return;
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.colorScheme = colorScheme;
+    // Review MWC-01 (modern-web-guidance: dark-mode-toggle): the meta tag
+    // and tokens.css's color-scheme name the same scheme.
+    document
+      .querySelector('meta[name="color-scheme"]')
+      ?.setAttribute('content', resolvedColorScheme(theme, colorScheme));
     onChange?.(theme);
   }, [theme, colorScheme, onChange]);
 

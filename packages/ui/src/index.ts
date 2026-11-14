@@ -136,3 +136,4 @@ export { ThemeProvider, useTheme } from './theme';
 export { UiLabelsProvider, useUiLabels, DEFAULT_UI_LABELS } from './labels';
 export type { UiLabels } from './labels';
 export { useTapGuard } from './useTapGuard';
+export { isCommitEnter } from './enterKey';
