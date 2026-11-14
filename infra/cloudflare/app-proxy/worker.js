@@ -306,6 +306,8 @@ export default {
  * its own. scripts/__tests__/appProxyWorker.test.ts checks these strings
  * against the api's, so the two cannot drift apart.
  */
+// The api's strict policy, enforced since it ran report-only with clean
+// reports (strictCsp in apps/api/src/http/securityHeaders.ts).
 const SCRIPT_SRC = "script-src 'self' 'wasm-unsafe-eval' https://telegram.org";
 const BEFORE_CONNECT = [
   "style-src 'self' 'unsafe-inline'",
@@ -330,13 +332,6 @@ export function pageSecurityHeaders(host) {
     'referrer-policy': 'strict-origin-when-cross-origin',
     'permissions-policy': 'camera=(self), microphone=(), geolocation=(self), payment=(), usb=()',
     'content-security-policy': [
-      "default-src 'self'",
-      SCRIPT_SRC,
-      ...BEFORE_CONNECT,
-      "connect-src 'self' wss: https:",
-      ...AFTER_CONNECT,
-    ].join('; '),
-    'content-security-policy-report-only': [
       "default-src 'self'",
       `${SCRIPT_SRC} 'report-sample'`,
       ...BEFORE_CONNECT,
