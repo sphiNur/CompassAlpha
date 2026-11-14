@@ -62,3 +62,123 @@ describe('Review MWC-14 (V10): the capsule shrinks with transforms only', () => 
     );
   });
 });
+
+/**
+ * Owner, 2026-11-14: on a page with a main button, the button and the
+ * capsule share one row (the dock, Shell.tsx / index.css): the capsule
+ * with icons and words on the left, the button on the right as a circle in a capsule of the nav's
+ * glass, 8px between and at the ends.
+ */
+describe('the main button on the nav row', () => {
+  const shellSrc = readFileSync(join(import.meta.dir, '..', 'Shell.tsx'), 'utf8');
+  const buttonSrc = readFileSync(
+    join(import.meta.dir, '..', 'shell', 'PageMainButton.tsx'),
+    'utf8',
+  );
+  const remPx = (name: string) => {
+    const m = new RegExp(`${name}: ([\\d.]+)(px|rem)`).exec(appCss)!;
+    // eslint-disable-next-line no-restricted-syntax -- CSS lengths, not money
+    return Number(m[1]) * (m[2] === 'rem' ? 16 : 1);
+  };
+  const rule = (selector: string) => {
+    const at = appCss.indexOf(`${selector} {`);
+    return at < 0 ? '' : appCss.slice(at, appCss.indexOf('}', at));
+  };
+
+  test('beside the button the capsule fills the row with the usual tabs', () => {
+    // Owner, 2026-11-14: icon over word, no narrower icon-only tabs.
+    expect(appCss).not.toMatch(
+      /\[data-main-button\] \.app-dock\[data-nav\] \.app-nav(-item|-label)? \{/,
+    );
+    expect(appCss).not.toContain('--app-nav-icon-w');
+    expect(rule('  .app-nav')).toMatch(/flex: 1 1 auto;/);
+    expect(navSrc).toMatch(/min-w-\[min\(2\.75rem,20%\)\] flex-auto/);
+  });
+
+  test("the circle is the open tab's pill height, its capsule the nav's height", () => {
+    // The pill is inset 4px top and bottom in the capsule (inset-y-1).
+    expect(navSrc).toMatch(/app-nav-active absolute inset-x-0\.5 inset-y-1 /);
+    expect(appCss).toContain(`--app-main-btn-d: calc(${light['--app-nav-h']} - 8px);`);
+    const btn = rule('  .app-main-btn');
+    expect(btn).toMatch(/width: var\(--app-main-btn-d\);/);
+    expect(btn).toMatch(/height: var\(--app-main-btn-d\);/);
+    expect(btn).toMatch(/min-width: 44px;/);
+    expect(btn).toMatch(/min-height: 44px;/);
+    expect(rule('  .app-main-capsule')).toMatch(/padding: 4px;/);
+    expect(buttonSrc).toMatch(
+      /app-main-btn press relative flex items-center justify-center rounded-full/,
+    );
+  });
+
+  test("the circle's capsule has the nav capsule's glass", () => {
+    const nav = rule('  .app-nav::before');
+    const capsule = rule('  .app-main-capsule');
+    for (const part of [
+      'background: var(--c-nav-surface-solid);',
+      'var(--shadow-nav),\n      inset 0 0 0 1px var(--c-divider);',
+    ]) {
+      expect(nav).toContain(part);
+      expect(capsule).toContain(part);
+    }
+    expect(rule('  .app-main-capsule')).toMatch(/border-radius: var\(--r-pill\);/);
+    // The blur, and solid under reduced transparency, as the nav.
+    expect(appCss).toMatch(
+      /\.app-nav::before,\s*\.app-main-capsule,\s*\.app-dock-hint \{\s*background: var\(--c-nav-surface\);\s*-webkit-backdrop-filter/,
+    );
+    expect(appCss).toMatch(
+      /\.app-nav::before,\s*\.app-main-capsule,\s*\.app-dock-hint \{\s*background: var\(--c-nav-surface-solid\);\s*-webkit-backdrop-filter: none/,
+    );
+  });
+
+  test('the row fits a 320 px phone with five tabs, so it never stacks', () => {
+    const gap = remPx('--app-dock-gap');
+    const capsule = 5 * 44 + 2 * 4; // the tabs at their tap, padding-inline: 4px
+    const circle = 60 - 8 + 2 * 4;
+    expect(gap).toBe(8);
+    expect(320 - 2 * gap - capsule - gap - circle).toBeGreaterThanOrEqual(0);
+    expect(appCss).not.toMatch(/@container|container:/);
+    expect(appCss).not.toMatch(/column-reverse/);
+  });
+
+  test('no words on it: they are its accessible name and title', () => {
+    expect(buttonSrc).toMatch(/aria-label=\{state\.text\}/);
+    expect(buttonSrc).toMatch(/title=\{state\.text\}/);
+    expect(buttonSrc).not.toMatch(/>\s*\{state\.text\}\s*</);
+  });
+
+  test("a count is a badge with the nav badges' look", () => {
+    expect(buttonSrc).toMatch(/\$\{NAV_BADGE_COUNT_CLASS\}/);
+    expect(navSrc).toMatch(/\$\{NAV_BADGE_COUNT_CLASS\}/);
+  });
+
+  test('the words stay beside the button, scrolling too; every tab keeps its name', () => {
+    expect(
+      rule('  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-label'),
+    ).toMatch(/opacity: 1;/);
+    // Each NavItem is given an aria-label (the full name, with its badge).
+    expect(navSrc).toMatch(/aria-label=\{ariaLabel\}/);
+    expect(navSrc).not.toMatch(/ariaLabel=\{undefined\}/);
+  });
+
+  test('scrolling down neither hides tabs nor shrinks the capsule beside the button', () => {
+    expect(appCss).not.toMatch(/\.app-nav-item:not\(\[aria-current\]\)/);
+    expect(appCss).toMatch(
+      /\[data-main-button\] \[data-nav-compact\] \.app-dock\[data-nav\] \.app-nav::before,[^{]*\{\s*transform: none;/,
+    );
+  });
+
+  test('the page keeps room for the dock, not for two bars', () => {
+    expect(appCss).toContain(
+      'padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));',
+    );
+    expect(appCss).not.toMatch(/\[data-main-button\] \.app-main \{/);
+  });
+
+  test('the nav comes first for Tab, and the dock is outside the swipe pager', () => {
+    const dock = shellSrc.indexOf('className="app-dock"');
+    expect(dock).toBeGreaterThan(shellSrc.indexOf('</SwipePager>'));
+    expect(shellSrc.indexOf('<BottomNav', dock)).toBeLessThan(
+      shellSrc.indexOf('<PageMainButton', dock),
+    );
+  });
+});

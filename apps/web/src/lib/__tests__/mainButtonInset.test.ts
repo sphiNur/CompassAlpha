@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   MAIN_BUTTON_INSET_VAR,
+  mainButtonInsetOf,
   mainButtonInsetValue,
   publishMainButtonInset,
 } from '../mainButtonInset';
@@ -32,5 +33,21 @@ describe('publishMainButtonInset', () => {
 
   test('no root (SSR / tests) is a no-op', () => {
     expect(() => publishMainButtonInset(65, null)).not.toThrow();
+  });
+});
+
+describe('mainButtonInsetOf (2026-11-14: the button on the nav row)', () => {
+  test('on the row it adds nothing above the nav', () => {
+    expect(mainButtonInsetOf({ navTop: 700, contentTop: 700, dockBottom: 760 })).toBe(0);
+  });
+
+  test('a hint over the row is what reaches above', () => {
+    // The hint: 30px and the 8px gap over the row.
+    expect(mainButtonInsetOf({ navTop: 700, contentTop: 662, dockBottom: 760 })).toBe(38);
+  });
+
+  test('without the nav, from the top of the button (or its hint) to the dock foot', () => {
+    expect(mainButtonInsetOf({ navTop: null, contentTop: 704, dockBottom: 772 })).toBe(68);
+    expect(mainButtonInsetOf({ navTop: null, contentTop: 666, dockBottom: 772 })).toBe(106);
   });
 });

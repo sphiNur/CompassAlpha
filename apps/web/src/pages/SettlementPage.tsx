@@ -131,6 +131,8 @@ export function SettlementPage() {
     active: canSave && !saving,
     onInactiveClick: fieldsToFix > 0 ? showFirstFieldToFix : undefined,
     inactiveHint: saveHint,
+    // 2026-11-14 (owner): a circle on the nav's row, its text the name.
+    icon: 'check',
   });
 
   if (!session) return null;

@@ -129,6 +129,9 @@ async function phone(who: Role): Promise<Page> {
 const main = (page: Page): Locator => page.getByRole('main');
 const sheet = (page: Page): Locator => page.getByRole('dialog');
 const mainButton = (page: Page): Locator => page.getByTestId('page-main-button');
+/** The main button while it does `name`: a circle, its words its name (2026-11-14). */
+const mainButtonNamed = (page: Page, name: string): Locator =>
+  mainButton(page).and(page.getByRole('button', { name, exact: true }));
 const row = (page: Page, code: string): Locator =>
   main(page)
     .getByRole('listitem')
@@ -537,7 +540,7 @@ test('a draft order', async () => {
 
 test('the order submitted', async () => {
   const page = await phone('staff');
-  await expect(mainButton(page)).toHaveText(t('order.action.submitCount', { n: 3 }));
+  await expect(mainButton(page)).toHaveAccessibleName(t('order.action.submitCount', { n: 3 }));
   await mainButton(page).click();
   await expect(main(page).getByRole('status')).toContainText(t('order.status.submitted'));
   await audit('submitted', ['owner', 'manager', 'staff', 'purchaser', 'cashier']);
@@ -558,7 +561,7 @@ test('the run being bought', async () => {
   ).toHaveCount(0);
   const page = await phone('purchaser');
   await openTab(page, 'run');
-  await reach(page, mainButton(page).getByText(t('run.action.startPurchase')));
+  await reach(page, mainButtonNamed(page, t('run.action.startPurchase')));
   await mainButton(page).click();
   const save = main(page).getByRole('button', {
     name: t('run.action.savePurchaseAriaLabel', { name: skuName('BEEF', 'en') }),
@@ -590,7 +593,7 @@ test('the run being delivered', async () => {
   // A preset reason marks the item at once (#469) and closes the sheet.
   await preset.click();
   await expect(sheet(page)).toBeHidden();
-  await expect(mainButton(page)).toHaveText(t('run.action.startDelivery'));
+  await expect(mainButton(page)).toHaveAccessibleName(t('run.action.startDelivery'));
   await mainButton(page).click();
   const deliver = main(page).getByRole('button', {
     name: t('run.delivery.deliverTo', { store: STORES.en.central }),

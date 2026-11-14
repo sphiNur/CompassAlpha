@@ -50,7 +50,7 @@
 
 | 件             | 现状                                                                                                                                        |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 边缘           | Cloudflare Worker `app-proxy`（TLS、源站地址存 KV）→ cloudflared quick tunnel → nginx :80 → api:3000；nginx 配置还不在仓库（review OPS-23） |
+| 边缘           | Cloudflare Worker `app-proxy`（TLS、源站地址存 KV）→ cloudflared quick tunnel → nginx :80 → api:3000；nginx 配置见 infra/nginx/compass-app.conf（review OPS-23） |
 | 数据库         | PostgreSQL 18，启用 RLS                                                                                                                     |
 | 队列 / Pub-Sub | PostgreSQL outbox 表（**未用 Redis Pub/Sub**）                                                                                              |
 | 缓存 / 限流    | 进程内 Map（还没有 Redis：M2 迁移目标，review OPS-29）                                                                                      |

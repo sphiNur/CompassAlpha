@@ -1,17 +1,20 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { Spinner, useTapGuard } from '@compass/ui';
+import { IconCheck, IconRun, IconSend, IconTruck, Spinner, useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
 import { useI18n } from '../../hooks/useI18n';
 import { announce } from '../../lib/announce';
-import { usePageMainButtonState } from '../../hooks/usePageMainButton';
-import { publishMainButtonInset } from '../../lib/mainButtonInset';
+import { usePageMainButtonState, type PageMainButtonIcon } from '../../hooks/usePageMainButton';
+import { mainButtonInsetOf, publishMainButtonInset } from '../../lib/mainButtonInset';
+import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
 
 /**
  * In-DOM page primary action button (M3.49, 2026-05-23). Reads from the
  * module-level store written by usePageMainButton(). Renders nothing
- * when no page has registered an action — the nav rises against the
- * page content. When a page sets one, a sticky bar appears ABOVE the
- * nav with the action's text + click handler.
+ * when no page has registered an action. When a page sets one, the
+ * button floats in the shell's dock (Shell.tsx) with the nav capsule:
+ * since 2026-11-14 (owner) on the capsule's row, a circle with the
+ * action's icon in a capsule of its own (`.app-dock` in
+ * styles/index.css).
  *
  * Telegram's native MainButton is kept permanently hidden (effect
  * below) so the two don't compete for the bottom-of-screen slot.
@@ -33,8 +36,7 @@ export function PageMainButton() {
   // flight the button stays focusable (aria-disabled, the click dropped)
   // instead of `disabled`, which threw focus off it, and "Please wait…"
   // is said through the app's polite region when this button's press
-  // started it. aria-busy alone is barely read. No spinner (the look
-  // stays).
+  // started it. aria-busy alone is barely read.
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pressedAt = useRef(0);
   const wasBusy = useRef(busy);
@@ -48,7 +50,7 @@ export function PageMainButton() {
     }
   }, [busy, i18n]);
   // Permanently hide Telegram's native MainButton — we render our
-  // own in-DOM equivalent above the bottom nav. The hide() call is
+  // own in-DOM equivalent beside the bottom nav. The hide() call is
   // idempotent on the SDK side.
   useEffect(() => {
     const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
@@ -56,75 +58,87 @@ export function PageMainButton() {
     tg.MainButton.hide();
   }, [state?.visible]);
 
-  // 2026-10-21 FE-05: publish this bar's height as --app-main-btn-h so the
-  // toast stack (anchored above the nav) clears it instead of covering it.
-  const barRef = useRef<HTMLDivElement>(null);
+  // 2026-10-21 FE-05: publish what the button adds above the nav as
+  // --app-main-btn-h, so the toast stack (anchored above the nav) and the
+  // room <main> keeps under its last content clear it. 2026-11-14: on the
+  // nav's row that is nothing, or the hint over the row; without the nav,
+  // the dock from the button's (or the hint's) top (mainButtonInsetOf).
+  const colRef = useRef<HTMLDivElement>(null);
+  const hintRef = useRef<HTMLParagraphElement>(null);
   const shown = Boolean(state?.visible);
+  const interactable = !!state && state.active && !busy;
+  const hint = state && !interactable && !busy ? state.inactiveHint : undefined;
+  const hasHint = !!hint;
   // 2026-11-14: `data-main-button` on <html> tells the shell's CSS
-  // (styles/index.css) that the page ends above this bar, so <main> keeps
-  // no room of its own for the floating nav and shows no bottom fade.
+  // (styles/index.css) to show the capsule beside the button with icons
+  // only.
   useLayoutEffect(() => {
-    const el = barRef.current;
+    const col = colRef.current;
     const html = typeof document !== 'undefined' ? document.documentElement : null;
-    if (!shown || !el) {
+    if (!shown || !col) {
       publishMainButtonInset(0);
       html?.removeAttribute('data-main-button');
       return;
     }
     html?.setAttribute('data-main-button', '');
-    publishMainButtonInset(el.offsetHeight);
-    const ro =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => publishMainButtonInset(el.offsetHeight))
-        : null;
-    ro?.observe(el);
+    const dock = col.closest<HTMLElement>('.app-dock');
+    const measure = () => {
+      const nav = dock?.querySelector<HTMLElement>('.app-nav') ?? null;
+      const hintEl = hintRef.current;
+      const top = Math.min(
+        col.getBoundingClientRect().top,
+        hintEl ? hintEl.getBoundingClientRect().top : Infinity,
+      );
+      publishMainButtonInset(
+        mainButtonInsetOf({
+          navTop: nav ? nav.getBoundingClientRect().top : null,
+          contentTop: top,
+          dockBottom: (dock ?? col).getBoundingClientRect().bottom,
+        }),
+      );
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(col);
+    if (dock) ro?.observe(dock);
+    if (hintRef.current) ro?.observe(hintRef.current);
     return () => {
       ro?.disconnect();
       publishMainButtonInset(0);
       html?.removeAttribute('data-main-button');
     };
-  }, [shown]);
+  }, [shown, hasHint]);
 
   if (!state || !state.visible) return null;
-  const interactable = state.active && !busy;
   // A11Y-2: an inactive button whose page can say why stays in the Tab
   // order (aria-disabled) and points at the problem when used.
   const explains = !interactable && !busy && !!state.onInactiveClick;
-  const hint = !interactable && !busy ? state.inactiveHint : undefined;
-  // 2026-11-14: the nav capsule floats over the foot of this bar (its
-  // room is --app-nav-reserve under the button), so the button sits
-  // above the capsule, never under it. The published height is the
-  // button's own part, above that room.
+  const Icon = MAIN_BUTTON_ICONS[state.icon] ?? IconCheck;
+  // 2026-11-14 (owner): the button floats in the dock with the nav
+  // capsule (Shell.tsx), after it in the Tab order, on the capsule's row:
+  // a circle the size of the open tab's pill, in a capsule of the nav's
+  // glass. No words on it; they are its accessible name and its title. A
+  // count rides it as a corner badge, as on the tabs. Swipes between tabs
+  // never start here: the dock is outside the pager (SwipePager.tsx).
   return (
-    <div
-      className="shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
-      style={{ paddingBottom: 'var(--app-nav-reserve)' }}
-    >
-      <div
-        ref={barRef}
-        style={{
-          // The page's own side inset, or more on a phone on its side,
-          // where the notch and rounded corners are (COREWEB1-07). Review
-          // COREWEB1-31 (2026-11-12): the inset is the token, not 16px.
-          paddingLeft: 'max(var(--app-inline-x), var(--app-safe-left, 0px))',
-          paddingRight: 'max(var(--app-inline-x), var(--app-safe-right, 0px))',
-          paddingTop: 8,
-          paddingBottom: 8,
-        }}
-      >
-        {hint ? (
-          <p
-            id="page-main-button-hint"
-            data-testid="page-main-button-hint"
-            className="mb-2 text-center text-old-label text-[var(--c-fg-muted)]"
-          >
-            {hint}
-          </p>
-        ) : null}
+    <div ref={colRef} className="app-dock-action">
+      {hint ? (
+        <p
+          ref={hintRef}
+          id="page-main-button-hint"
+          data-testid="page-main-button-hint"
+          className="app-dock-hint text-center text-old-label text-[var(--c-fg-muted)]"
+        >
+          {hint}
+        </p>
+      ) : null}
+      <div className="app-main-capsule">
         <button
           ref={buttonRef}
           type="button"
           data-testid="page-main-button"
+          aria-label={state.text}
+          title={state.text}
           disabled={(!interactable && !explains && !busy) || undefined}
           aria-disabled={explains || busy || undefined}
           aria-describedby={hint ? 'page-main-button-hint' : undefined}
@@ -139,29 +153,38 @@ export function PageMainButton() {
                   }
           }
           aria-busy={busy || undefined}
-          // Review MWA-10 (modern-web-guidance: respect-os-text-scale): 48px
-          // is a minimum, so the bar grows with larger phone text (its
-          // height is measured and published above) instead of clipping.
           className={
-            'flex min-h-12 w-full min-w-0 items-center justify-center gap-2 rounded-[var(--r-pill)] px-4 py-1.5 text-center text-old-h3 font-semibold ' +
+            'app-main-btn press relative flex items-center justify-center rounded-full ' +
             (interactable
               ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
               : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
           }
         >
-          {/* Review MWC-08 (modern-web-guidance: single-line-overflow): a
-              long action ("Отправить на проверку…") wraps to two balanced
-              lines instead of being cut; the bar grows (min-h-12). */}
           {/* Review MWB-10 (V5, modern-web-guidance: progress): a busy main
-              button shows the kit spinner beside its label, as a busy kit
-              Button does; the button is full width, so nothing moves. */}
-          {busy ? <Spinner size={16} className="shrink-0" /> : null}
-          <span className="min-w-0 break-words line-clamp-2 [text-wrap:balance]">{state.text}</span>
+                button shows the kit spinner, here in the icon's place. */}
+          {busy ? <Spinner size={22} /> : <Icon size={24} />}
+          {state.badge ? (
+            <span
+              aria-hidden
+              data-testid="page-main-button-badge"
+              className={`absolute -right-1 -top-1 ${NAV_BADGE_COUNT_CLASS}`}
+            >
+              {navBadgeCountText(state.badge)}
+            </span>
+          ) : null}
         </button>
       </div>
     </div>
   );
 }
+
+/** The circle's icon per action (usePageMainButton's `icon`). */
+const MAIN_BUTTON_ICONS: Record<PageMainButtonIcon, typeof IconCheck> = {
+  check: IconCheck,
+  send: IconSend,
+  cart: IconRun,
+  truck: IconTruck,
+};
 
 /**
  * Review MWB-10: whether the write that just started is said: the main

@@ -80,6 +80,9 @@ async function tapTab(c: Card, page: Page, stepId: string, name: string): Promis
   await c.tap(stepId, sheet(page).getByTestId(`nav-${name}`));
 }
 const mainButton = (page: Page): Locator => page.getByTestId('page-main-button');
+/** The main button while it does `name`: a circle, its words its name (2026-11-14). */
+const mainButtonNamed = (page: Page, name: string): Locator =>
+  mainButton(page).and(page.getByRole('button', { name, exact: true }));
 /** The innermost list item naming the product. */
 const row = (page: Page, code: string): Locator =>
   main(page)
@@ -133,7 +136,7 @@ test("staff: submit today's order", async () => {
   await addToOrder(page, 'TOMATO', 4);
   await c.shot('add-milk', plus('MILK'), { taps: 2 });
   await addToOrder(page, 'MILK', 2);
-  await expect(mainButton(page)).toHaveText(t('order.action.submitCount', { n: 3 }));
+  await expect(mainButton(page)).toHaveAccessibleName(t('order.action.submitCount', { n: 3 }));
   await c.tap('submit', mainButton(page));
   await expect(main(page).getByRole('status')).toContainText(t('order.status.submitted'));
   await c.shot('submitted', null);
@@ -144,7 +147,7 @@ test('staff: withdraw an order', async () => {
   const c = card(page, 'staff-withdraw-order', 'staff', 'Withdraw an order');
   const withdraw = main(page).getByRole('button', { name: t('order.withdraw'), exact: true });
   await c.tap('withdraw', withdraw);
-  await expect(mainButton(page)).toHaveText(t('order.action.submitCount', { n: 3 }));
+  await expect(mainButton(page)).toHaveAccessibleName(t('order.action.submitCount', { n: 3 }));
   // The "submitted" toast from a moment ago would say the opposite.
   await c.shot('back-to-draft', null, { toasts: false });
   // Sent again for the manager's cards.
@@ -209,7 +212,7 @@ test('purchaser: start purchase', async () => {
   const page = await phone('purchaser');
   const c = card(page, 'purchaser-start-purchase', 'purchaser', 'Start purchase');
   await tapTab(c, page, 'open-run', 'run');
-  await expect(mainButton(page)).toHaveText(t('run.action.startPurchase'));
+  await expect(mainButton(page)).toHaveAccessibleName(t('run.action.startPurchase'));
   await c.tap('start-purchase', mainButton(page));
   await expect(
     main(page).getByRole('button', {
@@ -272,7 +275,7 @@ test('purchaser: mark an item unavailable', async () => {
 test('purchaser: start delivery', async () => {
   const page = await phone('purchaser');
   const c = card(page, 'purchaser-start-delivery', 'purchaser', 'Start delivery');
-  await expect(mainButton(page)).toHaveText(t('run.action.startDelivery'));
+  await expect(mainButton(page)).toHaveAccessibleName(t('run.action.startDelivery'));
   await c.tap('start-delivery', mainButton(page));
   const deliver = main(page).getByRole('button', {
     name: t('run.delivery.deliverTo', { store: STORES[lang].central }),
@@ -338,7 +341,7 @@ test('staff: confirm a receipt (All OK)', async () => {
 test('purchaser: finish the run', async () => {
   const page = await phone('purchaser');
   const c = card(page, 'purchaser-finish-run', 'purchaser', 'Finish the run');
-  await reach(page, mainButton(page).getByText(t('run.action.finish')));
+  await reach(page, mainButtonNamed(page, t('run.action.finish')));
   await c.tap('finish', mainButton(page));
   await c.tap('confirm-finish', sheet(page).getByRole('button', { name: t('run.action.finish') }));
   await expect(sheet(page)).toBeHidden();

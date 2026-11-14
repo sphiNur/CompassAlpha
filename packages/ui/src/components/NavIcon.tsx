@@ -224,3 +224,40 @@ export function IconMoreVertical(props: IconProps) {
     </svg>
   );
 }
+
+/*
+ * The page main button's actions (owner, 2026-11-14): on the nav's row the
+ * button is a circle with an icon, its words its accessible name
+ * (PageMainButton.tsx). Same line-art as the tabs. A cart is IconRun.
+ */
+
+/** Done / save / confirm: a plain check. */
+export function IconCheck(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+/** Send (an order): an arrow up, as a message is sent. */
+export function IconSend(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="M12 19V5" />
+      <path d="m6 11 6-6 6 6" />
+    </svg>
+  );
+}
+
+/** Delivery: a truck. */
+export function IconTruck(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="M3 6h11v10H3z" />
+      <path d="M14 9h4l3 3.5V16h-7" />
+      <circle cx="7" cy="17.5" r="1.75" />
+      <circle cx="17" cy="17.5" r="1.75" />
+    </svg>
+  );
+}

@@ -9,7 +9,7 @@ export async function openTab(page: Page, key: string): Promise<void> {
   const nav = page.getByTestId('primary-nav');
   await nav.waitFor();
   const inBar = nav.getByTestId(`nav-${key}`);
-  if (await inBar.isVisible()) {
+  if ((await inBar.count()) > 0) {
     await inBar.click();
     return;
   }

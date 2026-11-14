@@ -429,10 +429,14 @@ async function run() {
         };
         const native = w.Telegram?.WebApp?.MainButton;
         if (native?.isVisible && native.text) return native.text;
+        // 2026-11-14: the main button is an icon circle; its words are its
+        // accessible name (aria-label), the text in older bundles.
+        const name = (b: HTMLButtonElement) => b.getAttribute('aria-label') || b.textContent || '';
         const own = [...document.querySelectorAll('button')].filter((b) =>
-          /Submit order/.test(b.textContent ?? ''),
+          /Submit order/.test(name(b)),
         );
-        return own.at(-1)?.textContent ?? '';
+        const last = own.at(-1);
+        return last ? name(last) : '';
       });
     const countOf = (label: string) => Number(/Submit order\s*\((\d+)\)/.exec(label)?.[1] ?? 0);
     let chosenLabel = await reviewLabel();
@@ -461,7 +465,9 @@ async function run() {
       });
       if (nativeClicked) return true;
 
-      const button = page.locator('button', { hasText: label }).last();
+      // By accessible name: the circle's aria-label (2026-11-14), or the
+      // text of an older bundle's pill.
+      const button = page.getByRole('button', { name: label }).last();
       if ((await button.count()) === 0) return false;
       await button.click();
       return true;

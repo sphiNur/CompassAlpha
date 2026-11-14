@@ -46,7 +46,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton } from '../hooks/usePageMainButton';
+import { usePageMainButton, type PageMainButtonIcon } from '../hooks/usePageMainButton';
 import { scrollBehavior } from '../lib/reducedMotion';
 import { RUN_PAGE } from '../config/timings';
 import { readLocalPref, writeLocalPref } from '../lib/localPref';
@@ -688,11 +688,18 @@ export function RunPage() {
     if (deliveryBlock && confirmAction === 'startDelivery') setConfirmAction(null);
   }, [deliveryBlock, confirmAction]);
 
+  // 2026-11-14 (owner): the main button is a circle on the nav's row, its
+  // text the accessible name: `icon` draws the step, `badge` a count it
+  // carries, and `hint` says in words, over the row, why it waits (the
+  // text did that on the old pill).
   const mainButton = useMemo<{
     text: string;
     onClick: () => void;
     visible: boolean;
     active: boolean;
+    icon: PageMainButtonIcon;
+    badge?: number;
+    hint?: string;
   }>(() => {
     if (!activeRun) {
       /**
@@ -736,15 +743,18 @@ export function RunPage() {
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
         // Server re-checks (run.errors.runDateInFuture / invalidRunDate).
         const dateOk = !runDate || !previewToday || runDate <= previewToday;
+        const why = offline
+          ? i18n.t('run.offline.needNetworkToStart')
+          : sessionIds.length === 0
+            ? i18n.t('run.select.noneSelected')
+            : !dateOk
+              ? // BUY-19: the button only greyed out; say why.
+                i18n.t('run.errors.runDateInFuture')
+              : undefined;
         return {
-          text: offline
-            ? i18n.t('run.offline.needNetworkToStart')
-            : sessionIds.length === 0
-              ? i18n.t('run.select.noneSelected')
-              : !dateOk
-                ? // BUY-19: the button only greyed out; say why.
-                  i18n.t('run.errors.runDateInFuture')
-                : i18n.t('run.action.startPurchase'),
+          text: why ?? i18n.t('run.action.startPurchase'),
+          icon: 'cart',
+          hint: why,
           onClick: () => {
             if (offline || sessionIds.length === 0 || !dateOk || creatingRun) return;
             createRun({
@@ -757,12 +767,13 @@ export function RunPage() {
           active: !offline && sessionIds.length > 0 && dateOk && !creatingRun,
         };
       }
-      return { text: '', onClick: () => {}, visible: false, active: false };
+      return { text: '', onClick: () => {}, visible: false, active: false, icon: 'check' };
     }
     switch (activeRun.status) {
       case 'planned':
         return {
           text: i18n.t('run.action.startPurchase'),
+          icon: 'cart',
           // 2026-11-13: no confirm, as the first start; Back to plan undoes it.
           onClick: () => sendStep('startPurchase'),
           visible: true,
@@ -796,6 +807,8 @@ export function RunPage() {
             // Only items of other stores remain (RE-BUY-1).
             return {
               text: i18n.t('run.action.waitingOtherStores'),
+              icon: 'truck',
+              hint: i18n.t('run.action.waitingOtherStores'),
               onClick: () => {},
               visible: true,
               active: false,
@@ -803,6 +816,8 @@ export function RunPage() {
           }
           return {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
+            icon: 'cart',
+            badge: pendingCount,
             onClick: () => {
               const next = document.querySelector('[data-run-item-pending]');
               if (next) next.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
@@ -820,11 +835,14 @@ export function RunPage() {
         // once online with the queue still sending, started a delivery the
         // server thought was not fully bought. Say what it waits for.
         if (deliveryBlock) {
+          const why =
+            deliveryBlock === 'offline'
+              ? i18n.t('run.offline.needNetworkToDeliver')
+              : i18n.t('run.offline.waitForSync', { n: offline.pendingEntries.length });
           return {
-            text:
-              deliveryBlock === 'offline'
-                ? i18n.t('run.offline.needNetworkToDeliver')
-                : i18n.t('run.offline.waitForSync', { n: offline.pendingEntries.length }),
+            text: why,
+            icon: 'truck',
+            hint: why,
             onClick: () => {},
             visible: true,
             active: false,
@@ -832,6 +850,7 @@ export function RunPage() {
         }
         return {
           text: i18n.t('run.action.startDelivery'),
+          icon: 'truck',
           // 2026-11-13: sent at once (Back to purchase undoes it); the
           // sheet opens only to warn about other items not handled.
           onClick: () =>
@@ -851,6 +870,8 @@ export function RunPage() {
           if (waiting.undelivered.length > 0) {
             return {
               text: i18n.t('run.action.deliverRemaining', { n: waiting.undelivered.length }),
+              icon: 'truck',
+              badge: waiting.undelivered.length,
               onClick: () => {
                 const stores = document.querySelector('[data-run-stores]');
                 stores?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
@@ -859,12 +880,15 @@ export function RunPage() {
               active: true,
             };
           }
+          const why = i18n.t('run.action.waitingStoreConfirm', {
+            stores: waiting.unconfirmed
+              .map((id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'))
+              .join(i18n.t('common.listSeparator')),
+          });
           return {
-            text: i18n.t('run.action.waitingStoreConfirm', {
-              stores: waiting.unconfirmed
-                .map((id) => storeById.get(id)?.name ?? i18n.t('common.unknownStore'))
-                .join(i18n.t('common.listSeparator')),
-            }),
+            text: why,
+            icon: 'check',
+            hint: why,
             onClick: () => {},
             visible: true,
             active: false,
@@ -873,12 +897,15 @@ export function RunPage() {
         // RE-DLV-3: someone the server would refuse is told so here.
         const blocked = runDetailQuery.data?.finishBlockedReason;
         if (blocked) {
+          const why = i18n.t(
+            blocked === 'run.errors.runHasOtherStores'
+              ? 'run.action.finishBlocked.otherStores'
+              : 'run.action.finishBlocked.noPermission',
+          );
           return {
-            text: i18n.t(
-              blocked === 'run.errors.runHasOtherStores'
-                ? 'run.action.finishBlocked.otherStores'
-                : 'run.action.finishBlocked.noPermission',
-            ),
+            text: why,
+            icon: 'check',
+            hint: why,
             onClick: () => {},
             visible: true,
             active: false,
@@ -886,6 +913,7 @@ export function RunPage() {
         }
         return {
           text: i18n.t('run.action.finish'),
+          icon: 'check',
           onClick: () => setConfirmAction('finish'),
           visible: true,
           active: true,
@@ -896,6 +924,8 @@ export function RunPage() {
         if (runDetailQuery.data?.finishBlockedReason) {
           return {
             text: i18n.t('run.errors.cannotAmend'),
+            icon: 'check',
+            hint: i18n.t('run.errors.cannotAmend'),
             onClick: () => {},
             visible: true,
             active: false,
@@ -903,12 +933,13 @@ export function RunPage() {
         }
         return {
           text: i18n.t('run.action.refinalize'),
+          icon: 'check',
           onClick: () => setConfirmAction('refinalize'),
           visible: true,
           active: true,
         };
       default:
-        return { text: '', onClick: () => {}, visible: false, active: false };
+        return { text: '', onClick: () => {}, visible: false, active: false, icon: 'check' };
     }
   }, [
     activeRun,
@@ -982,6 +1013,9 @@ export function RunPage() {
   usePageMainButton(mainButton.text, mainButton.onClick, {
     visible: mainButton.visible,
     active: mainButton.active,
+    icon: mainButton.icon,
+    badge: mainButton.badge,
+    inactiveHint: mainButton.hint,
   });
 
   // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.

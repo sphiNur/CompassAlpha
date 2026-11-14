@@ -8,7 +8,8 @@
  *
  * Owner, 2026-11-14: a capsule floating over the page with at most five
  * items, four tabs + More when there are more (navLayout.ts). Its look is
- * `.app-nav` in styles/index.css.
+ * `.app-nav` in styles/index.css. On a page with a main button it shares
+ * a row with it (Shell.tsx's dock), icon over word as everywhere.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { IconMore, Sheet } from '@compass/ui';
@@ -20,6 +21,7 @@ import { navBadges, type NavBadge } from '../../lib/navBadges';
 import { trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
 import type { Tab } from '../../stores/navStore';
+import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
 import { navLayout } from './navLayout';
 import { showsNav, type TabDef } from './tabs';
 
@@ -143,8 +145,8 @@ function TabBar({ tabs, tab, onSelect, permissions }: BottomNavProps) {
               short={short}
               // The short nav word is an abbreviation in ru / uz; screen
               // readers announce the section's full name. Review MWC-03: always
-              // named, since the compact capsule hides the word (display:none)
-              // and the icon is aria-hidden.
+              // named, since the compact capsule hides the word and the
+              // icon is aria-hidden.
               ariaLabel={badgeText(t) ?? label}
               badge={<NavBadgeMark tabKey={t.key} badge={badges[t.key]} />}
               disabled={busy}
@@ -261,7 +263,7 @@ function NavItem({
       onClick={onClick}
       disabled={disabled}
       className={
-        'press relative flex min-w-[min(2.75rem,20%)] flex-auto flex-col items-center justify-center gap-0.5 px-0.5 ' +
+        'app-nav-item press relative flex min-w-[min(2.75rem,20%)] flex-auto flex-col items-center justify-center gap-0.5 px-0.5 ' +
         (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
       }
     >
@@ -303,10 +305,10 @@ function NavBadgeMark({ tabKey, badge }: { tabKey: string; badge: NavBadge | und
       className={
         badge === 'dot'
           ? 'absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)]'
-          : 'absolute -right-2.5 -top-1.5 min-w-[1.125rem] rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)] px-1 text-center text-[0.625rem] font-semibold leading-[0.875rem] text-[var(--c-danger-fg)] tabular-nums'
+          : `absolute -right-2.5 -top-1.5 ${NAV_BADGE_COUNT_CLASS}`
       }
     >
-      {badge === 'dot' ? null : badge > 99 ? '99+' : badge}
+      {badge === 'dot' ? null : navBadgeCountText(badge)}
     </span>
   );
 }
