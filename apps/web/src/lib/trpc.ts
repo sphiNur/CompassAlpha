@@ -439,6 +439,11 @@ export async function authFetch(
 ): Promise<Response> {
   const attach = (token: string | null): RequestInit => ({
     ...init,
+    // Review MWD-14: the auth calls set or clear the refresh cookie; send
+    // and keep it when the api is on another origin (development), as
+    // signInCall does. Same origin in production, where this changes
+    // nothing.
+    ...(isAuthCall ? { credentials: 'include' as const } : {}),
     headers: {
       ...(init.headers as Record<string, string> | undefined),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -448,6 +453,7 @@ export async function authFetch(
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const path = trpcPath(url);
   const isSignIn = path.split(',').some((p) => SIGN_IN_PATHS.has(p));
+  const isAuthCall = path.split(',').some((p) => p.startsWith('auth.'));
 
   let token = useAuthStore.getState().accessToken;
   // Review MWD-14 (modern-web-guidance: privacy): the access token lives
