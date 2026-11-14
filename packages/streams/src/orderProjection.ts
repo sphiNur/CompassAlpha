@@ -12,6 +12,10 @@
  * time, so a replay (`pnpm reproject`) gave every session the same
  * updated_at, and the lookups that pick the most recent session by it
  * picked at random.
+ *
+ * The worker projects the events of its system commands (an idle claim
+ * released, an orphaned session repaired) with this same projector (review
+ * ORD-07: it had its own copy of those branches).
  */
 import { and, eq, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
@@ -195,16 +199,13 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
         // handoff happened. The `claimed_by_member_id` reference in
         // the SET is evaluated against the OLD row per SQL UPDATE
         // semantics, so we can null and snapshot in one statement.
-        const remembersOverride =
-          e.payload.reason === 'override' || e.payload.reason === 'timeout';
+        const remembersOverride = e.payload.reason === 'override' || e.payload.reason === 'timeout';
         await db
           .update(s.orderSessionsV)
           .set({
             claimedByMemberId: null,
             claimedAt: null,
-            previousClaimerMemberId: remembersOverride
-              ? sql`claimed_by_member_id`
-              : null,
+            previousClaimerMemberId: remembersOverride ? sql`claimed_by_member_id` : null,
             lastSeq: e.seq,
             updatedAt: e.occurredAt,
           })

@@ -29,6 +29,8 @@ const ROOTS = [
   'packages/domain/src',
   // zod messages in the shared schemas are catalog keys too (run.errors.priceFormat).
   'packages/contracts/src',
+  // The order projector's ConcurrentDraftError (review ORD-07).
+  'packages/streams/src',
 ];
 
 /** The .ts/.tsx files under `dir`, tests left out. */

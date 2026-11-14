@@ -6,7 +6,7 @@
 import { describe, expect, setSystemTime, test } from 'bun:test';
 import type { DB } from '@compass/db';
 import type { OrderEvent } from '@compass/domain/order';
-import { projectOrder } from '../orderProjection';
+import { projectOrder } from '@compass/streams';
 
 type Write = Record<string, unknown>;
 

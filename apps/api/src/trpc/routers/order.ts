@@ -51,15 +51,13 @@ import { DomainError } from '@compass/domain';
 import { priceStoreIds, pricesVisibleFor, redactMoneyFor } from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import type { RequestContext } from '../context';
-import { readOrderEvents } from '../../services/orderStream';
-import { writeOrderEvents } from '../../services/streamWrite';
+import { ConcurrentDraftError, readOrderEvents, writeOrderEvents } from '@compass/streams';
 import {
   isStreamSeqConflict,
   isUniqueViolation,
   pgConstraintName,
   withStreamConflictRetry,
 } from '../../services/pgErrors';
-import { ConcurrentDraftError } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
 import { memberProfiles } from '../../services/memberProfiles';
 import {
