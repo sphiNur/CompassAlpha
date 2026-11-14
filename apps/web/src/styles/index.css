@@ -82,11 +82,11 @@
   /* The dock (owner, 2026-11-14, "main button on the nav's row"): the
      capsule and the page's main button (PageMainButton.tsx) float in one
      box at the foot of the screen, on one row: the capsule on the left
-     with icons only, the button on the right as a circle the size of the
+     with its icons and words, the button on the right as a circle the size of the
      open tab's pill, in a capsule of its own with the nav's glass, so the
-     two read as a pair. 8px from the screen's sides. The circle leaves
-     room for the capsule on a 320px phone and at large text sizes (the
-     tabs narrow to their 44px tap first), so the row never stacks.
+     two read as a pair. 8px from the screen's sides. The capsule takes
+     the rest of the row; on a 320px phone five tabs still get their 44px
+     tap (the words truncate first), so the row never stacks.
      pointer-events: only the controls take taps, not the gap between. */
   .app-dock {
     position: absolute;
@@ -99,8 +99,6 @@
     pointer-events: none;
     --app-dock-inset-x: var(--app-nav-inset-x);
     --app-dock-gap: 8px;
-    /* An icon-only tab: the 44px tap of WALK-03, growing with the text. */
-    --app-nav-icon-w: 2.75rem;
     /* The main button's circle: the open tab's pill height (BottomNav's
        inset-y-1 in a full --app-nav-h capsule: 52px at the default text
        size, growing with it). Spelled out from --app-nav-h's value, which
@@ -270,27 +268,18 @@
     }
   }
 
-  /* The capsule beside the main button (see .app-dock): icons only, each
-     tab keeping its name (aria-label, BottomNav.tsx). The tabs are their
-     44px tap wide, and narrow towards it only where the row is short of
-     room (large text). Pages without a main button keep the full capsule
-     with labels. */
-  [data-main-button] .app-dock[data-nav] .app-nav {
-    flex: 0 1 auto;
-  }
-  [data-main-button] .app-dock[data-nav] .app-nav-item {
-    flex: 0 1 var(--app-nav-icon-w);
-    min-width: 44px;
-  }
-  [data-main-button] .app-dock[data-nav] .app-nav-label {
-    display: none;
-  }
-  /* Scrolling down does not shrink this capsule: it keeps the height of
-     the button's capsule beside it. */
+  /* The capsule beside the main button (see .app-dock): the same tabs as
+     without it, icon over word (owner, 2026-11-14: "keep the old nav
+     look and use the free space"), filling the row up to the circle.
+     Scrolling down does not shrink it: it keeps the height of the
+     button's capsule beside it, words included. */
   [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav::before,
   [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-active,
   [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-icon {
     transform: none;
+  }
+  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-label {
+    opacity: 1;
   }
 
   /* <main>, the one scroller: room under the last content for the
