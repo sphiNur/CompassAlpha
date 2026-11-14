@@ -4,6 +4,7 @@ import { IDEMPOTENT_ROUTES } from '@compass/contracts/idempotency';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { BatchRefused, getLogger, type LogEvent, type TransportOptions } from '@compass/telemetry';
 import { isRefreshRejected } from './networkError';
+import { getTg } from './telegram';
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -115,73 +116,227 @@ export function refreshIncompleteError(serverStatus: number | null): TypeError {
 export function resetRefreshCooldownForTests(): void {
   refreshIncompleteAt = Number.NEGATIVE_INFINITY;
   refreshIncompleteStatus = null;
+  bootRefreshStarted = false;
 }
 
-async function refreshAccessToken(): Promise<{
-  accessToken: string;
-  refreshToken: string;
-} | null> {
+/**
+ * Review MWD-14 (modern-web-guidance: privacy): asks auth.refresh to read
+ * the HttpOnly refresh cookie when the body carries no token (the server
+ * reads the cookie only with it; apps/api/src/http/refreshCookie.ts).
+ */
+const REFRESH_COOKIE_HEADERS = {
+  'content-type': 'application/json',
+  'x-compass-refresh': 'cookie',
+} as const;
+
+type Tokens = { accessToken: string; refreshToken: string };
+type SignInAnswer =
+  | { kind: 'ok'; tokens: Tokens; session: AuthSession }
+  | { kind: 'rejected'; status: number }
+  | { kind: 'incomplete'; status: number | null; why: string };
+
+/**
+ * One call that answers with tokens and a session (auth.refresh, or
+ * auth.telegramLogin as the fallback). `credentials: 'include'` so the
+ * refresh cookie is sent, and the one in the answer kept, when the api is
+ * on another origin (development); in production both are one origin.
+ */
+async function signInCall(path: string, body: unknown): Promise<SignInAnswer> {
+  try {
+    // guardedFetch: a refresh that hangs would hold every request
+    // waiting on it (single-flight); time it out, sooner than a write.
+    const res = await guardedFetch(
+      `${API_URL}/trpc/${path}`,
+      {
+        method: 'POST',
+        headers: REFRESH_COOKIE_HEADERS,
+        credentials: 'include',
+        body: JSON.stringify(body),
+      },
+      REFRESH_TIMEOUT_MS,
+    );
+    if (!res.ok) {
+      // Refused (4xx other than 408/429): this credential is no good.
+      // Anything else (5xx, 429) is the server having a moment.
+      if (isRefreshRejected(res.status)) return { kind: 'rejected', status: res.status };
+      return { kind: 'incomplete', status: res.status, why: `http ${res.status}` };
+    }
+    const json = (await res.json()) as {
+      result?: { data?: { tokens?: Partial<Tokens>; session?: AuthSession } };
+    };
+    const tokens = json.result?.data?.tokens;
+    const session = json.result?.data?.session;
+    if (!tokens?.accessToken || !tokens.refreshToken || !session) {
+      return { kind: 'incomplete', status: res.status, why: 'answer without tokens' };
+    }
+    return {
+      kind: 'ok',
+      tokens: { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken },
+      session,
+    };
+  } catch (err) {
+    const gateway = /\(gateway (\d{3})\)/.exec(err instanceof Error ? err.message : '');
+    return {
+      kind: 'incomplete',
+      status: gateway ? Number(gateway[1]) : null,
+      why: err instanceof Error ? err.message : 'fetch failed',
+    };
+  }
+}
+
+/** Is there a session a refresh could renew (the cookie, or a token held here)? */
+function canRefresh(): boolean {
+  const s = useAuthStore.getState();
+  return !!s.session || !!s.refreshToken || !!s.legacyRefreshToken;
+}
+
+/**
+ * Get a fresh access token. Review MWD-14 (modern-web-guidance: privacy):
+ * the refresh token is no longer in localStorage, so this tries, in order,
+ * stopping at the first that works:
+ *   1. a refresh token an older build saved (moved to the cookie by this
+ *      first refresh; the server sets the cookie on every answer);
+ *   2. the HttpOnly cookie (no token in the body);
+ *   3. the refresh token the server last returned to this page, held in
+ *      memory, for a browser that did not keep the cookie;
+ *   4. inside Telegram, a silent sign-in from initData, the same one the
+ *      app makes at start. The saved session stays, so the screen, the tab
+ *      and the offline copy of the data are kept; another person's
+ *      answer replaces them as a sign-out would.
+ * A step that gets no answer (offline, 5xx, 429) stops the chain and
+ * leaves the session alone, as before: it says nothing about the session.
+ * Only when every step is refused is the session cleared, which sends
+ * AuthGate back to the sign-in screen.
+ *
+ * `boot`: the refresh the app starts with (startSessionRefresh). When it
+ * is refused everywhere but an older build's access token is still held,
+ * the session is kept until that token runs out (its first 401 then
+ * takes this path again, without `boot`).
+ */
+async function refreshAccessToken(options: { boot?: boolean } = {}): Promise<Tokens | null> {
   if (refreshInFlight) return refreshInFlight;
-  const refreshToken = useAuthStore.getState().refreshToken;
-  if (!refreshToken) return null;
+  if (!canRefresh()) return null;
   if (Date.now() - refreshIncompleteAt < REFRESH_COOLDOWN_MS) return null;
 
   refreshInFlight = (async () => {
-    try {
-      // guardedFetch: a refresh that hangs would hold every request
-      // waiting on it (single-flight); time it out, sooner than a write.
-      const res = await guardedFetch(
-        `${API_URL}/trpc/auth.refresh`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        },
-        REFRESH_TIMEOUT_MS,
-      );
-      if (!res.ok) {
-        // Refresh token itself is bad: clear auth so AuthGate routes the
-        // user back through telegramLogin. Anything else (5xx, 429) is
-        // the server having a moment; keep the session and let the
-        // caller's request fail on its own.
-        if (isRefreshRejected(res.status)) {
-          noteSessionCleared('refresh-rejected', res.status);
-          useAuthStore.getState().clear();
-        } else {
-          refreshIncompleteAt = Date.now();
-          refreshIncompleteStatus = res.status;
-          noteRefreshIncomplete(`http ${res.status}`);
-        }
-        return null;
-      }
-      const json = (await res.json()) as {
-        result?: {
-          data?: {
-            tokens?: { accessToken: string; refreshToken: string };
-            session?: AuthSession;
-          };
-        };
-      };
-      const tokens = json.result?.data?.tokens;
-      const session = json.result?.data?.session;
-      if (!tokens?.accessToken || !tokens?.refreshToken || !session) return null;
-      useAuthStore.getState().setSession({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        session,
-      });
-      return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
-    } catch (err) {
+    const epoch = useAuthStore.getState().epoch;
+    const priorUserId = useAuthStore.getState().session?.user.id ?? null;
+    /** Keep a sign-in or sign-out made while this was in flight. */
+    const superseded = () => useAuthStore.getState().epoch !== epoch;
+    const incomplete = (answer: { status: number | null; why: string }) => {
       refreshIncompleteAt = Date.now();
-      const gateway = /\(gateway (\d{3})\)/.exec(err instanceof Error ? err.message : '');
-      refreshIncompleteStatus = gateway ? Number(gateway[1]) : null;
-      noteRefreshIncomplete(err instanceof Error ? err.message : 'fetch failed');
+      refreshIncompleteStatus = answer.status;
+      noteRefreshIncomplete(answer.why);
+      return null;
+    };
+    const accept = (answer: { tokens: Tokens; session: AuthSession }, how: string) => {
+      if (superseded()) {
+        const now = useAuthStore.getState();
+        return now.accessToken && now.refreshToken
+          ? { accessToken: now.accessToken, refreshToken: now.refreshToken }
+          : null;
+      }
+      // Someone else's session (the fallback sign-in): drop this one's
+      // tab and offline copy first, as a sign-out does.
+      if (priorUserId && answer.session.user.id !== priorUserId) {
+        noteSessionCleared('refresh-other-user');
+        useAuthStore.getState().clear();
+      }
+      useAuthStore.getState().setSession({ ...answer.tokens, session: answer.session });
+      if (how !== 'cookie') noteRefreshVia(how);
+      return answer.tokens;
+    };
+    try {
+      const state = useAuthStore.getState();
+      const attempts: Array<{ how: string; body: { refreshToken?: string } }> = [];
+      if (state.legacyRefreshToken) {
+        attempts.push({ how: 'saved', body: { refreshToken: state.legacyRefreshToken } });
+      }
+      attempts.push({ how: 'cookie', body: {} });
+      if (state.refreshToken && state.refreshToken !== state.legacyRefreshToken) {
+        attempts.push({ how: 'memory', body: { refreshToken: state.refreshToken } });
+      }
+      for (const attempt of attempts) {
+        const answer = await signInCall('auth.refresh', attempt.body);
+        if (answer.kind === 'ok') return accept(answer, attempt.how);
+        if (answer.kind === 'incomplete') return incomplete(answer);
+        // Refused: an older build's token is not tried again.
+        if (attempt.how === 'saved' && !superseded()) {
+          useAuthStore.setState({ legacyRefreshToken: null });
+        }
+      }
+      if (superseded()) return null;
+
+      // Every refresh was refused. Inside Telegram, sign in again from
+      // initData (the safety net for a cookie the browser did not keep).
+      const initData = getTg()?.initData;
+      if (initData) {
+        const answer = await signInCall('auth.telegramLogin', { initData });
+        if (answer.kind === 'ok') return accept(answer, 'telegram');
+        if (answer.kind === 'incomplete') return incomplete(answer);
+      }
+      if (superseded()) return null;
+      if (options.boot && useAuthStore.getState().accessToken) return null;
+      // Refresh token itself is bad: clear auth so AuthGate routes the
+      // user back through telegramLogin.
+      noteSessionCleared('refresh-rejected');
+      useAuthStore.getState().clear();
       return null;
     } finally {
       refreshInFlight = null;
     }
   })();
   return refreshInFlight;
+}
+
+let bootRefreshStarted = false;
+
+/**
+ * Review MWD-14 (modern-web-guidance: privacy): the access token is not
+ * saved, so a start with a saved session gets one here, once, before the
+ * pages ask (they would also get one on their first call, through
+ * authFetch). A session saved by an older build is moved to the cookie
+ * here too. Offline, this fails as a network failure: the app opens on the
+ * saved session and the offline copy, and the next call online tries again.
+ * Not while an invite is being accepted: that sign-in may switch the
+ * workspace, and this refresh would race it.
+ */
+export async function startSessionRefresh(): Promise<void> {
+  if (bootRefreshStarted) return;
+  const s = useAuthStore.getState();
+  if (!s.session) return;
+  if (s.accessToken && !s.legacyRefreshToken) return;
+  bootRefreshStarted = true;
+  await refreshAccessToken({ boot: true });
+}
+
+function noteRefreshVia(how: string): void {
+  try {
+    getLogger().log('info', 'auth.refresh', { action: how });
+  } catch {
+    /* logger not booted */
+  }
+}
+
+/**
+ * Calls that sign in or are open to anyone: they never wait for a refresh
+ * first (one of them is the refresh itself).
+ */
+const SIGN_IN_PATHS = new Set([
+  'auth.refresh',
+  'auth.telegramLogin',
+  'auth.acceptInvite',
+  'auth.nonTelegramLogin',
+  'auth.devBypassLogin',
+  'auth.devPersonaLogin',
+  'auth.devPersonas',
+  'auth.loginModes',
+]);
+
+function trpcPath(url: string): string {
+  const path = url.split('?')[0] ?? url;
+  const i = path.indexOf('/trpc/');
+  return i < 0 ? '' : path.slice(i + '/trpc/'.length);
 }
 
 /** Queries may wait this long for an answer, writes a little longer. */
@@ -284,33 +439,50 @@ export async function authFetch(
 ): Promise<Response> {
   const attach = (token: string | null): RequestInit => ({
     ...init,
+    // Review MWD-14: the auth calls set or clear the refresh cookie; send
+    // and keep it when the api is on another origin (development), as
+    // signInCall does. Same origin in production, where this changes
+    // nothing.
+    ...(isAuthCall ? { credentials: 'include' as const } : {}),
     headers: {
       ...(init.headers as Record<string, string> | undefined),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
   });
 
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const path = trpcPath(url);
+  const isSignIn = path.split(',').some((p) => SIGN_IN_PATHS.has(p));
+  const isAuthCall = path.split(',').some((p) => p.startsWith('auth.'));
+
   let token = useAuthStore.getState().accessToken;
+  // Review MWD-14 (modern-web-guidance: privacy): the access token lives
+  // in memory, so after a reload there is none until the first refresh.
+  // Wait for it (single-flight) instead of sending the call to be refused.
+  // The outbox replays through here too, so a queued write is sent with a
+  // fresh token, or stays queued while none can be had.
+  if (!token && !isSignIn && canRefresh()) {
+    const refreshed = await refreshAccessToken();
+    token = refreshed?.accessToken ?? useAuthStore.getState().accessToken;
+    if (!token && canRefresh()) throw refreshIncompleteError(refreshIncompleteStatus);
+  }
   let res = await guardedFetch(input, attach(token));
   if (res.status !== 401) return res;
 
   // 401 → try to refresh, then retry once. We don't refresh on the
-  // /auth.refresh route itself (would loop) nor on the /auth.telegramLogin
-  // route (anonymous by design).
-  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  if (url.includes('/auth.refresh') || url.includes('/auth.telegramLogin')) {
-    return res;
-  }
-  // refreshAccessToken clears the session itself when the server rejects
-  // the refresh token. A refresh that merely failed to complete (offline,
-  // api restarting, throttled) says nothing about the session, so it must
+  // /auth.refresh route itself (would loop) nor on the sign-in routes
+  // (anonymous by design).
+  if (isSignIn) return res;
+  // refreshAccessToken clears the session itself when every way to renew
+  // it is refused. A refresh that merely failed to complete (offline, api
+  // restarting, throttled) says nothing about the session, so it must
   // not reach the caller as UNAUTHORIZED: AuthGate drops the session on
   // an unauthorized `auth.me`, and a mutation would fail outright instead
   // of going to the offline queue. Surface it as the network failure it is.
-  const hadRefreshToken = !!useAuthStore.getState().refreshToken;
+  const hadSession = canRefresh();
   const refreshed = await refreshAccessToken();
   if (!refreshed) {
-    if (hadRefreshToken && useAuthStore.getState().refreshToken) {
+    if (hadSession && canRefresh()) {
       throw refreshIncompleteError(refreshIncompleteStatus);
     }
     return res;

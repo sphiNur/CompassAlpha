@@ -26,7 +26,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../../stores/authStore';
-import { noteSessionCleared, trpc } from '../../lib/trpc';
+import { noteSessionCleared, startSessionRefresh, trpc } from '../../lib/trpc';
 import { getTg } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 import { STALE } from '../../config/timings';
@@ -57,6 +57,7 @@ export function useSignIn() {
   const session = useAuthStore((s) => s.session);
   const authHydrated = useAuthStore((s) => s.hasHydrated);
   const setSession = useAuthStore((s) => s.setSession);
+  const patchSession = useAuthStore((s) => s.patchSession);
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
   const toast = useToast();
@@ -155,15 +156,23 @@ export function useSignIn() {
     meUnauthorized.current = false;
   }, [authHydrated, accessToken, loginSession]);
 
-  // Refresh session in store when auth.me succeeds.
+  // Refresh session in store when auth.me succeeds. Review MWD-14: the
+  // tokens are not touched (the refresh token may only be in the cookie).
   useEffect(() => {
     if (!me.data) return;
-    const at = useAuthStore.getState().accessToken;
-    const rt = useAuthStore.getState().refreshToken;
-    if (!at || !rt) return;
-    setSession({ accessToken: at, refreshToken: rt, session: me.data });
+    if (!useAuthStore.getState().accessToken) return;
+    patchSession(me.data);
     setLoginSession(me.data);
-  }, [me.data, setSession]);
+  }, [me.data, patchSession]);
+
+  // Review MWD-14 (modern-web-guidance: privacy): the access token is not
+  // saved, so a start with a saved session renews it once (lib/trpc.ts
+  // startSessionRefresh). Not during an invite launch, which signs in on
+  // its own and may switch the workspace.
+  useEffect(() => {
+    if (!authHydrated || inviteToken) return;
+    void startSessionRefresh();
+  }, [authHydrated, inviteToken]);
 
   /** The step every successful sign-in takes. */
   const signedIn = (data: SignInResult) => {

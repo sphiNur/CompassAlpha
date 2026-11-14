@@ -104,8 +104,47 @@ export function isUsableSession(value: unknown): value is AuthSession {
 
 export type PersistedAuth = Pick<
   AuthState,
-  'accessToken' | 'refreshToken' | 'session' | 'currentStoreId'
+  'accessToken' | 'refreshToken' | 'legacyRefreshToken' | 'session' | 'currentStoreId'
 >;
+
+/**
+ * Review MWD-14 (modern-web-guidance: privacy): what is saved under
+ * `compass.auth` now. The session (who, which organisation and member,
+ * what they may do, for the offline start and the per-user query cache)
+ * and the chosen store: no token. The access token is kept in memory and
+ * the refresh token is an HttpOnly cookie the server sets
+ * (apps/api/src/http/refreshCookie.ts).
+ *
+ * `refreshToken` is still written, as one of two values:
+ *   - while a session saved by an older build has not been moved to the
+ *     cookie yet, its refresh token (`legacyRefreshToken`), so a start
+ *     that is offline, or closed before the move, can still make it;
+ *   - otherwise {@link REFRESH_TOKEN_PLACEHOLDER}. Not a token: an older
+ *     build (a rollback) reads it as one, sends it to auth.refresh, is
+ *     refused and signs in again, as for any refused refresh token.
+ *     Without it, that build would hold a session with no token and no way
+ *     to sign in again from it.
+ */
+export const REFRESH_TOKEN_PLACEHOLDER = 'mwd14-refresh-token-is-in-a-cookie';
+
+export interface SavedAuth {
+  session: AuthSession | null;
+  currentStoreId: StoreContext;
+  refreshToken?: string | null;
+}
+
+/** What of the store is written to localStorage (the persist `partialize`). */
+export function savedAuth(
+  state: Pick<AuthState, 'session' | 'currentStoreId' | 'legacyRefreshToken'>,
+): SavedAuth {
+  return {
+    session: state.session,
+    currentStoreId: state.currentStoreId,
+    ...(state.session
+      ? { refreshToken: state.legacyRefreshToken ?? REFRESH_TOKEN_PLACEHOLDER }
+      : {}),
+  };
+}
 
 /**
  * A session saved before the server kept only the four languages
@@ -136,10 +175,21 @@ export function mergePersistedAuth<T extends PersistedAuth>(persisted: unknown, 
   const p = (persisted ?? {}) as Partial<PersistedAuth>;
   if (!isUsableSession(p.session)) return current;
   const session = withKnownLocales(p.session);
+  // Review MWD-14: a session saved by an older build still carries its
+  // tokens. The access token is used from memory until it runs out; the
+  // refresh token is moved to the cookie by the first refresh
+  // (lib/trpc.ts), and stays saved until then. Neither is written back.
+  const legacyRefreshToken =
+    typeof p.refreshToken === 'string' &&
+    p.refreshToken.length > 0 &&
+    p.refreshToken !== REFRESH_TOKEN_PLACEHOLDER
+      ? p.refreshToken
+      : null;
   return {
     ...current,
     accessToken: typeof p.accessToken === 'string' ? p.accessToken : null,
-    refreshToken: typeof p.refreshToken === 'string' ? p.refreshToken : null,
+    refreshToken: null,
+    legacyRefreshToken,
     session,
     currentStoreId: resolveCurrentStore(
       typeof p.currentStoreId === 'string' ? p.currentStoreId : null,
@@ -149,8 +199,22 @@ export function mergePersistedAuth<T extends PersistedAuth>(persisted: unknown, 
 }
 
 interface AuthState {
+  /** Review MWD-14: in memory only, never saved. */
   accessToken: string | null;
+  /**
+   * Review MWD-14: the refresh token the server last returned, in memory
+   * only. The cookie is what a refresh sends; this is the fallback where
+   * the browser does not keep the cookie (Telegram Web in a browser that
+   * blocks cookies in frames), for as long as the page stays open.
+   */
   refreshToken: string | null;
+  /** Review MWD-14: an older build's saved refresh token, until a refresh moves it to the cookie. */
+  legacyRefreshToken: string | null;
+  /**
+   * Bumped by every sign-in and sign-out. A refresh that was in flight
+   * across one does not write its (older) session over the new one.
+   */
+  epoch: number;
   session: AuthSession | null;
   currentStoreId: StoreContext;
   hasHydrated: boolean;
@@ -169,6 +233,8 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       accessToken: null,
       refreshToken: null,
+      legacyRefreshToken: null,
+      epoch: 0,
       session: null,
       currentStoreId: null,
       hasHydrated: false,
@@ -178,6 +244,10 @@ export const useAuthStore = create<AuthState>()(
           return {
             accessToken,
             refreshToken,
+            // The server answered with tokens, so it has set the cookie:
+            // an older build's saved token is no longer needed.
+            legacyRefreshToken: null,
+            epoch: state.epoch + 1,
             session,
             currentStoreId: resolveCurrentStore(state.currentStoreId, session),
           };
@@ -209,17 +279,21 @@ export const useAuthStore = create<AuthState>()(
         resetNavStore();
         // R2-ENG-1: the offline copy of their data goes with the session.
         void clearPersistedQueries();
-        set({ accessToken: null, refreshToken: null, session: null, currentStoreId: null });
+        set((state) => ({
+          accessToken: null,
+          refreshToken: null,
+          legacyRefreshToken: null,
+          epoch: state.epoch + 1,
+          session: null,
+          currentStoreId: null,
+        }));
       },
     }),
     {
       name: AUTH_STORAGE_KEY,
-      partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        session: state.session,
-        currentStoreId: state.currentStoreId,
-      }),
+      // Review MWD-14 (modern-web-guidance: privacy): no token is saved
+      // (SavedAuth above).
+      partialize: (state: AuthState): SavedAuth => savedAuth(state),
       merge: mergePersistedAuth,
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

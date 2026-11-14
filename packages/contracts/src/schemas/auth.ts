@@ -49,7 +49,13 @@ export const NonTelegramLoginInputSchema = z.object({
  * input, not to describe the token.
  */
 export const RefreshInputSchema = z.object({
-  refreshToken: z.string().min(20).max(4096),
+  /**
+   * Review MWD-14 (modern-web-guidance: privacy): optional since the web
+   * app keeps its refresh token in an HttpOnly cookie, which auth.refresh
+   * reads when the body has none. The Fine app still sends it here, and a
+   * token here always wins over the cookie.
+   */
+  refreshToken: z.string().min(20).max(4096).optional(),
 });
 
 export const StoreSummarySchema = z.object({

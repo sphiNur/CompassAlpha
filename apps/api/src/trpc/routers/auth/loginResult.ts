@@ -8,6 +8,8 @@ import { accessTokenExpiry, signAccess } from '../../../infra/jwt';
 import { issueRefresh, revokeFamilyForUser } from '../../../services/refreshTokens';
 import { buildSessionPayload } from '../../../services/sessionPayload';
 import type { RequestContext } from '../../context';
+import { env } from '../../../env';
+import { setRefreshCookie } from '../../../http/refreshCookie';
 
 export async function issueLoginResult(
   db: DB,
@@ -69,4 +71,22 @@ export async function endLeftRefreshChain(ctx: RequestContext): Promise<void> {
   const family = ctx.session?.refreshFamily;
   if (!family || !ctx.session) return;
   await revokeFamilyForUser(ctx.db, family, ctx.session.userId);
+}
+
+/**
+ * Review MWD-14 (modern-web-guidance: privacy): every sign-in and refresh
+ * also sets the refresh token as an HttpOnly cookie (http/refreshCookie.ts),
+ * so the web app need not keep it in localStorage. The JSON is returned
+ * unchanged: the Fine app reads `tokens.refreshToken` from it.
+ */
+export function withRefreshCookie<
+  T extends { tokens: { refreshToken: string; refreshExpiresAt: string } },
+>(ctx: Pick<RequestContext, 'hono'>, result: T): T {
+  setRefreshCookie(
+    ctx.hono,
+    result.tokens.refreshToken,
+    result.tokens.refreshExpiresAt,
+    env.NODE_ENV === 'production',
+  );
+  return result;
 }

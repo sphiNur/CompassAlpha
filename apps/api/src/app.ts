@@ -83,6 +83,10 @@ export function createApp() {
         'X-Idempotency-Key',
         'X-Trace-Id',
         'X-Compass-Org',
+        // Review MWD-14: asks auth.refresh to read the refresh cookie
+        // (http/refreshCookie.ts); the web app in development is on
+        // another port, so this is preflighted there.
+        'X-Compass-Refresh',
       ],
     }),
   );

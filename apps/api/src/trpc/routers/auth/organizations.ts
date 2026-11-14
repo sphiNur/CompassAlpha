@@ -17,7 +17,7 @@ import { detectLocale } from '@compass/i18n';
 import { authedProcedure } from '../../trpc';
 import { isUniqueViolation } from '../../../services/pgErrors';
 import { isPlatformAdmin } from '../../../services/platformAdmin';
-import { endLeftRefreshChain, issueLoginResult } from './loginResult';
+import { endLeftRefreshChain, issueLoginResult, withRefreshCookie } from './loginResult';
 
 export const organizationProcedures = {
   /**
@@ -48,13 +48,16 @@ export const organizationProcedures = {
           .where(eq(s.users.id, ctx.session!.userId)),
       );
       await endLeftRefreshChain(ctx);
-      return issueLoginResult(
-        ctx.db,
-        ctx.session!.userId,
-        member.id,
-        member.orgId,
-        ctx.ip,
-        ctx.userAgent,
+      return withRefreshCookie(
+        ctx,
+        await issueLoginResult(
+          ctx.db,
+          ctx.session!.userId,
+          member.id,
+          member.orgId,
+          ctx.ip,
+          ctx.userAgent,
+        ),
       );
     }),
 
@@ -112,13 +115,16 @@ export const organizationProcedures = {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       }
       await endLeftRefreshChain(ctx);
-      return issueLoginResult(
-        ctx.db,
-        user.id,
-        createdOrg.ownerMemberId,
-        createdOrg.orgId,
-        ctx.ip,
-        ctx.userAgent,
+      return withRefreshCookie(
+        ctx,
+        await issueLoginResult(
+          ctx.db,
+          user.id,
+          createdOrg.ownerMemberId,
+          createdOrg.orgId,
+          ctx.ip,
+          ctx.userAgent,
+        ),
       );
     }),
 };

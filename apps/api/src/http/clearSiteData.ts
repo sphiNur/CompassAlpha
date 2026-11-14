@@ -6,8 +6,9 @@
  *
  * Only `"cache"`. `"storage"` would also wipe the offline outbox
  * (IndexedDB), which can hold other people's queued writes on a shared
- * phone, and the service worker's offline shell; there is no session
- * cookie for `"cookies"` (the tokens are cleared by the client).
+ * phone, and the service worker's offline shell. Not `"cookies"` either:
+ * the one cookie, the refresh cookie (review MWD-14), is removed by
+ * auth.signOut itself with a `Max-Age=0` Set-Cookie (http/refreshCookie.ts).
  *
  * tRPC builds its own Response, so the header is added after it, on the
  * calls whose path names `auth.signOut` (alone or in a batch).

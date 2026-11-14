@@ -14,7 +14,7 @@ import { logger } from '../../../infra/log';
 import { enforceRate } from './limits';
 import { isNonTelegramLoginAvailable, parseNonTelegramUsers } from './modes';
 import { pickActiveMember } from './identity';
-import { issueLoginResult } from './loginResult';
+import { issueLoginResult, withRefreshCookie } from './loginResult';
 
 function digestSecret(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
@@ -85,6 +85,9 @@ export const nonTelegramProcedures = {
           .where(eq(s.users.id, user.id)),
       );
 
-      return issueLoginResult(ctx.db, user.id, member.id, member.orgId, ctx.ip, ctx.userAgent);
+      return withRefreshCookie(
+        ctx,
+        await issueLoginResult(ctx.db, user.id, member.id, member.orgId, ctx.ip, ctx.userAgent),
+      );
     }),
 };

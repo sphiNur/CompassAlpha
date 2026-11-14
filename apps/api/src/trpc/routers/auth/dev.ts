@@ -10,12 +10,11 @@ import { sql } from 'drizzle-orm';
 import { DevPersonaLoginInputSchema } from '@compass/contracts';
 import { inSystem, type DB } from '@compass/db';
 import { publicProcedure } from '../../trpc';
-import { accessTokenExpiry, signAccess } from '../../../infra/jwt';
 import { logger } from '../../../infra/log';
 import { executeRows } from '../../../services/sqlRows';
-import { buildSessionPayload } from '../../../services/sessionPayload';
 import type { RequestContext } from '../../context';
 import { enforceRate } from './limits';
+import { issueLoginResult, withRefreshCookie } from './loginResult';
 import { devLoginUnavailableReason } from './modes';
 
 type LoginIdentity = {
@@ -160,33 +159,26 @@ async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginId
   };
 }
 
-async function issueDevBypassLoginResult(db: DB, userId: string, memberId: string, orgId: string) {
-  const session = await buildSessionPayload(db, userId, memberId, orgId);
-  const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
-  const accessExpiresAt = accessTokenExpiry().toISOString();
-  return {
-    tokens: {
-      accessToken,
-      // Keep this truthy so the normal AuthGate/auth.me synchronization
-      // path runs in the browser, but deliberately do not issue a tracked
-      // refresh token. If this access token expires, refresh fails, auth
-      // clears, and the development-only bypass logs in again.
-      //
-      // 2026-07-30: the sentinel used to be 'dev-bypass' — 10 characters,
-      // against a `RefreshInputSchema` of `z.string().min(20).max(200)`.
-      // So auth.refresh answered 400 BAD_REQUEST with a Zod `too_small`
-      // dump rather than 401. Same outcome for the client (any non-ok
-      // response clears auth), but it reads like a client bug and sent a
-      // debugging session chasing a malformed request instead of an
-      // expired session. Long enough to reach the handler now, where
-      // verifyRefresh rejects it as what it actually is: not a valid
-      // refresh token.
-      refreshToken: 'dev-bypass-no-refresh-token',
-      accessExpiresAt,
-      refreshExpiresAt: accessExpiresAt,
-    },
-    session,
-  };
+/**
+ * A development sign-in: the same result, refresh chain and refresh cookie
+ * as a Telegram sign-in. Review MWD-14 (modern-web-guidance: privacy): the
+ * web app no longer saves its tokens, so a reload renews the session from
+ * the cookie; with the placeholder refresh token these logins used to hand
+ * out, every reload of a development build signed in again from scratch
+ * (the tab and the offline copy gone).
+ */
+async function issueDevLoginResult(ctx: RequestContext, identity: LoginIdentity) {
+  return withRefreshCookie(
+    ctx,
+    await issueLoginResult(
+      ctx.db,
+      identity.userId,
+      identity.memberId,
+      identity.orgId,
+      ctx.ip,
+      ctx.userAgent,
+    ),
+  );
 }
 
 export const devLoginProcedures = {
@@ -272,7 +264,7 @@ export const devLoginProcedures = {
       if (err instanceof TRPCError) throw err;
       rethrowDevLoginDatabaseError(err);
     }
-    return issueDevBypassLoginResult(ctx.db, identity.userId, identity.memberId, identity.orgId);
+    return issueDevLoginResult(ctx, identity);
   }),
 
   devPersonaLogin: publicProcedure
@@ -287,6 +279,6 @@ export const devLoginProcedures = {
         if (err instanceof TRPCError) throw err;
         rethrowDevLoginDatabaseError(err);
       }
-      return issueDevBypassLoginResult(ctx.db, identity.userId, identity.memberId, identity.orgId);
+      return issueDevLoginResult(ctx, identity);
     }),
 };

@@ -28,7 +28,7 @@ import {
   telegramUserOf,
   touchTelegramUser,
 } from './identity';
-import { issueLoginResult } from './loginResult';
+import { issueLoginResult, withRefreshCookie } from './loginResult';
 
 export const inviteProcedures = {
   /**
@@ -287,6 +287,6 @@ export const inviteProcedures = {
       ctx.ip,
       ctx.userAgent,
     );
-    return { ...login, alreadyMember: identity.alreadyMember };
+    return withRefreshCookie(ctx, { ...login, alreadyMember: identity.alreadyMember });
   }),
 };

@@ -22,6 +22,31 @@ type Db = ReturnType<typeof getDb>;
 export interface TestContextOptions {
   /** As the X-Idempotency-Key header would set it. */
   idempotencyKey?: string | null;
+  /** The request side, and where the response's headers land (testHono). */
+  hono?: TestHono;
+}
+
+/**
+ * The part of a Hono context the procedures use: the request's headers
+ * (the refresh cookie, review MWD-14) and the response headers they add
+ * (`Set-Cookie`), which a test reads back from `setCookies`.
+ */
+export interface TestHono {
+  req: { raw: Request; header: (name: string) => string | undefined };
+  header: (name: string, value: string, options?: { append?: boolean }) => void;
+  setCookies: string[];
+}
+
+export function testHono(requestHeaders: Record<string, string> = {}): TestHono {
+  const raw = new Request('http://localhost/trpc/test', { headers: requestHeaders });
+  const setCookies: string[] = [];
+  return {
+    req: { raw, header: (name) => raw.headers.get(name) ?? undefined },
+    header: (name, value) => {
+      if (name.toLowerCase() === 'set-cookie') setCookies.push(value);
+    },
+    setCookies,
+  };
 }
 
 /** What createContext builds for a request signed in as `session` (null: anonymous). */
@@ -31,8 +56,7 @@ export function testContext(
 ): RequestContext {
   const db = getDb();
   return {
-    // No procedure reads the Hono request itself.
-    hono: {} as RequestContext['hono'],
+    hono: (options.hono ?? testHono()) as unknown as RequestContext['hono'],
     db,
     log: logger,
     traceId: `test-${Date.now()}`,
@@ -62,7 +86,7 @@ export function gateCaller(
   options: { sessionUnavailable?: boolean } = {},
 ) {
   return appRouter.createCaller({
-    hono: {} as RequestContext['hono'],
+    hono: testHono() as unknown as RequestContext['hono'],
     db: {} as Db,
     log: logger,
     traceId: 'test',

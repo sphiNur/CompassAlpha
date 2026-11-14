@@ -6,9 +6,16 @@
  * noticing. For a long time it could not: the refresh endpoint rejected
  * every token the server issued, and nothing tested the two together.
  *
- * The development logins deliberately hand out a placeholder refresh
- * token, so this signs in the way Telegram does (signed initData) to get
- * a real one, then opens the app with an access token that is no good.
+ * Review MWD-14 (modern-web-guidance: privacy): the app no longer saves
+ * either token. The access token is in memory and the refresh token in an
+ * HttpOnly cookie the api sets. This opens the app with a sign-in saved
+ * the way an older build saved it (an access token that is no good and a
+ * refresh token), so it also covers the move: the saved refresh token is
+ * sent once, the api sets the cookie, nothing secret stays in storage, and
+ * a reload renews the session from the cookie alone.
+ *
+ * Signs in the way Telegram does (signed initData), outside the page, so
+ * the page starts with no cookie of its own.
  */
 import { expect, test } from '@playwright/test';
 import { ADMIN_TG_ID, API_URL } from '../env';
@@ -60,19 +67,37 @@ test('an expired access token is refreshed and the app carries on', async ({ pag
   // The session was kept, not silently replaced by a fresh sign-in.
   expect(calls.filter((c) => /Login$/.test(c.path))).toEqual([]);
 
+  // Nothing secret is saved any more: the session, and in place of the
+  // refresh token a placeholder an older build would be refused with.
   await expect
-    .poll(() =>
-      page.evaluate(
-        () => JSON.parse(window.localStorage.getItem('compass.auth')!).state.accessToken,
-      ),
-    )
-    .not.toBe('this.access.token-is-no-good');
+    .poll(() => page.evaluate(() => JSON.parse(window.localStorage.getItem('compass.auth')!).state))
+    .toMatchObject({ refreshToken: 'mwd14-refresh-token-is-in-a-cookie' });
   const stored = await page.evaluate(
     () => JSON.parse(window.localStorage.getItem('compass.auth')!).state,
   );
-  expect(stored.accessToken.split('.')).toHaveLength(3);
-  expect(stored.accessToken).not.toBe('this.access.token-is-no-good');
-  expect(stored.refreshToken.split('.')).toHaveLength(3);
-  expect(stored.refreshToken).not.toBe(tokens.refreshToken);
+  expect(stored).not.toHaveProperty('accessToken');
   expect(stored.session.user.id).toBe(session.user.id);
+  expect(JSON.stringify(stored)).not.toContain(tokens.refreshToken);
+
+  // The refresh token is now an HttpOnly cookie, sent only to auth.refresh.
+  const cookies = await page.context().cookies();
+  const cookie = cookies.find((c) => c.name === 'compass_rt');
+  expect(cookie?.httpOnly).toBe(true);
+  expect(cookie?.path).toBe('/trpc/auth.refresh');
+  expect(cookie?.value.split('.')).toHaveLength(3);
+  expect(cookie?.value).not.toBe(tokens.refreshToken);
+
+  // A reload has no token at all: it renews from the cookie, no sign-in.
+  calls.length = 0;
+  const refreshBodies: unknown[] = [];
+  page.on('request', (req) => {
+    if (/\/trpc\/auth\.refresh/.test(req.url())) refreshBodies.push(req.postDataJSON());
+  });
+  await page.reload();
+  await expect(
+    page.getByTestId('primary-nav').or(page.getByRole('heading', { name: 'Welcome to Compass' })),
+  ).toBeVisible();
+  await expect.poll(() => calls).toContainEqual({ path: 'auth.refresh', status: 200 });
+  expect(refreshBodies[0]).toEqual({});
+  expect(calls.filter((c) => /Login$/.test(c.path))).toEqual([]);
 });
