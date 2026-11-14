@@ -125,6 +125,19 @@
   .app-main {
     padding-bottom: var(--app-nav-reserve);
     scroll-padding-bottom: var(--app-nav-reserve);
+    /* Review MWC-06: focus and find stop below the page's sticky bar
+       (StickyPageBar publishes its height); not where the bar scrolls
+       away with the page (STICKY_BAR_SHORT_VIEWPORT). */
+    scroll-padding-top: var(--app-sticky-bar-h);
+  }
+  :root {
+    /* Written by StickyPageBar (packages/ui) while one is on the page. */
+    --app-sticky-bar-h: 0px;
+  }
+  @media (max-height: 500px) {
+    .app-main {
+      scroll-padding-top: 0;
+    }
   }
   [data-main-button] .app-main {
     padding-bottom: 0;

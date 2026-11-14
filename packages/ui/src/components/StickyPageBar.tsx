@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { cn } from '../cn';
 
 /**
@@ -38,9 +38,39 @@ export interface StickyPageBarProps {
   className?: string;
 }
 
+/** The CSS variable <main>'s scroll-padding-top reads (apps/web styles). */
+export const STICKY_BAR_HEIGHT_VAR = '--app-sticky-bar-h';
+
+/**
+ * Review MWC-06 (modern-web-guidance: state-aware-sticky-headers): the
+ * pinned bar is up to ~100 px tall on Order, and a row reached by
+ * keyboard or find could scroll in under it (WCAG 2.4.11). The bar
+ * publishes its height for <main>'s scroll-padding-top while it is on
+ * the page. Nothing is drawn differently.
+ */
+function usePublishHeight() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    const root = typeof document === 'undefined' ? null : document.documentElement;
+    if (!el || !root) return;
+    const publish = () => root.style.setProperty(STICKY_BAR_HEIGHT_VAR, `${el.offsetHeight}px`);
+    publish();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
+    observer?.observe(el);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty(STICKY_BAR_HEIGHT_VAR);
+    };
+  }, []);
+  return ref;
+}
+
 export function StickyPageBar({ children, direction = 'row', className }: StickyPageBarProps) {
+  const ref = usePublishHeight();
   return (
     <div
+      ref={ref}
       className={cn(
         'sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2',
         // A11Y-1 (2026-10-31): on a short viewport (a phone at 200% zoom
