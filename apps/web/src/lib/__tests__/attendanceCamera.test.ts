@@ -165,6 +165,16 @@ describe('grabFrame', () => {
     ]);
   });
 
+  test("the tracker worker's frame (an ImageBitmap) is drawn by its own size (MWD-05)", async () => {
+    const made = canvases();
+    const bitmap = { width: 1280, height: 960 } as unknown as ImageBitmap;
+    grabFrame(bitmap, 560);
+    expect(made[0]).toMatchObject({ width: 560, height: 420 });
+    expect(made[0]!.drawn).toEqual([[bitmap, 0, 0, 560, 420]]);
+    const small = { width: 120, height: 480 } as unknown as ImageBitmap;
+    expect(await reason(() => grabFrame(small))).toBe('unavailable');
+  });
+
   test('no 2D context, no JPEG encoder or an empty picture: unavailable', async () => {
     canvases(JPEG, false);
     expect(await reason(() => grabFrame(video(640, 480)))).toBe('unavailable');

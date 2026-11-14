@@ -67,11 +67,18 @@ function toBase64Jpeg(
   return b64;
 }
 
-/** The video's current frame as a base64 JPEG (not mirrored). */
-export function grabFrame(video: HTMLVideoElement, maxSide = MAX_SIDE): string {
+/**
+ * The video's current frame as a base64 JPEG (not mirrored). Or a frame
+ * already taken from it: the face tracker's worker (review MWD-05) reads
+ * an ImageBitmap of the video, and the photo is that same frame, so the
+ * picture shows the pose or the blink the tracker saw.
+ */
+export function grabFrame(video: HTMLVideoElement | ImageBitmap, maxSide = MAX_SIDE): string {
+  const width = 'videoWidth' in video ? video.videoWidth : video.width;
+  const height = 'videoHeight' in video ? video.videoHeight : video.height;
   // A frame this small is a camera that has not really started.
-  if (video.videoWidth < 160 || video.videoHeight < 160) throw new CameraError('unavailable');
-  return toBase64Jpeg(video, video.videoWidth, video.videoHeight, maxSide);
+  if (width < 160 || height < 160) throw new CameraError('unavailable');
+  return toBase64Jpeg(video, width, height, maxSide);
 }
 
 /** A photo from the system camera as a base64 JPEG, scaled down. */

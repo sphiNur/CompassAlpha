@@ -13,6 +13,7 @@ import {
   type Facing,
 } from '../../lib/attendanceCamera';
 import {
+  holdFaceTracker,
   loadFaceTracker,
   onTrackerProgress,
   type FaceReading,
@@ -80,11 +81,15 @@ export function useCamera(facing: Facing | null) {
     if (stream) void video.play().catch(() => {});
   }, [video, stream]);
 
-  /** The current frame, or null (and the problem set) when the camera failed. */
-  const grab = (maxSide?: number): string | null => {
-    if (!video) return null;
+  /**
+   * The current frame, or `from` (the frame a tracker reading is of), or
+   * null (and the problem set) when the camera failed.
+   */
+  const grab = (maxSide?: number, from?: HTMLVideoElement | ImageBitmap): string | null => {
+    const source = from ?? video;
+    if (!source) return null;
     try {
-      return grabFrame(video, maxSide);
+      return grabFrame(source, maxSide);
     } catch {
       setProblem('unavailable');
       return null;
@@ -106,6 +111,8 @@ export function useTracker(open: boolean, kind: TrackerKind = 'landmarker') {
     setSlow(false);
     const stop = onTrackerProgress((p) => setPercent(Math.floor((p.loaded / p.total) * 100)), kind);
     const timer = setTimeout(() => setSlow(true), 30_000);
+    // MWD-05: the tracker's worker ends a while after the last camera closes.
+    const release = holdFaceTracker();
     void loadFaceTracker(kind).then((t) => {
       if (cancelled) return;
       setTracker(t);
@@ -115,6 +122,7 @@ export function useTracker(open: boolean, kind: TrackerKind = 'landmarker') {
       cancelled = true;
       stop();
       clearTimeout(timer);
+      release();
     };
   }, [open, kind]);
   return { tracker, state, percent, slow };
@@ -122,7 +130,9 @@ export function useTracker(open: boolean, kind: TrackerKind = 'landmarker') {
 
 /**
  * Reads the tracker every ~120 ms while `active`; once `check` has passed
- * HOLD readings in a row (faceGuide.ts), calls `onHeld` (once).
+ * HOLD readings in a row (faceGuide.ts), calls `onHeld` (once) with the
+ * frame of the last reading, to photograph. A tick without a new reading
+ * (the tracker's worker still busy, review MWD-05) counts for nothing.
  */
 export function useAutoCapture({
   active,
@@ -137,7 +147,7 @@ export function useAutoCapture({
   video: HTMLVideoElement | null;
   tracker: FaceTracker | null;
   check: (r: FaceReading, since: number) => Guide | null;
-  onHeld: () => void;
+  onHeld: (frame: HTMLVideoElement | ImageBitmap) => void;
   onGuide: (g: Guide | null) => void;
   /** Restarts the loop (the step). */
   key: string;
@@ -155,11 +165,13 @@ export function useAutoCapture({
     const started = performance.now();
     const steady = steadyCounter();
     const timer = setInterval(() => {
-      const next = checkRef.current(tracker.read(video), performance.now() - started);
+      const got = tracker.poll(video);
+      if (!got) return;
+      const next = checkRef.current(got.reading, got.at - started);
       guideRef.current(next);
       if (steady(next)) {
         clearInterval(timer);
-        heldRef.current();
+        heldRef.current(got.frame);
       }
     }, 120);
     return () => clearInterval(timer);
@@ -169,7 +181,8 @@ export function useAutoCapture({
 /**
  * Calls `onReading` with a tracker reading about every 50 ms while
  * `active` (blink and open mouth, 2026-11-07: a blink lasts ~150 ms, too
- * short for the 120 ms hold loop above).
+ * short for the 120 ms hold loop above). `now` is when the frame was
+ * taken, `frame` the frame itself (to photograph); only new readings.
  */
 export function useFrameLoop({
   active,
@@ -183,7 +196,7 @@ export function useFrameLoop({
   tracker: FaceTracker | null;
   /** Restarts the loop (the step). */
   key: string;
-  onReading: (r: FaceReading, now: number) => boolean | void;
+  onReading: (r: FaceReading, now: number, frame: HTMLVideoElement | ImageBitmap) => boolean | void;
 }) {
   const readRef = useRef(onReading);
   readRef.current = onReading;
@@ -192,8 +205,10 @@ export function useFrameLoop({
     // Hidden (MWD-06): no readings until the page is visible again.
     if (!active || !visible || !video || !tracker) return;
     const timer = setInterval(() => {
+      const got = tracker.poll(video);
+      if (!got) return;
       // `true` from the callback: this step is over.
-      if (readRef.current(tracker.read(video), performance.now()) === true) clearInterval(timer);
+      if (readRef.current(got.reading, got.at, got.frame) === true) clearInterval(timer);
     }, 50);
     return () => clearInterval(timer);
   }, [active, visible, video, tracker, key]);

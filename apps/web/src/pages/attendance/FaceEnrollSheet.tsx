@@ -158,9 +158,13 @@ export function FaceEnrollSheet({
       raf = requestAnimationFrame(tick);
       if (now - lastAt < FRAME_MS) return;
       lastAt = now;
-      const step = session.step(tracker.read(video), now);
+      // Only a new reading (review MWD-05: the tracker's worker may still be busy).
+      const got = tracker.poll(video);
+      if (!got) return;
+      const step = session.step(got.reading, got.at);
       if (step.grab) {
-        const b64 = grabRef.current(ENROLL_SIDE);
+        // The frame the reading is of, so the photo shows that pose.
+        const b64 = grabRef.current(ENROLL_SIDE, got.frame);
         if (b64) {
           shots.current[step.grab] = b64;
           session.took(step.grab);

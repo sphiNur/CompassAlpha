@@ -22,57 +22,59 @@
  * BlazeFace before; its four keypoints could not see eyelids. The turn
  * and tilt are measured from the eye, nose and mouth points the same way
  * as on the server.
+ *
+ * Review MWD-05 (modern-web-guidance: performance), 2026-11-14: the
+ * inference runs in a Web Worker (faceWorker.ts) where the phone allows
+ * it, so the 50 and 120 ms loops no longer block taps on the sheet. The
+ * page grabs each frame as an ImageBitmap, one frame in flight at a time
+ * (faceFrames.ts), and the photo is taken from the frame the reading is
+ * of. Without Worker, OffscreenCanvas or createImageBitmap, or when the
+ * worker does not start (no WebGL in workers on some iOS), the tracker
+ * runs on the page as before.
  */
 import wasmLoaderPath from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';
 import landmarkerModelPath from '../assets/mediapipe/face_landmarker.task?url';
+import { getLogger } from '@compass/telemetry';
+import { runningBuildId } from './build';
+import {
+  createFramePump,
+  workerSupported,
+  type FramePump,
+  type FreshReading,
+  type FromWorker,
+  type ToWorker,
+} from './faceFrames';
+import { LANDMARKER_OPTIONS, NONE, readResult, type FaceReading } from './faceMesh';
+import { readLocalPref, writeLocalPref } from './localPref';
 
 /** One kind since 2026-11-07 (the landmarker); kept as a name for the progress listeners. */
 export type TrackerKind = 'landmarker';
 
-export interface FaceReading {
-  /** Faces in the frame. */
-  count: number;
-  /**
-   * The largest face's head turn, as the server measures it: the nose's
-   * offset from the eyes' midpoint in eye distances, positive when the
-   * person turned to their own left (unmirrored frame). Null without a face.
-   */
-  yaw: number | null;
-  /**
-   * The nose between the eyes and the mouth, top to bottom: about 0.5
-   * looking straight, smaller with the chin up, larger with it down.
-   */
-  pitch: number | null;
-  /** The face's width as a share of the frame's. */
-  size: number | null;
-  /** The face box's centre, 0–1 across and down the (unmirrored) frame. */
-  cx: number | null;
-  cy: number | null;
-  /** How closed the eyes are, 0 (open) – 1 (shut): both eyes' blendshape, averaged. */
-  blink: number | null;
-  /** How open the mouth is, 0 (shut) – 1 (wide): the jawOpen blendshape. */
-  jaw: number | null;
-}
+/** What the tracker gives each frame (faceMesh.ts). */
+export type { FaceReading } from './faceMesh';
+export { MESH, pitchFrom, readMesh, readShapes, yawFrom } from './faceMesh';
+
+/** A reading of a frame no caller has seen yet, with that frame (to photograph). */
+export type FaceFrame = FreshReading<HTMLVideoElement | ImageBitmap>;
 
 export interface FaceTracker {
+  /** Where the inference runs (review MWD-05). */
+  readonly where: 'worker' | 'page';
+  /**
+   * The latest reading. On the page it is of the video's current frame;
+   * from the worker it can be one frame behind, or the same as the last
+   * call's. The loops use `poll`; kept for any other caller.
+   */
   read(video: HTMLVideoElement): FaceReading;
+  /**
+   * A reading no earlier poll returned, and the frame it is of (take the
+   * photo from that frame: it shows what the reading says), or null when
+   * none is ready yet: skip this tick. On the page, every poll reads the
+   * video's current frame.
+   */
+  poll(video: HTMLVideoElement): FaceFrame | null;
   close(): void;
-}
-
-type Point = { x: number; y: number };
-
-/** yaw from two eyes and the nose tip, in pixels. */
-export function yawFrom(eyeA: Point, eyeB: Point, nose: Point): number {
-  const dist = Math.hypot(eyeB.x - eyeA.x, eyeB.y - eyeA.y) || 1;
-  return (nose.x - (eyeA.x + eyeB.x) / 2) / dist;
-}
-
-/** pitch from two eyes, the nose tip and the mouth, in pixels. */
-export function pitchFrom(eyeA: Point, eyeB: Point, nose: Point, mouth: Point): number {
-  const eyes = (eyeA.y + eyeB.y) / 2;
-  const span = mouth.y - eyes || 1;
-  return (nose.y - eyes) / span;
 }
 
 /** The WebAssembly's size after decompression, for the progress bar. */
@@ -130,127 +132,109 @@ async function prefetch(kind: TrackerKind, files: { url: string; bytes: number }
 }
 
 const loading: Partial<Record<TrackerKind, Promise<FaceTracker | null>>> = {};
+/** The loaded tracker, once there is one. */
+let current: FaceTracker | null = null;
 
 /** The tracker, or null where it cannot run (no face clocking on this phone then). */
 export function loadFaceTracker(kind: TrackerKind = 'landmarker'): Promise<FaceTracker | null> {
-  loading[kind] ??= loadLandmarker().then((t) => {
+  loading[kind] ??= loadAny().then((t) => {
     if (!t) delete loading[kind];
+    current = t;
     return t;
   });
   return loading[kind];
 }
 
-const NONE = { yaw: null, pitch: null, size: null, cx: null, cy: null, blink: null, jaw: null };
+/**
+ * How long the worker outlives the last camera that used it. Review
+ * MWD-05: the worker holds the model (tens of MB) and a thread, so it ends
+ * when the camera sheets are gone; not at once, so a retry or a second
+ * punch does not start it again.
+ */
+const IDLE_CLOSE_MS = 30_000;
+let holders = 0;
+let idle: ReturnType<typeof setTimeout> | undefined;
 
 /**
- * Face mesh points used for the turn and tilt: the corners of each eye
- * (their midpoint is the eye), the nose tip, the mouth corners.
+ * Keeps the tracker while a camera shows; the returned function lets it
+ * go. When nobody holds it for IDLE_CLOSE_MS, a worker tracker is ended
+ * and the next load starts a new one. A tracker on the page stays, as
+ * before.
  */
-export const MESH = {
-  eyeA: [33, 133],
-  eyeB: [362, 263],
-  nose: 1,
-  mouth: [61, 291],
-} as const;
-
-type Mark = { x: number; y: number };
-
-/** A FaceReading from one face's mesh (normalised points) in a w×h frame. */
-export function readMesh(
-  marks: readonly Mark[],
-  w: number,
-  h: number,
-  count: number,
-  shapes: { blink: number | null; jaw: number | null } = { blink: null, jaw: null },
-): FaceReading {
-  if (marks.length < 468) return { count, ...NONE };
-  const px = (i: number) => ({ x: marks[i]!.x * w, y: marks[i]!.y * h });
-  const mid = ([a, b]: readonly [number, number]) => {
-    const p = px(a);
-    const q = px(b);
-    return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-  };
-  const eyeA = mid(MESH.eyeA);
-  const eyeB = mid(MESH.eyeB);
-  const nose = px(MESH.nose);
-  const mouth = mid(MESH.mouth);
-  let minX = 1;
-  let maxX = 0;
-  let minY = 1;
-  let maxY = 0;
-  for (const m of marks) {
-    if (m.x < minX) minX = m.x;
-    if (m.x > maxX) maxX = m.x;
-    if (m.y < minY) minY = m.y;
-    if (m.y > maxY) maxY = m.y;
-  }
-  return {
-    count,
-    yaw: yawFrom(eyeA, eyeB, nose),
-    pitch: pitchFrom(eyeA, eyeB, nose, mouth),
-    size: maxX - minX,
-    cx: (minX + maxX) / 2,
-    cy: (minY + maxY) / 2,
-    blink: shapes.blink,
-    jaw: shapes.jaw,
+export function holdFaceTracker(): () => void {
+  holders += 1;
+  clearTimeout(idle);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    holders -= 1;
+    if (holders === 0) idle = setTimeout(closeIdle, IDLE_CLOSE_MS);
   };
 }
 
-type Shape = { categoryName: string; score: number };
-
-/** The blink and jaw-open scores from one face's blendshapes. */
-export function readShapes(shapes: readonly Shape[] | undefined): {
-  blink: number | null;
-  jaw: number | null;
-} {
-  if (!shapes || shapes.length === 0) return { blink: null, jaw: null };
-  const score = (name: string) => shapes.find((x) => x.categoryName === name)?.score ?? null;
-  const l = score('eyeBlinkLeft');
-  const r = score('eyeBlinkRight');
-  return { blink: l !== null && r !== null ? (l + r) / 2 : null, jaw: score('jawOpen') };
+function closeIdle() {
+  if (holders > 0 || current?.where !== 'worker') return;
+  current.close();
+  current = null;
+  delete loading.landmarker;
 }
 
-async function loadLandmarker(): Promise<FaceTracker | null> {
+/** The build the worker failed to start in, on this phone (faceFrames.ts workerSupported). */
+const WORKER_FAILED_KEY = 'compass.faceWorker.failed';
+
+function note(level: 'info' | 'warn', action: string, data: Record<string, unknown>) {
   try {
-    const [{ FaceLandmarker }] = await Promise.all([
-      import('@mediapipe/tasks-vision'),
-      prefetch('landmarker', [
-        { url: wasmBinaryPath, bytes: WASM_BYTES },
-        { url: landmarkerModelPath, bytes: LANDMARKER_BYTES },
-      ]),
-    ]);
+    getLogger().log(level, 'face.tracker', { action, data });
+  } catch {
+    // No logger yet (tests, an early failure): nothing to report to.
+  }
+}
+
+async function loadAny(): Promise<FaceTracker | null> {
+  const build = runningBuildId();
+  const tryWorker = workerSupported(globalThis, readLocalPref(WORKER_FAILED_KEY), build);
+  // The page path needs the library on the page; start it with the download.
+  const lib = tryWorker ? null : import('@mediapipe/tasks-vision');
+  lib?.catch(() => {});
+  await prefetch('landmarker', [
+    { url: wasmBinaryPath, bytes: WASM_BYTES },
+    { url: landmarkerModelPath, bytes: LANDMARKER_BYTES },
+  ]);
+  if (tryWorker) {
+    const t = await loadWorkerTracker();
+    if (t) return t;
+    writeLocalPref(WORKER_FAILED_KEY, build ?? 'dev');
+  }
+  const t = await loadLandmarker(lib ?? import('@mediapipe/tasks-vision'));
+  note(t ? 'info' : 'warn', t ? 'page' : 'unavailable', { worker: tryWorker });
+  return t;
+}
+
+async function loadLandmarker(
+  lib: Promise<typeof import('@mediapipe/tasks-vision')>,
+): Promise<FaceTracker | null> {
+  try {
+    const { FaceLandmarker } = await lib;
     const landmarker = await FaceLandmarker.createFromOptions(
       { wasmLoaderPath, wasmBinaryPath },
-      {
-        baseOptions: { modelAssetPath: landmarkerModelPath },
-        runningMode: 'VIDEO',
-        // Two, to notice a second person in the frame.
-        numFaces: 2,
-        minFaceDetectionConfidence: 0.6,
-        minFacePresenceConfidence: 0.6,
-        minTrackingConfidence: 0.5,
-        // Blink and open mouth (2026-11-07).
-        outputFaceBlendshapes: true,
-      },
+      // CPU, MediaPipe's default delegate (as before MWD-05).
+      { ...LANDMARKER_OPTIONS, baseOptions: { modelAssetPath: landmarkerModelPath } },
     );
     let last = 0;
+    const read = (video: HTMLVideoElement): FaceReading => {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return { count: 0, ...NONE };
+      last = Math.max(last + 1, performance.now());
+      return readResult(landmarker.detectForVideo(video, last), w, h);
+    };
     return {
-      read(video) {
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (!w || !h) return { count: 0, ...NONE };
-        last = Math.max(last + 1, performance.now());
-        const result = landmarker.detectForVideo(video, last);
-        const faces = result.faceLandmarks;
-        if (faces.length === 0) return { count: 0, ...NONE };
-        const width = (f: readonly Mark[]) =>
-          Math.max(...f.map((m) => m.x)) - Math.min(...f.map((m) => m.x));
-        let best = 0;
-        faces.forEach((f, i) => {
-          if (width(f) > width(faces[best]!)) best = i;
-        });
-        const shapes = readShapes(result.faceBlendshapes?.[best]?.categories);
-        return readMesh(faces[best]!, w, h, faces.length, shapes);
+      where: 'page',
+      read,
+      poll(video) {
+        const at = performance.now();
+        return { reading: read(video), frame: video, at };
       },
       close() {
         landmarker.close();
@@ -259,4 +243,119 @@ async function loadLandmarker(): Promise<FaceTracker | null> {
   } catch {
     return null;
   }
+}
+
+/** The worker's start: compiling the wasm and the model, files already downloaded. */
+const WORKER_START_MS = 45_000;
+
+/** An absolute URL: the worker resolves relative ones against its own script. */
+const absolute = (path: string) => new URL(path, document.baseURI).href;
+
+/**
+ * Review MWD-05 (modern-web-guidance: performance): the tracker in a Web
+ * Worker (faceWorker.ts), or null when the worker cannot start (the page
+ * runs it then). After a good start, a worker that crashes, hangs or
+ * fails frames in a row is ended and the page loads its own tracker; the
+ * loops get no readings for those few seconds.
+ */
+async function loadWorkerTracker(): Promise<FaceTracker | null> {
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL('./faceWorker.ts', import.meta.url), { name: 'face-tracker' });
+  } catch (e) {
+    note('warn', 'workerFailed', { why: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
+  const started = await new Promise<Extract<FromWorker, { type: 'ready' }> | string>((resolve) => {
+    const timer = setTimeout(() => resolve('timeout'), WORKER_START_MS);
+    worker.onmessage = (e: MessageEvent<FromWorker>) => {
+      if (e.data.type === 'ready') resolve(e.data);
+      else if (e.data.type === 'failed') resolve(e.data.message);
+      else return;
+      clearTimeout(timer);
+    };
+    worker.onerror = (e) => {
+      e.preventDefault();
+      clearTimeout(timer);
+      resolve(e.message || 'worker error');
+    };
+    worker.postMessage({
+      type: 'init',
+      wasmLoaderPath: absolute(wasmLoaderPath),
+      wasmBinaryPath: absolute(wasmBinaryPath),
+      modelAssetPath: absolute(landmarkerModelPath),
+    } satisfies ToWorker);
+  });
+  if (typeof started === 'string') {
+    worker.terminate();
+    note('warn', 'workerFailed', { why: started });
+    return null;
+  }
+  note('info', 'worker', {
+    delegate: started.delegate,
+    ms: Math.round(started.ms),
+    gpuError: started.gpuError,
+  });
+  return workerTracker(worker);
+}
+
+function workerTracker(worker: Worker): FaceTracker {
+  let page: FaceTracker | null = null;
+  let gaveUp = false;
+  let closed = false;
+  let last: FaceReading = { count: 0, ...NONE };
+
+  function giveUp(why: string) {
+    if (gaveUp) return;
+    gaveUp = true;
+    pump.close();
+    worker.terminate();
+    writeLocalPref(WORKER_FAILED_KEY, runningBuildId() ?? 'dev');
+    note('warn', 'workerLost', { why });
+    void loadLandmarker(import('@mediapipe/tasks-vision')).then((t) => {
+      if (closed) t?.close();
+      else page = t;
+    });
+  }
+
+  const pump: FramePump<ImageBitmap> = createFramePump<ImageBitmap>({
+    now: () => performance.now(),
+    send: (frame, at, id) =>
+      worker.postMessage({ type: 'frame', id, at, frame } satisfies ToWorker, [frame]),
+    drop: (frame) => frame.close(),
+    broken: giveUp,
+  });
+  worker.onmessage = (e: MessageEvent<FromWorker>) => {
+    const m = e.data;
+    if (m.type === 'result') pump.deliver(m.id, m.reading, m.frame);
+    else if (m.type === 'error') pump.fail(m.id, m.frame);
+  };
+  worker.onerror = (e) => {
+    e.preventDefault();
+    giveUp(e.message || 'worker error');
+  };
+  // HAVE_CURRENT_DATA: before it, createImageBitmap(video) rejects.
+  const capture = (video: HTMLVideoElement) =>
+    video.videoWidth && video.videoHeight && video.readyState >= 2
+      ? createImageBitmap(video)
+      : null;
+
+  const poll = (video: HTMLVideoElement): FaceFrame | null => {
+    if (page) return page.poll(video);
+    const got = pump.poll(() => capture(video));
+    if (got) last = got.reading;
+    return got;
+  };
+  return {
+    where: 'worker',
+    poll,
+    read: (video) => (page ? page.read(video) : (poll(video)?.reading ?? last)),
+    close() {
+      closed = true;
+      pump.close();
+      worker.terminate();
+      page?.close();
+      page = null;
+    },
+  } satisfies FaceTracker;
 }
