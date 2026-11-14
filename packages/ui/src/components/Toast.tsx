@@ -63,12 +63,11 @@ export interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const TONE: Record<ToastTone, string> = {
-  info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)] ring-hairline',
-  success:
-    'bg-[var(--c-success-bg)] text-[var(--c-success-ink)] ring-1 ring-[var(--c-success)]',
-  warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)] ring-1 ring-[var(--c-warning)]',
-  danger:
-    'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)] ring-1 ring-[var(--c-danger)]',
+  info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)]',
+  // UI overhaul A2 (2026-11-15): the tint says the tone; no outline on it.
+  success: 'bg-[var(--c-success-bg)] text-[var(--c-success-ink)]',
+  warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)]',
+  danger: 'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)]',
 };
 
 /**
@@ -526,7 +525,9 @@ export function ToastProvider({
           }
         }}
         className={cn(
-          'flex min-w-[200px] max-w-[92vw] items-center gap-3 px-4 py-2.5 text-left',
+          // A floating layer: lifted by the nav's shadow, as the dock and
+          // the sheets are, not outlined (UI overhaul A2, 2026-11-15).
+          'flex min-w-[200px] max-w-[92vw] items-center gap-3 px-4 py-3 text-left shadow-[var(--shadow-nav)]',
           // A toast with buttons is a card; one with only its ✕ keeps the pill.
           t.actions ? 'rounded-[var(--r-card)]' : 'min-h-11 rounded-[var(--r-pill)]',
           TONE[t.tone],
@@ -556,7 +557,7 @@ export function ToastProvider({
                 'press hit-44 h-8 rounded-[var(--r-pill)] px-3 text-old-label font-semibold',
                 a.emphasis === 'primary'
                   ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
+                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
               )}
             >
               {a.label}
@@ -577,7 +578,7 @@ export function ToastProvider({
         }}
         className={cn(
           // min-h-11 (R2-VIS-2): a one-line toast was 37px tall.
-          'press min-h-11 min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
+          'press min-h-11 min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-3 text-left shadow-[var(--shadow-nav)]',
           TONE[t.tone],
         )}
         style={{ pointerEvents: 'auto' }}

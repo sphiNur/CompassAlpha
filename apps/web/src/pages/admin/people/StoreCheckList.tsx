@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import type { ReactNode } from 'react';
-import { Checkbox } from '@compass/ui';
+import { Checkbox, rowGroupClass } from '@compass/ui';
 
 /** A store in a pick list: its name, then its code, muted. */
 function StoreName({ store }: { store: { name: string; code?: string | null } }) {
@@ -47,7 +47,7 @@ export function StoreCheckList<S extends { id: string; name: string; code?: stri
   empty?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+    <div className={rowGroupClass}>
       {stores.map((st) => (
         <StoreCheckRow
           key={st.id}
@@ -89,7 +89,7 @@ function StoreCheckRow({
 }) {
   const reasonId = useId();
   return (
-    <div className="px-2">
+    <div className="px-4 py-1">
       <div className="flex items-center gap-2">
         <Checkbox
           className="min-w-0 flex-1"

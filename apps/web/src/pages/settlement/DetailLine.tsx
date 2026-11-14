@@ -183,7 +183,7 @@ export function LineReasonField({
       }
     >
       {isHistorical ? (
-        <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
+        <p className="text-old-body-sm text-[var(--c-fg-muted)]">
           {historicalText}
         </p>
       ) : (

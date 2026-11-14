@@ -7,7 +7,7 @@ const badge = cva(
   {
     variants: {
       tone: {
-        info: 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
+        info: 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]',
         success: 'bg-[var(--c-success-bg)] text-[var(--c-success-ink)]',
         warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)]',
         danger: 'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)]',

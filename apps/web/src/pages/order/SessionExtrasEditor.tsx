@@ -367,7 +367,7 @@ function ExtraRowEditor({
           {focusing && suggestions.length > 0 ? (
             <ul
               role="list"
-              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-[var(--r-card)] bg-[var(--c-surface-elevated)] py-1 shadow-product ring-hairline"
+              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-[var(--r-card)] bg-[var(--c-surface-elevated)] py-1 shadow-[var(--shadow-product)]"
             >
               {suggestions.slice(0, 6).map((s) => (
                 <li key={s.name}>
