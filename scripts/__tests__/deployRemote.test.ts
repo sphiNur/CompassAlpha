@@ -809,6 +809,47 @@ describe('files a release no longer ships', () => {
     expect(existsSync(join(app, `${RELEASE_FILES}.gone`))).toBe(false);
   });
 
+  // #439 (2026-11-14): routers/run.ts, deleted in #432 before there was a
+  // list, stayed on the server and shadowed routers/run/ until a release
+  // removed an export it still imported.
+  test('code a release before the list left behind goes, whatever the list says', () => {
+    const { home, app } = liveTree();
+    put(app, 'apps/api/src/trpc/routers/run.ts', 'deleted before the list');
+    put(app, 'packages/shared/src/old.tsx', 'deleted before the list');
+    put(app, 'scripts/old.mjs', 'deleted before the list');
+    put(app, 'apps/api/uploads/notes.txt', 'made on the server');
+    put(app, 'apps/web/node_modules/dep/index.js', 'installed');
+    put(app, 'packages/shared/dist/index.js', 'built');
+    put(app, 'apps/web/dist.next/assets/app.js', 'built');
+    put(app, 'apps/web/.vite/deps/react.js', 'cache');
+    put(app, 'docs/old.ts', 'not a code folder');
+    const r = bash(extractScript(app, releaseTarball(home, 'v1', v1)));
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim().split('\n').sort()).toEqual([
+      'removed apps/api/src/trpc/routers/run.ts: left from an older release',
+      'removed packages/shared/src/old.tsx: left from an older release',
+      'removed scripts/old.mjs: left from an older release',
+    ]);
+    expect(existsSync(join(app, 'apps/api/src/trpc'))).toBe(false);
+    expect(existsSync(join(app, 'scripts'))).toBe(false);
+    expect(read(app, 'apps/api/src/main.ts')).toBe('api v1');
+    for (const kept of [
+      'apps/api/uploads/notes.txt',
+      'apps/web/node_modules/dep/index.js',
+      'packages/shared/dist/index.js',
+      'apps/web/dist.next/assets/app.js',
+      'apps/web/.vite/deps/react.js',
+      'apps/web/dist/assets/index-OLD.js',
+      'node_modules/dep/index.js',
+      'docs/old.ts',
+    ]) {
+      expect(existsSync(join(app, kept))).toBe(true);
+    }
+    expect(existsSync(join(app, `${RELEASE_FILES}.stale`))).toBe(false);
+    // Nothing left over: the next extract of the same release removes nothing.
+    expect(bash(extractScript(app, releaseTarball(home, 'v1b', v1))).stdout).toBe('');
+  });
+
   test('a folder the server put files in stays', () => {
     const { home, app } = liveTree();
     bash(extractScript(app, releaseTarball(home, 'v1', v1)));

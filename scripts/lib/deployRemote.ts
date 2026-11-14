@@ -336,10 +336,13 @@ function removePathsScript(list: string, why: string): string[] {
 /**
  * Shell script: extract the release over the live tree (step 3), then
  * remove the files the release before it shipped and this one does not,
- * and keep this release's list for the next deploy. The first extract
- * with a tree that has no list removes nothing. The release must list at
- * least one file: an empty list means a broken listing, and nothing is
- * extracted.
+ * and keep this release's list for the next deploy. Source files under
+ * SOURCE_DIRS that this release does not ship go too, list or no list:
+ * deploys before the list kept every file a release deleted, and one
+ * such file (routers/run.ts, deleted in #432) shadowed its replacement
+ * folder until a later release broke the import it still had (#439).
+ * The release must list at least one file: an empty list means a broken
+ * listing, and nothing is extracted.
  */
 export function extractScript(appDir = APP_DIR, tarball = DEPLOY_TARBALL): string {
   return [
@@ -353,8 +356,48 @@ export function extractScript(appDir = APP_DIR, tarball = DEPLOY_TARBALL): strin
     ...removePathsScript(`${RELEASE_FILES}.gone`, 'not in this release').map((l) => `  ${l}`),
     `  rm -f ${RELEASE_FILES}.gone`,
     'fi',
+    ...staleSourcesScript(`${RELEASE_FILES}.next`, `${RELEASE_FILES}.stale`),
+    ...removePathsScript(`${RELEASE_FILES}.stale`, 'left from an older release'),
+    `rm -f ${RELEASE_FILES}.stale`,
     `mv -f ${RELEASE_FILES}.next ${RELEASE_FILES}`,
   ].join('\n');
+}
+
+/** The folders whose code files are all the release's own: anything else there is left over. */
+export const SOURCE_DIRS = ['apps', 'packages', 'scripts'] as const;
+
+/** Code file names under SOURCE_DIRS that only a release puts there. */
+const SOURCE_NAMES = ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs'];
+
+/**
+ * Folders the server makes and git ignores (.gitignore): installed
+ * packages, builds and the dist.* copies of a build, tool caches.
+ */
+const SERVER_MADE_DIRS = [
+  'node_modules',
+  'dist',
+  'dist.*',
+  'build',
+  'out',
+  'coverage',
+  '.cache',
+  '.next',
+  '.turbo',
+  '.vite',
+];
+
+/**
+ * Shell lines: the code files under SOURCE_DIRS that `list` (sorted) does
+ * not have, into `out`. SERVER_MADE_DIRS are never looked in.
+ */
+function staleSourcesScript(list: string, out: string): string[] {
+  const names = SOURCE_NAMES.map((n) => `-name '${n}'`).join(' -o ');
+  const pruned = SERVER_MADE_DIRS.map((n) => `-name '${n}'`).join(' -o ');
+  return [
+    `{ for d in ${SOURCE_DIRS.join(' ')}; do`,
+    `  if [ -d "$d" ]; then find "$d" -type d \\( ${pruned} \\) -prune -o -type f \\( ${names} \\) -print; fi`,
+    `done; } | LC_ALL=C sort -u | LC_ALL=C comm -23 - ${list} > ${out}`,
+  ];
 }
 
 /**
