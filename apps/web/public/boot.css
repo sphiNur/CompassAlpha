@@ -22,6 +22,17 @@ body {
     color: #f5f5f7;
   }
 }
+/* Review MWC-02 (modern-web-guidance: dark-mode): what the browser draws
+   (the scrollbar, the Reset button) follows the same scheme as the page. */
+html {
+  color-scheme: light dark;
+}
+:where(html[data-color-scheme='light']) {
+  color-scheme: light;
+}
+:where(html[data-color-scheme='dark']) {
+  color-scheme: dark;
+}
 /* COREWEB1-26 (2026-11-11): the scheme boot-guard.js sets on <html>
    before the first paint (Telegram's, else the phone's) wins over the
    phone's alone: Telegram can be dark on a light phone. :where() keeps

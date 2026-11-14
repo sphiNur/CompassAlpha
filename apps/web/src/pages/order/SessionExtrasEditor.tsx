@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Button, cn, FieldError, Input, SectionLabel, Select, surfaceClass } from '@compass/ui';
+import {
+  Button,
+  cn,
+  FieldError,
+  Input,
+  isCommitEnter,
+  SectionLabel,
+  Select,
+  surfaceClass,
+} from '@compass/ui';
 import { trpc } from '../../lib/trpc';
 import {
   badExtraQty,
@@ -341,7 +350,7 @@ function ExtraRowEditor({
             onChange={(e) => onChange({ name: e.target.value })}
             onFocus={() => setFocusing(true)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') onNameCommit();
+              if (isCommitEnter(e)) onNameCommit();
             }}
           />
           {/* Review ORD-23 (2026-11): a plain list of buttons. It was marked

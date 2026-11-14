@@ -23,11 +23,12 @@ import type { ReactNode } from 'react';
 import {
   Button,
   Card,
-  Input,
-  NameCell,
-  SectionLabel,
   disabledClass,
   focusAfter,
+  Input,
+  isCommitEnter,
+  NameCell,
+  SectionLabel,
 } from '@compass/ui';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
@@ -1939,7 +1940,7 @@ export const PurchaseRow = memo(function PurchaseRow({
               formatError="none"
               enterKeyHint="next"
               onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
+                if (!isCommitEnter(e)) return;
                 e.preventDefault();
                 priceRef.current?.focus();
               }}
@@ -1959,7 +1960,7 @@ export const PurchaseRow = memo(function PurchaseRow({
               invalid={priceProblem}
               enterKeyHint="done"
               onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
+                if (!isCommitEnter(e)) return;
                 e.preventDefault();
                 if (canSave) handleSave('editor');
               }}

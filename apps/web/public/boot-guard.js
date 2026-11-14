@@ -299,6 +299,16 @@
     }
     root.dataset.theme = theme;
     root.dataset.colorScheme = scheme;
+    // Review MWC-02 (modern-web-guidance: dark-mode-toggle): the meta tag
+    // tells the browser the scheme before any CSS loads.
+    var meta = document.querySelector('meta[name="color-scheme"]');
+    if (meta) meta.setAttribute('content', resolvedScheme(theme, scheme));
+  }
+  /** The scheme a theme shows: apple is light only, dark always dark. */
+  function resolvedScheme(theme, scheme) {
+    if (theme === 'apple') return 'light';
+    if (theme === 'dark') return 'dark';
+    return scheme;
   }
   try {
     applyScheme();
