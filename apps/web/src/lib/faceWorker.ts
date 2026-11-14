@@ -1,4 +1,3 @@
-// TT: call installTrustedTypesPolicy() from lib/trustedTypes once that lands
 /**
  * The face tracker's worker. Review MWD-05 (modern-web-guidance:
  * performance): MediaPipe's Face Landmarker runs here, off the page's main
@@ -20,6 +19,12 @@
 import { FaceLandmarker } from '@mediapipe/tasks-vision';
 import type { Delegate, FromWorker, ToWorker } from './faceFrames';
 import { LANDMARKER_OPTIONS, readResult } from './faceMesh';
+import { installTrustedTypesPolicy } from './trustedTypes';
+
+// Review MWD-13 (modern-web-guidance: trusted-types): the worker has its
+// own globals, so it installs the same default policy before MediaPipe
+// hands importScripts its loader URL (a Trusted Types sink here too).
+installTrustedTypesPolicy();
 
 /** The worker global, typed by hand: the web app's TypeScript lib is DOM, not WebWorker. */
 const scope = self as unknown as {
