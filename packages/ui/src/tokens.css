@@ -619,3 +619,8 @@
     }
   }
 }
+
+/* UI overhaul B: a list skeleton fades in after a beat (SkeletonList). */
+.skeleton-delay {
+  animation: fadeIn var(--t-fade) var(--easing) 120ms both;
+}

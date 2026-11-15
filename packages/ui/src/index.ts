@@ -57,6 +57,8 @@ export { DataState, QueryErrorBanner } from './components/DataState';
 export type { DataStateProps, QueryLike } from './components/DataState';
 export { Skeleton } from './components/Skeleton';
 export type { SkeletonProps } from './components/Skeleton';
+export { SkeletonList } from './components/SkeletonList';
+export type { SkeletonListProps } from './components/SkeletonList';
 export { ChipBar, Chip } from './components/Chip';
 export type { ChipBarProps, ChipProps, ChipVariant } from './components/Chip';
 export { Segmented } from './components/Segmented';
