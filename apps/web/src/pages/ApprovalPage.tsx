@@ -33,7 +33,7 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../lib/telegram';
-import { leaveListItem } from '../lib/motion';
+import { leaveListItem, restoreListItem } from '../lib/motion';
 import { DockFilter } from '../components/dock/DockFilter';
 import { useOnline } from '../hooks/useOnline';
 import { useErrToast } from '../hooks/useErrToast';
@@ -48,11 +48,24 @@ import { ApprovalCard, type ApprovalCardBusy, type ApprovalTab } from './approva
 const NEXT_CARD = '[data-approval-list] > li h2';
 
 /** UI overhaul B part 2: a decided card slides out of the list (gap-2 = 8px). */
-function leaveCard(sessionId: string): Promise<void> {
-  return leaveListItem(
-    document.querySelector(`[data-approval-list] > li[data-approval-id="${CSS.escape(sessionId)}"]`),
-    8,
+function cardElement(sessionId: string): Element | null {
+  return document.querySelector(
+    `[data-approval-list] > li[data-approval-id="${CSS.escape(sessionId)}"]`,
   );
+}
+
+/**
+ * The card leaves, the list refreshes, focus moves to the next card. MWG
+ * review (2026-11-15, `motion`: "make sure the element still ends in its
+ * final state"): when the refreshed list still has the card (the refresh
+ * failed, or the order came back), it is put back, not left invisible.
+ */
+async function leaveCard(sessionId: string, refresh: () => Promise<unknown>): Promise<void> {
+  await leaveListItem(cardElement(sessionId), 8);
+  await refresh().catch(() => undefined);
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  restoreListItem(cardElement(sessionId));
+  focusAfter(NEXT_CARD);
 }
 
 /**
@@ -190,9 +203,7 @@ export function ApprovalPage() {
       // DX-IX-4 (2026-11-01): the approved card (and its button) leaves the
       // list; focus moves to the next card's title, not to <body>. UI
       // overhaul B part 2 (2026-11-15): it slides out and folds first.
-      void leaveCard(vars.sessionId)
-        .then(() => utils.order.pendingList.invalidate())
-        .then(() => focusAfter(NEXT_CARD));
+      void leaveCard(vars.sessionId, () => utils.order.pendingList.invalidate());
       haptic('success');
       // D12 (U1, 2026-10-31): the card's 通过 stays one tap, with five
       // seconds to take it back. The undo is the normal unapprove, sent
@@ -223,9 +234,7 @@ export function ApprovalPage() {
   });
   const reject = trpc.order.reject.useMutation({
     onSuccess: (_data, vars) => {
-      void leaveCard(vars.sessionId)
-        .then(() => utils.order.pendingList.invalidate())
-        .then(() => focusAfter(NEXT_CARD));
+      void leaveCard(vars.sessionId, () => utils.order.pendingList.invalidate());
       setRejectFor(null);
       setRejectReason('');
       haptic('warning');

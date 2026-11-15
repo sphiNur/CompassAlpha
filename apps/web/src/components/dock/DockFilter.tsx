@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconFilter, PickerGroup, PickerRow, Sheet, hapticSelection } from '@compass/ui';
 import { useDockToolSlot } from '../../lib/dockSlot';
+import { useI18n } from '../../hooks/useI18n';
 import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from '../../lib/navBadgeLook';
 
 export interface DockFilterOption<V extends string> {
@@ -33,6 +34,7 @@ export function DockFilter<V extends string>({
   badge?: number;
 }) {
   const slot = useDockToolSlot();
+  const i18n = useI18n();
   const [open, setOpen] = useState(false);
   if (!slot) return null;
   const current = options.find((o) => o.value === value);
@@ -44,7 +46,18 @@ export function DockFilter<V extends string>({
           <button
             type="button"
             className="press app-dock-tool-btn"
-            aria-label={current ? `${label}: ${current.label}` : label}
+            // MWG review (2026-11-15): the badge is aria-hidden, so the
+            // waiting count is read with the name, as BottomNav does.
+            aria-label={
+              showBadge
+                ? i18n.t('nav.badge.count', {
+                    label: current ? `${label}: ${current.label}` : label,
+                    n: badge,
+                  })
+                : current
+                  ? `${label}: ${current.label}`
+                  : label
+            }
             title={label}
             aria-haspopup="dialog"
             data-testid="dock-filter"

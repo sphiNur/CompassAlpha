@@ -41,19 +41,23 @@ export function DockSearch({
   return createPortal(
     <div className="app-dock-tool" data-dock-search="" data-open={open ? '' : undefined}>
       {open ? (
-        <div className="app-dock-search">
+        // MWG review (2026-11-15): Escape closes from the clear and close
+        // buttons too, not only from the field.
+        <div
+          className="app-dock-search"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              close();
+            }
+          }}
+        >
           <SearchInput
             ref={inputRef}
             className="min-w-0 flex-1"
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onClear={() => onChange('')}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                close();
-              }
-            }}
             placeholder={placeholder}
             clearAriaLabel={i18n.t('common.clear')}
             aria-label={placeholder}
@@ -75,7 +79,6 @@ export function DockSearch({
           className="press app-dock-tool-btn"
           aria-label={value ? `${i18n.t('dock.search.open')}: ${value}` : i18n.t('dock.search.open')}
           title={i18n.t('dock.search.open')}
-          aria-expanded={false}
           data-testid="dock-search"
           onClick={() => {
             hapticSelection();
