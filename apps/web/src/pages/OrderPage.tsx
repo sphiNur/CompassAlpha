@@ -13,6 +13,7 @@ import {
   StickyPageBar,
   SkeletonList,
 } from '@compass/ui';
+import { CategoryIcon } from '../components/CategoryIcon';
 import { useQueryClient } from '@tanstack/react-query';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -455,7 +456,12 @@ export function OrderPage() {
                   selected={activeCategory === c.id}
                   onClick={() => setActiveCategory(c.id)}
                 >
-                  {productName({ names: c.names })}
+                  {/* UI overhaul (2026-11-15, owner): a category picture
+                      instead of product photos. */}
+                  <span className="inline-flex items-center gap-1.5">
+                    <CategoryIcon names={c.names} />
+                    {productName({ names: c.names })}
+                  </span>
                 </Chip>
               ))
             }
@@ -550,7 +556,17 @@ export function OrderPage() {
                       as="h3"
                       className={cn('pt-3', group.archived && 'text-[var(--c-warning-fg)]')}
                     >
-                      {heading}
+                      <span className="inline-flex items-center gap-1.5">
+                        {!group.archived && group.categoryId ? (
+                          <CategoryIcon
+                            names={
+                              categoriesQuery.data?.find((c) => c.id === group.categoryId)
+                                ?.names ?? {}
+                            }
+                          />
+                        ) : null}
+                        {heading}
+                      </span>
                     </SectionLabel>
                   ) : null}
                   <ul className="flex flex-col" role="list">

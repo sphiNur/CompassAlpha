@@ -495,6 +495,13 @@ async function run() {
     }
     await clickNavTab(page, 'approve');
     await waitForText(page, [/Pending/, /Approved/, /Rejected/]);
+    // The list loads after the page (a skeleton first, 2026-11-15): wait
+    // for the card's Approve button before reading the page.
+    await page
+      .getByRole('button', { name: 'Approve', exact: true })
+      .first()
+      .waitFor({ timeout: 10_000 })
+      .catch(() => {});
     const approveText = await page.evaluate(() => document.body.innerText);
     // 2026-11-15: no top bar, so no store chip saying "Smoke Store"; the
     // card is its submitter and its Approve button.

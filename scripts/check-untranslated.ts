@@ -55,6 +55,10 @@ const EXEMPT_FILES: Array<{ match: string; why: string }> = [
     match: 'scripts/',
     why: 'not shipped to users',
   },
+  {
+    match: 'lib/categoryIcon.ts',
+    why: 'fragments matched against category names in every language to pick an icon; never shown',
+  },
 ];
 
 /**
