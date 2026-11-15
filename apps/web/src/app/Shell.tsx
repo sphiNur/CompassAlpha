@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, type CSSProperties } from 'react';
 import { Banner, Button, EmptyState, focusAfter } from '@compass/ui';
 import { PageMenuProvider, usePageMenuRegistration } from '../components/PageMenuContext';
 import { resilientLazy } from '../components/resilientLazy';
@@ -22,7 +22,7 @@ import { useScrollChrome } from './shell/scrollChrome';
 import { SkipLinks } from './shell/SkipLinks';
 import { SwipePager } from './shell/SwipePager';
 import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
-import { TopBar } from './shell/TopBar';
+import { TopVeil, topInset } from './shell/TopBar';
 import { isInTelegram } from '../lib/telegram';
 import { usePagePrefetch } from './shell/usePagePrefetch';
 import { useShellTab } from './shell/useShellTab';
@@ -124,7 +124,14 @@ function ShellInner() {
       ref={scrollChrome.rootRef}
       // relative: the nav capsule floats over the page (BottomNav.tsx).
       className="relative flex min-h-0 flex-col bg-[var(--c-bg)]"
-      style={{ height: 'var(--app-viewport-h, 100dvh)' }}
+      style={
+        {
+          height: 'var(--app-viewport-h, 100dvh)',
+          // Owner 2026-11-16: the room at the top the page starts below
+          // and scrolls under (app/shell/TopBar.tsx).
+          '--app-top-inset': topInset(),
+        } as CSSProperties
+      }
     >
       <SkipLinks hasNav={hasNav} />
       {settingsLoaded ? (
@@ -132,10 +139,9 @@ function ShellInner() {
           <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
         </Suspense>
       ) : null}
-      <TopBar />
       <LiveAnnouncer />
-      {/* 2026-11-14: the page fades where it scrolls under the top bar and
-          the nav capsule (.app-fade in styles/index.css). */}
+      {/* 2026-11-14: the page fades where it scrolls under the top of the
+          screen and the nav capsule (.app-fade in styles/index.css). */}
       <SwipePager
         ring={swipeRing}
         tab={tab}
@@ -143,7 +149,6 @@ function ShellInner() {
         onSwipe={swipeTab}
         resetKey={swipeResetKey}
       >
-        <div aria-hidden className="app-fade app-fade-top" />
         <main
           ref={mainRef}
           id="main-content"
@@ -219,6 +224,7 @@ function ShellInner() {
             />
           )}
         </main>
+        <TopVeil />
         {hasNav ? <div aria-hidden className="app-fade app-fade-bottom" /> : null}
       </SwipePager>
 

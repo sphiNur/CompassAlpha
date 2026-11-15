@@ -118,11 +118,12 @@ test('the app keeps clear of the phone bars Telegram reports', async () => {
   expect(await safeArea()).toBe('32px 20px 48px 30px');
   // The capsule floats 4px above the bottom bar (owner 2026-11-15: a
   // little lower; was 12px) and keeps 12px from the sides, or the
-  // cutout's width where that is more.
-  expect(await navGaps()).toBe('30px 20px 52px');
+  // cutout's width where that is more. Polled: the dock's sides move
+  // with a transition (owner 2026-11-16).
+  await expect.poll(navGaps).toBe('30px 20px 52px');
   expect(await sides(main())).toBe('20px 30px');
   await report(null);
-  expect(await navGaps()).toBe('12px 12px 12px');
+  await expect.poll(navGaps).toBe('12px 12px 12px');
 });
 
 test('place an order', async () => {

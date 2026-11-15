@@ -98,6 +98,15 @@
     pointer-events: none;
     --app-dock-inset-x: var(--app-nav-inset-x);
     --app-dock-gap: 8px;
+    /* Owner 2026-11-16 ("ghosting when the main button comes and goes"):
+       the room the main button takes at the row's end, animated
+       (@property --app-dock-btn-slot below), so the capsule narrows and
+       widens with it instead of jumping; the sides move with it. */
+    --app-dock-btn-slot: 0px;
+    transition:
+      --app-dock-btn-slot var(--t-base) var(--easing),
+      left var(--t-base) var(--easing),
+      right var(--t-base) var(--easing);
     /* The main button's and the dock tools' circle (owner, 2026-11-15):
        the nav capsule's full height (60px at the default text size,
        growing with it), so the row reads as one height. Spelled out from
@@ -107,6 +116,9 @@
   /* The row has 8px at both ends, as between the capsule and the button. */
   [data-main-button] .app-dock[data-nav] {
     --app-dock-inset-x: var(--app-dock-gap);
+  }
+  [data-main-button] .app-dock {
+    --app-dock-btn-slot: calc(var(--app-main-btn-d) + var(--app-dock-gap));
   }
   /* A main button without the nav (one tab or none): off the home strip.
      Inside the dock, so what it adds (--app-main-btn-h) includes it. */
@@ -118,13 +130,22 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: var(--app-dock-gap);
+    /* No gap: the main button's slot carries its own (--app-dock-btn-slot),
+       so an empty slot leaves no space; a dock tool has a margin. */
   }
   .app-dock-row > * {
     pointer-events: auto;
   }
+  /* The button sits at the slot's start, after the gap: while the slot
+     opens or closes the button slides in from, or out to, the screen's
+     edge beside whatever is left of it, never over it. */
   .app-dock-action {
     flex: none;
+    display: flex;
+    justify-content: flex-start;
+    box-sizing: border-box;
+    width: var(--app-dock-btn-slot);
+    padding-inline-start: var(--app-dock-gap);
     margin-inline-start: auto;
   }
   /* The circle's box. No surface of its own (owner, 2026-11-15: no grey
@@ -217,12 +238,17 @@
      nothing beside it on the row, the hint over the row when shown;
      PageMainButton.tsx publishes it). */
   .app-main {
+    /* Owner 2026-11-16 ("the top is unused"): the page scrolls under
+       Telegram's buttons (or the device's status bar) instead of stopping
+       at an opaque strip; it starts below them (--app-top-inset, set by
+       Shell from app/shell/TopBar.tsx) and .app-top-veil fades it there. */
+    padding-top: var(--app-top-inset, 0px);
     padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));
     scroll-padding-bottom: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px));
     /* Review MWC-06: focus and find stop below the page's sticky bar
        (StickyPageBar publishes its height); not where the bar scrolls
        away with the page (STICKY_BAR_SHORT_VIEWPORT). */
-    scroll-padding-top: var(--app-sticky-bar-h);
+    scroll-padding-top: calc(var(--app-top-inset, 0px) + var(--app-sticky-bar-h));
   }
   :root {
     /* Written by StickyPageBar (packages/ui) while one is on the page. */
@@ -230,48 +256,76 @@
   }
   @media (max-height: 500px) {
     .app-main {
-      scroll-padding-top: 0;
+      scroll-padding-top: var(--app-top-inset, 0px);
     }
   }
 
-  /* The page fading out where it scrolls under the top bar and the nav.
-     A gradient in the page colour laid over the scroller, not a
+  /* The page fading out where it scrolls under Telegram's buttons and
+     the nav. Overlays in the page colour over the scroller, not a
      mask-image on it: the overlay is painted once and composited, while a
      mask on the scroller is re-applied to the moving layer every frame in
-     Android's WebView, and would fade the very rows the capsule's blur
-     shows through. pointer-events: none, so taps go to the page. */
+     Android's WebView. pointer-events: none, so taps go to the page.
+     Above the page and the swipe preview (z-index), below the dock; in a
+     tab's view transition each is its own still group (below). */
   .app-fade {
     position: absolute;
     left: 0;
     right: 0;
-    z-index: 2;
     pointer-events: none;
     /* Review MWB-12 (modern-web-guidance: motion): opacity, not movement,
        so it keeps its fade under reduced motion (--t-fade). */
     transition: opacity var(--t-fade) var(--easing);
   }
-  .app-fade-top {
-    /* Review MWC-07 (V10, modern-web-guidance: soft-edge-content-fade):
-       under the page's sticky bar (StickyPageBar publishes its height),
-       where rows scroll in, not over the bar, whose top edge it washed. */
-    top: var(--app-sticky-bar-h, 0px);
-    height: var(--app-fade-h);
-    background: linear-gradient(to bottom, var(--c-bg), transparent);
-    opacity: 0;
+  /* Owner 2026-11-16: the top. Solid over the status bar, so the clock
+     stays readable, then the page shows through, softly blurred, fading
+     in towards the foot of Telegram's button row, where the page starts
+     at rest. Nothing is drawn below that, so a page's sticky bar (glass
+     itself, StickyPageBar) is never washed. */
+  .app-top-veil {
+    top: 0;
+    z-index: 3;
+    height: var(--app-top-inset, 0px);
+    background: linear-gradient(
+      to bottom,
+      var(--c-bg) var(--app-safe-top),
+      color-mix(in oklch, var(--c-bg) 60%, transparent) 75%,
+      transparent
+    );
   }
-  [data-scrolled] .app-fade-top {
-    opacity: 1;
-  }
-  /* MWC-07: on a short screen the bar scrolls away, so the fade is at the top. */
-  @media (max-height: 500px) {
-    .app-fade-top {
-      top: 0;
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    /* A blur that fades out with the gradient (masked), so rows do not
+       stop at a hard edge of frosted glass. */
+    .app-top-veil::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+      mask-image: linear-gradient(to bottom, black 55%, transparent);
     }
   }
+  @media (prefers-reduced-transparency: reduce) {
+    .app-top-veil::before {
+      display: none;
+    }
+  }
+  /* The bottom (owner 2026-11-16, "the layers look wrong"): solid only
+     under the capsule, over the phone's home strip, fading out by the
+     capsule's middle. Above that the capsule's glass blurs the rows
+     themselves, not a band of page colour laid over them. */
   .app-fade-bottom {
     bottom: 0;
-    height: calc(var(--app-nav-reserve) + var(--app-main-btn-h, 0px) + var(--app-fade-h));
-    background: linear-gradient(to top, var(--c-bg) var(--app-safe-bottom), transparent);
+    z-index: 2;
+    height: calc(
+      var(--app-safe-bottom) + var(--app-nav-float) + var(--app-nav-h) / 2 +
+        var(--app-main-btn-h, 0px)
+    );
+    background: linear-gradient(
+      to top,
+      var(--c-bg) calc(var(--app-safe-bottom) + var(--app-nav-float)),
+      transparent
+    );
   }
   [data-scroll-end] .app-fade-bottom {
     opacity: 0;
@@ -293,8 +347,30 @@ html[data-vt='tab'] .app-main {
 html[data-vt='tab'] .app-dock {
   view-transition-name: app-dock;
 }
-::view-transition-group(app-dock) {
+/* Owner 2026-11-16 ("ghosting on the nav"): the old and the new dock
+ * cross-faded, so a capsule with the main button and one without showed
+ * at once. The old picture is dropped and the new one is the live dock,
+ * so its own transitions (the capsule narrowing, the button growing in)
+ * play instead. The same for the edge fades, which the sliding page
+ * covered: groups after the page in document order, so drawn over it. */
+html[data-vt='tab'] .app-top-veil {
+  view-transition-name: app-top-veil;
+}
+html[data-vt='tab'] .app-fade-bottom {
+  view-transition-name: app-fade-bottom;
+}
+::view-transition-group(app-dock),
+::view-transition-group(app-top-veil),
+::view-transition-group(app-fade-bottom),
+::view-transition-new(app-dock),
+::view-transition-new(app-top-veil),
+::view-transition-new(app-fade-bottom) {
   animation: none;
+}
+::view-transition-old(app-dock),
+::view-transition-old(app-top-veil),
+::view-transition-old(app-fade-bottom) {
+  display: none;
 }
 @keyframes vt-page-out {
   to {
@@ -346,10 +422,23 @@ html:active-view-transition-type(backward) {
   }
   @starting-style {
     .app-main-btn {
-      scale: 0.6;
+      scale: 0.8;
       opacity: 0;
     }
   }
+  /* Owner 2026-11-16: and slides out, fading, when the page drops it
+     (PageMainButton keeps it for --t-base), as the capsule widens. */
+  .app-main-btn[data-leaving] {
+    scale: 0.8;
+    opacity: 0;
+  }
+}
+/* The main button's slot, animatable (ignored where @property is not
+ * supported: the slot then changes at once, as before). */
+@property --app-dock-btn-slot {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
 }
 
 /* UI overhaul C/D (2026-11-15): a page's tool on the dock's row (search,
@@ -360,6 +449,7 @@ html:active-view-transition-type(backward) {
 .app-dock-tool {
   flex: none;
   display: flex;
+  margin-inline-start: var(--app-dock-gap);
 }
 .app-dock-tool-btn {
   position: relative;
@@ -390,6 +480,7 @@ html:active-view-transition-type(backward) {
 .app-dock-tool[data-open] {
   flex: 1 1 auto;
   min-width: 0;
+  margin-inline-start: 0;
 }
 .app-dock-row:has(.app-dock-tool[data-open]) .app-nav {
   display: none;
