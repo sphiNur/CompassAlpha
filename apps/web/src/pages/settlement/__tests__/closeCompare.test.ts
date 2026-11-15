@@ -36,9 +36,10 @@ describe('closeCompare', () => {
     expect(metricChange(10049n, 10000n)?.percent).toBe(0);
   });
 
-  test('an earlier zero has no percent; both zero says nothing', () => {
+  test('an earlier zero has no percent; a zero today says nothing', () => {
     expect(metricChange(500n, 0n)).toEqual({ percent: null, deltaCents: 500n, unusual: true });
     expect(metricChange(0n, 0n)).toBeNull();
+    expect(metricChange(0n, 5000n)).toBeNull();
     expect(metricChange(null, 10n)).toBeNull();
   });
 });

@@ -53,8 +53,8 @@ export function numberToCents(value: number | null): bigint | null {
 
 export function metricChange(current: bigint | null, earlier: bigint | null): MetricChange | null {
   if (current === null || earlier === null) return null;
-  // Nothing on either day says nothing.
-  if (current === 0n && earlier === 0n) return null;
+  // A figure not filed yet (0) says nothing about the day.
+  if (current === 0n) return null;
   const deltaCents = current - earlier;
   if (earlier === 0n) return { percent: null, deltaCents, unusual: true };
   // Round half away from zero on whole percent, in integers.
