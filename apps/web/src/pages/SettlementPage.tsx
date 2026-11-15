@@ -42,6 +42,7 @@ import { SettlementSummary } from './settlement/SettlementSummary';
 import { WageLines } from './settlement/WageLines';
 import { salesBlockLayout } from './settlement/salesBlock';
 import { useSettlementForm } from './settlement/useSettlementForm';
+import { useCloseComparison } from './settlement/useCloseComparison';
 
 /**
  * The page while there is no form to show yet. UI-12 (2026-11-05): a tab
@@ -96,6 +97,7 @@ export function SettlementPage() {
     save,
     refreshRecord,
   } = useSettlementForm();
+  const compare = useCloseComparison(currentStoreId, date, dateValid);
   // 2026-10-21 CA-09: sales entry block (see render). Review CONF-14: as
   // sales.record holds in this store, overrides included.
   const canRecordSales = hasStorePermission(session, currentStoreId, 'sales.record');
@@ -534,7 +536,7 @@ export function SettlementPage() {
               </Banner>
             ) : null}
 
-            <SettlementSummary summary={summary} currency={currency} />
+            <SettlementSummary summary={summary} currency={currency} compare={compare} />
           </>
         )}
 
