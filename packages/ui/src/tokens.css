@@ -122,7 +122,9 @@
    * Canonical spacing/height so the SAME element renders at ONE value
    * instead of the 8 card-padding recipes / 4 control heights that had
    * accumulated across call sites. Consume via `px-[var(--card-pad)]`,
-   * `h-[var(--control-h)]` etc. — never re-type a raw px height.
+   * `min-h-[var(--control-h)]` etc. — never re-type a raw px height.
+   * Text controls take it as a minimum plus padding (modern-web-guidance:
+   * typography), so they grow with the phone's text size.
    *
    *   --card-pad       A card's inner padding: CardHeader and CardBody.
    *   --control-h      Every text field: Input (also type="number"),
@@ -397,15 +399,45 @@
 .scrollbar-hide {
   scrollbar-width: none;
 }
+/* MWG review (2026-11-15, customize-scrollbar-color-and-thickness): a
+   mouse or trackpad (Telegram Desktop, a desktop browser) has no swipe,
+   and a vertical wheel does not scroll a row sideways, so there the chip
+   strip shows a thin scrollbar to drag. Touch screens keep it hidden.
+   Browsers with scrollbar-width ignore ::-webkit-scrollbar; older WebKit
+   and Chromium draw the thin bar from the pseudo-elements. */
+@media (pointer: fine) {
+  .scrollbar-hide {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-fg-subtle) transparent;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-hide::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: var(--c-fg-subtle);
+  }
+  .scrollbar-hide::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
 
 /* Review MWA-16 (V11, modern-web-guidance:
    form-fields-automatically-fit-contents): the kit Textarea grows with its
    text, from its `rows` (the resting height, as before) up to ten lines,
    then scrolls; the width stays the field's (w-full), as the guide asks.
    Only where field-sizing exists: elsewhere `rows` keeps the fixed height.
-   1rem is the field's py-2; never under the 44 px field (min-h-11). */
+   1rem is the field's py-2; never under the 44 px field (min-h-11).
+   MWG review (2026-11-15): the drag handle is off only where the field
+   grows by itself; elsewhere a long text can be made taller by hand. */
+textarea.textarea-grow {
+  resize: vertical;
+}
 @supports (field-sizing: content) {
   textarea.textarea-grow {
+    resize: none;
     field-sizing: content;
     min-block-size: max(2.75rem, calc(var(--textarea-rows, 3) * 1lh + 1rem));
     max-block-size: calc(10lh + 1rem);
@@ -528,6 +560,20 @@
      dot is a fill; both vanished in a contrast theme. */
   .app-dock-tool-btn,
   .app-dock-search {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  /* MWG review (2026-11-15): the nav capsule (its surface is the nav's
+     ::before), the main button's "why inactive" hint and the main button
+     itself are edged by box-shadow only too (apps/web index.css). Before
+     :focus-visible below, so a focused main button still shows the
+     focus ring. */
+  .app-nav::before,
+  .app-dock-hint {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+  .app-main-btn {
     outline: 1px solid ButtonText;
     outline-offset: -1px;
   }

@@ -131,3 +131,29 @@ Referrer-Policy, Permissions-Policy, HSTS, and COOP on pages) to every page and 
 of its own. `apps/api/src/__tests__/page-security-worker.test.ts` fails
 if the Worker's strings and the api's drift apart. A change to the policy
 needs both a release and a `wrangler deploy`.
+
+MWG review (2026-11-15): `base-uri` is `'none'` (the page has no
+`<base>`), `Reporting-Endpoints` also names a `default` endpoint (the same
+`/csp-report`), and pages get `Cross-Origin-Resource-Policy: same-origin`,
+as the api sends on its HTML and JSON.
+
+### Extra connect-src origins (`COMPASS_CONNECT_ORIGINS`)
+
+The api puts the photo bucket's origin (from `S3_ENDPOINT` / `S3_BUCKET`)
+in its `connect-src`, so the browser may send the presigned photo upload
+there. The page the Worker decorates is served by nginx, so the Worker
+cannot know that origin: set it in the optional `COMPASS_CONNECT_ORIGINS`
+Worker variable, space-separated, e.g.
+
+```toml
+[vars]
+COMPASS_CONNECT_ORIGINS = "https://my-bucket.s3.eu-central-1.amazonaws.com"
+```
+
+(or a plain-text variable in the dashboard; it is not a secret). Each
+entry must be a bare `https://host[:port]` origin with a plain host name
+(letters, digits, dots, dashes), no path or trailing slash; anything else
+is ignored. The origins go after `wss://<host>` and before
+`https://telegram.org`, the api's order, so with the same bucket the two
+policies match. Unset or empty, the policy is as before. A change needs
+`wrangler deploy`.

@@ -104,8 +104,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       // Height = --control-h (44px since D18, 2026-10-31; was 40). The md
       // Button and Select share the token, so an Input + Button row and
       // Input + Select still line up. Text stays text-old-h3 (14 px).
+      // modern-web-guidance (typography): a minimum, not a fixed height,
+      // plus padding, so the field grows with the phone's text size; at
+      // the default size the line (≈18 px) plus py-2.5 stays under 44.
       className={cn(
-        'h-[var(--control-h)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3',
+        'min-h-[var(--control-h)] py-2.5 w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3',
         'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
         // V9: the field's edge at 3:1 against the page (--c-field-border).
         'outline-none ring-field',

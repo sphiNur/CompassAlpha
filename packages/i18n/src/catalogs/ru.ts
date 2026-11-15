@@ -34,6 +34,7 @@ export const ru = {
   'common.enterReason': 'Укажите причину.',
   // Review MWB-05 / MWB-07 (V6)
   'common.closeNotification': 'Закрыть уведомление',
+  'common.close': 'Закрыть',
   'common.archive': 'Архивировать',
   'common.discard': 'Не сохранять',
   'common.archived': 'в архиве',

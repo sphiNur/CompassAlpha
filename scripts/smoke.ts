@@ -15,7 +15,8 @@
  *   - tRPC public routes: system.health
  *   - tRPC auth-required routes refuse an anonymous caller (401); the smoke
  *     never signs in
- *   - HTML cache headers are no-store (regression check on the iOS WebView fix)
+ *   - HTML cache headers revalidate: no-cache (regression check on the iOS
+ *     WebView fix; no-store since 2026-11-15 only blocked the bfcache)
  *   - JS bundle contains expected user-facing strings (catch deploy-of-stale-bundle)
  *   - Realtime: a real WebSocket upgrade through BASE (token-less probe)
  *
@@ -71,7 +72,10 @@ async function checkSpaShell() {
   record('GET /  -> 200', r.status === 200, `status=${r.status}`);
   const html = await r.text();
   const cc = r.headers.get('cache-control') ?? '';
-  record('GET / has Cache-Control: no-store', cc.includes('no-store'), `Cache-Control=${cc}`);
+  // MWG review (2026-11-15): no-cache (revalidate every load) is what
+  // keeps the iOS WebView on the live shell; no-store is no longer sent
+  // (infra/nginx/compass-app.conf), and the older value contains no-cache too.
+  record('GET / has Cache-Control: no-cache', cc.includes('no-cache'), `Cache-Control=${cc}`);
   // Pull asset names from the served HTML.
   const jsMatch = html.match(/\/assets\/index-[A-Za-z0-9_-]+\.js/);
   const cssMatch = html.match(/\/assets\/index-[A-Za-z0-9_-]+\.css/);

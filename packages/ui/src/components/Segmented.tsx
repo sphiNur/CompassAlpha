@@ -23,9 +23,9 @@ import { useRovingRadio } from '../rovingRadio';
  * the user started comparing pages side-by-side.
  *
  * Design:
- *   - Default size `md` (h-9, text-old-body-sm 12 px) — matches the
+ *   - Default size `md` (min-h-9, text-old-body-sm 12 px) — matches the
  *     M3.15 nav-bar baseline and lives comfortably inside a Field.
- *   - `sm` variant (h-7, text-old-label 11 px) — for nested-in-row use
+ *   - `sm` variant (min-h-7, text-old-label 11 px) — for nested-in-row use
  *     like the Permissions matrix (allow/deny/inherit). Acts like
  *     SegBtn but reusable.
  *   - Single hairline ring; the chosen segment fills itself (action
@@ -123,7 +123,10 @@ export function Segmented<V extends string>({
         // V4 (2026-10-30): no overflow-hidden — it clipped the segments'
         // hit-44 tap areas. The end segments round their own corners.
         'flex rounded-[var(--r-utility)] ring-hairline',
-        isSm ? 'h-7' : 'h-[var(--control-h-sm)]',
+        // modern-web-guidance (typography): minimum heights, so a label set
+        // in a larger phone text size grows the bar instead of spilling out
+        // of it. The segments stretch to the bar and pad their label.
+        isSm ? 'min-h-7' : 'min-h-[var(--control-h-sm)]',
         disabled && 'opacity-50',
         className,
       )}
@@ -150,7 +153,7 @@ export function Segmented<V extends string>({
               }
             }}
             className={cn(
-              'hit-44 inline-flex items-center justify-center font-medium tabular-nums',
+              'hit-44 inline-flex items-center justify-center py-0.5 font-medium tabular-nums',
               !blocked && 'press',
               'first:rounded-l-[var(--r-utility)] last:rounded-r-[var(--r-utility)]',
               isSm ? 'px-2 text-old-label' : 'text-old-body-sm',

@@ -288,7 +288,11 @@ async function refreshOrigin(env) {
 export default {
   async fetch(request, env, ctx) {
     const response = await proxy(request, env, ctx);
-    return withPageSecurity(response, new URL(request.url).host);
+    return withPageSecurity(
+      response,
+      new URL(request.url).host,
+      connectOrigins(env.COMPASS_CONNECT_ORIGINS),
+    );
   },
 };
 
@@ -316,16 +320,48 @@ const BEFORE_CONNECT = [
 ];
 const AFTER_CONNECT = [
   "frame-ancestors 'self' https://web.telegram.org https://t.me",
-  "base-uri 'self'",
+  "base-uri 'none'",
   "form-action 'self'",
   "object-src 'none'",
 ];
 
-/** The headers the api would send on a page served from `host`. */
-export function pageSecurityHeaders(host) {
+/**
+ * MWG review (2026-11-15): the extra origins the page connects to, from
+ * the COMPASS_CONNECT_ORIGINS var (space-separated). The api adds the
+ * photo bucket's origin (S3_ENDPOINT / S3_BUCKET) to connect-src for the
+ * presigned PUT; nginx serves the page, so the Worker needs the same
+ * origin named here. Each must be a bare https origin
+ * (`https://host[:port]`, no path, a plain host name); anything else is
+ * left out. Unset or empty: the policy is unchanged.
+ */
+export function connectOrigins(value) {
+  const origins = [];
+  for (const item of String(value ?? '').split(/\s+/)) {
+    if (!item) continue;
+    let url;
+    try {
+      url = new URL(item);
+    } catch {
+      continue;
+    }
+    // A host the URL parser lets through can still hold `;` or `'`, which
+    // would end the directive: letters, digits, dots and dashes only.
+    if (url.protocol !== 'https:' || url.origin !== item) continue;
+    if (!/^[a-z0-9.-]+$/.test(url.hostname)) continue;
+    if (!origins.includes(item)) origins.push(item);
+  }
+  return origins;
+}
+
+/**
+ * The headers the api would send on a page served from `host`, with
+ * `extraConnect` (connectOrigins above) as the api's connectOrigins.
+ */
+export function pageSecurityHeaders(host, extraConnect = []) {
   const plain = /^[a-z0-9.-]+(?::\d{1,5})?$/.test(host) ? host : null;
   const connect = ["'self'"];
   if (plain) connect.push(`wss://${plain}`);
+  for (const origin of extraConnect) if (!connect.includes(origin)) connect.push(origin);
   connect.push('https://telegram.org');
   return {
     'x-content-type-options': 'nosniff',
@@ -342,25 +378,30 @@ export function pageSecurityHeaders(host) {
       'report-uri /csp-report',
       'report-to csp',
     ].join('; '),
-    'reporting-endpoints': 'csp="/csp-report"',
+    'reporting-endpoints': 'csp="/csp-report", default="/csp-report"',
     'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
   };
 }
 
 /** `response` with the page headers added when it is a page or a script without a CSP. */
-export function withPageSecurity(response, host) {
+export function withPageSecurity(response, host, extraConnect = []) {
   if (response.status === 101 || response.webSocket) return response;
   const type = (response.headers.get('content-type') ?? '').toLowerCase();
   const page = type.startsWith('text/html');
   const script = type.includes('javascript');
   if ((!page && !script) || response.headers.has('content-security-policy')) return response;
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(pageSecurityHeaders(host))) {
+  for (const [name, value] of Object.entries(pageSecurityHeaders(host, extraConnect))) {
     if (!headers.has(name)) headers.set(name, value);
   }
   // MWD-19: on the pages only, as the api does.
   if (page && !headers.has('cross-origin-opener-policy')) {
     headers.set('cross-origin-opener-policy', 'same-origin-allow-popups');
+  }
+  // MWG review (2026-11-15): CORP on the page, as the api sends it on
+  // HTML; not on the scripts, which the api leaves without it.
+  if (page && !headers.has('cross-origin-resource-policy')) {
+    headers.set('cross-origin-resource-policy', 'same-origin');
   }
   return new Response(response.body, {
     status: response.status,

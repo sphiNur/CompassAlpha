@@ -69,9 +69,11 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         spellCheck={false}
         // D18 (2026-10-31): 44 px like every text field (was 36, from
         // M3.15, which traded the touch minimum for one more list row).
-        // Text stays text-old-body-sm (12 px).
+        // Text stays text-old-body-sm (12 px). A minimum height plus padding
+        // (modern-web-guidance: typography), so it grows with the phone's
+        // text size; the clear button spans the field (inset-y-0).
         className={cn(
-          'h-[var(--control-h)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-old-body-sm',
+          'min-h-[var(--control-h)] py-2.5 w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-old-body-sm',
           'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
           // V9: the field's edge at 3:1 against the page (--c-field-border).
           'outline-none ring-field',
