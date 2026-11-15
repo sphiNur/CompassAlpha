@@ -2499,6 +2499,11 @@ export const en = {
   'notify.openApp': 'Open Compass',
   'notify.order.submitted.title': 'New order to review',
   'notify.order.submitted.body': '{store} submitted an order for your review.',
+  'notify.order.reviewWaiting.title': 'Orders waiting for review',
+  'notify.order.reviewWaiting.body':
+    '{store}: {n, plural, one {# order has} other {# orders have}} been waiting for review for over an hour.',
+  'notify.settlement.closeMissing.title': 'Daily close not recorded',
+  'notify.settlement.closeMissing.body': '{store} has no daily close for today yet.',
   'notify.order.approved.title': 'Order approved',
   'notify.order.approved.body': 'Your order is approved and queued for the next run.',
   'notify.order.selfApproved.title': 'Order approved by its submitter',
