@@ -72,7 +72,11 @@ export function StickyPageBar({ children, direction = 'row', className }: Sticky
     <div
       ref={ref}
       className={cn(
-        'sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2',
+        // Owner 2026-11-16: glass (.app-glass-bar, tokens.css), so the
+        // rows that pass under it show through blurred instead of meeting
+        // an opaque band. top-0 is the scroller's padding edge, which is
+        // already below the top of the screen (<main>'s padding-top).
+        'app-glass-bar sticky top-0 z-[1] border-b border-[var(--c-divider)] px-4 py-2',
         // A11Y-1 (2026-10-31): on a short viewport (a phone at 200% zoom
         // is ~420 CSS px tall, or landscape) the bar scrolls away with the
         // content. Pinned, it took ~100 px of the ~240 left between the

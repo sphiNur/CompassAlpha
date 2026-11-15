@@ -35,7 +35,7 @@ import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
  */
 export type PageMainButtonIcon = 'check' | 'send' | 'cart' | 'truck';
 
-interface PageMainButtonState {
+export interface PageMainButtonState {
   /** The action's words: the button's accessible name and title. */
   text: string;
   /** Default 'check'. */

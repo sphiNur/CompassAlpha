@@ -24,8 +24,9 @@ const light = themeOf({ 'data-theme': 'native' });
 /**
  * Custom properties the app sets from JavaScript (no stylesheet declares
  * them; every reader has a fallback): the Telegram chrome insets
- * (hooks/useTelegramChromeInsets.ts) and the MainButton height
- * (lib/mainButtonInset.ts).
+ * (hooks/useTelegramChromeInsets.ts), the MainButton height
+ * (lib/mainButtonInset.ts) and the top inset the page scrolls under
+ * (Shell.tsx, from app/shell/TopBar.tsx).
  */
 const RUNTIME_VARS = [
   '--app-chrome-reserve',
@@ -33,6 +34,7 @@ const RUNTIME_VARS = [
   '--app-chrome-pad-left',
   '--app-chrome-pad-right',
   '--app-main-btn-h',
+  '--app-top-inset',
 ];
 
 describe('colour tokens in use', () => {

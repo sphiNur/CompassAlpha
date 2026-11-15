@@ -140,3 +140,40 @@ describe('the main button on the nav row', () => {
     );
   });
 });
+
+/**
+ * Owner 2026-11-16: no ghost of the dock, and the page's edges fade the
+ * same during a tab's transition as at rest.
+ */
+describe('the dock and the edge fades in motion', () => {
+  const buttonSrc = readFileSync(
+    join(import.meta.dir, '..', 'shell', 'PageMainButton.tsx'),
+    'utf8',
+  );
+  const shellSrc = readFileSync(join(import.meta.dir, '..', 'Shell.tsx'), 'utf8');
+
+  test('the old dock picture is dropped, not cross-faded with the new one', () => {
+    expect(appCss).toMatch(/::view-transition-old\(app-dock\)[^{]*\{\s*display:\s*none/);
+    expect(appCss).toMatch(/::view-transition-new\(app-dock\)[\s\S]*?\{\s*animation:\s*none/);
+  });
+
+  test('the edge fades are their own groups, after the page, so it never covers them', () => {
+    expect(appCss).toContain("html[data-vt='tab'] .app-top-veil");
+    expect(appCss).toContain("html[data-vt='tab'] .app-fade-bottom");
+    const main = shellSrc.indexOf('<main');
+    expect(shellSrc.indexOf('<TopVeil />')).toBeGreaterThan(main);
+    expect(shellSrc.indexOf('app-fade-bottom')).toBeGreaterThan(main);
+  });
+
+  test("the main button's room is animated, and a dropped button leaves", () => {
+    expect(appCss).toMatch(/@property --app-dock-btn-slot/);
+    expect(appCss).toMatch(/transition:\s*--app-dock-btn-slot/);
+    expect(appCss).toMatch(/\.app-main-btn\[data-leaving\]/);
+    expect(buttonSrc).toMatch(/data-leaving=/);
+  });
+
+  test('the page scrolls under the top of the screen, which is not a strip', () => {
+    expect(appCss).toMatch(/\.app-main \{[^}]*padding-top: var\(--app-top-inset/);
+    expect(shellSrc).not.toContain('<TopBar');
+  });
+});

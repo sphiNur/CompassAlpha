@@ -333,6 +333,27 @@
   }
 }
 
+/* A page's pinned bar (StickyPageBar), owner 2026-11-16: glass where the
+   browser blurs what is behind it, so rows scrolling under it show
+   through softly; solid otherwise and under reduced transparency. */
+.app-glass-bar {
+  background: var(--c-bg);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-glass-bar {
+    background: color-mix(in oklch, var(--c-bg) 82%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(16px);
+    backdrop-filter: saturate(1.4) blur(16px);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app-glass-bar {
+    background: var(--c-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Utility class injected on every press affordance */
 .press {
   transition: transform var(--t-snap) var(--easing);

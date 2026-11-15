@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { PageMainButtonState } from '../../hooks/usePageMainButton';
 import { haptic } from '../../lib/telegram';
 import { IconCheck, IconRun, IconSend, IconTruck, Spinner, useTapGuard } from '@compass/ui';
 import { useAppMutating } from '../../hooks/useAppMutating';
@@ -24,7 +25,13 @@ import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from '../../lib/navBadgeLook
  * Review COREWEB1-10 (2026-11-12): out of Shell.tsx.
  */
 export function PageMainButton() {
-  const state = usePageMainButtonState();
+  const current = usePageMainButtonState();
+  // Owner 2026-11-16 ("ghosting when the button comes and goes"): when a
+  // page drops its button, the last one stays for LEAVE_MS with
+  // data-leaving, shrinking away while the capsule widens
+  // (styles/index.css), instead of vanishing in one frame.
+  const leaving = useLeaving(current);
+  const state = current?.visible ? current : leaving;
   // M3.50: also guard against re-tap during any in-flight mutation
   // (not just the one this button started). Without this guard, the
   // user could tap Save, then while it's processing tap a
@@ -67,7 +74,9 @@ export function PageMainButton() {
   // the dock from the button's (or the hint's) top (mainButtonInsetOf).
   const colRef = useRef<HTMLDivElement>(null);
   const hintRef = useRef<HTMLParagraphElement>(null);
-  const shown = Boolean(state?.visible);
+  // Only the live button holds the dock open; a leaving one gives the
+  // room back at once, so the capsule widens while it shrinks.
+  const shown = Boolean(current?.visible);
   const interactable = !!state && state.active && !busy;
   const hint = state && !interactable && !busy ? state.inactiveHint : undefined;
   // Owner, 2026-11-15: the reason shows when the inactive button is
@@ -162,10 +171,14 @@ export function PageMainButton() {
         <button
           ref={buttonRef}
           type="button"
-          data-testid="page-main-button"
+          data-leaving={leaving && !shown ? '' : undefined}
+          // A leaving button is a picture of the last one: not tappable,
+          // not read, out of the Tab order.
+          aria-hidden={leaving && !shown ? true : undefined}
+          data-testid={leaving && !shown ? undefined : 'page-main-button'}
           aria-label={state.text}
           title={state.text}
-          disabled={(!interactable && !explains && !busy) || undefined}
+          disabled={(leaving && !shown) || (!interactable && !explains && !busy) || undefined}
           aria-disabled={explains || busy || undefined}
           aria-describedby={hint ? 'page-main-button-hint' : undefined}
           onClick={
@@ -227,4 +240,39 @@ const MAIN_BUTTON_ICONS: Record<PageMainButtonIcon, typeof IconCheck> = {
  */
 export function mainButtonSaysBusy(focused: boolean, pressedAt: number, now: number): boolean {
   return focused || (pressedAt > 0 && now - pressedAt <= 1000);
+}
+
+/** How long a dropped main button takes to shrink away (--t-base). */
+export const LEAVE_MS = 240;
+
+/**
+ * The button state to keep drawing after the page dropped it: the last
+ * visible one, for LEAVE_MS, then null. Worked out while rendering, so
+ * the button is never gone for a frame before it starts to leave. Null
+ * at once under reduced motion, where nothing would animate.
+ */
+function useLeaving(current: PageMainButtonState | null): PageMainButtonState | null {
+  const last = useRef<PageMainButtonState | null>(null);
+  const [, setGone] = useState(0);
+  const visible = Boolean(current?.visible);
+  if (visible) last.current = current;
+  const leaving = !visible && last.current && !prefersReducedMotion() ? last.current : null;
+  if (!visible && !leaving) last.current = null;
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => {
+      last.current = null;
+      setGone((n) => n + 1);
+    }, LEAVE_MS);
+    return () => clearTimeout(timer);
+  }, [leaving]);
+  return leaving;
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
