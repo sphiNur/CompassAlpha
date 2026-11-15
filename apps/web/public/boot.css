@@ -71,6 +71,13 @@ html {
     transform: rotate(360deg);
   }
 }
+/* MWG review (2026-11-15, spinner): with reduced motion the ring turns
+   slowly instead of stopping, so loading still reads as loading. */
+@media (prefers-reduced-motion: reduce) {
+  #boot-spinner {
+    animation-duration: 6s;
+  }
+}
 /* Review MWC-11 (modern-web-guidance: typography): font sizes in rem (the
    same px at the default 16px root), so the phone's text size reaches them. */
 .boot-title {

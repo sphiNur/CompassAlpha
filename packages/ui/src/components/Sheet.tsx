@@ -326,6 +326,52 @@ export function useOpenedOnce(open: boolean): boolean {
   return open || opened;
 }
 
+/** What the sheet's ✕ is called while the host gives no `close` label. */
+export const SHEET_CLOSE_FALLBACK = 'Close';
+
+/**
+ * MWG review (2026-11-15, modern-web-guidance: dialog: "DO include a
+ * visible close button"): every sheet shows a ✕ at its top end corner. A
+ * pull, Esc, the backdrop and Telegram's back button were the only ways
+ * out, and none is visible. It closes through Radix (Dialog.Close), so
+ * unsaved changes still ask first. Last in the sheet's DOM, so the first
+ * field still takes the autofocus and Tab reaches the ✕ after the footer;
+ * placed over the header, whose title and description keep 32 px clear
+ * on both sides (SHEET_TITLE_INSET) so a long ru / uz title wraps before
+ * it. 32 px to look at, 44 to tap (hit-44). Not inside the header, so a
+ * tap on it is no pull. Exported for tests.
+ */
+export function SheetCloseButton({ label }: { label: string }) {
+  return (
+    <Dialog.Close
+      aria-label={label}
+      data-sheet-close=""
+      className={cn(
+        'press hit-44 absolute end-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full',
+        'text-[var(--c-fg-muted)] hover:text-[var(--c-fg)]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]',
+      )}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+        <path
+          d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    </Dialog.Close>
+  );
+}
+
+/**
+ * The room the header's centred text keeps on each side for the ✕: with
+ * the header's 16 px it starts 48 px from the sheet's edge, past the ✕'s
+ * 44 px tap area (end-2, centred on the 32 px circle, so 2-46 px). Both
+ * sides, so the text stays centred.
+ */
+export const SHEET_TITLE_INSET = 'px-8';
+
 /** A tap that landed on the toast layer (Toast.tsx), not outside a sheet. */
 function isToastTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-toast-stack]') !== null;
@@ -479,7 +525,9 @@ function OpenedSheet({
         >
           {/* The header (handle and title) pulls the sheet down (UI-25);
               touch-none keeps the pull from panning the page. */}
-          <SheetHeader className="touch-none" {...drag}>
+          {/* min-h-12: a sheet with no title still keeps its ✕ (top 8-40
+              px) off the body. */}
+          <SheetHeader className="min-h-12 touch-none" {...drag}>
             {/* Drag handle — slightly bolder + wider than the previous
                 40×4 hairline so first-time users can read it as "this is
                 draggable" without us having to render an explicit Cancel
@@ -495,19 +543,29 @@ function OpenedSheet({
                 tabIndex={focusTitleOnOpen ? -1 : undefined}
                 // Review MWC-10 (V9): a centred ru / uz title left one word
                 // on its last line; balanced, its lines are even.
-                className="mt-3 text-center text-old-h2 font-semibold outline-none [text-wrap:balance]"
+                className={cn(
+                  'mt-3 text-center text-old-h2 font-semibold outline-none [text-wrap:balance]',
+                  SHEET_TITLE_INSET,
+                )}
               >
                 {title}
               </Dialog.Title>
             ) : null}
             {description ? (
-              <Dialog.Description id={descriptionId} className="mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]">
+              <Dialog.Description
+                id={descriptionId}
+                className={cn(
+                  'mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)] [text-wrap:pretty]',
+                  SHEET_TITLE_INSET,
+                )}
+              >
                 {description}
               </Dialog.Description>
             ) : null}
           </SheetHeader>
           <SheetBody>{children}</SheetBody>
           {footer ? <SheetFooter>{footer}</SheetFooter> : null}
+          <SheetCloseButton label={labels.close ?? SHEET_CLOSE_FALLBACK} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -38,7 +38,14 @@ export function Avatar({ src, name, label, size = 32, className }: AvatarProps) 
   // stand in for it instead of a broken image (UI-24). A new src tries
   // again.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const style = { width: size, height: size, fontSize: Math.round(size * 0.42) };
+  // MWG review (2026-11-15, typography): the initials in rem (the same
+  // px at the default 16 px root), so the phone's text size reaches them,
+  // up to half the circle, past which two letters would leave it.
+  const style = {
+    width: size,
+    height: size,
+    fontSize: `min(${+((size * 0.42) / 16).toFixed(4)}rem, ${size / 2}px)`,
+  };
   if (src && src !== failedSrc) {
     return (
       <img

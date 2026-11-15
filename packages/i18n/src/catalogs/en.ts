@@ -51,6 +51,8 @@ export const en = {
   'common.enterReason': 'Enter a reason.',
   // Review MWB-05 / MWB-07 (V6): the close button of an error toast.
   'common.closeNotification': 'Close notification',
+  // MWG review (2026-11-15, dialog): the ✕ in every sheet's header.
+  'common.close': 'Close',
   // M2.0b: shared bits used by the dishes editor (and reusable
   // anywhere a CRUD section needs them).
   'common.archive': 'Archive',

@@ -14,13 +14,23 @@ const BEFORE_CONNECT = [
 ];
 const AFTER_CONNECT = [
   "frame-ancestors 'self' https://web.telegram.org https://t.me",
-  "base-uri 'self'",
+  // MWG review (2026-11-15, security): the page has no <base> element, so
+  // none is allowed; an injected one cannot redirect relative URLs.
+  "base-uri 'none'",
   "form-action 'self'",
   "object-src 'none'",
 ];
 
 /** The Reporting API endpoint name the report-only policy reports to. */
 export const CSP_REPORT_GROUP = 'csp';
+
+/**
+ * The Reporting-Endpoints header: the CSP's group, and `default` (MWG
+ * review 2026-11-15, security), where a browser sends the reports that
+ * name no group (deprecations, interventions, crashes) to the same
+ * /csp-report.
+ */
+export const REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}", default="${CSP_REPORT_PATH}"`;
 
 /** A Host header that is a plain host[:port], or null. */
 function plainHost(value: string | undefined): string | null {
@@ -127,6 +137,9 @@ export function strictCsp({
  *     (the clock-in radius), and those for our own page only, so an
  *     injected library cannot prompt the user for them.
  *
+ *   Cross-Origin-Resource-Policy: same-origin (JSON and HTML only)
+ *     MWG review (2026-11-15): see where it is set.
+ *
  *   Content-Security-Policy: see below (M1.20).
  */
 export function securityHeaders({
@@ -186,9 +199,11 @@ export function securityHeaders({
        *   - frame-ancestors 'self' https://web.telegram.org https://t.me
        *                                    only Telegram can embed
        *                                    the Mini App
-       *   - base-uri 'self'                blocks <base href=...>
+       *   - base-uri 'none'                blocks <base href=...>
        *                                    injection that would
        *                                    rewrite all relative URLs
+       *                                    (the page has no <base>;
+       *                                    'self' until 2026-11-15)
        *   - form-action 'self'             no cross-origin form posts
        *   - object-src 'none'              no Flash / plugin embeds
        *
@@ -207,13 +222,29 @@ export function securityHeaders({
           host: plainHost(c.req.header('x-forwarded-host') ?? c.req.header('host')),
         }),
       );
-      c.header('Reporting-Endpoints', `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`);
+      c.header('Reporting-Endpoints', REPORTING_ENDPOINTS);
       if (production) {
         c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
       }
+      const type = (c.res.headers.get('content-type') ?? '').toLowerCase();
+      const page = type.startsWith('text/html');
       // MWD-19: on the pages only (index.html), not on the JSON.
-      if ((c.res.headers.get('content-type') ?? '').toLowerCase().startsWith('text/html')) {
+      if (page) {
         c.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+      }
+      // MWG review (2026-11-15, security): another site cannot load the
+      // api's JSON or the page as a no-cors subresource (<script>, <img>)
+      // and read it through a side channel. Only JSON and HTML: the web's
+      // own calls are same-origin, or CORS in development (CORP does not
+      // apply to CORS requests or to navigations, Telegram's frame
+      // included). Static files (/assets, icons) and the attendance
+      // download keep none, so nothing another origin loads changes; a
+      // header a route set itself is kept.
+      if (
+        (page || type.startsWith('application/json')) &&
+        !c.res.headers.has('Cross-Origin-Resource-Policy')
+      ) {
+        c.header('Cross-Origin-Resource-Policy', 'same-origin');
       }
     }
   };

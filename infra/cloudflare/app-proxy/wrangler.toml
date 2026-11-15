@@ -14,6 +14,9 @@ workers_dev = true
 #   CLIENT_IP_PROXY_KEY real client address for the API rate limiter (AUTH-6,
 #                       2026-10-30); must equal CLIENT_IP_PROXY_KEY in the
 #                       server .env
+# Optional plain variable (not a secret; README "Extra connect-src origins"):
+#   COMPASS_CONNECT_ORIGINS  space-separated https origins added to the
+#                       page CSP's connect-src (the api's photo bucket)
 # No ORIGIN_URL (review OPS-28): the one here was a quick tunnel long gone,
 # and the Worker sent requests there whenever ntfy and KV had nothing.
 # Without an origin it now answers 503; set ORIGIN_URL under [vars] only
