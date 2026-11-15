@@ -1,4 +1,5 @@
 import { useToast } from '@compass/ui';
+import { copyText } from '../../lib/clipboard';
 import { getTg, haptic } from '../../lib/telegram';
 import { useI18n } from '../../hooks/useI18n';
 
@@ -19,11 +20,13 @@ export function TelegramIdChip({ id }: { id?: string } = {}) {
       type="button"
       aria-label={i18n.t('auth.copyTelegramId', { id: String(tgUserId) })}
       onClick={() => {
-        if (!navigator.clipboard) {
-          failed();
-          return;
-        }
-        void navigator.clipboard.writeText(String(tgUserId)).then(() => {
+        // MWG: lib/clipboard, which also copies in old WebViews without
+        // navigator.clipboard.
+        void copyText(String(tgUserId)).then((ok) => {
+          if (!ok) {
+            failed();
+            return;
+          }
           haptic('success');
           toast.success(i18n.t('auth.telegramIdCopied'));
         }, failed);

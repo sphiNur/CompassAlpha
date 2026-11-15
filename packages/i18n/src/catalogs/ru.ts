@@ -522,6 +522,8 @@ export const ru = {
   'dock.search.open': 'Поиск',
   'dock.search.close': 'Закрыть поиск',
   'common.optional': 'Необязательно',
+  'common.textThenDetail': '{text}, {detail}',
+  'common.actionOnItem': '{action}: {item}',
   'common.labelValue': '{label}: {value}',
   'common.amountWithCurrency': '{amount} {currency}',
   'common.empty': 'Пусто',
@@ -693,7 +695,6 @@ export const ru = {
     'У вашей роли нет доступа к заказам, проверке, закупкам и другим разделам. Если нужно, обратитесь к администратору.',
   'shell.offline.title': 'Нет соединения',
   'shell.offline.showDetails': 'Что работает',
-  'shell.offline.hideDetails': 'Скрыть',
   'shell.pageNotLoaded.title': 'Эта страница ещё не загружена',
   'shell.pageNotLoaded.body':
     'Для неё нужна сеть. Она откроется сама, когда появится связь, или нажмите «Повторить».',
@@ -711,6 +712,7 @@ export const ru = {
   'run.alloc.priceFor': 'Цена за единицу для магазина «{store}»',
   'ops.purge.dateLabel': 'Дата',
   'boot.copyDetails': 'Скопировать сведения об ошибке',
+  'boot.copyFailed': 'Не удалось скопировать. Сделайте снимок экрана и отправьте администратору.',
   'boot.detailsCopied': 'Скопировано. Отправьте администратору.',
   'shell.offline.noDataBody':
     'На этом телефоне ещё ничего не загружено; данные появятся, когда будет связь. Заказы, закупки и приёмка сохраняются на телефоне и отправятся при подключении; проверка, закрытие дня, продажи и управление сохраняются только онлайн.',
@@ -1214,6 +1216,7 @@ export const ru = {
   'order.extras.wholeNumber': 'Для этой единицы — только целое число.',
   'order.categories.uncategorized': 'Без категории',
   'order.batches.backToReceipt': 'К партиям за сегодня',
+  'order.extras.rowNumber': 'Прочая позиция {n}',
   'order.extras.remove': 'Удалить',
   'order.extras.usedCount':
     '{n, plural, one {использовано # раз} few {использовано # раза} many {использовано # раз} other {использовано # раза}}',
@@ -1235,7 +1238,6 @@ export const ru = {
     '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
   'approval.contributorsCount':
     '{n, plural, one {# автор заказа} few {{n} автора заказа} many {{n} авторов заказа} other {{n} автора заказа}}',
-  'approval.hideItems': 'Скрыть',
   'approval.approve': 'Одобрить',
   'approval.reject': 'Отклонить',
   'approval.release': 'Вернуть в очередь',
@@ -1622,7 +1624,6 @@ export const ru = {
   'run.action.supplierNone': 'Не указан',
   'run.action.receiptPhoto': 'Фото чека (необязательно)',
   'run.action.allocateAcrossStores': 'Распределить по магазинам',
-  'run.action.actualQtyAriaLabel': 'фактическое количество',
   'run.action.unitPriceAriaLabel': 'цена за единицу',
   'run.action.qtyLabelShort': 'Количество',
   'run.action.priceLabelShort': 'Цена',
@@ -2923,6 +2924,7 @@ export const ru = {
     'Вам отметили уход в магазине «{store}» в {time} с телефона, владелец: {owner}. Если это были не вы, сообщите управляющему.',
   'attendance.live.preparing':
     'Готовим отслеживание лица. В первый раз загружается несколько МБ, подождите.',
+  'attendance.live.preparingLabel': 'Готовим отслеживание лица',
   'attendance.live.preparingPercent': 'Готовим отслеживание лица: {percent}%',
   'attendance.live.slow': 'Сеть медленная, отслеживание лица ещё загружается. Подождите.',
   'attendance.errors.consentRequired': 'Сначала согласитесь на проверку лица.',

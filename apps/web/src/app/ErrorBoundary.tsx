@@ -12,6 +12,7 @@
  * boot-guard's error on it: a blank page with no way out.
  */
 import { Component } from 'react';
+import { copyText } from '../lib/clipboard';
 import { clearLocalSession } from '../lib/localSession';
 import { reloadApp } from '../lib/reload';
 import type { ErrorInfo, ReactNode } from 'react';
@@ -40,7 +41,8 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
-  copied?: boolean;
+  /** The copy button's result, said in the status line under it. */
+  copy?: 'copied' | 'failed';
 }
 
 /**
@@ -119,13 +121,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </p>
           <button
             type="button"
+            // MWG: lib/clipboard (with the old-WebView fallback), and the
+            // result said in the status line below, failure too. No toast:
+            // this screen sits outside every provider.
             onClick={() => {
-              void navigator.clipboard
-                ?.writeText(crashDetails(error))
-                .then(() => this.setState({ copied: true }))
-                .catch(() => {
-                  /* clipboard refused: nothing to copy to */
-                });
+              void copyText(crashDetails(error)).then(
+                (ok) => this.setState({ copy: ok ? 'copied' : 'failed' }),
+                () => this.setState({ copy: 'failed' }),
+              );
             }}
             style={{
               padding: '10px 20px',
@@ -137,12 +140,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               cursor: 'pointer',
             }}
           >
-            {this.state.copied ? t('boot.detailsCopied') : t('boot.copyDetails')}
+            {t('boot.copyDetails')}
           </button>
+          <p role="status" style={{ fontSize: '0.875rem', margin: 0, maxWidth: 320 }}>
+            {this.state.copy === 'copied'
+              ? t('boot.detailsCopied')
+              : this.state.copy === 'failed'
+                ? t('boot.copyFailed')
+                : null}
+          </p>
           <button
             type="button"
             onClick={() => {
-              this.setState({ error: null, copied: false });
+              this.setState({ error: null, copy: undefined });
             }}
             // Review COREWEB1-25 (2026-11-11): the action colour is light
             // blue in the dark theme, and white on it was 2.4:1.

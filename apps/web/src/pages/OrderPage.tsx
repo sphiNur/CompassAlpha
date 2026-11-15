@@ -537,7 +537,11 @@ export function OrderPage() {
                 />
               </li>
             ) : null}
-            {catalogGroups.map((group) => {
+            {catalogGroups.map((group, groupIndex) => {
+              // Rows above this group, for SkuRow's index.
+              const rowsBefore = catalogGroups
+                .slice(0, groupIndex)
+                .reduce((n, g) => n + g.skus.length, 0);
               // DX-ORD-6: headings under "All"; a picked category is its own
               // heading already. Archived lines always say what they are.
               const showHeading =
@@ -568,9 +572,10 @@ export function OrderPage() {
                     </SectionLabel>
                   ) : null}
                   <ul className="flex flex-col" role="list">
-                    {group.skus.map((sku) => (
+                    {group.skus.map((sku, i) => (
                       <SkuRow
                         key={sku.id}
+                        index={rowsBefore + i}
                         sku={sku}
                         archived={!!sku.isArchived}
                         myQty={myQtyBySku.get(sku.id) ?? 0}
@@ -666,6 +671,9 @@ export function OrderPage() {
         open={reviewOpen}
         onOpenChange={(open) => !open && !submit.isPending && setReviewOpen(false)}
         title={i18n.t('order.review.title')}
+        // MWG: focus lands on the title, above what is being ordered (the
+        // list is no longer a tab stop of its own; see below).
+        focusTitleOnOpen
         description={
           // DX-ORD-12: "7 items + 1 other item" — other items are not products.
           // ORD-20: the "+" is the catalog's (order.batches.itemsAndExtras).
@@ -710,9 +718,10 @@ export function OrderPage() {
         {/* A11Y-7 (2026-10-31): the list is the sheet's first focus stop, so
             opening 复核订单 with the keyboard lands on what is being
             ordered. Focus used to land on 提交订单 itself, where a repeated
-            Enter submitted the order unread. */}
+            Enter submitted the order unread. MWG: a static region is not a
+            tab stop (tabIndex -1); the sheet opens on its title instead. */}
         <div
-          tabIndex={0}
+          tabIndex={-1}
           role="region"
           aria-label={i18n.t('order.review.title')}
           className="rounded-[var(--r-utility)]"

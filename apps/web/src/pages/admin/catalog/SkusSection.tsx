@@ -2,7 +2,7 @@
  * Admin → Catalog → Products: search, import, the list and its editor.
  * Review ADM2-11 (2026-11-11): one file per catalog section.
  */
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useId, useMemo, useState } from 'react';
 import {
   Button,
   DataState,
@@ -45,6 +45,7 @@ import {
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { readSortIndex } from './sortIndex';
 import { lastSkuCategory, pickNewSkuCategory, rememberSkuCategory } from './skuCategory';
+import { SheetForm } from '../../../components/SheetForm';
 
 interface SkuDraft {
   skuId?: string;
@@ -93,6 +94,7 @@ export function SkusSection() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const formId = useId();
   const unitLabel = useUnitLabel();
   const productName = useProductName();
   const productNameParts = useProductNameParts();
@@ -302,6 +304,8 @@ export function SkusSection() {
         title={i18n.t(draft?.skuId ? 'catalog.sku.edit' : 'catalog.sku.new')}
         footer={
           <Button
+            type="submit"
+            form={formId}
             block
             loading={create.isPending || update.isPending}
             disabled={
@@ -337,7 +341,7 @@ export function SkusSection() {
         }
       >
         {draft ? (
-          <div className="flex flex-col gap-3 py-3">
+          <SheetForm id={formId} className="flex flex-col gap-3 py-3">
             <CatalogNameFields
               names={draft.names}
               onChange={(names) => setDraft({ ...draft, names })}
@@ -410,13 +414,16 @@ export function SkusSection() {
                 onChange={(e) => setDraft({ ...draft, code: e.target.value })}
                 maxLength={CATALOG_TEXT_MAX.skuCode}
                 placeholder={i18n.t('common.optional')}
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
               />
             </Field>
             <SortIndexField
               text={draft.sortText}
               onText={(sortText) => setDraft({ ...draft, sortText })}
             />
-          </div>
+          </SheetForm>
         ) : null}
       </Sheet>
     </div>

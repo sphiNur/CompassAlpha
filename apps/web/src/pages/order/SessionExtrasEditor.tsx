@@ -269,6 +269,7 @@ export function SessionExtrasEditor({
               onChange={(patch) => updateRow(idx, patch)}
               onNameCommit={commitName}
               onRemove={() => removeRow(idx)}
+              index={idx}
             />
           ))}
           <Button
@@ -300,8 +301,11 @@ function ExtraRowEditor({
   onChange,
   onNameCommit,
   onRemove,
+  index,
 }: {
   row: ExtraDraft;
+  /** The row's place in the list, naming its remove button while it has no name. */
+  index: number;
   /** Not saved: named but with an invalid qty (B-09). */
   invalid?: boolean;
   storeId: string;
@@ -403,7 +407,14 @@ function ExtraRowEditor({
         </div>
         {/* V11: centred on the field, not on the field and its label. */}
         <div className="flex h-[var(--control-h)] shrink-0 items-center">
-          <RemoveExtraButton label={i18n.t('order.extras.remove')} onClick={onRemove} />
+          {/* MWG: each row's remove button says which row ("Remove: Milk"). */}
+          <RemoveExtraButton
+            label={i18n.t('common.actionOnItem', {
+              action: i18n.t('order.extras.remove'),
+              item: row.name.trim() || i18n.t('order.extras.rowNumber', { n: index + 1 }),
+            })}
+            onClick={onRemove}
+          />
         </div>
       </div>
       <div className="mt-2 flex items-center gap-2">

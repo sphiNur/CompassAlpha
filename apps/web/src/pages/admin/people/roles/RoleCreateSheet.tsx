@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import {
   Button,
   Field,
@@ -25,6 +25,7 @@ import {
 import { canPutKeyInRole } from '../../../../lib/authority';
 import { groupPermissions } from '../permissionGroups';
 import { PermissionGroupList } from '../PermissionGroupList';
+import { SheetForm } from '../../../../components/SheetForm';
 import { PermissionKeyOption } from './PermissionKeyOption';
 import { RankField } from './RankField';
 
@@ -128,6 +129,7 @@ export function RoleCreateSheet({
     });
   };
 
+  const formId = useId();
   const canSave = slugIsValid(slugToSend) && name.trim().length > 0 && rankRead.ok;
   // UX-05: what the disabled Create is waiting for, first problem first.
   const saveHint = !name.trim()
@@ -150,6 +152,8 @@ export function RoleCreateSheet({
       footer={
         <Button
           block
+          type="submit"
+          form={formId}
           loading={create.isPending}
           disabled={!canSave}
           disabledHint={saveHint}
@@ -168,7 +172,7 @@ export function RoleCreateSheet({
         </Button>
       }
     >
-      <div className="flex flex-col gap-3 py-3">
+      <SheetForm id={formId} className="flex flex-col gap-3 py-3">
         <Field label={i18n.t('admin.field.name')} required>
           <Input
             value={name}
@@ -190,6 +194,9 @@ export function RoleCreateSheet({
             {...slugLeft.inputProps}
             onChange={(e) => setSlug(normaliseSlugInput(e.target.value))}
             maxLength={64}
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             placeholder={autoSlug}
           />
         </Field>
@@ -227,7 +234,7 @@ export function RoleCreateSheet({
             />
           )}
         </div>
-      </div>
+      </SheetForm>
     </Sheet>
   );
 }

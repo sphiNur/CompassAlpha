@@ -2,7 +2,7 @@
  * Development builds: sign in as any member of the local database.
  * Review COREWEB1-09 (2026-11-12): out of AuthGate.tsx.
  */
-import { Banner, Button, Spinner } from '@compass/ui';
+import { Banner, Button, LoadingState } from '@compass/ui';
 import { useI18n, useRoleLabels } from '../../hooks/useI18n';
 import { formatList } from '../../lib/listFormat';
 
@@ -60,9 +60,7 @@ export function DevPersonaPicker({
         </Button>
       </div>
       {loading ? (
-        <div className="flex items-center justify-center py-4 text-[var(--c-fg-muted)]">
-          <Spinner size={22} />
-        </div>
+        <LoadingState variant="compact" />
       ) : error ? (
         <Banner tone="danger" title={i18n.t('dev.persona.loadFailed')}>
           {error}

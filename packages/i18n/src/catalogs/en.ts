@@ -554,6 +554,8 @@ export const en = {
   'common.optional': 'Optional',
   // 2026-10-30: "Label: value" built in code put a half-width colon into
   // Chinese (支付方式: 现金). The punctuation belongs to the language.
+  'common.textThenDetail': '{text}, {detail}',
+  'common.actionOnItem': '{action}: {item}',
   'common.labelValue': '{label}: {value}',
   'common.amountWithCurrency': '{amount} {currency}',
   'common.empty': 'Empty',
@@ -738,7 +740,6 @@ export const en = {
     'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
   'shell.offline.title': 'You are offline',
   'shell.offline.showDetails': 'What works',
-  'shell.offline.hideDetails': 'Hide',
   'shell.pageNotLoaded.title': 'This page has not downloaded yet',
   'shell.pageNotLoaded.body':
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
@@ -757,6 +758,7 @@ export const en = {
   'run.alloc.priceFor': 'Unit price for {store}',
   'ops.purge.dateLabel': 'Date',
   'boot.copyDetails': 'Copy error details',
+  'boot.copyFailed': 'Could not copy. Take a screenshot of this screen and send it to your administrator.',
   'boot.detailsCopied': 'Copied. Send it to your administrator.',
   'shell.offline.noDataBody':
     'Nothing has been loaded on this phone yet; data appears once you are back online. Orders, purchases and receiving are kept on this phone and sent when you are back online; review, daily close, sales and admin need a connection to save.',
@@ -1279,6 +1281,7 @@ export const en = {
   'order.extras.wholeNumber': 'Use a whole number for this unit.',
   'order.categories.uncategorized': 'Uncategorized',
   'order.batches.backToReceipt': "Back to today's batches",
+  'order.extras.rowNumber': 'Other item {n}',
   'order.extras.remove': 'Remove',
   // Review ORD-23 (2026-11): how many orders of the last 30 days had the
   // suggested name; it read "×3", which a screen reader says as "times 3".
@@ -1301,7 +1304,6 @@ export const en = {
   // triage without expanding every row.
   'approval.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',
   'approval.contributorsCount': '{n, plural, =1 {1 contributor} other {{n} contributors}}',
-  'approval.hideItems': 'Hide items',
   'approval.approve': 'Approve',
   'approval.reject': 'Reject',
   'approval.release': 'Put back',
@@ -1690,7 +1692,6 @@ export const en = {
   'run.action.supplierNone': 'Not specified',
   'run.action.receiptPhoto': 'Receipt photo (optional)',
   'run.action.allocateAcrossStores': 'Allocate across stores',
-  'run.action.actualQtyAriaLabel': 'actual quantity',
   'run.action.unitPriceAriaLabel': 'unit price',
   // Review MWA-20 (V11): the visible labels over the run row's two fields.
   'run.action.qtyLabelShort': 'Quantity',
@@ -3018,6 +3019,7 @@ export const en = {
     "You were clocked out at {store} at {time} on {owner}'s phone. If this was not you, tell your manager.",
   'attendance.live.preparing':
     'Getting face tracking ready. The first time it downloads a few MB; please wait.',
+  'attendance.live.preparingLabel': 'Getting face tracking ready',
   'attendance.live.preparingPercent': 'Getting face tracking ready: {percent}%',
   'attendance.live.slow': 'The network is slow; face tracking is still downloading. Please wait.',
   'attendance.errors.consentRequired': 'Agree to the face check first.',

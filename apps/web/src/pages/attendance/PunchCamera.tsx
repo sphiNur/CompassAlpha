@@ -274,22 +274,16 @@ export function FaceOverlay({
           <span className="text-old-label">
             {i18n.t('attendance.live.preparingPercent', { percent })}
           </span>
-          <span
-            // UI-8 exception: the progress bar over the camera picture, as
-            // the text above it.
-            className="h-1.5 w-full overflow-hidden rounded-full bg-white/30"
-            role="progressbar"
-            aria-label={i18n.t('attendance.live.preparingPercent', { percent })}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-          >
-            <span
-              // UI-8 exception: as the bar around it.
-              className="block h-full rounded-full bg-white transition-[width]"
-              style={{ width: `${percent}%` }}
-            />
-          </span>
+          {/* MWG (progress): a native <progress> with a name that stays
+              put (the percent was in the name, which changed on every
+              step); the value carries the percent. UI-8 exception: the bar
+              over the camera picture, white as the text above it. */}
+          <progress
+            aria-label={i18n.t('attendance.live.preparingLabel')}
+            max={100}
+            value={percent}
+            className="block h-1.5 w-full appearance-none overflow-hidden rounded-full border-0 bg-white/30 [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-white [&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-white"
+          />
         </span>
       ) : null}
       {guide ? (

@@ -9,7 +9,7 @@
  * (2026-11-12): its own file; the quantity and price fields are the ones
  * the "+ add" sheet uses (QtyPriceFields).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -35,6 +35,7 @@ import type { SkuLite, StoreLite } from '../types';
 import type { PurchaseDraft } from './drafts';
 import { QtyPriceFields } from './QtyPriceFields';
 import { priceHint, qtyHint } from './saveHint';
+import { SheetForm } from '../../../components/SheetForm';
 
 interface PurchaseSheetProps {
   draft: PurchaseDraft | null;
@@ -73,6 +74,7 @@ export function PurchaseSheet({
   onUndo,
 }: PurchaseSheetProps) {
   const i18n = useI18n();
+  const formId = useId();
   const toast = useToast();
   const currency = useCurrency();
   const unitLabel = useUnitLabel();
@@ -158,6 +160,8 @@ export function PurchaseSheet({
       footer={
         // M3.49: see Shell's PageMainButton — sheet footers always render now.
         <Button
+          type="submit"
+          form={formId}
           block
           loading={submitting}
           disabled={!canSubmit}
@@ -181,7 +185,7 @@ export function PurchaseSheet({
       }
     >
       {draft ? (
-        <div className="flex flex-col gap-3 py-3">
+        <SheetForm id={formId} className="flex flex-col gap-3 py-3">
           {draft.topUp ? (
             // DX-BUY-2: the earlier batch stays as it was bought.
             <Banner tone="info">
@@ -410,7 +414,7 @@ export function PurchaseSheet({
               {i18n.t('run.action.undoPurchase')}
             </Button>
           ) : null}
-        </div>
+        </SheetForm>
       ) : null}
     </Sheet>
   );

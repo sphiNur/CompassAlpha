@@ -26,7 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cacheOwner } from '../lib/queryPersist';
 import { hintStorage, saveRunHint } from '../lib/runHint';
 import {
@@ -106,6 +106,7 @@ import {
 } from './runs/lib/confirmCopy';
 import { RunConfirmSummary } from './runs/sheets/RunConfirmSummary';
 import { newAddItemDraft, planAddItemSubmit } from './runs/lib/addItem';
+import { SheetForm } from '../components/SheetForm';
 
 /** R4 (2026-11-13): the mark-unavailable sheet's common reasons. */
 const UNAVAILABLE_PRESETS = [
@@ -117,6 +118,7 @@ const UNAVAILABLE_PRESETS = [
 
 export function RunPage() {
   const i18n = useI18n();
+  const unavailableFormId = useId();
   const dates = useDateFormat();
   const productName = useProductName();
   const productNameParts = useProductNameParts();
@@ -1216,19 +1218,14 @@ export function RunPage() {
               </>
             ) : null}
           </div>
-          <div
-            role="progressbar"
+          {/* MWG (progress): a native <progress>, styled as the thin bar
+              it replaced. */}
+          <progress
             aria-label={i18n.t('run.gauge.progressLabel')}
-            aria-valuemin={0}
-            aria-valuemax={gauge.total}
-            aria-valuenow={gauge.done}
-            className="h-[3px] overflow-hidden rounded-full bg-[var(--c-surface-2)]"
-          >
-            <div
-              className="h-full bg-[var(--c-action)]"
-              style={{ width: `${gauge.total > 0 ? (gauge.done / gauge.total) * 100 : 0}%` }}
-            />
-          </div>
+            max={Math.max(gauge.total, 1)}
+            value={gauge.done}
+            className="block h-[3px] w-full appearance-none overflow-hidden rounded-full border-0 bg-[var(--c-surface-2)] [&::-moz-progress-bar]:bg-[var(--c-action)] [&::-webkit-progress-bar]:bg-[var(--c-surface-2)] [&::-webkit-progress-value]:bg-[var(--c-action)]"
+          />
         </div>
       ) : null}
       </div>
@@ -1804,6 +1801,8 @@ export function RunPage() {
         footer={
           // M3.49: the sheet carries its own submit (Shell's PageMainButton).
           <Button
+            type="submit"
+            form={unavailableFormId}
             block
             variant="danger"
             disabled={!unavailableNote.trim() || (markUnavailable.isPending && !typedNoteSending)}
@@ -1820,7 +1819,7 @@ export function RunPage() {
           </Button>
         }
       >
-        <div className="flex flex-col gap-3 py-3">
+        <SheetForm id={unavailableFormId} className="flex flex-col gap-3 py-3">
           {/* R4 (2026-11-13): a common reason marks the item at once (open
               row → N/A → reason); the hint says so. Typing a reason and
               the button below still work. Kit buttons, not chips: a chip
@@ -1853,7 +1852,7 @@ export function RunPage() {
             // RUNWEB1-28: a name that stays once something is typed.
             aria-label={i18n.t('run.action.unavailableReasonPlaceholder')}
           />
-        </div>
+        </SheetForm>
       </Sheet>
 
       {/* Generic confirm sheet for ALL the major transitions. Centralized

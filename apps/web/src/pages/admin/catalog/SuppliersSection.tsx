@@ -2,7 +2,7 @@
  * Admin → Catalog → Suppliers (stalls): the list and its editor. Review
  * ADM2-11 (2026-11-11): one file per catalog section.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   Button,
   DataState,
@@ -22,6 +22,7 @@ import { useUndoToast } from '../../../hooks/useUndoToast';
 import { useIsOrgAdmin } from '../../../hooks/useAdminAuthority';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
 import { changedFields, hasChanges } from './editPatch';
+import { SheetForm } from '../../../components/SheetForm';
 
 /** A supplier's fields as the editor types them ('' for none). */
 interface SupplierText {
@@ -58,6 +59,7 @@ export function SuppliersSection() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const formId = useId();
   const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<SupplierDraft | null>(null);
 
@@ -164,6 +166,8 @@ export function SuppliersSection() {
         title={i18n.t(draft?.supplierId ? 'catalog.supplier.edit' : 'catalog.supplier.new')}
         footer={
           <Button
+            type="submit"
+            form={formId}
             block
             loading={create.isPending || update.isPending}
             disabled={!draft?.name.trim()}
@@ -191,7 +195,7 @@ export function SuppliersSection() {
         }
       >
         {draft ? (
-          <div className="flex flex-col gap-3 py-3">
+          <SheetForm id={formId} className="flex flex-col gap-3 py-3">
             <Field label={i18n.t('admin.field.name')} required>
               <Input
                 value={draft.name}
@@ -232,7 +236,7 @@ export function SuppliersSection() {
                 maxLength={CATALOG_TEXT_MAX.notes}
               />
             </Field>
-          </div>
+          </SheetForm>
         ) : null}
       </Sheet>
     </div>

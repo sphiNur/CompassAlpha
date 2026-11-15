@@ -2,7 +2,7 @@
  * Admin → Catalog → Dishes: menu items and their recipes. Review ADM2-11
  * (2026-11-11): one file per catalog section.
  */
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -32,6 +32,7 @@ import { EMPTY_NAMES, namesForEdit, type CatalogNames } from './catalogNames';
 import { checkDishDraft, type DishIngredientDraft } from './dishDraft';
 import { haptic } from '../../../lib/telegram';
 import { useEditorSheet } from '../../../hooks/useDraftChanged';
+import { SheetForm } from '../../../components/SheetForm';
 
 // ============ Dishes (M2.0b) ============
 //
@@ -83,6 +84,7 @@ const EMPTY_DISH: DishDraft = {
 
 export function DishesSection() {
   const i18n = useI18n();
+  const formId = useId();
   const unitLabel = useUnitLabel();
   const productName = useProductName();
   const productNameParts = useProductNameParts();
@@ -350,136 +352,144 @@ export function DishesSection() {
           // the sheet is a read-only view; Save used to be offered and then
           // refused.
           draft && canManage ? (
-            <Button block loading={save.isPending} onClick={handleSave}>
+            <Button type="submit" form={formId} block loading={save.isPending} onClick={handleSave}>
               {i18n.t('common.save')}
             </Button>
           ) : null
         }
       >
         {draft ? (
-          <fieldset disabled={!canManage} className="flex min-w-0 flex-col gap-3 border-0 p-0 py-3">
-            {!canManage ? <Banner tone="info" title={i18n.t('dishes.readOnly')} /> : null}
-            {/* Walkthrough F16 (2026-11-05): the same name fields as the
-                category and product forms. ADM2-11: the same component. */}
-            <CatalogNameFields
-              names={draft.names}
-              onChange={(names) => setDraft({ ...draft, names })}
-            />
-            <Field label={i18n.t('dishes.field.code')} hint={i18n.t('dishes.field.codeHint')}>
-              <Input
-                value={draft.code}
-                onChange={(e) => setDraft({ ...draft, code: e.target.value })}
-                maxLength={CATALOG_TEXT_MAX.dishCode}
-                placeholder="D-12"
-              />
-            </Field>
-            {/* UX-08: the price grouped, with its currency, under the field. */}
-            <Field
-              label={i18n.t('dishes.field.unitPrice')}
-              hint={formatAmountInFull(draft.unitPrice, currency)}
+          <SheetForm id={formId}>
+            <fieldset
+              disabled={!canManage}
+              className="flex min-w-0 flex-col gap-3 border-0 p-0 py-3"
             >
-              <Input
-                type="number"
-                value={draft.unitPrice}
-                onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })}
+              {!canManage ? <Banner tone="info" title={i18n.t('dishes.readOnly')} /> : null}
+              {/* Walkthrough F16 (2026-11-05): the same name fields as the
+                category and product forms. ADM2-11: the same component. */}
+              <CatalogNameFields
+                names={draft.names}
+                onChange={(names) => setDraft({ ...draft, names })}
               />
-            </Field>
+              <Field label={i18n.t('dishes.field.code')} hint={i18n.t('dishes.field.codeHint')}>
+                <Input
+                  value={draft.code}
+                  onChange={(e) => setDraft({ ...draft, code: e.target.value })}
+                  maxLength={CATALOG_TEXT_MAX.dishCode}
+                  placeholder="D-12"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+              </Field>
+              {/* UX-08: the price grouped, with its currency, under the field. */}
+              <Field
+                label={i18n.t('dishes.field.unitPrice')}
+                hint={formatAmountInFull(draft.unitPrice, currency)}
+              >
+                <Input
+                  type="number"
+                  value={draft.unitPrice}
+                  onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })}
+                />
+              </Field>
 
-            {/* Ingredients. M2.1: SectionLabel + add-ingredient
+              {/* Ingredients. M2.1: SectionLabel + add-ingredient
                 button uses Button component. */}
-            <div>
-              <div className="mb-2 flex items-baseline justify-between gap-2 px-0">
-                <SectionLabel className="px-0 py-0">
-                  {i18n.t('dishes.section.ingredients')}
-                </SectionLabel>
-                <Button variant="pearl" size="sm" onClick={addIngredient}>
-                  {i18n.t('dishes.action.addIngredient')}
-                </Button>
-              </div>
-              {draft.ingredients.length === 0 ? (
-                <p className="text-old-label text-[var(--c-fg-muted)]">
-                  {i18n.t('dishes.label.noIngredientsHint')}
-                </p>
-              ) : (
-                // Review ADM2-12 (2026-11-11): rows of one white card, not
-                // grey cards (UI-6, UI-13).
-                <ul className={rowGroupClass} role="list">
-                  {draft.ingredients.map((ing, idx) => {
-                    const sku = skuById.get(ing.skuId);
-                    const archivedSku = sku?.isArchived ? sku : null;
-                    const archivedNoteId = `dish-${ing.key}-archived`;
-                    return (
-                      <li key={ing.key} className="flex flex-col gap-1 px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          {/* DX-VIS-5: the kit Select (field edge at 3:1);
+              <div>
+                <div className="mb-2 flex items-baseline justify-between gap-2 px-0">
+                  <SectionLabel className="px-0 py-0">
+                    {i18n.t('dishes.section.ingredients')}
+                  </SectionLabel>
+                  <Button variant="pearl" size="sm" onClick={addIngredient}>
+                    {i18n.t('dishes.action.addIngredient')}
+                  </Button>
+                </div>
+                {draft.ingredients.length === 0 ? (
+                  <p className="text-old-label text-[var(--c-fg-muted)]">
+                    {i18n.t('dishes.label.noIngredientsHint')}
+                  </p>
+                ) : (
+                  // Review ADM2-12 (2026-11-11): rows of one white card, not
+                  // grey cards (UI-6, UI-13).
+                  <ul className={rowGroupClass} role="list">
+                    {draft.ingredients.map((ing, idx) => {
+                      const sku = skuById.get(ing.skuId);
+                      const archivedSku = sku?.isArchived ? sku : null;
+                      const archivedNoteId = `dish-${ing.key}-archived`;
+                      return (
+                        <li key={ing.key} className="flex flex-col gap-1 px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            {/* DX-VIS-5: the kit Select (field edge at 3:1);
                               an archived product is marked by its danger ring. */}
-                          <div className="min-w-0 flex-1">
-                            <Select
-                              value={ing.skuId}
-                              aria-label={i18n.t('dishes.field.pickSku')}
-                              invalid={!!archivedSku}
-                              aria-describedby={archivedSku ? archivedNoteId : undefined}
-                              onChange={(e) => {
-                                const next = [...draft.ingredients];
-                                next[idx] = { ...next[idx]!, skuId: e.target.value };
+                            <div className="min-w-0 flex-1">
+                              <Select
+                                value={ing.skuId}
+                                aria-label={i18n.t('dishes.field.pickSku')}
+                                invalid={!!archivedSku}
+                                aria-describedby={archivedSku ? archivedNoteId : undefined}
+                                onChange={(e) => {
+                                  const next = [...draft.ingredients];
+                                  next[idx] = { ...next[idx]!, skuId: e.target.value };
+                                  setDraft({ ...draft, ingredients: next });
+                                }}
+                              >
+                                <option value="">{i18n.t('dishes.field.pickSku')}</option>
+                                {archivedSku ? (
+                                  <option value={archivedSku.id} disabled>
+                                    {i18n.t('dishes.label.archivedSku', {
+                                      name: productName({ names: archivedSku.names }),
+                                    })}
+                                  </option>
+                                ) : null}
+                                {activeSkus.map((skuRow) => (
+                                  <option key={skuRow.id} value={skuRow.id}>
+                                    {productName({ names: skuRow.names })}
+                                  </option>
+                                ))}
+                              </Select>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="danger-ghost"
+                              onClick={() => {
+                                const next = draft.ingredients.filter((_, i) => i !== idx);
                                 setDraft({ ...draft, ingredients: next });
                               }}
+                              aria-label={i18n.t('common.remove')}
+                              className="shrink-0"
                             >
-                              <option value="">{i18n.t('dishes.field.pickSku')}</option>
-                              {archivedSku ? (
-                                <option value={archivedSku.id} disabled>
-                                  {i18n.t('dishes.label.archivedSku', {
-                                    name: productName({ names: archivedSku.names }),
-                                  })}
-                                </option>
-                              ) : null}
-                              {activeSkus.map((skuRow) => (
-                                <option key={skuRow.id} value={skuRow.id}>
-                                  {productName({ names: skuRow.names })}
-                                </option>
-                              ))}
-                            </Select>
+                              ×
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="danger-ghost"
-                            onClick={() => {
-                              const next = draft.ingredients.filter((_, i) => i !== idx);
-                              setDraft({ ...draft, ingredients: next });
-                            }}
-                            aria-label={i18n.t('common.remove')}
-                            className="shrink-0"
-                          >
-                            ×
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={ing.qtyPerServing}
-                            onChange={(e) => {
-                              const next = [...draft.ingredients];
-                              next[idx] = { ...next[idx]!, qtyPerServing: e.target.value };
-                              setDraft({ ...draft, ingredients: next });
-                            }}
-                            placeholder={i18n.t('dishes.field.qtyPlaceholder')}
-                          />
-                          <span className="text-old-label text-[var(--c-fg-muted)]">
-                            {sku?.unit ? unitLabel.uncounted(sku.unit) : '—'}
-                          </span>
-                        </div>
-                        {archivedSku ? (
-                          <FieldError id={archivedNoteId} className="mt-0">
-                            {i18n.t('dishes.errors.archivedIngredientRow')}
-                          </FieldError>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </fieldset>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={ing.qtyPerServing}
+                              onChange={(e) => {
+                                const next = [...draft.ingredients];
+                                next[idx] = { ...next[idx]!, qtyPerServing: e.target.value };
+                                setDraft({ ...draft, ingredients: next });
+                              }}
+                              placeholder={i18n.t('dishes.field.qtyPlaceholder')}
+                            />
+                            <span className="text-old-label text-[var(--c-fg-muted)]">
+                              {sku?.unit ? unitLabel.uncounted(sku.unit) : '—'}
+                            </span>
+                          </div>
+                          {archivedSku ? (
+                            <FieldError id={archivedNoteId} className="mt-0">
+                              {i18n.t('dishes.errors.archivedIngredientRow')}
+                            </FieldError>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </fieldset>
+          </SheetForm>
         ) : null}
       </Sheet>
     </div>

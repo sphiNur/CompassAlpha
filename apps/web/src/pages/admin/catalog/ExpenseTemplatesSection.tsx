@@ -2,7 +2,7 @@
  * Admin → Catalog → Expense templates. Review ADM2-11 (2026-11-11): one
  * file per catalog section.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   Button,
   DataState,
@@ -36,6 +36,7 @@ import { moneyLine } from '../../../lib/money';
 import { paymentMethodOrCash } from '../../../lib/paymentMethod';
 import { readSortIndex } from './sortIndex';
 import { changedFields, hasChanges } from './editPatch';
+import { SheetForm } from '../../../components/SheetForm';
 
 // ============ Expense Templates (M3.57) ============
 //
@@ -83,6 +84,7 @@ function templateFields(d: ExpenseTemplateText, sortIndex: number) {
 
 export function ExpenseTemplatesSection() {
   const i18n = useI18n();
+  const formId = useId();
   const [includeArchived, setIncludeArchived] = useState(false);
   const templatesQuery = trpc.admin.expenseTemplateList.useQuery({
     includeArchived,
@@ -236,6 +238,8 @@ export function ExpenseTemplatesSection() {
         }
         footer={
           <Button
+            type="submit"
+            form={formId}
             block
             loading={create.isPending || update.isPending}
             disabled={
@@ -275,7 +279,7 @@ export function ExpenseTemplatesSection() {
         }
       >
         {draft ? (
-          <div className="flex flex-col gap-3 py-3">
+          <SheetForm id={formId} className="flex flex-col gap-3 py-3">
             <Field label={i18n.t('admin.field.label')} required>
               <Input
                 value={draft.label}
@@ -336,7 +340,7 @@ export function ExpenseTemplatesSection() {
               text={draft.sortText}
               onText={(sortText) => setDraft({ ...draft, sortText })}
             />
-          </div>
+          </SheetForm>
         ) : null}
       </Sheet>
     </div>

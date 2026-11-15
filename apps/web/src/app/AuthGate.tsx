@@ -1,5 +1,5 @@
 import { Suspense, type ReactNode } from 'react';
-import { Spinner } from '@compass/ui';
+import { LoadingState } from '@compass/ui';
 import { resilientLazy } from '../components/resilientLazy';
 import { I18nGate } from '../hooks/useI18n';
 import { accessBlock } from '../lib/authAccess';
@@ -42,9 +42,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 function GateSpinner() {
   return (
-    <div className="flex h-full items-center justify-center text-[var(--c-fg-muted)]">
-      <Spinner size={32} />
-    </div>
+    // MWG: LoadingState gives the spinner words a screen reader can hear.
+    <LoadingState className="h-full" />
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   Badge,
   Button,
@@ -22,6 +22,7 @@ import { planName } from '../../../lib/planName';
 import { subscriptionStatusLabel } from '../../../lib/statusLabels/subscription';
 import { useI18n } from '../../../hooks/useI18n';
 import { localDateValue } from '../../../lib/calendarDate';
+import { SheetForm } from '../../../components/SheetForm';
 
 /**
  * A workspace as the platform list returns it. Review ADM1-29 (2026-11-12):
@@ -105,6 +106,7 @@ function SubscriptionSheet({
   onClose: () => void;
 }) {
   const i18n = useI18n();
+  const formId = useId();
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
@@ -146,6 +148,8 @@ function SubscriptionSheet({
       description={i18n.t('platform.sheet.description')}
       footer={
         <Button
+          type="submit"
+          form={formId}
           block
           size="lg"
           loading={update.isPending}
@@ -175,7 +179,7 @@ function SubscriptionSheet({
         </Button>
       }
     >
-      <div className="flex flex-col gap-3 py-3">
+      <SheetForm id={formId} className="flex flex-col gap-3 py-3">
         <Field label={i18n.t('platform.field.plan')}>
           <Select value={planCode} onChange={(e) => setPlanCode(e.target.value)}>
             {(plans.data ?? []).map((plan) => (
@@ -224,7 +228,7 @@ function SubscriptionSheet({
         <Field label={i18n.t('platform.field.note')}>
           <Input value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} />
         </Field>
-      </div>
+      </SheetForm>
     </Sheet>
   );
 }

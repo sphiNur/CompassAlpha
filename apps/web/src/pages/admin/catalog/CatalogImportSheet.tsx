@@ -17,10 +17,10 @@ import {
   Button,
   DataState,
   Field,
+  LoadingState,
   QueryErrorBanner,
   Select,
   Sheet,
-  Spinner,
   Switch,
   useToast,
 } from '@compass/ui';
@@ -129,9 +129,7 @@ export function CatalogImportSheet({
         {preview.isError ? (
           <QueryErrorBanner query={preview} />
         ) : preview.isLoading ? (
-          <div className="flex justify-center py-3 text-[var(--c-fg-muted)]">
-            <Spinner />
-          </div>
+          <LoadingState variant="compact" />
         ) : p ? (
           nothingNew ? (
             <Banner tone="success" title={i18n.t('catalog.import.nothingNew')} />
