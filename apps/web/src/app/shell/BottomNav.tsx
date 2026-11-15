@@ -23,7 +23,7 @@ import { navBadges, type NavBadge } from '../../lib/navBadges';
 import { trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
 import type { Tab } from '../../stores/navStore';
-import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from './navBadgeLook';
+import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from '../../lib/navBadgeLook';
 import { navLayout } from './navLayout';
 import { showsNav, type TabDef } from './tabs';
 

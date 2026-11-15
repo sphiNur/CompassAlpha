@@ -405,3 +405,85 @@ html:active-view-transition-type(backward) {
     }
   }
 }
+
+/* UI overhaul C/D (2026-11-15): a page's tool on the dock's row (search,
+ * view switch; components/dock). The slot takes no room when empty. */
+.app-dock-slot {
+  display: contents;
+}
+.app-dock-tool {
+  flex: none;
+  display: flex;
+  padding: 4px;
+}
+.app-dock-tool-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--app-main-btn-d);
+  height: var(--app-main-btn-d);
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--r-pill);
+  color: var(--c-fg);
+  background: var(--c-nav-surface-solid);
+  box-shadow:
+    var(--shadow-nav),
+    inset 0 0 0 1px var(--c-divider);
+}
+.app-dock-tool-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--c-action);
+}
+/* Open search: across the row; the nav steps aside, the main button stays. */
+.app-dock-tool[data-open] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.app-dock-row:has(.app-dock-tool[data-open]) .app-nav {
+  display: none;
+}
+.app-dock-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--app-main-btn-d);
+  padding-inline: 6px;
+  border-radius: var(--r-pill);
+  background: var(--c-nav-surface-solid);
+  box-shadow:
+    var(--shadow-nav),
+    inset 0 0 0 1px var(--c-divider);
+}
+.app-dock-search-close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-pill);
+  color: var(--c-fg-muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .app-dock-search {
+    transition:
+      opacity var(--t-fade) var(--easing),
+      scale var(--t-base) var(--easing);
+    transform-origin: 100% 50%;
+  }
+  @starting-style {
+    .app-dock-search {
+      opacity: 0;
+      scale: 0.9 1;
+    }
+  }
+}

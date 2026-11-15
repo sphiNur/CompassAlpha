@@ -15,6 +15,7 @@ import { LiveAnnouncer } from './shell/LiveAnnouncer';
 import { navLayout } from './shell/navLayout';
 import { OfflineBanner } from './shell/OfflineBanner';
 import { PageMainButton } from './shell/PageMainButton';
+import { setDockToolSlot } from '../lib/dockSlot';
 import { PAGES } from './shell/pages';
 import { ReviewLanding } from './shell/ReviewLanding';
 import { useScrollChrome } from './shell/scrollChrome';
@@ -239,6 +240,9 @@ function ShellInner() {
             permissions={session?.permissions ?? []}
             onOpenSettings={browserSettings ? openSettings : undefined}
           />
+          {/* UI overhaul C/D (2026-11-15): a page's search or view switch,
+              drawn here through a portal (components/dock). */}
+          <div ref={setDockToolSlot} className="app-dock-slot" />
           <PageMainButton />
         </div>
       </div>

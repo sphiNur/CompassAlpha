@@ -179,8 +179,11 @@ async function middleOf(el: Locator): Promise<{ x: number; y: number }> {
 }
 
 test('a sideways drag on the page moves to the next tab and back', async () => {
-  const startX = WIDTH * 0.8;
-  const endX = WIDTH * 0.15;
+  // 2026-11-15: from mid-row, left of the quantity buttons. The order
+  // page's search row, which left plain room at the right, moved into the
+  // dock; every row's right half is buttons now.
+  const startX = WIDTH * 0.5;
+  const endX = WIDTH * 0.1;
   let y = await plainY(startX);
   await touchDrag({ x: startX, y }, { x: endX, y: y + 4 });
   await active('approve');
@@ -191,19 +194,13 @@ test('a sideways drag on the page moves to the next tab and back', async () => {
   await active('order');
 });
 
-test('a drag on the category chips or the state switch does not switch tabs', async () => {
+test('a drag on the category chips does not switch tabs', async () => {
   await active('order');
   const chips = page.getByRole('main').getByRole('radiogroup', { name: 'Product categories' });
   const from = await middleOf(chips);
   await touchDrag(from, { x: WIDTH * 0.1, y: from.y });
   await page.waitForTimeout(600);
   await active('order');
-
-  await openTab(page, 'approve');
-  await active('approve');
-  const states = page.getByRole('main').getByRole('radiogroup', { name: 'Approval status filter' });
-  const start = await middleOf(states);
-  await touchDrag(start, { x: WIDTH * 0.1, y: start.y });
-  await page.waitForTimeout(600);
-  await active('approve');
+  // 2026-11-15: the approval page's state switch moved into the dock
+  // (DockFilter), outside the pager.
 });

@@ -272,3 +272,22 @@ export function IconSettings(props: IconProps) {
     </svg>
   );
 }
+
+/** Search (2026-11-15): the dock's search button (order page). */
+export function IconSearch(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <circle cx="11" cy="11" r="6" />
+      <path d="m16 16 4 4" />
+    </svg>
+  );
+}
+
+/** Filter (2026-11-15): the dock's view switch (approval page). */
+export function IconFilter(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="M4 6h16M7 12h10M10 18h4" />
+    </svg>
+  );
+}

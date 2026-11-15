@@ -90,11 +90,16 @@ test('the app keeps clear of the phone bars Telegram reports', async () => {
       return out;
     });
   const nav = page.getByTestId('primary-nav');
-  /** How far the floating nav capsule keeps from the left, right and bottom edges. */
+  /**
+   * How far the floating dock keeps from the left, right and bottom edges:
+   * the nav capsule's left and bottom, the dock row's right (a page's tool
+   * or main button can sit right of the capsule since 2026-11-15).
+   */
   const navGaps = () =>
     nav.evaluate((n) => {
       const r = n.getBoundingClientRect();
-      return `${r.left}px ${innerWidth - r.right}px ${innerHeight - r.bottom}px`;
+      const row = n.closest('.app-dock-row')!.getBoundingClientRect();
+      return `${r.left}px ${innerWidth - row.right}px ${innerHeight - r.bottom}px`;
     });
   /** <main>'s side padding: right left. */
   const sides = (el: Locator) =>

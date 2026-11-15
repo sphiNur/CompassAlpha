@@ -494,7 +494,7 @@ async function run() {
       await page.waitForTimeout(200);
     }
     await clickNavTab(page, 'approve');
-    await waitForText(page, [/Pending/, /Approved/, /Rejected/]);
+    await waitForText(page, [/Pending/]);
     // The list loads after the page (a skeleton first, 2026-11-15): wait
     // for the card's Approve button before reading the page.
     await page
@@ -511,9 +511,16 @@ async function run() {
       approveButtons > 0 && /Smoke/.test(approveText),
       approveText.split('\n').slice(0, 5).join(' / '),
     );
-    const missingTabs = ['Pending', 'Approved', 'Rejected'].filter((t) => !approveText.includes(t));
+    // 2026-11-15 (owner): the three views moved into the dock's filter
+    // button; its sheet lists them.
+    await page.click('[data-testid="dock-filter"]');
+    await page.waitForSelector('[role="dialog"]');
+    const filterText = await page.locator('[role="dialog"]').innerText();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    const missingTabs = ['Pending', 'Approved', 'Rejected'].filter((t) => !filterText.includes(t));
     record(
-      'ApprovalPage shows tabs (Pending / Approved / Rejected)',
+      'ApprovalPage filter lists the views (Pending / Approved / Rejected)',
       missingTabs.length === 0,
       // Only on a failure: it used to print "tab labels missing" on a pass.
       missingTabs.length > 0 ? `missing ${missingTabs.join(', ')}` : undefined,
