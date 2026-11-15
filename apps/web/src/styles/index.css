@@ -43,6 +43,50 @@
   canvas {
     max-width: 100%;
   }
+  /* Owner 2026-11-16 ("every tap needs feedback, not an instant change";
+     modern-web-guidance: natural-interactions, "Give every control …
+     press … feedback"): whatever can be tapped dims at once under the
+     finger and fades back on release. Zero specificity (:where), in the
+     base layer: a control with its own press look keeps it (.press
+     shrinks as well; a row's active:bg tint and the main button's
+     active:opacity replace the dim). Opacity, not movement, so it stays
+     under reduced motion. Disabled controls do not react. */
+  :where(
+    button,
+    a[href],
+    summary,
+    [role='button'],
+    [role='tab'],
+    [role='radio'],
+    [role='checkbox'],
+    [role='switch'],
+    [role='option'],
+    [role='menuitem'],
+    [role='menuitemradio']
+  ):where(
+    :not(:disabled, [aria-disabled='true'], [class*='active:bg-'], [class*='active:opacity'])
+  ) {
+    transition: opacity var(--t-quick) var(--easing);
+  }
+  :where(
+      button,
+      a[href],
+      summary,
+      [role='button'],
+      [role='tab'],
+      [role='radio'],
+      [role='checkbox'],
+      [role='switch'],
+      [role='option'],
+      [role='menuitem'],
+      [role='menuitemradio']
+    ):where(
+      :not(:disabled, [aria-disabled='true'], [class*='active:bg-'], [class*='active:opacity'])
+    ):active {
+    opacity: 0.6;
+    transition-duration: 0s;
+  }
+
   /* CMP-INT-6 (2026-10-31): a visible keyboard focus ring everywhere.
      This used to be `outline: none` on every element, which left chips,
      the qty keys, nav tabs, picker rows and admin rows with no focus

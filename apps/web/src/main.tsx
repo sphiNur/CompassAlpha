@@ -13,6 +13,13 @@ import { installTrustedTypesPolicy } from './lib/trustedTypes';
 // before any script URL is set (the service worker below, the face tracker).
 installTrustedTypesPolicy();
 
+// Owner 2026-11-16 ("taps change instantly, no feedback"): iOS WebViews,
+// Telegram's included, only apply :active while the document has a
+// touchstart listener, so every press state in the stylesheets (.press,
+// the rows' tint, the default dim in styles/index.css) never showed on an
+// iPhone. An empty passive one is enough and costs nothing.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 // F10 (2026-10-30): after a deploy, a client that stayed open asks for
 // lazy page chunks that no longer exist; the import failed into the root
 // error boundary and the whole app became a crash page whose Retry failed

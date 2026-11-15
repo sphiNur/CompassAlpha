@@ -356,7 +356,11 @@
 
 /* Utility class injected on every press affordance */
 .press {
-  transition: transform var(--t-snap) var(--easing);
+  /* Opacity too: the app's default press dim (apps/web styles) fades
+     back on release instead of snapping. */
+  transition:
+    transform var(--t-snap) var(--easing),
+    opacity var(--t-quick) var(--easing);
 }
 .press:active {
   transform: scale(0.96);
