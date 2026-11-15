@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardMeta,
   CardTitle,
+  IconChevronRight,
   useConfirm,
 } from '@compass/ui';
 import type { RouterOutputs } from '../../lib/trpc';
@@ -394,8 +395,16 @@ export function ApprovalCard({
           aria-expanded={open}
           aria-controls={open ? `approval-items-${row.id}` : undefined}
           onClick={onToggleItems}
+          // MWG (disclosure): one name; aria-expanded and the chevron say
+          // whether the lines are open (it used to flip to "Hide items").
+          trailingIcon={
+            <IconChevronRight
+              size={16}
+              className={'shrink-0 transition-transform ' + (open ? 'rotate-90' : '')}
+            />
+          }
         >
-          {open ? i18n.t('approval.hideItems') : i18n.t('approval.viewItems')}
+          {i18n.t('approval.viewItems')}
         </Button>
       </div>
 

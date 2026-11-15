@@ -30,7 +30,7 @@
  * and the quantity and price fields are the purchase sheet's
  * (QtyPriceFields). This keeps what both modes share.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Field,
@@ -43,6 +43,7 @@ import {
 } from '@compass/ui';
 import { lineAmountNumber } from '@compass/contracts/money';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
+import { SheetForm } from '../../../components/SheetForm';
 import { useCurrency } from '../../../hooks/useCurrency';
 import { useDraftChanged } from '../../../hooks/useDraftChanged';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
@@ -234,6 +235,7 @@ export function AddItemSheet({
       ),
     });
   }, [draft, onChange, storeChoices]);
+  const formId = useId();
 
   return (
     <Sheet
@@ -256,6 +258,8 @@ export function AddItemSheet({
       footer={
         <Button
           block
+          type="submit"
+          form={formId}
           loading={submitting}
           disabled={!canSubmit}
           disabledHint={saveHint}
@@ -268,7 +272,7 @@ export function AddItemSheet({
       }
     >
       {draft ? (
-        <div className="flex flex-col gap-3 py-3">
+        <SheetForm id={formId} className="flex flex-col gap-3 py-3">
           {/* M3.44: mode tabs at the top. Tapping switches the form
               shape; the shared fields (qty / price / payment / reason)
               stay populated so a mistaken-mode tap doesn't wipe what
@@ -454,7 +458,7 @@ export function AddItemSheet({
               ) : null}
             </>
           ) : null}
-        </div>
+        </SheetForm>
       ) : null}
     </Sheet>
   );

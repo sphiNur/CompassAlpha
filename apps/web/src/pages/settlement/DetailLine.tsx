@@ -86,12 +86,20 @@ export function DetailLineFrame({
   onRemove: (() => void) | undefined;
   children: ReactNode;
 }) {
+  const i18n = useI18n();
   return (
     <div className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0">
       <div className="flex items-center justify-between gap-3">
         <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">{title}</span>
         {onRemove ? (
-          <Button size="sm" variant="danger-ghost" aria-label={removeLabel} onClick={onRemove}>
+          // WCAG 2.5.3 / MWG: one "Remove" per line, each named by its
+          // visible word and then the line ("Remove: Expense 2").
+          <Button
+            size="sm"
+            variant="danger-ghost"
+            aria-label={i18n.t('common.actionOnItem', { action: removeLabel, item: title })}
+            onClick={onRemove}
+          >
             {removeLabel}
           </Button>
         ) : null}

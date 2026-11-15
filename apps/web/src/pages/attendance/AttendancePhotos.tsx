@@ -34,7 +34,9 @@ export function PunchPhotoStrip({ storeId, punchId }: { storeId: string; punchId
             <figure key={ph.kind} className="flex flex-col gap-1">
               <img
                 src={ph.src}
-                alt={i18n.t(`attendance.photo.${ph.kind}`)}
+                // MWG: the figcaption names the photo; an alt saying the
+                // same was read twice.
+                alt=""
                 className="aspect-[3/4] w-full rounded-[var(--r-utility)] object-cover"
               />
               <figcaption className="text-old-label text-[var(--c-fg-muted)]">

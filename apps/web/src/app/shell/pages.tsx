@@ -7,7 +7,7 @@
  * Review COREWEB1-10 (2026-11-12): out of Shell.tsx.
  */
 import { Suspense, type ReactNode } from 'react';
-import { Spinner } from '@compass/ui';
+import { LoadingState } from '@compass/ui';
 import { resilientLazy } from '../../components/resilientLazy';
 import type { Tab } from '../../stores/navStore';
 import {
@@ -62,9 +62,7 @@ const OrderPage = resilientLazy(importOrderPage);
 // the page content would be, not crammed under the header.
 function PageLoading() {
   return (
-    <div className="flex min-h-[min(80dvh,calc(var(--app-viewport-h)-var(--app-nav-h)))] items-center justify-center">
-      <Spinner size={20} />
-    </div>
+    <LoadingState className="min-h-[min(80dvh,calc(var(--app-viewport-h)-var(--app-nav-h)))]" />
   );
 }
 

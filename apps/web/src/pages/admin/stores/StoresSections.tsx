@@ -44,6 +44,7 @@ import { PeopleSection } from '../people';
 import { StoreInventoryTab } from './inventory/StoreInventoryTab';
 import { StoreTimeZoneSelect } from './StoreTimeZoneSelect';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
+import { SheetForm } from '../../../components/SheetForm';
 
 interface StoreDraft {
   storeId?: string;
@@ -95,6 +96,7 @@ export function StoresHomeSection({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const formId = useId();
   const refreshSession = useRefreshSession();
   // Lightweight create-only sheet: create flow needs name/code/address/
   // timezone but NOT default-role/archive (those land in Settings tab
@@ -272,6 +274,8 @@ export function StoresHomeSection({
         title={i18n.t('admin.store.new')}
         footer={
           <Button
+            type="submit"
+            form={formId}
             block
             loading={create.isPending}
             disabled={!createDraft?.name.trim()}
@@ -292,7 +296,7 @@ export function StoresHomeSection({
         }
       >
         {createDraft ? (
-          <div className="flex flex-col gap-3 py-3">
+          <SheetForm id={formId} className="flex flex-col gap-3 py-3">
             <Field label={i18n.t('admin.field.name')} required>
               <Input
                 value={createDraft.name}
@@ -311,6 +315,9 @@ export function StoresHomeSection({
                 }
                 maxLength={32}
                 placeholder={i18n.t('admin.field.codePlaceholder')}
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
               />
             </Field>
             <Field label={i18n.t('admin.field.address')}>
@@ -331,7 +338,7 @@ export function StoresHomeSection({
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.store.createHint')}
             </p>
-          </div>
+          </SheetForm>
         ) : null}
       </Sheet>
     </div>
@@ -568,6 +575,9 @@ function StoreSettingsTab({ storeId, onLeave }: { storeId: string; onLeave: () =
           maxLength={32}
           placeholder={i18n.t('admin.field.codePlaceholder')}
           disabled={!canAdmin}
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
         />
       </Field>
       <Field label={i18n.t('admin.field.address')}>

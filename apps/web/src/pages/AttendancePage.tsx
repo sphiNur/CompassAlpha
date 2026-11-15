@@ -26,7 +26,7 @@
  * result; for a colleague, whose punch it was, with "Not <name>" for two
  * minutes (attendance/usePunchFlow.ts, attendance/PunchSheet.tsx).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -38,6 +38,7 @@ import {
 } from '@compass/ui';
 import { ATTENDANCE_FACE_CONSENT_VERSION, locationVerdict } from '@compass/contracts/limits';
 import type { CatalogKey } from '@compass/i18n';
+import { announce } from '../lib/announce';
 import { haptic } from '../lib/telegram';
 import { StoreContextEmpty } from '../components/NoStoreYet';
 import { useStoreContext } from '../hooks/useStoreContext';
@@ -469,9 +470,13 @@ function WhereAmI({ area }: { area: GeoArea }) {
   const [fix, setFix] = useState<LocationFix | null>(null);
   const [locating, setLocating] = useState(false);
   const [problem, setProblem] = useState<LocationFailure | null>(null);
+  /** The verdict last said through the status region (see below). */
+  const saidVerdict = useRef<string | null>(null);
   const locate = async () => {
     setLocating(true);
     setProblem(null);
+    // A tap of its own is answered, even with the verdict unchanged.
+    saidVerdict.current = null;
     try {
       setFix(await currentLocation());
     } catch (e) {
@@ -486,6 +491,28 @@ function WhereAmI({ area }: { area: GeoArea }) {
       ? locationVerdict({ distanceM: distance, accuracyM: fix.accuracy, radiusM: area.radiusM })
       : null;
   const inside = verdict === 'inside';
+  const verdictLine =
+    !fix || distance === null
+      ? null
+      : verdict === 'inaccurate'
+        ? // What the punch would say: too coarse to place anyone.
+          i18n.t('attendance.errors.locationInaccurate', { accuracy: Math.round(fix.accuracy) })
+        : inside
+          ? i18n.t('attendance.map.inside', { m: distance })
+          : i18n.t('attendance.map.outside', { m: distance - area.radiusM });
+  // MWG (live regions): the line was aria-live and re-read on every GPS
+  // fix (a new distance each second). It is said through the app's one
+  // status region only when the verdict changes: inside, outside or too
+  // coarse, or once after a tap that asked for the place again.
+  useEffect(() => {
+    if (!verdict) {
+      saidVerdict.current = null;
+      return;
+    }
+    if (verdict === saidVerdict.current) return;
+    saidVerdict.current = verdict;
+    announce(verdictLine);
+  }, [fix, verdict, verdictLine]);
   return (
     <Card as="section" className="flex flex-col gap-2 p-3">
       <GeoMap
@@ -508,16 +535,12 @@ function WhereAmI({ area }: { area: GeoArea }) {
       {fix && distance !== null ? (
         <p
           className={`text-old-body font-semibold ${inside ? 'text-[var(--c-success-ink)]' : 'text-[var(--c-danger-ink)]'}`}
-          aria-live="polite"
         >
           {verdict === 'inaccurate' ? (
-            // What the punch would say: too coarse to place anyone.
-            i18n.t('attendance.errors.locationInaccurate', { accuracy: Math.round(fix.accuracy) })
+            verdictLine
           ) : (
             <>
-              {inside
-                ? i18n.t('attendance.map.inside', { m: distance })
-                : i18n.t('attendance.map.outside', { m: distance - area.radiusM })}
+              {verdictLine}
               <span className="block text-old-label font-normal text-[var(--c-fg-muted)]">
                 {i18n.t('attendance.map.accuracy', { m: Math.round(fix.accuracy) })}
               </span>

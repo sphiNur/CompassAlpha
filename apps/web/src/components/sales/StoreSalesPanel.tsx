@@ -51,6 +51,7 @@ import { useDateFormat, useI18n, useProductName, useProductNameParts } from '../
 import { rowName } from '../../lib/productName';
 import { normalizeVoidReason, salesListView } from './salesSummary';
 import { moneyLine } from '../../lib/money';
+import { SheetForm } from '../SheetForm';
 
 /** The most stock items the below-zero warning names (review CONF-24). */
 const NEGATIVE_NAMES_SHOWN = 3;
@@ -70,6 +71,7 @@ export function StoreSalesPanel({
 }) {
   const dateFmt = useDateFormat();
   const i18n = useI18n();
+  const voidFormId = useId();
   const toast = useToast();
   const errToast = useErrToast();
   const productName = useProductName();
@@ -475,6 +477,8 @@ export function StoreSalesPanel({
         footer={
           voidTarget ? (
             <Button
+              type="submit"
+              form={voidFormId}
               block
               variant="danger"
               loading={voidSale.isPending}
@@ -490,7 +494,7 @@ export function StoreSalesPanel({
         }
       >
         {voidTarget ? (
-          <div className="flex flex-col gap-3 py-3">
+          <SheetForm id={voidFormId} className="flex flex-col gap-3 py-3">
             <Field label={i18n.t('sales.void.reasonLabel')}>
               <Input
                 value={voidReason}
@@ -500,7 +504,7 @@ export function StoreSalesPanel({
                 autoFocus
               />
             </Field>
-          </div>
+          </SheetForm>
         ) : null}
       </Sheet>
     </div>

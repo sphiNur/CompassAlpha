@@ -16,7 +16,7 @@
  * which fixed the word order in every language.
  */
 import { useState } from 'react';
-import { Banner } from '@compass/ui';
+import { Banner, IconChevronRight } from '@compass/ui';
 import { lastUpdatedLabel, useCachedDataAge } from '../../hooks/useCachedDataAge';
 import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { useOnline } from '../../hooks/useOnline';
@@ -40,12 +40,18 @@ export function OfflineBanner() {
         action={
           <button
             type="button"
-            className="press min-h-11 px-1 text-old-label font-semibold text-[var(--c-action)]"
+            className="press inline-flex min-h-11 items-center gap-0.5 px-1 text-old-label font-semibold text-[var(--c-action)]"
             aria-expanded={details}
             aria-controls="offline-details"
             onClick={() => setDetails(!details)}
           >
-            {i18n.t(details ? 'shell.offline.hideDetails' : 'shell.offline.showDetails')}
+            {/* MWG (disclosure): one name; aria-expanded and the chevron
+                say whether it is open (the label used to flip to "Hide"). */}
+            {i18n.t('shell.offline.showDetails')}
+            <IconChevronRight
+              size={16}
+              className={'transition-transform ' + (details ? 'rotate-90' : '')}
+            />
           </button>
         }
       >

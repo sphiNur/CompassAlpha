@@ -35,6 +35,9 @@ type SkuRowSku = {
   step: string;
 };
 
+/** Rows painted at once: about the first screen and a half. */
+const EAGER_ROWS = 15;
+
 export const SkuRow = memo(function SkuRow({
   sku,
   archived = false,
@@ -47,8 +50,11 @@ export const SkuRow = memo(function SkuRow({
   unitLabel,
   i18n,
   onQtyChange,
+  index,
 }: {
   sku: SkuRowSku;
+  /** The row's place in the whole list (all groups): the first screens paint at once. */
+  index: number;
   /** DX-ORD-16: archived but still in my draft — can only go down. The
    *  group heading above says "No longer sold". */
   archived?: boolean;
@@ -93,7 +99,14 @@ export const SkuRow = memo(function SkuRow({
     // browser skip layout/paint for rows off screen (iOS 18+ WebView).
     // "auto 50px" (measured row height) is the estimate until a row has
     // been laid out once; afterwards the browser remembers the real one.
-    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0 [content-visibility:auto] [contain-intrinsic-size:auto_50px]">
+    // MWG (content-visibility): not on the first rows, which are on screen
+    // at once and would only be measured twice.
+    <li
+      className={
+        'flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0' +
+        (index >= EAGER_ROWS ? ' [content-visibility:auto] [contain-intrinsic-size:auto_50px]' : '')
+      }
+    >
       <div className="min-w-[7rem] flex-1">
         <NameCell
           primary={nm.primary}

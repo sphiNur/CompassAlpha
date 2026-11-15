@@ -24,7 +24,7 @@
  *
  * Self-protection rules are server-side; the FE just gives the UI.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { enterLevel } from '../lib/motion';
 import {
   Banner,
@@ -102,6 +102,7 @@ import { PlatformSection } from './admin/platform/PlatformSections';
 import { AttendanceAdmin } from './attendance/AttendanceAdmin';
 import { InviteFlow } from './admin/people/invite/InviteFlow';
 import { inviteStoreChoice } from './admin/people/invite/inviteStores';
+import { SheetForm } from '../components/SheetForm';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -680,6 +681,7 @@ function WorkspaceSection() {
   const session = useAuthStore((s) => s.session);
   const patchSession = useAuthStore((s) => s.patchSession);
   const i18n = useI18n();
+  const financeFormId = useId();
   const roleText = useRoleLabels();
   const toast = useToast();
   const errToast = useErrToast();
@@ -827,6 +829,8 @@ function WorkspaceSection() {
           // M3.49: sheets always render their own footer button — the
           // in-page PageMainButton is behind any open sheet.
           <Button
+            type="submit"
+            form={financeFormId}
             block
             loading={orgFinanceUpdate.isPending}
             disabled={taxProblem !== null}
@@ -842,7 +846,7 @@ function WorkspaceSection() {
           </Button>
         }
       >
-        <div className="flex flex-col gap-3 py-3">
+        <SheetForm id={financeFormId} className="flex flex-col gap-3 py-3">
           <Field label={i18n.t('admin.workspace.currency')}>
             <Select value={draftCurrency} onChange={(e) => setDraftCurrency(e.target.value)}>
               {/* Limited to four ISO codes for launch — UZS (default),
@@ -883,7 +887,7 @@ function WorkspaceSection() {
             />
           </FieldGroup>
           <Banner tone="info" title={i18n.t('admin.workspace.financeSheet.warning')} />
-        </div>
+        </SheetForm>
       </Sheet>
     </div>
   );

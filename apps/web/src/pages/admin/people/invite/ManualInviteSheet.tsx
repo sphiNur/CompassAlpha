@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
@@ -20,6 +20,7 @@ import { defaultInviteRole, tgIdProblem } from '../../../../lib/adminFields';
 import { canGrantRole, rolePassesOn, type Actor } from '../../../../lib/authority';
 import { type InviteDraft } from '../shared';
 import { StoreCheckList } from '../StoreCheckList';
+import { SheetForm } from '../../../../components/SheetForm';
 
 export function ManualInviteSheet({
   mode = 'tgid',
@@ -138,6 +139,7 @@ export function ManualInviteSheet({
           ? i18n.t('admin.invite.pickStore')
           : '';
   // DX-ADM-28: typed id / name or a picked role is input worth asking about.
+  const formId = useId();
   const inviteChanged =
     !!draft &&
     (draft.tgUserId !== '' || draft.displayName !== '' || draft.roleSlug !== '' || draft.clocksIn);
@@ -154,6 +156,8 @@ export function ManualInviteSheet({
         <Button
           block
           size="lg"
+          type="submit"
+          form={formId}
           loading={pending}
           disabled={!canSubmit}
           disabledHint={submitHint}
@@ -164,7 +168,7 @@ export function ManualInviteSheet({
       }
     >
       {draft ? (
-        <div className="flex flex-col gap-3 py-3">
+        <SheetForm id={formId} className="flex flex-col gap-3 py-3">
           {isLink ? (
             <p className="text-old-body-sm text-[var(--c-fg-muted)]">
               {i18n.t('admin.invite.link.hint')}
@@ -287,7 +291,7 @@ export function ManualInviteSheet({
               onChange={(e) => setDraft({ ...draft, clocksIn: e.target.checked })}
             />
           ) : null}
-        </div>
+        </SheetForm>
       ) : null}
     </Sheet>
   );

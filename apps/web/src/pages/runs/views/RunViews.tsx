@@ -1983,7 +1983,6 @@ export const PurchaseRow = memo(function PurchaseRow({
                   e.preventDefault();
                   priceRef.current?.focus();
                 }}
-                aria-label={i18n.t('run.action.actualQtyAriaLabel')}
                 // A dense row: the narrow field keeps room for five digits.
                 className="w-[4.5rem] shrink-0 px-3"
               />
@@ -2016,7 +2015,8 @@ export const PurchaseRow = memo(function PurchaseRow({
                 }}
                 placeholder={i18n.t('run.action.unitPriceAriaLabel')}
                 // DX-IX-7: the name carries the unit in force, as the sheet's
-                // label does ("单价（千 UZS）").
+                // label does ("单价（千 UZS）"). It contains the visible label
+                // ("Price"/"单价"), so label-in-name holds (MWG review).
                 aria-label={
                   priceInThousands
                     ? i18n.t('run.action.unitPriceUzsThousands', { currency })

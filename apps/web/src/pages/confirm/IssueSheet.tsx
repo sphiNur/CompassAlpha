@@ -2,7 +2,9 @@
  * The problem form: how much arrived, why, and an optional photo.
  * Review CONF-07: moved out of ConfirmPage, which keeps the mutation.
  */
+import { useId } from 'react';
 import { Button, Field, Input, PhotoCapture, Sheet, type PhotoUploader } from '@compass/ui';
+import { SheetForm } from '../../components/SheetForm';
 import { useI18n, useUnitLabel } from '../../hooks/useI18n';
 import { formatQty } from '../../lib/format';
 import {
@@ -34,6 +36,7 @@ export function IssueSheet({
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
   const draft = form.draft;
+  const formId = useId();
   const status = draft ? i18n.t(DECISION_LABEL[draft.status]) : '';
   // C2: a short line's note is optional.
   const noteRequired = draft ? issueNoteRequired(draft.status) : true;
@@ -89,6 +92,8 @@ export function IssueSheet({
         // UX-05: the kit's line over the disabled Save says why.
         <Button
           block
+          type="submit"
+          form={formId}
           disabled={!check?.canSave}
           disabledHint={saveReason ?? ''}
           loading={saving}
@@ -98,7 +103,7 @@ export function IssueSheet({
         </Button>
       }
     >
-      <div className="flex flex-col gap-3 py-3">
+      <SheetForm id={formId} className="flex flex-col gap-3 py-3">
         {/* 2026-10-21 CA-06: inventory books what actually arrived.
             Required for a short line; for a wrong or spoiled item it
             starts at the delivered qty (2026-11-05 owner) and is
@@ -147,7 +152,7 @@ export function IssueSheet({
           uploader={photoUploader}
           onBusyChange={form.setPhotoUploading}
         />
-      </div>
+      </SheetForm>
     </Sheet>
   );
 }

@@ -756,18 +756,30 @@ export function AttendanceRoster({ storeId }: { storeId: string }) {
                     // the 44 px tap height (the text buttons were about 32 px).
                     <Card as="section" key={date}>
                       <CardHeader className="items-center">
+                        {/* MWG (use-of-color): today was marked by its colour
+                            only; it now says "Today" too. */}
                         <h3
+                          aria-current={date === data.today ? 'date' : undefined}
                           className={
-                            'text-old-h3 font-semibold ' +
+                            'flex flex-wrap items-center gap-2 text-old-h3 font-semibold ' +
                             (date === data.today ? 'text-[var(--c-action)]' : 'text-[var(--c-fg)]')
                           }
                         >
                           {dates.weekdayLong(date)}
+                          {date === data.today ? (
+                            <Badge tone="info">{i18n.t('attendance.nav.today')}</Badge>
+                          ) : null}
                         </h3>
+                        {/* WCAG 2.5.3: seven "+ Shift" buttons, each named
+                            by its visible word and then its day. */}
                         <Button
                           variant="ghost"
                           size="sm"
                           disabled={people.length === 0}
+                          aria-label={i18n.t('common.textThenDetail', {
+                            text: i18n.t('attendance.roster.add'),
+                            detail: dates.weekdayLong(date),
+                          })}
                           onClick={() => setDraft(newDraft(date))}
                         >
                           {i18n.t('attendance.roster.add')}

@@ -4,7 +4,7 @@
  * component; it lived inside StoreInventoryTab with the list and the
  * movements sheet.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   Button,
   Field,
@@ -21,6 +21,7 @@ import {
   stocktakeCountProblem,
 } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../../../lib/trpc';
+import { SheetForm } from '../../../../components/SheetForm';
 import { useErrToast } from '../../../../hooks/useErrToast';
 import { formatQty } from '../../../../lib/format';
 import { useI18n, useProductName, useUnitLabel } from '../../../../hooks/useI18n';
@@ -132,6 +133,7 @@ export function InventoryActionSheet({
     },
     onError: errToast('common.errors.actionFailed'),
   });
+  const formId = useId();
 
   return (
     <Sheet
@@ -178,6 +180,8 @@ export function InventoryActionSheet({
             ) : null}
             <Button
               block
+              type="submit"
+              form={formId}
               loading={stocktake.isPending || recordWastage.isPending}
               disabled={
                 !action.skuId ||
@@ -242,7 +246,7 @@ export function InventoryActionSheet({
       }
     >
       {action ? (
-        <div className="flex flex-col gap-3 py-3">
+        <SheetForm id={formId} className="flex flex-col gap-3 py-3">
           {action.kind === 'stocktake' ? (
             <>
               {action.pickSku ? (
@@ -344,7 +348,7 @@ export function InventoryActionSheet({
               </Field>
             </>
           )}
-        </div>
+        </SheetForm>
       ) : null}
     </Sheet>
   );

@@ -187,6 +187,8 @@ export function HistoryPage() {
           between wrapped rows keeps one row's tap area off the next. */}
       <div
         className="flex flex-wrap items-center gap-x-1.5 gap-y-3"
+        // MWG: a name on a plain div is ignored; a group carries it.
+        role="group"
         aria-label={i18n.t('run.history.activeFilters', { n: activeFilterCount })}
       >
         {/* CMP-HIS-1: always say which stores the list and its total cover. */}

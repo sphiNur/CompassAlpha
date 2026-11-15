@@ -43,6 +43,7 @@ import { useStoreContext } from '../hooks/useStoreContext';
 import { adjustingSessionIds } from './approval/adjustInFlight';
 import { conflictKind } from '../lib/conflict';
 import { ApprovalCard, type ApprovalCardBusy, type ApprovalTab } from './approval/ApprovalCard';
+import { SheetForm } from '../components/SheetForm';
 
 /** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
 const NEXT_CARD = '[data-approval-list] > li h2';
@@ -61,11 +62,39 @@ function cardElement(sessionId: string): Element | null {
  * failed, or the order came back), it is put back, not left invisible.
  */
 async function leaveCard(sessionId: string, refresh: () => Promise<unknown>): Promise<void> {
-  await leaveListItem(cardElement(sessionId), 8);
+  const card = cardElement(sessionId);
+  moveFocusOffLeavingCard(card);
+  await leaveListItem(card, 8);
   await refresh().catch(() => undefined);
   await new Promise((resolve) => requestAnimationFrame(resolve));
   restoreListItem(cardElement(sessionId));
   focusAfter(NEXT_CARD);
+}
+
+/**
+ * MWG review (`motion`, focus): the leave makes the card inert at once, and
+ * focus on its Approve button fell to <body>. Before the leave starts,
+ * focus moves to the title of the card that takes its place (the next one,
+ * else the one before), else to the list's heading, else the page's h1.
+ * Only when focus is in the leaving card: focus elsewhere (a toast, a
+ * sheet) is left alone.
+ */
+function moveFocusOffLeavingCard(card: Element | null): void {
+  if (!card || !card.contains(document.activeElement)) return;
+  const titles = [...document.querySelectorAll<HTMLElement>(NEXT_CARD)].filter(
+    (t) => !card.contains(t),
+  );
+  const after = titles.find(
+    (t) => card.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  const target =
+    after ??
+    titles.at(-1) ??
+    document.querySelector<HTMLElement>('[data-approval-heading]') ??
+    document.querySelector<HTMLElement>('main h1, h1');
+  if (!target) return;
+  if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+  target.focus({ preventScroll: true });
 }
 
 /**
@@ -95,6 +124,7 @@ const UNDO_APPROVE_MS = 5000;
 
 export function ApprovalPage() {
   const i18n = useI18n();
+  const rejectFormId = useId();
   const session = useAuthStore((s) => s.session);
   const [tab, setTab] = useState<ApprovalTab>('pending');
   // Review MWB-16 (modern-web-guidance: tabs): the list the segments swap.
@@ -436,7 +466,9 @@ export function ApprovalPage() {
             { value: 'rejected', label: i18n.t(TAB_LABEL_KEYS.rejected) },
           ]}
         />
-        <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]" aria-live="polite">
+        {/* MWG: not a live region (the tab already says it is selected);
+            the heading takes focus when the last card leaves. */}
+        <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]" data-approval-heading="">
           {i18n.t(TAB_LABEL_KEYS[tab])}
         </h2>
       </StickyPageBar>
@@ -558,6 +590,8 @@ export function ApprovalPage() {
         deferAutoFocusMs={280}
         footer={
           <Button
+            type="submit"
+            form={rejectFormId}
             block
             variant="danger"
             disabled={!rejectReason.trim()}
@@ -578,7 +612,7 @@ export function ApprovalPage() {
           </Button>
         }
       >
-        <div className="flex flex-col gap-2 py-3">
+        <SheetForm id={rejectFormId} className="flex flex-col gap-2 py-3">
           <ChipBar
             ariaLabel={i18n.t('approval.rejectPreset.label')}
             // Choosing writes into the field: arrows only move focus.
@@ -610,7 +644,7 @@ export function ApprovalPage() {
               aria-required
             />
           </Field>
-        </div>
+        </SheetForm>
       </Sheet>
     </div>
   );

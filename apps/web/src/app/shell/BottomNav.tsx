@@ -126,9 +126,9 @@ function TabBar({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavP
   const current = more.find((t) => t.key === tab);
   const moreBadge = more.some((t) => badges[t.key] !== undefined);
   // The badge is read with the name: 「审核，2 件待处理」.
-  const badgeText = (t: TabDef): string | null => {
+  /** `label` with the tab's badge said after it; null when the tab has no badge. */
+  const badgeText = (t: TabDef, label = i18n.t(t.labelKey)): string | null => {
     const badge = badges[t.key];
-    const label = i18n.t(t.labelKey);
     if (badge === undefined) return null;
     return badge === 'dot'
       ? i18n.t('nav.badge.due', { label })
@@ -137,6 +137,15 @@ function TabBar({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavP
   const moreLabel = current
     ? i18n.t('nav.moreCurrentAria', { label: i18n.t(current.labelKey) })
     : i18n.t('nav.moreAria');
+  // WCAG 2.5.3 (label in name): a button's accessible name starts with the
+  // word it shows. The short nav word (ru "Ещё", "Закрытие") is not always
+  // the start of the full name, so the full name follows it.
+  const startWithWord = (short: string, full: string): string =>
+    full.toLocaleLowerCase().startsWith(short.toLocaleLowerCase())
+      ? full
+      : i18n.t('common.textThenDetail', { text: short, detail: full });
+  const moreShort = i18n.t(current ? current.shortKey : 'nav.short.more');
+  const moreName = startWithWord(moreShort, moreLabel);
   return (
     <>
       <nav
@@ -153,6 +162,7 @@ function TabBar({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavP
         {bar.map((t) => {
           const label = i18n.t(t.labelKey);
           const short = i18n.t(t.shortKey);
+          const name = startWithWord(short, label);
           return (
             <NavItem
               key={t.key}
@@ -161,10 +171,10 @@ function TabBar({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavP
               Icon={t.Icon}
               short={short}
               // The short nav word is an abbreviation in ru / uz; screen
-              // readers announce the section's full name. Review MWC-03: always
-              // named, since the compact capsule hides the word and the
-              // icon is aria-hidden.
-              ariaLabel={badgeText(t) ?? label}
+              // readers hear it first, then the section's full name. Review
+              // MWC-03: always named, since the compact capsule hides the
+              // word and the icon is aria-hidden.
+              ariaLabel={badgeText(t, name) ?? name}
               badge={<NavBadgeMark tabKey={t.key} badge={badges[t.key]} />}
               disabled={busy}
               onClick={() => onSelect(t.key)}
@@ -176,8 +186,8 @@ function TabBar({ tabs, tab, onSelect, permissions, onOpenSettings }: BottomNavP
             testId="nav-more"
             active={!!current}
             Icon={current?.Icon ?? IconMore}
-            short={i18n.t(current ? current.shortKey : 'nav.short.more')}
-            ariaLabel={moreBadge ? i18n.t('nav.badge.inside', { label: moreLabel }) : moreLabel}
+            short={moreShort}
+            ariaLabel={moreBadge ? i18n.t('nav.badge.inside', { label: moreName }) : moreName}
             ariaHasPopup
             ariaExpanded={moreOpen}
             badge={moreBadge ? <NavBadgeMark tabKey="more" badge="dot" /> : null}
