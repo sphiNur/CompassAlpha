@@ -585,12 +585,11 @@ export const ru = {
   'settings.secondaryLanguage.offHint': 'Один язык (по умолчанию)',
   'settings.language.subtitle': 'Выберите язык меню, товаров и сообщений.',
   'settings.title': 'Настройки',
-  'settings.profile.title': 'Профиль',
   'settings.profile.displayName': 'Отображаемое имя',
   'settings.profile.lockedHint':
     'После сохранения имя может изменить только администратор. Свяжитесь с ним при необходимости.',
   'settings.profile.username': 'Telegram',
-  'settings.about.title': 'О приложении',
+  'settings.account.title': 'Аккаунт',
   'settings.about.workspace': 'Рабочее пространство',
   'workspace.title': 'Рабочее пространство',
   'workspace.current': 'Текущее',

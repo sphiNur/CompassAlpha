@@ -23,7 +23,6 @@ import {
   Field,
   Input,
   Sheet,
-  StickyPageBar,
   focusAfter,
   useToast,
   SkeletonList,
@@ -437,41 +436,29 @@ export function ApprovalPage() {
   // SKU list further.
   return (
     <div className="flex flex-col">
-      {/* M3.5: store-switcher pill moved to SettingsSheet. The sticky
-         band now only carries the approval-state switch. */}
-      <StickyPageBar direction="col">
-        {/* 2026-07-30: which store's queue am I looking at? The list is
-            filtered by store context but never said so. On 'all' the chip
-            reads 所有门店, which is equally load-bearing. Answered by the
-            chip in Shell's top strip now (same day) rather than a copy
-            per page — this strip is back to just the state switch. */}
-        {/* Review ORD-22 (2026-11): the kit's Segmented, as every other
-            page switches its views (UI-16); this was the one <Tabs> in
-            the app. One Tab stop, arrow keys between the states. */}
-        {/* UI overhaul D (2026-11-15, owner): the switch is a dock button
-            on the nav's row with the waiting count (DockFilter); the page
-            names the view it shows. */}
-        <DockFilter<ApprovalTab>
-          label={i18n.t('approval.tabsAriaLabel')}
-          value={tab}
-          onChange={setTab}
-          badge={waitingCount ?? undefined}
-          options={[
-            {
-              value: 'pending',
-              label: i18n.t(TAB_LABEL_KEYS.pending),
-              count: waitingCount ?? undefined,
-            },
-            { value: 'approved', label: i18n.t(TAB_LABEL_KEYS.approved) },
-            { value: 'rejected', label: i18n.t(TAB_LABEL_KEYS.rejected) },
-          ]}
-        />
-        {/* MWG: not a live region (the tab already says it is selected);
-            the heading takes focus when the last card leaves. */}
-        <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]" data-approval-heading="">
-          {i18n.t(TAB_LABEL_KEYS[tab])}
-        </h2>
-      </StickyPageBar>
+      {/* UI overhaul D (2026-11-15, owner): the switch between the
+          states is a dock button on the nav's row with the waiting count
+          (DockFilter). Owner 2026-11-15: no 待审核 / 已通过 over the
+          list either; the view's name stays for screen readers, and is
+          where focus goes when the last card leaves. */}
+      <DockFilter<ApprovalTab>
+        label={i18n.t('approval.tabsAriaLabel')}
+        value={tab}
+        onChange={setTab}
+        badge={waitingCount ?? undefined}
+        options={[
+          {
+            value: 'pending',
+            label: i18n.t(TAB_LABEL_KEYS.pending),
+            count: waitingCount ?? undefined,
+          },
+          { value: 'approved', label: i18n.t(TAB_LABEL_KEYS.approved) },
+          { value: 'rejected', label: i18n.t(TAB_LABEL_KEYS.rejected) },
+        ]}
+      />
+      <h2 className="sr-only" tabIndex={-1} data-approval-heading="">
+        {i18n.t(TAB_LABEL_KEYS[tab])}
+      </h2>
 
       {!showsList ? (
         // Manager dragged of all stores mid-shift, or never assigned.

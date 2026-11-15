@@ -177,8 +177,8 @@
    * (46px of icon and air plus a 0.875rem label line), and the room the
    * page keeps under it (--app-nav-reserve) with it. */
   --app-nav-h: max(60px, calc(46px + 0.875rem));
-  --app-nav-h-compact: 48px;
-  --app-nav-float: 12px;
+  /* Owner 2026-11-15: a little lower (was 12px). */
+  --app-nav-float: 4px;
   --app-nav-inset-x: 12px;
   --app-nav-reserve: calc(var(--app-nav-h) + var(--app-nav-float) + var(--app-safe-bottom));
   /* How far the page fades where it scrolls under the top bar and the nav. */

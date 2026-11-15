@@ -24,7 +24,7 @@
     /* Review MWA-09 (modern-web-guidance: respect-os-text-scale): no
        text-size-adjust lock any more (M3.30 set it to 100% to stop the
        phone's "larger text"); the phone's text size applies, and the
-       type scale is in rem. Pinch zoom is allowed (index.html viewport,
+       type scale is in rem. The viewport locks the scale (index.html,
        owner 2026-11-15); touch-action: manipulation stops double-tap zoom. */
     touch-action: manipulation;
     overscroll-behavior: none;
@@ -82,9 +82,8 @@
   /* The dock (owner, 2026-11-14, "main button on the nav's row"): the
      capsule and the page's main button (PageMainButton.tsx) float in one
      box at the foot of the screen, on one row: the capsule on the left
-     with its icons and words, the button on the right as a circle the size of the
-     open tab's pill, in a capsule of its own with the nav's glass, so the
-     two read as a pair. 8px from the screen's sides. The capsule takes
+     with its icons and words, the button on the right as a circle as tall
+     as the capsule, so the two read as a pair. 8px from the screen's sides. The capsule takes
      the rest of the row; on a 320px phone five tabs still get their 44px
      tap (the words truncate first), so the row never stacks.
      pointer-events: only the controls take taps, not the gap between. */
@@ -99,12 +98,11 @@
     pointer-events: none;
     --app-dock-inset-x: var(--app-nav-inset-x);
     --app-dock-gap: 8px;
-    /* The main button's circle: the open tab's pill height (BottomNav's
-       inset-y-1 in a full --app-nav-h capsule: 52px at the default text
-       size, growing with it). Spelled out from --app-nav-h's value, which
-       the shell sets to 0 when there is no nav. Its capsule's 4px padding
-       makes it the nav capsule's height. */
-    --app-main-btn-d: calc(max(60px, calc(46px + 0.875rem)) - 8px);
+    /* The main button's and the dock tools' circle (owner, 2026-11-15):
+       the nav capsule's full height (60px at the default text size,
+       growing with it), so the row reads as one height. Spelled out from
+       --app-nav-h's value, which the shell sets to 0 when there is no nav. */
+    --app-main-btn-d: max(60px, calc(46px + 0.875rem));
   }
   /* The row has 8px at both ends, as between the capsule and the button. */
   [data-main-button] .app-dock[data-nav] {
@@ -129,14 +127,12 @@
     flex: none;
     margin-inline-start: auto;
   }
-  /* The circle's box: 4px around it, so the circle sits level with the
-     nav capsule. No surface of its own (owner, 2026-11-15: no grey ring
-     round the button); the circle carries the nav's shadow. */
+  /* The circle's box. No surface of its own (owner, 2026-11-15: no grey
+     ring round the button); the circle carries the nav's shadow. */
   .app-main-capsule {
     display: flex;
-    padding: 4px;
   }
-  /* The circle: at least the 44px tap (it is 52px), growing with the text. */
+  /* The circle: at least the 44px tap (it is 60px), growing with the text. */
   .app-main-btn {
     box-shadow: var(--shadow-nav);
     width: var(--app-main-btn-d);
@@ -173,17 +169,9 @@
     transition:
       opacity 120ms ease,
       transform var(--t-quick) var(--easing);
-    /* Review MWC-14 (V10): the compact capsule's sizes (48 of 60 px; the
-       active tab's pill 40 of 52). Scales, so the shrink is transforms only. */
-    --app-nav-compact-scale: 0.8;
-    --app-nav-compact-pill-scale: 0.77;
   }
-  /* Review MWC-14 (V10, modern-web-guidance: shrinking-header-on-scroll):
-     "animate only performant CSS properties … such as transform and
-     opacity". The capsule's surface is its ::before, which scales to the
-     compact height from the bottom edge; the box keeps its height, so
-     nothing is laid out again while it shrinks. Same look as the height
-     animation it replaces. */
+  /* The capsule's surface is its ::before (glass, shadow, ring). Owner
+     2026-11-15: it keeps one size; scrolling no longer shrinks it. */
   .app-nav::before {
     content: '';
     position: absolute;
@@ -194,8 +182,6 @@
     box-shadow:
       var(--shadow-nav),
       inset 0 0 0 1px var(--c-divider);
-    transform-origin: 50% 100%;
-    transition: transform var(--t-quick) var(--easing);
   }
   /* Translucent only where the browser blurs what is behind it: without
      the blur, rows under the capsule would show through its labels. */
@@ -225,59 +211,6 @@
   .app-nav-active {
     transform-origin: 50% 100%;
   }
-  /* Scrolling down: a lower capsule with icons only, each still a 48px
-     tap. Shell sets the attribute; never under reduced motion (Shell does
-     not set it then, and the rules below are off too). */
-  @media (prefers-reduced-motion: no-preference) {
-    [data-nav-compact] .app-nav::before {
-      transform: scaleY(var(--app-nav-compact-scale));
-    }
-    [data-nav-compact] .app-nav-active {
-      transform: scaleY(var(--app-nav-compact-pill-scale));
-    }
-    /* The icon moves down to the middle of the compact capsule: half the
-       height it loses plus half the label line (gap-0.5 + the label's
-       line, text-old-label at leading-tight) it no longer sits above. */
-    [data-nav-compact] .app-nav-icon {
-      transform: translateY(
-        calc((var(--app-nav-h) - var(--app-nav-h-compact)) / 2 + (0.125rem + 0.6875rem * 1.25) / 2)
-      );
-    }
-    [data-nav-compact] .app-nav-label {
-      opacity: 0;
-    }
-  }
-  /* Review MWC-15 (V10, modern-web-guidance: content-first-noise-reduction):
-     "don't stack several sticky bars". On a short screen (a phone on its
-     side, or the keyboard up) the page's sticky bar already scrolls away
-     (STICKY_BAR_SHORT_VIEWPORT); scrolling down there now takes the
-     capsule away too, and scrolling up brings it back. Not on a page with
-     a main button: the button stays, and the capsule beside it. */
-  @media (max-height: 500px) and (prefers-reduced-motion: no-preference) {
-    html:not([data-main-button]) [data-nav-compact] .app-nav {
-      transform: translateY(calc(100% + var(--app-nav-float) + var(--app-safe-bottom)));
-      opacity: 0;
-      pointer-events: none;
-    }
-    html:not([data-main-button]) [data-nav-compact] .app-fade-bottom {
-      opacity: 0;
-    }
-  }
-
-  /* The capsule beside the main button (see .app-dock): the same tabs as
-     without it, icon over word (owner, 2026-11-14: "keep the old nav
-     look and use the free space"), filling the row up to the circle.
-     Scrolling down does not shrink it: it keeps the height of the
-     button's capsule beside it, words included. */
-  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav::before,
-  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-active,
-  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-icon {
-    transform: none;
-  }
-  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-label {
-    opacity: 1;
-  }
-
   /* <main>, the one scroller: room under the last content for the
      capsule, and for focus moved there by keyboard. With a main button,
      also for what it adds above the capsule's top (--app-main-btn-h:
@@ -353,6 +286,16 @@
 html[data-vt='tab'] .app-main {
   view-transition-name: app-page;
 }
+/* Owner 2026-11-15 ("the page is drawn over the nav while it loads"): a
+ * named group is painted over the root, so the sliding page covered the
+ * dock, which was part of the root. The dock is its own group, after the
+ * page in paint order, so it stays on top and does not move. */
+html[data-vt='tab'] .app-dock {
+  view-transition-name: app-dock;
+}
+::view-transition-group(app-dock) {
+  animation: none;
+}
 @keyframes vt-page-out {
   to {
     opacity: 0;
@@ -378,8 +321,11 @@ html:active-view-transition-type(backward) {
   animation-duration: var(--t-base);
   animation-timing-function: var(--easing);
 }
+/* Old and new over the same time: a cross-fade of equal length keeps the
+ * screen covered, where a quicker fade-out left a blink of bare
+ * background between the two pages (owner 2026-11-15). */
 ::view-transition-old(app-page) {
-  animation: vt-page-out var(--t-quick) var(--easing) both;
+  animation: vt-page-out var(--t-base) var(--easing) both;
 }
 ::view-transition-new(app-page) {
   animation: vt-page-in var(--t-base) var(--easing) both;
@@ -414,7 +360,6 @@ html:active-view-transition-type(backward) {
 .app-dock-tool {
   flex: none;
   display: flex;
-  padding: 4px;
 }
 .app-dock-tool-btn {
   position: relative;

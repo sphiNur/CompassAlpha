@@ -582,12 +582,11 @@ export const uz = {
   'settings.secondaryLanguage.offHint': 'Bir tilli (standart)',
   'settings.language.subtitle': 'Menyu, mahsulot va xabarlar uchun tilni tanlang.',
   'settings.title': 'Sozlamalar',
-  'settings.profile.title': 'Profil',
   'settings.profile.displayName': 'Koʻrinadigan ism',
   'settings.profile.lockedHint':
     'Ism oʻrnatilgandan soʻng faqat administrator uni oʻzgartira oladi. Kerak boʻlsa unga murojaat qiling.',
   'settings.profile.username': 'Telegram',
-  'settings.about.title': 'Ilova haqida',
+  'settings.account.title': 'Hisob',
   'settings.about.workspace': 'Ish maydoni',
   'workspace.title': 'Ish maydoni',
   'workspace.current': 'Joriy',

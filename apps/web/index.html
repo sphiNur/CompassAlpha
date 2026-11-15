@@ -12,12 +12,16 @@
       viewport-fit=cover enables env(safe-area-inset-*) on iOS notches.
       M3.30 (2026-05-18) locked the scale (maximum-scale=1,
       user-scalable=no) to stop accidental pinch-zoom misaligning the
-      sticky headers and nav. Owner decision 2026-11-15 (modern-web-
-      guidance): pinch zoom is allowed again, for WCAG 2.1 SC 1.4.4
-      (Resize Text). body keeps touch-action: manipulation, which only
-      stops double-tap zoom.
+      sticky headers and nav. 2026-11-15 the lock was lifted for pinch
+      zoom (WCAG 1.4.4), which brought back iOS zooming the whole page
+      into any field under 16px (the dock search, prices, quantities).
+      Owner decision the same day: lock the scale again. The phone's own
+      text size still applies (the type scale is in rem).
     -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <!--
       Review MWA-09 (modern-web-guidance: respect-os-text-scale): opt into
       the phone's text size (Android Chrome WebView 146+; others ignore

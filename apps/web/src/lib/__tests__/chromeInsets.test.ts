@@ -37,4 +37,25 @@ describe('chromeInsets (M3.42 / M3.46 / M3.47)', () => {
     };
     expect(chromeInsets(tg)).toMatchObject({ padLeft: 44, padRight: 88 });
   });
+
+  test('not fullscreen: Telegram’s row is above the page, so only the safe area is kept', () => {
+    const tg = {
+      platform: 'ios',
+      isFullscreen: false,
+      safeAreaInset: inset(0),
+      contentSafeAreaInset: inset(0),
+    };
+    expect(chromeInsets(tg).reserve).toBe(0);
+    expect(chromeInsets({ platform: 'android', isFullscreen: false }).reserve).toBe(0);
+  });
+
+  test('fullscreen keeps the row under Telegram’s buttons', () => {
+    const tg = {
+      platform: 'ios',
+      isFullscreen: true,
+      safeAreaInset: inset(47),
+      contentSafeAreaInset: inset(46),
+    };
+    expect(chromeInsets(tg).reserve).toBe(111);
+  });
 });

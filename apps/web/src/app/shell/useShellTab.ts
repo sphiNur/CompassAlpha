@@ -13,6 +13,10 @@ import { createTabScrollMemory, restoreScroll } from '../../lib/tabScroll';
 import { requestTabChange, resolveVisibleTab, useNavStore, type Tab } from '../../stores/navStore';
 import type { TabDef } from './tabs';
 import { useDeepLinkTab } from './useDeepLinkTab';
+import { preloadPage } from '../pageChunks';
+
+/** How long a tab tap waits for its page's code before it slides anyway. */
+const PAGE_WAIT_MS = 500;
 
 export function useShellTab(visible: readonly TabDef[]) {
   // M3.16-B (2026-05-16): tab state lives in navStore (persisted to
@@ -65,9 +69,17 @@ export function useShellTab(visible: readonly TabDef[]) {
     // UI overhaul B (2026-11-15): a tap moves to the tab with a short
     // slide from its side of the bar and a selection tick. A swipe has
     // its own motion (SwipePager.tsx) and goes through changeTab alone.
-    void requestTabChange(nextTab).then((allowed) => {
+    void requestTabChange(nextTab).then(async (allowed) => {
       if (!allowed) return;
       haptic('selection');
+      // Owner 2026-11-15 ("pages flash when they open"): the slide starts
+      // once the page's code is in, so the new picture is the page and
+      // not the loading spinner. Mostly in already (idle prefetch); on a
+      // slow line the tap waits at most PAGE_WAIT_MS, then slides anyway.
+      await Promise.race([
+        preloadPage(nextTab),
+        new Promise((resolve) => setTimeout(resolve, PAGE_WAIT_MS)),
+      ]);
       const direction =
         visibleKeys.indexOf(nextTab) > visibleKeys.indexOf(tab) ? 'forward' : 'backward';
       withViewTransition(() => flushSync(() => setPersistedTab(nextTab)), 'tab', [direction]);
