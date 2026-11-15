@@ -272,6 +272,21 @@ test('buy everything, one item in cash and one by transfer', async () => {
   await expect(item('Apple')).toContainText('24,000 UZS');
   await expect(item('Beef')).toContainText('90,000 UZS');
   await evidence('run-purchased');
+
+  // MWG defer-rendering-heavy-content: a shut category draws no rows,
+  // but its product names stay findable (hidden="until-found"); the
+  // browser's beforematch on a find-in-page hit opens the group.
+  const perCategory = main().getByRole('button', { name: 'Per category', exact: true });
+  await perCategory.click();
+  await main().getByRole('button', { name: /^Fruit/, expanded: true }).click();
+  await expect(main().getByRole('button', { name: /^Bought Apple/ })).toHaveCount(0);
+  const findable = main().locator('[data-findable-shut]').filter({ hasText: 'Apple' });
+  await expect(findable).toHaveAttribute('hidden', 'until-found');
+  await expect(findable).toBeHidden();
+  await findable.dispatchEvent('beforematch');
+  await expect(main().getByRole('button', { name: /^Fruit/, expanded: true })).toBeVisible();
+  await expect(item('Apple').getByRole('button', { name: /^Bought Apple/ })).toBeVisible();
+  await perCategory.click(); // back to the flat list the later steps use
 });
 
 test('deliver to the store', async () => {

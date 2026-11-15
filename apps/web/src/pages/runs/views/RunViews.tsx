@@ -65,6 +65,7 @@ import {
 } from '../types';
 import { NO_DEMAND, rowSplitsOf } from '../lib/rowSplits';
 import { rowName } from '../../../lib/productName';
+import { FindableWhenShut } from '../../../components/FindableWhenShut';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 import { isPositiveQty } from '@compass/contracts/limits';
 import type { PaymentMethod } from '@compass/contracts';
@@ -1013,7 +1014,21 @@ export function PerCategoryView({
                   );
                 })}
               </ul>
-            ) : null}
+            ) : (
+              <FindableWhenShut
+                names={group.items.map((item) => {
+                  const n = rowName(productNameParts, skuById.get(item.skuId), i18n.t('common.unknownProduct'));
+                  return n.secondary ? `${n.primary} ${n.secondary}` : n.primary;
+                })}
+                onFound={() =>
+                  setShut((cur) => {
+                    const next = new Set(cur);
+                    next.delete(group.categoryId);
+                    return next;
+                  })
+                }
+              />
+            )}
           </Card>
         );
       })}
