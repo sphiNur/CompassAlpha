@@ -136,10 +136,15 @@ export function PhotoCapture({
       <FieldLabel id={labelId}>{effectiveLabel}</FieldLabel>
       {value ? (
         <div className="relative">
+          {/* MWG review (2026-11-15, performance): the photo's size is not
+              known before it loads, so the preview keeps its 160 px height
+              from the start (h-40, was max-h-40) and the form under it does
+              not jump when it arrives. Width follows the photo; a very wide
+              one is fitted, not stretched. */}
           <img
             src={value}
             alt={effectiveLabel}
-            className="block max-h-40 w-auto rounded-[var(--r-card)] ring-hairline"
+            className="block h-40 w-auto max-w-full rounded-[var(--r-card)] object-contain ring-hairline"
           />
           {onClear ? (
             <button

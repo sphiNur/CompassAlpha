@@ -41,6 +41,7 @@ export const uz = {
   'common.enterReason': 'Sababni yozing.',
   // Review MWB-05 / MWB-07 (V6)
   'common.closeNotification': 'Bildirishnomani yopish',
+  'common.close': 'Yopish',
   'common.archive': 'Arxivlash',
   'common.discard': 'Saqlamaslik',
   'common.archived': 'arxivlangan',

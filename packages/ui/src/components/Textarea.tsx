@@ -10,8 +10,9 @@ import { fieldRequired, joinIds, useFieldControl } from './fieldControl';
  * Concord rules:
  *   - Default rows=3 — keeps the field visible-to-fold on mobile
  *     without dominating the screen. Caller can override.
- *   - Resize disabled (`resize-none`) so the field doesn't fight the
- *     surrounding layout. Review MWA-16 (V11, modern-web-guidance:
+ *   - No resize handle where the field grows by itself (MWG review
+ *     2026-11-15: `.textarea-grow` sets `resize: none` only under
+ *     field-sizing; elsewhere `resize: vertical`). Review MWA-16 (V11, modern-web-guidance:
  *     form-fields-automatically-fit-contents): it grows with its text
  *     instead (`field-sizing: content`, `.textarea-grow` in tokens.css),
  *     from `rows` lines up to ten, then scrolls. Where the WebView lacks
@@ -40,8 +41,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       ref={ref}
       rows={rows}
       className={cn(
-        // D18: never shorter than a 44px field, even at rows={1}.
-        'textarea-grow min-h-11 w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
+        // D18: never shorter than a 44px field, even at rows={1}. Its resize
+        // handle is set by .textarea-grow (tokens.css): off only where
+        // field-sizing grows the field (MWG review 2026-11-15).
+        'textarea-grow min-h-11 w-full rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
         'text-old-body leading-snug text-[var(--c-fg)]',
         'placeholder:text-[var(--c-fg-subtle)]',
         // V9: the field's edge at 3:1 against the page (--c-field-border).

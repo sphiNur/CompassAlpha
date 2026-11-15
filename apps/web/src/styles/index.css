@@ -24,8 +24,8 @@
     /* Review MWA-09 (modern-web-guidance: respect-os-text-scale): no
        text-size-adjust lock any more (M3.30 set it to 100% to stop the
        phone's "larger text"); the phone's text size applies, and the
-       type scale is in rem. Pinch zoom stays off (index.html viewport);
-       touch-action: manipulation still stops double-tap zoom. */
+       type scale is in rem. Pinch zoom is allowed (index.html viewport,
+       owner 2026-11-15); touch-action: manipulation stops double-tap zoom. */
     touch-action: manipulation;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;

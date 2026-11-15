@@ -12,6 +12,10 @@ function app(production: boolean, connectOrigins: string[] = []) {
   a.use('*', securityHeaders({ production, connectOrigins }));
   a.get('/', (c) => c.html('<!doctype html><title>Compass</title>'));
   a.get('/json', (c) => c.json({ ok: true }));
+  a.get('/file', (c) => c.body('png', 200, { 'content-type': 'image/png' }));
+  a.get('/shared', (c) =>
+    c.json({ ok: true }, 200, { 'cross-origin-resource-policy': 'cross-origin' }),
+  );
   a.get('/boom', () => {
     throw new Error('boom');
   });
@@ -36,6 +40,21 @@ describe('security headers', () => {
     expect(page.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
     const json = await app(true).request('/json');
     expect(json.headers.get('cross-origin-opener-policy')).toBeNull();
+  });
+
+  test('the JSON and the page are same-origin resources; files and own headers are left (MWG 2026-11-15)', async () => {
+    for (const path of ['/', '/json', '/boom']) {
+      const res = await app(true).request(path);
+      expect(`${path}: ${res.headers.get('cross-origin-resource-policy')}`).toBe(
+        `${path}: same-origin`,
+      );
+    }
+    expect(
+      (await app(true).request('/file')).headers.get('cross-origin-resource-policy'),
+    ).toBeNull();
+    expect((await app(true).request('/shared')).headers.get('cross-origin-resource-policy')).toBe(
+      'cross-origin',
+    );
   });
 
   test('HSTS in production only', async () => {
@@ -71,9 +90,10 @@ describe('the strict policy, enforced (MWD-12, MWD-13)', () => {
     expect(csp.get('trusted-types')).toBe('default goog#html');
     expect(csp.get('frame-ancestors')).toBe("'self' https://web.telegram.org https://t.me");
     expect(csp.get('object-src')).toBe("'none'");
+    expect(csp.get('base-uri')).toBe("'none'");
     expect(csp.get('report-uri')).toBe('/csp-report');
     expect(csp.get('report-to')).toBe('csp');
-    expect(res.headers.get('reporting-endpoints')).toBe('csp="/csp-report"');
+    expect(res.headers.get('reporting-endpoints')).toBe('csp="/csp-report", default="/csp-report"');
   });
 
   test('the forwarded public host is used; a strange Host is left out', async () => {

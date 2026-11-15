@@ -143,6 +143,15 @@ export interface UiLabels {
   // --- Toast (Review MWB-05 / MWB-07, V6) ---
   /** Name of the ✕ on a toast that stays until it is closed (an error). */
   closeNotification: string;
+
+  // --- Sheet header (MWG review 2026-11-15, modern-web-guidance: dialog) ---
+  /**
+   * Name of the ✕ every sheet shows in its header. Optional for now:
+   * until the host maps it (apps/web uiLabels.ts, catalog key
+   * `common.close`), the sheet says SHEET_CLOSE_FALLBACK. Once mapped,
+   * make it required and move the default into DEFAULT_UI_LABELS.
+   */
+  close?: string;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {

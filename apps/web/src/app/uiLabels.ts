@@ -149,5 +149,9 @@ export function uiLabelsFor(i18n: I18n): UiLabels {
     get closeNotification() {
       return i18n.t('common.closeNotification');
     },
+    // MWG review (2026-11-15, dialog): the sheet's visible ✕.
+    get close() {
+      return i18n.t('common.close');
+    },
   };
 }
