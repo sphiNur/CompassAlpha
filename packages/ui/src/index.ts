@@ -50,6 +50,8 @@ export { EmptyState } from './components/EmptyState';
 export type { EmptyStateProps } from './components/EmptyState';
 export { Disclosure } from './components/Disclosure';
 export type { DisclosureProps } from './components/Disclosure';
+export { Reveal, REVEAL_MS } from './components/Reveal';
+export type { RevealProps } from './components/Reveal';
 export { LoadingState } from './components/LoadingState';
 export type { LoadingStateProps, LoadingStateVariant } from './components/LoadingState';
 export { isWaitingOffline, OfflineState, PendingState } from './components/OfflineState';

@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { surfaceClass } from './Card';
 import { IconChevronRight } from './NavIcon';
+import { Reveal } from './Reveal';
 
 /**
  * A titled block that opens on a tap: the day's sales and a close's
@@ -50,11 +51,10 @@ export function Disclosure({ title, children, open, onOpenChange, className }: D
           <IconChevronRight size={18} />
         </span>
       </button>
-      {shown ? (
-        <div id={contentId} data-disclosure-content="">
-          {children}
-        </div>
-      ) : null}
+      {/* Owner 2026-11-16: opens and folds with motion (Reveal). */}
+      <Reveal open={shown} id={contentId}>
+        <div data-disclosure-content="">{children}</div>
+      </Reveal>
     </section>
   );
 }

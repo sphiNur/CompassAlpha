@@ -153,7 +153,9 @@ export function Segmented<V extends string>({
               }
             }}
             className={cn(
-              'hit-44 inline-flex items-center justify-center py-0.5 font-medium tabular-nums',
+              // Owner 2026-11-16: the chosen segment's colour moves over
+              // --t-quick instead of jumping.
+              'hit-44 inline-flex items-center justify-center py-0.5 font-medium tabular-nums transition-colors duration-[var(--t-quick)] ease-[var(--easing)]',
               !blocked && 'press',
               'first:rounded-l-[var(--r-utility)] last:rounded-r-[var(--r-utility)]',
               isSm ? 'px-2 text-old-label' : 'text-old-body-sm',
