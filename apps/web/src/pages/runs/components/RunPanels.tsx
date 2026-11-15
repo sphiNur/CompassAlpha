@@ -62,6 +62,7 @@ import { haptic, getTg, isInTelegram } from '../../../lib/telegram';
 import { scrollBehavior } from '../../../lib/reducedMotion';
 import { readLocalPref, writeLocalPref } from '../../../lib/localPref';
 import { PhotoThumb, PhotoViewerSheet, type ViewedPhoto } from '../../../components/PhotoThumb';
+import { FindableWhenShut } from '../../../components/FindableWhenShut';
 import { useStableCallbacks } from '../../../hooks/useStableCallbacks';
 import {
   PerStoreView,
@@ -2091,7 +2092,12 @@ export function PreviewSummaryCard({
                     </section>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <FindableWhenShut
+                  names={g.items.map((line) => line.name)}
+                  onFound={() => setOpenStore(g.storeId)}
+                />
+              )}
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
                   per item; legacy free-text notes (pre-M3.16) appended
@@ -2223,7 +2229,12 @@ export function PreviewSummaryCard({
                     </div>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <FindableWhenShut
+                  names={b.stores.flatMap((store) => store.items.map((line) => line.name))}
+                  onFound={() => setOpenSupplier(supplierKey)}
+                />
+              )}
             </section>
             );
           })}
