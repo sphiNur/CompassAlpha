@@ -523,6 +523,18 @@
  * outside forced colors.
  */
 @media (forced-colors: active) {
+  /* MWG review (2026-11-15, color): the dock's tool circles and the open
+     search capsule are edged by box-shadow only, and the "search is on"
+     dot is a fill; both vanished in a contrast theme. */
+  .app-dock-tool-btn,
+  .app-dock-search {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  .app-dock-tool-dot {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
   .ring-hairline,
   .ring-field,
   .shadow-sheet {

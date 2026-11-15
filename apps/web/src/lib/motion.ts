@@ -16,39 +16,64 @@ function canAnimate(el: Element | null | undefined): el is HTMLElement {
 
 /**
  * A list item that is about to leave (an order approved or rejected):
- * slides out to the side and folds its height, then stays folded until
- * the list re-renders without it. `gap` is the list's gap in px, folded
- * with it.
+ * slides out to the side, then its space closes. It is inert from the
+ * start, so its buttons leave the tab order while they fade, and it stays
+ * collapsed until the list re-renders without it; when the list still
+ * shows it (the refresh failed), `restoreListItem` puts it back.
+ *
+ * modern-web-guidance `motion` (review 2026-11-15): "Prefer to animate
+ * opacity and transform". The space no longer closes by animating the
+ * item's height (layout on every frame): the item collapses at once and
+ * the rows below slide up from where they were (FLIP, translate only).
+ * `gap` is the list's gap in px, closed with it.
  */
 export async function leaveListItem(el: Element | null | undefined, gap = 8): Promise<void> {
-  if (!canAnimate(el)) return;
-  const height = el.offsetHeight;
+  if (!el) return;
+  const item = el as HTMLElement;
+  item.inert = true;
+  if (!canAnimate(item)) return;
   try {
-    await el.animate(
+    await item.animate(
       [
         { opacity: 1, translate: '0 0' },
         { opacity: 0, translate: '-24px 0' },
       ],
       { duration: 160, easing: EASE_IN, fill: 'forwards' },
     ).finished;
-    el.style.overflow = 'hidden';
-    await el.animate(
-      [
-        { height: `${height}px`, marginBottom: '0px' },
-        { height: '0px', marginBottom: `${-gap}px` },
-      ],
-      { duration: 180, easing: EASE_OUT, fill: 'forwards' },
-    ).finished;
   } catch {
     /* cancelled (the item re-rendered): nothing to wait for */
+    return;
   }
+  const below: HTMLElement[] = [];
+  for (let n = item.nextElementSibling; n; n = n.nextElementSibling) below.push(n as HTMLElement);
+  const before = below.map((n) => n.getBoundingClientRect().top);
+  item.style.height = '0px';
+  item.style.overflow = 'hidden';
+  item.style.marginBottom = `${-gap}px`;
+  const moves = below.map((n, i) => {
+    const dy = before[i]! - n.getBoundingClientRect().top;
+    return dy
+      ? n.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], {
+          duration: 180,
+          easing: EASE_OUT,
+        }).finished
+      : Promise.resolve();
+  });
+  await Promise.allSettled(moves);
 }
 
-/** Put back an item whose leave did not happen (the request failed). */
+/**
+ * Put back an item whose leave did not happen (the request or the refresh
+ * failed, or the list still has it): visible, sized and focusable again.
+ */
 export function restoreListItem(el: Element | null | undefined): void {
   if (!el) return;
-  for (const a of (el as HTMLElement).getAnimations?.() ?? []) a.cancel();
-  (el as HTMLElement).style.overflow = '';
+  const item = el as HTMLElement;
+  for (const a of item.getAnimations?.() ?? []) a.cancel();
+  item.style.height = '';
+  item.style.overflow = '';
+  item.style.marginBottom = '';
+  item.inert = false;
 }
 
 /**
