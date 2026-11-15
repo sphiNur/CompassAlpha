@@ -1994,14 +1994,6 @@ export const PurchaseRow = memo(function PurchaseRow({
               <label htmlFor={priceFieldId} className={RUN_FIELD_LABEL}>
                 {i18n.t('run.action.priceLabelShort')}
               </label>
-              {/* DX-IX-7: the unit in force, said with the field. MWG (label
-                  in name): the visible label names the field; an aria-label
-                  used to replace it. */}
-              <span id={`${priceFieldId}-unit`} className="sr-only">
-                {priceInThousands
-                  ? i18n.t('run.action.unitPriceUzsThousands', { currency })
-                  : i18n.t('run.action.unitPriceUzs', { currency })}
-              </span>
               <Input
                 id={priceFieldId}
                 type="number"
@@ -2012,9 +2004,7 @@ export const PurchaseRow = memo(function PurchaseRow({
                 // The row has no room for a message; line 3 says it.
                 formatError="none"
                 invalid={priceShown}
-                aria-describedby={
-                  priceShown ? `${priceFieldId}-unit ${priceErrorId}` : `${priceFieldId}-unit`
-                }
+                aria-describedby={priceShown ? priceErrorId : undefined}
                 onBlur={priceLeft.onBlur}
                 enterKeyHint="done"
                 onKeyDown={(e) => {
@@ -2024,6 +2014,14 @@ export const PurchaseRow = memo(function PurchaseRow({
                   if (canSave) handleSave('editor');
                 }}
                 placeholder={i18n.t('run.action.unitPriceAriaLabel')}
+                // DX-IX-7: the name carries the unit in force, as the sheet's
+                // label does ("单价（千 UZS）"). It contains the visible label
+                // ("Price"/"单价"), so label-in-name holds (MWG review).
+                aria-label={
+                  priceInThousands
+                    ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                    : i18n.t('run.action.unitPriceUzs', { currency })
+                }
                 className="w-full"
               />
             </div>
