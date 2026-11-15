@@ -6,7 +6,16 @@
  * optional.
  */
 import { useState } from 'react';
-import { Banner, Button, Field, PickerButton, Select, useToast } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  Field,
+  PickerButton,
+  Select,
+  useToast,
+  PresenceItem,
+  usePresence,
+} from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
 import { trpc } from '../../lib/trpc';
 import { haptic } from '../../lib/telegram';
@@ -64,6 +73,7 @@ export function WageLines({
   // A total-only row from before lines were recorded stays as it is (see
   // the expense lines).
   const historical = lines.some((line) => line.isHistorical);
+  const presence = usePresence(lines, (line) => line.id);
   const atLimit = lines.length >= MAX_DETAIL_ITEMS;
   /** The line whose employee is being chosen. */
   const [pickerFor, setPickerFor] = useState<string | null>(null);
@@ -235,24 +245,27 @@ export function WageLines({
         </Banner>
       ) : null}
 
-      {lines.length === 0 ? (
+      {presence.length === 0 ? (
         <DetailListEmpty>{i18n.t('settlement.wages.empty')}</DetailListEmpty>
       ) : (
         <DetailLineList>
-          {lines.map((wage, index) => (
-            <WageLine
-              key={wage.id}
-              wage={wage}
-              title={i18n.t('settlement.wages.itemNumber', { n: index + 1 })}
-              selectionRequired={selectionRequired}
-              reveal={reveal}
-              onChange={(patch) => change(wage.id, patch)}
-              onChoose={() => {
-                setPickerFor(wage.id);
-                setNewPickerFor(null);
-              }}
-              onRemove={wage.isHistorical ? undefined : () => remove(wage.id)}
-            />
+          {/* Owner 2026-11-16: an added line slides in, a removed one
+              folds away (kit usePresence). */}
+          {presence.map(({ item: wage, key, index, phase }) => (
+            <PresenceItem key={key} phase={phase}>
+              <WageLine
+                wage={wage}
+                title={i18n.t('settlement.wages.itemNumber', { n: index + 1 })}
+                selectionRequired={selectionRequired}
+                reveal={reveal}
+                onChange={(patch) => change(wage.id, patch)}
+                onChoose={() => {
+                  setPickerFor(wage.id);
+                  setNewPickerFor(null);
+                }}
+                onRemove={wage.isHistorical ? undefined : () => remove(wage.id)}
+              />
+            </PresenceItem>
           ))}
         </DetailLineList>
       )}
