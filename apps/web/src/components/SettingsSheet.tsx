@@ -1,8 +1,8 @@
 /**
  * SettingsSheet (M1.6, 2026-05-06), opened from Telegram's gear button or
- * the browser header. The page's own actions come first (M1.12), then the
- * person's own things: profile, workspace, store, language, the stall's
- * language and About. Organisation settings stay in Admin, so this stays
+ * the browser header. The page's own actions come first (M1.12), then what
+ * people change most (store, the languages), then one Account section
+ * (profile, workspace and About; owner 2026-11-15). Organisation settings stay in Admin, so this stays
  * "my preferences" (M1.6 #3).
  *
  * Review COREWEB1-24 (2026-11-12): the profile and About were grey boxes
@@ -134,10 +134,33 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           </section>
         ) : null}
 
-        {/* ── Profile ─────────────────────────────────────── */}
-        <section>
-          <SectionLabel as="h3" padded={false} className="mb-2">
-            {i18n.t('settings.profile.title')}
+        {/* Owner 2026-11-15: what people change most comes first (the
+            page's actions above, then the store and the languages); who
+            they are, the workspace and the build are one Account card
+            at the bottom. */}
+
+        {/* ── Store picker (M3.5, org.admin only) ──────────── */}
+        {canSeeStorePicker ? <StorePickerSection onClose={() => onOpenChange(false)} /> : null}
+
+        {/* ── Languages: the app's, then the stall's (M3.45) ── */}
+        <section className="flex flex-col gap-2">
+          <SectionLabel as="h3" padded={false}>
+            {i18n.t('settings.language.title')}
+          </SectionLabel>
+          <LanguagePicker />
+          <SectionLabel padded={false} className="mt-2">
+            {i18n.t('settings.secondaryLanguage.title')}
+          </SectionLabel>
+          <p className="text-old-label text-[var(--c-fg-muted)]">
+            {i18n.t('settings.secondaryLanguage.hint')}
+          </p>
+          <SecondaryLanguagePicker />
+        </section>
+
+        {/* ── Account: profile, workspace and About in one ─── */}
+        <section className="flex flex-col gap-2">
+          <SectionLabel as="h3" padded={false}>
+            {i18n.t('settings.account.title')}
           </SectionLabel>
           {/* AUTH-22 (2026-10-30): the name is always locked here (anyone
               whose name is not yet confirmed is held at onboarding before
@@ -153,19 +176,30 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 value={`@${session.user.tgUsername}`}
               />
             ) : null}
+            {roleNames.length > 0 ? (
+              <DetailRow
+                label={i18n.t('settings.about.role')}
+                value={formatList(roleNames, i18n.locale)}
+              />
+            ) : null}
+            <DetailRow
+              label={i18n.t('settings.about.workspace')}
+              value={session?.member.orgName ?? '—'}
+            />
+            {/* UI-14: the build is a code, so monospace. */}
+            <DetailRow
+              label={i18n.t('settings.about.build')}
+              value={<span className="font-mono">{buildId}</span>}
+            />
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('settings.profile.lockedHint')}
             </p>
           </Card>
-        </section>
 
-        {/* ── Workspace switcher / new tenant ──────────────── */}
-        {memberships.length > 1 || canCreateWorkspace ? (
-          <section>
-            <SectionLabel as="h3" padded={false} className="mb-2">
-              {i18n.t('workspace.title')}
-            </SectionLabel>
-            {creatingWorkspace ? (
+          {/* Workspace switcher / new tenant: only with a second workspace
+              to switch to, or for a platform admin who may create one. */}
+          {memberships.length > 1 || canCreateWorkspace ? (
+            creatingWorkspace ? (
               <div className="flex flex-col gap-2">
                 <CreateWorkspaceForm onCreated={() => setCreatingWorkspace(false)} />
                 {/* AUTH-16 (2026-10-30): the form had no way back. */}
@@ -218,54 +252,8 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   </Button>
                 ) : null}
               </div>
-            )}
-          </section>
-        ) : null}
-
-        {/* ── Store picker (M3.5, org.admin only) ──────────── */}
-        {canSeeStorePicker ? <StorePickerSection onClose={() => onOpenChange(false)} /> : null}
-
-        {/* ── Language ────────────────────────────────────── */}
-        <section>
-          <SectionLabel as="h3" padded={false} className="mb-2">
-            {i18n.t('settings.language.title')}
-          </SectionLabel>
-          <LanguagePicker />
-        </section>
-
-        {/* ── The stall's language (M3.45) ─────────────────── */}
-        <section>
-          <SectionLabel as="h3" padded={false} className="mb-2">
-            {i18n.t('settings.secondaryLanguage.title')}
-          </SectionLabel>
-          <div className="mb-2 text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('settings.secondaryLanguage.hint')}
-          </div>
-          <SecondaryLanguagePicker />
-        </section>
-
-        {/* ── About ───────────────────────────────────────── */}
-        <section>
-          <SectionLabel as="h3" padded={false} className="mb-2">
-            {i18n.t('settings.about.title')}
-          </SectionLabel>
-          <Card className="flex flex-col gap-2 px-4 py-3">
-            <DetailRow
-              label={i18n.t('settings.about.workspace')}
-              value={session?.member.orgName ?? '—'}
-            />
-            {roleNames.length > 0 ? (
-              <DetailRow
-                label={i18n.t('settings.about.role')}
-                value={formatList(roleNames, i18n.locale)}
-              />
-            ) : null}
-            {/* UI-14: the build is a code, so monospace. */}
-            <DetailRow
-              label={i18n.t('settings.about.build')}
-              value={<span className="font-mono">{buildId}</span>}
-            />
-          </Card>
+            )
+          ) : null}
         </section>
         {/* Local development in a plain browser: back to the persona picker
             (there is no sign-out in production, where Telegram is the login). */}

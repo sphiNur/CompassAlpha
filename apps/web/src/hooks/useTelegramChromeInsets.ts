@@ -68,10 +68,12 @@ export function useTelegramChromeInsets(): void {
       onEvent('safeAreaChanged', apply);
       onEvent('contentSafeAreaChanged', apply);
       onEvent('viewportChanged', apply);
+      onEvent('fullscreenChanged', apply);
       return () => {
         offEvent('safeAreaChanged', apply);
         offEvent('contentSafeAreaChanged', apply);
         offEvent('viewportChanged', apply);
+        offEvent('fullscreenChanged', apply);
       };
     }
     return;

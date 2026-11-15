@@ -121,6 +121,8 @@ declare global {
      * `env(safe-area-inset-top)` returns 0 on Android Telegram WebView.
      */
     platform?: string;
+    /** Bot API 8.0: the Mini App fills the screen, Telegram's buttons over it. */
+    isFullscreen?: boolean;
     /**
      * M3.42: Telegram WebApp 8.0+ device safe-area inset (status bar /
      * notch). Available on newer clients; may be undefined on

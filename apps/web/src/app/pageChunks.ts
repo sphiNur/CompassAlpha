@@ -11,26 +11,37 @@
  * entry, side by side with the language catalog, whenever the app does
  * not reopen on another tab: no extra round trip before the first screen.
  */
+import { lazyModule } from '../lib/lazyModule';
 import { AUTH_STORAGE_KEY } from '../stores/authStore';
 import { isTab, NAV_STORAGE_KEY, type Tab } from '../stores/navStore';
 
-export const importAdminPage = () =>
-  import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
-export const importOrderPage = () =>
-  import('../pages/OrderPage').then((m) => ({ default: m.OrderPage }));
-export const importRunPage = () => import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
-export const importHistoryPage = () =>
-  import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
-export const importSettlementPage = () =>
-  import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
-export const importSalesPage = () =>
-  import('../pages/SalesPage').then((m) => ({ default: m.SalesPage }));
-export const importApprovalPage = () =>
-  import('../pages/ApprovalPage').then((m) => ({ default: m.ApprovalPage }));
-export const importAttendancePage = () =>
-  import('../pages/AttendancePage').then((m) => ({ default: m.AttendancePage }));
-export const importConfirmPage = () =>
-  import('../pages/ConfirmPage').then((m) => ({ default: m.ConfirmPage }));
+export const importAdminPage = lazyModule(() =>
+  import('../pages/AdminPage').then((m) => ({ default: m.AdminPage })),
+);
+export const importOrderPage = lazyModule(() =>
+  import('../pages/OrderPage').then((m) => ({ default: m.OrderPage })),
+);
+export const importRunPage = lazyModule(() =>
+  import('../pages/RunPage').then((m) => ({ default: m.RunPage })),
+);
+export const importHistoryPage = lazyModule(() =>
+  import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage })),
+);
+export const importSettlementPage = lazyModule(() =>
+  import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage })),
+);
+export const importSalesPage = lazyModule(() =>
+  import('../pages/SalesPage').then((m) => ({ default: m.SalesPage })),
+);
+export const importApprovalPage = lazyModule(() =>
+  import('../pages/ApprovalPage').then((m) => ({ default: m.ApprovalPage })),
+);
+export const importAttendancePage = lazyModule(() =>
+  import('../pages/AttendancePage').then((m) => ({ default: m.AttendancePage })),
+);
+export const importConfirmPage = lazyModule(() =>
+  import('../pages/ConfirmPage').then((m) => ({ default: m.ConfirmPage })),
+);
 
 // Review COREWEB1-11 (2026-11-11): keyed by every tab, so a new tab
 // cannot be left out of the preload.
@@ -70,8 +81,9 @@ export function preloadPage(tab: Tab): Promise<void> {
  * the entry chunk when the startup budget ran out (scripts/
  * check-entry-budget.ts, 2026-11-12).
  */
-export const importSettingsSheet = () =>
-  import('../components/SettingsSheet').then((m) => ({ default: m.SettingsSheet }));
+export const importSettingsSheet = lazyModule(() =>
+  import('../components/SettingsSheet').then((m) => ({ default: m.SettingsSheet })),
+);
 
 /** Start downloading the settings sheet; its own import handles a failure. */
 export function preloadSettingsSheet(): Promise<void> {

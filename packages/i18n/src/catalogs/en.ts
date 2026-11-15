@@ -629,12 +629,11 @@ export const en = {
   'settings.language.subtitle': 'Pick the language for menus, products, and messages.',
   // Settings hub (M1.6).
   'settings.title': 'Settings',
-  'settings.profile.title': 'Profile',
   'settings.profile.displayName': 'Display name',
   'settings.profile.lockedHint':
     'Once set, only an admin can change your name. Ask them if you need to update it.',
   'settings.profile.username': 'Telegram',
-  'settings.about.title': 'About',
+  'settings.account.title': 'Account',
   'settings.about.workspace': 'Workspace',
   'workspace.title': 'Workspace',
   'workspace.current': 'Current',

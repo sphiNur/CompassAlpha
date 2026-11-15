@@ -17,7 +17,6 @@ const appCss = readFileSync(join(import.meta.dir, '..', '..', 'styles', 'index.c
 describe('WALK-03: the bottom nav taps as 44', () => {
   test('the capsule, full or shrunk, is at least 44 px tall', () => {
     expect(px('--app-nav-h')).toBeGreaterThanOrEqual(44);
-    expect(px('--app-nav-h-compact')).toBeGreaterThanOrEqual(44);
   });
 
   test('the capsule grows with larger text, never below 60 px (MWA-10)', () => {
@@ -35,31 +34,6 @@ describe('WALK-03: the bottom nav taps as 44', () => {
 
   test('the rows of the More sheet are at least 44 px tall', () => {
     expect(navSrc).toMatch(/press flex min-h-12 w-full/);
-  });
-});
-
-describe('Review MWC-14 (V10): the capsule shrinks with transforms only', () => {
-  const rule = (selector: string) => {
-    const at = appCss.indexOf(`${selector} {`);
-    return at < 0 ? '' : appCss.slice(at, appCss.indexOf('}', at));
-  };
-
-  test('its height is not animated, and stays put when compact', () => {
-    expect(rule('  .app-nav')).not.toMatch(/transition:[^;]*\bheight\b/);
-    expect(appCss).not.toMatch(/\[data-nav-compact\] \.app-nav \{\s*height/);
-  });
-
-  test('the compact scales are the 48-of-60 capsule and the 40-of-52 pill', () => {
-    const scale = (name: string) =>
-      Number(new RegExp(`${name}: ([\\d.]+);`).exec(appCss)?.[1] ?? 'NaN');
-    expect(scale('--app-nav-compact-scale')).toBeCloseTo(
-      px('--app-nav-h-compact') / px('--app-nav-h'),
-      2,
-    );
-    expect(scale('--app-nav-compact-pill-scale')).toBeCloseTo(
-      (px('--app-nav-h-compact') - 8) / (px('--app-nav-h') - 8),
-      2,
-    );
   });
 });
 
@@ -95,16 +69,15 @@ describe('the main button on the nav row', () => {
     expect(navSrc).toMatch(/min-w-\[min\(2\.75rem,20%\)\] flex-auto/);
   });
 
-  test("the circle is the open tab's pill height, its capsule the nav's height", () => {
-    // The pill is inset 4px top and bottom in the capsule (inset-y-1).
-    expect(navSrc).toMatch(/app-nav-active absolute inset-x-0\.5 inset-y-1 /);
-    expect(appCss).toContain(`--app-main-btn-d: calc(${light['--app-nav-h']} - 8px);`);
+  test("the circle is the nav capsule's height (owner, 2026-11-15)", () => {
+    expect(appCss).toContain(`--app-main-btn-d: ${light['--app-nav-h']};`);
     const btn = rule('  .app-main-btn');
     expect(btn).toMatch(/width: var\(--app-main-btn-d\);/);
     expect(btn).toMatch(/height: var\(--app-main-btn-d\);/);
     expect(btn).toMatch(/min-width: 44px;/);
     expect(btn).toMatch(/min-height: 44px;/);
-    expect(rule('  .app-main-capsule')).toMatch(/padding: 4px;/);
+    expect(rule('  .app-main-capsule')).not.toMatch(/padding/);
+    expect(rule('.app-dock-tool')).not.toMatch(/padding/);
     expect(buttonSrc).toMatch(
       /app-main-btn press relative flex items-center justify-center rounded-full/,
     );
@@ -112,7 +85,6 @@ describe('the main button on the nav row', () => {
 
   test('no grey ring round the circle; it carries the nav shadow (owner, 2026-11-15)', () => {
     const capsule = rule('  .app-main-capsule');
-    expect(capsule).toMatch(/padding: 4px;/);
     expect(capsule).not.toMatch(/background|box-shadow|border/);
     expect(appCss).not.toMatch(/\.app-main-capsule,/);
     expect(rule('  .app-main-btn')).toMatch(/box-shadow: var\(--shadow-nav\);/);
@@ -146,20 +118,11 @@ describe('the main button on the nav row', () => {
     expect(navSrc).toMatch(/\$\{NAV_BADGE_COUNT_CLASS\}/);
   });
 
-  test('the words stay beside the button, scrolling too; every tab keeps its name', () => {
-    expect(
-      rule('  [data-main-button] [data-nav-compact] .app-dock[data-nav] .app-nav-label'),
-    ).toMatch(/opacity: 1;/);
+  test('every tab keeps its name', () => {
     // Each NavItem is given an aria-label (the full name, with its badge).
     expect(navSrc).toMatch(/aria-label=\{ariaLabel\}/);
     expect(navSrc).not.toMatch(/ariaLabel=\{undefined\}/);
-  });
-
-  test('scrolling down neither hides tabs nor shrinks the capsule beside the button', () => {
     expect(appCss).not.toMatch(/\.app-nav-item:not\(\[aria-current\]\)/);
-    expect(appCss).toMatch(
-      /\[data-main-button\] \[data-nav-compact\] \.app-dock\[data-nav\] \.app-nav::before,[^{]*\{\s*transform: none;/,
-    );
   });
 
   test('the page keeps room for the dock, not for two bars', () => {

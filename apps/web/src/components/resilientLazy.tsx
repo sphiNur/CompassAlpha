@@ -10,7 +10,7 @@
  * Review COREWEB2-14 (2026-11-11): moved here from lib/; it draws a
  * component, with the i18n hook.
  */
-import { lazy, useCallback, useEffect, useState } from 'react';
+import { createElement, lazy, useCallback, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { Button, EmptyState } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
@@ -18,8 +18,10 @@ import { reloadForStaleChunk, STALE_CHUNK_RELOAD_WINDOW_MS } from '../lib/reload
 
 type PageModule<P> = { default: ComponentType<P> };
 
-export function resilientLazy<P extends object>(factory: () => Promise<PageModule<P>>) {
-  return lazy(() =>
+export function resilientLazy<P extends object>(
+  factory: (() => Promise<PageModule<P>>) & { loaded?: () => PageModule<P> | undefined },
+) {
+  const Lazy = lazy(() =>
     factory().catch(() => ({
       default: function PageNotLoaded(props: P) {
         const i18n = useI18n();
@@ -60,4 +62,18 @@ export function resilientLazy<P extends object>(factory: () => Promise<PageModul
       },
     })),
   );
+  // Owner 2026-11-15 ("pages flash when they open"): a module that is
+  // already in (lib/lazyModule.ts: prefetched, or opened before) renders
+  // at once; React.lazy would suspend it for a frame and draw the
+  // fallback. Decided once per mount, so a page never swaps between the
+  // two and loses its state.
+  function Resilient(props: P) {
+    const [ready] = useState(() => factory.loaded?.()?.default ?? null);
+    // The lazy component's props type adds React's ref attributes; P is
+    // what every caller passes, so the cast only names that.
+    return ready
+      ? createElement(ready, props)
+      : createElement(Lazy as unknown as ComponentType<P>, props);
+  }
+  return Resilient;
 }

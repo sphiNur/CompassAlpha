@@ -23,7 +23,7 @@ export interface ChromeInsets {
 
 export type ChromeReport = Pick<
   TelegramWebAppGlobal,
-  'platform' | 'safeAreaInset' | 'contentSafeAreaInset'
+  'platform' | 'safeAreaInset' | 'contentSafeAreaInset' | 'isFullscreen'
 >;
 
 export function chromeInsets(tg: ChromeReport): ChromeInsets {
@@ -53,7 +53,15 @@ export function chromeInsets(tg: ChromeReport): ChromeInsets {
   const safeTop = tg.safeAreaInset?.top;
   const contentTop = tg.contentSafeAreaInset?.top;
   let reserve: number | null = null;
-  if (typeof contentTop === 'number' && contentTop > 0) {
+  // Owner 2026-11-15 ("is the top bar really gone?"): outside fullscreen
+  // Telegram draws its Close / title / ⋯ row ABOVE the web view, not
+  // over it, so there is nothing to clear: the row floor below left an
+  // empty 56-64 px band at the top of every page. Only the device's safe
+  // area (0 there) is reserved. A client that does not report the flag
+  // keeps the old rule.
+  if (tg.isFullscreen === false) {
+    reserve = safeTop ?? 0;
+  } else if (typeof contentTop === 'number' && contentTop > 0) {
     reserve = Math.max(contentTop, (safeTop ?? 0) + chromeRowFloor);
   } else if (typeof safeTop === 'number') {
     reserve = safeTop + chromeRowFloor;
