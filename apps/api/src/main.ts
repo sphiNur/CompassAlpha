@@ -22,6 +22,7 @@ import { hub, WS_CLOSE_GOING_AWAY } from './realtime/hub';
 import { relayDatabaseNotices } from './realtime/dbRelay';
 import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
 import { scanAttendanceReminders } from './services/attendanceReminders';
+import { scanMissingCloseReminders, scanPendingReviewReminders } from './services/workReminders';
 import { purgeOldAttendancePhotos, purgeOldFramePrints } from './services/attendancePhotoRetention';
 import { trustedClientIp } from './services/clientIp';
 import { loadSession } from './trpc/context';
@@ -118,6 +119,20 @@ async function main() {
             logger.warn({ err, shiftId }, 'attendance reminder failed'),
         });
         if (sent > 0) logger.info({ sent }, 'attendance reminders');
+      },
+      logger,
+    ),
+    // UI overhaul E2 (2026-11-15): orders waiting an hour for review, and
+    // no daily close by 22:00; each deduped, like the attendance reminders.
+    every(
+      'work reminders',
+      ATTENDANCE_JOB_MS,
+      async () => {
+        const onError = (storeId: string, err: unknown) =>
+          logger.warn({ err, storeId }, 'work reminder failed');
+        const review = await scanPendingReviewReminders(db, new Date(), { onError });
+        const close = await scanMissingCloseReminders(db, new Date(), { onError });
+        if (review + close > 0) logger.info({ review, close }, 'work reminders');
       },
       logger,
     ),

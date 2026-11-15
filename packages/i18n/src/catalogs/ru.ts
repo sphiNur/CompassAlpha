@@ -2394,6 +2394,11 @@ export const ru = {
   'notify.openApp': 'Открыть Compass',
   'notify.order.submitted.title': 'Новый заказ на проверку',
   'notify.order.submitted.body': '{store}: заказ ждёт вашей проверки.',
+  'notify.order.reviewWaiting.title': 'Заказы ждут проверки',
+  'notify.order.reviewWaiting.body':
+    '{store}: {n, plural, one {# заказ ждёт} few {{n} заказа ждут} many {{n} заказов ждут} other {{n} заказа ждут}} проверки больше часа.',
+  'notify.settlement.closeMissing.title': 'Закрытие дня не записано',
+  'notify.settlement.closeMissing.body': '{store}: закрытие дня за сегодня ещё не записано.',
   'notify.order.approved.title': 'Заказ одобрен',
   'notify.order.approved.body': 'Ваш заказ одобрен и попадёт в следующую закупку.',
   'notify.order.selfApproved.title': 'Заказ одобрил сам автор',
