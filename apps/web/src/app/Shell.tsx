@@ -200,7 +200,10 @@ function ShellInner() {
               </Banner>
             </div>
           ) : null}
-          {tabLabel && !TABS_WITH_OWN_H1.has(tab) ? <h1 className="sr-only">{tabLabel}</h1> : null}
+          {/* The More page with Admin on it has Admin's <h1> (one per page). */}
+          {tabLabel && !TABS_WITH_OWN_H1.has(tab) && !(tab === 'more' && layout.admin) ? (
+            <h1 className="sr-only">{tabLabel}</h1>
+          ) : null}
           {/* SHL-3 (2026-10-30): a member whose roles open no tab got an
             empty bar over the order page. */}
           {visible.length > 0 ? (
