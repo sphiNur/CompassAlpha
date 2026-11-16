@@ -1,9 +1,8 @@
 import type { Page } from '@playwright/test';
 
 /**
- * Opens a bottom-nav tab. With more than five tabs the bar holds four and
- * More (owner, 2026-11-14), so a tab that is not in the bar for this role
- * is opened from the More sheet.
+ * Opens a bottom-nav tab. A tab that is not in the bar for this role is
+ * opened from the More page (owner 2026-11-17), which also holds Admin.
  */
 export async function openTab(page: Page, key: string): Promise<void> {
   const nav = page.getByTestId('primary-nav');
@@ -13,6 +12,9 @@ export async function openTab(page: Page, key: string): Promise<void> {
     await inBar.click();
     return;
   }
+  // Owner 2026-11-17: More is a page; Admin is drawn on it, the other
+  // tabs the bar has no room for are rows at its top.
   await nav.getByTestId('nav-more').click();
-  await page.getByRole('dialog').getByTestId(`nav-${key}`).click();
+  if (key === 'admin' || key === 'more') return;
+  await page.getByTestId('more-nav-list').getByTestId(`nav-${key}`).click();
 }

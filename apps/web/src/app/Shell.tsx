@@ -10,7 +10,8 @@ import { setPageTitleBase } from '../lib/pageTitle';
 import { useAuthStore } from '../stores/authStore';
 import { importSettingsSheet } from './pageChunks';
 import { PageErrorBoundary } from './PageErrorBoundary';
-import { BottomNav } from './shell/BottomNav';
+import { BottomNav, showsNav } from './shell/BottomNav';
+import { MoreNavContext } from './shell/moreNav';
 import { LiveAnnouncer } from './shell/LiveAnnouncer';
 import { navLayout } from './shell/navLayout';
 import { OfflineBanner } from './shell/OfflineBanner';
@@ -21,7 +22,7 @@ import { ReviewLanding } from './shell/ReviewLanding';
 import { useScrollChrome } from './shell/scrollChrome';
 import { SkipLinks } from './shell/SkipLinks';
 import { SwipePager } from './shell/SwipePager';
-import { shellTabs, showsNav, TABS_WITH_OWN_H1 } from './shell/tabs';
+import { MORE_TAB, shellTabs, TABS_WITH_OWN_H1 } from './shell/tabs';
 import { TopVeil, topInset } from './shell/TopBar';
 import { isInTelegram } from '../lib/telegram';
 import { usePagePrefetch } from './shell/usePagePrefetch';
@@ -61,17 +62,26 @@ function ShellInner() {
   const storeCtx = useStoreContext();
   const storePerms =
     storeCtx.kind === 'specific' ? session?.storePermissions?.[storeCtx.storeId] : undefined;
-  const visible = shellTabs(session, storePerms);
+  const memberTabs = shellTabs(session, storePerms);
   usePagePrefetch(session);
-  const { tab, selectTab, changeTab, mainRef, saveScroll } = useShellTab(visible);
-  // 2026-11-14 (step 2): a swipe moves to the bar's neighbouring tab, in
-  // the order the bar draws them; not to tabs behind More (SwipePager.tsx).
   // Owner, 2026-11-15: no top bar. In a browser (no Telegram ⋯ menu)
-  // settings open from More, which is then always in the bar.
+  // settings open from More, which is then always there.
   const browserSettings = !isInTelegram();
-  const hasNav = showsNav(visible, browserSettings);
+  // Owner 2026-11-17: Admin lives on the More page, never in the bar; the
+  // shell's tabs are the member's pages without Admin, plus More when
+  // there is one (navLayout.ts).
+  const layout = navLayout(memberTabs, session?.permissions ?? [], browserSettings);
+  const visible = [
+    ...memberTabs.filter((t) => t.key !== 'admin'),
+    ...(layout.morePage ? [MORE_TAB] : []),
+  ];
+  const { tab, selectTab, changeTab, mainRef, saveScroll } = useShellTab(visible);
+  // 2026-11-14 (step 2): a swipe moves to the bar's neighbouring item, in
+  // the order the bar draws them, More last; not to the tabs listed on the
+  // More page (SwipePager.tsx).
+  const hasNav = showsNav(layout);
   const swipeRing = hasNav
-    ? navLayout(visible, session?.permissions ?? [], browserSettings).bar.map((t) => t.key)
+    ? [...layout.bar.map((t) => t.key), ...(layout.morePage ? (['more'] as const) : [])]
     : [];
   const swipeResetKey = [
     session?.user.id,
@@ -215,7 +225,16 @@ function ShellInner() {
                 </div>
               )}
             >
-              {PAGES[tab]()}
+              <MoreNavContext.Provider
+                value={{
+                  tabs: layout.more,
+                  admin: layout.admin,
+                  onSelect: selectTab,
+                  onOpenSettings: browserSettings ? openSettings : undefined,
+                }}
+              >
+                {PAGES[tab]()}
+              </MoreNavContext.Provider>
             </PageErrorBoundary>
           ) : (
             <EmptyState
@@ -239,13 +258,7 @@ function ShellInner() {
           pager, so a swipe never starts on either. */}
       <div className="app-dock" data-nav={hasNav ? '' : undefined}>
         <div className="app-dock-row">
-          <BottomNav
-            tabs={visible}
-            tab={tab}
-            onSelect={selectTab}
-            permissions={session?.permissions ?? []}
-            onOpenSettings={browserSettings ? openSettings : undefined}
-          />
+          <BottomNav layout={layout} tab={tab} onSelect={selectTab} />
           {/* UI overhaul C/D (2026-11-15): a page's search or view switch,
               drawn here through a portal (components/dock). */}
           <div ref={setDockToolSlot} className="app-dock-slot" />

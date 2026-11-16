@@ -139,9 +139,10 @@ async function run() {
       await page.screenshot({ path: failureShot('smoke-failure-shell.png'), fullPage: true });
     }
 
-    // Walk every tab. Each click must not produce a JS error. More (four
-    // tabs + More when there are more than five, 2026-11-14) is walked
-    // after the bar: each of its rows opens from the More sheet.
+    // Walk every tab. Each click must not produce a JS error. More (owner
+    // 2026-11-17: a page with the tabs the bar has no room for, Settings
+    // in a browser, and Admin) is walked after the bar: the page, then
+    // each of its rows.
     const TAB_SELECTOR = `${PRIMARY_NAV_SELECTOR} button:not([data-testid="nav-more"])`;
     const tabs = await page.$$(TAB_SELECTOR);
     record(`BottomNav has tabs (${tabs.length})`, tabs.length >= 1);
@@ -155,7 +156,9 @@ async function run() {
     for (let i = 0; i < tabs.length; i++) {
       const tab = (await page.$$(TAB_SELECTOR))[i];
       if (!tab) break;
-      const label = (await tab.textContent())?.replace(/\s+/g, ' ').trim() ?? '?';
+      // Only the open item shows its word (owner 2026-11-17); the name is
+      // on every item.
+      const label = (await tab.getAttribute('aria-label')) ?? '?';
       const errorsBefore = realErrorCount();
       await tab.click();
       await page.waitForTimeout(400); // let render + suspended queries settle
@@ -165,12 +168,20 @@ async function run() {
     }
     const moreSelector = `${PRIMARY_NAV_SELECTOR} [data-testid="nav-more"]`;
     if (await page.$(moreSelector)) {
+      // Owner 2026-11-17: More is a page (its rows, Settings, Admin).
+      const errorsBeforeMore = realErrorCount();
       await page.click(moreSelector);
+      await page.waitForTimeout(400);
       const moreKeys = await page
-        .locator('[role="dialog"] [data-testid^="nav-"]:not([data-testid^="nav-badge"])')
+        .locator(
+          '[data-testid="more-nav-list"] [data-testid^="nav-"]:not([data-testid^="nav-badge"])',
+        )
         .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.slice(4)));
-      record(`More lists the other tabs (${moreKeys.length})`, moreKeys.length >= 1);
-      await page.keyboard.press('Escape');
+      record(
+        `More page rendered without new JS errors (${moreKeys.length} tab rows)`,
+        realErrorCount() === errorsBeforeMore,
+        `+${realErrorCount() - errorsBeforeMore}`,
+      );
       for (const key of moreKeys) {
         const errorsBefore = realErrorCount();
         await clickNavTab(page, key);

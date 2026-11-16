@@ -57,6 +57,9 @@ export const TAB_KEYS = [
   'history',
   'attendance',
   'admin',
+  // Owner 2026-11-17: the More page (app/shell/MorePage.tsx): the tabs the
+  // bar has no room for, Settings in a browser, and Admin below them.
+  'more',
 ] as const;
 export type Tab = (typeof TAB_KEYS)[number];
 
@@ -303,6 +306,9 @@ export const useNavStore = create<NavState>()(
  */
 export function resolveVisibleTab(persisted: Tab, visibleKeys: readonly Tab[]): Tab {
   if (visibleKeys.includes(persisted)) return persisted;
+  // Owner 2026-11-17: Admin lives on the More page, so a link, a saved tab
+  // or a button that opens Admin opens More.
+  if (persisted === 'admin' && visibleKeys.includes('more')) return 'more';
   // 2026-10-21: 'sales' and 'settlement' are the two homes of sales entry
   // and are mutually exclusive (the Sales tab hides once the user holds
   // settlement.record). Gaining or losing that permission lands the user

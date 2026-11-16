@@ -15,6 +15,7 @@ import {
   IconCatalog,
   IconConfirm,
   IconHistory,
+  IconMore,
   IconOrder,
   IconRun,
   IconSettlement,
@@ -134,7 +135,20 @@ const TAB_DEFS: { [K in Tab]: Omit<TabDef, 'key'> } = {
     shortKey: 'nav.short.admin',
     Icon: IconAdmin,
   },
+  // Owner 2026-11-17: the More page. Not a tab of its own permission: the
+  // shell adds it when the bar has no room for every tab, when the member
+  // may open Admin (which lives on it), or in a browser (Settings).
+  more: {
+    permission: null,
+    storeBound: false,
+    labelKey: 'nav.more',
+    shortKey: 'nav.short.more',
+    Icon: IconMore,
+  },
 };
+
+/** The More page's tab (navLayout.ts decides when it is there). */
+export const MORE_TAB: TabDef = { key: 'more', ...TAB_DEFS.more };
 
 const TABS: TabDef[] = TAB_KEYS.map((key) => ({ key, ...TAB_DEFS[key] }));
 
@@ -150,8 +164,9 @@ export function visibleTabsFor(
 ): TabDef[] {
   return TABS.filter(
     (t) =>
-      isTabVisible(t, storePerms && t.storeBound ? storePerms : permissions) ||
-      (t.key === 'admin' && isPlatformAdmin),
+      t.key !== 'more' &&
+      (isTabVisible(t, storePerms && t.storeBound ? storePerms : permissions) ||
+        (t.key === 'admin' && isPlatformAdmin)),
   );
 }
 
@@ -177,17 +192,6 @@ export function shellTabs(
         ? { ...t, labelKey: 'admin.subsection.finance', Icon: IconActivity }
         : t,
   );
-}
-
-/**
- * 2026-11-05 (owner): a bar with a single tab (a cashier has only 日结)
- * switches nowhere and takes 64 px of the screen. With one page or none,
- * there is no bottom nav.
- */
-export function showsNav(tabs: readonly TabDef[], withMore = false): boolean {
-  // 2026-11-15 (owner): in a browser More always holds Settings, so one
-  // tab and More make a bar too (withMore).
-  return tabs.length + (withMore ? 1 : 0) > 1;
 }
 
 /**

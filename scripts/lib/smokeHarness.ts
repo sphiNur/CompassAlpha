@@ -55,8 +55,11 @@ export async function clickNavTab(page: Page, key: string): Promise<void> {
     await inBar.click();
     return;
   }
+  // Owner 2026-11-17: More is a page; Admin is drawn on it, the other
+  // tabs the bar has no room for are rows at its top.
   await page.click(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-more"]`);
-  await page.click(`[role="dialog"] [data-testid="nav-${key}"]`);
+  if (key === 'admin' || key === 'more') return;
+  await page.click(`[data-testid="more-nav-list"] [data-testid="nav-${key}"]`);
 }
 
 export interface Check {
