@@ -43,6 +43,7 @@ import {
   PickerRow,
   SearchInput,
   rowListClass,
+  Reveal,
 } from '@compass/ui';
 import type { PaymentMethod } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
@@ -2074,7 +2075,7 @@ export function PreviewSummaryCard({
               </div>
               {/* RUNWEB1-34: a shut group's rows are not drawn at all
                   (they were, hidden, in every group). */}
-              {open ? (
+              <Reveal open={open}>
                 <div id={panelId} className="flex flex-col gap-2">
                   {groupStoreBySupplier(
                     g,
@@ -2092,12 +2093,13 @@ export function PreviewSummaryCard({
                     </section>
                   ))}
                 </div>
-              ) : (
+              </Reveal>
+              {!open ? (
                 <FindableWhenShut
                   names={g.items.map((line) => line.name)}
                   onFound={() => setOpenStore(g.storeId)}
                 />
-              )}
+              ) : null}
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
                   per item; legacy free-text notes (pre-M3.16) appended
@@ -2205,7 +2207,7 @@ export function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              {open ? (
+              <Reveal open={open}>
                 <div id={panelId} className="flex flex-col gap-2">
                   {b.stores.map((store) => (
                     <div key={store.storeId}>
@@ -2229,12 +2231,13 @@ export function PreviewSummaryCard({
                     </div>
                   ))}
                 </div>
-              ) : (
+              </Reveal>
+              {!open ? (
                 <FindableWhenShut
                   names={b.stores.flatMap((store) => store.items.map((line) => line.name))}
                   onFound={() => setOpenSupplier(supplierKey)}
                 />
-              )}
+              ) : null}
             </section>
             );
           })}

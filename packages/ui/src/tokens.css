@@ -333,6 +333,50 @@
   }
 }
 
+/* Reveal (components/Reveal.tsx), owner 2026-11-16: content that opens
+   slides and fades in, and folds away on close, instead of appearing in
+   one frame. Height too where the browser animates to `auto`
+   (interpolate-size); the rest of the page then moves smoothly as well.
+   Clipped vertically, with room for focus rings. */
+@media (prefers-reduced-motion: no-preference) {
+  .app-reveal {
+    transition:
+      opacity var(--t-base) var(--easing),
+      translate var(--t-base) var(--easing);
+  }
+  @starting-style {
+    .app-reveal {
+      opacity: 0;
+      translate: 0 -6px;
+    }
+  }
+  .app-reveal[data-closing] {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+  @supports (interpolate-size: allow-keywords) {
+    :root {
+      interpolate-size: allow-keywords;
+    }
+    .app-reveal {
+      overflow-y: clip;
+      overflow-clip-margin: 8px;
+      transition:
+        opacity var(--t-base) var(--easing),
+        translate var(--t-base) var(--easing),
+        height var(--t-base) var(--easing);
+    }
+    @starting-style {
+      .app-reveal {
+        height: 0;
+      }
+    }
+    .app-reveal[data-closing] {
+      height: 0;
+    }
+  }
+}
+
 /* A page's pinned bar (StickyPageBar), owner 2026-11-16: glass where the
    browser blurs what is behind it, so rows scrolling under it show
    through softly; solid otherwise and under reduced transparency. */
@@ -357,10 +401,15 @@
 /* Utility class injected on every press affordance */
 .press {
   /* Opacity too: the app's default press dim (apps/web styles) fades
-     back on release instead of snapping. */
+     back on release instead of snapping. And colours (owner 2026-11-16):
+     a chip or button that becomes selected or active changes colour over
+     --t-quick instead of in one frame. */
   transition:
     transform var(--t-snap) var(--easing),
-    opacity var(--t-quick) var(--easing);
+    opacity var(--t-quick) var(--easing),
+    background-color var(--t-quick) var(--easing),
+    color var(--t-quick) var(--easing),
+    box-shadow var(--t-quick) var(--easing);
 }
 .press:active {
   transform: scale(0.96);

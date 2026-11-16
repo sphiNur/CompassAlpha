@@ -9,6 +9,7 @@ import {
   CardTitle,
   IconChevronRight,
   useConfirm,
+  Reveal,
 } from '@compass/ui';
 import type { RouterOutputs } from '../../lib/trpc';
 import type { AuthSession } from '../../stores/authStore';
@@ -408,7 +409,7 @@ export function ApprovalCard({
         </Button>
       </div>
 
-      {open ? (
+      <Reveal open={open}>
         <div id={`approval-items-${row.id}`}>
           <SessionItems
             sessionId={row.id}
@@ -428,7 +429,7 @@ export function ApprovalCard({
             onHold={onHold}
           />
         </div>
-      ) : null}
+      </Reveal>
     </Card>
   );
 }

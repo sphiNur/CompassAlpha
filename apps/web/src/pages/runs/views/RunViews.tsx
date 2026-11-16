@@ -31,6 +31,7 @@ import {
   SectionLabel,
   useAnnounceShown,
   useLeftField,
+  Reveal,
 } from '@compass/ui';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useProductNameParts, useUnitLabel } from '../../../hooks/useI18n';
@@ -986,7 +987,7 @@ export function PerCategoryView({
                 meta={i18n.t('run.label.itemsCount', { n: group.items.length })}
               />
             </button>
-            {open ? (
+            <Reveal open={open}>
               <ul id={panelId} className="flex flex-col" role="list">
                 {group.items.map((item) => {
                   const sku = skuById.get(item.skuId);
@@ -1014,7 +1015,8 @@ export function PerCategoryView({
                   );
                 })}
               </ul>
-            ) : (
+            </Reveal>
+            {!open ? (
               <FindableWhenShut
                 names={group.items.map((item) => {
                   const n = rowName(productNameParts, skuById.get(item.skuId), i18n.t('common.unknownProduct'));
@@ -1028,7 +1030,7 @@ export function PerCategoryView({
                   })
                 }
               />
-            )}
+            ) : null}
           </Card>
         );
       })}

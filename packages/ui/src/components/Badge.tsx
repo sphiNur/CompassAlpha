@@ -3,7 +3,9 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
 
 const badge = cva(
-  'inline-flex items-center gap-1 rounded-[var(--r-pill)] px-2.5 py-0.5 text-old-label font-medium',
+  // Owner 2026-11-16: a status that changes (pending → approved) changes
+  // colour over --t-quick, not in one frame.
+  'inline-flex items-center gap-1 rounded-[var(--r-pill)] px-2.5 py-0.5 text-old-label font-medium transition-colors duration-[var(--t-quick)] ease-[var(--easing)]',
   {
     variants: {
       tone: {
