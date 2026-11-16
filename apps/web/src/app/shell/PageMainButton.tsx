@@ -8,6 +8,7 @@ import { announce } from '../../lib/announce';
 import { usePageMainButtonState, type PageMainButtonIcon } from '../../hooks/usePageMainButton';
 import { mainButtonInsetOf, publishMainButtonInset } from '../../lib/mainButtonInset';
 import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from '../../lib/navBadgeLook';
+import { flipDock } from './dockFlip';
 
 /**
  * In-DOM page primary action button (M3.49, 2026-05-23). Reads from the
@@ -101,16 +102,24 @@ export function PageMainButton() {
   const hasHint = !!hint && hintOpen;
   // 2026-11-14: `data-main-button` on <html> tells the shell's CSS
   // (styles/index.css) to show the capsule beside the button with icons
-  // only.
+  // only. Owner 2026-11-16: the dock moves to its new layout by FLIP
+  // (dockFlip.ts), not by animating widths. Before the inset measure
+  // below, which reads the new layout.
+  useLayoutEffect(() => {
+    const html = document.documentElement;
+    if (html.hasAttribute('data-main-button') === shown) return;
+    flipDock(document.querySelector<HTMLElement>('.app-dock'), () => {
+      html.toggleAttribute('data-main-button', shown);
+    });
+  }, [shown]);
+  useLayoutEffect(() => () => document.documentElement.removeAttribute('data-main-button'), []);
+  // The inset the page keeps for the button (lib/mainButtonInset).
   useLayoutEffect(() => {
     const col = colRef.current;
-    const html = typeof document !== 'undefined' ? document.documentElement : null;
     if (!shown || !col) {
       publishMainButtonInset(0);
-      html?.removeAttribute('data-main-button');
       return;
     }
-    html?.setAttribute('data-main-button', '');
     const dock = col.closest<HTMLElement>('.app-dock');
     const measure = () => {
       const nav = dock?.querySelector<HTMLElement>('.app-nav') ?? null;
@@ -141,7 +150,6 @@ export function PageMainButton() {
     return () => {
       ro?.disconnect();
       publishMainButtonInset(0);
-      html?.removeAttribute('data-main-button');
     };
   }, [shown, hasHint]);
 

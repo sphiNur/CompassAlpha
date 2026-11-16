@@ -143,14 +143,11 @@
     --app-dock-inset-x: var(--app-nav-inset-x);
     --app-dock-gap: 8px;
     /* Owner 2026-11-16 ("ghosting when the main button comes and goes"):
-       the room the main button takes at the row's end, animated
-       (@property --app-dock-btn-slot below), so the capsule narrows and
-       widens with it instead of jumping; the sides move with it. */
+       the room the main button takes at the row's end. It changes in one
+       step; the pieces then slide from where they were (FLIP,
+       app/shell/dockFlip.ts), so no width or side is animated and no
+       frame re-lays out the row (modern-web-guidance `motion`). */
     --app-dock-btn-slot: 0px;
-    transition:
-      --app-dock-btn-slot var(--t-base) var(--easing),
-      left var(--t-base) var(--easing),
-      right var(--t-base) var(--easing);
     /* The main button's and the dock tools' circle (owner, 2026-11-15):
        the nav capsule's full height (60px at the default text size,
        growing with it), so the row reads as one height. Spelled out from
@@ -476,13 +473,6 @@ html:active-view-transition-type(backward) {
     scale: 0.8;
     opacity: 0;
   }
-}
-/* The main button's slot, animatable (ignored where @property is not
- * supported: the slot then changes at once, as before). */
-@property --app-dock-btn-slot {
-  syntax: '<length>';
-  inherits: true;
-  initial-value: 0px;
 }
 
 /* UI overhaul C/D (2026-11-15): a page's tool on the dock's row (search,

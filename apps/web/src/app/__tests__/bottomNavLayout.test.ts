@@ -165,9 +165,10 @@ describe('the dock and the edge fades in motion', () => {
     expect(shellSrc.indexOf('app-fade-bottom')).toBeGreaterThan(main);
   });
 
-  test("the main button's room is animated, and a dropped button leaves", () => {
-    expect(appCss).toMatch(/@property --app-dock-btn-slot/);
-    expect(appCss).toMatch(/transition:\s*--app-dock-btn-slot/);
+  test("the main button's room moves by FLIP, not by animating layout, and a dropped button leaves", () => {
+    expect(appCss).not.toMatch(/transition:\s*--app-dock-btn-slot/);
+    expect(appCss).not.toMatch(/transition:[^;]*\bleft var/);
+    expect(buttonSrc).toMatch(/flipDock\(/);
     expect(appCss).toMatch(/\.app-main-btn\[data-leaving\]/);
     expect(buttonSrc).toMatch(/data-leaving=/);
   });
