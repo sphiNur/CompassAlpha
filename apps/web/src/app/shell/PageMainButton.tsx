@@ -127,8 +127,14 @@ export function PageMainButton() {
         }),
       );
     };
-    measure();
+    // MWG delta audit (2026-11-16, identify-inp-causes): no synchronous
+    // measure() here: it read three rects straight after the <html>
+    // attribute above, a forced layout inside the commit (and inside the
+    // tab change's view transition). ResizeObserver's first callback runs
+    // after layout and before paint, so the inset is still there in the
+    // first frame. Without ResizeObserver, measure once after layout.
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (!ro) requestAnimationFrame(measure);
     ro?.observe(col);
     if (dock) ro?.observe(dock);
     if (hintRef.current) ro?.observe(hintRef.current);
