@@ -6,7 +6,7 @@
  * the "manager only" state is gone. S5 (2026-11-13): the organisation's
  * expense templates add a filled-in line.
  */
-import { Banner, Button, FieldGroup, useToast } from '@compass/ui';
+import { Banner, Button, FieldGroup, useToast, PresenceItem, usePresence } from '@compass/ui';
 import { SETTLEMENT_DETAIL_ITEMS_MAX as MAX_DETAIL_ITEMS } from '@compass/contracts/limits';
 import { trpc } from '../../lib/trpc';
 import { haptic } from '../../lib/telegram';
@@ -60,6 +60,7 @@ export function ExpenseLines({
   // immutable historical total instead of being retroactively attributed to
   // the person who happens to open the record today.
   const historical = lines.some((line) => line.isHistorical);
+  const presence = usePresence(lines, (line) => line.id);
   const editable = !historical;
   const atLimit = lines.length >= MAX_DETAIL_ITEMS;
 
@@ -135,41 +136,44 @@ export function ExpenseLines({
         </Banner>
       ) : null}
 
-      {lines.length === 0 ? (
+      {presence.length === 0 ? (
         <DetailListEmpty>{i18n.t('settlement.expenses.empty')}</DetailListEmpty>
       ) : (
         <DetailLineList>
-          {lines.map((expense, index) => {
+          {/* Owner 2026-11-16: an added line slides in, a removed one
+              folds away (kit usePresence). */}
+          {presence.map(({ item: expense, key, index, phase }) => {
             const title = i18n.t('settlement.expenses.itemNumber', { n: index + 1 });
             const problems = lineProblems(expense, reveal);
             return (
-              <DetailLineFrame
-                key={expense.id}
-                title={title}
-                removeLabel={i18n.t('settlement.expenses.remove')}
-                onRemove={editable ? () => remove(expense.id) : undefined}
-              >
-                <LineAmountField
-                  label={i18n.t('settlement.expenses.amount')}
-                  name={`${title} · ${i18n.t('settlement.expenses.amount')}`}
-                  value={expense.amount}
-                  readOnly={!editable}
-                  problem={problems.amount}
-                  onLeave={() => reveal.leave(`${expense.id}:amount`)}
-                  onChange={(amount) => change(expense.id, { amount, isHistorical: false })}
-                />
-                <LineReasonField
-                  label={i18n.t('settlement.expenses.reason')}
-                  name={`${title} · ${i18n.t('settlement.expenses.reason')}`}
-                  historicalText={i18n.t('settlement.expenses.historicalReason')}
-                  isHistorical={expense.isHistorical}
-                  value={expense.reason}
-                  readOnly={!editable}
-                  missing={problems.reasonMissing}
-                  onLeave={() => reveal.leave(`${expense.id}:reason`)}
-                  onChange={(reason) => change(expense.id, { reason, isHistorical: false })}
-                />
-              </DetailLineFrame>
+              <PresenceItem key={key} phase={phase}>
+                <DetailLineFrame
+                  title={title}
+                  removeLabel={i18n.t('settlement.expenses.remove')}
+                  onRemove={editable ? () => remove(expense.id) : undefined}
+                >
+                  <LineAmountField
+                    label={i18n.t('settlement.expenses.amount')}
+                    name={`${title} · ${i18n.t('settlement.expenses.amount')}`}
+                    value={expense.amount}
+                    readOnly={!editable}
+                    problem={problems.amount}
+                    onLeave={() => reveal.leave(`${expense.id}:amount`)}
+                    onChange={(amount) => change(expense.id, { amount, isHistorical: false })}
+                  />
+                  <LineReasonField
+                    label={i18n.t('settlement.expenses.reason')}
+                    name={`${title} · ${i18n.t('settlement.expenses.reason')}`}
+                    historicalText={i18n.t('settlement.expenses.historicalReason')}
+                    isHistorical={expense.isHistorical}
+                    value={expense.reason}
+                    readOnly={!editable}
+                    missing={problems.reasonMissing}
+                    onLeave={() => reveal.leave(`${expense.id}:reason`)}
+                    onChange={(reason) => change(expense.id, { reason, isHistorical: false })}
+                  />
+                </DetailLineFrame>
+              </PresenceItem>
             );
           })}
         </DetailLineList>
