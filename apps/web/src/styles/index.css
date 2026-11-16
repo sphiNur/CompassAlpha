@@ -24,8 +24,8 @@
     /* Review MWA-09 (modern-web-guidance: respect-os-text-scale): no
        text-size-adjust lock any more (M3.30 set it to 100% to stop the
        phone's "larger text"); the phone's text size applies, and the
-       type scale is in rem. The viewport locks the scale (index.html,
-       owner 2026-11-15); touch-action: manipulation stops double-tap zoom. */
+       type scale is in rem. Pinch zoom is allowed (index.html, owner
+       2026-11-16); touch-action: manipulation stops double-tap zoom. */
     touch-action: manipulation;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
@@ -555,5 +555,19 @@ html:active-view-transition-type(backward) {
       opacity: 0;
       scale: 0.9 1;
     }
+  }
+}
+
+/* Owner 2026-11-16 (pinch zoom back): iOS zooms the whole page into any
+   text field whose font is under 16px when it gets focus ("tapping
+   search zoomed everything"). On iOS only (-webkit-touch-callout is
+   iOS-only), every text field is at least 16px, so focus no longer
+   zooms; elsewhere nothing changes. !important: kit and page utilities
+   set smaller sizes on fields, and this must win over all of them. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']),
+  textarea,
+  select {
+    font-size: max(16px, 1rem) !important;
   }
 }
