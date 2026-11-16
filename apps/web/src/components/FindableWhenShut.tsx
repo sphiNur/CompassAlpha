@@ -25,6 +25,11 @@ export function FindableWhenShut({
   const onFoundRef = useRef(onFound);
   onFoundRef.current = onFound;
 
+  const drawn = SUPPORTED && names.length > 0;
+  // MWG delta audit (2026-11-16, search-hidden-content): keyed on
+  // whether the list is drawn. With [] a list that first drew with no
+  // names, or emptied and filled again, kept React's plain `hidden`
+  // (display: none) and no `beforematch`, so find-in-page missed it.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -32,9 +37,9 @@ export function FindableWhenShut({
     const handle = () => onFoundRef.current();
     el.addEventListener('beforematch', handle);
     return () => el.removeEventListener('beforematch', handle);
-  }, []);
+  }, [drawn]);
 
-  if (!SUPPORTED || names.length === 0) return null;
+  if (!drawn) return null;
   return (
     // No padding or margin: an until-found element keeps its box (only
     // its content is skipped), so any padding would show as an empty

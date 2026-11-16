@@ -637,6 +637,14 @@ textarea.textarea-grow {
     outline: 1px solid ButtonText;
     outline-offset: -1px;
   }
+  /* MWG delta audit (2026-11-16, color): a toast and its action buttons
+     lost their ring for a shadow (UI overhaul A2) and so their edge in a
+     contrast theme. */
+  [data-toast],
+  [data-toast] button {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
   /* MWG review (2026-11-15): the nav capsule (its surface is the nav's
      ::before), the main button's "why inactive" hint and the main button
      itself are edged by box-shadow only too (apps/web index.css). Before
