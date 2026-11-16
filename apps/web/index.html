@@ -15,13 +15,13 @@
       sticky headers and nav. 2026-11-15 the lock was lifted for pinch
       zoom (WCAG 1.4.4), which brought back iOS zooming the whole page
       into any field under 16px (the dock search, prices, quantities).
-      Owner decision the same day: lock the scale again. The phone's own
-      text size still applies (the type scale is in rem).
+      Owner decision the same day: lock the scale again. 2026-11-16 the
+      owner asked for pinch zoom back; the cause of the page zooming into
+      a field (iOS does it for any field under 16px) is fixed instead:
+      on iOS every text field is at least 16px (styles/index.css). The
+      phone's own text size still applies (the type scale is in rem).
     -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <!--
       Review MWA-09 (modern-web-guidance: respect-os-text-scale): opt into
       the phone's text size (Android Chrome WebView 146+; others ignore
