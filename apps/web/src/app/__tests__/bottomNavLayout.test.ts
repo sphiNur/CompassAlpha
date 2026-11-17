@@ -12,6 +12,7 @@ const light = themeOf({ 'data-theme': 'native' });
 // its first term is the size at the default root.
 const px = (name: string) => Number.parseFloat((light[name] ?? 'NaN').replace(/^max\(/, ''));
 const navSrc = readFileSync(join(import.meta.dir, '..', 'shell', 'BottomNav.tsx'), 'utf8');
+const moreSrc = readFileSync(join(import.meta.dir, '..', 'shell', 'MorePage.tsx'), 'utf8');
 const appCss = readFileSync(join(import.meta.dir, '..', '..', 'styles', 'index.css'), 'utf8');
 
 describe('WALK-03: the bottom nav taps as 44', () => {
@@ -23,17 +24,17 @@ describe('WALK-03: the bottom nav taps as 44', () => {
     expect(light['--app-nav-h']).toBe('max(60px, calc(46px + 0.875rem))');
   });
 
-  test('each item fills the capsule height and is at least min(44 px, a fifth) wide', () => {
+  test('each item fills the capsule height and is at least 44 px wide', () => {
     const item = /function NavItem[\s\S]*?className=\{\s*'([^']*)'/.exec(navSrc)![1]!;
-    expect(item).toContain('min-w-[min(2.75rem,20%)]');
+    expect(item).toContain('min-w-11');
     expect(item).not.toMatch(/\bh-\d|overflow-hidden|\btruncate\b/);
     // The capsule has no vertical padding, so the items are its height.
     const rule = /\.app-nav\s*\{([^}]*)\}/.exec(appCss)![1]!;
     expect(rule).not.toMatch(/padding(-block|-top|-bottom)?\s*:/);
   });
 
-  test('the rows of the More sheet are at least 44 px tall', () => {
-    expect(navSrc).toMatch(/press flex min-h-12 w-full/);
+  test('the rows of the More page are at least 44 px tall', () => {
+    expect(moreSrc).toMatch(/press flex min-h-12 w-full/);
   });
 });
 
@@ -59,14 +60,14 @@ describe('the main button on the nav row', () => {
     return at < 0 ? '' : appCss.slice(at, appCss.indexOf('}', at));
   };
 
-  test('beside the button the capsule fills the row with the usual tabs', () => {
-    // Owner, 2026-11-14: icon over word, no narrower icon-only tabs.
+  test('beside the button the capsule fills the row; only the open item shows its word', () => {
+    // Owner 2026-11-17: the open item is icon + word, the others icons, the
+    // same with or without the main button.
     expect(appCss).not.toMatch(
       /\[data-main-button\] \.app-dock\[data-nav\] \.app-nav(-item|-label)? \{/,
     );
-    expect(appCss).not.toContain('--app-nav-icon-w');
     expect(rule('  .app-nav')).toMatch(/flex: 1 1 auto;/);
-    expect(navSrc).toMatch(/min-w-\[min\(2\.75rem,20%\)\] flex-auto/);
+    expect(navSrc).toMatch(/\{active \? \(\s*<span className="app-nav-label/);
   });
 
   test("the circle is the nav capsule's height (owner, 2026-11-15)", () => {

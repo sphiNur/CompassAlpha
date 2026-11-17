@@ -46,6 +46,9 @@ export const importConfirmPage = lazyModule(() =>
 // Review COREWEB1-11 (2026-11-11): keyed by every tab, so a new tab
 // cannot be left out of the preload.
 const PAGE_IMPORTS: Record<Tab, () => Promise<unknown>> = {
+  // The More page is part of the shell. Admin, drawn on it for those who
+  // may, has its own chunk, warmed for them at idle (usePagePrefetch).
+  more: () => Promise.resolve(),
   order: importOrderPage,
   approve: importApprovalPage,
   run: importRunPage,

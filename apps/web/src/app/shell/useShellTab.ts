@@ -59,7 +59,8 @@ export function useShellTab(visible: readonly TabDef[]) {
     if (nextTab === tab) {
       // Walkthrough F15 (2026-11-05): inside an admin page, tapping 管理
       // again goes back to the admin menu, as tab bars do elsewhere.
-      if (tab === 'admin' && useNavStore.getState().adminSection !== 'home') {
+      // Owner 2026-11-17: Admin is on the More page.
+      if ((tab === 'admin' || tab === 'more') && useNavStore.getState().adminSection !== 'home') {
         useNavStore.getState().resetAdminDrillDown();
         return;
       }

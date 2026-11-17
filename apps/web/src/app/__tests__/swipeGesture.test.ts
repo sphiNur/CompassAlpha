@@ -42,11 +42,11 @@ describe('ringNeighbours', () => {
     expect(ringNeighbours(['order'], 'order')).toEqual(none);
     expect(ringNeighbours([], 'order')).toEqual(none);
   });
-  test("a store manager's ring is the bar: Order next to Review, History and Admin behind More", () => {
+  test("a store manager's ring is the bar: Order next to Review, Admin on the More page", () => {
     const manager = BUILTIN_ROLES.find((r) => r.slug === 'manager')!.permissions;
     const { bar } = navLayout(visibleTabsFor(manager, undefined, false), manager);
     const ring = bar.map((t) => t.key);
-    expect(ring).toEqual(['order', 'approve', 'confirm', 'settlement']);
+    expect(ring).toEqual(['order', 'approve', 'confirm', 'settlement', 'history']);
     expect(ringNeighbours(ring, 'order').next).toBe('approve');
     expect(ringNeighbours(ring, 'admin')).toEqual(none);
   });

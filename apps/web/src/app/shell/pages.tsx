@@ -9,6 +9,7 @@
 import { Suspense, type ReactNode } from 'react';
 import { LoadingState } from '@compass/ui';
 import { resilientLazy } from '../../components/resilientLazy';
+import { MorePage } from './MorePage';
 import type { Tab } from '../../stores/navStore';
 import {
   importAdminPage,
@@ -107,6 +108,8 @@ export const PAGES: Record<Tab, () => ReactNode> = {
       <AttendancePage />
     </Suspense>
   ),
+  // Owner 2026-11-17: the More page, which also draws Admin (MorePage.tsx).
+  more: () => <MorePage />,
   admin: () => (
     <Suspense fallback={<PageLoading />}>
       <AdminPage />
