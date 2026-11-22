@@ -596,7 +596,10 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
     default: {
       const _x: never = event;
       void _x;
-      return state;
+      // An event type this release does not know (a newer release wrote it
+      // before a rollback): skip its meaning but count its seq, as the
+      // order reducer does, so the stream stays writable.
+      return { ...state, seq: (event as { seq: number }).seq };
     }
   }
 }
