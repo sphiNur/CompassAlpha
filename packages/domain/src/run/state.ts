@@ -218,6 +218,12 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         // payment method was tracked). Forward events always carry a
         // value, so the ?? is a one-time projection-time backfill.
         paymentMethod: event.payload.paymentMethod ?? 'cash',
+        // An unavailable line bought after all (an offline replay, the
+        // Fine app): the buy answers its whole plan, the demand that
+        // joined it while unavailable included, as UnavailableUndone
+        // does. Kept, the top-up held StartDelivery until the purchaser
+        // said "won't buy" about goods they had bought.
+        ...(existing.status === 'unavailable' ? { topUpQty: null } : {}),
       });
       return { ...state, seq: event.seq, items };
     }

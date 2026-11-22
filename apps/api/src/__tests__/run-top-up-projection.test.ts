@@ -290,6 +290,20 @@ describe.skipIf(!SHOULD_RUN)('run items top-up column (RUNAPI-12, PG-gated)', ()
     expect(topUps[onion]).toBe('0.5');
   });
 
+  test('an unavailable line bought after all drops its top-up', async () => {
+    const [rice] = fix!.skus;
+    const run = await newRun([{ skuId: rice, qty: '2' }]);
+    await steps(
+      run,
+      { type: 'StartPurchase', actor: fix!.actor },
+      { type: 'MarkUnavailable', skuId: rice, note: 'none left', actor: fix!.actor },
+      attach(rice, '3'),
+      // An offline replay or the Fine app buys it without unmarking first.
+      buy(rice, '5'),
+    );
+    expect((await streamTopUps(run.id))[rice]).toBeNull();
+  });
+
   test('a run whose column is not current is answered from its stream, then filled', async () => {
     const { db, skus, actor } = fix!;
     const [rice, onion] = skus;
