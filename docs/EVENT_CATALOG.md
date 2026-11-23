@@ -18,6 +18,14 @@
 - **Anything else is a new type.** Changing what a field means, or making
   a field required, needs a new type (e.g. `ItemAdjustedV2`) and a
   projector branch for both.
+- **A new type ships in two releases when it changes state.** A reducer
+  that meets a type it does not know counts its `seq` and otherwise skips
+  it (`unknownEvent.test.ts`), so a stream stays writable after a release
+  that wrote the type is rolled back. The older release still decides as
+  if the event never happened. So a type that changes what later commands
+  may do is first released with its reducer and projector branches and
+  nothing that writes it; the release that writes it comes after. The Fine
+  app follows the same order.
 
 ## Conventions
 

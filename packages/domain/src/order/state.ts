@@ -292,7 +292,11 @@ export function apply(state: OrderState, event: OrderEvent): OrderState {
     default: {
       const _exhaustive: never = event;
       void _exhaustive;
-      return state;
+      // An event type this release does not know: one a newer release wrote
+      // before a rollback, or the Fine app. Its meaning is lost here, but its
+      // seq must still count, or the next event is a "seq gap" and every
+      // command decides a seq that already exists (staleSeq forever).
+      return { ...state, seq: (event as { seq: number }).seq };
     }
   }
 }
