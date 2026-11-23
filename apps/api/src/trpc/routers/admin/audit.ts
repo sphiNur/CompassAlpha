@@ -183,10 +183,25 @@ export const auditProcedures = {
            *  without an actor. A missing user is not this. */
           bySystem: r.actorId === null,
           occurredAt: r.occurredAt.toISOString(),
-          inputs: r.inputs as unknown,
+          // Review: the member list hides Telegram ids from anyone but an
+          // organisation admin (members.ts); an invite by Telegram id
+          // wrote it into its audit inputs, and this list returned them
+          // to the store admins it hides them from.
+          inputs: (scope === null ? r.inputs : withoutTelegramIds(r.inputs)) as unknown,
           scopeStoreId: r.scopeStoreId,
           labels: buildAuditLabels(refs[i]!, lookups, auditLabelsAtWrite(r.inputs)),
         }));
       });
     }),
 };
+
+/**
+ * Audit inputs as a store admin sees them: without the Telegram ids the
+ * member list does not show them either. Exported for tests.
+ */
+export function withoutTelegramIds(inputs: unknown): unknown {
+  if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) return inputs;
+  return Object.fromEntries(
+    Object.entries(inputs as Record<string, unknown>).filter(([key]) => key !== 'tgUserId'),
+  );
+}
