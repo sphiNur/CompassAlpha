@@ -32,9 +32,9 @@ import { useAuthStore } from '../../stores/authStore';
 import {
   classifyEntry,
   classifyReplayError,
-  countsTowardGiveUp,
   isOwnEntry,
   isRetryDue,
+  replayCountsTowardGiveUp,
   shouldGiveUp,
   staysQueued,
   trpcErrorCode,
@@ -308,8 +308,9 @@ export function flushOutbox(): Promise<void> {
           }
           // No answer, a lapsed session or a server that is down: the entry
           // is not at fault. Leave it untouched and stop, preserving order
-          // for next time.
-          if (!countsTowardGiveUp(code)) break;
+          // for next time. An error page from a proxy does count: it
+          // refuses the entry every time (replayCountsTowardGiveUp).
+          if (!replayCountsTowardGiveUp(err)) break;
           const nextRetries = entry.retries + 1;
           if (shouldGiveUp(nextRetries)) {
             // Transient failures exhausted — abandon this entry so it can't

@@ -38,6 +38,33 @@ export function isLikelyNetworkError(err: unknown): boolean {
  * again later" left the client holding a token that could never work,
  * with every request failing and no way back to sign-in.
  */
+/**
+ * A failure answer that is not the API's: an error page from nginx (413
+ * for a body over its limit) or the edge (a firewall 403). tRPC could not
+ * parse it and threw a bare SyntaxError, with no code and no status, so
+ * the outbox took it for "no answer" and retried the entry every 15 s for
+ * good, holding every later write behind it. authFetch throws this
+ * instead; tRPC keeps it as the error's `cause`.
+ */
+export class NotAnApiAnswerError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`Not an API answer (http ${status})`);
+    this.name = 'NotAnApiAnswerError';
+    this.status = status;
+  }
+}
+
+/** The HTTP status of a NotAnApiAnswerError behind `err`; undefined for any other failure. */
+export function notAnApiAnswerStatus(err: unknown): number | undefined {
+  let e: unknown = err;
+  for (let depth = 0; depth < 3 && e; depth++) {
+    if (e instanceof NotAnApiAnswerError) return e.status;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
 export function isRefreshRejected(status: number): boolean {
   if (status === 408 || status === 429) return false;
   return status >= 400 && status < 500;

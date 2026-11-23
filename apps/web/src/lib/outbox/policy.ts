@@ -7,7 +7,7 @@
  * which held the whole engine.
  */
 import type { OutboxEntry } from '../idb';
-import { isLikelyNetworkError } from '../networkError';
+import { isLikelyNetworkError, notAnApiAnswerStatus } from '../networkError';
 import type { ReplayedProcedure } from './replayHandlers';
 
 /** Who is signed in now: the person and the organisation they work in. */
@@ -69,6 +69,21 @@ export function staysQueued(err: unknown): boolean {
  */
 export function countsTowardGiveUp(code: string | undefined): boolean {
   return code !== undefined && code !== 'UNAUTHORIZED' && code !== 'SERVICE_UNAVAILABLE';
+}
+
+/**
+ * Does a replay failure move its entry toward being abandoned? As
+ * countsTowardGiveUp, and also when something in front of the api
+ * answered with an error page (NotAnApiAnswerError): a 413 or a firewall
+ * 403 will refuse the entry every time, and it used to hold the whole
+ * queue behind it for good, retried every 15 s with no backoff. 408 and
+ * 429 say "later", not "never": those stay queued as before.
+ */
+export function replayCountsTowardGiveUp(err: unknown): boolean {
+  const code = trpcErrorCode(err);
+  if (code !== undefined) return countsTowardGiveUp(code);
+  const status = notAnApiAnswerStatus(err);
+  return status !== undefined && status !== 408 && status !== 429;
 }
 
 const RETRY_BASE_MS = 5_000;

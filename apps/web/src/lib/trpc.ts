@@ -3,7 +3,7 @@ import type { AppRouter } from '@compass/api/src/trpc/router';
 import { IDEMPOTENT_ROUTES } from '@compass/contracts/idempotency';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { BatchRefused, getLogger, type LogEvent, type TransportOptions } from '@compass/telemetry';
-import { isRefreshRejected } from './networkError';
+import { isRefreshRejected, NotAnApiAnswerError } from './networkError';
 import { getTg } from './telegram';
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -467,7 +467,7 @@ export async function authFetch(
     if (!token && canRefresh()) throw refreshIncompleteError(refreshIncompleteStatus);
   }
   let res = await guardedFetch(input, attach(token));
-  if (res.status !== 401) return res;
+  if (res.status !== 401) return fromTheApi(res);
 
   // 401 → try to refresh, then retry once. We don't refresh on the
   // /auth.refresh route itself (would loop) nor on the sign-in routes
@@ -489,6 +489,19 @@ export async function authFetch(
   }
   token = refreshed.accessToken;
   res = await guardedFetch(input, attach(token));
+  return fromTheApi(res);
+}
+
+/**
+ * The api answers every failure in JSON. A failure that is not JSON came
+ * from something in front of it (guardedFetch already turns gateway pages
+ * into network failures): say so with its status rather than let tRPC
+ * fail to parse it (NotAnApiAnswerError).
+ */
+function fromTheApi(res: Response): Response {
+  if (res.status >= 400 && !(res.headers.get('content-type') ?? '').includes('json')) {
+    throw new NotAnApiAnswerError(res.status);
+  }
   return res;
 }
 
