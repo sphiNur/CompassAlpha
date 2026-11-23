@@ -29,13 +29,14 @@
 
 ## Conventions
 
-- Stream id formats: ULID for both `order` and `run`.
+- Stream ids are UUIDs (v4, `randomUUID()`) for both `order` and `run`;
+  `domain.events.stream_id` is a `uuid` column.
 - `seq` starts at 1 and increases by exactly 1 per event in a stream.
 - `(streamId, seq)` is UNIQUE in `domain.events` — that's our optimistic
   concurrency primitive.
 - `correlationId` groups events caused by the same client command.
-- `causationId` points to the event that triggered this one (cross-stream
-  workflows: e.g. `Approved` causes `AttachedToRun` later).
+- `causationId` has a column and a field on the event envelope, but no
+  code sets it yet: every event has it null. Do not read it.
 - Quantities and money are decimal strings. An optional field marked
   "absent before X" is missing on every event written before that date.
 
@@ -43,7 +44,9 @@
 
 ### `order` stream
 
-One stream per store and order date (`packages/domain/src/order/events.ts`).
+One stream per order session: a member's order for one store and order date
+(the read model refuses a second draft for the same member, store and date;
+`packages/domain/src/order/events.ts`).
 
 | Type | Payload | Notes |
 |---|---|---|
@@ -53,7 +56,7 @@ One stream per store and order date (`packages/domain/src/order/events.ts`).
 | `SessionNoteSet` | `{note: string \| null, byMemberId}` | M1.8 — session-level free text for things not in the catalog. No skuId. Locked once status leaves `draft`/`rejected`. 1000-char domain cap. |
 | `SessionExtrasSet` | `{extras: {name, qty, unit, note?, status?}[], byMemberId}` | M3.16-C (2026-05-16) — the structured "other items" list; each event carries the full list. `status` (`'pending' \| 'bought' \| 'unavailable'`): absent before M3.37 (2026-05-19) and on rows never marked = `'pending'`. |
 | `ExtraStatusSet` | `{extraIndex, status: 'pending' \| 'bought' \| 'unavailable', byMemberId}` | M3.37 (2026-05-19) — the purchaser marks one "other items" row during a run. |
-| `Submitted` | `{itemCount, byMemberId}` | Owner only. Requires ≥ 1 non-zero aggregate item. |
+| `Submitted` | `{itemCount, byMemberId}` | Owner only. Requires ≥ 1 non-zero item or ≥ 1 "other items" extra (M3.33, 2026-05-18: an extras-only order is allowed, with `itemCount` 0). |
 | `Claimed` | `{byMemberId}` | Atomic: collision throws CONFLICT. |
 | `ClaimReleased` | `{byMemberId, reason: 'manual' \| 'pagehide' \| 'override', fromMemberId?}` or `{byMemberId: null, reason: 'timeout'}` | `override` (2026-05-18): another approver took over; `byMemberId` is the one taking over. `fromMemberId`: whose claim an override ended; absent before 2026-10-30 and on self-releases. `timeout` (M3.20, 2026-05-18): the worker, no actor. |
 | `Approved` | `{byMemberId}` | Clears claim. |
@@ -114,12 +117,17 @@ are absent when the store pays the line's.
 7. Bump no schema; events are JSON in `domain.events.payload` so the column
    already accepts the new shape.
 
-## Snapshot policy
+## Snapshots and rebuilds
 
-Snapshots (`domain.snapshots`) are written every 200 events on the same
-stream by the worker. Replay starts from the last snapshot, then catches up
-through `events` after that snapshot's seq.
+There are no snapshots. The `domain.snapshots` table exists (migration
+0000) but nothing writes or reads it; every command folds its stream from
+seq 1 (`readStream`), and a stream stays short (one order session, one
+run).
 
-Replay must be deterministic — `decide()` is pure, so given identical
-events the resulting state is identical. CI runs the "drop+rebuild yields
-identical view" test on every commit.
+Replay must be deterministic: `apply` is pure, so the same events give the
+same state. The read model is rebuilt from the log by
+`apps/api/scripts/reproject.ts` (docs/RUNBOOK.md). Its replay is
+`apps/api/src/services/replay.ts`, and the PG test
+`apps/api/src/__tests__/rebuild-parity.test.ts` checks that it rebuilds the
+rows the live projection wrote, except the clock columns (`updated_at`;
+`inventory.price_history.created_at`).
