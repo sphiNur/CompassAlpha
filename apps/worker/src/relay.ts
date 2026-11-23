@@ -23,6 +23,23 @@ export class RelayError extends Error {
   get permanent(): boolean {
     return this.fromBotApi && (this.errorCode === 403 || this.errorCode === 400);
   }
+
+  /**
+   * The relay itself refused the call (a wrong shared key, a wrong address,
+   * a body it cannot read): every message fails the same way until someone
+   * fixes our configuration, so the row waits without using up its retries
+   * (plan 2.2: they ran out after about 4.4 hours and the message was
+   * dropped). 408 and 429 are about load, not configuration.
+   */
+  get ourConfiguration(): boolean {
+    return (
+      !this.fromBotApi &&
+      this.errorCode >= 400 &&
+      this.errorCode < 500 &&
+      this.errorCode !== 408 &&
+      this.errorCode !== 429
+    );
+  }
 }
 
 /** Throws RelayError unless the Bot API accepted the call. */

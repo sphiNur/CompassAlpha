@@ -534,6 +534,7 @@ export async function stubAppReads(context: BrowserContext): Promise<void> {
     projectorLag: 0,
     outboxPending: 0,
     outboxOldestSec: null,
+    outboxGaveUp24h: 0,
     version: 'smoke',
   });
   await stubTrpc(context, 'system.recentLogs', []);

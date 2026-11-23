@@ -32,6 +32,20 @@ export interface OutboxPayload {
 /** The button's label when the payload carries none. */
 export const DEFAULT_BUTTON_TEXT = 'Open Compass';
 
+/**
+ * Why a row was closed without delivery (sync.outbox.failure, migration
+ * 0074). `gave_up` is the one to look at: system.health counts it.
+ */
+export type OutboxFailure = 'gave_up' | 'refused' | 'undeliverable' | 'disabled';
+
+/**
+ * How long a row waits when the relay refuses our configuration: tried
+ * again every so often without counting a retry, so it goes out once the
+ * key or address is fixed. Meanwhile system.health reads the queue as
+ * degraded (the oldest unsent row is past five minutes).
+ */
+export const HELD_DELAY_SECONDS = 600;
+
 /** Tries after the first one before a row is given up. */
 export const MAX_RETRIES = 8;
 /**

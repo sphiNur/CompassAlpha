@@ -67,7 +67,21 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
   per table per hour; the rest goes next hour). Look for
   `[worker] retention …` lines in `journalctl -u compass-worker`. Windows
   live in `apps/worker/src/retention.ts`. Undelivered outbox rows
-  (`sent_at IS NULL`) are never deleted.
+  (`sent_at IS NULL`) are never deleted. Rows closed without delivery
+  (`failed_at` set, migration 0074) are kept 90 days.
+- Bot messages that were not delivered (2026-11-23): `sync.outbox.failure`
+  says why: `gave_up` (retries ran out, about 4.4 hours: look at it),
+  `refused` (Telegram refused it: the user blocked the bot, a wrong id),
+  `undeliverable`, `disabled` (delivery is off on this server).
+  `system.health` reports `outboxGaveUp24h`. A relay that refuses our
+  configuration (a wrong `COMPASS_RELAY_KEY` or address) holds the rows
+  and tries every 10 minutes without using up their retries, so they go
+  out once it is fixed; meanwhile `system.health` is `degraded`. To look:
+  ```sql
+  SELECT failure, count(*), max(failed_at), min(last_error)
+    FROM sync.outbox WHERE failed_at > now() - interval '7 days'
+   GROUP BY failure;
+  ```
 
 ## Common operations
 

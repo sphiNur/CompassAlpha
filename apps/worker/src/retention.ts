@@ -28,6 +28,8 @@ export interface RetentionRule {
   column: string;
   /** Rows whose `column` is older than this many days are deleted. */
   days: number;
+  /** Only rows where this column is NULL (another rule handles the rest). */
+  onlyWhereNull?: string;
 }
 
 export const RETENTION_RULES: readonly RetentionRule[] = [
@@ -36,7 +38,16 @@ export const RETENTION_RULES: readonly RetentionRule[] = [
   { name: 'notifications', table: 'ops.notifications', column: 'created_at', days: 90 },
   // Delivered outbox rows only — `sent_at IS NULL` rows (pending or
   // retrying) never match `sent_at < …`, so nothing undelivered is lost.
-  { name: 'outbox', table: 'sync.outbox', column: 'sent_at', days: 30 },
+  // Rows closed without delivery (failed_at, migration 0074) are kept
+  // longer, to find out what a person was never told.
+  {
+    name: 'outbox',
+    table: 'sync.outbox',
+    column: 'sent_at',
+    days: 30,
+    onlyWhereNull: 'failed_at',
+  },
+  { name: 'outbox-failed', table: 'sync.outbox', column: 'failed_at', days: 90 },
   // Client telemetry; forensics for recent incidents only.
   { name: 'client_logs', table: 'ops.client_logs', column: 'created_at', days: 30 },
 ];
@@ -48,7 +59,11 @@ const IDENT = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/;
 
 /** One batch: delete at most `limit` expired rows, returning their ids. */
 export function retentionDeleteSql(rule: RetentionRule, limit: number): SQL {
-  if (!IDENT.test(rule.table) || !IDENT.test(rule.column)) {
+  if (
+    !IDENT.test(rule.table) ||
+    !IDENT.test(rule.column) ||
+    (rule.onlyWhereNull !== undefined && !IDENT.test(rule.onlyWhereNull))
+  ) {
     throw new Error(`retention: invalid identifier in rule ${rule.name}`);
   }
   if (!Number.isInteger(rule.days) || rule.days <= 0) {
@@ -59,11 +74,13 @@ export function retentionDeleteSql(rule: RetentionRule, limit: number): SQL {
   }
   const table = sql.raw(rule.table);
   const column = sql.raw(rule.column);
+  const onlyWhereNull =
+    rule.onlyWhereNull === undefined ? sql`` : sql` AND ${sql.raw(rule.onlyWhereNull)} IS NULL`;
   return sql`
     DELETE FROM ${table}
     WHERE id IN (
       SELECT id FROM ${table}
-      WHERE ${column} < NOW() - (${rule.days}::int * interval '1 day')
+      WHERE ${column} < NOW() - (${rule.days}::int * interval '1 day')${onlyWhereNull}
       LIMIT ${limit}::int
     )
     RETURNING id

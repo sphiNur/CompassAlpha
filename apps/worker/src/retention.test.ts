@@ -13,7 +13,12 @@ describe('RETENTION_RULES', () => {
   test('match the decided windows (CA-38)', () => {
     const byTable = Object.fromEntries(RETENTION_RULES.map((r) => [r.table, r]));
     expect(byTable['ops.notifications']).toMatchObject({ column: 'created_at', days: 90 });
-    expect(byTable['sync.outbox']).toMatchObject({ column: 'sent_at', days: 30 });
+    const outbox = RETENTION_RULES.filter((r) => r.table === 'sync.outbox');
+    // Delivered rows 30 days; rows closed without delivery 90 (plan 2.2).
+    expect(outbox).toEqual([
+      expect.objectContaining({ column: 'sent_at', days: 30, onlyWhereNull: 'failed_at' }),
+      expect.objectContaining({ column: 'failed_at', days: 90 }),
+    ]);
     expect(byTable['ops.client_logs']).toMatchObject({ column: 'created_at', days: 30 });
   });
 });
@@ -24,6 +29,7 @@ describe('retentionDeleteSql', () => {
     const text = q.sql.replace(/\s+/g, ' ').trim();
     expect(text).toContain('DELETE FROM sync.outbox WHERE id IN ( SELECT id FROM sync.outbox');
     expect(text).toContain('WHERE sent_at < NOW() -');
+    expect(text).toContain("interval '1 day') AND failed_at IS NULL LIMIT");
     expect(text).toContain('LIMIT $2::int');
     expect(text).toContain('RETURNING id');
     expect(q.params).toEqual([30, 500]);

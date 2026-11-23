@@ -34,9 +34,11 @@ import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
 import {
   botMessage,
+  HELD_DELAY_SECONDS,
   MAX_RETRIES,
   nextAttempt,
   outboxPayloadProblem,
+  type OutboxFailure,
   type OutboxPayload,
 } from './outbox';
 import { repairOrphanedSession } from './orphanRepair';
@@ -100,7 +102,7 @@ const bot = botDeliveryEnabled && !relayConfigured && botToken ? new Bot(botToke
 
 if (!botDeliveryEnabled) {
   console.warn(
-    '[worker] bot delivery disabled — outbox bot rows will be marked sent without delivery.',
+    '[worker] bot delivery disabled — outbox bot rows are closed as not delivered (failure=disabled).',
   );
 } else if (relayConfigured) {
   console.log(`[worker] bot delivery via CF Worker relay (${relayUrl})`);
@@ -110,7 +112,7 @@ if (!botDeliveryEnabled) {
   console.warn(
     '[worker] BOT_DELIVERY_ENABLED=true but no transport configured ' +
       '(need either TG_RELAY_URL+COMPASS_RELAY_KEY or TELEGRAM_BOT_TOKEN). ' +
-      'Outbox bot rows will be marked sent without delivery.',
+      'Outbox bot rows are closed as not delivered (failure=disabled).',
   );
 }
 // COREAPI-27: Telegram refuses a button without an https address, so
@@ -215,21 +217,16 @@ async function handleNextRow(
   if (row.channel === 'bot') {
     const canDeliver = botDeliveryEnabled && (relayConfigured || !!bot);
     if (!canDeliver) {
-      await tx
-        .update(s.outbox)
-        .set({ sentAt: now, lastError: 'bot delivery disabled' })
-        .where(eq(s.outbox.id, row.id));
-      return 'sent' as const;
+      // Off on purpose (config.ts refuses a transport set up halfway).
+      await closeFailed(tx, row.id, 'disabled', 'bot delivery disabled');
+      return 'failed' as const;
     }
     // COREAPI-03: a payload that can never become a message is closed
     // with the reason, instead of throwing on every pass at the head
     // of the queue.
     const problem = outboxPayloadProblem(row.payload);
     if (problem) {
-      await tx
-        .update(s.outbox)
-        .set({ sentAt: now, lastError: `undeliverable: ${problem}` })
-        .where(eq(s.outbox.id, row.id));
+      await closeFailed(tx, row.id, 'undeliverable', `undeliverable: ${problem}`);
       return 'failed' as const;
     }
     const delivery = await deliverBot(tx, row.payload as OutboxPayload);
@@ -240,27 +237,51 @@ async function handleNextRow(
     if (delivery.outcome === 'failed') {
       // COREAPI-24: closed with the reason, so a message that can never
       // be delivered is not mistaken for one that was.
-      await tx
-        .update(s.outbox)
-        .set({ sentAt: now, lastError: delivery.reason })
-        .where(eq(s.outbox.id, row.id));
+      await closeFailed(tx, row.id, delivery.failure, delivery.reason);
       return 'failed' as const;
+    }
+    if (delivery.outcome === 'held') {
+      await holdOutboxTx(tx, row.id, delivery.error);
+      return 'deferred' as const;
     }
     await deferOutboxTx(tx, row.id, row.retries, delivery.error);
     return 'deferred' as const;
   }
   if (row.channel === 'webpush') {
-    await tx
-      .update(s.outbox)
-      .set({ sentAt: now, lastError: 'webpush not implemented (M2)' })
-      .where(eq(s.outbox.id, row.id));
+    await closeFailed(tx, row.id, 'undeliverable', 'webpush not implemented (M2)');
     return 'failed' as const;
   }
+  await closeFailed(tx, row.id, 'undeliverable', `unknown channel "${row.channel}"`);
+  return 'failed' as const;
+}
+
+/**
+ * Close a row that was not delivered (migration 0074): `sent_at` so no
+ * worker takes it again, `failed_at` and `failure` so it is not mistaken
+ * for a delivered one, counted, and kept longer.
+ */
+async function closeFailed(
+  tx: Tx,
+  id: string,
+  failure: OutboxFailure,
+  lastError: string,
+): Promise<void> {
+  const now = new Date();
   await tx
     .update(s.outbox)
-    .set({ sentAt: now, lastError: `unknown channel "${row.channel}"` })
-    .where(eq(s.outbox.id, row.id));
-  return 'failed' as const;
+    .set({ sentAt: now, failedAt: now, failure, lastError })
+    .where(eq(s.outbox.id, id));
+}
+
+/** Wait for a configuration fix without using up a retry (RelayError.ourConfiguration). */
+async function holdOutboxTx(tx: Tx, id: string, error: string): Promise<void> {
+  await tx
+    .update(s.outbox)
+    .set({
+      nextAttemptAt: sql`now() + ${HELD_DELAY_SECONDS}::int * interval '1 second'`,
+      lastError: error,
+    })
+    .where(eq(s.outbox.id, id));
 }
 
 /**
@@ -269,8 +290,9 @@ async function handleNextRow(
  */
 type Delivery =
   | { outcome: 'sent' }
-  | { outcome: 'failed'; reason: string }
-  | { outcome: 'retry'; error: string };
+  | { outcome: 'failed'; failure: OutboxFailure; reason: string }
+  | { outcome: 'retry'; error: string }
+  | { outcome: 'held'; error: string };
 
 /**
  * Send one bot message. The recipient is read in the row's own
@@ -284,7 +306,7 @@ async function deliverBot(tx: Tx, payload: OutboxPayload): Promise<Delivery> {
   if (!user || !user.tgUserId) {
     // Without a Telegram id it can never be delivered; don't loop.
     console.warn('[worker] bot dispatch: no tgUserId for user', payload.recipientUserId);
-    return { outcome: 'failed', reason: 'recipient has no Telegram id' };
+    return { outcome: 'failed', failure: 'undeliverable', reason: 'recipient has no Telegram id' };
   }
 
   const chatId = Number(user.tgUserId);
@@ -308,7 +330,19 @@ async function deliverBot(tx: Tx, payload: OutboxPayload): Promise<Delivery> {
     if (err instanceof RelayError) {
       if (err.permanent) {
         console.error('[worker] permanent relay error', err.errorCode, err.description);
-        return { outcome: 'failed', reason: `telegram ${err.errorCode}: ${err.description}` };
+        return {
+          outcome: 'failed',
+          failure: 'refused',
+          reason: `telegram ${err.errorCode}: ${err.description}`,
+        };
+      }
+      if (err.ourConfiguration) {
+        console.error(
+          '[worker] the relay refuses our configuration',
+          err.errorCode,
+          err.description,
+        );
+        return { outcome: 'held', error: errorText(err) };
       }
       console.warn('[worker] transient relay error', err.message);
       return { outcome: 'retry', error: errorText(err) };
@@ -316,7 +350,11 @@ async function deliverBot(tx: Tx, payload: OutboxPayload): Promise<Delivery> {
     if (err instanceof GrammyError) {
       if (err.error_code === 403 || err.error_code === 400) {
         console.error('[worker] permanent bot error', err.error_code, err.description);
-        return { outcome: 'failed', reason: `telegram ${err.error_code}: ${err.description}` };
+        return {
+          outcome: 'failed',
+          failure: 'refused',
+          reason: `telegram ${err.error_code}: ${err.description}`,
+        };
       }
     }
     if (err instanceof HttpError) {
@@ -373,13 +411,12 @@ async function deferOutboxTx(
 ): Promise<void> {
   const next = nextAttempt(currentRetries);
   if (next.giveUp) {
-    await tx
-      .update(s.outbox)
-      .set({
-        sentAt: new Date(),
-        lastError: `gave up after ${MAX_RETRIES} retries${error ? `: ${error}` : ''}`,
-      })
-      .where(eq(s.outbox.id, id));
+    await closeFailed(
+      tx,
+      id,
+      'gave_up',
+      `gave up after ${MAX_RETRIES} retries${error ? `: ${error}` : ''}`,
+    );
     return;
   }
   await tx
