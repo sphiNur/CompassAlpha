@@ -1134,16 +1134,10 @@ export const attendanceRouter = router({
     });
     const shots = input.photos;
     if (!shots) fail('BAD_REQUEST', 'photoRequired');
-    // The face and liveness checks (~0.5 s a frame) run before the
-    // transaction, not inside it.
-    const faceBytes = photoBytes(shots.face);
-    const checked = await faceFeature(faceBytes);
-    if (!checked) fail('CONFLICT', 'faceCheckUnavailable');
-    if (!checked.found) fail('BAD_REQUEST', 'faceNotFound');
-    // Every frame's print, and the movement frames' features: each must be
-    // the enrolled person, and none may have been sent before (2026-11-07).
-    const prints: FramePrint[] = [print('face', faceBytes, checked.feature)];
-    const moves: number[][] = [];
+    // The liveness token first (review 2026-11-23): it is a signature
+    // check, and the frames below cost ~0.5 s each on the one face worker
+    // every organisation shares. A request with no valid token used to
+    // spend that time before it was refused.
     if (!input.liveness) fail('BAD_REQUEST', 'livenessRequired');
     const claims = await verifyLivenessToken(input.liveness.token);
     if (
@@ -1155,6 +1149,16 @@ export const attendanceRouter = router({
     ) {
       fail('BAD_REQUEST', 'livenessExpired');
     }
+    // The face and liveness checks (~0.5 s a frame) run before the
+    // transaction, not inside it.
+    const faceBytes = photoBytes(shots.face);
+    const checked = await faceFeature(faceBytes);
+    if (!checked) fail('CONFLICT', 'faceCheckUnavailable');
+    if (!checked.found) fail('BAD_REQUEST', 'faceNotFound');
+    // Every frame's print, and the movement frames' features: each must be
+    // the enrolled person, and none may have been sent before (2026-11-07).
+    const prints: FramePrint[] = [print('face', faceBytes, checked.feature)];
+    const moves: number[][] = [];
     const nonce = claims.nonce;
     // The blink and the open mouth (2026-11-07): seen by the phone, the
     // frames checked here. A token from before asks for none.
