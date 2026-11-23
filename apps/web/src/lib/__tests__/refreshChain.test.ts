@@ -30,6 +30,8 @@ const session = testSession();
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let issued = 0;
+/** Whom the Telegram sign-in answers as: the launch's account, not always the saved one. */
+let telegramUserId = 'u1';
 const signedIn = (userId = 'u1') => {
   issued += 1;
   return {
@@ -50,6 +52,7 @@ beforeEach(() => {
   calls = [];
   answers = {};
   issued = 0;
+  telegramUserId = 'u1';
   resetRefreshCooldownForTests();
   inTelegram(null);
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,7 +68,8 @@ beforeEach(() => {
     const next = answers[path]?.shift() ?? 200;
     if (next === 'offline') throw new TypeError('Failed to fetch');
     if (path === 'auth.refresh' || path === 'auth.telegramLogin') {
-      return next === 200 ? json(200, signedIn()) : json(next, { error: {} });
+      if (next !== 200) return json(next, { error: {} });
+      return json(200, signedIn(path === 'auth.telegramLogin' ? telegramUserId : 'u1'));
     }
     // Any other call: 401 without a token, 200 with one.
     if (!headers.authorization) return json(401, { error: {} });
@@ -252,5 +256,53 @@ describe('a sign-in while a refresh is in flight', () => {
     await pending;
     expect(useAuthStore.getState().accessToken).toBe('invite-access');
     expect(useAuthStore.getState().session?.member.orgId).toBe('o2');
+  });
+});
+
+// Plan 2.3 (2026-11-23): the refresh a write waits for can come back as
+// another person (the initData sign-in is whoever's Telegram account
+// opened the app). The write must not then go out as theirs: an offline
+// replay of A's purchase was recorded as B's.
+describe('a refresh that comes back as someone else', () => {
+  const POST = { method: 'POST' } as const;
+
+  it('a write waiting for it is not sent, fails as a network failure, and stays queued', async () => {
+    inTelegram('user=%7B%7D&hash=x');
+    telegramUserId = 'u2';
+    useAuthStore.setState({ session, accessToken: null, refreshToken: null });
+    answers['auth.refresh'] = [401];
+    const err = await authFetch('/trpc/run.purchaseItem', POST).catch((e) => e);
+    expect(isLikelyNetworkError(err)).toBe(true);
+    expect(paths()).toEqual(['auth.refresh', 'auth.telegramLogin']);
+    expect(useAuthStore.getState().session?.user.id).toBe('u2');
+  });
+
+  it('the same after a 401: the retry is not sent as the new person', async () => {
+    inTelegram('user=%7B%7D&hash=x');
+    telegramUserId = 'u2';
+    useAuthStore.setState({ session, accessToken: 'expired', refreshToken: null });
+    answers['run.purchaseItem'] = [401];
+    answers['auth.refresh'] = [401];
+    const err = await authFetch('/trpc/run.purchaseItem', POST).catch((e) => e);
+    expect(isLikelyNetworkError(err)).toBe(true);
+    expect(paths()).toEqual(['run.purchaseItem', 'auth.refresh', 'auth.telegramLogin']);
+  });
+
+  it('a read goes on for the new person', async () => {
+    inTelegram('user=%7B%7D&hash=x');
+    telegramUserId = 'u2';
+    useAuthStore.setState({ session, accessToken: null, refreshToken: null });
+    answers['auth.refresh'] = [401];
+    const res = await authFetch('/trpc/order.todaySession');
+    expect(res.status).toBe(200);
+  });
+
+  it('the same person again: the write goes out', async () => {
+    inTelegram('user=%7B%7D&hash=x');
+    useAuthStore.setState({ session, accessToken: null, refreshToken: null });
+    answers['auth.refresh'] = [401];
+    const res = await authFetch('/trpc/run.purchaseItem', POST);
+    expect(res.status).toBe(200);
+    expect(paths()).toEqual(['auth.refresh', 'auth.telegramLogin', 'run.purchaseItem']);
   });
 });

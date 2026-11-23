@@ -456,6 +456,7 @@ export async function authFetch(
   const isAuthCall = path.split(',').some((p) => p.startsWith('auth.'));
 
   let token = useAuthStore.getState().accessToken;
+  const sentAs = sessionOwner();
   // Review MWD-14 (modern-web-guidance: privacy): the access token lives
   // in memory, so after a reload there is none until the first refresh.
   // Wait for it (single-flight) instead of sending the call to be refused.
@@ -465,6 +466,7 @@ export async function authFetch(
     const refreshed = await refreshAccessToken();
     token = refreshed?.accessToken ?? useAuthStore.getState().accessToken;
     if (!token && canRefresh()) throw refreshIncompleteError(refreshIncompleteStatus);
+    refuseWriteAsSomeoneElse(sentAs, init);
   }
   let res = await guardedFetch(input, attach(token));
   if (res.status !== 401) return fromTheApi(res);
@@ -488,6 +490,7 @@ export async function authFetch(
     return res;
   }
   token = refreshed.accessToken;
+  refuseWriteAsSomeoneElse(sentAs, init);
   res = await guardedFetch(input, attach(token));
   return fromTheApi(res);
 }
@@ -503,6 +506,33 @@ function fromTheApi(res: Response): Response {
     throw new NotAnApiAnswerError(res.status);
   }
   return res;
+}
+
+/** Who a request is made for: the signed-in person and organisation. */
+function sessionOwner(): string | null {
+  const session = useAuthStore.getState().session;
+  return session ? `${session.user.id}:${session.member.orgId}` : null;
+}
+
+/**
+ * Plan 2.3 (2026-11-23): the refresh a request waits for can come back
+ * as someone else. When every refresh is refused, the chain signs in
+ * from the launch's initData, and that is whoever's Telegram account
+ * opened the app; a person's other organisation can come back the same
+ * way. A write that was made for the session before must not then go out
+ * under the new one: an offline replay of A's purchase was recorded as
+ * B's, or refused in B's organisation and deleted. It fails as a network
+ * failure instead, so it stays in the outbox (whose entry carries its
+ * author) for its author's next session. Reads go on: they belong to
+ * whoever asks.
+ */
+function refuseWriteAsSomeoneElse(sentAs: string | null, init: RequestInit): void {
+  if (sentAs === null) return;
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD') return;
+  if (sessionOwner() !== sentAs) {
+    throw new TypeError('Failed to fetch (signed in as someone else)');
+  }
 }
 
 /**

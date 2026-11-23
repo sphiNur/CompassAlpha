@@ -4,6 +4,7 @@ import type { Session } from '@compass/contracts/schemas/auth';
 import { detectLocale } from '@compass/i18n';
 import { resetNavStore } from './navStore';
 import { clearPersistedQueries } from '../lib/queryPersist';
+import { getTg } from '../lib/telegram';
 
 /**
  * localStorage key of the saved session. Read before React starts
@@ -170,10 +171,51 @@ function withKnownLocales(session: AuthSession): AuthSession {
   };
 }
 
+/**
+ * The Telegram account this launch was opened from; null outside Telegram
+ * or before the SDK has loaded (it is a deferred script that runs before
+ * the bundle, index.html). Unsigned, and used for nothing but the check
+ * below: the worst a wrong value does is sign the person in again from
+ * initData, which the server verifies.
+ */
+export function launchTelegramUserId(): string | null {
+  const id = getTg()?.initDataUnsafe?.user?.id;
+  return id === undefined || id === null ? null : String(id);
+}
+
+/**
+ * Plan 2.3 (2026-11-23): is a saved session another Telegram account's
+ * than the one that opened the app? The saved session and the refresh
+ * cookie live in the WebView, which two accounts on one phone can share;
+ * the app opened as the last person to use it, for up to the cookie's 30
+ * days, with no sign-out in production. Both ids must be known: a
+ * session from a sign-in without Telegram, or a start outside it, is
+ * kept as before.
+ */
+export function savedForAnotherAccount(
+  savedTgUserId: string | null | undefined,
+  launchTgUserId: string | null,
+): boolean {
+  return !!savedTgUserId && !!launchTgUserId && savedTgUserId !== launchTgUserId;
+}
+
 /** What a stored payload restores: all of it, or nothing when the session is unusable. */
-export function mergePersistedAuth<T extends PersistedAuth>(persisted: unknown, current: T): T {
+export function mergePersistedAuth<T extends PersistedAuth>(
+  persisted: unknown,
+  current: T,
+  launchTgUserId: string | null = launchTelegramUserId(),
+): T {
   const p = (persisted ?? {}) as Partial<PersistedAuth>;
   if (!isUsableSession(p.session)) return current;
+  if (savedForAnotherAccount(p.session.user.tgUserId, launchTgUserId)) {
+    // Another person's: not restored, and their tab and offline copy go
+    // with it, as clear() does. The sign-in screen then signs this
+    // account in from initData. The outbox stays: its writes carry their
+    // author and wait for that person's next session.
+    resetNavStore();
+    void clearPersistedQueries();
+    return current;
+  }
   const session = withKnownLocales(p.session);
   // Review MWD-14: a session saved by an older build still carries its
   // tokens. The access token is used from memory until it runs out; the
