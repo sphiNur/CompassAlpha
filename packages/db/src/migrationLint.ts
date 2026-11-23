@@ -197,3 +197,69 @@ export function indexNameReuse(
   }
   return problems;
 }
+
+/**
+ * Plan 2.5 (2026-11-23): statements an older release may not survive.
+ *
+ * On every deploy the old release keeps serving between the migration and
+ * the restart, and when the new api does not start the deploy puts the old
+ * release back on the migrated schema (scripts/deploy.ts; migrations only
+ * go forward). A migration that drops or renames what the old code reads,
+ * or refuses what it writes, breaks it at request time while /health/ready
+ * still answers ok.
+ *
+ * Such a statement needs the line `-- old-release-safe: <why>` in its file:
+ * why the release before this one does not read or write what changes (it
+ * was never used; the code stopped using it a release ago). The files
+ * below shipped before this rule. Never add to this list.
+ */
+export const LEGACY_OLD_RELEASE_HAZARDS: ReadonlySet<string> = new Set([
+  '0001_per_store_orders',
+  '0002_per_contributor_lines',
+  '0018_sales_qty_precision',
+  '0033_run_store_split_price_payment',
+  '0036_sku_unit_canonical',
+  '0039_settlement_itemized_expenses',
+  '0040_role_binding_scope_check',
+  '0049_sales_void',
+  '0064_attendance_liveness',
+  '0065_attendance_checks',
+  '0066_attendance_face_enroll',
+  '0067_attendance_face_ring',
+  '0072_sales_void_reason_not_null',
+]);
+
+const OLD_RELEASE_SAFE = /^--\s*old-release-safe:\s*\S/m;
+
+const HAZARDS: ReadonlyArray<{ name: string; re: RegExp }> = [
+  { name: 'DROP COLUMN', re: /\bDROP\s+COLUMN\b/i },
+  { name: 'DROP TABLE', re: /\bDROP\s+TABLE\b/i },
+  { name: 'RENAME', re: /\bRENAME\s+(?:COLUMN\s+)?(?:"?\w+"?\s+)?TO\b/i },
+  { name: 'SET NOT NULL', re: /\bALTER\s+COLUMN\s+"?\w+"?\s+SET\s+NOT\s+NULL\b/i },
+  { name: 'column TYPE', re: /\bALTER\s+COLUMN\s+"?\w+"?\s+(?:SET\s+DATA\s+)?TYPE\b/i },
+  { name: 'CHECK constraint', re: /\bADD\s+CONSTRAINT\s+"?\w+"?\s+CHECK\b/i },
+];
+
+/** The statements in one migration that an older release may not survive. Comments are skipped. */
+export function oldReleaseHazards(sql: string): string[] {
+  const code = sql.replace(/--[^\n]*/g, '');
+  const found = HAZARDS.filter(({ re }) => re.test(code)).map(({ name }) => name);
+  // A required column the old code does not know: its inserts fail.
+  const addsRequired = [...code.matchAll(/\bADD\s+COLUMN\b([^,;]*)/gi)].some(
+    ([, clause]) => /\bNOT\s+NULL\b/i.test(clause!) && !/\bDEFAULT\b/i.test(clause!),
+  );
+  if (addsRequired) found.push('ADD COLUMN NOT NULL without DEFAULT');
+  return found;
+}
+
+/** Migrations with such a statement, no `-- old-release-safe:` line, and not on the legacy list. */
+export function oldReleaseViolations(
+  files: ReadonlyArray<{ tag: string; sql: string }>,
+  legacy: ReadonlySet<string> = LEGACY_OLD_RELEASE_HAZARDS,
+): Array<{ tag: string; statements: string[] }> {
+  return files.flatMap(({ tag, sql }) => {
+    if (legacy.has(tag) || OLD_RELEASE_SAFE.test(sql)) return [];
+    const statements = oldReleaseHazards(sql);
+    return statements.length > 0 ? [{ tag, statements }] : [];
+  });
+}

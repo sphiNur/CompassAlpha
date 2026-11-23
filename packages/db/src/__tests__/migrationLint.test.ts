@@ -20,6 +20,8 @@ import {
   transactionControlViolations,
   unreachableMigrations,
   type JournalEntry,
+  oldReleaseHazards,
+  oldReleaseViolations,
 } from '../migrationLint';
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'migrations');
@@ -235,5 +237,65 @@ describe('index names in the migrations folder', () => {
         table: 'inventory.attendance_punch_reviews',
       },
     ]);
+  });
+});
+
+// Plan 2.5 (2026-11-23): the release before keeps running on the migrated
+// schema (between migrate and restart, and after a put-back).
+describe('oldReleaseHazards', () => {
+  test('finds what an older release may not survive', () => {
+    expect(oldReleaseHazards('ALTER TABLE a.b DROP COLUMN c;')).toEqual(['DROP COLUMN']);
+    expect(oldReleaseHazards('DROP TABLE IF EXISTS a.b;')).toEqual(['DROP TABLE']);
+    expect(oldReleaseHazards('ALTER TABLE a.b RENAME COLUMN c TO d;')).toEqual(['RENAME']);
+    expect(oldReleaseHazards('ALTER TABLE a.b RENAME TO c;')).toEqual(['RENAME']);
+    expect(oldReleaseHazards('ALTER TABLE a.b ALTER COLUMN "c" SET NOT NULL;')).toEqual([
+      'SET NOT NULL',
+    ]);
+    expect(oldReleaseHazards('ALTER TABLE a.b ALTER COLUMN c TYPE numeric(14,3);')).toEqual([
+      'column TYPE',
+    ]);
+    expect(oldReleaseHazards('ALTER TABLE a.b ADD CONSTRAINT x CHECK (c > 0);')).toEqual([
+      'CHECK constraint',
+    ]);
+    expect(oldReleaseHazards('ALTER TABLE a.b ADD COLUMN c text NOT NULL;')).toEqual([
+      'ADD COLUMN NOT NULL without DEFAULT',
+    ]);
+  });
+
+  test('leaves what the older release does not notice', () => {
+    expect(oldReleaseHazards('ALTER TABLE a.b ADD COLUMN c text;')).toEqual([]);
+    expect(oldReleaseHazards("ALTER TABLE a.b ADD COLUMN c text NOT NULL DEFAULT 'x';")).toEqual(
+      [],
+    );
+    expect(oldReleaseHazards('CREATE INDEX IF NOT EXISTS i ON a.b (c);')).toEqual([]);
+    expect(oldReleaseHazards('ALTER TABLE a.b ALTER COLUMN c DROP NOT NULL;')).toEqual([]);
+    // Words in comments do not count.
+    expect(oldReleaseHazards('-- we will DROP COLUMN later\nSELECT 1;')).toEqual([]);
+  });
+
+  test('a file that says why it is safe passes', () => {
+    const files = [
+      { tag: '0100_x', sql: 'ALTER TABLE a.b DROP COLUMN c;' },
+      {
+        tag: '0101_y',
+        sql: '-- old-release-safe: c was last read two releases ago\nALTER TABLE a.b DROP COLUMN c;',
+      },
+    ];
+    expect(oldReleaseViolations(files, new Set())).toEqual([
+      { tag: '0100_x', statements: ['DROP COLUMN'] },
+    ]);
+  });
+});
+
+describe('the migrations folder and older releases', () => {
+  const files = readdirSync(MIGRATIONS)
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+    .map((f) => ({ tag: f.replace(/\.sql$/, ''), sql: readFileSync(join(MIGRATIONS, f), 'utf8') }));
+
+  test('every statement an older release may not survive says why it is safe', () => {
+    // Add the line `-- old-release-safe: <why>` to the migration, after
+    // checking that the release before this one does not read or write
+    // what it changes. Do not add it to LEGACY_OLD_RELEASE_HAZARDS.
+    expect(oldReleaseViolations(files)).toEqual([]);
   });
 });

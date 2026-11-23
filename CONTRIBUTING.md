@@ -101,6 +101,16 @@ the `maintenance` system context for its whole session, so a backfill
 under FORCE RLS sees every tenant without a `set_config` of its own. Do not
 set or clear `app.system_context` in a migration.
 
+The release before yours runs on your migrated schema: between the
+migration and the restart on every deploy, and for good when the deploy
+puts it back after your api fails to start. A migration that drops or
+renames a column or table, sets `NOT NULL`, changes a type, adds a
+`NOT NULL` column without a default or adds a CHECK constraint needs the
+line `-- old-release-safe: <why>` (why the previous release does not read
+or write what changes). The unit tests refuse one without it
+(`oldReleaseViolations` in `packages/db/src/migrationLint.ts`). To drop a
+column, stop using it in one release and drop it in the next.
+
 Write the SQL by hand. Do not run `drizzle-kit generate` (`pnpm
 db:generate` now refuses): `meta/` only has the snapshot of 0000, and
 about two dozen CHECK constraints exist only in the SQL, so the
