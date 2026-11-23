@@ -460,6 +460,13 @@ const releaseSha = ROLLBACK ? '' : await provenanceGates();
 let expectedSha = DRY ? '' : releaseSha;
 /** The server's time just before step 4c restarted the api. */
 let restartedAt = '';
+/**
+ * Plan 2.5 (2026-11-23): the migrations this deploy applied. A put-back
+ * after a failed start leaves them in place, and the previous release then
+ * runs on a schema it was not written for; /health/ready only pings the
+ * database, so the deploy now runs the server smoke against it.
+ */
+let appliedMigrations: string[] = [];
 
 /**
  * Pre-flight: never swap the frontend out from under a purchaser who is
@@ -894,8 +901,30 @@ async function putBackAfterFailedStart(
   console.error(
     `\x1b[33m✖ DEPLOY FAILED — the previous release is live again (${BASE}/health/ready answered after ${Math.round(back.afterMs / 1000)} s).\x1b[0m`,
   );
-  console.error('  Migrations the failed release applied stay applied (they only go forward).');
-  console.error('  The smokes did not run against it: run scripts/smoke.ts to check it.');
+  if (appliedMigrations.length === 0) {
+    console.error('  No migration was applied, so it runs on the schema it was written for.');
+    console.error('  The smokes did not run against it: run scripts/smoke.ts to check it.');
+    process.exit(1);
+  }
+  // Plan 2.5: it runs on the migrated schema now. The server smoke (any
+  // release: no expected commit) says whether it still works there.
+  console.error(`  Migrations this deploy applied stay applied: ${appliedMigrations.join(', ')}.`);
+  step('undo. server-side smoke of the previous release on the migrated schema');
+  const smoke = spawnSync('bun', ['run', join(__dirname, 'smoke.ts')], {
+    stdio: 'inherit',
+    // process.env, not smokeEnv: no expected commit or start time.
+    env: process.env,
+    timeout: LIMIT.smoke,
+  });
+  if (smoke.status === 0) {
+    console.error('  ✓ the previous release passes the server smoke on the migrated schema.');
+  } else {
+    console.error(
+      `\x1b[31m✖ the previous release FAILS the server smoke on the migrated schema${stoppedNote(smoke, LIMIT.smoke)}.\x1b[0m`,
+    );
+    console.error('  Fix forward with a release that starts, or restore the backup taken before');
+    console.error('  the migrations (step 3.7; docs/RUNBOOK.md, restore).');
+  }
   process.exit(1);
 }
 
@@ -1081,6 +1110,7 @@ if (!DRY) {
     // and `ssh()` throws on non-zero so we abort before the api restart.
     try {
       console.log(ssh(migrateScript()));
+      appliedMigrations = pending;
     } catch (err) {
       abortAfterExtract('db migrate FAILED', err);
     }
