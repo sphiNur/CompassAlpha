@@ -1488,6 +1488,7 @@ export const ru = {
     '«{action}» не отправлено: {reason}. Откройте и при необходимости повторите.',
   'offline.drop.generic':
     '«{action}» не отправлено и отменено. Откройте эту позицию и при необходимости повторите.',
+  'offline.drop.detail': 'Что это было: {what}.',
   'confirm.final.title': 'Подтвердить приёмку в этом магазине?',
   'confirm.final.part.ok': 'В порядке: {n}',
   'confirm.final.part.short': 'Недостача: {n}',

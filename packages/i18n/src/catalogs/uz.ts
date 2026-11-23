@@ -1478,6 +1478,7 @@ export const uz = {
     '«{action}» yuborilmadi: {reason}. Ochib, kerak boʻlsa qayta kiriting.',
   'offline.drop.generic':
     '«{action}» yuborilmadi va bekor qilindi. Shu mahsulotni ochib, kerak boʻlsa qayta kiriting.',
+  'offline.drop.detail': 'Nima edi: {what}.',
   'confirm.final.title': 'Bu doʻkon uchun qabulni tasdiqlaysizmi?',
   'confirm.final.part.ok': 'Yaxshi: {n}',
   'confirm.final.part.short': 'Kam: {n}',

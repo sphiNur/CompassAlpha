@@ -27,6 +27,7 @@
  * Review COREWEB2-14 (2026-11-11): this was the body of
  * hooks/useOfflineQueue.ts.
  */
+import { getLogger } from '@compass/telemetry';
 import { nextSeq, outbox, type OutboxEntry } from '../idb';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -98,12 +99,78 @@ export interface OfflineDropInfo {
   /** For 'rejected': the server's error message (usually an i18n key such
    *  as order.errors.staleOfflineEdit) so the host can say WHY. */
   message?: string;
+  /**
+   * The write itself (plan 2.4): the notice says what it was (item,
+   * quantity, price), and one given up on can be queued again
+   * (requeueDropped). Its only other copy is the client log.
+   */
+  entry?: OutboxEntry;
 }
 
 /** Told when a queued write is dropped without being applied (app level). */
 let dropHandler: ((info: OfflineDropInfo) => void) | null = null;
 export function setOfflineDropHandler(fn: ((info: OfflineDropInfo) => void) | null): void {
   dropHandler = fn;
+}
+
+/**
+ * Tell the app, and the client log, that a queued write was dropped. The
+ * log keeps what it was, so the loss can still be found after the notice
+ * is dismissed or the page reloads (ops.client_logs, kind outbox.dropped).
+ */
+function reportDrop(info: OfflineDropInfo): void {
+  const entry = info.entry;
+  try {
+    getLogger().log('warn', 'outbox.dropped', {
+      action: info.procedure,
+      ...(info.message ? { errorMsg: info.message } : {}),
+      data: {
+        reason: info.reason,
+        ...(entry
+          ? {
+              input: loggableInput(entry.input),
+              enqueuedAt: entry.enqueuedAt,
+              retries: entry.retries,
+            }
+          : {}),
+      },
+    });
+  } catch {
+    // No logger yet (it starts with the app): the notice still goes out.
+  }
+  dropHandler?.(info);
+}
+
+/**
+ * A queued input as the client log keeps it: long strings (a photo as a
+ * data URL) are replaced by their length, so a drop costs a few hundred
+ * bytes, not the photo.
+ */
+export function loggableInput(input: unknown, depth = 0): unknown {
+  if (typeof input === 'string') return input.length > 200 ? `[${input.length} chars]` : input;
+  if (input === null || typeof input !== 'object') return input;
+  if (depth >= 4) return '[nested]';
+  if (Array.isArray(input)) return input.slice(0, 20).map((v) => loggableInput(v, depth + 1));
+  return Object.fromEntries(
+    Object.entries(input as Record<string, unknown>).map(([k, v]) => [
+      k,
+      loggableInput(v, depth + 1),
+    ]),
+  );
+}
+
+/**
+ * Queue a write that was given up on again, at its old place in the
+ * line and with its idempotency key, then try it (plan 2.4: the notice's
+ * Retry). A write the server refused is not offered this: it would be
+ * refused again.
+ */
+export async function requeueDropped(entry: OutboxEntry): Promise<void> {
+  const { lastAttemptAt: _lastAttemptAt, ...rest } = entry;
+  void _lastAttemptAt;
+  await outbox.add({ ...rest, retries: 0 });
+  notifyOutboxChanged();
+  void flushOutbox();
 }
 
 /** Every mounted useOfflineQueue re-reads the outbox when it changes. */
@@ -283,7 +350,7 @@ export function flushOutbox(): Promise<void> {
           // forever.
           if (classifyEntry(false, ageMs) === 'expire') {
             await outbox.remove(entry.clientSeq);
-            dropHandler?.({ procedure: entry.procedure, reason: 'stale' });
+            reportDrop({ procedure: entry.procedure, reason: 'stale', entry });
           }
           continue;
         }
@@ -299,10 +366,11 @@ export function flushOutbox(): Promise<void> {
             // Server-side rejection — keeping it in the queue won't help.
             await outbox.remove(entry.clientSeq);
             const message = (err as { message?: unknown } | undefined)?.message;
-            dropHandler?.({
+            reportDrop({
               procedure: entry.procedure,
               reason: 'rejected',
               ...(typeof message === 'string' ? { message } : {}),
+              entry,
             });
             continue;
           }
@@ -316,7 +384,7 @@ export function flushOutbox(): Promise<void> {
             // Transient failures exhausted — abandon this entry so it can't
             // block the queue forever, but surface the loss (H3).
             await outbox.remove(entry.clientSeq);
-            dropHandler?.({ procedure: entry.procedure, reason: 'gaveup' });
+            reportDrop({ procedure: entry.procedure, reason: 'gaveup', entry });
             continue;
           }
           await outbox.add({ ...entry, retries: nextRetries, lastAttemptAt: Date.now() });

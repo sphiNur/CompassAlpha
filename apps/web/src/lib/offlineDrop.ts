@@ -9,6 +9,7 @@ import type { CatalogKey as Key } from '@compass/i18n';
 import type { OfflineDropInfo } from './outbox/engine';
 import type { ReplayedProcedure } from './outbox/replayHandlers';
 import { isErrorKey, withoutFinalStop } from './errorText';
+import { formatMoney, formatQty } from './format';
 
 /** The action label for each run / receiving procedure (order changes use the generic text). */
 const ACTION_KEYS: { readonly [P in ReplayedProcedure]?: Key } = {
@@ -24,8 +25,44 @@ const ACTION_KEYS: { readonly [P in ReplayedProcedure]?: Key } = {
 /** The same map by any name: a dropped entry may come from another bundle. */
 const actionKeyByName: Readonly<Record<string, Key | undefined>> = ACTION_KEYS;
 
+/**
+ * Plan 2.4 (2026-11-23): what the dropped write was, from its own input:
+ * "Rice 4 × 12,000", "Onion 2", "Taxi 1 × 30,000". The notice named only
+ * the action, and with ten purchases dropped after a run was finished
+ * nobody could tell which to enter again. `nameOf` finds a product's name
+ * (the cached catalogue); without it the line still has the numbers.
+ * Null when the input names nothing worth showing.
+ */
+export function droppedWhat(
+  input: unknown,
+  nameOf: (skuId: string) => string | undefined,
+): string | null {
+  if (!input || typeof input !== 'object') return null;
+  const i = input as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const name = (text(i.skuId) && nameOf(text(i.skuId)!)) || text(i.label);
+  const qty = text(i.actualQty) ?? text(i.qty) ?? text(i.receivedQty);
+  const price = text(i.unitPrice);
+  const amount = qty
+    ? price
+      ? `${formatQty(qty)} × ${formatMoney(price)}`
+      : formatQty(qty)
+    : undefined;
+  const parts = [name, amount].filter((p): p is string => !!p);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 /** The toast text for a dropped entry. Exported for tests. */
 export function offlineDropText(
+  t: (key: Key, values?: Record<string, string | number>) => string,
+  info: OfflineDropInfo,
+  what?: string | null,
+): string {
+  const text = offlineDropSentence(t, info);
+  return what ? `${text} ${t('offline.drop.detail', { what })}` : text;
+}
+
+function offlineDropSentence(
   t: (key: Key, values?: Record<string, string | number>) => string,
   info: OfflineDropInfo,
 ): string {
@@ -54,6 +91,7 @@ export function offlineDropText(
  */
 export function offlineDropToastOptions(
   gotIt: string,
+  /** Refresh for a stale version (UX-22), or Retry for a write given up on (plan 2.4). */
   refresh?: { label: string; onClick: () => void },
 ): {
   tone: 'danger';
