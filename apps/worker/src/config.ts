@@ -71,6 +71,18 @@ export function readWorkerConfig(env: Env): WorkerConfig {
     claimTimeoutMinutes: minutes('CLAIM_TIMEOUT_MINUTES', 30, 0),
     claimTimeoutScanMinutes: minutes('CLAIM_TIMEOUT_SCAN_MINUTES', 5, 1),
   };
+  // Plan 2.2 (2026-11-23): a transport set up halfway used to start the
+  // worker with delivery off, and every bot message was closed as sent
+  // without being sent; the only sign was one line in the start log.
+  if ((config.relayUrl === null) !== (config.relayKey === null)) {
+    problems.push(
+      'TG_RELAY_URL and COMPASS_RELAY_KEY go together: set both to deliver through the relay, or neither',
+    );
+  } else if (config.botDeliveryEnabled === true && !config.relayUrl && !config.botToken) {
+    problems.push(
+      'BOT_DELIVERY_ENABLED=true needs a way to send: TG_RELAY_URL with COMPASS_RELAY_KEY, or TELEGRAM_BOT_TOKEN',
+    );
+  }
   if (problems.length > 0) {
     throw new Error(`Invalid worker environment: ${problems.join('; ')}`);
   }

@@ -62,4 +62,29 @@ describe('readWorkerConfig (COREAPI-27)', () => {
       'CLAIM_TIMEOUT_SCAN_MINUTES must be a whole number of minutes, at least 1',
     );
   });
+
+  // Plan 2.2: half a transport started the worker with delivery off, and
+  // every bot message was closed as sent without being sent.
+  test('a relay address without its key, or the reverse, stops the start', () => {
+    expect(() => readWorkerConfig({ ...BASE, TG_RELAY_URL: 'https://relay.example' })).toThrow(
+      'TG_RELAY_URL and COMPASS_RELAY_KEY go together',
+    );
+    expect(() => readWorkerConfig({ ...BASE, COMPASS_RELAY_KEY: 'k'.repeat(32) })).toThrow(
+      'TG_RELAY_URL and COMPASS_RELAY_KEY go together',
+    );
+  });
+
+  test('delivery turned on with no way to send stops the start', () => {
+    expect(() => readWorkerConfig({ ...BASE, BOT_DELIVERY_ENABLED: 'true' })).toThrow(
+      'BOT_DELIVERY_ENABLED=true needs a way to send',
+    );
+    // Either transport is enough; off needs neither.
+    expect(
+      readWorkerConfig({ ...BASE, BOT_DELIVERY_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '1:x' })
+        .botDeliveryEnabled,
+    ).toBe(true);
+    expect(readWorkerConfig({ ...BASE, BOT_DELIVERY_ENABLED: 'false' }).botDeliveryEnabled).toBe(
+      false,
+    );
+  });
 });

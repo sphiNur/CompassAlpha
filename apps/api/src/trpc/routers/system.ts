@@ -101,6 +101,10 @@ export const systemRouter = router({
    *   - status: 'ok' | 'degraded'    (degraded = something to look at)
    *   - db: did SELECT 1 succeed
    *   - outboxPending: rows in sync.outbox awaiting delivery
+   *   - outboxGaveUp24h: bot messages given up after their retries in
+   *     the last 24 hours (sync.outbox.failure, migration 0074). Not part
+   *     of `status`: an overnight Telegram outage would fail the next
+   *     deploy's smoke; a monitor reads the number instead.
    *   - outboxOldestSec: age in seconds of the oldest unsent row.
    *     High value = worker stalled, network egress dead, or backoff
    *     exhausted. Threshold for "degraded" is 300s (5 min) — covers
@@ -113,6 +117,7 @@ export const systemRouter = router({
     let dbOk = true;
     let outboxPending = 0;
     let outboxOldestSec: number | null = null;
+    let outboxGaveUp24h = 0;
     try {
       await inSystem(ctx.db, 'health', (tx) => tx.execute(sql`SELECT 1`));
     } catch (err) {
@@ -124,14 +129,21 @@ export const systemRouter = router({
         const r = (await inSystem(ctx.db, 'health', (tx) =>
           tx.execute(sql`
           SELECT
-            COUNT(*)::int AS pending,
-            EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::int AS oldest_sec
+            COUNT(*) FILTER (WHERE sent_at IS NULL)::int AS pending,
+            EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE sent_at IS NULL)))::int
+              AS oldest_sec,
+            COUNT(*) FILTER (WHERE failure = 'gave_up')::int AS gave_up
           FROM sync.outbox
-          WHERE sent_at IS NULL
+          WHERE sent_at IS NULL OR failed_at > NOW() - interval '24 hours'
         `),
-        )) as unknown as Array<{ pending: number; oldest_sec: number | null }>;
+        )) as unknown as Array<{
+          pending: number;
+          oldest_sec: number | null;
+          gave_up: number;
+        }>;
         outboxPending = r[0]?.pending ?? 0;
         outboxOldestSec = r[0]?.oldest_sec ?? null;
+        outboxGaveUp24h = r[0]?.gave_up ?? 0;
       } catch (err) {
         logger.warn({ err }, 'system.health: outbox probe failed');
       }
@@ -151,6 +163,7 @@ export const systemRouter = router({
       projectorLag: 0,
       outboxPending,
       outboxOldestSec,
+      outboxGaveUp24h,
       version: env.VITE_BUILD_SHA ?? 'dev',
     };
   }),

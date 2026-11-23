@@ -40,6 +40,27 @@ describe('assertRelayDelivered', () => {
     }
   });
 
+  test('the relay refusing our configuration holds the row without using a retry (plan 2.2)', () => {
+    for (const [status, body] of [
+      [403, 'forbidden'],
+      [400, 'invalid json'],
+      [404, 'not found'],
+      [405, 'method not allowed: sendPhoto'],
+    ] as const) {
+      expect(verdict(status, body)?.ourConfiguration).toBe(true);
+    }
+    // Load, outages and the Bot API's own answers are not ours to fix.
+    for (const [status, body] of [
+      [429, 'slow down'],
+      [408, 'timeout'],
+      [502, '<html>bad gateway</html>'],
+      [403, '{"ok":false,"error_code":403,"description":"bot was blocked"}'],
+      [400, '{"ok":false,"error_code":400,"description":"chat not found"}'],
+    ] as const) {
+      expect(verdict(status, body)?.ourConfiguration).toBe(false);
+    }
+  });
+
   test('a Bot API rate limit or outage is transient', () => {
     expect(
       verdict(429, '{"ok":false,"error_code":429,"description":"retry later"}')?.permanent,

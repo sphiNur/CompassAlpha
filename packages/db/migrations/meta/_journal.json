@@ -519,6 +519,13 @@
       "when": 1792540000021,
       "tag": "0073_run_item_top_up",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792540000022,
+      "tag": "0074_outbox_failed_at",
+      "breakpoints": true
     }
   ]
 }

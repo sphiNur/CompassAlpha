@@ -28,7 +28,12 @@ export const outbox = syncSchema.table(
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
+    /** Set when the row is closed, delivered or not; the worker takes only rows without it. */
     sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
+    /** Closed without delivery (migration 0074); `failure` says why. */
+    failedAt: timestamp('failed_at', { withTimezone: true, mode: 'date' }),
+    /** gave_up | refused | undeliverable | disabled (OutboxFailure in apps/worker). */
+    failure: varchar('failure', { length: 32 }),
     lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
@@ -41,6 +46,10 @@ export const outbox = syncSchema.table(
     unsentIdx: index('outbox_unsent_idx')
       .on(t.createdAt)
       .where(sql`sent_at IS NULL`),
+    // Retention and system.health read the failed rows (0074).
+    failedIdx: index('outbox_failed_idx')
+      .on(t.failedAt)
+      .where(sql`failed_at IS NOT NULL`),
   }),
 );
 
