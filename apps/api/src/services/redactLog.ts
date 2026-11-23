@@ -25,8 +25,15 @@ const JWT = /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*)?/g;
 /**
  * A URL fragment that holds Telegram's launch parameters
  * (`#tgWebAppData=…&tgWebAppVersion=…`): the whole fragment goes.
+ *
+ * Review (2026-11-23): this was `#[^\s"'<>]*tgWebApp[^\s"'<>]*`, which
+ * from every "#" read to the end of the run looking for `tgWebApp`: 8,000
+ * "#" took about half a second, and an anonymous system.log call carries
+ * 200 such strings. Each fragment is now read once (FRAGMENT) and masked
+ * when it holds the name (TG_IN_FRAGMENT).
  */
-const TG_FRAGMENT = /#[^\s"'<>]*tgWebApp[^\s"'<>]*/gi;
+const FRAGMENT = /#[^\s"'<>]*/g;
+const TG_IN_FRAGMENT = /tgWebApp/i;
 
 /**
  * Query or form parameters that carry Telegram's init data or a secret:
@@ -36,8 +43,13 @@ const TG_FRAGMENT = /#[^\s"'<>]*tgWebApp[^\s"'<>]*/gi;
 const SECRET_PARAM =
   /\b(tgWebAppData|init_?data|hash|signature|user|receiver|chat|chat_instance|query_id|(?:access|refresh|id)_?token|token|password|secret|api_?key)=[^&\s"'<>#]*/gi;
 
-/** An e-mail address. */
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+/**
+ * An e-mail address. The part before "@" is at most 64 characters (RFC
+ * 5321). Review (2026-11-23): unbounded, a long run with no "@" was read
+ * to its end from every position, 170 ms for 8,000 letters; bounded, each
+ * position reads at most 64.
+ */
+const EMAIL = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 
 /**
  * A phone-like run: an optional "+", then digits with spaces, dashes or
@@ -72,7 +84,7 @@ export function redactLogText(text: string): string {
   return text
     .replace(BEARER, (_m, scheme: string) => `${scheme} [token]`)
     .replace(JWT, '[jwt]')
-    .replace(TG_FRAGMENT, '#[telegram]')
+    .replace(FRAGMENT, (fragment) => (TG_IN_FRAGMENT.test(fragment) ? '#[telegram]' : fragment))
     .replace(SECRET_PARAM, (_m, name: string) => `${name}=[redacted]`)
     .replace(EMAIL, '[email]')
     .replace(PHONE_LIKE, maskPhone);
