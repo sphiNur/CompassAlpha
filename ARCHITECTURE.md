@@ -38,7 +38,7 @@
 | 包                   | 用途                                                                       |
 | -------------------- | -------------------------------------------------------------------------- |
 | `packages/contracts` | tRPC 路由的 Zod schema（前后端共用）                                       |
-| `packages/db`        | Drizzle schema + 71 个迁移 + RLS 策略                                      |
+| `packages/db`        | Drizzle schema + 75 个迁移 + RLS 策略                                      |
 | `packages/domain`    | 纯函数领域核心：events / decide / apply / state（无副作用，单元测试 100%） |
 | `packages/streams`   | 事件读写与订单投影、采购单认领投影（API 与 worker 共用）                   |
 | `packages/ui`        | 约 30 个组件（Radix Dialog + CVA 变体 + Tailwind）+ ThemeProvider          |
@@ -277,7 +277,7 @@ API 在每个事务内执行 `SELECT set_config('app.current_org_id', $1, true)`
 
 ### 3.3 迁移策略
 
-- 24 个迁移文件（0000~0024）由 `drizzle-kit generate` + 手工 RLS DDL 组成。
+- 75 个迁移文件（0000~0074）。早期的由 `drizzle-kit generate` + 手工 RLS DDL 组成，之后全部手写（CONTRIBUTING.md §5）。
 - CI 强制 `packages/db/migrations/meta/_journal.json` 与 `.sql` 文件名一一对应。
 - 破坏性变更走两阶段：先双写，再删旧列，跨至少一个发布周期。
 - 部署时 `pnpm db:migrate` 幂等执行。

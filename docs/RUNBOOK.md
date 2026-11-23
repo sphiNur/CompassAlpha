@@ -35,9 +35,11 @@ Without rsync (or on Windows) the whole tarball is uploaded with scp.
 ## Daily
 
 ### Health checks
-- `https://compass.example.com/health/live` — should return `{status:"ok"}` < 100ms.
-- `https://compass.example.com/health/ready` — pings the database (503 when it does not answer) and reports the projector lag. If `degraded`, dig into the JSON.
-- `https://compass.example.com/health/version` — confirms the running commit sha.
+`$COMPASS_BASE` is the public URL (https://compass-alpha.sphinxr.workers.dev).
+- `$COMPASS_BASE/health/live` — should return `{status:"ok"}` < 100ms.
+- `$COMPASS_BASE/health/ready` — one round trip to the database; 503 with `{status:"down", component:"db"}` when it fails. Projections run in the same transaction as the command, so there is no projector lag to report.
+- `$COMPASS_BASE/health/version` — confirms the running commit sha.
+- `$COMPASS_BASE/trpc/system.health` — `status` (`degraded` when the oldest unsent bot message is over 5 minutes old), `outboxPending`, `outboxOldestSec`, and `outboxGaveUp24h` (bot messages given up in the last day; not part of `status`).
 
 ### Log tailing
 Production runs as systemd units (`compass-api`, `compass-worker`), not
@@ -240,8 +242,10 @@ the machine's `core.autocrlf`.
 
 **Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
 previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
-No restart is needed — the api serves `dist` from disk on every request
-and `/health/version` reads `dist/build-id.txt`, so clients get the
+No restart is needed — nginx serves `dist` from disk on every request
+(`infra/nginx/compass-app.conf`; the api's own copy, `http/webApp.ts`, is
+what answers without nginx) and `/health/version` reads
+`dist/build-id.txt`, so clients get the
 reload prompt back to the old build:
 ```bash
 cd /home/ubuntu/compass-alpha/apps/web
@@ -401,8 +405,10 @@ sustained CONFLICT in logs:
 2. If the same actor is colliding with itself, the FE has duplicate inflight mutations
    (likely a missing useMutation key). File against the FE.
 3. If two different actors are racing, that's expected concurrent editing — verify the
-   read model is converging within ~1s. If not, projector lag → check
-   `domain.projector_cursors.lag`.
+   read model shows the last writer's version. Projections are written in the
+   command's own transaction, so it cannot lag behind the log; a read model that
+   disagrees with `domain.events` is a projector bug (rebuild:
+   `apps/api/scripts/reproject.ts`).
 
 ## Incident response
 
@@ -412,21 +418,24 @@ sustained CONFLICT in logs:
 3. `EXPLAIN ANALYZE` it; check if the index it should use is still there.
 4. If a missing index, add a migration; never `CREATE INDEX` ad-hoc on prod (no audit trail).
 
-### `/health/ready` says `projectorLag > 60s`
+### `system.health` says `degraded` (bot messages not going out)
+`outboxOldestSec` over 300: the worker is not delivering.
 - Worker process probably crashed. `systemctl status compass-worker`.
 - Restart: `sudo systemctl restart compass-worker`.
 - Investigate: `journalctl -u compass-worker --since "1 hour ago" --no-pager`.
 
 ### Cross-tenant data appears in a query
 This is an RLS regression. Critical.
-1. Page the on-call.
+1. Tell the owner at once; there is no on-call rota.
 2. Confirm the offending route ran with `app.current_org_id` set: check
    `domain.policy_decisions` for the user's recent decisions; cross-reference with
    `domain.events.org_id`.
 3. If RLS was bypassed, the API's `withOrg()` helper is the only place that should
    set the GUC. Check `apps/api/src/trpc/context.ts` — any new helper code that ran
    without the helper is the suspect.
-4. Add the regression test to `tests/integration/rls.test.ts`.
+4. Add the regression test to the RLS suites in `apps/api/src/__tests__/`
+   (`rls-isolation.test.ts`, `rls-records.test.ts`, `rls-catalog.test.ts`,
+   `rls-attendance.test.ts`).
 
 ## Backups
 
