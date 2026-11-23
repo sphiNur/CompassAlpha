@@ -24,15 +24,16 @@ import {
   flushOutbox,
   notifyOutboxChanged,
   registerReplayHandlers,
+  requeueDropped,
   setOfflineDropHandler,
   type OfflineDropInfo,
 } from '../lib/outbox/engine';
 import type { OutboxOwner } from '../lib/outbox/policy';
 import { replayHandlers } from '../lib/outbox/replayHandlers';
-import { offlineDropText, offlineDropToastOptions } from '../lib/offlineDrop';
+import { droppedWhat, offlineDropText, offlineDropToastOptions } from '../lib/offlineDrop';
 import { isStaleVersionKey } from '../lib/conflict';
 import { useAuthStore } from '../stores/authStore';
-import { useI18n } from './useI18n';
+import { useI18n, useProductName } from './useI18n';
 
 export function useOutboxReplay(): void {
   const utils = trpc.useUtils();
@@ -52,18 +53,31 @@ function useOfflineDropToast(): (info: OfflineDropInfo) => void {
   const i18n = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
+  const productName = useProductName();
   return (info) => {
+    const entry = info.entry;
     // UX-22: refused for a stale version → Refresh, as in useErrToast.
-    const refresh =
+    // Plan 2.4: given up on after its retries → Retry puts it back in line.
+    const action =
       info.reason === 'rejected' && isStaleVersionKey(info.message)
         ? {
             label: i18n.t('common.refresh'),
             onClick: () => void queryClient.invalidateQueries(),
           }
-        : undefined;
+        : info.reason === 'gaveup' && entry
+          ? { label: i18n.t('common.retry'), onClick: () => void requeueDropped(entry) }
+          : undefined;
+    // The catalogue the order, approval and receiving pages read (and the
+    // query cache keeps across a reload).
+    const skus = utils.catalog.skus.getData({ includeArchived: true });
+    const nameOf = (skuId: string) => {
+      const sku = skus?.find((s) => s.id === skuId);
+      return sku ? productName(sku) : undefined;
+    };
     toast.show(
-      offlineDropText(i18n.t, info),
-      offlineDropToastOptions(i18n.t('common.gotIt'), refresh),
+      offlineDropText(i18n.t, info, entry ? droppedWhat(entry.input, nameOf) : null),
+      offlineDropToastOptions(i18n.t('common.gotIt'), action),
     );
   };
 }

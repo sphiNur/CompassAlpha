@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { loadCatalog } from '@compass/i18n';
-import { offlineDropText, offlineDropToastOptions } from '../offlineDrop';
+import { droppedWhat, offlineDropText, offlineDropToastOptions } from '../offlineDrop';
+import { loggableInput } from '../outbox/engine';
 
 // A reason is shown only when this build's catalog has its key (COREWEB2-19).
 beforeAll(async () => {
@@ -14,6 +15,7 @@ const catalog: Record<string, string> = {
   'offline.drop.generic': '{action} did not sync — please check',
   'run.errors.storeItemsUnchecked': '2 lines still to check',
   'order.errors.staleOfflineEdit': 'That day is over; the change was not saved',
+  'offline.drop.detail': 'It was: {what}.',
 };
 const t = (key: string, values?: Record<string, string | number>) => {
   const text = catalog[key] ?? key;
@@ -105,5 +107,68 @@ describe('the dropped-write toast stays (DX-DLV-06)', () => {
       { label: 'Refresh', onClick, emphasis: 'primary' },
       { label: 'Got it' },
     ]);
+  });
+});
+
+// Plan 2.4 (2026-11-23): ten purchases dropped after a run was finished
+// were ten notices that named only the action; nobody could tell which
+// to enter again.
+describe('what a dropped write was', () => {
+  const RICE = '00000000-0000-4000-8000-000000000001';
+  const nameOf = (id: string) => (id === RICE ? 'Rice' : undefined);
+
+  test('a purchase: the product, the quantity and the price', () => {
+    expect(
+      droppedWhat({ runId: 'r', skuId: RICE, actualQty: '4.500', unitPrice: '12000.00' }, nameOf),
+    ).toBe('Rice 4.5 × 12,000');
+  });
+
+  test('a product the cached catalogue does not know still shows its numbers', () => {
+    expect(
+      droppedWhat(
+        { skuId: '00000000-0000-4000-8000-000000000002', actualQty: '2', unitPrice: '5' },
+        nameOf,
+      ),
+    ).toBe('2 × 5');
+  });
+
+  test('an order line and an expense', () => {
+    expect(droppedWhat({ skuId: RICE, qty: '3' }, nameOf)).toBe('Rice 3');
+    expect(droppedWhat({ label: 'Taxi', qty: '1', unitPrice: '30000' }, nameOf)).toBe(
+      'Taxi 1 × 30,000',
+    );
+  });
+
+  test('nothing worth showing: no detail', () => {
+    expect(droppedWhat({ runId: 'r', storeId: 's' }, nameOf)).toBeNull();
+    expect(droppedWhat(null, nameOf)).toBeNull();
+  });
+
+  test('the notice gets the detail as its own sentence', () => {
+    expect(
+      offlineDropText(t, { procedure: 'run.confirmStore', reason: 'gaveup' }, 'Rice 4 × 12,000'),
+    ).toBe('Confirm receipt did not sync — please check It was: Rice 4 × 12,000.');
+    expect(offlineDropText(t, { procedure: 'run.confirmStore', reason: 'gaveup' }, null)).toBe(
+      'Confirm receipt did not sync — please check',
+    );
+  });
+});
+
+describe('a dropped write in the client log', () => {
+  test('keeps the input but not a photo', () => {
+    const photo = `data:image/jpeg;base64,${'A'.repeat(5000)}`;
+    expect(
+      loggableInput({
+        skuId: 'x',
+        actualQty: '2',
+        receiptPhotoUrl: photo,
+        storeSplits: [{ qty: '2' }],
+      }),
+    ).toEqual({
+      skuId: 'x',
+      actualQty: '2',
+      receiptPhotoUrl: `[${photo.length} chars]`,
+      storeSplits: [{ qty: '2' }],
+    });
   });
 });

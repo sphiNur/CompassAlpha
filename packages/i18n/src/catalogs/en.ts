@@ -1556,6 +1556,7 @@ export const en = {
   'offline.drop.withReason': '"{action}" was not sent: {reason}. Open it and redo it if needed.',
   'offline.drop.generic':
     '"{action}" was not sent and was dropped. Open the item and redo it if needed.',
+  'offline.drop.detail': 'It was: {what}.',
   'confirm.final.title': 'Confirm receipt for this store?',
   'confirm.final.part.ok': 'OK: {n}',
   'confirm.final.part.short': 'Short: {n}',

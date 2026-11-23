@@ -1313,6 +1313,7 @@ export const zh = {
   'offline.drop.withReason': '「{action}」没发出去：{reason}。打开看看，需要的话重新录一次。',
   'offline.drop.generic':
     '「{action}」没发出去，手机上的这条已作废。打开这一项看看，需要的话重新录一次。',
+  'offline.drop.detail': '内容：{what}。',
   'confirm.final.title': '确认本店收货？',
   'confirm.final.part.ok': '正常 {n} 项',
   'confirm.final.part.short': '数量不足 {n} 项',
