@@ -95,6 +95,25 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     expect(await recorded(f.staffId)).toEqual([first.id]);
   });
 
+  // Review 2026-11-23: the face check (~0.5 s a frame on the one worker
+  // every organisation shares) ran before the token was looked at. A
+  // photo the model fails on, with a token that does not fit, shows the
+  // order: the token is refused before the model is asked.
+  test('a token that does not fit is refused before any frame is checked', async () => {
+    const f = fixture();
+    await staffReady();
+    await switchOn(f.colleagueId);
+    await f.manager.attendance.policySave(anyPhoneAnywhere(f.storeId));
+    const theirs = await f.colleague().attendance.livenessChallenge({
+      storeId: f.storeId,
+      force: true,
+    });
+    await expectError(
+      clock(f.staff(), { face: 'boom', token: theirs.token }),
+      'attendance.errors.livenessExpired',
+    );
+  });
+
   test('a failed check is refused, never recorded, and tells nobody', async () => {
     const f = fixture();
     await staffReady();
