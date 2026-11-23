@@ -77,3 +77,41 @@ describe('redactLogValue', () => {
     expect(redactLogValue(null)).toBeNull();
   });
 });
+
+// Review (2026-11-23): two patterns read to the end of a run from every
+// position. 8,000 letters took 170 ms and 8,000 "#" half a second, and an
+// anonymous system.log call carries 200 strings: one call held the api's
+// only thread for over a minute. Every pattern is now linear.
+describe('redaction time on crafted input', () => {
+  const n = 16_000;
+  const inputs: Record<string, string> = {
+    letters: 'x'.repeat(n),
+    hashes: '#'.repeat(n),
+    digits: '1'.repeat(n),
+    dashes: 'a-'.repeat(n / 2),
+    ats: 'a@'.repeat(n / 2),
+    domainChain: 'a@' + 'b.'.repeat(n / 2),
+    hashesThenTelegram: '#'.repeat(n) + 'tgWebAppData=1',
+  };
+
+  for (const [name, text] of Object.entries(inputs)) {
+    test(`${name}: well under 100 ms for 16,000 characters`, () => {
+      const t0 = performance.now();
+      redactLogText(text);
+      // Quadratic, these took 0.7 to 2 s; linear, a few ms.
+      expect(performance.now() - t0).toBeLessThan(100);
+    });
+  }
+
+  test('a fragment is masked when it holds the launch data, and only then', () => {
+    expect(redactLogText('https://a.app/#x#tgWebAppData=user%3D1')).toBe(
+      'https://a.app/#[telegram]',
+    );
+    expect(redactLogText('see /docs#section-2 here')).toBe('see /docs#section-2 here');
+    expect(redactLogText('#'.repeat(50) + 'tgWebAppVersion=7')).toBe('#[telegram]');
+  });
+
+  test('an address whose local part is over 64 characters is still mostly masked', () => {
+    expect(redactLogText('x'.repeat(70) + '@mail.example')).toBe('xxxxxx[email]');
+  });
+});
