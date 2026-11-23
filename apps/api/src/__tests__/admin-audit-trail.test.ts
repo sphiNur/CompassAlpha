@@ -354,3 +354,27 @@ describe.skipIf(!SHOULD_RUN)('names in the list (R2-ADM-3)', () => {
     expect((await listed())?.labels.roleName).toBe('Night shift');
   });
 });
+
+describe.skipIf(!SHOULD_RUN)('Telegram ids in the audit feed', () => {
+  test('a store admin does not see them; an organisation admin does', async () => {
+    const { db, orgId, storeA, owner, managerA } = fix!;
+    const resourceId = randomUUID();
+    await db.insert(s.policyDecisions).values({
+      orgId,
+      actorId: owner.userId,
+      action: 'admin.memberInviteByTgId',
+      resourceType: 'member',
+      resourceId,
+      decision: 'allow',
+      inputs: { tgUserId: '777000111', displayName: 'Invited', storeIds: [storeA] },
+      scopeStoreId: storeA,
+    });
+    const rowFor = async (who: typeof owner) =>
+      (await who.as.admin.adminAuditList({ limit: 200 })).find((r) => r.resourceId === resourceId);
+
+    const seenByManager = await rowFor(managerA);
+    expect(seenByManager).toBeDefined();
+    expect(seenByManager!.inputs).toEqual({ displayName: 'Invited', storeIds: [storeA] });
+    expect((await rowFor(owner))!.inputs).toMatchObject({ tgUserId: '777000111' });
+  });
+});
