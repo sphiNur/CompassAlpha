@@ -3,6 +3,7 @@ import { testSession } from '../../__tests__/fixtures/session';
 import {
   isUsableSession,
   mergePersistedAuth,
+  savedForAnotherAccount,
   REFRESH_TOKEN_PLACEHOLDER,
   savedAuth,
 } from '../authStore';
@@ -117,5 +118,29 @@ describe('the saved session holds no token (MWD-14)', () => {
     // characters it passes the input schema and is refused as invalid.
     expect(REFRESH_TOKEN_PLACEHOLDER.length).toBeGreaterThanOrEqual(20);
     expect(REFRESH_TOKEN_PLACEHOLDER.split('.')).toHaveLength(1);
+  });
+});
+
+// Plan 2.3 (2026-11-23): two Telegram accounts on one phone share the
+// WebView's storage, and the app opened as whoever used it last.
+describe('a saved session and the Telegram account that opened the app', () => {
+  const saved = { accessToken: 'a', refreshToken: 'r', currentStoreId: 's1' };
+  const asTg = (tgUserId: string | null) => ({
+    ...saved,
+    session: testSession({ user: { ...session.user, tgUserId } }),
+  });
+
+  test('another account’s session is not restored', () => {
+    expect(mergePersistedAuth(asTg('111111'), current, '222222')).toBe(current);
+  });
+
+  test('the same account’s is', () => {
+    expect(mergePersistedAuth(asTg('111111'), current, '111111').session?.user.id).toBe('u1');
+  });
+
+  test('kept when either id is unknown: outside Telegram, or a sign-in without it', () => {
+    expect(mergePersistedAuth(asTg('111111'), current, null).session).not.toBeNull();
+    expect(mergePersistedAuth(asTg(null), current, '222222').session).not.toBeNull();
+    expect(savedForAnotherAccount(undefined, '222222')).toBe(false);
   });
 });
