@@ -1069,7 +1069,9 @@ describe('the new worker reads the server .env before the migrations (COREAPI-27
 
   test('settings the worker reads pass, and no value is printed', () => {
     const r = run(
-      treeWith('DATABASE_URL=postgres://u:secret-pw@db:5432/x\nBOT_DELIVERY_ENABLED=true\n'),
+      treeWith(
+        'DATABASE_URL=postgres://u:secret-pw@db:5432/x\nBOT_DELIVERY_ENABLED=true\nTELEGRAM_BOT_TOKEN=1:x\n',
+      ),
     );
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe('worker settings: ok');
@@ -1084,6 +1086,18 @@ describe('the new worker reads the server .env before the migrations (COREAPI-27
     // remoteStepError shows a failed step's last line on stderr.
     expect(r.stderr.trim().split('\n').pop()).toContain('BOT_DELIVERY_ENABLED');
     expect(r.stdout + r.stderr).not.toContain('yes-please');
+    expect(r.stdout + r.stderr).not.toContain('secret-pw');
+  });
+
+  // Plan 2.2: half a relay used to start the worker with delivery off.
+  test('a relay address without its key fails the step before the restart', () => {
+    const r = run(
+      treeWith(
+        'DATABASE_URL=postgres://u:secret-pw@db:5432/x\nTG_RELAY_URL=https://relay.example\n',
+      ),
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr.trim().split('\n').pop()).toContain('COMPASS_RELAY_KEY');
     expect(r.stdout + r.stderr).not.toContain('secret-pw');
   });
 
