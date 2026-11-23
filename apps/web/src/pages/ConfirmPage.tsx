@@ -54,6 +54,7 @@ import {
 import { ConfirmItemRow, type ConfirmLine } from './confirm/ConfirmItemRow';
 import { IssueSheet } from './confirm/IssueSheet';
 import { ReceivingWaitState } from './confirm/ReceivingWaitState';
+import { ReceivingRecord } from './confirm/ReceivingRecord';
 import { UnboughtCard } from './confirm/UnboughtCard';
 import { useConfirmMainButton } from './confirm/useConfirmMainButton';
 import { useIssueForm, type ReportedLine } from './confirm/useIssueForm';
@@ -547,20 +548,18 @@ export function ConfirmPage() {
                           </Button>
                         ) : null}
                       </div>
+                    ) : confirmQueued ? (
+                      // R2-DLV-3: confirmed offline — saved, not yet sent.
+                      <div
+                        data-testid="confirm-queued"
+                        className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-warning-fg)]"
+                      >
+                        {i18n.t('confirm.queued')}
+                      </div>
                     ) : (
-                      confirmQueued ? (
-                        // R2-DLV-3: confirmed offline — saved, not yet sent.
-                        <div
-                          data-testid="confirm-queued"
-                          className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-warning-fg)]"
-                        >
-                          {i18n.t('confirm.queued')}
-                        </div>
-                      ) : (
-                        <div className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-success)]">
-                          {i18n.t('confirm.storeConfirmedAt', { time: dates.dateTime(confirmedAt) })}
-                        </div>
-                      )
+                      <div className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-success)]">
+                        {i18n.t('confirm.storeConfirmedAt', { time: dates.dateTime(confirmedAt) })}
+                      </div>
                     )}
                     <ul className="flex flex-col" role="list">
                       {myItems.map((it) => {
@@ -593,6 +592,13 @@ export function ConfirmPage() {
             )}
           </DataState>
         )}
+        {/* Owner 2026-11-23: what this store received before. Folded while
+            there is a list to check. */}
+        <ReceivingRecord
+          storeId={currentStoreId}
+          skuById={skuById}
+          folded={!!activeRun && myItems.length > 0 && !storeConfirmed}
+        />
       </div>
 
       <ConfirmSheet

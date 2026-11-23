@@ -3234,4 +3234,20 @@ export const en = {
   'attendance.punch.preparing': 'Getting ready…',
   'run.errors.listFrozenWhileDelivering':
     "Delivery has started, so the list can't change now. If no store has its goods yet, go back to purchase first.",
+  // Owner 2026-11-23: tab groups, the receiving record, the settlement page's history link.
+  'nav.group.orders': 'Orders',
+  'nav.short.group.orders': 'Orders',
+  'nav.group.switchAria': 'Page in this section',
+  'confirm.records.title': 'Receiving record',
+  'confirm.records.hint': 'What this store received in the last two weeks.',
+  'confirm.records.empty': 'Nothing received in the last two weeks.',
+  'confirm.records.run': '{date} · trip {n}',
+  'confirm.records.confirmedBy': 'Confirmed by {name}',
+  'confirm.records.allOk': 'All as expected',
+  'confirm.records.problems': '{n, plural, one {# problem} other {# problems}}',
+  'confirm.records.received': 'arrived {qty}',
+  'confirm.records.revised': 'Corrected after receiving',
+  'confirm.records.show': 'Show receiving record',
+  'confirm.records.photo': 'Photo of {name}',
+  'settlement.viewHistory': "This store's purchase history",
 } as const;

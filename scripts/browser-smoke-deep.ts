@@ -370,30 +370,28 @@ async function run() {
     await page.waitForSelector(PRIMARY_NAV_SELECTOR, { timeout: 8_000 });
     record('Auth + Shell ready', true);
 
-    // ---- Bottom nav (owner 2026-11-17) ----
-    // The stubbed super admin sees six tabs and Admin: Admin lives on the
-    // More page, five tabs fit the bar (only the open one shows its word,
-    // so the bar is read by test id), History is a row on the More page.
+    // ---- Bottom nav (owner 2026-11-17, 2026-11-23) ----
+    // The stubbed super admin sees six tabs and Admin. Receiving shares
+    // Orders' item and History shares Buying's (tabGroups.ts), so four
+    // items fit the bar (only the open one shows its word, so the bar is
+    // read by test id) and More holds Admin alone.
     const barKeys = await page
       .locator(`${PRIMARY_NAV_SELECTOR} button`)
       .evaluateAll((els) => els.map((e) => (e.getAttribute('data-testid') ?? '').slice(4)));
     record(
-      'BottomNav shows Order / Review / Run / Receiving / Close and More',
-      JSON.stringify(barKeys) ===
-        JSON.stringify(['order', 'approve', 'run', 'confirm', 'settlement', 'more']),
+      'BottomNav shows Orders / Review / Run / Close and More',
+      JSON.stringify(barKeys) === JSON.stringify(['order', 'approve', 'run', 'settlement', 'more']),
       barKeys.join(' / '),
     );
-    await page.click(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-more"]`);
-    await page.waitForSelector('[data-testid="more-nav-list"]', { timeout: 8_000 });
-    const moreRows = await page
-      .locator('[data-testid="more-nav-list"] [data-testid^="nav-"]')
-      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()));
-    record(
-      'The More page lists History (Admin below it)',
-      JSON.stringify(moreRows) === JSON.stringify(['History']),
-      moreRows.join(' / '),
-    );
     await clickNavTab(page, 'order');
+    const switchKeys = await page
+      .locator('[data-testid="group-switch"] [data-testid^="group-"]')
+      .evaluateAll((els) => els.map((e) => (e.getAttribute('data-testid') ?? '').slice(6)));
+    record(
+      'Orders switches between Order and Receiving',
+      JSON.stringify(switchKeys) === JSON.stringify(['order', 'confirm']),
+      switchKeys.join(' / '),
+    );
 
     // ---- Order page interaction ----
     // BottomNav order tab is the default per Shell's first tab (nav.counts

@@ -3136,4 +3136,21 @@ export const ru = {
   'attendance.punch.preparing': 'Подготовка…',
   'run.errors.listFrozenWhileDelivering':
     'Доставка уже началась, список сейчас менять нельзя. Если ни один магазин ещё не получил товар, сначала вернитесь к закупке.',
+  // Owner 2026-11-23: tab groups, the receiving record, the settlement page's history link.
+  'nav.group.orders': 'Заказы',
+  'nav.short.group.orders': 'Заказы',
+  'nav.group.switchAria': 'Страница раздела',
+  'confirm.records.title': 'Журнал приёмки',
+  'confirm.records.hint': 'Что магазин получил за последние две недели.',
+  'confirm.records.empty': 'За последние две недели ничего не поступало.',
+  'confirm.records.run': '{date} · закупка {n}',
+  'confirm.records.confirmedBy': 'Подтверждение: {name}',
+  'confirm.records.allOk': 'Всё в порядке',
+  'confirm.records.problems':
+    '{n, plural, one {# проблема} few {{n} проблемы} many {{n} проблем} other {{n} проблемы}}',
+  'confirm.records.received': 'пришло {qty}',
+  'confirm.records.revised': 'Исправлено после приёмки',
+  'confirm.records.show': 'Показать журнал приёмки',
+  'confirm.records.photo': 'Фото: {name}',
+  'settlement.viewHistory': 'История закупок магазина',
 } as const satisfies Record<CatalogKey, string>;

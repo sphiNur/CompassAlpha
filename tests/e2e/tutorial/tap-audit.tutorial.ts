@@ -248,7 +248,11 @@ async function goView(page: Page, auth: string, nav: Nav): Promise<boolean> {
   const navTabs = page.locator('[data-testid^="nav-"]:not([data-testid^="nav-badge"])');
   if ((await navTabs.count()) > 0) {
     // A tab behind More (2026-11-14) is open when More stands for it.
-    const inBar = page.getByTestId('primary-nav').getByTestId(`nav-${nav.tab}`);
+    // Owner 2026-11-23: a tab in a group is open when its group's item is.
+    const lead = ({ confirm: 'order', history: 'run' } as Record<string, string>)[nav.tab];
+    const bar = page.getByTestId('primary-nav');
+    const own = bar.getByTestId(`nav-${nav.tab}`);
+    const inBar = (await own.count()) > 0 || !lead ? own : bar.getByTestId(`nav-${lead}`);
     const current = await ((await inBar.count()) > 0 ? inBar : page.getByTestId('nav-more'))
       .getAttribute('aria-current', { timeout: 5_000 })
       .catch(() => null);

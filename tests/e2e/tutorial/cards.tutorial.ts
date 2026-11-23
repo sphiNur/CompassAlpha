@@ -76,6 +76,13 @@ async function tapTab(c: Card, page: Page, stepId: string, name: string): Promis
   await nav.waitFor();
   const inBar = nav.getByTestId(`nav-${name}`);
   if (await inBar.isVisible()) return c.tap(stepId, inBar);
+  // Owner 2026-11-23: Receiving and History share Orders' and Buying's
+  // item (apps/web/src/app/shell/tabGroups.ts); the page switches.
+  const lead = ({ confirm: 'order', history: 'run' } as Record<string, string>)[name];
+  if (lead && (await nav.getByTestId(`nav-${lead}`).isVisible())) {
+    await c.tap(`${stepId}-group`, nav.getByTestId(`nav-${lead}`));
+    return c.tap(stepId, page.getByTestId(`group-${name}`));
+  }
   await c.tap('open-more', page.getByTestId('nav-more'));
   await c.tap(stepId, sheet(page).getByTestId(`nav-${name}`));
 }
