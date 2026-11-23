@@ -5,6 +5,7 @@ import {
   RUN_CLOCK as clock,
   planAndPurchase,
   planRun,
+  purchaseItem,
   purchaser,
   revisePurchase,
   runStepper,
@@ -128,5 +129,29 @@ describe('run.topUp (BUY-5)', () => {
     s = step(s, attach('5'));
     expect(s.items.get('sku-1')?.plannedQty).toBe('9');
     expect(s.items.get('sku-1')?.topUpQty ?? null).toBeNull();
+  });
+
+  test('an unavailable line bought after all answers its whole plan, top-up included', () => {
+    let s = step(emptyRunState('run-1'), planRun({ plannedItems: [{ skuId: 'sku-1', qty: '2' }] }));
+    s = step(s, { type: 'StartPurchase', actor: purchaser() });
+    s = step(s, { type: 'MarkUnavailable', skuId: 'sku-1', note: 'none left', actor: purchaser() });
+    s = step(s, attach('3'));
+    expect(s.items.get('sku-1')?.plannedQty).toBe('5');
+    expect(s.items.get('sku-1')?.topUpQty).toBe('3');
+
+    // An offline replay or the Fine app buys it without unmarking first.
+    s = step(
+      s,
+      purchaseItem({
+        skuId: 'sku-1',
+        supplierId: 'sup-1',
+        unitPrice: '12000',
+        actualQty: '5',
+        storeSplits: [{ storeId: 'A', qty: '5' }],
+      }),
+    );
+    expect(s.items.get('sku-1')?.status).toBe('purchased');
+    expect(s.items.get('sku-1')?.topUpQty ?? null).toBeNull();
+    expect(decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toHaveLength(1);
   });
 });

@@ -87,6 +87,10 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             // M1.14: legacy events without paymentMethod project as
             // 'cash' — same default the domain applyRun reducer uses.
             paymentMethod: e.payload.paymentMethod ?? 'cash',
+            // An unavailable line bought after all drops its top-up, as
+            // the reducer does (the right side reads the row before this
+            // UPDATE, so `status` is still the old one).
+            topUpQty: sql`CASE WHEN ${s.runItemsV.status} = 'unavailable' THEN NULL ELSE ${s.runItemsV.topUpQty} END`,
             updatedAt: new Date(),
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
