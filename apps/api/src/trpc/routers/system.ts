@@ -30,6 +30,37 @@ import { env } from '../../env';
 const LOG_LIMIT = { window: 60_000, max: 60 } as const;
 
 /**
+ * And a budget of bytes stored per address and minute (review,
+ * 2026-11-23). 60 calls of 200 events, each up to ~16 KB after clamping,
+ * let one address write about 190 MB a minute into ops.client_logs and
+ * the journal. The web sends at most 60 KB a batch
+ * (CLIENT_LOG_BATCH_MAX_BYTES), every few seconds when busy, so 1 MB a
+ * minute leaves it room; a batch over the budget is refused whole.
+ */
+const LOG_BYTES_LIMIT = { window: 60_000, max: 1_000_000 } as const;
+
+/** What a client log row costs to store, roughly: its text and its data as JSON. */
+export function logRowBytes(row: typeof s.clientLogs.$inferInsert): number {
+  let bytes = 0;
+  for (const value of [
+    row.sessionId,
+    row.kind,
+    row.action,
+    row.target,
+    row.errorMsg,
+    row.errorStack,
+    row.platform,
+    row.appVersion,
+    row.traceId,
+    row.spanId,
+  ]) {
+    if (typeof value === 'string') bytes += Buffer.byteLength(value, 'utf8');
+  }
+  if (row.data) bytes += Buffer.byteLength(JSON.stringify(row.data), 'utf8');
+  return bytes;
+}
+
+/**
  * Lenient batch shape. We accept anything that has an `events` array,
  * normalize each event ourselves, and clamp/drop fields that don't fit
  * our DB columns. The web's writer has its own type (LogEvent in
@@ -228,6 +259,14 @@ export const systemRouter = router({
         traceId: clamp(raw.traceId, 64),
         spanId: clamp(raw.spanId, 32),
         clientTs,
+      });
+    }
+
+    const bytes = rows.reduce((sum, row) => sum + logRowBytes(row), 0);
+    if (bytes > 0 && !checkClientRate('system.log.bytes', ctx.trustedIp, LOG_BYTES_LIMIT, bytes)) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'system.errors.logRateLimited',
       });
     }
 
