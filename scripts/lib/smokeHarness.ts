@@ -496,6 +496,8 @@ export async function stubAppReads(context: BrowserContext): Promise<void> {
     summary: { total: '0', itemsTotal: '0', expensesTotal: '0', cash: '0', transfer: '0' },
   });
   await stubTrpc(context, 'run.expenseTemplates', []);
+  // Owner 2026-11-23: the receiving record under Receiving; nothing received.
+  await stubTrpc(context, 'run.storeReceipts', []);
   await stubTrpc(context, 'run.previewCreatable', {
     date: '2026-05-01',
     today: '2026-05-01',
