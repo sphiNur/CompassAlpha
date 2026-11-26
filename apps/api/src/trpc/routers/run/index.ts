@@ -19,12 +19,14 @@ import { planProcedures } from './plan';
 import { previewProcedures } from './preview';
 import { purchaseProcedures } from './purchase';
 import { readProcedures } from './read';
+import { receiptProcedures } from './receipts';
 
 export const runRouter = router({
   ...previewProcedures,
   ...planProcedures,
   ...readProcedures,
   ...historyProcedures,
+  ...receiptProcedures,
   ...purchaseProcedures,
   ...deliveryProcedures,
   ...closeProcedures,

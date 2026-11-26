@@ -33,6 +33,7 @@ import { zoneName } from '../lib/dateFormat';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 import { hasStorePermission } from '../lib/storePermission';
 import { trpc } from '../lib/trpc';
+import { requestTabChange, useNavStore } from '../stores/navStore';
 import { BUSINESS_DATE } from './settlement/draftModel';
 import { AmountField } from './settlement/AmountField';
 import { ExpenseLines } from './settlement/ExpenseLines';
@@ -101,6 +102,15 @@ export function SettlementPage() {
   // 2026-10-21 CA-09: sales entry block (see render). Review CONF-14: as
   // sales.record holds in this store, overrides included.
   const canRecordSales = hasStorePermission(session, currentStoreId, 'sales.record');
+  // Owner 2026-11-23 (option B): the day is closed against what was bought,
+  // so this store's purchase history is one tap from here. History reads
+  // the store in the header (useReportStore), this one.
+  const canSeeHistory = hasStorePermission(session, currentStoreId, 'prices.view');
+  const openHistory = () => {
+    void requestTabChange('history').then((allowed) => {
+      if (allowed) useNavStore.getState().setTab('history');
+    });
+  };
   // S2 (2026-11-13): open by default. The Sales tab is hidden for whoever
   // holds settlement.record (app/shell/tabs.ts, `hiddenWith`), which this
   // page needs in its store, so here the block is the member's only way
@@ -541,6 +551,11 @@ export function SettlementPage() {
         )}
 
         <RecentCloses storeId={currentStoreId} onOpen={openDay} />
+        {canSeeHistory ? (
+          <Button variant="pearl" data-testid="settlement-view-history" onClick={openHistory}>
+            {i18n.t('settlement.viewHistory')}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

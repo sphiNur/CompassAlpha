@@ -29,6 +29,7 @@ import { NAV_BADGE_COUNT_CLASS, navBadgeCountText } from '../../lib/navBadgeLook
 import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { DOCK_FLIP_MS } from './dockFlip';
 import type { NavLayout } from './navLayout';
+import { groupBadge } from './tabGroups';
 import type { TabDef } from './tabs';
 
 interface BottomNavProps {
@@ -87,10 +88,19 @@ export function useNavBadges(tabs: readonly TabDef[]) {
       retry: false,
     },
   );
-  return navBadges(
+  // Owner 2026-11-23: an entry for a group (tabGroups.ts) shows what waits
+  // in any of its members.
+  const badges = navBadges(
     navCountsQuery.data,
-    tabs.map((t) => t.key),
+    tabs.flatMap((t) => [t.key, ...(t.members ?? [])]),
   );
+  for (const t of tabs) {
+    if (!t.members) continue;
+    const merged = groupBadge(badges, t.members);
+    if (merged === undefined) delete badges[t.key];
+    else badges[t.key] = merged;
+  }
+  return badges;
 }
 
 const EASE = 'cubic-bezier(0.2, 0.7, 0.2, 1)';

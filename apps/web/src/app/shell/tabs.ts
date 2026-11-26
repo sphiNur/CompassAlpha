@@ -47,6 +47,11 @@ export interface TabDef {
    * follows what the member may do in that store, not in any store.
    */
   storeBound: boolean;
+  /**
+   * Owner 2026-11-23: on a bar or More entry that stands for a group
+   * (tabGroups.ts), the group's visible members; absent on a lone tab.
+   */
+  members?: readonly Tab[];
 }
 
 /**

@@ -3121,4 +3121,20 @@ export const uz = {
   'attendance.punch.preparing': 'Tayyorlanmoqda…',
   'run.errors.listFrozenWhileDelivering':
     'Yetkazib berish boshlandi, roʻyxatni hozir oʻzgartirib boʻlmaydi. Hali hech bir doʻkon tovarni olmagan boʻlsa, avval xaridga qayting.',
+  // Owner 2026-11-23: tab groups, the receiving record, the settlement page's history link.
+  'nav.group.orders': 'Buyurtmalar',
+  'nav.short.group.orders': 'Buyurtmalar',
+  'nav.group.switchAria': 'Boʻlim sahifasi',
+  'confirm.records.title': 'Qabul tarixi',
+  'confirm.records.hint': 'Doʻkon soʻnggi ikki haftada qabul qilgan mahsulotlar.',
+  'confirm.records.empty': 'Soʻnggi ikki haftada hech narsa qabul qilinmadi.',
+  'confirm.records.run': '{date} · {n}-xarid',
+  'confirm.records.confirmedBy': 'Tasdiqladi: {name}',
+  'confirm.records.allOk': 'Hammasi joyida',
+  'confirm.records.problems': '{n, plural, =1 {1 ta muammo} other {{n} ta muammo}}',
+  'confirm.records.received': 'keldi: {qty}',
+  'confirm.records.revised': 'Qabuldan keyin tuzatildi',
+  'confirm.records.show': 'Qabul tarixini koʻrsatish',
+  'confirm.records.photo': '{name} surati',
+  'settlement.viewHistory': 'Doʻkon xaridlari tarixi',
 } as const satisfies Record<CatalogKey, string>;

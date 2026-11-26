@@ -2789,4 +2789,20 @@ export const zh = {
   'attendance.punch.preparing': '正在准备…',
   'run.errors.listFrozenWhileDelivering':
     '已经开始配送，清单不能再改。如果还没有门店收到货，请先回到采购阶段。',
+  // Owner 2026-11-23: tab groups, the receiving record, the settlement page's history link.
+  'nav.group.orders': '订货',
+  'nav.short.group.orders': '订货',
+  'nav.group.switchAria': '本栏目的页面',
+  'confirm.records.title': '收货记录',
+  'confirm.records.hint': '本店最近两周收到的货。',
+  'confirm.records.empty': '最近两周没有收货。',
+  'confirm.records.run': '{date} 第 {n} 次采购',
+  'confirm.records.confirmedBy': '{name} 确认收货',
+  'confirm.records.allOk': '全部正常',
+  'confirm.records.problems': '{n} 项有问题',
+  'confirm.records.received': '实收 {qty}',
+  'confirm.records.revised': '验收后有更正',
+  'confirm.records.show': '查看收货记录',
+  'confirm.records.photo': '{name} 的照片',
+  'settlement.viewHistory': '查看本店采购历史',
 } as const satisfies Record<CatalogKey, string>;

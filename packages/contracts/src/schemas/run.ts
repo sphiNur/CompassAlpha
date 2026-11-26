@@ -22,6 +22,13 @@ export type RunStatus = z.infer<typeof RunStatusSchema>;
 export const PaymentMethodSchema = z.enum(['cash', 'transfer']);
 export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
 
+/**
+ * Owner 2026-11-23: what one store received, for whoever receives there
+ * (`delivery.confirm`), without money. RECEIPT_DAYS days back.
+ */
+export const RECEIPT_DAYS = 14;
+export const StoreReceiptsInputSchema = z.object({ storeId: UuidSchema });
+
 /** Server-side purchase-history search + pagination. */
 export const RunHistoryInputSchema = z
   .object({

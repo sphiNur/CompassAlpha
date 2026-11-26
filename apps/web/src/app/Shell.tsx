@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState, type CSSProperties } from 'react';
+import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Banner, Button, EmptyState, focusAfter } from '@compass/ui';
 import { PageMenuProvider, usePageMenuRegistration } from '../components/PageMenuContext';
 import { resilientLazy } from '../components/resilientLazy';
@@ -10,7 +10,10 @@ import { setPageTitleBase } from '../lib/pageTitle';
 import { useAuthStore } from '../stores/authStore';
 import { importSettingsSheet } from './pageChunks';
 import { PageErrorBoundary } from './PageErrorBoundary';
-import { BottomNav, showsNav } from './shell/BottomNav';
+import { BottomNav, showsNav, useNavBadges } from './shell/BottomNav';
+import { GroupSwitch } from './shell/GroupSwitch';
+import { entryKeyFor, groupEntries, memberToOpen, membersAround } from './shell/tabGroups';
+import type { Tab } from '../stores/navStore';
 import { MoreNavContext } from './shell/moreNav';
 import { LiveAnnouncer } from './shell/LiveAnnouncer';
 import { navLayout } from './shell/navLayout';
@@ -70,18 +73,37 @@ function ShellInner() {
   // Owner 2026-11-17: Admin lives on the More page, never in the bar; the
   // shell's tabs are the member's pages without Admin, plus More when
   // there is one (navLayout.ts).
-  const layout = navLayout(memberTabs, session?.permissions ?? [], browserSettings);
+  // Owner 2026-11-23: ordering and receiving, and buying and its history,
+  // each take one place in the bar (tabGroups.ts); the tabs stay tabs.
+  const entries = groupEntries(memberTabs);
+  const layout = navLayout(entries, session?.permissions ?? [], browserSettings);
   const visible = [
     ...memberTabs.filter((t) => t.key !== 'admin'),
     ...(layout.morePage ? [MORE_TAB] : []),
   ];
   const { tab, selectTab, changeTab, mainRef, saveScroll } = useShellTab(visible);
+  // The bar's item for the open tab, and the group it is open in.
+  const navTab = entryKeyFor(tab, entries);
+  const groupMembers = membersAround(tab, entries);
+  const tabBadges = useNavBadges(memberTabs);
+  const lastInGroup = useRef(new Map<Tab, Tab>());
+  if (groupMembers.length > 0) lastInGroup.current.set(navTab, tab);
+  /** The member a group's entry opens; a lone tab is itself. */
+  const openFor = (key: Tab): Tab => {
+    const members = entries.find((e) => e.key === key)?.members;
+    if (!members) return key;
+    if (members.includes(tab)) return tab;
+    return memberToOpen(members, lastInGroup.current.get(key), tabBadges);
+  };
+  // A tap on a bar or More entry. On the group already open it is a tap on
+  // the open tab (back to its top), as on any tab.
+  const selectEntry = (key: Tab) => selectTab(openFor(key));
   // 2026-11-14 (step 2): a swipe moves to the bar's neighbouring item, in
   // the order the bar draws them, More last; not to the tabs listed on the
   // More page (SwipePager.tsx).
   const hasNav = showsNav(layout);
   const swipeRing = hasNav
-    ? [...layout.bar.map((t) => t.key), ...(layout.morePage ? (['more'] as const) : [])]
+    ? [...layout.bar.map((t) => openFor(t.key)), ...(layout.morePage ? (['more'] as const) : [])]
     : [];
   const swipeResetKey = [
     session?.user.id,
@@ -232,10 +254,18 @@ function ShellInner() {
                 value={{
                   tabs: layout.more,
                   admin: layout.admin,
-                  onSelect: selectTab,
+                  onSelect: selectEntry,
                   onOpenSettings: browserSettings ? openSettings : undefined,
                 }}
               >
+                {groupMembers.length > 1 ? (
+                  <GroupSwitch
+                    members={groupMembers.flatMap((k) => memberTabs.filter((t) => t.key === k))}
+                    tab={tab}
+                    badges={tabBadges}
+                    onSelect={selectTab}
+                  />
+                ) : null}
                 {PAGES[tab]()}
               </MoreNavContext.Provider>
             </PageErrorBoundary>
@@ -261,7 +291,7 @@ function ShellInner() {
           pager, so a swipe never starts on either. */}
       <div className="app-dock" data-nav={hasNav ? '' : undefined}>
         <div className="app-dock-row">
-          <BottomNav layout={layout} tab={tab} onSelect={selectTab} />
+          <BottomNav layout={layout} tab={navTab} onSelect={selectEntry} />
           {/* UI overhaul C/D (2026-11-15): a page's search or view switch,
               drawn here through a portal (components/dock). */}
           <div ref={setDockToolSlot} className="app-dock-slot" />

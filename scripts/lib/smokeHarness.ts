@@ -49,10 +49,26 @@ export const PRIMARY_NAV_SELECTOR =
  * than five tabs the bar holds four and More (2026-11-14); a tab that is
  * not in the bar is opened from the More sheet.
  */
+/**
+ * Owner 2026-11-23 (apps/web/src/app/shell/tabGroups.ts): Receiving and
+ * History share a bar item with Order and Buying when the role sees both;
+ * the page then switches between them (data-testid="group-<tab>").
+ */
+const GROUP_LEAD: Record<string, string> = { confirm: 'order', history: 'run' };
+
 export async function clickNavTab(page: Page, key: string): Promise<void> {
   const inBar = page.locator(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-${key}"]`);
   if ((await inBar.count()) > 0) {
     await inBar.click();
+    return;
+  }
+  const lead = GROUP_LEAD[key];
+  if (
+    lead &&
+    (await page.locator(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-${lead}"]`).count()) > 0
+  ) {
+    await page.click(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-${lead}"]`);
+    await page.click(`[data-testid="group-${key}"]`);
     return;
   }
   // Owner 2026-11-17: More is a page; Admin is drawn on it, the other
