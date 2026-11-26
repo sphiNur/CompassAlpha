@@ -696,7 +696,11 @@ async function run() {
     // ---- Confirm tab ----
     // UX-07: leaving with unsaved settlement input asks in the app's own
     // sheet (no longer Telegram's popup); "Discard" lets the tab change.
-    await clickNavTab(page, 'confirm');
+    // Owner 2026-11-23: Receiving is inside Orders (tabGroups.ts), so the
+    // tap that leaves the daily close is on Orders, and Receiving is
+    // chosen on its switch once the question is answered. clickNavTab
+    // would wait for the switch while the question still covers it.
+    await page.click(`${PRIMARY_NAV_SELECTOR} [data-testid="nav-order"]`);
     const leaveAsked = page.getByRole('dialog', { name: /daily-close changes/ });
     const leavePrompted = await leaveAsked
       .waitFor({ state: 'visible', timeout: 5_000 })
@@ -705,6 +709,7 @@ async function run() {
     if (leavePrompted) {
       await leaveAsked.getByRole('button', { name: 'Discard', exact: true }).click();
     }
+    await page.click('[data-testid="group-confirm"]', { timeout: 15_000 });
     await page
       .waitForFunction(
         () =>

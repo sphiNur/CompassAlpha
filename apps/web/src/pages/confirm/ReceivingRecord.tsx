@@ -48,13 +48,16 @@ export function ReceivingRecord({
   );
   const [photo, setPhoto] = useState<ViewedPhoto | null>(null);
   if (query.isError) return null;
+  // An answer without a list (a stub, an odd proxy) reads as nothing
+  // received; it crashed the page in the deploy's deep smoke (2026-11-26).
+  const receipts = query.data ?? [];
   const body = query.isPending ? (
     <SkeletonList count={2} />
-  ) : query.data.length === 0 ? (
+  ) : receipts.length === 0 ? (
     <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('confirm.records.empty')}</p>
   ) : (
     <ul role="list" className="flex flex-col gap-2">
-      {query.data.map((r) => (
+      {receipts.map((r) => (
         <li key={r.runId}>
           <ReceiptCard receipt={r} skuById={skuById} onPhoto={setPhoto} />
         </li>
